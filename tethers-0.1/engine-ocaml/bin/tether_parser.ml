@@ -104,11 +104,25 @@ let parse_argument line =
       if name = "" || raw = "" then fail "parse_error" ("Malformed action argument: " ^ body);
       (name, parse_value raw)
 
+let check_unique_arguments action_name arguments =
+  let names = List.map fst arguments in
+  let rec check = function
+    | [] -> ()
+    | name :: rest ->
+        if List.mem name rest then
+          fail "parse_error" ("Duplicate argument " ^ name ^ " for " ^ action_name)
+        else check rest
+  in
+  check names
+
 let parse_actions lines =
   let finish current result =
     match current with
     | None -> result
-    | Some (name, arguments) -> { capability = name; arguments = List.rev arguments } :: result
+    | Some (name, arguments) ->
+        let args = List.rev arguments in
+        check_unique_arguments name args;
+        { capability = name; arguments = args } :: result
   in
   let rec loop remaining current result =
     match remaining with

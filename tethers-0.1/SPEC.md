@@ -92,6 +92,10 @@ Supported values:
 No loops, arithmetic, user functions, mutation, implicit I/O, or hidden
 coercion are permitted.
 
+Each argument name may appear at most once within a single Action.
+Duplicate argument names are rejected as parse errors before evaluation
+begins. Different Actions may use the same argument name independently.
+
 ## 6. Action semantics
 
 Actions are ordered. The host executes them sequentially and stops on the first

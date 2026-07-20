@@ -88,6 +88,17 @@ evaluation/planning). Tethers 0.1 uses only:
    parse);
 2. fully correlated evaluation/planning errors (Condition, Action).
 
+## 2026-07-20: Reject Duplicate Action Argument Names
+
+Decision: Each argument name may appear at most once within a single Action.
+Duplicate names are rejected as parse errors before evaluation begins.
+
+Reason: Duplicates create ambiguity about which value the Tether author
+intended. The host should not silently select one value over another. Rejecting
+duplicates during parsing provides a clear, deterministic error before any
+evaluation identity or Trail is established. Different Actions may
+independently reuse the same argument name without conflict.
+
 ## Open Decisions
 
 - Whether future documentation should live at the workspace root, inside

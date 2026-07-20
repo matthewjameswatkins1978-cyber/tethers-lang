@@ -1,0 +1,34 @@
+{
+  "protocol_version": "0.1",
+  "language_version": "0.1",
+  "evaluation_id": "eval_duplicate_argument_001",
+  "tether": {
+    "id": "record-completed-task",
+    "version": "demo-v1",
+    "source": "tether \"Record completed software task\"\n\nanchor\n    coding.task_completed\n\nwhen\n    project.type is \"software\"\n    and task.changed_files greater_than 0\n\ndo\n    lantern.task.record\n        project: anchor.project\n        task: anchor.task\n        task: \"something else\"\n"
+  },
+  "event": {
+    "id": "evt_duplicate_argument_001",
+    "name": "coding.task_completed",
+    "data": {
+      "project": "lantern-keeper",
+      "task": "LK-39"
+    }
+  },
+  "facts": {
+    "project.type": "software",
+    "task.changed_files": 3
+  },
+  "capabilities": [
+    {
+      "name": "lantern.task.record",
+      "version": "1.0.0",
+      "inputs": {
+        "project": "string",
+        "task": "string"
+      },
+      "effects": ["lantern.write"],
+      "reversibility": "compensatable"
+    }
+  ]
+}

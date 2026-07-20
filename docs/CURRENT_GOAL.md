@@ -167,3 +167,9 @@ or Trail. `docs/DECISIONS.md` records the design decision that parse errors
 remain minimal because evaluation has not begun and the two-category error
 model (minimal pre-evaluation, fully correlated evaluation/planning) is
 preferred over partial correlation.
+
+The duplicate-Action-argument fixture enforces that each argument name may
+appear at most once per Action. The Tether source duplicates `task` with
+a discernibly different value; the parser rejects it as a `parse_error` before
+evaluation begins. Different Actions may independently use the same argument
+name.
