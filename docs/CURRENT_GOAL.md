@@ -117,3 +117,8 @@ envelope for `type_error` raised during Condition evaluation. The fixture keeps
 the canonical Tether source and changes `project.type` to integer `7`, so the
 engine preserves reception and matched Anchor Trail entries before appending one
 `condition_failed` entry at sequence 3.
+
+`docs/OCAML_GUIDE_FOR_AGENTS.md` now records the verified OCaml 5.5.0 local
+toolchain, current engine module structure, project OCaml subset, Yojson usage,
+and official source links for AI coding agents. `.clinerules/30-ocaml.md`
+points Cline to the guide for OCaml implementation tasks without duplicating it.

@@ -54,6 +54,8 @@
       concise references from project guidance.
 - [x] Correlate `type_error` errors raised during Condition evaluation while
       preserving known identifiers and accumulated Trail entries.
+- [x] Add a concise OCaml 5.5 guide for AI coding agents and wire agent
+      guidance references.
 
 ## Next
 

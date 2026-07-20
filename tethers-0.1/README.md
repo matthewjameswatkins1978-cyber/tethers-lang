@@ -46,23 +46,22 @@ a deterministic decision from the visible result.
 ## Repository map
 
 - `../docs/CONSTITUTION.md` — enduring design principles
+- `../docs/OCAML_GUIDE_FOR_AGENTS.md` — OCaml guidance for AI coding agents
 - `SPEC.md` — current 0.1 language and protocol semantics
 - `protocol/` — request, response, and capability examples
 - `engine-ocaml/` — line-oriented parser, validator, and evaluator
 - `host-rust/` — reference host and mock capability executor
 - `examples/` — the first Tether
-- `scripts/demo.sh` — builds both programs and runs the round trip
+- `scripts/demo.ps1` — builds both programs and runs the round trip on Windows
 
 ## Intended demo
 
-Prerequisites: Rust/Cargo, OCaml, Dune, and opam package `yojson`.
+Prerequisites: Rust/Cargo and the project-local opam switch in
+`engine-ocaml/`.
 
-```sh
-cd tethers-0.1
-opam install dune yojson
-./scripts/demo.sh
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\demo.ps1
 ```
 
-The current workspace used to produce this prototype did not contain Rust or
-OCaml build tools, so the source could not be compiled here. The JSON fixtures
-are nevertheless checked by `scripts/check-fixtures.sh` when `jq` is present.
+The native Windows verification scripts are the current project automation
+entry points.

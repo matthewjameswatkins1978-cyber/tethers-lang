@@ -6,6 +6,8 @@ Read this file, `docs/CONSTITUTION.md`, `tethers-0.1/SPEC.md`,
 `docs/CONSTITUTION.md` governs enduring Tethers design principles.
 `tethers-0.1/SPEC.md` defines the current precise 0.1 language and protocol
 semantics.
+For OCaml implementation tasks, also read the task-relevant section of
+`docs/OCAML_GUIDE_FOR_AGENTS.md`.
 
 ## Project definition
 
@@ -529,6 +531,10 @@ Before every task:
 5. Read `docs/TASK_QUEUE.md`.
 6. Inspect Git status.
 7. Preserve unrelated and user-authored changes.
+
+For OCaml implementation tasks, read the relevant section of
+`docs/OCAML_GUIDE_FOR_AGENTS.md` and consult the linked official documentation
+before relying on model memory for unfamiliar syntax, APIs, or tooling.
 
 During work:
 

@@ -58,6 +58,17 @@ Reason: The constitution should exist once as a stable document that other
 project guidance can reference concisely. `tethers-0.1/SPEC.md` remains the
 authority for current precise 0.1 language and protocol semantics.
 
+## 2026-07-20: Use A Compact OCaml Guide For AI Agents
+
+Decision: Tethers uses `docs/OCAML_GUIDE_FOR_AGENTS.md` plus task-relevant
+official OCaml, Dune, opam, and Yojson documentation for OCaml implementation
+tasks.
+
+Reason: AI coding agents need verified project-specific OCaml guidance without
+loading an entire language manual into every task. The compact guide points to
+official documentation for version-specific details, and the compiler plus
+Tethers contract tests remain the final authority.
+
 ## Open Decisions
 
 - Whether future documentation should live at the workspace root, inside
