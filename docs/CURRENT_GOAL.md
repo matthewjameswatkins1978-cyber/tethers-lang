@@ -139,3 +139,9 @@ The missing-Action-argument fixture now uses the correlated error envelope for
 canonical happy-path Tether and removes the required `task` argument from the
 Action, so the engine preserves the full evaluation Trail before appending one
 `action_planning_failed` entry at sequence 5.
+
+The unknown-Action-argument fixture now uses the correlated error envelope for
+`unknown_argument` raised during Action planning. The fixture copies the
+canonical happy-path Tether and adds an undeclared `extra` argument to the
+Action, so the engine preserves the full evaluation Trail before appending one
+`action_planning_failed` entry at sequence 5.
