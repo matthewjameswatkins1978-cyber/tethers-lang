@@ -1,0 +1,22 @@
+# Git internals
+.git/
+
+# OCaml local switch and generated output
+tethers-0.1/engine-ocaml/_opam/
+tethers-0.1/engine-ocaml/_build/
+
+# Rust generated output
+tethers-0.1/host-rust/target/
+target/
+
+# Imported archive
+Tethers-0.1-Prototype.tar.gz
+
+# Editor and operating-system noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.swp

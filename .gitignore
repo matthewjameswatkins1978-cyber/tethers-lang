@@ -23,6 +23,11 @@ Tethers-0.1-Prototype.tar.gz
 .idea/
 *.code-workspace
 
+# Project-specific Cline guidance is tracked even though the parent repo ignores it.
+!.clinerules/
+!.clinerules/**
+!.clineignore
+
 # OS-local files
 .DS_Store
 Thumbs.db

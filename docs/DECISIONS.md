@@ -40,6 +40,16 @@ Decision: Add project-control documents under `docs/`.
 Reason: The workspace needs a clear overview, active goal, decision log, and
 task queue before compilation or further design work begins.
 
+## 2026-07-20: Give Cline Concise Workspace Rules
+
+Decision: Add `.clinerules/` and `.clineignore` at the primary workspace root
+so Cline has concise project-specific operating guidance.
+
+Reason: Cline is the bounded implementation worker for this project and should
+receive enough architectural context to avoid dangerous changes without loading
+the full cross-agent project constitution for every mechanical task. `AGENTS.md`
+remains the full project constitution for Codex and other agents.
+
 ## Open Decisions
 
 - Whether future documentation should live at the workspace root, inside
