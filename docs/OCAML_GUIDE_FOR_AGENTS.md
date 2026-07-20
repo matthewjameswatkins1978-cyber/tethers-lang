@@ -21,17 +21,18 @@ Verified on 2026-07-20:
 - Dune: `3.24.0`
 - Yojson: `2.2.2`
 - PowerShell automation shell: PowerShell 7.6.3, `pwsh.exe`
-- Local switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
+- Local switch directory: `tethers-0.1/engine-ocaml`
 
-The OCaml switch is path-bound and lives under:
+The OCaml switch is path-bound to `tethers-0.1/engine-ocaml` and lives under:
 
 ```text
 tethers-0.1/engine-ocaml/_opam/
 ```
 
-Do not move or rename `tethers-0.1/engine-ocaml` while this switch is in use.
-Use `opam exec` from inside `tethers-0.1/engine-ocaml` so commands run against
-the local switch.
+Do not move or rename `tethers-0.1/engine-ocaml` casually while this switch is
+in use. Use `opam switch show`, `opam switch list --short`, and `opam var root`
+to discover the active switch and opam root. Use `opam exec` from inside
+`tethers-0.1/engine-ocaml` so commands run against the local switch.
 
 The package constraints in `tethers-0.1/engine-ocaml/tethers_engine.opam` are
 `ocaml >= 5.1.0 and < 6.0.0`, `dune >= 3.10`, and

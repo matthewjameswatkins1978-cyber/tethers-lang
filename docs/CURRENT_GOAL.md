@@ -23,8 +23,8 @@ starting implementation.
 
 - Native opam is visible: `opam 2.5.2`.
 - `opam init -y` was run. The first invocation exceeded the command timeout, but
-  opam finished initialising enough to report root
-  `C:\Users\Matmus\AppData\Local\opam` and usable switch operations.
+  opam finished initialising enough to report the native Windows opam root via
+  `opam var root` and usable switch operations.
 - A project-local switch exists at `tethers-0.1/engine-ocaml` using
   `ocaml-base-compiler.5.5.0`.
 - Installed local switch versions:

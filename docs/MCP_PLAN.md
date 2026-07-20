@@ -324,19 +324,14 @@ The first MCP server is deliberately non-executing. Even so, it must:
 
 ## Repository/profile reminder
 
-MCP work described here belongs in:
+MCP work described here belongs in the Tethers project. Before assigning MCP
+implementation work, switch VS Code and Cline to the **Tethers** profile/folder
+and open the repository root containing `AGENTS.md`, `docs/`, and
+`tethers-0.1/`.
 
-```text
-D:\The Next Thing\Tethers Lang
-```
-
-Before assigning MCP implementation work, switch VS Code and Cline to the **Tethers** profile/folder.
-
-Lantern Keeper integration work belongs in:
-
-```text
-D:\The Next Thing\lantern-keeper
-```
+Lantern Keeper integration work belongs in the Lantern Keeper project. Switch
+VS Code and Cline to the **Lantern Keeper** profile/folder and open the Lantern
+Keeper repository root for that work.
 
 Lantern Keeper may later expose its own capabilities to a Tethers host, but it does not own the Tethers MCP server.
 
