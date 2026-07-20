@@ -149,6 +149,45 @@ versions rather than guess.
 
 ## 11. Error policy
 
+### 11.1 Request-decoding errors
+
+Errors that occur before reliable request identities are extracted (malformed
+JSON, missing protocol/language version, missing structural fields, or
+unsupported version values) return a minimal error envelope:
+
+```json
+{
+  "protocol_version": "0.1",
+  "status": "error",
+  "error": { "code": "...", "message": "..." }
+}
+```
+
+No evaluation identifiers, plan, or Trail are included because the engine
+has not yet established reliable evaluation context.
+
+### 11.2 Correlated evaluation errors
+
+Once the engine has extracted evaluation, event, and Tether identities and
+the Anchor has matched, errors that occur during Condition evaluation return
+a correlated error envelope that retains all known identities, `plan: null`,
+and the evaluation Trail accumulated so far.
+
+When a Fact referenced by a Condition is missing, the engine:
+
+- retains `evaluation_id`, `event_id`, `tether_id`, and `tether_version`;
+- returns `plan: null`;
+- includes reception and Anchor-matched Trail entries;
+- appends exactly one `condition_failed` entry (phase `"evaluation"`, kind
+  `"condition_failed"`, outcome `"error"`) whose message contains the
+  original missing-Fact text.
+
+Other Condition-evaluation error paths are not yet correlated and may still
+produce the minimal request-decoding error envelope. The correlated envelope
+is extended deliberately, one error path at a time.
+
+### 11.3 Error classification
+
 Malformed source, missing Facts, unknown Capabilities, missing inputs, type
 mismatches, and incompatible versions are evaluation errors. A false Condition
 is not an error; it produces a successful `not_matched` result with no plan.

@@ -48,14 +48,16 @@
 - [x] Review and verify the OCaml parser extraction from `main.ml`.
 - [x] Extract JSON/Capability protocol helpers from `main.ml` into
       `engine-ocaml/bin/tethers_protocol.ml`.
+- [x] Correlate `missing_fact` errors raised during Condition evaluation while
+      preserving known identifiers and accumulated Trail entries.
 
 ## Next
 
 - [ ] Decide the first post-baseline implementation milestone.
-- [ ] Design and implement the correlated evaluation-error envelope before
-      expanding the error contract. Determine which available identifiers,
-      plan: null, and evaluation Trail entries must be retained when evaluation
-      fails.
+- [ ] Migrate the remaining contextual evaluation-error paths deliberately,
+      including parser, type, unknown Capability, missing argument, unknown
+      argument, and missing reference errors where reliable evaluation context
+      is available.
 
 ## Later
 

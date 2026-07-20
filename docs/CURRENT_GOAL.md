@@ -99,3 +99,10 @@ The JSON/Capability protocol helpers have been mechanically extracted from
 Module dependency chain: `main.ml` → `Tethers_protocol` → `Tether_parser`.
 All seven fixture cases, the demo round-trip, and fixture validation continue to
 pass.
+
+The missing-Fact fixture now uses the correlated evaluation-error envelope for
+`missing_fact` raised during Condition evaluation. The canonical missing-Fact
+request still includes `project.type` and omits `task.changed_files`, so the
+error Trail preserves the matched first Condition before appending a single
+`condition_failed` entry for `Missing Fact: task.changed_files`. Other
+contextual evaluation errors remain a separate migration task.
