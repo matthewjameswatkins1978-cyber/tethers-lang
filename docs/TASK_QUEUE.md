@@ -10,7 +10,8 @@
 - [x] OCaml parser, protocol helpers, and correlated error envelopes.
 - [x] Fixture contract covering happy path, anchor mismatch, false condition,
       condition boundary, condition errors, action planning errors, parse errors,
-      argument uniqueness, argument reuse, and capability-name uniqueness.
+      invalid indentation, argument uniqueness, argument reuse, and
+      capability-name uniqueness.
 - [x] `docs/CONSTITUTION.md`, `docs/DECISIONS.md`, `docs/CURRENT_GOAL.md`,
       `docs/OCAML_GUIDE_FOR_AGENTS.md`, and `.clinerules/` established.
 

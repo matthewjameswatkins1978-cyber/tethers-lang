@@ -44,6 +44,12 @@ let indentation line =
   in
   count 0
 
+let require_indent expected kind line =
+  let actual = indentation line in
+  if actual <> expected then
+    fail "parse_error"
+      ("Expected " ^ string_of_int expected ^ "-space indentation for " ^ kind ^ ": " ^ trim line)
+
 let non_blank_lines source =
   source
   |> String.split_on_char '\n'
@@ -92,6 +98,7 @@ let parse_condition_value raw =
   | _ -> value
 
 let parse_condition line =
+  require_indent 4 "Condition" line;
   let source = trim line in
   let body = if starts_with "and " source then drop_prefix "and " source else source in
   let fact, rest = take_word body in
@@ -101,6 +108,7 @@ let parse_condition line =
   { fact; operator = operator_of_string operator_text; expected = parse_condition_value expected; source = body }
 
 let parse_argument line =
+  require_indent 8 "Action argument" line;
   let body = trim line in
   match String.index_opt body ':' with
   | None -> fail "parse_error" ("Malformed action argument: " ^ body)
@@ -135,14 +143,16 @@ let parse_actions lines =
     | [] -> List.rev (finish current result)
     | line :: rest ->
         let indent = indentation line in
-        if indent >= 8 then
+        if indent = 8 then
           (match current with
            | None -> fail "parse_error" "Action argument appeared before an Action"
            | Some (name, arguments) ->
                loop rest (Some (name, parse_argument line :: arguments)) result)
-        else
+        else if indent = 4 then
           let result = finish current result in
           loop rest (Some (trim line, [])) result
+        else
+          fail "parse_error" ("Expected 4-space Action indentation: " ^ trim line)
   in
   loop lines None []
 
@@ -150,6 +160,7 @@ let parse_tether source =
   match non_blank_lines source with
   | first :: "anchor" :: anchor :: "when" :: rest ->
       if not (starts_with "tether " first) then fail "parse_error" "Tether must begin with tether \"name\"";
+      require_indent 4 "Anchor" anchor;
       let title = drop_prefix "tether " first |> unquote in
       let rec split_conditions acc = function
         | [] -> fail "parse_error" "Missing do section"

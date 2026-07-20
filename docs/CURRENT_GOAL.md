@@ -236,6 +236,12 @@ with a real JSON boolean Fact value. Both produce full matched Plans and
 Trails. All four condition operators (`is`, `contains`, `greater_than`,
 `greater_than_or_equal`) now have focused fixture coverage.
 
+The invalid-indentation fixture closes a final review gap: the parser now
+rejects noncanonical Tether indentation instead of accepting unindented Anchor,
+Condition, or Action lines as undocumented alternative syntax. Version 0.1
+requires four-space indentation for Anchor, Conditions, and Action names, and
+eight-space indentation for Action arguments.
+
 ## Final Tethers 0.1 Sign-Off On 2026-07-20
 
 The Tethers 0.1 engineering baseline is verified. The language and protocol

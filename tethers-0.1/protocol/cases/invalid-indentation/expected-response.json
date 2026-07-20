@@ -1,0 +1,8 @@
+{
+  "protocol_version": "0.1",
+  "status": "error",
+  "error": {
+    "code": "parse_error",
+    "message": "Expected 4-space indentation for Anchor: coding.task_completed"
+  }
+}
