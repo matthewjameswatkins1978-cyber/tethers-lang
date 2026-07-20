@@ -201,3 +201,11 @@ pre-evaluation error envelope (`incompatible_protocol` or
 `protocol_version` in the response is always `"0.1"` (the engine's native
 protocol version), not the request value. SPEC §11.1 now explicitly
 enumerates the four categories of pre-evaluation errors.
+
+The host-denial integration test (`scripts/test-host-denial.ps1`) proves the
+end-to-end denied-plan boundary. A happy-path request with the Capability
+effect changed to `network.write` produces a valid `matched` Plan from the
+engine. The Rust host inspects `required_effects`, finds an unpermitted
+effect, denies the Plan, appends a `plan_denied` Trail entry, sets
+`execution_status: "denied"`, and executes zero Actions. The Plan remains
+present and atomic despite denial.
