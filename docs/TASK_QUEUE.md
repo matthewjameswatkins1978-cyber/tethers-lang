@@ -44,6 +44,8 @@
 - [x] Update `docs/CURRENT_GOAL.md`.
 - [x] Update `docs/TASK_QUEUE.md`.
 - [x] Add and verify a `greater_than_or_equal` inclusive boundary fixture.
+- [x] Configure workspace and Cline guidance to use PowerShell 7 (`pwsh.exe`).
+- [x] Review and verify the OCaml parser extraction from `main.ml`.
 
 ## Next
 

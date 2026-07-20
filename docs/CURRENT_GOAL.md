@@ -74,6 +74,9 @@ documented 0.1 semantics. `tethers-0.1/` is the active development tree for the
 0.1 cycle; do not move or rename it while the path-bound local opam switch is in
 use.
 
+PowerShell 7 (`pwsh.exe`) is the required shell for Tethers automation and Cline
+tasks. Windows PowerShell 5.1 (`powershell.exe`) is not a project requirement.
+
 ## Fixture Contract Follow-Up
 
 The evaluation fixture contract now covers the canonical happy path, Anchor
@@ -86,3 +89,7 @@ The fixture contract also now covers the inclusive boundary for
 `greater_than_or_equal`: `task.changed_files = 3` with
 `greater_than_or_equal 3` evaluates to `matched` and plans
 `lantern.task.record`.
+
+The OCaml Tether parser has been mechanically extracted from `main.ml` into
+`engine-ocaml/bin/tether_parser.ml` without changing the verified fixture or demo
+behaviour.

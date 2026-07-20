@@ -21,8 +21,15 @@ Current platform:
 - Windows
 - Rust host
 - Native OCaml through project-local opam switch
-- PowerShell is the primary automation shell
+- PowerShell 7 (`pwsh.exe`) is the required automation shell
 - Unix scripts remain for portability
+
+Shell rules:
+
+- Use `pwsh.exe` for Tethers automation and Cline terminal commands.
+- `powershell.exe` is Windows PowerShell 5.1 and is not a project requirement.
+- Do not spend implementation time making scripts compatible with Windows
+  PowerShell 5.1.
 
 Important paths:
 
