@@ -152,3 +152,9 @@ happy-path Tether and changes the `task` argument from a string to integer
 `42` (capability declares `task` as `string`), so the engine preserves the
 full evaluation Trail before appending one `action_planning_failed` entry at
 sequence 5.
+
+The missing-Action-reference fixture now uses the correlated error envelope
+for `missing_reference` raised during Action planning. The fixture copies the
+canonical happy-path Tether and removes `task` from the event data while the
+Action references `anchor.task`, so the engine preserves the full evaluation
+Trail before appending one `action_planning_failed` entry at sequence 5.
