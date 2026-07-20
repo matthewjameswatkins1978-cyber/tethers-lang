@@ -186,9 +186,18 @@ Actions is valid.
 
 The duplicate-capability fixture enforces that every Capability name must
 be unique within a request. The fixture duplicates the `lantern.task.record`
-Capability name with a different version; the engine rejects it as a minimal
-pre-evaluation `invalid_capability` error with no evaluation identifiers, plan,
-or Trail. Capability names are compared without regard to version because
-Actions address Capabilities by name. The uniqueness check runs after
-Capability declarations are parsed but before evaluation begins, preserving
-original order for valid requests without changing Action lookup behaviour.
+schema identically; the engine rejects it as a minimal pre-evaluation
+`invalid_capability` error with no evaluation identifiers, plan, or Trail.
+Capability names are compared without regard to version because Actions
+address Capabilities by name. The uniqueness check runs after Capability
+declarations are parsed but before evaluation begins, preserving original
+order for valid requests without changing Action lookup behaviour.
+
+The incompatible-protocol and incompatible-language fixtures prove version
+rejection per SPEC §10. Both derive from the happy-path request and change
+only the relevant version field to `"9.0"`. The engine returns a minimal
+pre-evaluation error envelope (`incompatible_protocol` or
+`incompatible_language`) with no identifiers, plan, or Trail.
+`protocol_version` in the response is always `"0.1"` (the engine's native
+protocol version), not the request value. SPEC §11.1 now explicitly
+enumerates the four categories of pre-evaluation errors.

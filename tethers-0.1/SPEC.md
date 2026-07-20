@@ -163,9 +163,20 @@ versions rather than guess.
 
 ### 11.1 Request-decoding errors
 
-Errors that occur before reliable request identities are extracted (malformed
-JSON, missing protocol/language version, missing structural fields, unsupported
-version values, or Tether source parse errors) return a minimal error envelope:
+Errors that occur before reliable request identities are extracted return a
+minimal error envelope:
+
+- **invalid JSON / request structure** (`invalid_json`, `invalid_request`):
+  malformed JSON or missing structural fields;
+- **incompatible versions** (`incompatible_protocol`, `incompatible_language`):
+  unsupported protocol or language version values;
+- **Tether source parse errors** (`parse_error`): syntactically invalid Tether
+  source, including duplicate argument names within a single Action;
+- **Capability-schema / structural validation errors** (`invalid_capability`):
+  duplicate Capability names, malformed Capability input types, or invalid
+  Effect declarations.
+
+The minimal envelope is:
 
 ```json
 {

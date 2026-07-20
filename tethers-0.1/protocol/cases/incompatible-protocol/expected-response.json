@@ -1,0 +1,8 @@
+{
+  "protocol_version": "0.1",
+  "status": "error",
+  "error": {
+    "code": "incompatible_protocol",
+    "message": "Unsupported protocol: 9.0"
+  }
+}

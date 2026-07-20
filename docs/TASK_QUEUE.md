@@ -1,88 +1,31 @@
 # Task Queue
 
-## Now
+## Completed Milestones
 
-- [x] Inspect the initial workspace.
-- [x] Inspect the archive contents before extraction.
-- [x] Extract `Tethers-0.1-Prototype.tar.gz` without overwriting existing files.
-- [x] Add project overview, current goal, decisions, and task queue documents.
-- [x] Review the project guidance before verification.
-- [x] Inspect complete workspace structure and Git status.
-- [x] Confirm there is no unnecessary nested `tethers-0.1/` duplicate.
-- [x] Check required tool availability.
-- [x] Attempt existing fixture validation.
-- [x] Build and test the Rust reference host.
-- [x] Record verified state in `docs/CURRENT_GOAL.md`.
-- [x] Add native PowerShell fixture validation script.
-- [x] Add native PowerShell golden engine-response test script.
-- [x] Add native PowerShell full demo script.
-- [x] Add opam package metadata for the OCaml engine.
-- [x] Check Git availability.
-- [x] Install native Windows opam with winget.
-- [x] Restart VS Code so the winget-installed `opam` command is visible on PATH.
-- [x] Confirm `opam --version` reports `2.5.2`.
-- [x] Run `opam init -y`.
-- [x] Create a project-local opam switch in `tethers-0.1/engine-ocaml` with
-      `ocaml-base-compiler.5.5.0`.
-- [x] Install only declared local package dependencies with opam.
-- [x] Confirm active OCaml, opam, Dune, and yojson versions.
-- [x] Run `scripts/check-fixtures.ps1`.
-- [x] Run Rust host unit tests with `cargo test`.
-- [x] Build the OCaml engine through `opam exec -- dune build`.
-- [x] Run `scripts/test-engine.ps1`.
-- [x] Run `scripts/demo.ps1`.
-- [x] Capture the first verified full round-trip output.
-- [x] Decide that `tethers-0.1/` is the active development tree for the 0.1
-      cycle.
-- [x] Record the active-tree decision in `docs/DECISIONS.md`.
-- [x] Ignore generated build output, the local opam switch, temporary files,
-      editor-local files, and the imported archive.
-- [x] Re-run the verified baseline checks before committing.
-- [x] Run Git whitespace/error checks.
-- [x] Stage only the intended project baseline.
-- [x] Commit the verified native Windows baseline locally.
-- [x] Update `docs/CURRENT_GOAL.md`.
-- [x] Update `docs/TASK_QUEUE.md`.
-- [x] Add and verify a `greater_than_or_equal` inclusive boundary fixture.
-- [x] Configure workspace and Cline guidance to use PowerShell 7 (`pwsh.exe`).
-- [x] Review and verify the OCaml parser extraction from `main.ml`.
-- [x] Extract JSON/Capability protocol helpers from `main.ml` into
-      `engine-ocaml/bin/tethers_protocol.ml`.
-- [x] Correlate `missing_fact` errors raised during Condition evaluation while
-      preserving known identifiers and accumulated Trail entries.
-- [x] Add `docs/CONSTITUTION.md` as the enduring Tethers constitution and wire
-      concise references from project guidance.
-- [x] Correlate `type_error` errors raised during Condition evaluation while
-      preserving known identifiers and accumulated Trail entries.
-- [x] Add a concise OCaml 5.5 guide for AI coding agents and wire agent
-      guidance references.
-- [x] Add Lucy's compact Tethers orientation notes under `docs/` and reference
-      them as optional orientation.
-- [x] Correlate `unknown_capability` errors raised during Action planning while
-      preserving known identifiers and accumulated evaluation Trail entries.
-- [x] Correlate `missing_reference` errors raised during Action planning.
-- [x] Define minimal pre-evaluation `parse_error` responses.
-- [x] Reject duplicate Action arguments within a single Action.
-- [x] Prove argument-name reuse across separate Actions.
-- [x] Reject duplicate Capability names before evaluation.
+- [x] Initial workspace inspection, extraction, and integration.
+- [x] Native Windows opam, OCaml 5.5.0, Dune, and yojson toolchain.
+- [x] Fixture validation, Rust tests, OCaml build, golden engine test, full demo.
+- [x] Verified native Windows baseline committed locally.
+- [x] PowerShell 7 automation scripts for all verification workflows.
+- [x] OCaml parser, protocol helpers, and correlated error envelopes.
+- [x] Fixture contract covering happy path, anchor mismatch, false condition,
+      condition boundary, condition errors, action planning errors, parse errors,
+      argument uniqueness, argument reuse, and capability-name uniqueness.
+- [x] `docs/CONSTITUTION.md`, `docs/DECISIONS.md`, `docs/CURRENT_GOAL.md`,
+      `docs/OCAML_GUIDE_FOR_AGENTS.md`, and `.clinerules/` established.
 
-## Next
+## 0.1 Finishing Queue
 
-- [ ] Decide the first post-baseline implementation milestone.
-- [ ] Migrate any future contextual error paths deliberately only where reliable
-      evaluation or planning context is available.
+1. [x] Add version-rejection fixtures (`incompatible_protocol`, `incompatible_language`).
+2. [ ] Add denied-plan host integration test (prove `execution_status: denied` end-to-end).
+3. [ ] Add execution-failure host test (prove `action_failed` path).
+4. [ ] Clarify or restrict Condition expected values to literals (no fixture proves `anchor.*` references in Condition expected-value position).
+5. [ ] Final 0.1 milestone review and sign-off.
 
-## Later
-
-- [ ] Decide the first implementation milestone after the verified 0.1 baseline.
-- [ ] Add contribution and development setup notes.
-- [ ] Add a release or changelog document once changes begin.
-- [ ] Consider a higher-level architecture note for adapters, HQ, AI
-      capabilities, and Trail inspection.
-
-## Deferred By Current Scope
+## Deferred
 
 - Installing WSL, Docker, Bash, jq, or unrelated OCaml editor tooling.
-- Changing parser, evaluator, host, fixtures, scripts, or examples beyond
-  definite build defects.
+- Changing parser, evaluator, host, fixtures, scripts, or examples beyond definite build defects.
 - Adding adapters, package management, scheduling, HQ, or AI integration.
+- Production CLI polishing, contribution setup notes, release/changelog.
+- Architecture notes for adapters, HQ, and Trail inspection.
