@@ -65,9 +65,8 @@
 
 - [ ] Decide the first post-baseline implementation milestone.
 - [ ] Migrate the remaining contextual evaluation-error paths deliberately,
-      including parser, type, unknown Capability, missing argument, unknown
-      argument, and missing reference errors where reliable evaluation context
-      is available.
+      including parser and missing reference errors where reliable evaluation
+      context is available.
 
 ## Later
 
