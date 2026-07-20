@@ -46,6 +46,8 @@
 - [x] Add and verify a `greater_than_or_equal` inclusive boundary fixture.
 - [x] Configure workspace and Cline guidance to use PowerShell 7 (`pwsh.exe`).
 - [x] Review and verify the OCaml parser extraction from `main.ml`.
+- [x] Extract JSON/Capability protocol helpers from `main.ml` into
+      `engine-ocaml/bin/tethers_protocol.ml`.
 
 ## Next
 

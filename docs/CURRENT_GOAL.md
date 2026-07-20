@@ -93,3 +93,9 @@ The fixture contract also now covers the inclusive boundary for
 The OCaml Tether parser has been mechanically extracted from `main.ml` into
 `engine-ocaml/bin/tether_parser.ml` without changing the verified fixture or demo
 behaviour.
+
+The JSON/Capability protocol helpers have been mechanically extracted from
+`main.ml` into `engine-ocaml/bin/tethers_protocol.ml` without changing behaviour.
+Module dependency chain: `main.ml` → `Tethers_protocol` → `Tether_parser`.
+All seven fixture cases, the demo round-trip, and fixture validation continue to
+pass.
