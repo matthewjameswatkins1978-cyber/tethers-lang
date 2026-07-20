@@ -20,7 +20,8 @@
 2. [x] Add denied-plan host integration test (prove `execution_status: denied` end-to-end).
 3. [x] Add execution-failure host test (prove `action_failed` path).
 4. [x] Clarify or restrict Condition expected values to literals (no fixture proves `anchor.*` references in Condition expected-value position).
-5. [ ] Final 0.1 milestone review and sign-off.
+5. [x] Add focused `contains` and boolean Condition fixtures (all four operators now covered).
+6. [ ] Final 0.1 milestone review and sign-off.
 
 ## Deferred
 

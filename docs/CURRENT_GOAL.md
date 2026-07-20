@@ -228,3 +228,10 @@ evaluation begins. The `condition-reference-rejected` fixture proves this by
 replacing the first Condition's literal `"software"` with
 `anchor.project_type`. Action `anchor.*` references remain valid and continue
 to resolve in the host round-trip demo.
+
+The contains-condition fixture proves positive substring matching
+(`project.type contains "soft"` matches `"software"`). The boolean-condition
+fixture proves boolean literal matching (`project.approved is true`)
+with a real JSON boolean Fact value. Both produce full matched Plans and
+Trails. All four condition operators (`is`, `contains`, `greater_than`,
+`greater_than_or_equal`) now have focused fixture coverage.
