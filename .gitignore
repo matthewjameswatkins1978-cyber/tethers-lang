@@ -1,0 +1,29 @@
+# Build output and local toolchains
+tethers-0.1/engine-ocaml/_opam/
+tethers-0.1/engine-ocaml/_build/
+tethers-0.1/host-rust/target/
+target/
+!tethers-0.1/engine-ocaml/bin/
+!tethers-0.1/engine-ocaml/bin/dune
+!tethers-0.1/engine-ocaml/bin/main.ml
+
+# Imported source artifact kept locally as a recovery point
+Tethers-0.1-Prototype.tar.gz
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Editor-local files
+.vscode/
+.idea/
+*.code-workspace
+
+# OS-local files
+.DS_Store
+Thumbs.db
+Desktop.ini

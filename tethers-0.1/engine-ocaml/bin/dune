@@ -1,0 +1,4 @@
+(executable
+ (name main)
+ (public_name tethers_engine)
+ (libraries yojson))

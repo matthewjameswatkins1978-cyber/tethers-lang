@@ -1,0 +1,17 @@
+opam-version: "2.0"
+synopsis: "Reference deterministic planner for Tethers 0.1"
+description: """
+The OCaml reference engine for the frozen Tethers 0.1 semantic baseline.
+It parses, validates, evaluates, and plans from supplied immutable inputs.
+"""
+maintainer: "Matthew"
+authors: "Matthew"
+license: "UNLICENSED"
+depends: [
+  "ocaml" {>= "5.1.0" & < "6.0.0"}
+  "dune" {>= "3.10"}
+  "yojson" {>= "2.0.0" & < "3.0.0"}
+]
+build: [
+  ["dune" "build" "-p" name]
+]
