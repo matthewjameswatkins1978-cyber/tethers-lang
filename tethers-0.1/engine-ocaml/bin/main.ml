@@ -86,6 +86,7 @@ let evaluate request =
   let event_data = Yojson.Safe.Util.member "data" event in
   let facts = json_assoc "facts" request in
   let capabilities = json_list "capabilities" request |> List.map parse_capability in
+  let () = check_unique_capabilities capabilities in
   let base = [
     trail_entry 1 "reception" "event_received" "accepted" ("Received " ^ event_name);
     trail_entry 2 "evaluation" "anchor_checked"

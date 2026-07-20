@@ -49,3 +49,13 @@ let parse_capability json =
          | _ -> fail "invalid_capability" "Effects must be strings")
   in
   { name = json_string "name" json; version = json_string "version" json; inputs; effects }
+
+let check_unique_capabilities capabilities =
+  let rec check seen = function
+    | [] -> ()
+    | cap :: rest ->
+        if List.mem cap.name seen then
+          fail "invalid_capability" ("Duplicate Capability: " ^ cap.name)
+        else check (cap.name :: seen) rest
+  in
+  check [] capabilities

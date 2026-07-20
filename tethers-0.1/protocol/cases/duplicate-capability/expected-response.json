@@ -1,0 +1,8 @@
+{
+  "protocol_version": "0.1",
+  "status": "error",
+  "error": {
+    "code": "invalid_capability",
+    "message": "Duplicate Capability: lantern.task.record"
+  }
+}

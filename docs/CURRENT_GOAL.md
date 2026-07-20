@@ -183,3 +183,12 @@ contains two `action_planned` entries at sequential positions 5 and 6.
 `required_effects` remains deduplicated (`["lantern.write"]`). Duplicate
 argument names inside a single Action remain rejected; reuse across separate
 Actions is valid.
+
+The duplicate-capability fixture enforces that every Capability name must
+be unique within a request. The fixture duplicates the `lantern.task.record`
+schema identically; the engine rejects it as a minimal pre-evaluation
+`invalid_capability` error with no evaluation identifiers, plan, or Trail.
+Capability names are compared without regard to version because Actions
+address Capabilities by name. The uniqueness check runs after Capability
+declarations are parsed but before evaluation begins, preserving original
+order for valid requests without changing Action lookup behaviour.

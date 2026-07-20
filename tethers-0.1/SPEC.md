@@ -96,6 +96,11 @@ Each argument name may appear at most once within a single Action.
 Duplicate argument names are rejected as parse errors before evaluation
 begins. Different Actions may use the same argument name independently.
 
+Every Capability name must be unique within a request. Duplicate
+Capability names are rejected as `invalid_capability` errors before
+evaluation begins. Capability names are compared without regard to
+version because Actions address Capabilities by name.
+
 ## 6. Action semantics
 
 Actions are ordered. The host executes them sequentially and stops on the first

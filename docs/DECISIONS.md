@@ -99,6 +99,19 @@ duplicates during parsing provides a clear, deterministic error before any
 evaluation identity or Trail is established. Different Actions may
 independently reuse the same argument name without conflict.
 
+## 2026-07-20: Reject Duplicate Capability Names
+
+Decision: Every Capability name must be unique within a request. Duplicate
+Capability names are rejected as a minimal pre-evaluation `invalid_capability`
+error before any evaluation identifiers, plan, or Trail are established.
+
+Reason: Actions address Capabilities by name. When two entries share the
+same name, the engine cannot determine which schema the Tether author
+intended. The name is compared without regard to version because a
+name+version pair still creates ambiguity for Action lookup. Silent
+selection of the first (or last) declaration would mask author error.
+Deterministic rejection produces a clear, unambiguous response.
+
 ## Open Decisions
 
 - Whether future documentation should live at the workspace root, inside
