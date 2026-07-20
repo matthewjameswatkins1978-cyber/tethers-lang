@@ -198,6 +198,22 @@ Other Condition-evaluation error paths are not yet correlated and may still
 produce the minimal request-decoding error envelope. The correlated envelope
 is extended deliberately, one error path at a time.
 
+When all Conditions have matched and the engine enters Action planning,
+**unknown Capability** (`unknown_capability`) uses the same correlated
+pattern:
+
+- retains all evaluation identities;
+- returns `plan: null`;
+- includes the full evaluation Trail (reception, Anchor match, every
+  matched Condition);
+- appends exactly one `action_planning_failed` entry (phase `"evaluation"`,
+  kind `"action_planning_failed"`, outcome `"error"`) whose message
+  preserves the original error text.
+
+Other Action-planning errors (missing arguments, unknown arguments, type
+errors, unresolved references) are not yet correlated and may still produce
+the minimal request-decoding error envelope.
+
 ### 11.3 Error classification
 
 Malformed source, missing Facts, unknown Capabilities, missing inputs, type
