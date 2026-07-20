@@ -1,0 +1,36 @@
+{
+  "protocol_version": "0.1",
+  "evaluation_id": "eval_condition_type_error_001",
+  "event_id": "evt_condition_type_error_001",
+  "tether_id": "record-completed-task",
+  "tether_version": "demo-v1",
+  "status": "error",
+  "plan": null,
+  "error": {
+    "code": "type_error",
+    "message": "Invalid operands in condition: project.type is \"software\""
+  },
+  "trail": [
+    {
+      "sequence": 1,
+      "phase": "reception",
+      "kind": "event_received",
+      "outcome": "accepted",
+      "message": "Received coding.task_completed"
+    },
+    {
+      "sequence": 2,
+      "phase": "evaluation",
+      "kind": "anchor_checked",
+      "outcome": "matched",
+      "message": "Anchor coding.task_completed matched"
+    },
+    {
+      "sequence": 3,
+      "phase": "evaluation",
+      "kind": "condition_failed",
+      "outcome": "error",
+      "message": "Invalid operands in condition: project.type is \"software\""
+    }
+  ]
+}

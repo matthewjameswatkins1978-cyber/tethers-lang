@@ -111,3 +111,9 @@ contextual evaluation errors remain a separate migration task.
 Project guidance references it as the constitutional authority, while
 `tethers-0.1/SPEC.md` remains the authority for current precise 0.1 language and
 protocol semantics.
+
+The Condition type-error fixture now uses the correlated evaluation-error
+envelope for `type_error` raised during Condition evaluation. The fixture keeps
+the canonical Tether source and changes `project.type` to integer `7`, so the
+engine preserves reception and matched Anchor Trail entries before appending one
+`condition_failed` entry at sequence 3.

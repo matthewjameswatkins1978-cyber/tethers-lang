@@ -176,14 +176,23 @@ the Anchor has matched, errors that occur during Condition evaluation return
 a correlated error envelope that retains all known identities, `plan: null`,
 and the evaluation Trail accumulated so far.
 
-When a Fact referenced by a Condition is missing, the engine:
+The following Condition-evaluation errors use the correlated envelope:
+
+- **missing Fact** (`missing_fact`): the Fact key is absent from the supplied
+  Facts;
+- **type error** (`type_error`): the Fact value has an incompatible type for
+  the Condition operator (for example, comparing an integer against a string
+  with `is`).
+
+In both cases the engine:
 
 - retains `evaluation_id`, `event_id`, `tether_id`, and `tether_version`;
 - returns `plan: null`;
 - includes reception and Anchor-matched Trail entries;
+- includes any Condition Trail entries that precede the error;
 - appends exactly one `condition_failed` entry (phase `"evaluation"`, kind
-  `"condition_failed"`, outcome `"error"`) whose message contains the
-  original missing-Fact text.
+  `"condition_failed"`, outcome `"error"`) whose message preserves the
+  original error text.
 
 Other Condition-evaluation error paths are not yet correlated and may still
 produce the minimal request-decoding error envelope. The correlated envelope

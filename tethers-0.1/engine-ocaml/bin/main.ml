@@ -126,9 +126,9 @@ let evaluate request =
              if matched then check_conditions (sequence + 1) trail rest
              else Condition_not_matched (sequence + 1, trail)
            with
-           | Tethers_error ("missing_fact", message) ->
+           | Tethers_error (("missing_fact" | "type_error") as code, message) ->
                let entry = trail_entry sequence "evaluation" "condition_failed" "error" message in
-               Condition_error ("missing_fact", message, trail @ [entry])
+               Condition_error (code, message, trail @ [entry])
           )
     in
     match check_conditions 3 base parsed.conditions with

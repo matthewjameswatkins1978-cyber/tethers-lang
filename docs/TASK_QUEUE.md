@@ -52,6 +52,8 @@
       preserving known identifiers and accumulated Trail entries.
 - [x] Add `docs/CONSTITUTION.md` as the enduring Tethers constitution and wire
       concise references from project guidance.
+- [x] Correlate `type_error` errors raised during Condition evaluation while
+      preserving known identifiers and accumulated Trail entries.
 
 ## Next
 
