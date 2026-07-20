@@ -2,7 +2,7 @@
 
 ## Goal
 
-Prepare and commit the verified native Windows Tethers 0.1 baseline.
+Record the verified Tethers 0.1 engineering baseline and final sign-off.
 
 ## Immediate Definition Of Done
 
@@ -186,12 +186,12 @@ Actions is valid.
 
 The duplicate-capability fixture enforces that every Capability name must
 be unique within a request. The fixture duplicates the `lantern.task.record`
-schema identically; the engine rejects it as a minimal pre-evaluation
-`invalid_capability` error with no evaluation identifiers, plan, or Trail.
-Capability names are compared without regard to version because Actions
-address Capabilities by name. The uniqueness check runs after Capability
-declarations are parsed but before evaluation begins, preserving original
-order for valid requests without changing Action lookup behaviour.
+Capability name with a different version; the engine rejects it as a minimal
+pre-evaluation `invalid_capability` error with no evaluation identifiers, plan,
+or Trail. Capability names are compared without regard to version because
+Actions address Capabilities by name. The uniqueness check runs after
+Capability declarations are parsed but before evaluation begins, preserving
+original order for valid requests without changing Action lookup behaviour.
 
 The incompatible-protocol and incompatible-language fixtures prove version
 rejection per SPEC §10. Both derive from the happy-path request and change
@@ -235,3 +235,20 @@ fixture proves boolean literal matching (`project.approved is true`)
 with a real JSON boolean Fact value. Both produce full matched Plans and
 Trails. All four condition operators (`is`, `contains`, `greater_than`,
 `greater_than_or_equal`) now have focused fixture coverage.
+
+## Final Tethers 0.1 Sign-Off On 2026-07-20
+
+The Tethers 0.1 engineering baseline is verified. The language and protocol
+now prove the complete 0.1 round trip: a host supplies an event, immutable
+Facts, Capability schemas, and Tether source; the OCaml engine parses,
+validates, evaluates, and plans deterministically; the Rust reference host
+authorises required Effects, executes mock Capabilities sequentially, preserves
+idempotency behaviour, and appends authorisation and execution Trail entries.
+
+The complete verification suite passed for the signed-off state: OCaml build,
+fixture validation, golden engine fixtures, denied-plan host integration,
+failed-Action host integration, full demo, Rust unit tests, and Git whitespace
+checks.
+
+No 0.1 blockers remain. Post-0.1 work should be treated as deliberate
+hardening or expansion, not as part of the signed-off semantic baseline.

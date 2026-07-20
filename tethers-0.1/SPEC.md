@@ -223,9 +223,8 @@ In both cases the engine:
   `"condition_failed"`, outcome `"error"`) whose message preserves the
   original error text.
 
-Other Condition-evaluation error paths are not yet correlated and may still
-produce the minimal request-decoding error envelope. The correlated envelope
-is extended deliberately, one error path at a time.
+All current Condition-evaluation errors within the correlated boundary
+described above are now migrated.
 
 When all Conditions have matched and the engine enters Action planning,
 the following errors use the same correlated pattern:
