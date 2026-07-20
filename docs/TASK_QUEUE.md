@@ -14,6 +14,18 @@
       capability-name uniqueness.
 - [x] `docs/CONSTITUTION.md`, `docs/DECISIONS.md`, `docs/CURRENT_GOAL.md`,
       `docs/OCAML_GUIDE_FOR_AGENTS.md`, and `.clinerules/` established.
+- [x] Tethers 0.1 semantic baseline signed off.
+
+## MCP Direction Queue
+
+1. [x] M0 documentation checkpoint: preserve `docs/MCP_PLAN.md`, reference it
+   from project guidance, and record the OCaml-owned MCP decision.
+2. [ ] M1 read-only OCaml MCP dependency survey: inspect `ocaml-mcp`,
+   `snf_mcp`, and the OCaml `jsonrpc` package for identity, licence, MCP
+   revision, stdio framing, tools support, errors, tests, OCaml/Dune/Yojson
+   compatibility, Windows-native behaviour, and reproducible use.
+3. [ ] M2 extract one canonical OCaml evaluator boundary used by both the
+   existing engine executable and any future MCP tool.
 
 ## 0.1 Finishing Queue
 
@@ -27,6 +39,10 @@
 ## Deferred
 
 - Installing WSL, Docker, Bash, jq, or unrelated OCaml editor tooling.
+- Installing, pinning, vendoring, or selecting an MCP dependency before the M1
+  survey is reviewed.
+- Implementing MCP server code before the M0 documentation checkpoint and M1
+  dependency survey are complete.
 - Changing parser, evaluator, host, fixtures, scripts, or examples beyond definite build defects.
 - Adding adapters, package management, scheduling, HQ, or AI integration.
 - Production CLI polishing, contribution setup notes, release/changelog.

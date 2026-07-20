@@ -46,6 +46,7 @@ a deterministic decision from the visible result.
 ## Repository map
 
 - `../docs/CONSTITUTION.md` — enduring design principles
+- `../docs/MCP_PLAN.md` — approved OCaml MCP direction
 - `../docs/OCAML_GUIDE_FOR_AGENTS.md` — OCaml guidance for AI coding agents
 - `SPEC.md` — current 0.1 language and protocol semantics
 - `protocol/` — request, response, and capability examples
@@ -65,3 +66,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\demo.ps1
 
 The native Windows verification scripts are the current project automation
 entry points.
+
+## Post-0.1 MCP Direction
+
+The approved MCP path keeps Tethers as the direct MCP endpoint, implemented in
+OCaml beside the existing engine. Lantern Keeper remains a host and capability
+provider. The first MCP milestone is planner-only over stdio and must preserve
+the existing 0.1 request/response protocol, Plan, required Effects, and Trail.

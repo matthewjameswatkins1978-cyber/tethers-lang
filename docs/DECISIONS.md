@@ -112,6 +112,20 @@ name+version pair still creates ambiguity for Action lookup. Silent
 selection of the first (or last) declaration would mask author error.
 Deterministic rejection produces a clear, unambiguous response.
 
+## 2026-07-20: Tethers Owns Its MCP Interface In OCaml
+
+Decision: MCP connects directly to Tethers. The MCP implementation belongs in
+OCaml, in the Tethers project, and must call the same evaluator boundary as the
+existing engine. Lantern Keeper is a connected host and capability provider,
+not the MCP hub. The first MCP surface is planner-only over stdio: it evaluates
+complete Tethers requests and returns the existing Plan and Trail envelope
+without executing Actions.
+
+Reason: Tethers is the deterministic planner and should expose that planning
+surface directly. Keeping the MCP adapter in OCaml avoids parallel Rust and
+OCaml interpretations of the language, preserves the signed-off 0.1 protocol,
+and keeps host permission and execution responsibilities outside Tethers Core.
+
 ## 2026-07-20: Restrict Condition Expected Values To Literals
 
 Decision: Conditions may only compare Fact values against literal values

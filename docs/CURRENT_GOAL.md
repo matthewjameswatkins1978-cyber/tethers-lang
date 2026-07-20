@@ -2,24 +2,22 @@
 
 ## Goal
 
-Record the verified Tethers 0.1 engineering baseline and final sign-off.
+Record and publish the approved OCaml-owned Tethers MCP direction without
+starting implementation.
 
 ## Immediate Definition Of Done
 
-- Native Windows `opam` is visible after the VS Code restart.
-- `opam init -y` has been run.
-- `tethers-0.1/engine-ocaml` has a project-local opam switch using
-  `ocaml-base-compiler.5.5.0`.
-- Only the local package dependencies are installed in that switch.
-- Active OCaml, opam, Dune, and yojson versions are recorded.
-- Fixture validation, Rust tests, OCaml build, golden engine test, and full demo
-  all pass.
-- The demo proves the final Trail includes reception, evaluation,
-  authorisation, and execution, with final execution status `completed`.
-- `tethers-0.1/` is documented as the active 0.1 development tree.
-- Generated build output, the local opam switch, temporary files, editor-local
-  files, and the imported archive are ignored.
-- The verified baseline is committed locally.
+- `docs/MCP_PLAN.md` is preserved substantively as the approved architecture
+  plan.
+- `AGENTS.md`, the root `README.md`, and `tethers-0.1/README.md` point agents
+  to the MCP plan where appropriate.
+- `docs/DECISIONS.md` records that MCP connects directly to Tethers, the MCP
+  implementation belongs in OCaml, Lantern Keeper is a host and capability
+  provider, and the first MCP surface is planner-only over stdio.
+- This document and `docs/TASK_QUEUE.md` name M0 as the documentation
+  checkpoint and M1 as a read-only OCaml MCP dependency survey.
+- No production source, language semantics, fixtures, dependencies, generated
+  files, or opam switch paths are changed.
 
 ## Verified State On 2026-07-20
 
@@ -76,6 +74,14 @@ use.
 
 PowerShell 7 (`pwsh.exe`) is the required shell for Tethers automation and Cline
 tasks. Windows PowerShell 5.1 (`powershell.exe`) is not a project requirement.
+
+## MCP Working Posture
+
+M0 is documentation-only: preserve the approved MCP direction, make it
+discoverable from the project guidance, and commit the decision. M1 is a
+read-only dependency survey of `ocaml-mcp`, `snf_mcp`, and the OCaml `jsonrpc`
+package. Do not install, pin, vendor, or implement MCP code before that survey
+is reviewed.
 
 ## Fixture Contract Follow-Up
 

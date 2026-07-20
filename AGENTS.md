@@ -1,11 +1,15 @@
 # Tethers — Project Guidance for Codex
 
 Read this file, `docs/CONSTITUTION.md`, `tethers-0.1/SPEC.md`,
-`docs/CURRENT_GOAL.md`, and `docs/TASK_QUEUE.md` before making changes.
+`docs/MCP_PLAN.md`, `docs/CURRENT_GOAL.md`, and `docs/TASK_QUEUE.md` before
+making changes.
 
 `docs/CONSTITUTION.md` governs enduring Tethers design principles.
 `tethers-0.1/SPEC.md` defines the current precise 0.1 language and protocol
 semantics.
+`docs/MCP_PLAN.md` records the approved post-0.1 MCP direction: Tethers owns
+its MCP interface directly in OCaml, while Lantern Keeper remains a host and
+capability provider.
 For OCaml implementation tasks, also read the task-relevant section of
 `docs/OCAML_GUIDE_FOR_AGENTS.md`.
 For optional project orientation, `docs/TETHERS_LUCY_NOTES.md` can help recover
@@ -529,10 +533,11 @@ Before every task:
 1. Read this file.
 2. Read `docs/CONSTITUTION.md`.
 3. Read `tethers-0.1/SPEC.md`.
-4. Read `docs/CURRENT_GOAL.md`.
-5. Read `docs/TASK_QUEUE.md`.
-6. Inspect Git status.
-7. Preserve unrelated and user-authored changes.
+4. Read `docs/MCP_PLAN.md`.
+5. Read `docs/CURRENT_GOAL.md`.
+6. Read `docs/TASK_QUEUE.md`.
+7. Inspect Git status.
+8. Preserve unrelated and user-authored changes.
 
 For OCaml implementation tasks, read the relevant section of
 `docs/OCAML_GUIDE_FOR_AGENTS.md` and consult the linked official documentation
