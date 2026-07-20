@@ -145,3 +145,10 @@ The unknown-Action-argument fixture now uses the correlated error envelope for
 canonical happy-path Tether and adds an undeclared `extra` argument to the
 Action, so the engine preserves the full evaluation Trail before appending one
 `action_planning_failed` entry at sequence 5.
+
+The Action-type-error fixture now uses the correlated error envelope for
+`type_error` raised during Action planning. The fixture copies the canonical
+happy-path Tether and changes the `task` argument from a string to integer
+`42` (capability declares `task` as `string`), so the engine preserves the
+full evaluation Trail before appending one `action_planning_failed` entry at
+sequence 5.

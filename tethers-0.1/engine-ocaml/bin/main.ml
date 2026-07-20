@@ -184,7 +184,7 @@ let evaluate request =
             in
             Actions_planned (actions, required_effects, trail)
           with
-          | Tethers_error (("unknown_capability" | "missing_argument" | "unknown_argument") as code, message) ->
+          | Tethers_error (("unknown_capability" | "missing_argument" | "unknown_argument" | "type_error") as code, message) ->
               let entry = trail_entry next_sequence "evaluation" "action_planning_failed" "error" message in
               Action_planning_error (code, message, condition_trail @ [entry])
         in

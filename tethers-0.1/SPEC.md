@@ -206,7 +206,9 @@ the following errors use the same correlated pattern:
 - **missing argument** (`missing_argument`): a required Capability input
   was not supplied in the Action;
 - **unknown argument** (`unknown_argument`): the Action supplied an argument
-  not declared by the Capability schema.
+  not declared by the Capability schema;
+- **type error** (`type_error`): an Action argument resolved to a value whose
+  type is incompatible with the declared Capability input type.
 
 In each case the engine:
 
@@ -218,9 +220,9 @@ In each case the engine:
   kind `"action_planning_failed"`, outcome `"error"`) whose message
   preserves the original error text.
 
-Other Action-planning errors (type errors, unresolved references) are
-not yet correlated and may still produce the minimal request-decoding
-error envelope.
+Other Action-planning errors (unresolved references) are not yet
+correlated and may still produce the minimal request-decoding error
+envelope.
 
 ### 11.3 Error classification
 
