@@ -61,7 +61,7 @@ Host application — initially Rust
     - records results
     - appends the execution Trail
     - emits result events where appropriate
-````
+```
 
 For Lantern Keeper:
 
@@ -151,14 +151,14 @@ Given the same complete input, Tethers must produce the same semantic Action Pla
 
 The engine must never secretly read:
 
-* the system clock;
-* environment variables;
-* random values;
-* the filesystem;
-* the network;
-* the host database;
-* live application state;
-* undeclared configuration.
+- the system clock;
+- environment variables;
+- random values;
+- the filesystem;
+- the network;
+- the host database;
+- live application state;
+- undeclared configuration.
 
 If time or changing state matters, the host must supply it explicitly as event data or Facts.
 
@@ -188,23 +188,23 @@ greater_than_or_equal
 
 Version 0.1 values:
 
-* quoted strings;
-* integers;
-* booleans;
-* dotted references beginning with `anchor.`.
+- quoted strings;
+- integers;
+- booleans;
+- dotted references beginning with `anchor.`.
 
 Version 0.1 deliberately excludes:
 
-* loops;
-* arithmetic;
-* user-defined functions;
-* arbitrary mutation;
-* implicit I/O;
-* hidden type coercion;
-* parallel Actions;
-* branching inside `do`;
-* Conditions that inspect Action results;
-* direct Action-result chaining.
+- loops;
+- arithmetic;
+- user-defined functions;
+- arbitrary mutation;
+- implicit I/O;
+- hidden type coercion;
+- parallel Actions;
+- branching inside `do`;
+- Conditions that inspect Action results;
+- direct Action-result chaining.
 
 Do not expand this list without an explicit semantic decision.
 
@@ -289,12 +289,12 @@ capability file.move
 
 Capability schemas describe:
 
-* name;
-* version;
-* inputs;
-* outputs;
-* Effects;
-* reversibility.
+- name;
+- version;
+- inputs;
+- outputs;
+- Effects;
+- reversibility.
 
 Capability schemas do not grant permission.
 
@@ -330,11 +330,11 @@ Production hosts must enforce resource scope at the execution boundary. A Capabi
 
 The protocol uses:
 
-* `event_id` — identifies the incoming host event;
-* `evaluation_id` — identifies one Tether evaluation;
-* `plan_id` — identifies the resulting Plan;
-* `action_id` — identifies an Action’s position within the Plan;
-* `idempotency_key` — prevents accidental duplicate execution.
+- `event_id` — identifies the incoming host event;
+- `evaluation_id` — identifies one Tether evaluation;
+- `plan_id` — identifies the resulting Plan;
+- `action_id` — identifies an Action’s position within the Plan;
+- `idempotency_key` — prevents accidental duplicate execution.
 
 The 0.1 idempotency key is:
 
@@ -359,13 +359,13 @@ Tethers writes deterministic Reception and Evaluation entries.
 
 The host appends Authorisation and Execution entries, including:
 
-* permission decisions;
-* timestamps;
-* Action starts;
-* results;
-* failures;
-* retries;
-* resulting event IDs.
+- permission decisions;
+- timestamps;
+- Action starts;
+- results;
+- failures;
+- retries;
+- resulting event IDs.
 
 Tethers must not claim an Action happened when it only proposed it.
 
@@ -377,9 +377,9 @@ Do not describe all Actions as undoable.
 
 Use these distinctions:
 
-* `reversible` — the host can reliably restore the previous state;
-* `compensatable` — another Action may counteract the Effect;
-* `irreversible` — no meaningful automatic reversal exists.
+- `reversible` — the host can reliably restore the previous state;
+- `compensatable` — another Action may counteract the Effect;
+- `irreversible` — no meaningful automatic reversal exists.
 
 “Undo support” means declared reversal or compensation, not magical rollback.
 
@@ -389,24 +389,24 @@ Tether Sets provide project-specific behaviour without hard-coding project modes
 
 Possible software-project sets:
 
-* Software Project Stewardship
-* Architecture Protection
-* Coding Handover
-* Milestone Audit
+- Software Project Stewardship
+- Architecture Protection
+- Coding Handover
+- Milestone Audit
 
 Possible music-project sets:
 
-* Song Version Tracking
-* Mix Decision Memory
-* Export Archiving
-* Creative Direction Review
+- Song Version Tracking
+- Mix Decision Memory
+- Export Archiving
+- Creative Direction Review
 
 Possible research-project sets:
 
-* Source Verification
-* Contradiction Detection
-* Evidence Confidence
-* Research Digest
+- Source Verification
+- Contradiction Detection
+- Evidence Confidence
+- Research Digest
 
 Tether Sets are future-facing. Do not implement package management or a Set marketplace during 0.1.
 
@@ -414,25 +414,25 @@ Tether Sets are future-facing. Do not implement package management or a Set mark
 
 Use Tethers where behaviour should be:
 
-* visible;
-* configurable;
-* disableable;
-* permissioned;
-* explainable;
-* auditable;
-* replaceable;
-* triggered across component boundaries.
+- visible;
+- configurable;
+- disableable;
+- permissioned;
+- explainable;
+- auditable;
+- replaceable;
+- triggered across component boundaries.
 
 Use ordinary Rust, OCaml, TypeScript, or other implementation code for:
 
-* database internals;
-* byte conversion;
-* ordinary function calls;
-* UI rendering;
-* algorithms;
-* low-level error handling;
-* performance-critical machinery;
-* internal operations required for the host to function.
+- database internals;
+- byte conversion;
+- ordinary function calls;
+- UI rendering;
+- algorithms;
+- low-level error handling;
+- performance-critical machinery;
+- internal operations required for the host to function.
 
 Decision test:
 
@@ -465,17 +465,17 @@ Rust host
 
 Success criteria:
 
-* textual Tether parses;
-* Anchor matching works;
-* supported Conditions evaluate correctly;
-* missing or incorrectly typed inputs fail clearly;
-* Action arguments resolve correctly;
-* required Effects are reported;
-* host permission checking works;
-* mock Action execution works;
-* idempotency works;
-* golden response fixture passes;
-* complete Trail is visible.
+- textual Tether parses;
+- Anchor matching works;
+- supported Conditions evaluate correctly;
+- missing or incorrectly typed inputs fail clearly;
+- Action arguments resolve correctly;
+- required Effects are reported;
+- host permission checking works;
+- mock Action execution works;
+- idempotency works;
+- golden response fixture passes;
+- complete Trail is visible.
 
 Do not add AI, GitHub, email, scheduling, adapters, package management, visual diagrams, or HQ before this round trip is reliable.
 
@@ -540,17 +540,17 @@ before relying on model memory for unfamiliar syntax, APIs, or tooling.
 
 During work:
 
-* Keep each implementation step under approximately 10 minutes.
-* Do not expand scope to fill available time.
-* Fix clear defects, not speculative future problems.
-* Do not silently change language semantics.
-* Do not add dependencies without justification.
-* Keep Core application-agnostic.
-* Maintain deterministic output.
-* Keep protocol fixtures synchronized with intentional changes.
-* Prefer small tests proving one behaviour.
-* Do not replace working foundations to make a demonstration easier.
-* Never modify permissions or safety boundaries merely to make a test pass.
+- Keep each implementation step under approximately 10 minutes.
+- Do not expand scope to fill available time.
+- Fix clear defects, not speculative future problems.
+- Do not silently change language semantics.
+- Do not add dependencies without justification.
+- Keep Core application-agnostic.
+- Maintain deterministic output.
+- Keep protocol fixtures synchronized with intentional changes.
+- Prefer small tests proving one behaviour.
+- Do not replace working foundations to make a demonstration easier.
+- Never modify permissions or safety boundaries merely to make a test pass.
 
 After work:
 
@@ -579,4 +579,5 @@ The Core should remain stubbornly ignorant:
 
 > It knows rules, values, schemas, Plans, and Trails.
 > It does not know what an invoice, song, repository, email, or memory is.
+
 ```
