@@ -209,3 +209,13 @@ engine. The Rust host inspects `required_effects`, finds an unpermitted
 effect, denies the Plan, appends a `plan_denied` Trail entry, sets
 `execution_status: "denied"`, and executes zero Actions. The Plan remains
 present and atomic despite denial.
+
+The host-execution-failure integration test (`scripts/test-host-execution-failure.ps1`)
+proves the authorised-but-failed boundary. A happy-path request uses an
+unsupported Capability (`lantern.task.fail`) with a permitted effect
+(`lantern.write`). The engine produces a valid `matched` Plan. The host
+authorises it (`plan_authorised`), starts the Action (`action_started`),
+receives the executor error `"no host executor is installed for
+lantern.task.fail"`, records `action_failed`, sets `execution_status:
+"failed"`, and stops without attempting further Actions. No `action_completed`
+entry appears.
