@@ -173,3 +173,13 @@ appear at most once per Action. The Tether source duplicates `task` with
 a discernibly different value; the parser rejects it as a `parse_error` before
 evaluation begins. Different Actions may independently use the same argument
 name.
+
+The reused-argument-across-actions fixture proves that the same argument
+name (`task`) may be used once in each of two separate
+`lantern.task.record` Actions within a single Tether. Both Actions resolve
+`anchor.task` independently, both appear in the Plan in source order with
+consecutive `action_id` values (`action_1`, `action_2`), and the Trail
+contains two `action_planned` entries at sequential positions 5 and 6.
+`required_effects` remains deduplicated (`["lantern.write"]`). Duplicate
+argument names inside a single Action remain rejected; reuse across separate
+Actions is valid.
