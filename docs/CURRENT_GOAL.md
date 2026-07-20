@@ -219,3 +219,12 @@ receives the executor error `"no host executor is installed for
 lantern.task.fail"`, records `action_failed`, sets `execution_status:
 "failed"`, and stops without attempting further Actions. No `action_completed`
 entry appears.
+
+Condition expected values are now restricted to literals (strings, integers,
+booleans). The `parse_condition_value` function in `tether_parser.ml` rejects
+`anchor.*` references during Condition parsing with a clear `parse_error`
+message (`"Condition expected value must be a literal, got: ..."`) before
+evaluation begins. The `condition-reference-rejected` fixture proves this by
+replacing the first Condition's literal `"software"` with
+`anchor.project_type`. Action `anchor.*` references remain valid and continue
+to resolve in the host round-trip demo.

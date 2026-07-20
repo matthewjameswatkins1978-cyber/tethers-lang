@@ -85,6 +85,12 @@ let operator_of_string = function
   | "greater_than_or_equal" -> Greater_than_or_equal
   | value -> fail "parse_error" ("Unknown condition operator: " ^ value)
 
+let parse_condition_value raw =
+  let value = parse_value raw in
+  match value with
+  | Reference _ -> fail "parse_error" ("Condition expected value must be a literal, got: " ^ raw)
+  | _ -> value
+
 let parse_condition line =
   let source = trim line in
   let body = if starts_with "and " source then drop_prefix "and " source else source in
@@ -92,7 +98,7 @@ let parse_condition line =
   let operator_text, expected = take_word rest in
   if fact = "" || operator_text = "" || expected = "" then
     fail "parse_error" ("Malformed condition: " ^ source);
-  { fact; operator = operator_of_string operator_text; expected = parse_value expected; source = body }
+  { fact; operator = operator_of_string operator_text; expected = parse_condition_value expected; source = body }
 
 let parse_argument line =
   let body = trim line in

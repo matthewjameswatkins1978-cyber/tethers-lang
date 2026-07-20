@@ -82,7 +82,16 @@ Supported 0.1 operators:
 - `greater_than`
 - `greater_than_or_equal`
 
-Supported values:
+Supported values in Conditions:
+
+- quoted strings
+- integers
+- `true` and `false`
+
+Condition expected values must be literals. `anchor.*` references are
+rejected during parsing as `parse_error` before evaluation begins.
+
+Supported values in Action arguments:
 
 - quoted strings
 - integers

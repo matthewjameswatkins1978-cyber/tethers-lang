@@ -1,0 +1,8 @@
+{
+  "protocol_version": "0.1",
+  "status": "error",
+  "error": {
+    "code": "parse_error",
+    "message": "Condition expected value must be a literal, got: anchor.project_type"
+  }
+}

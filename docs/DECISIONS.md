@@ -112,6 +112,20 @@ name+version pair still creates ambiguity for Action lookup. Silent
 selection of the first (or last) declaration would mask author error.
 Deterministic rejection produces a clear, unambiguous response.
 
+## 2026-07-20: Restrict Condition Expected Values To Literals
+
+Decision: Conditions may only compare Fact values against literal values
+(strings, integers, booleans). `anchor.*` references are rejected during
+Condition parsing as `parse_error` before evaluation begins.
+
+Reason: Conditions test known Facts against known thresholds. Allowing
+`anchor.*` references in Conditions would require the engine to resolve
+event data during Condition evaluation, which mixes Fact and event
+resolution contexts before the evaluation lifecycle clearly separates
+them. Action arguments remain free to use `anchor.*` references because
+Action resolution occurs after all Conditions have matched, when the
+event data is fully available and the resolution context is unambiguous.
+
 ## Open Decisions
 
 - Whether future documentation should live at the workspace root, inside
