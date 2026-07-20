@@ -73,3 +73,11 @@ the core application-agnostic and make only small, explicit changes against the
 documented 0.1 semantics. `tethers-0.1/` is the active development tree for the
 0.1 cycle; do not move or rename it while the path-bound local opam switch is in
 use.
+
+## Fixture Contract Follow-Up
+
+The evaluation fixture contract now covers the canonical happy path, Anchor
+mismatch, false Condition, and the current sparse missing-Fact error response.
+The missing-Fact case intentionally documents current behaviour only; a
+correlated evaluation-error envelope remains a queued design task before the
+error contract expands.

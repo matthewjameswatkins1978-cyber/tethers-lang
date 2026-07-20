@@ -47,6 +47,10 @@
 ## Next
 
 - [ ] Decide the first post-baseline implementation milestone.
+- [ ] Design and implement the correlated evaluation-error envelope before
+      expanding the error contract. Determine which available identifiers,
+      plan: null, and evaluation Trail entries must be retained when evaluation
+      fails.
 
 ## Later
 

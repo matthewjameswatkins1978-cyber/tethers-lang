@@ -22,7 +22,23 @@ function Test-JsonFile {
     }
 }
 
-Test-JsonFile "protocol/request.json"
-Test-JsonFile "protocol/expected-response.json"
+$fixturePaths = @(
+    "protocol/request.json"
+    "protocol/expected-response.json"
+)
 
-Write-Output "JSON fixtures are valid"
+$casesRoot = Join-Path $Root "protocol/cases"
+if (Test-Path -LiteralPath $casesRoot -PathType Container) {
+    $caseFixtures = Get-ChildItem -LiteralPath $casesRoot -Recurse -File -Filter "*.json" |
+        Sort-Object FullName |
+        ForEach-Object {
+            [System.IO.Path]::GetRelativePath($Root, $_.FullName)
+        }
+    $fixturePaths += $caseFixtures
+}
+
+foreach ($fixturePath in $fixturePaths) {
+    Test-JsonFile $fixturePath
+}
+
+Write-Output "JSON fixtures are valid ($($fixturePaths.Count) files)"

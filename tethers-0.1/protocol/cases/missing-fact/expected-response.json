@@ -1,0 +1,8 @@
+{
+  "protocol_version": "0.1",
+  "status": "error",
+  "error": {
+    "code": "missing_fact",
+    "message": "Missing Fact: task.changed_files"
+  }
+}

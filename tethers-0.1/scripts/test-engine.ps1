@@ -4,8 +4,7 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $EngineDir = Join-Path $Root "engine-ocaml"
 $EnginePath = Join-Path $EngineDir "_build/default/bin/main.exe"
-$RequestPath = Join-Path $Root "protocol/request.json"
-$ExpectedPath = Join-Path $Root "protocol/expected-response.json"
+$ProtocolDir = Join-Path $Root "protocol"
 
 function Assert-Command {
     param(
@@ -62,14 +61,6 @@ function ConvertTo-CanonicalJson {
 
 Assert-Command "opam"
 
-if (-not (Test-Path -LiteralPath $RequestPath -PathType Leaf)) {
-    throw "Missing request fixture: protocol/request.json"
-}
-
-if (-not (Test-Path -LiteralPath $ExpectedPath -PathType Leaf)) {
-    throw "Missing expected response fixture: protocol/expected-response.json"
-}
-
 Push-Location $EngineDir
 try {
     & opam exec -- dune build
@@ -85,32 +76,102 @@ if (-not (Test-Path -LiteralPath $EnginePath -PathType Leaf)) {
     throw "Dune build completed but engine executable was not found at $EnginePath"
 }
 
-$request = Get-Content -Raw -LiteralPath $RequestPath | ConvertFrom-Json -ErrorAction Stop
-$requestLine = $request | ConvertTo-Json -Depth 100 -Compress
-$engineOutput = $requestLine | & $EnginePath
+function Invoke-EngineCase {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $CaseName,
+
+        [Parameter(Mandatory = $true)]
+        [string] $RequestPath,
+
+        [Parameter(Mandatory = $true)]
+        [string] $ExpectedPath
+    )
+
+    if (-not (Test-Path -LiteralPath $RequestPath -PathType Leaf)) {
+        throw "Missing request fixture for ${CaseName}: $RequestPath"
+    }
+
+    if (-not (Test-Path -LiteralPath $ExpectedPath -PathType Leaf)) {
+        throw "Missing expected response fixture for ${CaseName}: $ExpectedPath"
+    }
+
+    $request = Get-Content -Raw -LiteralPath $RequestPath | ConvertFrom-Json -ErrorAction Stop
+    $requestLine = $request | ConvertTo-Json -Depth 100 -Compress
+    $engineOutput = $requestLine | & $EnginePath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Engine exited with code $LASTEXITCODE for case '$CaseName'."
+    }
+
+    $actualText = ($engineOutput -join "`n").Trim()
+    if ($actualText -eq "") {
+        throw "Engine produced no JSON output for case '$CaseName'."
+    }
+
+    try {
+        $actual = $actualText | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "Engine produced invalid JSON for case '$CaseName': $($_.Exception.Message)"
+    }
+
+    $expected = Get-Content -Raw -LiteralPath $ExpectedPath | ConvertFrom-Json -ErrorAction Stop
+
+    $actualCanonical = ConvertTo-CanonicalJson $actual
+    $expectedCanonical = ConvertTo-CanonicalJson $expected
+
+    if ($actualCanonical -ne $expectedCanonical) {
+        throw "Engine response did not semantically match expected fixture for case '$CaseName'.`nExpected: $expectedCanonical`nActual:   $actualCanonical"
+    }
+
+    [Console]::Out.WriteLine("PASS $CaseName")
+    return [pscustomobject]@{
+        RequestLine = $requestLine
+        ActualText = $actualText
+    }
+}
+
+$cases = @(
+    [pscustomobject]@{
+        Name = "top-level"
+        RequestPath = Join-Path $ProtocolDir "request.json"
+        ExpectedPath = Join-Path $ProtocolDir "expected-response.json"
+    }
+)
+
+$casesRoot = Join-Path $ProtocolDir "cases"
+if (Test-Path -LiteralPath $casesRoot -PathType Container) {
+    $caseDirectories = Get-ChildItem -LiteralPath $casesRoot -Directory | Sort-Object Name
+    foreach ($caseDirectory in $caseDirectories) {
+        $cases += [pscustomobject]@{
+            Name = $caseDirectory.Name
+            RequestPath = Join-Path $caseDirectory.FullName "request.json"
+            ExpectedPath = Join-Path $caseDirectory.FullName "expected-response.json"
+        }
+    }
+}
+
+$happyResult = $null
+foreach ($case in $cases) {
+    $result = Invoke-EngineCase -CaseName $case.Name -RequestPath $case.RequestPath -ExpectedPath $case.ExpectedPath
+    if ($case.Name -eq "happy-path") {
+        $happyResult = $result
+    }
+}
+
+if ($null -eq $happyResult) {
+    throw "Missing fixture case: happy-path"
+}
+
+$repeatOutput = $happyResult.RequestLine | & $EnginePath
 if ($LASTEXITCODE -ne 0) {
-    throw "Engine exited with code $LASTEXITCODE."
+    throw "Engine exited with code $LASTEXITCODE during happy-path determinism check."
 }
 
-$actualText = ($engineOutput -join "`n").Trim()
-if ($actualText -eq "") {
-    throw "Engine produced no JSON output."
+$repeatText = ($repeatOutput -join "`n").Trim()
+if ($repeatText -ne $happyResult.ActualText) {
+    throw "Happy-path output was not deterministic across two evaluations."
 }
 
-try {
-    $actual = $actualText | ConvertFrom-Json -ErrorAction Stop
-}
-catch {
-    throw "Engine produced invalid JSON: $($_.Exception.Message)"
-}
-
-$expected = Get-Content -Raw -LiteralPath $ExpectedPath | ConvertFrom-Json -ErrorAction Stop
-
-$actualCanonical = ConvertTo-CanonicalJson $actual
-$expectedCanonical = ConvertTo-CanonicalJson $expected
-
-if ($actualCanonical -ne $expectedCanonical) {
-    throw "Engine response did not semantically match protocol/expected-response.json.`nExpected: $expectedCanonical`nActual:   $actualCanonical"
-}
-
-Write-Output "Engine response matches the frozen fixture"
+Write-Output "PASS happy-path deterministic repeat"
+Write-Output "Engine responses match all fixture cases"
