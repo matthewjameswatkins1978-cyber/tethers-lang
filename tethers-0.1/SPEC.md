@@ -199,8 +199,14 @@ produce the minimal request-decoding error envelope. The correlated envelope
 is extended deliberately, one error path at a time.
 
 When all Conditions have matched and the engine enters Action planning,
-**unknown Capability** (`unknown_capability`) uses the same correlated
-pattern:
+the following errors use the same correlated pattern:
+
+- **unknown Capability** (`unknown_capability`): the named Capability was
+  not supplied by the host;
+- **missing argument** (`missing_argument`): a required Capability input
+  was not supplied in the Action.
+
+In both cases the engine:
 
 - retains all evaluation identities;
 - returns `plan: null`;
@@ -210,9 +216,9 @@ pattern:
   kind `"action_planning_failed"`, outcome `"error"`) whose message
   preserves the original error text.
 
-Other Action-planning errors (missing arguments, unknown arguments, type
-errors, unresolved references) are not yet correlated and may still produce
-the minimal request-decoding error envelope.
+Other Action-planning errors (unknown arguments, type errors, unresolved
+references) are not yet correlated and may still produce the minimal
+request-decoding error envelope.
 
 ### 11.3 Error classification
 

@@ -126,3 +126,16 @@ points Cline to the guide for OCaml implementation tasks without duplicating it.
 `docs/TETHERS_LUCY_NOTES.md` now preserves Lucy's compact project-orientation
 notes. AGENTS.md references it as optional orientation, not as an authoritative
 source for semantics.
+
+The unknown-Capability fixture now uses the correlated error envelope for
+`unknown_capability` raised during Action planning. The fixture copies the
+canonical happy-path Tether and changes the Action capability to
+`lantern.task.save` (not supplied in capabilities), so the engine preserves
+the full evaluation Trail (reception, Anchor match, both matched Conditions)
+before appending one `action_planning_failed` entry at sequence 5.
+
+The missing-Action-argument fixture now uses the correlated error envelope for
+`missing_argument` raised during Action planning. The fixture copies the
+canonical happy-path Tether and removes the required `task` argument from the
+Action, so the engine preserves the full evaluation Trail before appending one
+`action_planning_failed` entry at sequence 5.

@@ -58,6 +58,8 @@
       guidance references.
 - [x] Add Lucy's compact Tethers orientation notes under `docs/` and reference
       them as optional orientation.
+- [x] Correlate `unknown_capability` errors raised during Action planning while
+      preserving known identifiers and accumulated evaluation Trail entries.
 
 ## Next
 
