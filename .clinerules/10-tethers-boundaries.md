@@ -2,6 +2,11 @@
 
 Tethers is a small deterministic behaviour language and Capability protocol.
 
+Authority:
+
+- `docs/CONSTITUTION.md` governs enduring design principles.
+- `tethers-0.1/SPEC.md` defines current precise language/protocol semantics.
+
 Core model:
 
 - Hosts provide events, immutable Facts, and Capability schemas.

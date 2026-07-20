@@ -106,3 +106,8 @@ request still includes `project.type` and omits `task.changed_files`, so the
 error Trail preserves the matched first Condition before appending a single
 `condition_failed` entry for `Missing Fact: task.changed_files`. Other
 contextual evaluation errors remain a separate migration task.
+
+`docs/CONSTITUTION.md` now records the enduring Tethers design principles.
+Project guidance references it as the constitutional authority, while
+`tethers-0.1/SPEC.md` remains the authority for current precise 0.1 language and
+protocol semantics.

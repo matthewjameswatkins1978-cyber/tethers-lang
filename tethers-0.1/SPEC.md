@@ -1,5 +1,8 @@
 # Tethers 0.1 — Semantic Baseline
 
+This SPEC defines the current precise 0.1 language and protocol semantics. The
+enduring design principles are governed by `../docs/CONSTITUTION.md`.
+
 ## 1. Definition
 
 Tethers is a deterministic planner. It accepts a Tether, an event, an immutable
@@ -192,15 +195,8 @@ Malformed source, missing Facts, unknown Capabilities, missing inputs, type
 mismatches, and incompatible versions are evaluation errors. A false Condition
 is not an error; it produces a successful `not_matched` result with no plan.
 
-## 12. Project constitution
+## 12. Constitution
 
-1. Tethers plans; hosts execute.
-2. Applications expose Capabilities; Core contains no application-specific logic.
-3. Evaluation uses immutable supplied Facts, never hidden live state.
-4. The same complete input produces the same plan.
-5. AI is an explicit Capability, never invisible authority.
-6. Schemas describe, policies authorise, and hosts enforce.
-7. Every decision and Effect belongs to a causal Trail.
-8. Actions are safely identifiable for replay and deduplication.
-9. The language remains smaller than a general programming language.
-10. Behaviour that need not be inspected, changed, disabled, or audited belongs in ordinary code.
+The enduring Tethers design principles are recorded in
+`../docs/CONSTITUTION.md`. This SPEC remains the authority for the current
+precise 0.1 language and protocol semantics.

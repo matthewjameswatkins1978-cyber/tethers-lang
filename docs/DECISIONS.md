@@ -47,8 +47,16 @@ so Cline has concise project-specific operating guidance.
 
 Reason: Cline is the bounded implementation worker for this project and should
 receive enough architectural context to avoid dangerous changes without loading
-the full cross-agent project constitution for every mechanical task. `AGENTS.md`
-remains the full project constitution for Codex and other agents.
+the full project guidance for every mechanical task.
+
+## 2026-07-20: Adopt `docs/CONSTITUTION.md` As The Enduring Constitution
+
+Decision: `docs/CONSTITUTION.md` is the authoritative Tethers constitution and
+governs enduring design principles.
+
+Reason: The constitution should exist once as a stable document that other
+project guidance can reference concisely. `tethers-0.1/SPEC.md` remains the
+authority for current precise 0.1 language and protocol semantics.
 
 ## Open Decisions
 

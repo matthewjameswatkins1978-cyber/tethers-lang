@@ -1,6 +1,11 @@
 # Tethers — Project Guidance for Codex
 
-Read this file, `tethers-0.1/SPEC.md`, `docs/CURRENT_GOAL.md`, and `docs/TASK_QUEUE.md` before making changes.
+Read this file, `docs/CONSTITUTION.md`, `tethers-0.1/SPEC.md`,
+`docs/CURRENT_GOAL.md`, and `docs/TASK_QUEUE.md` before making changes.
+
+`docs/CONSTITUTION.md` governs enduring Tethers design principles.
+`tethers-0.1/SPEC.md` defines the current precise 0.1 language and protocol
+semantics.
 
 ## Project definition
 
@@ -518,11 +523,12 @@ Do not install software without explicit permission.
 Before every task:
 
 1. Read this file.
-2. Read `tethers-0.1/SPEC.md`.
-3. Read `docs/CURRENT_GOAL.md`.
-4. Read `docs/TASK_QUEUE.md`.
-5. Inspect Git status.
-6. Preserve unrelated and user-authored changes.
+2. Read `docs/CONSTITUTION.md`.
+3. Read `tethers-0.1/SPEC.md`.
+4. Read `docs/CURRENT_GOAL.md`.
+5. Read `docs/TASK_QUEUE.md`.
+6. Inspect Git status.
+7. Preserve unrelated and user-authored changes.
 
 During work:
 
@@ -549,16 +555,9 @@ After work:
 
 ## Project constitution
 
-1. Tethers plans; hosts execute.
-2. Applications expose Capabilities; Core contains no application-specific logic.
-3. Evaluation uses immutable supplied Facts, never hidden live state.
-4. The same complete input produces the same Plan.
-5. AI is an explicit Capability, never invisible authority.
-6. Schemas describe, policies authorise, and hosts enforce.
-7. Every decision and Effect belongs to a causal Trail.
-8. Actions are identifiable for safe replay and deduplication.
-9. The language remains smaller than a general programming language.
-10. If behaviour does not need to be inspected, changed, disabled, or audited, it belongs in ordinary code.
+The authoritative project constitution is `docs/CONSTITUTION.md`. It governs
+enduring design principles. `tethers-0.1/SPEC.md` remains authoritative for the
+current precise 0.1 language and protocol semantics.
 
 ## Final scope warning
 

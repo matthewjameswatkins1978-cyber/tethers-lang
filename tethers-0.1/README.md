@@ -45,7 +45,8 @@ a deterministic decision from the visible result.
 
 ## Repository map
 
-- `SPEC.md` — frozen semantics and project constitution
+- `../docs/CONSTITUTION.md` — enduring design principles
+- `SPEC.md` — current 0.1 language and protocol semantics
 - `protocol/` — request, response, and capability examples
 - `engine-ocaml/` — line-oriented parser, validator, and evaluator
 - `host-rust/` — reference host and mock capability executor
