@@ -1,0 +1,8 @@
+{
+  "protocol_version": "0.1",
+  "status": "error",
+  "error": {
+    "code": "parse_error",
+    "message": "Tether must begin with tether \"name\""
+  }
+}

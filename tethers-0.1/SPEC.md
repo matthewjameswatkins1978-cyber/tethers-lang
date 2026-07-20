@@ -155,8 +155,8 @@ versions rather than guess.
 ### 11.1 Request-decoding errors
 
 Errors that occur before reliable request identities are extracted (malformed
-JSON, missing protocol/language version, missing structural fields, or
-unsupported version values) return a minimal error envelope:
+JSON, missing protocol/language version, missing structural fields, unsupported
+version values, or Tether source parse errors) return a minimal error envelope:
 
 ```json
 {

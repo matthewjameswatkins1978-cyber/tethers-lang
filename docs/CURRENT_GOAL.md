@@ -158,3 +158,12 @@ for `missing_reference` raised during Action planning. The fixture copies the
 canonical happy-path Tether and removes `task` from the event data while the
 Action references `anchor.task`, so the engine preserves the full evaluation
 Trail before appending one `action_planning_failed` entry at sequence 5.
+
+The Tether parse-error fixture now documents the existing minimal
+pre-evaluation error contract for `parse_error`. The fixture changes the Tether
+opening keyword from `tether` to `bad`; the engine returns only
+`protocol_version`, `status`, and `error` — no evaluation identifiers, plan,
+or Trail. `docs/DECISIONS.md` records the design decision that parse errors
+remain minimal because evaluation has not begun and the two-category error
+model (minimal pre-evaluation, fully correlated evaluation/planning) is
+preferred over partial correlation.

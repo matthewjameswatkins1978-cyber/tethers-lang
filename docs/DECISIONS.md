@@ -69,6 +69,25 @@ loading an entire language manual into every task. The compact guide points to
 official documentation for version-specific details, and the compiler plus
 Tethers contract tests remain the final authority.
 
+## 2026-07-20: Pre-Evaluation Parse Errors Remain Minimal
+
+Decision: Tether source parse errors (`parse_error`) remain minimal
+pre-evaluation errors. The engine returns only `protocol_version`, `status`,
+and `error` — no evaluation identifiers, no plan, and no Trail.
+
+Reason: Parsing is part of validating the submitted request; evaluation has
+not begun and no evaluation Trail exists. When the Tether source is
+syntactically invalid, the request is semantically incomplete and the engine
+cannot identify which identities a correlated envelope should carry. Partially
+correlated envelopes that contain some identifiers and not others would
+introduce three categories of error shape (minimal, partial, full) rather than
+the simpler two-category model (minimal pre-evaluation, fully correlated
+evaluation/planning). Tethers 0.1 uses only:
+
+1. minimal pre-evaluation errors (request-decoding, version, structural,
+   parse);
+2. fully correlated evaluation/planning errors (Condition, Action).
+
 ## Open Decisions
 
 - Whether future documentation should live at the workspace root, inside
