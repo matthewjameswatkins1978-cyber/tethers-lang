@@ -60,13 +60,17 @@
       them as optional orientation.
 - [x] Correlate `unknown_capability` errors raised during Action planning while
       preserving known identifiers and accumulated evaluation Trail entries.
+- [x] Correlate `missing_reference` errors raised during Action planning.
+- [x] Define minimal pre-evaluation `parse_error` responses.
+- [x] Reject duplicate Action arguments within a single Action.
+- [x] Prove argument-name reuse across separate Actions.
+- [x] Reject duplicate Capability names before evaluation.
 
 ## Next
 
 - [ ] Decide the first post-baseline implementation milestone.
-- [ ] Migrate the remaining contextual evaluation-error paths deliberately,
-      including parser and missing reference errors where reliable evaluation
-      context is available.
+- [ ] Migrate any future contextual error paths deliberately only where reliable
+      evaluation or planning context is available.
 
 ## Later
 
