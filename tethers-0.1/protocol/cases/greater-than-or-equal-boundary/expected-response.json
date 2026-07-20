@@ -1,0 +1,62 @@
+{
+  "protocol_version": "0.1",
+  "evaluation_id": "eval_demo_001",
+  "event_id": "evt_demo_001",
+  "tether_id": "record-completed-task",
+  "tether_version": "demo-v1",
+  "status": "matched",
+  "plan": {
+    "id": "eval_demo_001/plan",
+    "required_effects": ["lantern.write"],
+    "actions": [
+      {
+        "action_id": "action_1",
+        "idempotency_key": "eval_demo_001/action_1",
+        "capability": "lantern.task.record",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "project": "lantern-keeper",
+          "task": "LK-39"
+        },
+        "effects": ["lantern.write"]
+      }
+    ]
+  },
+  "trail": [
+    {
+      "sequence": 1,
+      "phase": "reception",
+      "kind": "event_received",
+      "outcome": "accepted",
+      "message": "Received coding.task_completed"
+    },
+    {
+      "sequence": 2,
+      "phase": "evaluation",
+      "kind": "anchor_checked",
+      "outcome": "matched",
+      "message": "Anchor coding.task_completed matched"
+    },
+    {
+      "sequence": 3,
+      "phase": "evaluation",
+      "kind": "condition_checked",
+      "outcome": "matched",
+      "message": "project.type is \"software\""
+    },
+    {
+      "sequence": 4,
+      "phase": "evaluation",
+      "kind": "condition_checked",
+      "outcome": "matched",
+      "message": "task.changed_files greater_than_or_equal 3"
+    },
+    {
+      "sequence": 5,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned lantern.task.record"
+    }
+  ]
+}

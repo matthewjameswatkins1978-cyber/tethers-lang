@@ -81,3 +81,8 @@ mismatch, false Condition, and the current sparse missing-Fact error response.
 The missing-Fact case intentionally documents current behaviour only; a
 correlated evaluation-error envelope remains a queued design task before the
 error contract expands.
+
+The fixture contract also now covers the inclusive boundary for
+`greater_than_or_equal`: `task.changed_files = 3` with
+`greater_than_or_equal 3` evaluates to `matched` and plans
+`lantern.task.record`.

@@ -43,6 +43,7 @@
 - [x] Commit the verified native Windows baseline locally.
 - [x] Update `docs/CURRENT_GOAL.md`.
 - [x] Update `docs/TASK_QUEUE.md`.
+- [x] Add and verify a `greater_than_or_equal` inclusive boundary fixture.
 
 ## Next
 
