@@ -56,6 +56,8 @@
       preserving known identifiers and accumulated Trail entries.
 - [x] Add a concise OCaml 5.5 guide for AI coding agents and wire agent
       guidance references.
+- [x] Add Lucy's compact Tethers orientation notes under `docs/` and reference
+      them as optional orientation.
 
 ## Next
 

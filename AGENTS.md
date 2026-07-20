@@ -8,6 +8,8 @@ Read this file, `docs/CONSTITUTION.md`, `tethers-0.1/SPEC.md`,
 semantics.
 For OCaml implementation tasks, also read the task-relevant section of
 `docs/OCAML_GUIDE_FOR_AGENTS.md`.
+For optional project orientation, `docs/TETHERS_LUCY_NOTES.md` can help recover
+the conceptual model, but it is not an authoritative specification.
 
 ## Project definition
 

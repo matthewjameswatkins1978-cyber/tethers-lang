@@ -122,3 +122,7 @@ engine preserves reception and matched Anchor Trail entries before appending one
 toolchain, current engine module structure, project OCaml subset, Yojson usage,
 and official source links for AI coding agents. `.clinerules/30-ocaml.md`
 points Cline to the guide for OCaml implementation tasks without duplicating it.
+
+`docs/TETHERS_LUCY_NOTES.md` now preserves Lucy's compact project-orientation
+notes. AGENTS.md references it as optional orientation, not as an authoritative
+source for semantics.
