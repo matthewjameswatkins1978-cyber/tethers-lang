@@ -783,6 +783,52 @@ fn parse_binding(
 }
 
 // ---------------------------------------------------------------------------
+// Verified manifest (C2a)
+// ---------------------------------------------------------------------------
+
+/// A manifest whose supplied digest has been verified against its
+/// authoritative content.
+///
+/// Constructible only through [`verify_manifest`].  No public constructor,
+/// no `From<TrustedManifest>`, and no mutable access to its identity fields
+/// exist — C2b insertion must accept `VerifiedManifest` rather than
+/// `TrustedManifest` to prevent unverified insertion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedManifest {
+    capability_name: String,
+    capability_version: u32,
+    verified_digest: String,
+    manifest: TrustedManifest,
+}
+
+impl VerifiedManifest {
+    /// The verified capability name (immutable).
+    pub fn capability_name(&self) -> &str {
+        &self.capability_name
+    }
+
+    /// The verified capability version (immutable).
+    pub fn capability_version(&self) -> u32 {
+        self.capability_version
+    }
+
+    /// The cryptographic digest that was verified (immutable).
+    pub fn verified_digest(&self) -> &str {
+        &self.verified_digest
+    }
+
+    /// The underlying trusted manifest (immutable shared reference).
+    ///
+    /// `TrustedManifest` fields are `pub` for construction ergonomics, but
+    /// a shared reference (`&TrustedManifest`) cannot be mutated through
+    /// safe Rust — the type uses no interior mutability.  Callers can
+    /// inspect the manifest but cannot replace identity-bearing values.
+    pub fn manifest(&self) -> &TrustedManifest {
+        &self.manifest
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public parse entry point
 // ---------------------------------------------------------------------------
 
@@ -1125,15 +1171,143 @@ fn digest_string(canonical_bytes: &[u8]) -> String {
 /// Performs C1a2 structural validation, C1c semantic validation, number-domain
 /// enforcement, and then canonicalization + digesting.
 pub fn canonicalize_and_digest(json: &str) -> Result<(Vec<u8>, String), ManifestError> {
-    let parsed = parse_value_no_dupes(json)
-        .map_err(|e| ManifestError::new(ManifestErrorCode::InvalidJson, e.to_string()))?;
-    let manifest = TrustedManifest::parse(json)?;
-    manifest.validate_semantics()?;
+    let (parsed, _manifest) = validate_manifest_full(json)?;
     validate_number_domain(&parsed, "")?;
     let filtered = filtered_canonical_input(&parsed)?;
     let bytes = canonicalize(&filtered)?;
     let digest = digest_string(&bytes);
     Ok((bytes, digest))
+}
+
+/// Private authoritative validation pipeline for already strict-parsed JSON.
+///
+/// Parses the manifest via `TrustedManifest::parse` (which re-validates the
+/// JSON independently and does not accept an already-parsed `Value`) and runs
+/// C1c semantic validation.  Returns both the parsed root `Value` (for
+/// canonicalisation) and the validated `TrustedManifest`.
+fn validate_manifest_full(
+    json: &str,
+) -> Result<(serde_json::Value, TrustedManifest), ManifestError> {
+    let parsed = parse_value_no_dupes(json)
+        .map_err(|e| ManifestError::new(ManifestErrorCode::InvalidJson, e.to_string()))?;
+    let manifest = TrustedManifest::parse(json)?;
+    manifest.validate_semantics()?;
+    Ok((parsed, manifest))
+}
+
+// ---------------------------------------------------------------------------
+// C2a — digest verification
+// ---------------------------------------------------------------------------
+
+/// Validate the syntax of a supplied `sha256:...` digest string.
+///
+/// Rules:
+/// - Must be exactly 71 ASCII bytes: `"sha256:"` (7) + 64 lowercase hex.
+/// - First 7 characters must be exactly `"sha256:"`.
+/// - Remaining 64 characters must be `[0-9a-f]`.
+/// - No whitespace, no uppercase, no other algorithm prefixes.
+fn validate_digest_syntax(raw: &str) -> Result<(), ManifestError> {
+    if raw.len() != 71 {
+        return Err(ManifestError::with_field(
+            ManifestErrorCode::InvalidValue,
+            format!(
+                "digest must be \"sha256:\" followed by 64 lowercase hex characters, got {} bytes",
+                raw.len()
+            ),
+            "/digest",
+        ));
+    }
+
+    if &raw[..7] != "sha256:" {
+        return Err(ManifestError::with_field(
+            ManifestErrorCode::InvalidValue,
+            "digest must begin with \"sha256:\"",
+            "/digest",
+        ));
+    }
+
+    for (i, b) in raw.bytes().enumerate().skip(7) {
+        if !b.is_ascii_hexdigit() || b.is_ascii_uppercase() {
+            return Err(ManifestError::with_field(
+                ManifestErrorCode::InvalidValue,
+                format!("digest hex character {} must be lowercase hexadecimal", i),
+                "/digest",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// C2a: verify that a manifest's supplied top-level `digest` matches the
+/// digest computed from its authoritative fields.
+///
+/// Pipeline (per `docs/CAPABILITY_BRIDGE.md` §17.1):
+/// 1. Duplicate-aware strict JSON parsing (C1a2).
+/// 2. Authoritative field, type, and enum validation (C1a2).
+/// 3. C1c semantic cross-field validation.
+/// 4. IEEE-754/I-JSON number-domain enforcement.
+/// 5. RFC 8785/JCS canonicalisation excluding top-level `digest`, `title`,
+///    `description`.
+/// 6. SHA-256 calculation.
+/// 7. Supplied-digest syntax validation.
+/// 8. Exact comparison of supplied and calculated digest.
+/// 9. `VerifiedManifest` produced only on equality.
+///
+/// The supplied digest is **mandatory**.  A missing `digest` field returns
+/// `MissingField`.  A non-string `digest` returns `InvalidType`.  Malformed
+/// syntax returns `InvalidValue`.  Correct syntax with wrong value returns
+/// `DigestMismatch`.
+pub fn verify_manifest(json: &str) -> Result<VerifiedManifest, ManifestError> {
+    let (parsed, manifest) = validate_manifest_full(json)?;
+
+    // Number-domain enforcement (step 4) comes before digest extraction
+    // so that a number-domain error takes precedence over a missing
+    // or malformed digest.
+    validate_number_domain(&parsed, "")?;
+
+    // Extract mandatory supplied digest.
+    let supplied_digest = match &parsed {
+        serde_json::Value::Object(obj) => match obj.get("digest") {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(_) => {
+                return Err(ManifestError::with_field(
+                    ManifestErrorCode::InvalidType,
+                    "digest must be a string",
+                    "/digest",
+                ));
+            }
+            None => {
+                return Err(ManifestError::with_field(
+                    ManifestErrorCode::MissingField,
+                    "missing required field: digest",
+                    "/digest",
+                ));
+            }
+        },
+        _ => unreachable!("validate_manifest_full already rejected non-object root"),
+    };
+
+    let filtered = filtered_canonical_input(&parsed)?;
+    let _canonical_bytes = canonicalize(&filtered)?;
+    let calculated = digest_string(&_canonical_bytes);
+
+    validate_digest_syntax(&supplied_digest)?;
+
+    if supplied_digest != calculated {
+        return Err(ManifestError::with_field(
+            ManifestErrorCode::DigestMismatch,
+            "supplied digest does not match the digest computed from authoritative fields",
+            "/digest",
+        ));
+    }
+
+    Ok(VerifiedManifest {
+        capability_name: manifest.capability_name.clone(),
+        capability_version: manifest.capability_version,
+        verified_digest: calculated,
+        manifest,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -2192,5 +2366,384 @@ mod tests {
         let (_, digest2) = canonicalize_and_digest(&m2.to_string()).unwrap();
 
         assert_ne!(digest1, digest2);
+    }
+
+    // ==================================================================
+    // C2a — declared-digest verification
+    // ==================================================================
+
+    /// Build a minimal manifest with the given digest value embedded.
+    fn minimal_with_digest(digest: &str) -> String {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!(digest);
+        m.to_string()
+    }
+
+    /// The correct digest for minimal_manifest_json() produced by
+    /// canonicalize_and_digest (a fixed literal, not derived at test time).
+    const MINIMAL_CORRECT_DIGEST: &str =
+        "sha256:ad5c8e3cd5430588caf083e367a452f01d4f6c5da6ee7eabdf39c47919b27401";
+
+    // -- successful verification --
+
+    #[test]
+    fn c2a_verify_valid_manifest_with_correct_digest() {
+        let json = minimal_with_digest(MINIMAL_CORRECT_DIGEST);
+        let v = verify_manifest(&json).unwrap();
+        assert_eq!(v.capability_name(), "notes.note.read");
+        assert_eq!(v.capability_version(), 1);
+        assert_eq!(v.verified_digest(), MINIMAL_CORRECT_DIGEST);
+        assert_eq!(v.manifest().capability_name, "notes.note.read");
+    }
+
+    #[test]
+    fn c2a_verified_digest_is_calculated_not_supplied() {
+        // The verified_digest field is always the calculated value.
+        let json = minimal_with_digest(MINIMAL_CORRECT_DIGEST);
+        let v = verify_manifest(&json).unwrap();
+        assert_eq!(v.verified_digest(), MINIMAL_CORRECT_DIGEST);
+    }
+
+    #[test]
+    fn c2a_excluded_title_does_not_affect_digest() {
+        // Title is excluded from digest — changing it doesn't change required digest.
+        // The digest is computed from authoritative fields only; title change
+        // doesn't invalidate.  We test that the same supplied digest works.
+        let mut m = minimal_manifest_json();
+        m["title"] = json!("Different title");
+        m["digest"] = json!(MINIMAL_CORRECT_DIGEST);
+        let v = verify_manifest(&m.to_string()).unwrap();
+        assert_eq!(v.capability_name(), "notes.note.read");
+    }
+
+    #[test]
+    fn c2a_covered_field_change_requires_digest_change() {
+        // Changing a covered field means the old digest no longer matches.
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!(MINIMAL_CORRECT_DIGEST);
+        m["capability_name"] = json!("changed.name");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::DigestMismatch);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    // -- missing digest --
+
+    #[test]
+    fn c2a_reject_missing_digest() {
+        let mut m = minimal_manifest_json();
+        m.as_object_mut().unwrap().remove("digest");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::MissingField);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    // -- non-string digest --
+
+    #[test]
+    fn c2a_reject_null_digest() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = serde_json::Value::Null;
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidType);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_numeric_digest() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!(42);
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidType);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_object_digest() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!({"algo": "sha256"});
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidType);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_array_digest() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!(["sha256:abcd"]);
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidType);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    // -- malformed digest syntax --
+
+    #[test]
+    fn c2a_reject_empty_digest_string() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!("");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_wrong_prefix() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!("sha512:"); // not sha256:
+                                        // Pad to exactly 71 bytes to isolate the prefix check.
+        m["digest"] =
+            json!("sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_uppercase_algorithm_prefix() {
+        let mut m = minimal_manifest_json();
+        m["digest"] =
+            json!("SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_uppercase_hex() {
+        let mut m = minimal_manifest_json();
+        m["digest"] =
+            json!("sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_too_few_hex() {
+        let mut m = minimal_manifest_json();
+        // 63 hex chars instead of 64 → 70 total bytes.
+        m["digest"] =
+            json!("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_too_many_hex() {
+        let mut m = minimal_manifest_json();
+        // 65 hex chars → 72 bytes.
+        m["digest"] =
+            json!("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_non_hex_characters() {
+        let mut m = minimal_manifest_json();
+        // 'g' is not a hex digit.
+        m["digest"] =
+            json!("sha256:gaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_leading_whitespace() {
+        let mut m = minimal_manifest_json();
+        m["digest"] =
+            json!(" sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_trailing_whitespace() {
+        let mut m = minimal_manifest_json();
+        m["digest"] =
+            json!("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_reject_correct_syntax_wrong_digest() {
+        // Valid syntax but digest is not the one calculated for this manifest.
+        let mut m = minimal_manifest_json();
+        m["digest"] =
+            json!("sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::DigestMismatch);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    // -- pipeline preservation: structural errors before verification --
+
+    #[test]
+    fn c2a_malformed_json_rejected_before_verification() {
+        let err = verify_manifest("{not json}").unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidJson);
+    }
+
+    #[test]
+    fn c2a_duplicate_keys_rejected_before_verification() {
+        let json = r#"{"manifest_format_version":"1.0","manifest_format_version":"1.0","capability_name":"a.b"}"#;
+        let err = verify_manifest(json).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidJson);
+    }
+
+    #[test]
+    fn c2a_escaped_equivalent_duplicate_keys_rejected_before_verification() {
+        let raw = r#"{"manifest_format_version":"1.0","capability_name":"a.b","capability_version":1,"title":"t","description":"d","input_schema":{"type":"object","\u0074ype":"object"},"output_schema":{"type":"object"},"effects":["a"],"permission_scope":null,"reversibility":"reversible","determinism":"deterministic","idempotency":{"mechanism":"none"},"confirmation_policy":{"standing_permitted":true,"per_call_required":false},"timeout_ms":5000,"retry_policy":{"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":false},"provider":{"identity":"x","display_name":"x","identity_source":"host_configuration"},"binding":{"kind":"mcp","server_name":"x","tool_name":"x","adapter":null},"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#;
+        let err = verify_manifest(raw).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidJson);
+    }
+
+    #[test]
+    fn c2a_trailing_tokens_rejected_before_verification() {
+        let json = format!("{} {}", minimal_with_digest(MINIMAL_CORRECT_DIGEST), "{}");
+        let err = verify_manifest(&json).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidJson);
+    }
+
+    #[test]
+    fn c2a_unknown_field_rejected_before_verification() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!(MINIMAL_CORRECT_DIGEST);
+        m.as_object_mut()
+            .unwrap()
+            .insert("extra".into(), json!(true));
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::UnknownField);
+    }
+
+    #[test]
+    fn c2a_invalid_type_rejected_before_verification() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!(MINIMAL_CORRECT_DIGEST);
+        m["capability_version"] = json!("one");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidType);
+    }
+
+    #[test]
+    fn c2a_semantic_error_rejected_before_verification() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!(MINIMAL_CORRECT_DIGEST);
+        m["output_schema"] = json!({});
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/output_schema"));
+    }
+
+    #[test]
+    fn c2a_unsafe_number_domain_rejected_before_verification() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!(MINIMAL_CORRECT_DIGEST);
+        m["input_schema"] = json!({"type": "integer", "maximum": 9007199254740992_u64});
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/input_schema/maximum"));
+    }
+
+    #[test]
+    fn c2a_number_domain_takes_precedence_over_missing_digest() {
+        // When a manifest has both an out-of-domain number AND a missing
+        // digest field, number-domain enforcement (step 4) must fire before
+        // the missing-digest check.
+        let mut m = minimal_manifest_json();
+        m.as_object_mut().unwrap().remove("digest");
+        m["input_schema"] = json!({"type": "integer", "maximum": 9007199254740992_u64});
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/input_schema/maximum"));
+    }
+
+    // -- error precedence: semantic before digest --
+
+    #[test]
+    fn c2a_semantic_error_takes_precedence_over_malformed_digest() {
+        // Output schema is empty (semantic error) AND digest is malformed.
+        // The semantic error should appear first.
+        let mut m = minimal_manifest_json();
+        m["output_schema"] = json!({});
+        m["digest"] = json!("bad");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/output_schema"));
+    }
+
+    #[test]
+    fn c2a_valid_syntax_malformed_digest_returns_invalid_value() {
+        let mut m = minimal_manifest_json();
+        m["digest"] = json!("not-a-valid-digest");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/digest"));
+    }
+
+    #[test]
+    fn c2a_only_correctly_formatted_unequal_digest_returns_mismatch() {
+        let mut m = minimal_manifest_json();
+        // Correct format but wrong hash.
+        m["digest"] =
+            json!("sha256:0000000000000000000000000000000000000000000000000000000000000000");
+        let err = verify_manifest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::DigestMismatch);
+    }
+
+    // -- digest remains excluded from its own canonical input --
+
+    #[test]
+    fn c2a_supplied_digest_is_excluded_from_canonical_input() {
+        // The digest is self-referential.  Verify that two manifests differing
+        // only in their supplied digest value require the SAME calculated
+        // digest — i.e., the supplied digest is excluded from digest input.
+        let json1 = minimal_with_digest(MINIMAL_CORRECT_DIGEST);
+        let v1 = verify_manifest(&json1).unwrap();
+
+        // Same manifest with a different (matching) supplied digest.
+        let mut m2 = minimal_manifest_json();
+        m2["digest"] = json!(MINIMAL_CORRECT_DIGEST);
+        let v2 = verify_manifest(&m2.to_string()).unwrap();
+
+        // Both produce the same verified digest because the supplied digest
+        // is excluded from the digest calculation.
+        assert_eq!(v1.verified_digest(), v2.verified_digest());
+        assert_eq!(v1.verified_digest(), MINIMAL_CORRECT_DIGEST);
+    }
+
+    // -- nested digest/title/description remain covered --
+
+    #[test]
+    fn c2a_nested_digest_in_schema_is_digest_covered() {
+        // A digest key inside input_schema must affect the calculated digest.
+        let mut m1 = minimal_manifest_json();
+        m1["input_schema"] = json!({"type": "object", "digest": "v1"});
+        let (_, d1) = canonicalize_and_digest(&m1.to_string()).unwrap();
+
+        let mut m2 = minimal_manifest_json();
+        m2["input_schema"] = json!({"type": "object", "digest": "v2"});
+        let (_, d2) = canonicalize_and_digest(&m2.to_string()).unwrap();
+
+        assert_ne!(d1, d2);
+    }
+
+    // -- VerifiedManifest has no public constructor --
+
+    #[test]
+    fn c2a_verified_manifest_constructed_only_through_verify() {
+        // Tests verify that VerifiedManifest is constructible only through
+        // verify_manifest — there is no public function, no From impl, and
+        // no direct struct literal construction escaping this module.
+        let json = minimal_with_digest(MINIMAL_CORRECT_DIGEST);
+        let v = verify_manifest(&json).unwrap();
+        assert_eq!(v.verified_digest(), MINIMAL_CORRECT_DIGEST);
     }
 }
