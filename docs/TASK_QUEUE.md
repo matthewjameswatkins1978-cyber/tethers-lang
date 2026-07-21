@@ -61,16 +61,51 @@ Final checkpoint: `34330b3` — feat: validate Columbo manifest semantics
    vectors.
 5. [x] C1c semantic and cross-field validation.
 
-### C2 — Trusted Manifest Store
+### C2 — Trusted Manifest Store (complete)
 
-1. [ ] C2a verify declared manifest digest.
-2. [ ] C2b store verified manifests with identity and digest indexes.
-3. [ ] C2c define and implement insertion conflicts, idempotency, and
-   retrieval semantics.
+Final checkpoint: `25ab2bb` — feat: add trusted manifest store
+
+1. [x] C2a verify declared manifest digest.
+2. [x] C2b store verified manifests with identity and digest indexes,
+   insertion conflicts, idempotency, and retrieval semantics.
+3. [x] C2c merged into C2b because conflict and duplicate detection are part of
+   the insertion contract.
 
 The 10-minute implementation-step limit is a clean-stop limit, not a promise
 that each task must finish in ten minutes. Incomplete tasks must stop cleanly
 and report remaining work.
+
+## Joint Runtime Slice Queue
+
+The accepted build foundation is
+[`architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md`](architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md).
+It maps the remaining Tethers work into one immediate vertical runtime slice
+rather than separate architectural empires for provider admission, capability
+resolution, permission, dispatch, result Anchors, and Trail writing.
+
+Next:
+
+1. [ ] Define the smallest configured local provider binding and one real stdio
+   MCP provider fixture.
+2. [ ] Admit one verified manifest through the Trusted Manifest Store and derive
+   the live capability projection for one Tether Set with exact capability
+   versions.
+3. [ ] Carry the opaque manifest digest through deterministic planning for
+   bridge-backed capabilities without making Tethers Core inspect complete
+   manifests.
+4. [ ] Implement conservative effective policy outcomes:
+   `allow`, `ask`, `deny`, and `unavailable`.
+5. [ ] Dispatch serially with no automatic retries, intent-first Trail entries,
+   honest `succeeded`/`failed`/`uncertain` classification, output validation,
+   and standard result Anchors.
+
+Later:
+
+- Lantern Keeper capability-provider integration after Lantern Keeper exposes a
+  small stable capability surface.
+- Safe retry only after idempotency is proved end to end.
+- Additional providers, automatic discovery, HQ, remote transports, and
+  package/marketplace work.
 
 ## 0.1 Finishing Queue
 

@@ -159,9 +159,10 @@ first server small, deterministic, and application-agnostic.
 
 ## 2026-07-21: Columbo C1 Complete — Begin C2 Trusted Manifest Store
 
-Decision: Columbo C1 is complete at checkpoint `34330b3`. The next set is
-C2 — Trusted Manifest Store, beginning with C2a — Verify declared manifest
-digest.
+Decision at that checkpoint: Columbo C1 was complete at `34330b3`, and the
+next set was C2 — Trusted Manifest Store, beginning with C2a — Verify declared
+manifest digest. C2 is now complete at `25ab2bb`; see the later C2 decision
+entry below.
 
 C1 final state:
 - C1a1: data types and structured error model ✓
@@ -170,7 +171,7 @@ C1 final state:
 - C1b2: canonicalisation, SHA-256, golden vectors ✓
 - C1c: semantic cross-field validation ✓
 
-C2 planned task order:
+C2 original planned task order:
 - C2a: Verify declared manifest digest
 - C2b: Store verified manifests with identity and digest indexes
 - C2c: Define insertion conflicts, idempotency, and retrieval semantics
@@ -187,6 +188,50 @@ Uppercase, whitespace, and other algorithm prefixes are rejected.
 
 Reason: C2 establishes the boundary between valid manifests and verified
 ones before any storage, trust, or dispatch decision.
+
+## 2026-07-21: Columbo C2 Complete — Begin Joint Runtime Slice
+
+Decision: Columbo C2 is complete at checkpoint `25ab2bb`. The Trusted Manifest
+Store now admits only `VerifiedManifest`, indexes manifests by exact
+`(capability_name, capability_version)` identity and verified digest, supports
+idempotent reinsertion, returns deterministic identity/digest conflict errors,
+and leaves both indexes unchanged on every rejection.
+
+C2 final state:
+- C2a: declared digest verification and `VerifiedManifest` boundary ✓
+- C2b: verified manifest store with identity and digest indexes ✓
+- C2c: insertion conflicts, idempotency, and retrieval semantics merged into
+  C2b ✓
+
+The next Tethers target is the vertical runtime slice defined by the joint
+Tethers/Lantern Keeper canonical architecture. Provider admission, live
+capability projection, exact version resolution, effective policy, serial
+dispatch, result Anchors, and execution Trail writing are one coherent route,
+not independent architectural products. Tethers remains a general coordination
+and behaviour layer; it has no built-in knowledge of Lantern Keeper, memory,
+AI, or MCP-specific business meanings. AI judgement is an explicit capability
+Action whose structured result can become a later Anchor.
+
+Reason: The accepted joint architecture keeps the already implemented manifest
+verification/store baseline and directs future work toward one real
+Anchor-to-Plan-to-permission-to-execution-to-Trail slice.
+
+## 2026-07-21: Adopt Joint Tethers/Lantern Keeper Canonical Architecture
+
+Decision:
+[`architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md`](architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md)
+is the synchronized joint architectural contract and build foundation for
+Tethers plus Lantern Keeper. The same file is installed in both repositories
+and must be updated in both places for future architectural edits.
+
+The report does not replace `tethers-0.1/SPEC.md` for exact current language
+semantics or `docs/CAPABILITY_BRIDGE.md` for the current manifest/capability
+contract. It governs the joint build order and ownership boundaries:
+Tethers coordinates, Lantern Keeper remembers, AI interprets through explicit
+capabilities, and Matthew remains the final authority.
+
+Reason: The two projects need one shared target architecture without turning
+Tethers into a memory engine or Lantern Keeper into a general workflow engine.
 
 ## 2026-07-21: Capability Bridge Trust Boundary (M7)
 

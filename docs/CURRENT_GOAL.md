@@ -2,21 +2,30 @@
 
 ## Goal
 
-Prepare Columbo C1 manifest validation implementation by finalising the
-documentation boundary for digest coverage, RFC 8785/JCS canonicalization,
-strict manifest parsing, credential handling, retry/idempotency, output-schema
-validation, and the C1 task split.
+Build the first vertical Tethers runtime slice around the completed Columbo
+manifest verification and Trusted Manifest Store baseline.
 
 ## Immediate Definition Of Done
 
-- `docs/CAPABILITY_BRIDGE.md` states the final Columbo C1 manifest validation
-  rules consistently.
-- `docs/DECISIONS.md` records the corrected digest, JCS, strict parsing,
-  credential, retry/idempotency, and output-schema decisions.
-- This document and `docs/TASK_QUEUE.md` split C1 into C1a1, C1a2, C1b1, C1b2,
-  and C1c.
-- No executable code, language semantics, fixtures, dependencies, generated
-  files, opam switch paths, pushes, amendments, merges, or tags are changed.
+- A configured local provider binding can be admitted through verified
+  manifests and the Trusted Manifest Store.
+- A derived live capability view for one Tether Set supplies exact capability
+  versions and manifest digests to planning.
+- The runtime host resolves one planned Action through effective
+  `allow`/`ask`/`deny`/`unavailable` policy.
+- Initial dispatch is serial, conservative, and has no automatic retries.
+- Intent, result, denied, unavailable, timeout, uncertain outcome, and result
+  Anchor paths are recorded honestly in the Trail.
+- AI judgement, when used, is an explicit capability Action whose structured
+  result becomes data for a later Anchor; it never runs invisibly inside
+  deterministic Condition evaluation.
+
+The controlling joint architecture is
+[`architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md`](architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md).
+It is the accepted target architecture and build order for the Tethers/Lantern
+Keeper joint system, while `tethers-0.1/SPEC.md` and
+`docs/CAPABILITY_BRIDGE.md` remain authoritative for their narrower current
+contracts.
 
 ## Verified State On 2026-07-20
 
@@ -363,8 +372,19 @@ semantics.
   confirmation; empty or bool-true output_schema rejected; idempotency/retry
   consistency enforced for effectful Actions.
 
-Next phase: Columbo C2 — Trusted Manifest Store, beginning with
-C2a — Verify declared manifest digest.
+C2 is complete. Final checkpoint: `25ab2bb` — feat: add trusted manifest store.
+
+- C2a verifies declared manifest digests and produces `VerifiedManifest`.
+- C2b stores only verified manifests, indexes by exact identity and digest,
+  handles idempotent reinsertion and insertion conflicts, and preserves both
+  indexes on every rejection.
+- C2c was merged into C2b because insertion semantics, idempotency, conflicts,
+  and retrieval cannot be implemented independently.
+
+Next phase: the vertical runtime slice described above. This replaces the
+older idea of stretching the remaining work into separate C3-through-C12
+architecture layers; existing small checkpoint names may remain as commit-sized
+implementation slices under the one runtime goal.
 
 ## Fixture Contract Follow-Up
 

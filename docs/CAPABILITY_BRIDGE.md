@@ -1455,8 +1455,10 @@ Three settled C1c invariants:
 - `idempotency.mechanism` is `"none"` + effectful effects + `max_retries > 0`
   is invalid.
 
-Reserved error codes awaiting future implementation: `InvalidEffects`,
-`InvalidIdempotency`, `ContainsCredentials`, `DigestMismatch`.
+Reserved error codes from the original C1 design were `InvalidEffects`,
+`InvalidIdempotency`, `ContainsCredentials`, and `DigestMismatch`.
+`DigestMismatch` is implemented by C2a. The others remain reserved for future
+validation or credential-scanning work.
 
 ## 17. Columbo C2 — Trusted Manifest Store
 
@@ -1475,11 +1477,12 @@ matches. Digest verification proves content identity and integrity relative to
 the declared digest; it does not prove who authored, supplied or authorised the
 manifest.
 
-Planned task boundaries:
+Completed task boundaries:
 
-- **C2a** — Verify declared manifest digest.
+- **C2a** — Verify declared manifest digest. Complete in checkpoint `25ab2bb`.
 - **C2b** — Store verified manifests with identity and digest indexes,
-  including insertion conflicts, idempotency, and retrieval semantics.
+  including insertion conflicts, idempotency, and retrieval semantics. Complete
+  in checkpoint `25ab2bb`.
   (C2c is merged into C2b; insertion semantics cannot be implemented
   independently of conflict and duplicate detection.)
 
@@ -1532,8 +1535,8 @@ A new type carrying at minimum:
 - `verified_digest`: `String`
 - `manifest`: `TrustedManifest` (the fully validated manifest data)
 
-The `VerifiedManifest` type exists so that C2b insertion and C2c retrieval
-signatures can accept `VerifiedManifest` rather than `TrustedManifest`, making
+The `VerifiedManifest` type exists so that C2b insertion and retrieval
+signatures accept `VerifiedManifest` rather than `TrustedManifest`, making
 unverified insertion impossible at compile time.
 
 `VerifiedManifest` must not contain canonical bytes or the original JSON/Value
@@ -1558,8 +1561,7 @@ It does **not** mean:
 - approval is granted.
 
 Use "verified manifest" for the C2a result. Reserve "trusted store" for the
-host-controlled collection that admits verified manifests under later C2b/C2c
-rules.
+host-controlled collection that admits verified manifests under C2b rules.
 
 #### C2a scope exclusions
 
@@ -1576,7 +1578,7 @@ C2a must not implement:
 - broader semantic validation;
 - algorithm agility.
 
-#### Later C2 boundaries (defined here, not implemented)
+#### C2b implemented boundary
 
 **C2b — Store verified manifests:**
 
@@ -1584,35 +1586,26 @@ C2a must not implement:
 - Primary identity key: `(capability_name, capability_version)`.
 - Retrieval by exact digest.
 - Retrieval by exact name/version.
-- Initial implementation is deterministic in-memory unless canonical documents
-  already require persistence.
+- Initial implementation is deterministic and in-memory.
+- Reinsertion of the same identity and same digest returns `AlreadyPresent`.
+- Same identity with a different unused digest returns `IdentityConflict`.
+- Same digest with a different identity returns `DigestConflict`.
+- Same identity plus an attempted digest already assigned to a different
+  identity returns `DigestConflict`.
+- All rejections leave both the identity index and digest index unchanged.
+- No replacement policy is implemented. A changed contract requires a new
+  capability version or a later explicit replacement design.
 
-**C2c — Insertion conflicts, idempotency, and retrieval semantics:**
-
-C2c will settle:
-
-- Reinsertion of the same identity and same digest.
-- Same identity with a different digest.
-- Digest collision or inconsistent index state.
-- Replacement/version policy.
-- Deterministic error mappings.
-- Retrieval and conflict tests.
-
-C2c conflict policy is not settled here. The unresolved choices are:
-
-- Whether same-identity-same-digest reinsertion quietly succeeds or explicitly
-  signals idempotency.
-- Whether same-identity-different-digest is rejected unconditionally or
-  permitted under a policy switch.
-- Whether digest collision (same digest, different identity) is an error or
-  merely a warning.
+The Trusted Manifest Store still does not prove provider trust, live
+availability, permission, credential access, dispatch authority, or execution.
+Those belong to the next vertical runtime slice.
 
 ### Remaining deferred items (beyond C2)
 
 - MCP discovery adapter and schema-drift checker.
 - Capability registry/projection supplied to the planner as deterministic input.
 - Host dispatcher, provider-specific scope validators, credential injection,
-  result validation, and execution Trail writer.
+  result validation, result Anchors, and execution Trail writer.
 
 ### Unresolved questions
 
