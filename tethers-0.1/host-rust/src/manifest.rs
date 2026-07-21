@@ -1683,9 +1683,22 @@ mod tests {
     // -- malformed/duplicate/trailing input rejected before digest --
 
     #[test]
+    fn malformed_json_cannot_reach_digest() {
+        let err = canonicalize_and_digest(r#"{"manifest_format_version":"1.0""#).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidJson);
+    }
+
+    #[test]
     fn duplicate_key_input_cannot_reach_digest() {
         let json = r#"{"manifest_format_version":"1.0","manifest_format_version":"1.0","capability_name":"a.b"}"#;
         let err = canonicalize_and_digest(json).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidJson);
+    }
+
+    #[test]
+    fn escaped_equivalent_duplicate_key_cannot_reach_digest() {
+        let raw = r#"{"manifest_format_version":"1.0","capability_name":"a.b","capability_version":1,"title":"t","description":"d","input_schema":{"type":"object","\u0074ype":"object"},"output_schema":{"type":"object"},"effects":["a"],"permission_scope":null,"reversibility":"reversible","determinism":"deterministic","idempotency":{"mechanism":"none"},"confirmation_policy":{"standing_permitted":true,"per_call_required":false},"timeout_ms":5000,"retry_policy":{"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":false},"provider":{"identity":"x","display_name":"x","identity_source":"host_configuration"},"binding":{"kind":"mcp","server_name":"x","tool_name":"x","adapter":null}}"#;
+        let err = canonicalize_and_digest(raw).unwrap_err();
         assert_eq!(err.code, ManifestErrorCode::InvalidJson);
     }
 
@@ -1705,6 +1718,15 @@ mod tests {
         let err = canonicalize_and_digest(&m.to_string()).unwrap_err();
         assert_eq!(err.code, ManifestErrorCode::UnknownField);
         assert_eq!(err.field.as_deref(), Some("/extra"));
+    }
+
+    #[test]
+    fn invalid_authoritative_field_type_cannot_reach_digest() {
+        let mut m = minimal_manifest_json();
+        m["capability_version"] = json!("one");
+        let err = canonicalize_and_digest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidType);
+        assert_eq!(err.field.as_deref(), Some("/capability_version"));
     }
 
     #[test]
