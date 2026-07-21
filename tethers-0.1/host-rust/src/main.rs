@@ -1,4 +1,5 @@
 mod manifest;
+pub mod trusted_store;
 
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -10,8 +11,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
-    let engine_path = args.next().ok_or("usage: tethers-reference-host ENGINE REQUEST_JSON")?;
-    let request_path = args.next().ok_or("usage: tethers-reference-host ENGINE REQUEST_JSON")?;
+    let engine_path = args
+        .next()
+        .ok_or("usage: tethers-reference-host ENGINE REQUEST_JSON")?;
+    let request_path = args
+        .next()
+        .ok_or("usage: tethers-reference-host ENGINE REQUEST_JSON")?;
 
     let request: Value = serde_json::from_str(&fs::read_to_string(request_path)?)?;
     let mut response = call_engine(&engine_path, &request)?;
@@ -67,8 +72,12 @@ impl HostPolicy {
 }
 
 trait CapabilityExecutor {
-    fn execute(&mut self, capability: &str, arguments: &Value, idempotency_key: &str)
-        -> Result<Value, String>;
+    fn execute(
+        &mut self,
+        capability: &str,
+        arguments: &Value,
+        idempotency_key: &str,
+    ) -> Result<Value, String>;
 }
 
 #[derive(Default)]
@@ -89,9 +98,13 @@ impl CapabilityExecutor for MockExecutor {
 
         let result = match capability {
             "lantern.task.record" => {
-                let project = arguments.get("project").and_then(Value::as_str)
+                let project = arguments
+                    .get("project")
+                    .and_then(Value::as_str)
                     .ok_or("lantern.task.record requires string argument project")?;
-                let task = arguments.get("task").and_then(Value::as_str)
+                let task = arguments
+                    .get("task")
+                    .and_then(Value::as_str)
                     .ok_or("lantern.task.record requires string argument task")?;
                 json!({
                     "status": "recorded",
@@ -114,19 +127,26 @@ fn authorise_and_execute(
     executor: &mut dyn CapabilityExecutor,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plan = response.get("plan").ok_or("matched response had no plan")?;
-    let effects = plan.get("required_effects").and_then(Value::as_array)
+    let effects = plan
+        .get("required_effects")
+        .and_then(Value::as_array)
         .ok_or("plan had no required_effects")?;
-    let denied: Vec<String> = effects.iter()
+    let denied: Vec<String> = effects
+        .iter()
         .filter_map(Value::as_str)
         .filter(|effect| !policy.permits(effect))
         .map(str::to_owned)
         .collect();
 
-    let actions = plan.get("actions").and_then(Value::as_array)
+    let actions = plan
+        .get("actions")
+        .and_then(Value::as_array)
         .ok_or("plan had no actions")?
         .clone();
 
-    let trail = response.get_mut("trail").and_then(Value::as_array_mut)
+    let trail = response
+        .get_mut("trail")
+        .and_then(Value::as_array_mut)
         .ok_or("response had no Trail")?;
     let mut sequence = trail.len() as u64 + 1;
 
@@ -203,7 +223,9 @@ fn authorise_and_execute(
 }
 
 fn required_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, Box<dyn std::error::Error>> {
-    value.get(field).and_then(Value::as_str)
+    value
+        .get(field)
+        .and_then(Value::as_str)
         .ok_or_else(|| format!("expected string field {field}").into())
 }
 
@@ -248,8 +270,12 @@ mod tests {
     fn mock_execution_is_idempotent() {
         let mut executor = MockExecutor::default();
         let args = json!({"project": "lantern-keeper", "task": "LK-39"});
-        let first = executor.execute("lantern.task.record", &args, "eval/action").unwrap();
-        let second = executor.execute("lantern.task.record", &args, "eval/action").unwrap();
+        let first = executor
+            .execute("lantern.task.record", &args, "eval/action")
+            .unwrap();
+        let second = executor
+            .execute("lantern.task.record", &args, "eval/action")
+            .unwrap();
         assert_eq!(first["status"], "recorded");
         assert_eq!(second["status"], "already_completed");
     }

@@ -1478,9 +1478,10 @@ manifest.
 Planned task boundaries:
 
 - **C2a** — Verify declared manifest digest.
-- **C2b** — Store verified manifests with identity and digest indexes.
-- **C2c** — Define and implement insertion conflicts, idempotency, and
-  retrieval semantics.
+- **C2b** — Store verified manifests with identity and digest indexes,
+  including insertion conflicts, idempotency, and retrieval semantics.
+  (C2c is merged into C2b; insertion semantics cannot be implemented
+  independently of conflict and duplicate detection.)
 
 ### 17.1 C2a — Verify declared manifest digest
 
