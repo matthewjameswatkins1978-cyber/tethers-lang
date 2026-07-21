@@ -1,3 +1,5 @@
+mod manifest;
+
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::env;
