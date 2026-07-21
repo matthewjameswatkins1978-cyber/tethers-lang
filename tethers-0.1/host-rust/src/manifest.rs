@@ -2,8 +2,10 @@
 //
 // C1a1: types and error codes.
 // C1a2: strict JSON parsing, recursive duplicate-key rejection, unknown-field rejection.
+// C1b2: RFC 8785 canonical bytes, SHA-256 digest, golden vectors.
 
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fmt;
 
@@ -940,6 +942,110 @@ impl ManifestError {
 }
 
 // ---------------------------------------------------------------------------
+// RFC 8785 canonicalisation and SHA-256 digest
+// ---------------------------------------------------------------------------
+
+/// Build the canonical digest input from strict-parsed manifest JSON.
+///
+/// Removes only the exact top-level members `digest`, `title`, and
+/// `description`.  Does not mutate the caller's retained value: it operates on
+/// a shallow clone.
+fn filtered_canonical_input(root: &serde_json::Value) -> Result<serde_json::Value, ManifestError> {
+    let obj = match root {
+        serde_json::Value::Object(m) => m,
+        _ => {
+            return Err(ManifestError::new(
+                ManifestErrorCode::InvalidJson,
+                "manifest root must be a JSON object",
+            ));
+        }
+    };
+    let mut filtered = obj.clone();
+    filtered.remove("digest");
+    filtered.remove("title");
+    filtered.remove("description");
+    Ok(serde_json::Value::Object(filtered))
+}
+
+fn validate_number_domain(value: &serde_json::Value, pointer: &str) -> Result<(), ManifestError> {
+    const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+    match value {
+        serde_json::Value::Number(n) => {
+            let valid = if let Some(u) = n.as_u64() {
+                u <= MAX_SAFE_INTEGER
+            } else if let Some(i) = n.as_i64() {
+                i >= -(MAX_SAFE_INTEGER as i64) && i <= MAX_SAFE_INTEGER as i64
+            } else {
+                n.as_f64().is_some_and(f64::is_finite)
+            };
+
+            if valid {
+                Ok(())
+            } else {
+                Err(ManifestError::with_field(
+                    ManifestErrorCode::InvalidValue,
+                    "number is outside the accepted RFC 8785/I-JSON IEEE-754 domain",
+                    pointer,
+                ))
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for (index, item) in values.iter().enumerate() {
+                validate_number_domain(item, &format!("{}/{}", pointer, index))?;
+            }
+            Ok(())
+        }
+        serde_json::Value::Object(obj) => {
+            for (key, item) in obj {
+                validate_number_domain(item, &json_pointer_child(pointer, key))?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Produce RFC 8785 canonical bytes from a strict-parsed, filtered
+/// `serde_json::Value`.
+///
+/// The caller is responsible for stripping excluded top-level members before
+/// calling this function.
+fn canonicalize(value: &serde_json::Value) -> Result<Vec<u8>, ManifestError> {
+    serde_json_canonicalizer::to_vec(value).map_err(|e| {
+        ManifestError::new(
+            ManifestErrorCode::InvalidJson,
+            format!("JCS canonicalisation failed: {}", e),
+        )
+    })
+}
+
+/// Compute the SHA-256 digest of canonical bytes.
+///
+/// Returns the digest in `"sha256:hex..."` form.
+fn digest_string(canonical_bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(canonical_bytes);
+    let result = hasher.finalize();
+    format!("sha256:{:x}", result)
+}
+
+/// Full pipeline: parse JSON, filter excluded fields, canonicalize, digest.
+///
+/// Returns `(canonical_bytes, digest_string)`.  The canonical bytes are
+/// separately available so callers can inspect them without recomputing.
+pub fn canonicalize_and_digest(json: &str) -> Result<(Vec<u8>, String), ManifestError> {
+    let parsed = parse_value_no_dupes(json)
+        .map_err(|e| ManifestError::new(ManifestErrorCode::InvalidJson, e.to_string()))?;
+    TrustedManifest::parse(json)?;
+    validate_number_domain(&parsed, "")?;
+    let filtered = filtered_canonical_input(&parsed)?;
+    let bytes = canonicalize(&filtered)?;
+    let digest = digest_string(&bytes);
+    Ok((bytes, digest))
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1364,5 +1470,273 @@ mod tests {
             parsed.permission_scope,
             PermissionScope::Unrestricted
         ));
+    }
+
+    // ==================================================================
+    // C1b2 - canonicalisation and digest tests
+    // ==================================================================
+
+    // -- RFC 8785 sample: official JCS test vector from RFC 8785 section 3 --
+
+    #[test]
+    fn rfc8785_official_sample() {
+        // RFC 8785 section 3 provides the JCS sample: canonicalize with sorted
+        // keys, arrays retaining order, and numbers serialized per JCS.
+        let input = json!({
+            "numbers": [333333333.33333329_f64, 1E30_f64, 4.50_f64, 2e-3_f64, 0.000000000000000000000000001_f64],
+            "string": "\u{20AC}$\u{000f}\nA'B\"\\\\\"/",
+            "literals": [null, true, false]
+        });
+        let bytes = canonicalize(&input).unwrap();
+        let canonical_str = String::from_utf8(bytes).unwrap();
+        assert_eq!(
+            canonical_str,
+            "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"\u{20AC}$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}"
+        );
+    }
+
+    // -- recursive object sorting --
+
+    #[test]
+    fn canonical_sorts_objects_recursively() {
+        let input = json!({"z": 1, "a": {"c": 3, "b": 2}});
+        let bytes = canonicalize(&input).unwrap();
+        let s = String::from_utf8(bytes).unwrap();
+        assert_eq!(s, "{\"a\":{\"b\":2,\"c\":3},\"z\":1}");
+    }
+
+    // -- UTF-16 ordering with non-BMP keys --
+
+    #[test]
+    fn canonical_uses_utf16_code_unit_ordering() {
+        // U+0041 "A" = 0x0041, U+00C9 "E-acute" = 0x00C9,
+        // U+1D11E "musical symbol G clef" is
+        // surrogate pair U+D834 U+DD1E in UTF-16.
+        // UTF-16 ordering: "A" < U+00C9 < U+1D11E.
+        let input = json!({"\u{1D11E}": 3, "\u{00C9}": 2, "A": 1});
+        let bytes = canonicalize(&input).unwrap();
+        let s = String::from_utf8(bytes).unwrap();
+        // JCS sorts by UTF-16 code units; the canonical form must have
+        // these keys in that order.
+        let a_pos = s.find("\"A\"").unwrap();
+        let e_pos = s.find("\"\u{00C9}\"").unwrap();
+        let g_pos = s.find("\"\u{1D11E}\"").unwrap();
+        assert!(a_pos < e_pos);
+        assert!(e_pos < g_pos);
+    }
+
+    // -- representative RFC number serialization --
+
+    #[test]
+    fn canonical_number_serialization() {
+        let input = json!({"int": 42, "float": 1.5, "zero": 0, "neg": -1});
+        let bytes = canonicalize(&input).unwrap();
+        let s = String::from_utf8(bytes).unwrap();
+        assert!(s.contains("\"float\":1.5"));
+        assert!(s.contains("\"int\":42"));
+        assert!(s.contains("\"neg\":-1"));
+        assert!(s.contains("\"zero\":0"));
+    }
+
+    // -- UTF-8/Unicode preservation without normalization --
+
+    #[test]
+    fn canonical_preserves_unicode_without_normalization() {
+        // U+00E9 is precomposed e-acute (single codepoint).
+        // U+0065 U+0301 is decomposed "e" + combining acute.
+        // They look identical but have different byte representations.
+        // JCS must NOT normalize them.
+        let composed = json!({"\u{00E9}": 1});
+        let decomposed = json!({"e\u{0301}": 1});
+        let bytes_c = canonicalize(&composed).unwrap();
+        let bytes_d = canonicalize(&decomposed).unwrap();
+        assert_ne!(bytes_c, bytes_d, "JCS must not normalize Unicode");
+    }
+
+    // -- arrays retain order while nested objects are sorted --
+
+    #[test]
+    fn canonical_arrays_retain_order_nested_objects_sorted() {
+        let input = json!([{"b": 2, "a": 1}, {"d": 4, "c": 3}]);
+        let bytes = canonicalize(&input).unwrap();
+        let s = String::from_utf8(bytes).unwrap();
+        assert_eq!(s, "[{\"a\":1,\"b\":2},{\"c\":3,\"d\":4}]");
+    }
+
+    // -- only top-level digest/title/description excluded --
+
+    #[test]
+    fn top_level_display_fields_excluded_from_digest() {
+        let json = minimal_manifest_json().to_string();
+        let (bytes1, digest1) = canonicalize_and_digest(&json).unwrap();
+        // Change title only - same digest.
+        let mut m2 = minimal_manifest_json();
+        m2["title"] = json!("A different title altogether");
+        let (bytes2, digest2) = canonicalize_and_digest(&m2.to_string()).unwrap();
+        assert_eq!(bytes1, bytes2, "canonical bytes unchanged by title change");
+        assert_eq!(digest1, digest2, "digest unchanged by title change");
+
+        // Change description only - same digest.
+        let mut m3 = minimal_manifest_json();
+        m3["description"] = json!("Completely different description text");
+        let (bytes3, digest3) = canonicalize_and_digest(&m3.to_string()).unwrap();
+        assert_eq!(bytes1, bytes3);
+        assert_eq!(digest1, digest3);
+
+        // Change digest value - same digest (it's excluded).
+        let mut m4 = minimal_manifest_json();
+        m4["digest"] =
+            json!("sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        let (bytes4, digest4) = canonicalize_and_digest(&m4.to_string()).unwrap();
+        assert_eq!(bytes1, bytes4);
+        assert_eq!(digest1, digest4);
+    }
+
+    #[test]
+    fn invalid_excluded_display_field_type_is_rejected_before_filtering() {
+        let mut m = minimal_manifest_json();
+        m["title"] = json!(123);
+        let err = canonicalize_and_digest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidType);
+        assert_eq!(err.field.as_deref(), Some("/title"));
+    }
+
+    // -- nested fields named digest/title/description remain covered --
+
+    #[test]
+    fn nested_display_field_names_are_digest_covered() {
+        // A `description` key inside input_schema must appear in canonical bytes.
+        let mut m = minimal_manifest_json();
+        m["input_schema"] = json!({"type": "object", "description": "schema-level desc"});
+        let (_, digest1) = canonicalize_and_digest(&m.to_string()).unwrap();
+
+        m["input_schema"] = json!({"type": "object", "description": "changed desc"});
+        let (_, digest2) = canonicalize_and_digest(&m.to_string()).unwrap();
+
+        assert_ne!(digest1, digest2, "nested description changes digest");
+    }
+
+    // -- changing a covered field changes canonical bytes and digest --
+
+    #[test]
+    fn covered_field_change_changes_digest() {
+        let json1 = minimal_manifest_json().to_string();
+        let (bytes1, digest1) = canonicalize_and_digest(&json1).unwrap();
+
+        let mut m2 = minimal_manifest_json();
+        m2["capability_name"] = json!("different.name");
+        let (bytes2, digest2) = canonicalize_and_digest(&m2.to_string()).unwrap();
+
+        assert_ne!(bytes1, bytes2);
+        assert_ne!(digest1, digest2);
+    }
+
+    // -- manifest_format_version is covered --
+
+    #[test]
+    fn manifest_format_version_is_digest_covered() {
+        let json1 = minimal_manifest_json().to_string();
+        let (bytes, _) = canonicalize_and_digest(&json1).unwrap();
+        let canonical = String::from_utf8(bytes).unwrap();
+
+        assert!(canonical.contains("\"manifest_format_version\":\"1.0\""));
+    }
+
+    // -- input_schema and output_schema are covered completely --
+
+    #[test]
+    fn schemas_are_digest_covered() {
+        let json1 = minimal_manifest_json().to_string();
+        let (_, digest1) = canonicalize_and_digest(&json1).unwrap();
+
+        let mut m2 = minimal_manifest_json();
+        m2["input_schema"] = json!({"type": "object", "additionalProperties": true});
+        let (_, digest2) = canonicalize_and_digest(&m2.to_string()).unwrap();
+        assert_ne!(digest1, digest2);
+
+        let mut m3 = minimal_manifest_json();
+        m3["output_schema"] = json!({"type": "array", "items": {"type": "string"}});
+        let (_, digest3) = canonicalize_and_digest(&m3.to_string()).unwrap();
+        assert_ne!(digest1, digest3);
+    }
+
+    // -- fixed project golden vectors --
+
+    #[test]
+    fn golden_vector_read_manifest_stability() {
+        // Golden vector: canonicalizes and digests the minimal read manifest.
+        // The exact canonical bytes and digest are pinned as literals. If
+        // these change, the contract digest definition has changed and C1b2
+        // must stop for re-evaluation.
+        const EXPECTED_CANONICAL: &str = r#"{"binding":{"adapter":null,"kind":"mcp","server_name":"obsidian","tool_name":"obsidian_read_note"},"capability_name":"notes.note.read","capability_version":1,"confirmation_policy":{"per_call_required":false,"standing_permitted":true},"determinism":"deterministic","effects":["filesystem.read"],"idempotency":{"mechanism":"none"},"input_schema":{"additionalProperties":false,"properties":{"path":{"type":"string"}},"required":["path"],"type":"object"},"manifest_format_version":"1.0","output_schema":{"properties":{"content":{"type":"string"}},"required":["content"],"type":"object"},"permission_scope":{"allowed_prefixes":["projects/"],"kind":"path_prefix"},"provider":{"description":"Host-assigned identity.","display_name":"Obsidian (local vault)","identity":"obsidian-local","identity_source":"host_configuration"},"retry_policy":{"allowed_on":["outcome_unknown"],"backoff_ms":500,"max_retries":3,"requires_idempotency_proof":false},"reversibility":"reversible","timeout_ms":5000}"#;
+        const EXPECTED_DIGEST: &str =
+            "sha256:833972460c8d41092eaf7b88e98b550c13888ac7e5c550e43a26abe8303afdea";
+
+        let json = minimal_manifest_json().to_string();
+        let (bytes, digest) = canonicalize_and_digest(&json).unwrap();
+        let canonical = String::from_utf8(bytes).unwrap();
+
+        assert_eq!(canonical, EXPECTED_CANONICAL);
+        assert_eq!(digest, EXPECTED_DIGEST);
+    }
+
+    // -- malformed/duplicate/trailing input rejected before digest --
+
+    #[test]
+    fn duplicate_key_input_cannot_reach_digest() {
+        let json = r#"{"manifest_format_version":"1.0","manifest_format_version":"1.0","capability_name":"a.b"}"#;
+        let err = canonicalize_and_digest(json).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidJson);
+    }
+
+    #[test]
+    fn trailing_tokens_cannot_reach_digest() {
+        let json = format!("{} {{}}", minimal_manifest_json());
+        let err = canonicalize_and_digest(&json).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidJson);
+    }
+
+    #[test]
+    fn unknown_field_cannot_reach_digest() {
+        let mut m = minimal_manifest_json();
+        m.as_object_mut()
+            .unwrap()
+            .insert("extra".into(), json!(true));
+        let err = canonicalize_and_digest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::UnknownField);
+        assert_eq!(err.field.as_deref(), Some("/extra"));
+    }
+
+    #[test]
+    fn out_of_domain_integer_cannot_reach_digest() {
+        let mut m = minimal_manifest_json();
+        m["input_schema"] = json!({"type": "integer", "maximum": 9007199254740992_u64});
+        let err = canonicalize_and_digest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/input_schema/maximum"));
+    }
+
+    // -- digest stability --
+
+    #[test]
+    fn digest_stable_across_repeated_calls() {
+        let json = minimal_manifest_json().to_string();
+        let (_, d1) = canonicalize_and_digest(&json).unwrap();
+        let (_, d2) = canonicalize_and_digest(&json).unwrap();
+        assert_eq!(d1, d2);
+    }
+
+    // -- provider description is covered (it's not top-level description) --
+
+    #[test]
+    fn provider_description_is_digest_covered() {
+        let json1 = minimal_manifest_json().to_string();
+        let (_, digest1) = canonicalize_and_digest(&json1).unwrap();
+
+        let mut m2 = minimal_manifest_json();
+        m2["provider"]["description"] = json!("Changed provider description");
+        let (_, digest2) = canonicalize_and_digest(&m2.to_string()).unwrap();
+
+        assert_ne!(digest1, digest2);
     }
 }
