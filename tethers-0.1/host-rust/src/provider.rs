@@ -1,7 +1,7 @@
 // Columbo — Provider configuration and admission
 //
 // Binds a locally configured provider identity to a set of allowed
-// capability names with optional pinned digests.  Admits verified
+// exact capability names and versions with optional pinned digests.  Admits verified
 // manifests through the Trusted Manifest Store only after checking
 // that the manifest matches local configuration.
 //
@@ -21,6 +21,8 @@ use crate::trusted_store::{InsertOutcome, ManifestStoreError, TrustedManifestSto
 pub struct AllowedCapability {
     /// Exact capability name the provider is permitted to present.
     pub capability_name: String,
+    /// Exact capability version the provider is permitted to present.
+    pub capability_version: u32,
     /// Optional locally pinned digest.  When present, only a manifest
     /// whose verified digest matches this exact value is admitted.
     pub pinned_digest: Option<String>,
@@ -29,7 +31,7 @@ pub struct AllowedCapability {
 /// A host-configured provider binding.
 ///
 /// Binds a host-assigned provider identity to a display name and the
-/// exact set of capability names the provider is permitted to expose.
+/// exact set of capability name/version pairs the provider is permitted to expose.
 /// Each capability may carry an optional pinned digest for defence in
 /// depth against manifest changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +65,14 @@ pub enum AdmissionError {
         capability_name: String,
         configured_identity: String,
     },
+    /// The configured provider allows this capability name, but only at
+    /// a different exact version.
+    CapabilityVersionMismatch {
+        capability_name: String,
+        expected_version: u32,
+        actual_version: u32,
+        configured_identity: String,
+    },
     /// The configured provider pins a digest for this capability, and
     /// the manifest's verified digest does not match the pin.
     PinnedDigestMismatch {
@@ -73,9 +83,7 @@ pub enum AdmissionError {
     /// The configuration has an entry for this capability name but it
     /// lacks a required pinned digest.  (When a pin is expected but
     /// absent, the configuration must be explicit.)
-    DigestPinRequired {
-        capability_name: String,
-    },
+    DigestPinRequired { capability_name: String },
     /// Admission to the trusted store failed (identity conflict, digest
     /// conflict).
     StoreError(ManifestStoreError),
@@ -91,7 +99,7 @@ pub enum AdmissionError {
 /// 1. Identity check — manifest's `provider.identity` must match the
 ///    configured identity.
 /// 2. Capability allow-list check — the manifest's `capability_name`
-///    must appear in the configured allowed list.
+///    and `capability_version` must appear in the configured allowed list.
 /// 3. Pinned digest check — if the configured capability carries a
 ///    `pinned_digest`, the manifest's verified digest must match it
 ///    exactly.
@@ -116,7 +124,7 @@ pub fn admit_provider_manifest(
     }
 
     // -- 2. capability allow-list check --
-    let allowed = config
+    let allowed_by_name = config
         .allowed_capabilities
         .iter()
         .find(|c| c.capability_name == manifest.capability_name)
@@ -125,8 +133,17 @@ pub fn admit_provider_manifest(
             configured_identity: config.identity.clone(),
         })?;
 
+    if allowed_by_name.capability_version != manifest.capability_version {
+        return Err(AdmissionError::CapabilityVersionMismatch {
+            capability_name: manifest.capability_name.clone(),
+            expected_version: allowed_by_name.capability_version,
+            actual_version: manifest.capability_version,
+            configured_identity: config.identity.clone(),
+        });
+    }
+
     // -- 3. pinned digest check --
-    if let Some(pinned) = &allowed.pinned_digest {
+    if let Some(pinned) = &allowed_by_name.pinned_digest {
         if pinned != verified.verified_digest() {
             return Err(AdmissionError::PinnedDigestMismatch {
                 capability_name: manifest.capability_name.clone(),
@@ -268,16 +285,22 @@ mod tests {
 
     fn verified_read() -> VerifiedManifest {
         let mut m = read_manifest_json();
-        let (_, digest) =
-            crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        m["digest"] = json!(digest);
+        verify_manifest(&m.to_string()).unwrap()
+    }
+
+    fn verified_read_version(version: u32) -> VerifiedManifest {
+        let mut m = read_manifest_json();
+        m["capability_version"] = json!(version);
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
         m["digest"] = json!(digest);
         verify_manifest(&m.to_string()).unwrap()
     }
 
     fn verified_write() -> VerifiedManifest {
         let mut m = write_manifest_json();
-        let (_, digest) =
-            crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
         m["digest"] = json!(digest);
         verify_manifest(&m.to_string()).unwrap()
     }
@@ -289,10 +312,12 @@ mod tests {
             allowed_capabilities: vec![
                 AllowedCapability {
                     capability_name: "notes.note.read".to_string(),
+                    capability_version: 1,
                     pinned_digest: None,
                 },
                 AllowedCapability {
                     capability_name: "notes.note.create".to_string(),
+                    capability_version: 1,
                     pinned_digest: None,
                 },
             ],
@@ -310,9 +335,27 @@ mod tests {
         let outcome = admit_provider_manifest(&config, v, &mut store).unwrap();
         assert_eq!(outcome, InsertOutcome::Inserted);
         assert_eq!(store.len(), 1);
-        assert!(store
-            .get_by_name_version("notes.note.read", 1)
-            .is_some());
+        assert!(store.get_by_name_version("notes.note.read", 1).is_some());
+    }
+
+    #[test]
+    fn configured_exact_version_is_admitted() {
+        let config = ProviderConfig {
+            identity: "obsidian-local".to_string(),
+            display_name: "Obsidian (local vault)".to_string(),
+            allowed_capabilities: vec![AllowedCapability {
+                capability_name: "notes.note.read".to_string(),
+                capability_version: 2,
+                pinned_digest: None,
+            }],
+        };
+        let mut store = TrustedManifestStore::new();
+        let v = verified_read_version(2);
+
+        let outcome = admit_provider_manifest(&config, v, &mut store).unwrap();
+
+        assert_eq!(outcome, InsertOutcome::Inserted);
+        assert!(store.get_by_name_version("notes.note.read", 2).is_some());
     }
 
     #[test]
@@ -360,8 +403,7 @@ mod tests {
         // Build a manifest with a different provider identity.
         let mut m = read_manifest_json();
         m["provider"]["identity"] = json!("other-provider");
-        let (_, digest) =
-            crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
         m["digest"] = json!(digest);
         let v = verify_manifest(&m.to_string()).unwrap();
 
@@ -389,8 +431,7 @@ mod tests {
         m["capability_name"] = json!("notes.note.delete");
         m["binding"]["tool_name"] = json!("obsidian_delete_note");
         // Effects must stay read-only to keep semantics valid.
-        let (_, digest) =
-            crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
         m["digest"] = json!(digest);
         let v = verify_manifest(&m.to_string()).unwrap();
 
@@ -411,6 +452,36 @@ mod tests {
         assert!(store.is_empty());
     }
 
+    #[test]
+    fn reject_same_capability_name_with_different_version_before_store_mutation() {
+        let config = obsidian_config(); // allows notes.note.read@1
+        let mut store = TrustedManifestStore::new();
+        admit_provider_manifest(&config, verified_write(), &mut store).unwrap();
+        let len_before = store.len();
+
+        let err =
+            admit_provider_manifest(&config, verified_read_version(2), &mut store).unwrap_err();
+
+        match err {
+            AdmissionError::CapabilityVersionMismatch {
+                capability_name,
+                expected_version,
+                actual_version,
+                configured_identity,
+            } => {
+                assert_eq!(capability_name, "notes.note.read");
+                assert_eq!(expected_version, 1);
+                assert_eq!(actual_version, 2);
+                assert_eq!(configured_identity, "obsidian-local");
+            }
+            _ => panic!("expected CapabilityVersionMismatch, got {:?}", err),
+        }
+
+        assert_eq!(store.len(), len_before);
+        assert!(store.get_by_name_version("notes.note.read", 2).is_none());
+        assert!(store.get_by_name_version("notes.note.create", 1).is_some());
+    }
+
     // -- pinned digest match --
 
     #[test]
@@ -423,6 +494,7 @@ mod tests {
             display_name: "Obsidian (local vault)".to_string(),
             allowed_capabilities: vec![AllowedCapability {
                 capability_name: "notes.note.read".to_string(),
+                capability_version: 1,
                 pinned_digest: Some(correct_digest),
             }],
         };
@@ -442,7 +514,11 @@ mod tests {
             display_name: "Obsidian (local vault)".to_string(),
             allowed_capabilities: vec![AllowedCapability {
                 capability_name: "notes.note.read".to_string(),
-                pinned_digest: Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+                capability_version: 1,
+                pinned_digest: Some(
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        .to_string(),
+                ),
             }],
         };
         let mut store = TrustedManifestStore::new();
@@ -482,8 +558,7 @@ mod tests {
             "allowed_on": ["outcome_unknown"],
             "requires_idempotency_proof": false
         });
-        let (_, digest) =
-            crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
         m["digest"] = json!(digest);
         let v2 = verify_manifest(&m.to_string()).unwrap();
 
@@ -523,6 +598,7 @@ mod tests {
             display_name: "Obsidian".to_string(),
             allowed_capabilities: vec![AllowedCapability {
                 capability_name: "notes.note.read".to_string(),
+                capability_version: 1,
                 pinned_digest: None,
             }],
         };
