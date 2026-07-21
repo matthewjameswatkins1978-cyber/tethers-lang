@@ -1,0 +1,6 @@
+[mcp_servers.tethers]
+command = "pwsh.exe"
+args = ["-NoProfile", "-File", ".\\tethers-0.1\\scripts\\launch-mcp-server.ps1"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60

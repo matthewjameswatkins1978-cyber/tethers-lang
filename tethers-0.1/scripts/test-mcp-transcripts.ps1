@@ -309,6 +309,7 @@ function Test-SemanticComparisonSelfChecks {
 
 $requiredCases = @(
     "initialization-success",
+    "initialization-success-2025-06-18",
     "incompatible-mcp-protocol-version",
     "tools-list",
     "evaluate-matched",

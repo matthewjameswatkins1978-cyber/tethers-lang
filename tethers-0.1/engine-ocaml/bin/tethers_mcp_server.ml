@@ -7,7 +7,7 @@ type server_state =
 
 let server_state = ref Uninitialized
 
-let supported_protocol_versions = ["2025-11-25"]
+let supported_protocol_versions = ["2025-06-18"; "2025-11-25"]
 
 let json_member_opt name fields = List.assoc_opt name fields
 
@@ -59,7 +59,7 @@ let handle_initialize id fields =
     let result =
       `Assoc
         [
-          ("protocolVersion", `String "2025-11-25");
+          ("protocolVersion", `String protocol_version);
           ("capabilities", `Assoc [ ("tools", `Assoc []) ]);
           ( "serverInfo",
             `Assoc

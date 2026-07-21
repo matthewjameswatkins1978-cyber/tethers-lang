@@ -167,6 +167,39 @@ Verification after M4:
 
 Next milestone: M5 — Real client verification per `docs/MCP_PLAN.md`.
 
+M5 Cline real-client verification is complete on 2026-07-21.
+
+Cline MCP configuration:
+- Settings file: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
+- Launcher: `pwsh.exe -NoProfile -File "D:\The Next Thing\Tethers Lang\tethers-0.1\scripts\launch-mcp-server.ps1"`
+- The launcher invokes `opam exec -- tethers_mcp_main.exe` within the project-local opam switch at `tethers-0.1/engine-ocaml`.
+
+Real-client evidence:
+- Cline discovered `tethers.evaluate` via `tools/list` with the declared input schema (`request` object, `additionalProperties: false`).
+- A matched call using the happy-path Tether returned `status: "matched"`, a Plan with one Action (`lantern.task.record`), and a full 5-entry evaluation Trail.
+- A not-matched call using the same Tether with `coding.task_started` returned `status: "not_matched"`, null Plan, and a 2-entry evaluation Trail.
+- `structuredContent` was returned to the client with `isError: false`.
+- No Action was executed. The Rust host was never invoked.
+- Server stdout contained only protocol JSON; server stderr was empty.
+- MCP transcript tests continue to pass after adding the launcher script.
+
+M5 Codex real-client verification is complete on 2026-07-21.
+
+Codex MCP configuration:
+- Project-scoped settings file: `.codex/config.toml`
+- Launcher: `pwsh.exe -NoProfile -File .\tethers-0.1\scripts\launch-mcp-server.ps1`
+- The launcher invokes `opam exec -- tethers_mcp_main.exe` within the project-local opam switch at `tethers-0.1/engine-ocaml`.
+
+Real-client evidence:
+- `codex mcp list` and `codex mcp get tethers` showed the enabled `tethers` stdio server from the project-scoped config.
+- A Codex `exec` session discovered and called `tethers/tethers.evaluate` through Codex's MCP client.
+- The matched call returned `status: "matched"`, Plan `eval_demo_001/plan`, required Effects `["lantern.write"]`, one proposed Action (`lantern.task.record`), and a 5-entry evaluation Trail.
+- The not-matched call returned `status: "not_matched"`, null Plan, and a 2-entry evaluation Trail.
+- Both MCP tool calls completed with `isError: false`.
+- No Action was executed. The response contained only a proposed Plan and deterministic evaluation Trail; no authorisation or execution Trail entries, no Action result entries, and no Rust host invocation occurred.
+
+M5 is complete. Next milestone: M6 — MCP authoring support.
+
 ## Fixture Contract Follow-Up
 
 The evaluation fixture contract now covers the canonical happy path, Anchor

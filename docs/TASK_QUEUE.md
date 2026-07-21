@@ -30,10 +30,13 @@
    tethers.evaluate, planner-error pass-through, malformed MCP calls, unknown
    tools, call-before-initialization, and clean EOF/shutdown.
 5. [x] M4 minimal OCaml stdio server.
-6. [ ] M5 real client verification (configure one local MCP client, verify
-   initialize → tools/list → tools/call against the built OCaml server,
-   confirm a real Tether returns the expected Plan and Trail, confirm no
-   Action is executed, then configure Codex and Cline).
+6. [x] M5 real client verification:
+   - [x] Cline configured and verified (initialize, tools/list, matched
+     and not-matched tethers.evaluate calls, no Action executed, no Rust
+     host invoked).
+   - [x] Codex configured and verified through the project-scoped
+     `.codex/config.toml` and launcher.
+   - [x] M5 fully complete after both Cline and Codex real-client verification.
 
 ## 0.1 Finishing Queue
 
