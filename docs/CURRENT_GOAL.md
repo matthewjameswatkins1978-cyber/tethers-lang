@@ -261,9 +261,9 @@ no new dependency, and no production implementation are part of M7.
 
 The design establishes:
 
-- A five-layer trust model: discovered MCP tool (untrusted) -> trusted capability
-  manifest -> Tethers planner (deterministic) -> permissioned host -> execution
-  Trail.
+- A five-layer trust model: discovered MCP tool (untrusted) -> trusted
+  capability manifest -> host-produced approved capability projection -> Tethers
+  planner (deterministic) -> permissioned host -> execution Trail.
 - The trusted manifest format: a canonical JSON structure with execution-
   authoritative fields (capability name/version, input/output schemas, effects,
   permission scope, reversibility, determinism, idempotency mechanism,
@@ -283,9 +283,9 @@ The design establishes:
   deduplicates internally), or `none`. The word `"conditional"` alone is
   insufficient.
 - Schema-drift lifecycle: `notifications/tools/list_changed` triggers
-  rediscovery; mismatched contracts become unavailable pending re-review; no
-  automatic reapproval; Plan digest pinning prevents time-of-check/time-of-use
-  substitution.
+  rediscovery; mismatched contracts become unavailable immediately; an installed
+  old manifest document alone is not dispatch proof; no automatic reapproval;
+  Plan digest pinning prevents time-of-check/time-of-use substitution.
 - Typed input/output validation rules, effect and permission scope envelopes,
   confirmation policy and standing approval separation, determinism/
   idempotency/reversibility as three distinct properties, timeout/retry/
@@ -296,9 +296,9 @@ The design establishes:
   result_validation, status (completed/failed/denied/outcome_unknown),
   timestamp, and redaction rules.
 - Two worked examples (read-only `obsidian.note.read`, scoped write
-  `notes.note.create`) and ten explicit rejected cases.
+  `notes.note.create`) and eleven explicit rejected cases.
 - Eight future implementation pieces identified but not built.
-- Five unresolved questions honestly stated.
+- Four unresolved questions honestly stated.
 
 The MCP plan milestone sequence (M0-M7) defined in `docs/MCP_PLAN.md` is now
 complete. Genuinely deferred work from the MCP plan includes:
@@ -317,6 +317,16 @@ Verification after M7:
 - Only documentation changed.
 - Working tree was clean before M7.
 - `git diff --check`: whitespace clean.
+
+M7 correction on 2026-07-21:
+- `docs/CAPABILITY_BRIDGE.md` now states that bridge-backed planning requires a
+  future additive capability projection containing the opaque
+  `manifest_digest`; the planner copies that digest into proposed bridge
+  Actions and does not inspect or trust complete manifests.
+- Schema drift now fails closed: an installed old manifest document alone is not
+  enough to dispatch an old Plan. The host must prove the exact pinned contract
+  and provider binding before every dispatch, and undispatched Actions using an
+  invalidated manifest are denied.
 
 Next phase: deferred work per `docs/MCP_PLAN.md` non-goals and deferred
 sections. No M8 is defined in the canonical plan.

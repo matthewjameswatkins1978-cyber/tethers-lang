@@ -43,6 +43,8 @@
    updated to advertise both tools, all fifteen MCP transcript cases pass, full
    regression suite passes.
 8. [x] M7 capability bridge design, not automatic execution.
+   - [x] Corrected the deterministic `manifest_digest` flow and schema-drift
+         fail-closed rules in `docs/CAPABILITY_BRIDGE.md`.
 
 ## 0.1 Finishing Queue
 

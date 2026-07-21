@@ -173,9 +173,13 @@ Key trust boundaries:
 
 1. **MCP tool discovery -> manifest author**: Nothing is trusted. All tool
    metadata is untrusted advertising claims.
-2. **Manifest -> planner**: Manifest fields form the capability contract.
-3. **Planner -> Plan Action**: Action references capability name, version, and
-   manifest digest. Host must still re-validate.
+2. **Manifest -> planner**: The trusted host supplies an approved capability
+   projection containing planning-relevant fields and an opaque manifest digest.
+   The planner does not inspect or trust the complete manifest.
+3. **Planner -> Plan Action**: A bridge Action references capability name,
+   version, and the same manifest digest supplied in deterministic evaluator
+   input. Host must still resolve the digest and prove the pinned provider/tool
+   binding before dispatch.
 4. **Plan Action -> host**: Nothing trusted. Plan is a request, not permission.
 5. **Host -> remote MCP call**: Nothing trusted. Remote server is untrusted at
    call time.

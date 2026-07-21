@@ -57,13 +57,14 @@ Five layers, separated by explicit trust boundaries:
 |   confirmation, timeout, retry,           |
 |   provider identity, binding, digest)     |
 +--------------+---------------------------+
-               | presented to planner
+               | host projects approved planning fields
                v
 +------------------------------------------+
 |  Tethers Planner (OCaml)                 |  DETERMINISTIC
-|  (evaluates Conditions, proposes Actions |
-|   referencing capability name, version,   |
-|   and manifest digest - never executes)   |
+|  (evaluates Conditions using approved     |
+|   capability projection, copies opaque    |
+|   manifest digest into Actions, never     |
+|   executes)                               |
 +--------------+---------------------------+
                | Plan with manifest digest
                v
@@ -90,7 +91,7 @@ Five layers, separated by explicit trust boundaries:
 | Boundary | Trusted claim | Untrusted / must be re-verified |
 |---|---|---|
 | MCP tool discovery -> manifest author | Nothing. All tool metadata is untrusted. | Tool name, description, schemas, annotations. |
-| Manifest -> planner | Manifest fields form the capability contract. | N/A - manifest is trusted by definition. |
+| Manifest -> planner | The trusted host supplies an approved capability projection containing the planning-relevant fields and opaque digest. | The planner does not inspect or trust the complete manifest. |
 | Planner -> Plan Action | Action references capability name, version, and digest. | Host must still resolve the exact manifest and re-validate. |
 | Plan Action -> host | Nothing. Plan is a request, not permission. | Argument values, scope conformance, confirmation status. |
 | Host -> remote MCP call | Nothing. Remote server is untrusted at call time. | MCP tool input validity, output conformance, side effects. |
@@ -144,9 +145,11 @@ A proposed Action in a Plan identifies the exact approved contract:
 }
 ```
 
-The host resolves the manifest by digest. If the digest does not match any
-currently installed manifest, execution is denied. A Plan cannot silently
-execute against a changed or removed manifest.
+The host resolves the manifest by digest and proves the current provider/tool
+binding still matches that pinned contract. If the digest does not match any
+currently installed manifest, or if the binding proof fails, execution is
+denied. A Plan cannot silently execute against a changed or removed manifest or
+provider.
 
 ---
 
@@ -309,10 +312,24 @@ what input types, effects, and reversibility a capability declares so the
 planner can validate Action arguments and report `required_effects`.
 
 The **trusted manifest** is a separate, richer, host-installed artifact. The
-runtime schema may be a subset of the manifest's fields, generated at request
-time from the manifest. The host controls this; the planner does not need to
-know the manifest exists. The planner only needs to receive the subset it
-already uses.
+trusted host constructs the capability registry/view supplied as deterministic
+evaluator input. For each approved bridge-backed capability, that input includes
+the planning-relevant capability projection plus the exact `manifest_digest` as
+opaque contract identity.
+
+The planner does not inspect or trust the manifest. It receives an approved
+capability projection containing an opaque manifest digest and copies that digest
+into each proposed bridge Action. A missing digest means a bridge-backed
+capability Action is invalid and cannot execute.
+
+Compatibility boundary:
+
+- Existing 0.1 capability requests and Plans remain unchanged.
+- Bridge-backed capability planning requires the future additive
+  capability-input and Action/Plan fields described here.
+- M7 specifies that future extension but does not implement it.
+- Until those fields exist, Tethers cannot produce executable bridge-backed
+  Plans with digest pinning.
 
 ---
 
@@ -343,14 +360,18 @@ Trusted manifest is authored, reviewed, and installed
   with pinned contract digest
         |
         v
-Manifest is presented to planner as an available capability
-  (via the existing runtime schema subset)
+Host produces an approved capability projection
+  (planning fields plus opaque manifest_digest)
+        |
+        v
+Projection is supplied as deterministic planner input
         |
         v
 Planner may propose Actions referencing this capability
+  and copying the same manifest_digest
         |
         v
-Host resolves manifest by digest at execution time
+Host resolves exactly that digest before execution
 ```
 
 ### Discovery rules
@@ -391,20 +412,33 @@ Host compares each discovered tool's current schema
 Match: no action; capability remains available
 Mismatch: capability becomes UNAVAILABLE
   - planner cannot propose new Actions for this capability
-  - existing Plans referencing the old digest remain valid
-    but can only execute if the old manifest is still installed
+  - no existing Plan may dispatch an undispatched Action through
+    the changed provider
         |
         v
 Changed contract requires explicit human re-review
   - no automatic reapproval
   - new review produces a new manifest with new digest
-  - old digest may be retained for existing Plan execution
-    or explicitly revoked
+  - old Plans must be re-evaluated against the newly approved
+    capability projection
 ```
+
+A currently installed old manifest is not, by itself, enough to execute an old
+Plan. Before every dispatch, the host must prove that the currently bound
+provider/tool still matches the exact contract and provider binding pinned by
+the Action's `manifest_digest`. If current discovery or trusted binding state
+differs, the capability becomes unavailable immediately: no new Plan may use it,
+and no existing Plan may dispatch an undispatched Action through that changed
+provider.
+
+An old Plan may execute only if the host has an immutable old provider binding,
+versioned adapter, isolated endpoint, or equivalent host-verifiable proof that
+the exact old contract remains available. Retaining an old manifest document
+alone is not proof.
 
 ### Time-of-check/time-of-use prevention
 
-- A Plan records `manifest_digest` at evaluation time.
+- A Plan records the `manifest_digest` supplied in deterministic evaluator input.
 - The host resolves the manifest by digest at execution time.
 - If the digest does not match any currently installed manifest, execution is
   denied with `manifest_not_found`.
@@ -412,6 +446,20 @@ Changed contract requires explicit human re-review
   different version.
 - If a manifest is revoked (removed from the store), all Plans referencing its
   digest become unexecutable.
+- If the digest can be found but current discovery or trusted binding state no
+  longer proves the pinned contract and provider binding, dispatch is denied
+  with `manifest_binding_mismatch`.
+- Re-review and installation of a new manifest creates a new digest; it never
+  silently repairs or upgrades an old Plan. The old Plan must be re-evaluated
+  against the newly approved capability projection.
+
+### Multi-action Plan invalidation
+
+If drift or revocation is detected during execution, completed Actions remain
+recorded. Any currently dispatched Action follows the normal
+`completed`/`failed`/`outcome_unknown` rules. Every undispatched Action using the
+invalidated manifest must be denied. The host must not continue dispatching
+merely because the Plan was previously authorised.
 
 ---
 
@@ -802,26 +850,32 @@ Conservative defaults:
 
 The complete conceptual sequence:
 
-1. **Tethers evaluates** the Tether, Conditions, and Action arguments against
-   the runtime capability schemas supplied by the host.
-2. **A Plan is produced** containing proposed Actions. Each Action references
-   the capability name, capability version, and the **manifest digest** that
-   was current at evaluation time.
-3. **The host receives the Plan.** It resolves each Action's manifest by digest
-   from the trusted manifest store.
-4. **The host validates** each Action's arguments against the full manifest
+1. **The trusted host constructs deterministic evaluator input** from approved
+   manifests. Existing 0.1 capabilities use the unchanged runtime schema shape.
+   Bridge-backed capabilities use the future additive capability projection:
+   planning-relevant fields plus opaque `manifest_digest`.
+2. **Tethers evaluates** the Tether, Conditions, and Action arguments against
+   the capability projections supplied by the host. The planner does not inspect
+   or trust complete manifests.
+3. **A Plan is produced** containing proposed Actions. Each bridge Action
+   references the capability name, capability version, and the **manifest
+   digest** that was supplied in the deterministic evaluator input.
+4. **The host receives the Plan.** It resolves each Action's manifest by digest
+   from the trusted manifest store and proves the currently bound provider/tool
+   still matches the pinned contract and provider binding.
+5. **The host validates** each Action's arguments against the full manifest
    `input_schema`.
-5. **The host checks scope** by evaluating the Action's arguments against the
+6. **The host checks scope** by evaluating the Action's arguments against the
    manifest's `permission_scope`.
-6. **The host checks confirmation policy.** If `per_call_required` is `true`
+7. **The host checks confirmation policy.** If `per_call_required` is `true`
    or no standing approval covers this call, the host obtains explicit
    confirmation.
-7. **The host dispatches** the bound MCP call using the manifest's `binding`
+8. **The host dispatches** the bound MCP call using the manifest's `binding`
    fields.
-8. **The host awaits the result** within `timeout_ms`.
-9. **The host validates the result** against the manifest's `output_schema`
+9. **The host awaits the result** within `timeout_ms`.
+10. **The host validates the result** against the manifest's `output_schema`
    (if present).
-10. **The host appends execution Trail entries** - at minimum:
+11. **The host appends execution Trail entries** - at minimum:
     - `plan_authorised` / `plan_denied`
     - `action_started`
     - `action_dispatched`
@@ -853,6 +907,13 @@ The execution Trail entries must record, where applicable:
 | `result_validation` | `passed`, `failed`, `skipped` (no output schema) | On completion |
 | `status` | `completed`, `failed`, `denied`, `outcome_unknown` | Always |
 | `timestamp` | Host wall-clock time (not in planner output) | Execution phase |
+
+For stale-Plan or schema-drift denial, the Trail must record that the Action was
+not dispatched, including the pinned `manifest_digest`, the current provider
+identity if known, and the denial reason (`manifest_not_found`,
+`manifest_revoked`, or `manifest_binding_mismatch`). For multi-action Plans, the
+Trail preserves completed Actions and records denied entries for every
+undispatched Action using the invalidated manifest.
 
 ### Redaction rules
 
@@ -970,6 +1031,19 @@ The execution Trail entries must record, where applicable:
 }
 ```
 
+#### Approved capability projection (planner input)
+
+```json
+{
+  "name": "obsidian.note.read",
+  "version": 1,
+  "inputs": { "path": "string" },
+  "effects": ["filesystem.read"],
+  "reversibility": "reversible",
+  "manifest_digest": "sha256:1a2b3c4d..."
+}
+```
+
 #### Proposed Tethers Action (in Plan)
 
 ```json
@@ -989,12 +1063,14 @@ The execution Trail entries must record, where applicable:
 #### Host checks
 
 1. Resolve manifest by digest `sha256:1a2b3c4d...` -> found.
-2. Validate `path` against `input_schema` -> passes.
-3. Check scope: `projects/lantern/architecture.md` has prefix `projects/` -> within scope.
-4. Confirmation: `per_call_required` is `false`; standing approval exists for
+2. Prove the current `obsidian_read_note` provider binding still matches the
+   pinned contract -> passes.
+3. Validate `path` against `input_schema` -> passes.
+4. Check scope: `projects/lantern/architecture.md` has prefix `projects/` -> within scope.
+5. Confirmation: `per_call_required` is `false`; standing approval exists for
    this digest and scope -> skip confirmation.
-5. Dispatch `tools/call` with `obsidian_read_note` and `{"path": "projects/lantern/architecture.md"}`.
-6. Result: `structuredContent` with `content` and `frontmatter` -> validate against `output_schema` -> passes.
+6. Dispatch `tools/call` with `obsidian_read_note` and `{"path": "projects/lantern/architecture.md"}`.
+7. Result: `structuredContent` with `content` and `frontmatter` -> validate against `output_schema` -> passes.
 
 #### Trail outcome
 
@@ -1100,6 +1176,23 @@ The execution Trail entries must record, where applicable:
 }
 ```
 
+#### Approved capability projection (planner input)
+
+```json
+{
+  "name": "notes.note.create",
+  "version": 1,
+  "inputs": {
+    "title": "string",
+    "content": "string",
+    "tags": "array"
+  },
+  "effects": ["filesystem.write"],
+  "reversibility": "compensatable",
+  "manifest_digest": "sha256:9f8e7d6c..."
+}
+```
+
 #### Proposed Tethers Action (in Plan)
 
 ```json
@@ -1121,24 +1214,26 @@ The execution Trail entries must record, where applicable:
 #### Host checks
 
 1. Resolve manifest by digest `sha256:9f8e7d6c...` -> found.
-2. Validate arguments against `input_schema` -> passes. Note: `idempotency_key`
+2. Prove the current `obsidian_create_note` provider binding still matches the
+   pinned contract -> passes.
+3. Validate arguments against `input_schema` -> passes. Note: `idempotency_key`
    is declared in the schema but not supplied in the Tether Action arguments.
    The host must inject it before dispatch using `key_source`
    (`evaluation_id/action_id` -> `eval_002/action_1`).
-3. Check scope: the manifest declares `path_prefix` with `projects/` and
+4. Check scope: the manifest declares `path_prefix` with `projects/` and
    `daily/`. The Tether supplies `title` and `content` but no explicit `path`.
    The MCP tool derives the path from the title. The host must determine the
    resulting path from the tool's documented behaviour, or the manifest must
    declare a `path` input directly. If the host cannot verify scope before
    dispatch, the manifest must require per-call confirmation and present the
    inferred path to the user.
-4. Confirmation: `per_call_required` is `true` -> host obtains explicit
+5. Confirmation: `per_call_required` is `true` -> host obtains explicit
    confirmation. Confirmation prompt includes: capability, arguments, effects,
    manifest digest, inferred path.
-5. User confirms.
-6. Host injects `idempotency_key: "eval_002/action_1"` into the MCP call arguments.
-7. Dispatch `tools/call` with `obsidian_create_note` and the augmented arguments.
-8. Result: `{"path": "projects/lantern/architecture-decision-capability-bridge.md", "modified": true}` -> validate against `output_schema` -> passes.
+6. User confirms.
+7. Host injects `idempotency_key: "eval_002/action_1"` into the MCP call arguments.
+8. Dispatch `tools/call` with `obsidian_create_note` and the augmented arguments.
+9. Result: `{"path": "projects/lantern/architecture-decision-capability-bridge.md", "modified": true}` -> validate against `output_schema` -> passes.
 
 #### Trail outcome
 
@@ -1162,11 +1257,11 @@ it planner visibility or execution authority.
 
 ### Case 2: Manifest/tool schema mismatch
 
-The installed manifest declares `input_schema` requiring `{"repository": "string", "title": "string"}`. The discovered MCP tool has changed its schema to require `{"owner": "string", "repo": "string", "title": "string"}`. The digest has changed. The host marks the capability unavailable. No existing Plan can execute against this manifest because the old digest no longer matches any installed manifest. Re-review is required.
+The installed manifest declares `input_schema` requiring `{"repository": "string", "title": "string"}`. The discovered MCP tool has changed its schema to require `{"owner": "string", "repo": "string", "title": "string"}`. The host marks the capability unavailable. No new Plan may use it, and no existing Plan may dispatch an undispatched Action through the changed provider. Re-review is required; the new manifest receives a new digest, and old Plans must be re-evaluated against the newly approved capability projection.
 
 ### Case 3: Changed server or provider identity
 
-The manifest binds to `server_name: "obsidian"` with `provider.identity: "obsidian-local"`. The MCP server is replaced with a different Obsidian server instance. The host configuration changes the server identity. The manifest must be re-reviewed and re-installed with a new digest reflecting the new provider identity. Old Plans referencing the old digest cannot execute against the new server.
+The manifest binds to `server_name: "obsidian"` with `provider.identity: "obsidian-local"`. The MCP server is replaced with a different Obsidian server instance. The host configuration changes the server identity. The manifest must be re-reviewed and re-installed with a new digest reflecting the new provider identity. Old Plans referencing the old digest cannot execute against the new server unless the host has an immutable old binding or equivalent proof for the exact old contract.
 
 ### Case 4: Missing usable output schema without a reviewed typed adapter
 
@@ -1213,7 +1308,14 @@ is removed from the store. The Plan references `sha256:abc123`. The host cannot
 resolve the digest -> `manifest_not_found`. Execution is denied. The Plan must
 be re-evaluated against the current manifest set.
 
-### Case 10: Credentials or secrets supplied through a Plan
+### Case 10: Old digest with changed provider binding
+
+A Plan references an installed old digest, but the currently connected
+provider/tool no longer matches its pinned contract. Dispatch is denied unless
+an immutable old binding or equivalent proof is available. Retaining the old
+manifest document alone does not prove that the Action can still execute safely.
+
+### Case 11: Credentials or secrets supplied through a Plan
 
 A Tether Action argument contains `api_key: "sk-..."`. This is not a bridge
 design rejection; it is a Tether authoring error. Credentials must never appear
@@ -1240,12 +1342,13 @@ part of M7.
    drift.
 4. **Schema-drift checker** - compute current contract digest from discovered
    tool metadata, compare against installed manifest digest, flag mismatches.
-5. **Capability registry** - the subset of installed manifests presented to the
-   planner as runtime capability schemas. Only manifests with a clean drift
-   check are included.
-6. **Host dispatcher** - resolve manifest by digest, validate arguments, check
-   scope, obtain confirmation, bind and dispatch the MCP `tools/call`, validate
-   the result.
+5. **Capability registry/projection** - the approved capability projection
+   supplied to the planner as deterministic input. For bridge-backed
+   capabilities, it includes planning-relevant fields plus the opaque
+   `manifest_digest`. Only manifests with a clean drift check are included.
+6. **Host dispatcher** - resolve manifest by digest, prove the current provider
+   binding matches the pinned contract, validate arguments, check scope, obtain
+   confirmation, bind and dispatch the MCP `tools/call`, validate the result.
 7. **Provider-specific scope validators** - for each `permission_scope.kind`,
    implement the validation function that checks Action arguments against
    allowed scope values.
@@ -1268,14 +1371,7 @@ part of M7.
    this could mask drift. Implementation should verify that no discovered MCP
    tools rely on `description` for structural semantics.
 
-3. **Multi-action Plans and manifest resolution**: If a Plan contains five
-   Actions referencing the same manifest digest, and the manifest is revoked
-   between Action 3 and Action 4, should the host stop or continue? The
-   conservative answer is "stop" (the Plan's contract is broken), but the
-   host may reasonably want to record completed Actions and deny the remainder.
-   This is a host-policy decision, not a bridge-format decision.
-
-4. **Provider identity when MCP has no trustworthy identity mechanism**: MCP
+3. **Provider identity when MCP has no trustworthy identity mechanism**: MCP
    `initialize` returns `serverInfo: { name, version }` but this is
    self-reported and mutable. The design correctly uses host-assigned
    `provider.identity` with `identity_source: "host_configuration"`. The
@@ -1284,7 +1380,7 @@ part of M7.
    updating the provider identity, the host must detect the mismatch (e.g.,
    via a separate configuration fingerprint) and flag it.
 
-5. **Adapter identity and version in the manifest**: The `binding.adapter`
+4. **Adapter identity and version in the manifest**: The `binding.adapter`
    field is `null` for direct MCP bindings. When an adapter is required
    (e.g., for tools without usable output schemas), the adapter must have its
    own identity and version, and these must be included in the digest
