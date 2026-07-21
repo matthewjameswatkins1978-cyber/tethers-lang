@@ -46,6 +46,22 @@
    - [x] Corrected the deterministic `manifest_digest` flow and schema-drift
          fail-closed rules in `docs/CAPABILITY_BRIDGE.md`.
 
+## Columbo Manifest Validation Queue
+
+1. [ ] C1a1 data types and structured error model.
+2. [ ] C1a2 strict parsing, unknown-field handling, and recursive duplicate-key
+   rejection.
+3. [ ] C1b1 investigate and verify the RFC 8785/JCS implementation/dependency
+   against official vectors; stop for a separate design decision if no suitable
+   Rust implementation is verified.
+4. [ ] C1b2 canonicalisation, fixed SHA-256 digesting, and official/golden
+   vectors.
+5. [ ] C1c semantic and cross-field validation.
+
+The 10-minute implementation-step limit is a clean-stop limit, not a promise
+that each task must finish in ten minutes. Incomplete tasks must stop cleanly
+and report remaining work.
+
 ## 0.1 Finishing Queue
 
 1. [x] Add version-rejection fixtures (`incompatible_protocol`, `incompatible_language`).

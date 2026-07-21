@@ -184,12 +184,22 @@ Key trust boundaries:
 5. **Host -> remote MCP call**: Nothing trusted. Remote server is untrusted at
    call time.
 
-The contract digest covers every execution-authoritative manifest field:
-capability name and version, input and output schemas, effects, permission
-scope, reversibility, determinism, idempotency mechanism, confirmation policy,
-timeout and retry policy, provider identity (host-assigned, not
-self-reported), binding kind, server name, MCP tool name, and adapter
-identity/version. Display-only metadata is excluded.
+The contract digest is fixed to SHA-256 over RFC 8785/JCS canonical bytes.
+It covers `manifest_format_version`, capability name and version, complete input
+and output schemas, effects, permission scope, reversibility, determinism,
+idempotency mechanism, confirmation policy, timeout and retry policy, provider
+identity (host-assigned, not self-reported), binding kind, server name, MCP tool
+name, and adapter identity/version. Only the digest value itself and exact
+top-level display metadata (`title`, `description`) are excluded. The manifest
+does not carry `digest_algorithm`; algorithm agility is deferred until a real
+need exists.
+
+Manifest parsing must reject duplicate keys in every object recursively,
+including arbitrary nested `input_schema` and `output_schema` objects. C1b1 must
+verify a maintained Rust RFC 8785/JCS implementation against official examples
+and test vectors before C1b2 implements canonicalization and digesting. If no
+suitable implementation is verified, implementation stops for a separate design
+decision rather than using a casual homemade fallback.
 
 A manifest's `confirmation_policy` declares what is acceptable but does not
 grant standing authority. Actual standing approval is separate host-controlled
@@ -198,8 +208,22 @@ and creation/revocation information.
 
 Idempotency requires a concrete mechanism (`argument_key`, `server_dedup`, or
 `none`), not merely the word `"conditional"`. For `argument_key`, the manifest
-must name the argument and key source. Without a concrete reviewed mechanism,
-automatic retry is forbidden.
+must name the argument and key source. For `server_dedup`, the trusted
+host/provider/adapter evidence must describe the deduplication key, scope, and
+lifetime, pinned by the manifest binding. Without a concrete reviewed mechanism,
+automatic retry is forbidden for effectful Actions; `requires_idempotency_proof:
+false` cannot bypass that rule.
+
+Tether source and Plans never contain or supply credential values. Manifest
+schemas may describe credential-shaped inputs, but Columbo injects actual
+credential values only from trusted host storage at dispatch. Secret-like-value
+scanning is defence-in-depth; rejections must tell authors to remove the value,
+not rename or re-encode it.
+
+Output schemas must reject effectively unconstrained schemas. They do not all
+need to be objects with properties; concrete primitive, array, enum, and
+structured-object schemas may all be valid. Unstructured provider output
+requires a reviewed typed adapter.
 
 Provider identity uses host-assigned identity with
 `identity_source: "host_configuration"` because MCP `serverInfo` is
@@ -212,7 +236,7 @@ application-agnostic while providing a safe, auditable path from untrusted
 discovery to trusted execution. The decision applies the established Tethers
 architectural rules: Tethers plans, hosts execute; schemas describe, policies
 authorise, hosts enforce, Trails record; discovery never grants permission;
-credentials never appear in declarative artifacts.
+credential values never appear in declarative artifacts.
 
 ## Open Decisions
 

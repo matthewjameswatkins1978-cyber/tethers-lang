@@ -158,9 +158,9 @@ provider.
 ### Canonical structure
 
 A manifest is a JSON document stored in the host's trusted manifest store.
-Every field below the `manifest_format_version` header is authoritative for
-execution. Display-only fields (comments, annotations, authoring hints) are
-excluded from the contract digest and must not affect execution behaviour.
+All top-level fields except the digest value itself and exact display metadata
+(`title`, `description`) are authoritative for execution and covered by the
+contract digest. Display metadata must not affect execution behaviour.
 
 ```jsonc
 {
@@ -242,51 +242,79 @@ excluded from the contract digest and must not affect execution behaviour.
   },
 
   // -- Contract digest --
-  "digest": "sha256:...",
-  "digest_algorithm": "sha256"
+  "digest": "sha256:..."
 }
 ```
 
 ### Digest computation
 
-The digest is computed over a canonical JSON representation of every
-execution-authoritative field. The following fields are **included** in the
-canonical form:
+The digest algorithm is fixed to SHA-256. The manifest does not include a
+`digest_algorithm` field. Algorithm agility is deliberately deferred until a
+real need exists; adding it later would be a new manifest-format decision.
 
-1. `capability_name`
-2. `capability_version`
-3. `input_schema`
-4. `output_schema`
-5. `effects`
-6. `permission_scope`
-7. `reversibility`
-8. `determinism`
-9. `idempotency`
-10. `confirmation_policy`
-11. `timeout_ms`
-12. `retry_policy`
-13. `provider` (all sub-fields)
-14. `binding` (all sub-fields)
+The digest is computed over an RFC 8785 JSON Canonicalization Scheme (JCS)
+canonical representation of the manifest after removing only the digest value
+and exact top-level display metadata. The following fields are **included** in
+the canonical form:
+
+1. `manifest_format_version`
+2. `capability_name`
+3. `capability_version`
+4. `input_schema` (complete object, including all nested keys)
+5. `output_schema` (complete object, including all nested keys)
+6. `effects`
+7. `permission_scope`
+8. `reversibility`
+9. `determinism`
+10. `idempotency`
+11. `confirmation_policy`
+12. `timeout_ms`
+13. `retry_policy`
+14. `provider` (all sub-fields)
+15. `binding` (all sub-fields)
 
 The following fields are **excluded** from the canonical form:
 
 - `digest` (self-referential)
-- `digest_algorithm`
-- `manifest_format_version`
-- `title`
-- `description`
-- Any field-level `description` sub-keys inside schemas or policies that are
-  purely display metadata. Structural schema constraints (`type`, `properties`,
-  `required`, `additionalProperties`, `items`) are included; inline
-  `description` strings inside schema objects are excluded.
+- top-level `title`
+- top-level `description`
 
-**Canonicalization rules:**
+No nested schema or policy fields are excluded. In particular, `input_schema`
+and `output_schema` are digested completely, including nested `description`
+keys, annotations, examples, defaults, constraints, and every object beneath
+them. This avoids treating any nested schema text as non-authoritative by
+accident.
 
-1. Recursively sort all object keys in lexicographic order.
-2. Remove excluded fields.
-3. Serialize as compact UTF-8 JSON with no trailing newline.
-4. Compute SHA-256 over the resulting byte sequence.
-5. The digest string is `"sha256:"` followed by the lowercase hex encoding.
+**RFC 8785/JCS requirements:**
+
+1. The manifest must be valid I-JSON before canonicalization.
+2. Duplicate object keys are rejected, recursively, before any semantic
+   validation or digest computation.
+3. String data is preserved as Unicode; canonicalization must not normalize,
+   rewrite, or escape it except as required by JCS serialization.
+4. Numbers must be representable within the IEEE-754-compatible JSON number
+   constraints required by JCS/I-JSON. Values outside that range are invalid
+   manifest input.
+5. Object properties are sorted recursively according to RFC 8785 ordering by
+   UTF-16 code units, not by host-language string ordering if that differs.
+6. Primitive serialization must be ECMAScript-compatible as required by JCS.
+7. The canonical byte output is UTF-8 with no extra whitespace.
+8. Compute SHA-256 over those canonical bytes.
+9. The digest string is `"sha256:"` followed by the lowercase hex encoding.
+
+C1b1 must first verify a maintained Rust JCS implementation against official
+RFC 8785 examples and test vectors. Do not authorise a casual homemade
+canonicalizer or fallback. If no suitable implementation is verified, stop for a
+separate design decision before implementing manifest digests.
+
+### Strict JSON parsing
+
+Manifest parsing must reject duplicate keys in every object recursively,
+including arbitrary nested objects inside `input_schema` and `output_schema`.
+This is an observable requirement, independent of implementation mechanism.
+Do not claim that `serde_json::StreamDeserializer` or any other parser provides
+recursive duplicate-key rejection automatically until that behaviour has been
+verified. The C1a2 implementation task must choose and prove the mechanism.
 
 A host verifying a digest recomputes it from the stored manifest's
 authoritative fields and compares it with the `digest` value. A mismatch means
@@ -495,6 +523,15 @@ After receiving an MCP tool result, the host must:
    usable), the tool **requires a separately reviewed typed adapter** before it
    can become a trusted capability. Unstructured text must not silently become
    trusted structured data.
+
+Manifest review must reject effectively unconstrained `output_schema` values.
+Examples include empty schemas, schemas that allow all JSON values, or schemas
+whose constraints are too weak to make the provider result trustworthy for
+later host use. This does not mean every output must be an object with
+properties. Concrete primitive schemas, arrays with constrained items, enums,
+and structured-object schemas may all be valid when they precisely describe the
+provider result. Unstructured provider output still requires a reviewed typed
+adapter.
 
 ### Error classification at execution
 
@@ -728,13 +765,19 @@ a stable key derived from the evaluation and action identity. The provider
 #### Mechanism: `server_dedup`
 
 The capability's provider guarantees idempotency internally without requiring
-a client-supplied key.
+a client-supplied key. A manifest description alone is not proof. The host must
+have trusted host/provider/adapter evidence describing the deduplication key,
+scope, and lifetime, and that evidence must be pinned by the manifest binding.
 
 ```json
 {
   "idempotency": {
     "mechanism": "server_dedup",
-    "description": "The server detects duplicate requests by content hash and returns the cached result."
+    "dedup_key": "provider request id derived from stable message-id",
+    "dedup_scope": "provider account and target collection",
+    "dedup_lifetime": "at least 24 hours",
+    "evidence": "adapter contract review obsidian-local@2026-07-21",
+    "description": "The reviewed adapter proves provider-side deduplication for the declared key, scope, and lifetime."
   }
 }
 ```
@@ -753,12 +796,17 @@ The capability provides no idempotency guarantee.
 
 ### Idempotency and retry
 
-- If `mechanism` is `"none"`, automatic retry is **forbidden** for writes.
-  The host may only retry read-only, deterministic, idempotency-safe calls.
+- Effectful automatic retries require a concrete idempotency mechanism.
+  `retry_policy.requires_idempotency_proof: false` cannot bypass or skip this
+  rule.
+- If `mechanism` is `"none"`, automatic retry is **forbidden** for writes or
+  any other effectful Action. The host may only retry read-only, deterministic,
+  idempotency-safe calls.
 - If `mechanism` is `"argument_key"`, the host must supply the key before
   dispatch and may retry on `outcome_unknown` (see section 11).
 - If `mechanism` is `"server_dedup"`, the host may retry on `outcome_unknown`
-  without supplying an additional key.
+  only when the trusted manifest binding pins evidence for the deduplication
+  key, scope, and lifetime.
 - The word `"conditional"` alone is insufficient. A manifest must specify the
   exact mechanism and, for `argument_key`, the argument name and key source.
   Without a concrete reviewed mechanism, automatic retry remains forbidden.
@@ -820,18 +868,18 @@ The Trail must record:
 
 Conservative defaults:
 
-1. **No automatic retry for writes** unless the manifest's `idempotency.mechanism`
-   is `"argument_key"` or `"server_dedup"` with a reviewed, concrete proof of
-   safety.
+1. **No automatic retry for writes or other effectful Actions** unless the
+   manifest's `idempotency.mechanism` is `"argument_key"` or `"server_dedup"`
+   with reviewed, concrete proof of safety.
 2. Retry is **only** permitted for `outcome_unknown`. A confirmed `action_failed`
    must not be automatically retried.
 3. Each retry attempt uses a stable `execution_id` with an incrementing
    `attempt_id` (e.g., `exec_001/attempt_1`, `exec_001/attempt_2`).
 4. All attempts are recorded in the Trail.
 5. The host must respect `retry_policy.max_retries` and `retry_policy.backoff_ms`.
-6. If `retry_policy.requires_idempotency_proof` is `true` and the manifest's
-   idempotency mechanism is `"none"`, retry remains forbidden regardless of
-   `max_retries`.
+6. If the manifest's idempotency mechanism is `"none"`, retry remains
+   forbidden for effectful Actions regardless of `max_retries` or
+   `requires_idempotency_proof`.
 
 ```json
 {
@@ -922,6 +970,22 @@ undispatched Action using the invalidated manifest.
   for debugging and scoped to a non-production environment.
 - Record argument values only to the extent needed for audit (capability,
   scope, and intent). The host's logging policy controls this.
+
+### Credential handling
+
+Tether source and Plans never contain, request, or supply credential values.
+Manifest schemas may describe credential-shaped inputs when the provider tool
+expects such an argument, but the actual credential value is injected only by
+Columbo from trusted host credential storage at dispatch. The injected value is
+never part of deterministic planner input, never appears in the Plan, and must
+not be recorded in the Trail.
+
+Secret-like-value scanning of Tether source, manifests, Plans, and Trails is a
+defence-in-depth check. It does not replace the architectural rule that
+credentials live outside declarative artifacts. When a secret-like literal is
+found in a Tether or Plan, the rejection must tell the author to remove the
+value and rely on host credential injection. It must not suggest renaming,
+re-encoding, obfuscating, or otherwise disguising the value.
 
 ### Example execution Trail entry
 
@@ -1026,8 +1090,7 @@ undispatched Action using the invalidated manifest.
     "tool_name": "obsidian_read_note",
     "adapter": null
   },
-  "digest": "sha256:1a2b3c4d...",
-  "digest_algorithm": "sha256"
+  "digest": "sha256:1a2b3c4d..."
 }
 ```
 
@@ -1171,8 +1234,7 @@ undispatched Action using the invalidated manifest.
     "tool_name": "obsidian_create_note",
     "adapter": null
   },
-  "digest": "sha256:9f8e7d6c...",
-  "digest_algorithm": "sha256"
+  "digest": "sha256:9f8e7d6c..."
 }
 ```
 
@@ -1319,41 +1381,56 @@ manifest document alone does not prove that the Action can still execute safely.
 
 A Tether Action argument contains `api_key: "sk-..."`. This is not a bridge
 design rejection; it is a Tether authoring error. Credentials must never appear
-in Tether source, Plans, manifests, or Trails. The host's credential management
-is entirely outside the scope of the capability bridge. If a capability
-requires authentication, the host supplies credentials from its own secure
-store at dispatch time, keyed by provider identity. The Plan never sees them.
+in Tether source, Plans, or Trails. Manifest schemas may describe
+credential-shaped inputs, but values are supplied only by Columbo from trusted
+host storage at dispatch time, keyed by provider identity and binding. The Plan
+never sees them. The rejection message must tell the author to remove the value
+and rely on host credential injection; it must not suggest renaming or
+re-encoding the value.
 
 ---
 
-## 16. Future implementation boundary
+## 16. Columbo C1 implementation boundary
 
-The following are the smallest likely implementation pieces when M7 design
-transitions to implementation. They are identified here but **not built** as
-part of M7.
+Columbo C1 is the first implementation pass for manifest parsing, validation,
+and digesting. It is still documentation/planning here; no executable
+implementation is part of this M7/C1 design correction.
 
-1. **Manifest parser/validator** - parse the canonical JSON manifest format,
-   validate required fields, compute and verify the contract digest.
-2. **Trusted manifest store** - filesystem or database store for installed
-   manifests, keyed by `(capability_name, capability_version)`, retrievable
-   by digest.
-3. **MCP discovery adapter** - call `tools/list` on configured MCP servers,
-   compare discovered schemas against installed manifest pinned fields, report
-   drift.
-4. **Schema-drift checker** - compute current contract digest from discovered
-   tool metadata, compare against installed manifest digest, flag mismatches.
-5. **Capability registry/projection** - the approved capability projection
-   supplied to the planner as deterministic input. For bridge-backed
-   capabilities, it includes planning-relevant fields plus the opaque
-   `manifest_digest`. Only manifests with a clean drift check are included.
-6. **Host dispatcher** - resolve manifest by digest, prove the current provider
-   binding matches the pinned contract, validate arguments, check scope, obtain
-   confirmation, bind and dispatch the MCP `tools/call`, validate the result.
-7. **Provider-specific scope validators** - for each `permission_scope.kind`,
-   implement the validation function that checks Action arguments against
-   allowed scope values.
-8. **Execution Trail writer** - append authorisation and execution Trail entries
-   with all bridge-specific fields.
+The 10-minute implementation-step limit is a stop limit, not a promise that
+each task must finish in ten minutes. Each incomplete task must stop cleanly,
+leave the repository in a coherent state, and report the remaining work.
+
+Split C1 into these implementation tasks:
+
+1. **C1a1: data types and structured error model** - define manifest data
+   structures and explicit validation errors without parsing or digesting yet.
+2. **C1a2: strict parsing, unknown-field handling, and recursive duplicate-key
+   rejection** - parse manifest JSON while rejecting duplicate keys in every
+   object recursively, including arbitrary schema objects. Decide and document
+   unknown-field behaviour for top-level manifest objects and for nested
+   extension points.
+3. **C1b1: investigate and verify the JCS implementation/dependency** - review
+   maintained Rust RFC 8785/JCS implementations and verify the selected
+   candidate against official RFC 8785 examples and test vectors. If no
+   suitable implementation is verified, stop for a separate design decision.
+4. **C1b2: canonicalisation, SHA-256, and official/golden vectors** - compute
+   the fixed SHA-256 digest over RFC 8785 canonical bytes, add official and
+   project golden vectors, and prove `manifest_format_version`, complete
+   schemas, provider, binding, retry, idempotency, and all other authoritative
+   fields affect the digest.
+5. **C1c: semantic and cross-field validation** - validate capability identity,
+   scope, effects, confirmation, credential injection declarations, output
+   schema constraints, idempotency/retry consistency, provider binding proof,
+   and digest/pinned-binding consistency.
+
+Later post-C1 implementation pieces remain deferred:
+
+- Trusted manifest store keyed by `(capability_name, capability_version)` and
+  retrievable by digest.
+- MCP discovery adapter and schema-drift checker.
+- Capability registry/projection supplied to the planner as deterministic input.
+- Host dispatcher, provider-specific scope validators, credential injection,
+  result validation, and execution Trail writer.
 
 ### Unresolved questions
 
@@ -1365,13 +1442,7 @@ part of M7.
    host can execute; (c) require per-call confirmation that presents the
    inferred path. This is a material design decision for implementation.
 
-2. **Canonicalization of JSON Schema `description` fields**: The current
-   exclusion rule removes inline `description` keys from schema objects. If a
-   schema uses `description` to carry structural meaning (unusual but possible),
-   this could mask drift. Implementation should verify that no discovered MCP
-   tools rely on `description` for structural semantics.
-
-3. **Provider identity when MCP has no trustworthy identity mechanism**: MCP
+2. **Provider identity when MCP has no trustworthy identity mechanism**: MCP
    `initialize` returns `serverInfo: { name, version }` but this is
    self-reported and mutable. The design correctly uses host-assigned
    `provider.identity` with `identity_source: "host_configuration"`. The
@@ -1380,7 +1451,7 @@ part of M7.
    updating the provider identity, the host must detect the mismatch (e.g.,
    via a separate configuration fingerprint) and flag it.
 
-4. **Adapter identity and version in the manifest**: The `binding.adapter`
+3. **Adapter identity and version in the manifest**: The `binding.adapter`
    field is `null` for direct MCP bindings. When an adapter is required
    (e.g., for tools without usable output schemas), the adapter must have its
    own identity and version, and these must be included in the digest
@@ -1399,5 +1470,5 @@ part of M7.
 - Deterministic planning.
 - Explicit execution uncertainty.
 - No ambient authority.
-- No credentials in declarative artifacts.
+- No credential values in declarative artifacts.
 - Keep the format small enough for humans and AI systems to inspect.

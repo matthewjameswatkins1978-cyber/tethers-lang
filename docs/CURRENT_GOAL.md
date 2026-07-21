@@ -2,23 +2,21 @@
 
 ## Goal
 
-Prepare the first MCP implementation milestone by completing the read-only
-dependency survey, extracting the canonical evaluator boundary, and adding the
-test-first MCP transcript fixtures before server implementation.
+Prepare Columbo C1 manifest validation implementation by finalising the
+documentation boundary for digest coverage, RFC 8785/JCS canonicalization,
+strict manifest parsing, credential handling, retry/idempotency, output-schema
+validation, and the C1 task split.
 
 ## Immediate Definition Of Done
 
-- `docs/MCP_PLAN.md` is preserved substantively as the approved architecture
-  plan.
-- `AGENTS.md`, the root `README.md`, and `tethers-0.1/README.md` point agents
-  to the MCP plan where appropriate.
-- `docs/DECISIONS.md` records that MCP connects directly to Tethers, the MCP
-  implementation belongs in OCaml, Lantern Keeper is a host and capability
-  provider, and the first MCP surface is planner-only over stdio.
-- This document and `docs/TASK_QUEUE.md` name M0 as the documentation
-  checkpoint and M1 as a read-only OCaml MCP dependency survey.
-- No production source, language semantics, fixtures, dependencies, generated
-  files, or opam switch paths are changed.
+- `docs/CAPABILITY_BRIDGE.md` states the final Columbo C1 manifest validation
+  rules consistently.
+- `docs/DECISIONS.md` records the corrected digest, JCS, strict parsing,
+  credential, retry/idempotency, and output-schema decisions.
+- This document and `docs/TASK_QUEUE.md` split C1 into C1a1, C1a2, C1b1, C1b2,
+  and C1c.
+- No executable code, language semantics, fixtures, dependencies, generated
+  files, opam switch paths, pushes, amendments, merges, or tags are changed.
 
 ## Verified State On 2026-07-20
 
@@ -264,12 +262,13 @@ The design establishes:
 - A five-layer trust model: discovered MCP tool (untrusted) -> trusted
   capability manifest -> host-produced approved capability projection -> Tethers
   planner (deterministic) -> permissioned host -> execution Trail.
-- The trusted manifest format: a canonical JSON structure with execution-
-  authoritative fields (capability name/version, input/output schemas, effects,
-  permission scope, reversibility, determinism, idempotency mechanism,
-  confirmation policy, timeout/retry policy, provider identity, binding) and
-  a SHA-256 contract digest computed over a canonical JSON representation
-  excluding only the digest field itself and non-authoritative display metadata.
+- The trusted manifest format: a canonical JSON structure with authoritative
+  fields (`manifest_format_version`, capability name/version, complete
+  input/output schemas, effects, permission scope, reversibility, determinism,
+  idempotency mechanism, confirmation policy, timeout/retry policy, provider
+  identity, binding) and a fixed SHA-256 contract digest computed over RFC
+  8785/JCS canonical bytes, excluding only the digest value itself and exact
+  top-level display metadata (`title`, `description`).
 - Manifest digest coverage includes all execution-authoritative fields, not
   only schemas and binding identity.
 - Distinction between a manifest's `confirmation_policy` (declaring what is
@@ -279,9 +278,19 @@ The design establishes:
 - Provider identity uses host-assigned identity (`identity_source:
   "host_configuration"`) because MCP `serverInfo` is self-reported and mutable.
 - Idempotency mechanisms are concrete: `argument_key` (host supplies
-  `evaluation_id/action_id` as a key argument), `server_dedup` (server
-  deduplicates internally), or `none`. The word `"conditional"` alone is
-  insufficient.
+  `evaluation_id/action_id` as a key argument), `server_dedup` (trusted
+  host/provider/adapter evidence describes deduplication key, scope, and
+  lifetime, pinned by the manifest binding), or `none`. The word
+  `"conditional"` alone is insufficient.
+- Manifest parsing must reject duplicate keys recursively, including arbitrary
+  nested `input_schema` and `output_schema` objects. C1b1 must verify a
+  maintained Rust RFC 8785/JCS implementation against official vectors before
+  C1b2 implements canonicalization and digesting.
+- Tethers and Plans never contain credential values. Manifest schemas may
+  describe credential-shaped inputs, while Columbo injects actual credentials
+  from trusted host storage only at dispatch.
+- Output schemas must reject effectively unconstrained schemas while allowing
+  concrete primitive, array, enum, and structured-object schemas.
 - Schema-drift lifecycle: `notifications/tools/list_changed` triggers
   rediscovery; mismatched contracts become unavailable immediately; an installed
   old manifest document alone is not dispatch proof; no automatic reapproval;
@@ -297,8 +306,10 @@ The design establishes:
   timestamp, and redaction rules.
 - Two worked examples (read-only `obsidian.note.read`, scoped write
   `notes.note.create`) and eleven explicit rejected cases.
-- Eight future implementation pieces identified but not built.
-- Four unresolved questions honestly stated.
+- Columbo C1 split into C1a1, C1a2, C1b1, C1b2, and C1c, with later
+  manifest-store, discovery, registry/projection, dispatcher, credential
+  injection, and Trail-writing work deferred.
+- Three unresolved questions honestly stated.
 
 The MCP plan milestone sequence (M0-M7) defined in `docs/MCP_PLAN.md` is now
 complete. Genuinely deferred work from the MCP plan includes:
@@ -328,8 +339,16 @@ M7 correction on 2026-07-21:
   and provider binding before every dispatch, and undispatched Actions using an
   invalidated manifest are denied.
 
-Next phase: deferred work per `docs/MCP_PLAN.md` non-goals and deferred
-sections. No M8 is defined in the canonical plan.
+Columbo C1 architecture correction on 2026-07-21:
+- `digest_algorithm` is removed from the manifest; SHA-256 is fixed.
+- `manifest_format_version` and complete input/output schemas are covered by
+  the digest.
+- C1 is split into C1a1, C1a2, C1b1, C1b2, and C1c. The 10-minute limit is a
+  clean-stop limit for implementation steps, not a promise that each task must
+  finish in ten minutes.
+
+Next phase: Columbo C1a1 data types and structured error model. No M8 is
+defined in the canonical plan.
 
 ## Fixture Contract Follow-Up
 
