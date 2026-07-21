@@ -1,5 +1,6 @@
 mod manifest;
 pub mod provider;
+pub mod resolver;
 pub mod trusted_store;
 
 use serde_json::{json, Value};
