@@ -3,6 +3,7 @@
 // C1a1: types and error codes.
 // C1a2: strict JSON parsing, recursive duplicate-key rejection, unknown-field rejection.
 // C1b2: RFC 8785 canonical bytes, SHA-256 digest, golden vectors.
+// C1c: semantic and cross-field validation.
 
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use sha2::{Digest, Sha256};
@@ -194,6 +195,16 @@ pub enum Idempotency {
         description: Option<String>,
     },
     NoMechanism,
+}
+
+impl Idempotency {
+    /// Whether this idempotency mechanism provides concrete safety for retries.
+    fn has_concrete_mechanism(&self) -> bool {
+        matches!(
+            self,
+            Idempotency::ArgumentKey { .. } | Idempotency::ServerDedup { .. }
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -782,6 +793,9 @@ impl TrustedManifest {
     /// type validation, enum validation, and unknown-field rejection on all
     /// authoritative structures.  `input_schema` and `output_schema` are
     /// accepted as opaque JSON Schema objects with arbitrary keys.
+    ///
+    /// C1c semantic checks are applied by the authoritative
+    /// `canonicalize_and_digest` path before digest generation.
     pub fn parse(json: &str) -> Result<Self, ManifestError> {
         let root = parse_value_no_dupes(json)
             .map_err(|e| ManifestError::new(ManifestErrorCode::InvalidJson, e.to_string()))?;
@@ -886,6 +900,79 @@ impl TrustedManifest {
             binding,
             digest,
         })
+    }
+
+    /// C1c: semantic and cross-field validation.
+    ///
+    /// Validates invariants that span multiple fields after all structural
+    /// and type validation has passed.  Call this after [`parse`] and before
+    /// digest computation or trust decisions.
+    ///
+    /// Rules (from `docs/CAPABILITY_BRIDGE.md`):
+    ///
+    /// 1. **Null scope → per-call confirmation mandatory** (§8): if
+    ///    `permission_scope` is `Unrestricted` (null), then
+    ///    `confirmation_policy.per_call_required` must be `true`.
+    ///
+    /// 2. **Output schema must not be effectively unconstrained** (§7):
+    ///    output_schema must not be an empty object `{}` or boolean `true`.
+    ///
+    /// 3. **Idempotency/retry consistency** (§10-11): if
+    ///    `idempotency.mechanism` is `"none"` AND effects contain any
+    ///    non-`.read` effect AND `retry_policy.max_retries > 0`, the manifest
+    ///    is inconsistent (automatic retry is forbidden for effectful Actions
+    ///    without a concrete idempotency mechanism).
+    fn validate_semantics(&self) -> Result<(), ManifestError> {
+        // Rule 1: null scope → per-call confirmation mandatory.
+        if matches!(self.permission_scope, PermissionScope::Unrestricted)
+            && !self.confirmation_policy.per_call_required
+        {
+            return Err(ManifestError::with_field(
+                ManifestErrorCode::InvalidConfirmation,
+                "unrestricted permission_scope (null) requires per_call_required to be true",
+                "/permission_scope",
+            ));
+        }
+
+        // Rule 2: output_schema must not be effectively unconstrained.
+        match &self.output_schema {
+            serde_json::Value::Object(o) if o.is_empty() => {
+                return Err(ManifestError::with_field(
+                    ManifestErrorCode::InvalidValue,
+                    "output_schema must not be an empty object (effectively unconstrained)",
+                    "/output_schema",
+                ));
+            }
+            serde_json::Value::Bool(true) => {
+                return Err(ManifestError::with_field(
+                    ManifestErrorCode::InvalidValue,
+                    "output_schema must not be boolean true (accepts all JSON values)",
+                    "/output_schema",
+                ));
+            }
+            _ => {}
+        }
+
+        // Rule 3: idempotency/retry consistency for effectful Actions.
+        if !self.idempotency.has_concrete_mechanism()
+            && self.retry_policy.max_retries > 0
+            && self.has_effectful_effects()
+        {
+            return Err(ManifestError::with_field(
+                ManifestErrorCode::InvalidRetry,
+                "idempotency mechanism is \"none\" but retry_policy.max_retries > 0 for effectful (non-.read) effects; automatic retry requires a concrete idempotency mechanism",
+                "/retry_policy/max_retries",
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Whether any declared effect is *not* read-only (i.e. does not end
+    /// with `.read`).  Read-only effects are safe to retry without an
+    /// idempotency mechanism; everything else is effectful.
+    fn has_effectful_effects(&self) -> bool {
+        self.effects.iter().any(|e| !e.ends_with(".read"))
     }
 }
 
@@ -1034,10 +1121,14 @@ fn digest_string(canonical_bytes: &[u8]) -> String {
 ///
 /// Returns `(canonical_bytes, digest_string)`.  The canonical bytes are
 /// separately available so callers can inspect them without recomputing.
+///
+/// Performs C1a2 structural validation, C1c semantic validation, number-domain
+/// enforcement, and then canonicalization + digesting.
 pub fn canonicalize_and_digest(json: &str) -> Result<(Vec<u8>, String), ManifestError> {
     let parsed = parse_value_no_dupes(json)
         .map_err(|e| ManifestError::new(ManifestErrorCode::InvalidJson, e.to_string()))?;
-    TrustedManifest::parse(json)?;
+    let manifest = TrustedManifest::parse(json)?;
+    manifest.validate_semantics()?;
     validate_number_domain(&parsed, "")?;
     let filtered = filtered_canonical_input(&parsed)?;
     let bytes = canonicalize(&filtered)?;
@@ -1093,7 +1184,7 @@ mod tests {
             },
             "timeout_ms": 5000,
             "retry_policy": {
-                "max_retries": 3,
+                "max_retries": 0,
                 "backoff_ms": 500,
                 "allowed_on": ["outcome_unknown"],
                 "requires_idempotency_proof": false
@@ -1178,7 +1269,7 @@ mod tests {
         })
     }
 
-    // === parsing success ===
+    // === C1a parsing success ===
 
     #[test]
     fn parse_minimal_read_manifest() {
@@ -1228,7 +1319,7 @@ mod tests {
         }
     }
 
-    // === malformed JSON ===
+    // === C1a malformed JSON ===
 
     #[test]
     fn reject_malformed_json() {
@@ -1243,7 +1334,7 @@ mod tests {
         assert_eq!(err.code, ManifestErrorCode::InvalidJson);
     }
 
-    // === missing required field ===
+    // === C1a missing required field ===
 
     #[test]
     fn reject_missing_capability_name() {
@@ -1263,7 +1354,7 @@ mod tests {
         assert_eq!(err.field.as_deref(), Some("/manifest_format_version"));
     }
 
-    // === unknown top-level field ===
+    // === C1a unknown top-level field ===
 
     #[test]
     fn reject_unknown_top_level_field() {
@@ -1287,7 +1378,7 @@ mod tests {
         assert_eq!(err.field.as_deref(), Some("/a~1b~0c"));
     }
 
-    // === unknown nested field in authoritative object ===
+    // === C1a unknown nested field in authoritative object ===
 
     #[test]
     fn reject_unknown_nested_field_in_confirmation() {
@@ -1317,7 +1408,7 @@ mod tests {
         assert!(err.field.as_deref().unwrap().contains("provider"));
     }
 
-    // === duplicate keys ===
+    // === C1a duplicate keys ===
 
     #[test]
     fn reject_duplicate_top_level_key() {
@@ -1358,7 +1449,7 @@ mod tests {
         assert_eq!(err.code, ManifestErrorCode::InvalidJson);
     }
 
-    // === repeated keys in sibling objects (valid) ===
+    // === C1a repeated keys in sibling objects (valid) ===
 
     #[test]
     fn allow_repeated_keys_in_different_sibling_objects() {
@@ -1380,7 +1471,7 @@ mod tests {
         );
     }
 
-    // === arbitrary schema keywords accepted ===
+    // === C1a arbitrary schema keywords accepted ===
 
     #[test]
     fn input_schema_accepts_arbitrary_keywords() {
@@ -1398,7 +1489,7 @@ mod tests {
         assert_eq!(parsed.input_schema["$comment"], "arbitrary extension");
     }
 
-    // === invalid enum / type ===
+    // === C1a invalid enum / type ===
 
     #[test]
     fn reject_invalid_reversibility_enum() {
@@ -1459,7 +1550,7 @@ mod tests {
         assert_eq!(err.code, ManifestErrorCode::InvalidProvider);
     }
 
-    // === null permission_scope is Unrestricted ===
+    // === C1a null permission_scope is Unrestricted ===
 
     #[test]
     fn null_permission_scope_is_unrestricted() {
@@ -1470,6 +1561,320 @@ mod tests {
             parsed.permission_scope,
             PermissionScope::Unrestricted
         ));
+    }
+
+    // ==================================================================
+    // C1c - semantic and cross-field validation
+    // ==================================================================
+
+    // -- Rule 1: null scope → per_call_required must be true --
+
+    #[test]
+    fn c1c_null_scope_requires_per_call_confirmation() {
+        let mut m = minimal_manifest_json();
+        // read-only effects so Rule 3 doesn't fire
+        m["effects"] = json!(["filesystem.read"]);
+        m["permission_scope"] = serde_json::Value::Null;
+        m["confirmation_policy"] = json!({
+            "standing_permitted": false,
+            "per_call_required": false
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        let err = parsed.validate_semantics().unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidConfirmation);
+        assert_eq!(err.field.as_deref(), Some("/permission_scope"));
+    }
+
+    #[test]
+    fn c1c_null_scope_with_per_call_required_is_valid() {
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["filesystem.read"]);
+        m["retry_policy"]["max_retries"] = json!(0);
+        m["permission_scope"] = serde_json::Value::Null;
+        m["confirmation_policy"] = json!({
+            "standing_permitted": false,
+            "per_call_required": true,
+            "description": "Unrestricted scope requires per-call confirmation."
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn c1c_scoped_permission_without_per_call_is_valid() {
+        // A scoped permission (path_prefix) without per_call_required is fine.
+        let parsed = TrustedManifest::parse(&minimal_manifest_json().to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    // -- Rule 2: output_schema must not be effectively unconstrained --
+
+    #[test]
+    fn c1c_reject_empty_output_schema_object() {
+        let mut m = minimal_manifest_json();
+        m["output_schema"] = json!({});
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        let err = parsed.validate_semantics().unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/output_schema"));
+    }
+
+    #[test]
+    fn c1c_reject_bool_true_output_schema() {
+        let mut m = minimal_manifest_json();
+        m["output_schema"] = json!(true);
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        let err = parsed.validate_semantics().unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/output_schema"));
+    }
+
+    #[test]
+    fn c1c_accept_typed_output_schema() {
+        let mut m = minimal_manifest_json();
+        m["output_schema"] = json!({
+            "type": "object",
+            "properties": {
+                "content": { "type": "string" }
+            },
+            "required": ["content"]
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn c1c_accept_primitive_output_schema() {
+        // Concrete primitive schemas are valid per §7.
+        let mut m = minimal_manifest_json();
+        m["output_schema"] = json!({"type": "string"});
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn c1c_accept_array_output_schema_with_items() {
+        // Array with constrained items is valid.
+        let mut m = minimal_manifest_json();
+        m["output_schema"] = json!({
+            "type": "array",
+            "items": { "type": "string" }
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn c1c_output_schema_bool_false_accepted() {
+        // In JSON Schema, false means "reject everything" - that's constrained,
+        // not unconstrained.  It effectively means "no valid output", which
+        // is a meaningful contract (the tool must never produce a result).
+        let mut m = minimal_manifest_json();
+        m["output_schema"] = json!(false);
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    // -- Rule 3: idempotency/retry consistency for effectful Actions --
+
+    #[test]
+    fn c1c_reject_none_mechanism_with_write_effects_and_retries() {
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["filesystem.write"]);
+        m["idempotency"] = json!({"mechanism": "none"});
+        m["retry_policy"] = json!({
+            "max_retries": 3,
+            "backoff_ms": 1000,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": true
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        let err = parsed.validate_semantics().unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidRetry);
+        assert_eq!(err.field.as_deref(), Some("/retry_policy/max_retries"));
+    }
+
+    #[test]
+    fn c1c_accept_none_mechanism_with_read_only_effects_and_retries() {
+        // Read-only effects (.read) may retry without idempotency mechanism.
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["filesystem.read"]);
+        m["idempotency"] = json!({"mechanism": "none"});
+        m["retry_policy"] = json!({
+            "max_retries": 3,
+            "backoff_ms": 500,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": false
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn c1c_accept_none_mechanism_with_write_effects_and_zero_retries() {
+        // Write effects but max_retries=0 is fine - no automatic retry.
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["filesystem.write"]);
+        m["idempotency"] = json!({"mechanism": "none"});
+        m["retry_policy"] = json!({
+            "max_retries": 0,
+            "backoff_ms": 1000,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": true
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn c1c_accept_argument_key_with_write_effects_and_retries() {
+        // argument_key mechanism allows retry for effectful Actions.
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["filesystem.write"]);
+        m["idempotency"] = json!({
+            "mechanism": "argument_key",
+            "argument_name": "idempotency_key",
+            "key_source": "evaluation_id/action_id"
+        });
+        m["retry_policy"] = json!({
+            "max_retries": 3,
+            "backoff_ms": 1000,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": true
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn c1c_reject_none_mechanism_with_network_access_and_retries() {
+        // network.access is not .read - it's effectful.
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["network.access"]);
+        m["idempotency"] = json!({"mechanism": "none"});
+        m["retry_policy"] = json!({
+            "max_retries": 1,
+            "backoff_ms": 500,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": true
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        let err = parsed.validate_semantics().unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidRetry);
+    }
+
+    #[test]
+    fn c1c_reject_none_mechanism_with_mixed_read_write_and_retries() {
+        // Mixed effects containing a non-.read effect → effectful.
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["filesystem.read", "filesystem.write"]);
+        m["idempotency"] = json!({"mechanism": "none"});
+        m["retry_policy"] = json!({
+            "max_retries": 2,
+            "backoff_ms": 500,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": true
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        let err = parsed.validate_semantics().unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidRetry);
+    }
+
+    #[test]
+    fn c1c_read_substring_without_suffix_is_effectful() {
+        // Contains "read", but does not end with exact ".read".
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["filesystem.read.cache"]);
+        m["idempotency"] = json!({"mechanism": "none"});
+        m["retry_policy"] = json!({
+            "max_retries": 1,
+            "backoff_ms": 500,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": true
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        let err = parsed.validate_semantics().unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidRetry);
+        assert_eq!(err.field.as_deref(), Some("/retry_policy/max_retries"));
+    }
+
+    // -- C1c: structurally valid but semantically invalid → rejected --
+
+    #[test]
+    fn c1c_structurally_valid_but_semantically_invalid_is_rejected() {
+        // Parse succeeds (C1a), but C1c semantic validation fails.
+        let mut m = minimal_manifest_json();
+        m["permission_scope"] = serde_json::Value::Null;
+        m["confirmation_policy"] = json!({
+            "standing_permitted": false,
+            "per_call_required": false
+        });
+        m["effects"] = json!(["filesystem.read"]);
+        m["retry_policy"]["max_retries"] = json!(0);
+        // Parse passes, validate_semantics fails.
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        assert!(parsed.validate_semantics().is_err());
+    }
+
+    // -- C1c: valid manifest passes semantics --
+
+    #[test]
+    fn c1c_fully_valid_manifest_passes_semantics() {
+        let parsed = TrustedManifest::parse(&minimal_manifest_json().to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    // -- C1c: schemas remain opaque beyond authorised checks --
+
+    #[test]
+    fn c1c_schemas_remain_opaque_beyond_output_constraint_check() {
+        // A schema with arbitrary unknown keywords passes C1c (only
+        // empty-object and bool-true output are rejected).
+        let mut m = minimal_manifest_json();
+        m["output_schema"] = json!({
+            "type": "object",
+            "properties": {
+                "result": { "type": "string", "x-custom": true }
+            },
+            "$vocabulary": "some-future-vocab"
+        });
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        parsed.validate_semantics().unwrap();
+    }
+
+    // -- C1c: covered semantic fields remain digest-covered --
+
+    #[test]
+    fn c1c_semantic_fields_remain_digest_covered() {
+        let json = minimal_manifest_json().to_string();
+        let (_, digest1) = canonicalize_and_digest(&json).unwrap();
+
+        // Change effects → digest changes.
+        let mut m2 = minimal_manifest_json();
+        m2["effects"] = json!(["filesystem.read", "network.access"]);
+        m2["retry_policy"]["max_retries"] = json!(0); // keep valid
+        let (_, digest2) = canonicalize_and_digest(&m2.to_string()).unwrap();
+        assert_ne!(digest1, digest2);
+
+        // Change confirmation_policy → digest changes.
+        let mut m3 = minimal_manifest_json();
+        m3["confirmation_policy"] = json!({
+            "standing_permitted": false,
+            "per_call_required": true
+        });
+        let (_, digest3) = canonicalize_and_digest(&m3.to_string()).unwrap();
+        assert_ne!(digest1, digest3);
+
+        // Change retry_policy → digest changes.
+        let mut m4 = minimal_manifest_json();
+        m4["retry_policy"] = json!({
+            "max_retries": 1,
+            "backoff_ms": 1000,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": true
+        });
+        let (_, digest4) = canonicalize_and_digest(&m4.to_string()).unwrap();
+        assert_ne!(digest1, digest4);
     }
 
     // ==================================================================
@@ -1668,9 +2073,9 @@ mod tests {
         // The exact canonical bytes and digest are pinned as literals. If
         // these change, the contract digest definition has changed and C1b2
         // must stop for re-evaluation.
-        const EXPECTED_CANONICAL: &str = r#"{"binding":{"adapter":null,"kind":"mcp","server_name":"obsidian","tool_name":"obsidian_read_note"},"capability_name":"notes.note.read","capability_version":1,"confirmation_policy":{"per_call_required":false,"standing_permitted":true},"determinism":"deterministic","effects":["filesystem.read"],"idempotency":{"mechanism":"none"},"input_schema":{"additionalProperties":false,"properties":{"path":{"type":"string"}},"required":["path"],"type":"object"},"manifest_format_version":"1.0","output_schema":{"properties":{"content":{"type":"string"}},"required":["content"],"type":"object"},"permission_scope":{"allowed_prefixes":["projects/"],"kind":"path_prefix"},"provider":{"description":"Host-assigned identity.","display_name":"Obsidian (local vault)","identity":"obsidian-local","identity_source":"host_configuration"},"retry_policy":{"allowed_on":["outcome_unknown"],"backoff_ms":500,"max_retries":3,"requires_idempotency_proof":false},"reversibility":"reversible","timeout_ms":5000}"#;
+        const EXPECTED_CANONICAL: &str = r#"{"binding":{"adapter":null,"kind":"mcp","server_name":"obsidian","tool_name":"obsidian_read_note"},"capability_name":"notes.note.read","capability_version":1,"confirmation_policy":{"per_call_required":false,"standing_permitted":true},"determinism":"deterministic","effects":["filesystem.read"],"idempotency":{"mechanism":"none"},"input_schema":{"additionalProperties":false,"properties":{"path":{"type":"string"}},"required":["path"],"type":"object"},"manifest_format_version":"1.0","output_schema":{"properties":{"content":{"type":"string"}},"required":["content"],"type":"object"},"permission_scope":{"allowed_prefixes":["projects/"],"kind":"path_prefix"},"provider":{"description":"Host-assigned identity.","display_name":"Obsidian (local vault)","identity":"obsidian-local","identity_source":"host_configuration"},"retry_policy":{"allowed_on":["outcome_unknown"],"backoff_ms":500,"max_retries":0,"requires_idempotency_proof":false},"reversibility":"reversible","timeout_ms":5000}"#;
         const EXPECTED_DIGEST: &str =
-            "sha256:833972460c8d41092eaf7b88e98b550c13888ac7e5c550e43a26abe8303afdea";
+            "sha256:ad5c8e3cd5430588caf083e367a452f01d4f6c5da6ee7eabdf39c47919b27401";
 
         let json = minimal_manifest_json().to_string();
         let (bytes, digest) = canonicalize_and_digest(&json).unwrap();
@@ -1736,6 +2141,33 @@ mod tests {
         let err = canonicalize_and_digest(&m.to_string()).unwrap_err();
         assert_eq!(err.code, ManifestErrorCode::InvalidValue);
         assert_eq!(err.field.as_deref(), Some("/input_schema/maximum"));
+    }
+
+    // -- C1c: semantic rejection blocks digest computation --
+
+    #[test]
+    fn c1c_semantic_rejection_blocks_digest() {
+        let mut m = minimal_manifest_json();
+        // Make output_schema effectively unconstrained.
+        m["output_schema"] = json!({});
+        let err = canonicalize_and_digest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidValue);
+        assert_eq!(err.field.as_deref(), Some("/output_schema"));
+    }
+
+    #[test]
+    fn c1c_idempotency_retry_inconsistency_blocks_digest() {
+        let mut m = minimal_manifest_json();
+        m["effects"] = json!(["filesystem.write"]);
+        m["idempotency"] = json!({"mechanism": "none"});
+        m["retry_policy"] = json!({
+            "max_retries": 5,
+            "backoff_ms": 100,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": true
+        });
+        let err = canonicalize_and_digest(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidRetry);
     }
 
     // -- digest stability --
