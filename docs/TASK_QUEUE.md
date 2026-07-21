@@ -42,7 +42,7 @@
    (validate-valid, validate-invalid, validate-missing-source), `tools/list`
    updated to advertise both tools, all fifteen MCP transcript cases pass, full
    regression suite passes.
-8. [ ] M7 capability bridge design, not automatic execution.
+8. [x] M7 capability bridge design, not automatic execution.
 
 ## 0.1 Finishing Queue
 

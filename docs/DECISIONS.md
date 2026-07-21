@@ -157,6 +157,59 @@ including Windows CI and shutdown handling, but it vendors MCP code inside a
 web-search server with network-heavy dependencies. Tethers should keep the
 first server small, deterministic, and application-agnostic.
 
+## 2026-07-21: Capability Bridge Trust Boundary (M7)
+
+Decision: The capability bridge design (`docs/CAPABILITY_BRIDGE.md`) establishes
+that MCP tool discovery advertises what a server claims to provide, but
+discovered tool metadata and annotations are untrusted. A tool becomes a
+candidate Tethers capability only through an explicitly installed, reviewed,
+trusted host-side manifest. The Tethers planner may propose a capability Action
+but can never execute it. The permissioned host resolves the exact manifest by
+digest, re-validates arguments and scope, obtains confirmation where required,
+dispatches the bound MCP call, validates the result, and appends execution
+Trail entries.
+
+Key trust boundaries:
+
+1. **MCP tool discovery -> manifest author**: Nothing is trusted. All tool
+   metadata is untrusted advertising claims.
+2. **Manifest -> planner**: Manifest fields form the capability contract.
+3. **Planner -> Plan Action**: Action references capability name, version, and
+   manifest digest. Host must still re-validate.
+4. **Plan Action -> host**: Nothing trusted. Plan is a request, not permission.
+5. **Host -> remote MCP call**: Nothing trusted. Remote server is untrusted at
+   call time.
+
+The contract digest covers every execution-authoritative manifest field:
+capability name and version, input and output schemas, effects, permission
+scope, reversibility, determinism, idempotency mechanism, confirmation policy,
+timeout and retry policy, provider identity (host-assigned, not
+self-reported), binding kind, server name, MCP tool name, and adapter
+identity/version. Display-only metadata is excluded.
+
+A manifest's `confirmation_policy` declares what is acceptable but does not
+grant standing authority. Actual standing approval is separate host-controlled
+state bound to the exact manifest digest, approved scope, approving identity,
+and creation/revocation information.
+
+Idempotency requires a concrete mechanism (`argument_key`, `server_dedup`, or
+`none`), not merely the word `"conditional"`. For `argument_key`, the manifest
+must name the argument and key source. Without a concrete reviewed mechanism,
+automatic retry is forbidden.
+
+Provider identity uses host-assigned identity with
+`identity_source: "host_configuration"` because MCP `serverInfo` is
+self-reported and mutable and therefore insufficient for trustworthy provider
+identity.
+
+Reason: This trust boundary governs every future adapter (MCP, Git, Google,
+Obsidian, Lantern Keeper, and others). The design ensures Tethers Core remains
+application-agnostic while providing a safe, auditable path from untrusted
+discovery to trusted execution. The decision applies the established Tethers
+architectural rules: Tethers plans, hosts execute; schemas describe, policies
+authorise, hosts enforce, Trails record; discovery never grants permission;
+credentials never appear in declarative artifacts.
+
 ## Open Decisions
 
 - Whether future documentation should live at the workspace root, inside

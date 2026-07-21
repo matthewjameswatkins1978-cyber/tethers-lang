@@ -251,7 +251,75 @@ Verification after M6:
   (transcript tests). Live client requires server restart to pick up the new
   binary.
 
-Next milestone: M7 — Capability bridge design per `docs/MCP_PLAN.md`.
+M7 is complete on 2026-07-21.
+
+`docs/CAPABILITY_BRIDGE.md` defines the universal plug contract for connecting
+discovered MCP tools to trusted Tethers capabilities. It is a design document;
+no foreign MCP tool invocation, no automatic execution, no provider integration,
+no networking or credential management, no Tethers syntax or semantic changes,
+no new dependency, and no production implementation are part of M7.
+
+The design establishes:
+
+- A five-layer trust model: discovered MCP tool (untrusted) -> trusted capability
+  manifest -> Tethers planner (deterministic) -> permissioned host -> execution
+  Trail.
+- The trusted manifest format: a canonical JSON structure with execution-
+  authoritative fields (capability name/version, input/output schemas, effects,
+  permission scope, reversibility, determinism, idempotency mechanism,
+  confirmation policy, timeout/retry policy, provider identity, binding) and
+  a SHA-256 contract digest computed over a canonical JSON representation
+  excluding only the digest field itself and non-authoritative display metadata.
+- Manifest digest coverage includes all execution-authoritative fields, not
+  only schemas and binding identity.
+- Distinction between a manifest's `confirmation_policy` (declaring what is
+  acceptable) and actual standing approval (separate host-controlled state
+  bound to manifest digest, approved scope, approving identity, and
+  creation/revocation information).
+- Provider identity uses host-assigned identity (`identity_source:
+  "host_configuration"`) because MCP `serverInfo` is self-reported and mutable.
+- Idempotency mechanisms are concrete: `argument_key` (host supplies
+  `evaluation_id/action_id` as a key argument), `server_dedup` (server
+  deduplicates internally), or `none`. The word `"conditional"` alone is
+  insufficient.
+- Schema-drift lifecycle: `notifications/tools/list_changed` triggers
+  rediscovery; mismatched contracts become unavailable pending re-review; no
+  automatic reapproval; Plan digest pinning prevents time-of-check/time-of-use
+  substitution.
+- Typed input/output validation rules, effect and permission scope envelopes,
+  confirmation policy and standing approval separation, determinism/
+  idempotency/reversibility as three distinct properties, timeout/retry/
+  outcome-unknown semantics, and planning-to-execution handoff sequence.
+- Execution Trail additions: capability_name, capability_version,
+  manifest_digest, provider_identity, execution_id, attempt_id,
+  permission_decision, confirmation_decision, dispatch_state,
+  result_validation, status (completed/failed/denied/outcome_unknown),
+  timestamp, and redaction rules.
+- Two worked examples (read-only `obsidian.note.read`, scoped write
+  `notes.note.create`) and ten explicit rejected cases.
+- Eight future implementation pieces identified but not built.
+- Five unresolved questions honestly stated.
+
+The MCP plan milestone sequence (M0-M7) defined in `docs/MCP_PLAN.md` is now
+complete. Genuinely deferred work from the MCP plan includes:
+- Streamable HTTP, remote deployment, OAuth, network listeners.
+- Action execution through permissioned hosts.
+- Automatic MCP server discovery.
+- Automatic conversion of arbitrary MCP tools into trusted capabilities.
+- Lantern Keeper-specific language features.
+- HQ UI.
+- Prompts, sampling, elicitation, or long-running MCP tasks.
+- Replacing the existing Tethers engine protocol.
+
+No new milestone is invented beyond the canonical plan.
+
+Verification after M7:
+- Only documentation changed.
+- Working tree was clean before M7.
+- `git diff --check`: whitespace clean.
+
+Next phase: deferred work per `docs/MCP_PLAN.md` non-goals and deferred
+sections. No M8 is defined in the canonical plan.
 
 ## Fixture Contract Follow-Up
 
