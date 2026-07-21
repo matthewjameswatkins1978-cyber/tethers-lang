@@ -37,6 +37,12 @@
    - [x] Codex configured and verified through the project-scoped
      `.codex/config.toml` and launcher.
    - [x] M5 fully complete after both Cline and Codex real-client verification.
+7. [x] M6 MCP authoring support: `tethers.validate` tool using shared
+   `parse_tether` boundary, three new transcript fixtures
+   (validate-valid, validate-invalid, validate-missing-source), `tools/list`
+   updated to advertise both tools, all fifteen MCP transcript cases pass, full
+   regression suite passes.
+8. [ ] M7 capability bridge design, not automatic execution.
 
 ## 0.1 Finishing Queue
 

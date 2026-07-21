@@ -111,6 +111,34 @@ let handle_tools_list id =
                     ("additionalProperties", `Bool false);
                   ] );
             ];
+          `Assoc
+            [
+              ("name", `String "tethers.validate");
+              ( "description",
+                `String
+                  "Validate Tethers 0.1 source syntax and structure without \
+                   requiring event data or capabilities. Returns parse success \
+                   or structured diagnostics." );
+              ( "inputSchema",
+                `Assoc
+                  [
+                    ("type", `String "object");
+                    ( "properties",
+                      `Assoc
+                        [
+                          ( "source",
+                            `Assoc
+                              [
+                                ("type", `String "string");
+                                ( "description",
+                                  `String
+                                    "Complete Tethers 0.1 source text" );
+                              ] );
+                        ] );
+                    ("required", `List [ `String "source" ]);
+                    ("additionalProperties", `Bool false);
+                  ] );
+            ];
         ]
     in
     Some (make_response id (`Assoc [ ("tools", tools) ]))
@@ -129,9 +157,7 @@ let handle_tools_call id fields =
       | Some (`String n) -> n
       | _ -> ""
     in
-    if tool_name <> "tethers.evaluate" then
-      Some (make_error id (-32602) ("Unknown tool: " ^ tool_name) None)
-    else
+    if tool_name = "tethers.evaluate" then
       match json_member_opt "arguments" params with
       | Some (`Assoc args) -> (
           match json_member_opt "request" args with
@@ -176,6 +202,79 @@ let handle_tools_call id fields =
                "Invalid arguments for tethers.evaluate: expected object field \
                 request"
                None)
+    else if tool_name = "tethers.validate" then
+      match json_member_opt "arguments" params with
+      | Some (`Assoc args) -> (
+          match json_member_opt "source" args with
+          | Some (`String source) -> (
+              let validate_response =
+                try
+                  let parsed = parse_tether source in
+                  `Assoc
+                    [
+                      ("valid", `Bool true);
+                      ("title", `String parsed.title);
+                      ("anchor", `String parsed.anchor);
+                      ( "condition_count",
+                        `Int (List.length parsed.conditions) );
+                      ("action_count", `Int (List.length parsed.actions));
+                    ]
+                with
+                | Tethers_error (code, message) ->
+                    `Assoc
+                      [
+                        ("valid", `Bool false);
+                        ( "error",
+                          `Assoc
+                            [
+                              ("code", `String code);
+                              ("message", `String message);
+                            ] );
+                      ]
+                | exn ->
+                    `Assoc
+                      [
+                        ("valid", `Bool false);
+                        ( "error",
+                          `Assoc
+                            [
+                              ("code", `String "internal_error");
+                              ("message", `String (Printexc.to_string exn));
+                            ] );
+                      ]
+              in
+              let compact_json = Yojson.Safe.to_string validate_response in
+              let result =
+                `Assoc
+                  [
+                    ("structuredContent", validate_response);
+                    ( "content",
+                      `List
+                        [
+                          `Assoc
+                            [
+                              ("type", `String "text");
+                              ("text", `String compact_json);
+                            ];
+                        ] );
+                    ("isError", `Bool false);
+                  ]
+              in
+              Some (make_response id result))
+          | _ ->
+              Some
+                (make_error id (-32602)
+                   "Invalid arguments for tethers.validate: expected object \
+                    field source"
+                   None))
+      | _ ->
+          Some
+            (make_error id (-32602)
+               "Invalid arguments for tethers.validate: expected object field \
+                source"
+               None)
+    else
+      Some (make_error id (-32602) ("Unknown tool: " ^ tool_name) None)
 
 let handle_message msg =
   try

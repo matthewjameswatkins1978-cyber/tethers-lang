@@ -319,7 +319,10 @@ $requiredCases = @(
     "malformed-tool-arguments",
     "unknown-tool",
     "call-before-initialization",
-    "clean-eof-shutdown"
+    "clean-eof-shutdown",
+    "validate-valid",
+    "validate-invalid",
+    "validate-missing-source"
 )
 
 Test-SemanticComparisonSelfChecks

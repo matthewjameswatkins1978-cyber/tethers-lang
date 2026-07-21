@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":"init-1","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"tethers","version":"0.1.0"}}}
+{"jsonrpc":"2.0","id":"validate-valid-1","result":{"structuredContent":{"valid":true,"title":"Record completed software task","anchor":"coding.task_completed","condition_count":2,"action_count":1},"content":[{"type":"text","text":"{\"valid\":true,\"title\":\"Record completed software task\",\"anchor\":\"coding.task_completed\",\"condition_count\":2,\"action_count\":1}"}],"isError":false}}

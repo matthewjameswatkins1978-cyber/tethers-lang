@@ -198,7 +198,60 @@ Real-client evidence:
 - Both MCP tool calls completed with `isError: false`.
 - No Action was executed. The response contained only a proposed Plan and deterministic evaluation Trail; no authorisation or execution Trail entries, no Action result entries, and no Rust host invocation occurred.
 
-M5 is complete. Next milestone: M6 — MCP authoring support.
+M5 is complete.
+
+M6 is complete on 2026-07-21.
+
+`tethers.validate` has been added as a second MCP tool, using the shared
+`Tether_parser.parse_tether` boundary. It validates Tethers 0.1 source syntax
+and structure without requiring event data, Facts, or Capability schemas.
+
+The validate tool accepts a single string argument `source` and returns:
+- `valid: true`, `title`, `anchor`, `condition_count`, and `action_count` for
+  well-formed Tether source;
+- `valid: false` with a structured `error` object (`code` and `message`) for
+  invalid source.
+
+The tool reuses the existing `parse_tether` function directly; it does not
+duplicate parser logic, simulate evaluation, or touch the filesystem.
+Parse errors remain `isError: false` MCP tool results — they are deterministic
+planner diagnostics, not transport failures.
+
+`tools/list` now advertises both `tethers.evaluate` and `tethers.validate`
+with their respective input schemas.
+
+Three new MCP transcript fixture cases cover the validate tool:
+- `validate-valid` — canonical happy-path Tether returns `valid: true` with
+  correct metadata;
+- `validate-invalid` — syntactically broken source returns `valid: false` with
+  a precise parse_error;
+- `validate-missing-source` — call without the `source` argument returns a
+  JSON-RPC -32602 error.
+
+All twelve original MCP transcript cases continue to pass. The full
+verification suite (engine fixtures, host integration, Rust tests, demo,
+deterministic repeat) passes unchanged.
+
+No new dependency added. No Action executed. No Rust host invoked.
+No Tethers language syntax or semantics changed.
+
+Verification after M6:
+- `scripts/check-fixtures.ps1`: passed (44 JSON files, 30 JSONL files).
+- `scripts/test-mcp-transcripts.ps1`: passed all fifteen transcript cases.
+- Deterministic repeat of `test-mcp-transcripts.ps1`: passed.
+- `opam exec -- dune build`: passed.
+- `scripts/test-engine.ps1`: passed all fixture cases and deterministic repeat.
+- `scripts/test-host-denial.ps1`: passed.
+- `scripts/test-host-execution-failure.ps1`: passed.
+- `scripts/demo.ps1`: passed.
+- `cargo test`: passed, `2 passed; 0 failed`.
+- `git diff --check`: passed, whitespace clean.
+- `tethers.evaluate` confirmed working through live Cline MCP client.
+- `tethers.validate` confirmed functional through fresh server process
+  (transcript tests). Live client requires server restart to pick up the new
+  binary.
+
+Next milestone: M7 — Capability bridge design per `docs/MCP_PLAN.md`.
 
 ## Fixture Contract Follow-Up
 
