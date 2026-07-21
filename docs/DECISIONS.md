@@ -201,6 +201,16 @@ and test vectors before C1b2 implements canonicalization and digesting. If no
 suitable implementation is verified, implementation stops for a separate design
 decision rather than using a casual homemade fallback.
 
+C1b1 selected `serde_json_canonicalizer` 0.3.x, reviewed at 0.3.2, for C1b2
+JCS canonical byte generation. Columbo will use it only after C1a2 strict
+parsing has rejected duplicate keys recursively and after C1b2 has removed
+non-digest fields from the manifest value. Columbo remains responsible for
+manifest I-JSON constraints, for rejecting values outside the accepted number
+domain, and for adding project golden vectors before computing SHA-256 digests.
+Rejected alternatives were `serde_jcs`, `json-canon`, `canon-json`, and
+`jcs-canonicalize` for weaker direct fit, documented concerns, or bundled
+hashing scope.
+
 A manifest's `confirmation_policy` declares what is acceptable but does not
 grant standing authority. Actual standing approval is separate host-controlled
 state bound to the exact manifest digest, approved scope, approving identity,

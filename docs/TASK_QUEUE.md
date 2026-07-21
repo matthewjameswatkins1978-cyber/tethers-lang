@@ -48,12 +48,14 @@
 
 ## Columbo Manifest Validation Queue
 
-1. [ ] C1a1 data types and structured error model.
-2. [ ] C1a2 strict parsing, unknown-field handling, and recursive duplicate-key
+1. [x] C1a1 data types and structured error model.
+2. [x] C1a2 strict parsing, unknown-field handling, and recursive duplicate-key
    rejection.
-3. [ ] C1b1 investigate and verify the RFC 8785/JCS implementation/dependency
+3. [x] C1b1 investigate and verify the RFC 8785/JCS implementation/dependency
    against official vectors; stop for a separate design decision if no suitable
-   Rust implementation is verified.
+   Rust implementation is verified. Selected `serde_json_canonicalizer` 0.3.x
+   after reviewing version 0.3.2 against RFC examples and the cyberphone
+   reference corpus.
 4. [ ] C1b2 canonicalisation, fixed SHA-256 digesting, and official/golden
    vectors.
 5. [ ] C1c semantic and cross-field validation.

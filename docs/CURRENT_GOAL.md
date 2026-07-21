@@ -347,8 +347,17 @@ Columbo C1 architecture correction on 2026-07-21:
   clean-stop limit for implementation steps, not a promise that each task must
   finish in ten minutes.
 
-Next phase: Columbo C1a1 data types and structured error model. No M8 is
-defined in the canonical plan.
+Columbo implementation checkpoints on 2026-07-21:
+- C1a1 added manifest data types and the structured error model.
+- C1a2 added strict parsing, authoritative unknown-field rejection, recursive
+  duplicate-key rejection, and trailing-token rejection.
+- C1b1 selected `serde_json_canonicalizer` 0.3.x, reviewed at 0.3.2, for RFC
+  8785/JCS canonical byte generation after C1a2 strict parsing. Columbo still
+  owns I-JSON and number-domain enforcement, digest field filtering, SHA-256
+  digesting, and project golden vectors.
+
+Next phase: Columbo C1b2 canonicalisation, fixed SHA-256 digesting, and
+official/golden vectors. No M8 is defined in the canonical plan.
 
 ## Fixture Contract Follow-Up
 

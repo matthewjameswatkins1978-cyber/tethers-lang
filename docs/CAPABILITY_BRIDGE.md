@@ -307,6 +307,47 @@ RFC 8785 examples and test vectors. Do not authorise a casual homemade
 canonicalizer or fallback. If no suitable implementation is verified, stop for a
 separate design decision before implementing manifest digests.
 
+**C1b1 result (2026-07-21):** Columbo selects
+`serde_json_canonicalizer` 0.3.x for C1b2 canonical byte generation, subject to
+pinning an exact compatible crate version during the implementation task. The
+reviewed version was 0.3.2. Evidence: its current crate metadata identifies it
+as an RFC 8785/JCS implementation with MIT licensing; its source uses
+`ryu-js` for ECMAScript-compatible number serialization and sorts object keys by
+decoded UTF-16 code units; its test suite includes RFC-text cases and the
+cyberphone `json-canonicalization` reference corpus. A disposable local
+experiment against RFC sample output, recursive object sorting, and non-BMP
+UTF-16 key ordering passed.
+
+Division of responsibility:
+
+- C1a2 remains responsible for strict JSON parsing, recursive duplicate-key
+  rejection, trailing-token rejection, and authoritative unknown-field
+  rejection before canonicalization.
+- C1b2 must pass only the already strict-parsed and digest-filtered
+  `serde_json::Value` to `serde_json_canonicalizer::to_vec`.
+- Columbo must enforce manifest I-JSON and number-domain constraints before
+  canonicalization where `serde_json` or the canonicalizer do not reject them
+  explicitly.
+- C1b2 must add project golden vectors proving all digest-covered manifest
+  fields affect the canonical bytes and digest.
+
+Rejected C1b1 alternatives:
+
+- `serde_jcs` 0.2.0: API shape is usable and the crate is active enough to
+  compile on the current Rust toolchain, but `serde_json_canonicalizer` was
+  created specifically because `serde_jcs` had open RFC-compatibility concerns;
+  prefer the crate that documents and tests the intended RFC conformance more
+  directly.
+- `json-canon` 0.1.3: RFC 8785 API is plausible, but it documents problematic
+  handling for NaN/Infinity on struct input and has older dependencies.
+- `canon-json` 0.2.1: useful formatter implementation, but it delegates more
+  responsibility to caller-side serializer setup and is less direct than a
+  `to_vec(&serde_json::Value)` API for Columbo's strict-parsed value pipeline.
+- `jcs-canonicalize` 0.2.1: includes conformance tests, but it wraps
+  canonicalization with a CLI and SHA-256 helper. Columbo C1b2 should keep
+  canonicalization and digest calculation explicit rather than adopting a crate
+  that bundles hashing into its public story.
+
 ### Strict JSON parsing
 
 Manifest parsing must reject duplicate keys in every object recursively,
