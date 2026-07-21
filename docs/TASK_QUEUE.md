@@ -20,12 +20,20 @@
 
 1. [x] M0 documentation checkpoint: preserve `docs/MCP_PLAN.md`, reference it
    from project guidance, and record the OCaml-owned MCP decision.
-2. [ ] M1 read-only OCaml MCP dependency survey: inspect `ocaml-mcp`,
+2. [x] M1 read-only OCaml MCP dependency survey: inspect `ocaml-mcp`,
    `snf_mcp`, and the OCaml `jsonrpc` package for identity, licence, MCP
    revision, stdio framing, tools support, errors, tests, OCaml/Dune/Yojson
    compatibility, Windows-native behaviour, and reproducible use.
-3. [ ] M2 extract one canonical OCaml evaluator boundary used by both the
+3. [x] M2 extract one canonical OCaml evaluator boundary used by both the
    existing engine executable and any future MCP tool.
+4. [x] M3 MCP transcript fixtures covering initialization, tools/list,
+   tethers.evaluate, planner-error pass-through, malformed MCP calls, unknown
+   tools, call-before-initialization, and clean EOF/shutdown.
+5. [x] M4 minimal OCaml stdio server.
+6. [ ] M5 real client verification (configure one local MCP client, verify
+   initialize → tools/list → tools/call against the built OCaml server,
+   confirm a real Tether returns the expected Plan and Trail, confirm no
+   Action is executed, then configure Codex and Cline).
 
 ## 0.1 Finishing Queue
 
@@ -40,9 +48,10 @@
 
 - Installing WSL, Docker, Bash, jq, or unrelated OCaml editor tooling.
 - Installing, pinning, vendoring, or selecting an MCP dependency before the M1
-  survey is reviewed.
-- Implementing MCP server code before the M0 documentation checkpoint and M1
-  dependency survey are complete.
+  survey is reviewed. M1 is now recorded in `docs/MCP_DEPENDENCY_SURVEY.md`;
+  future dependency changes still require an explicit implementation task.
+- Implementing MCP server code before the M3 transcript fixtures. M3 is now
+  complete; server implementation belongs to M4.
 - Changing parser, evaluator, host, fixtures, scripts, or examples beyond definite build defects.
 - Adding adapters, package management, scheduling, HQ, or AI integration.
 - Production CLI polishing, contribution setup notes, release/changelog.

@@ -140,8 +140,24 @@ them. Action arguments remain free to use `anchor.*` references because
 Action resolution occurs after all Conditions have matched, when the
 event data is fully available and the resolution context is unambiguous.
 
+## 2026-07-21: Treat OCaml MCP Libraries As References For The First Server
+
+Decision: Do not add `ocaml-mcp` or `snf_mcp` as a dependency for the first
+Tethers MCP server. Use them as reference implementations only. Consider the
+smaller OCaml `jsonrpc` package later, after the evaluator boundary and MCP
+transcript fixtures exist, if it reduces JSON-RPC plumbing without weakening
+Tethers' protocol control.
+
+Reason: `ocaml-mcp` is real and useful, but currently targets MCP
+`2025-06-18` while the public MCP specification now redirects to `2025-11-25`,
+and its transport/SDK shape brings broad Eio, socket, HTTP, schema-generation,
+and OCaml-development-server machinery that Tethers does not need for a narrow
+planner-only stdio server. `snf_mcp` proves OCaml MCP stdio practicality,
+including Windows CI and shutdown handling, but it vendors MCP code inside a
+web-search server with network-heavy dependencies. Tethers should keep the
+first server small, deterministic, and application-agnostic.
+
 ## Open Decisions
 
 - Whether future documentation should live at the workspace root, inside
   `tethers-0.1/`, or both.
-- What the first post-baseline implementation milestone should be.

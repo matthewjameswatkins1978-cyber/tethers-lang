@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":"init-1","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"tethers","version":"0.1.0"}}}
+{"jsonrpc":"2.0","id":"tools-1","result":{"tools":[{"name":"tethers.evaluate","description":"Evaluate one complete Tethers 0.1 request and return the Tethers response envelope without executing Actions.","inputSchema":{"type":"object","properties":{"request":{"type":"object","description":"Complete Tethers 0.1 request envelope"}},"required":["request"],"additionalProperties":false}}]}}

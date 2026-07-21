@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"init-bad-version","method":"initialize","params":{"protocolVersion":"1900-01-01","capabilities":{},"clientInfo":{"name":"tethers-mcp-fixture-client","version":"0.1.0"}}}

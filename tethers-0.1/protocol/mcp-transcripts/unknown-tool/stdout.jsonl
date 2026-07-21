@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":"init-1","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"tethers","version":"0.1.0"}}}
+{"jsonrpc":"2.0","id":"unknown-tool-1","error":{"code":-32602,"message":"Unknown tool: tethers.nope"}}

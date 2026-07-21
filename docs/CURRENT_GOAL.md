@@ -2,8 +2,9 @@
 
 ## Goal
 
-Record and publish the approved OCaml-owned Tethers MCP direction without
-starting implementation.
+Prepare the first MCP implementation milestone by completing the read-only
+dependency survey, extracting the canonical evaluator boundary, and adding the
+test-first MCP transcript fixtures before server implementation.
 
 ## Immediate Definition Of Done
 
@@ -77,11 +78,94 @@ tasks. Windows PowerShell 5.1 (`powershell.exe`) is not a project requirement.
 
 ## MCP Working Posture
 
-M0 is documentation-only: preserve the approved MCP direction, make it
-discoverable from the project guidance, and commit the decision. M1 is a
-read-only dependency survey of `ocaml-mcp`, `snf_mcp`, and the OCaml `jsonrpc`
-package. Do not install, pin, vendor, or implement MCP code before that survey
-is reviewed.
+M0 is complete. M1 is complete and recorded in
+`docs/MCP_DEPENDENCY_SURVEY.md`.
+
+Dependency decision: do not add `ocaml-mcp` or `snf_mcp` as a first-server
+dependency. Use both as references only. The OCaml `jsonrpc` package remains a
+possible later helper after M2/M3, but no dependency should be added before an
+explicit implementation task.
+
+M2 is complete: `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml` now exposes
+`evaluate_request`, and the existing engine executable calls
+`Tethers_evaluator.process_line`.
+
+Verification after M2:
+
+- `opam exec -- dune build`: passed.
+- `scripts/check-fixtures.ps1`: passed, `JSON fixtures are valid (44 files)`.
+- `scripts/test-engine.ps1`: passed all fixture cases and deterministic repeat.
+- `scripts/test-host-denial.ps1`: passed.
+- `scripts/test-host-execution-failure.ps1`: passed.
+- `scripts/demo.ps1`: passed, full round trip completed.
+- `cargo test`: passed, `2 passed; 0 failed`.
+
+M3 is complete: `tethers-0.1/protocol/mcp-transcripts/` now contains eleven
+newline-delimited JSON-RPC transcript fixture cases, each with `stdin.jsonl`
+and `stdout.jsonl`.
+
+The transcript set covers:
+
+- initialization success;
+- incompatible MCP protocol version;
+- `tools/list`;
+- successful `tethers.evaluate` returning `matched`;
+- successful `tethers.evaluate` returning `not_matched`;
+- minimal Tethers error result;
+- correlated Tethers error result;
+- malformed tool arguments;
+- unknown tool;
+- tool call before initialization;
+- clean EOF/shutdown.
+
+`tethers-0.1/scripts/test-mcp-transcripts.ps1` validates the fixture set
+without running an MCP server. It compares JSON messages semantically by
+ignoring object-key order, preserves transcript message order, preserves array
+order, checks request/response ID correlation, verifies `notifications/initialized`
+appears before normal operations, confirms `tools/list` exposes only
+`tethers.evaluate`, and checks that Tethers planner errors remain
+`isError: false` tool results with matching `structuredContent` and text
+content.
+
+Verification after M3:
+
+- `scripts/check-fixtures.ps1`: passed, `JSON fixtures are valid (44 JSON files, 22 JSONL files)`.
+- `scripts/test-mcp-transcripts.ps1`: passed all eleven transcript cases.
+- Transcript validator deterministic repeat: passed.
+
+Next milestone: M4 minimal OCaml stdio server.
+
+M4 is complete on 2026-07-21.
+
+The real OCaml stdio MCP server passes all eleven transcript cases:
+- `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` — JSON-RPC parsing, lifecycle state machine, method dispatch, `tethers.evaluate` delegation to `Tethers_evaluator.evaluate_request`.
+- `tethers-0.1/engine-ocaml/bin/tethers_mcp_main.ml` — stdio loop executable; reads one JSON-RPC message per line, writes only protocol JSON to stdout, sends diagnostics to stderr, exits cleanly on EOF.
+- `tethers-0.1/engine-ocaml/bin/dune` — builds both `tethers_engine` (existing) and `tethers_mcp_server` (new) executables from shared source modules.
+- `tethers-0.1/scripts/test-mcp-transcripts.ps1` — now launches the real `tethers_mcp_main.exe` server via .NET `Process`, pipes each `stdin.jsonl` fixture, and compares actual stdout semantically against the expected `stdout.jsonl`.
+
+Supported MCP methods: `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`.
+Lifecycle: `Uninitialized → Initializing → Initialized`; calls before init rejected with -32002.
+`tools/list` advertises exactly `tethers.evaluate` with the declared input schema.
+`tools/call` for `tethers.evaluate` returns `structuredContent` + text mirror and `isError: false`.
+Unknown tools → -32602; malformed arguments → -32602; unknown methods → -32601.
+Incompatible protocol version → -32602 with `requested`/`supported` data.
+Notifications (including unknown) are silently ignored; no response for EOF.
+Uses only Yojson; no new dependencies added.
+
+Verification after M4:
+- `scripts/check-fixtures.ps1`: passed.
+- `scripts/test-mcp-transcripts.ps1`: passed all eleven transcript cases.
+- Deterministic repeat of `test-mcp-transcripts.ps1`: passed.
+- `opam exec -- dune build`: passed.
+- `scripts/test-engine.ps1`: passed all fixture cases and deterministic repeat.
+- `scripts/test-host-denial.ps1`: passed.
+- `scripts/test-host-execution-failure.ps1`: passed.
+- `scripts/demo.ps1`: passed.
+- `cargo test`: passed, `2 passed; 0 failed`.
+- `git diff --check`: passed, whitespace clean.
+- No dependency added, removed, or changed.
+
+Next milestone: M5 — Real client verification per `docs/MCP_PLAN.md`.
 
 ## Fixture Contract Follow-Up
 
