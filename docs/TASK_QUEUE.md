@@ -48,17 +48,25 @@
 
 ## Columbo Manifest Validation Queue
 
+### C1 — Manifest Parsing and Digesting (complete)
+
+Final checkpoint: `34330b3` — feat: validate Columbo manifest semantics
+
 1. [x] C1a1 data types and structured error model.
 2. [x] C1a2 strict parsing, unknown-field handling, and recursive duplicate-key
    rejection.
 3. [x] C1b1 investigate and verify the RFC 8785/JCS implementation/dependency
-   against official vectors; stop for a separate design decision if no suitable
-   Rust implementation is verified. Selected `serde_json_canonicalizer` 0.3.x
-   after reviewing version 0.3.2 against RFC examples and the cyberphone
-   reference corpus.
-4. [ ] C1b2 canonicalisation, fixed SHA-256 digesting, and official/golden
+   against official vectors. Selected `serde_json_canonicalizer` 0.3.x.
+4. [x] C1b2 canonicalisation, fixed SHA-256 digesting, and official/golden
    vectors.
-5. [ ] C1c semantic and cross-field validation.
+5. [x] C1c semantic and cross-field validation.
+
+### C2 — Trusted Manifest Store
+
+1. [ ] C2a verify declared manifest digest.
+2. [ ] C2b store verified manifests with identity and digest indexes.
+3. [ ] C2c define and implement insertion conflicts, idempotency, and
+   retrieval semantics.
 
 The 10-minute implementation-step limit is a clean-stop limit, not a promise
 that each task must finish in ten minutes. Incomplete tasks must stop cleanly

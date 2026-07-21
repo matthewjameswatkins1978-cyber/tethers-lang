@@ -157,6 +157,37 @@ including Windows CI and shutdown handling, but it vendors MCP code inside a
 web-search server with network-heavy dependencies. Tethers should keep the
 first server small, deterministic, and application-agnostic.
 
+## 2026-07-21: Columbo C1 Complete — Begin C2 Trusted Manifest Store
+
+Decision: Columbo C1 is complete at checkpoint `34330b3`. The next set is
+C2 — Trusted Manifest Store, beginning with C2a — Verify declared manifest
+digest.
+
+C1 final state:
+- C1a1: data types and structured error model ✓
+- C1a2: strict parsing, duplicate-key rejection ✓
+- C1b1: JCS dependency verified (`serde_json_canonicalizer` 0.3.x) ✓
+- C1b2: canonicalisation, SHA-256, golden vectors ✓
+- C1c: semantic cross-field validation ✓
+
+C2 planned task order:
+- C2a: Verify declared manifest digest
+- C2b: Store verified manifests with identity and digest indexes
+- C2c: Define insertion conflicts, idempotency, and retrieval semantics
+
+C2a verifies that a manifest's supplied top-level `digest` matches the
+digest computed from its authoritative fields. It produces a
+`VerifiedManifest` type that C2b insertion requires, making unverified
+insertion impossible at compile time. Digest verification proves content
+identity and integrity; it does not prove provider trust, authorisation,
+or permission to dispatch.
+
+Digest syntax: `sha256:` followed by exactly 64 lowercase hex characters.
+Uppercase, whitespace, and other algorithm prefixes are rejected.
+
+Reason: C2 establishes the boundary between valid manifests and verified
+ones before any storage, trust, or dispatch decision.
+
 ## 2026-07-21: Capability Bridge Trust Boundary (M7)
 
 Decision: The capability bridge design (`docs/CAPABILITY_BRIDGE.md`) establishes

@@ -1431,43 +1431,183 @@ re-encoding the value.
 
 ---
 
-## 16. Columbo C1 implementation boundary
+## 16. Columbo C1 implementation boundary (complete)
 
 Columbo C1 is the first implementation pass for manifest parsing, validation,
-and digesting. It is still documentation/planning here; no executable
-implementation is part of this M7/C1 design correction.
+and digesting. All five C1 tasks are complete.
 
-The 10-minute implementation-step limit is a stop limit, not a promise that
-each task must finish in ten minutes. Each incomplete task must stop cleanly,
-leave the repository in a coherent state, and report the remaining work.
+C1 final checkpoint: `34330b3` — feat: validate Columbo manifest semantics
 
-Split C1 into these implementation tasks:
+Completed C1 tasks:
 
-1. **C1a1: data types and structured error model** - define manifest data
-   structures and explicit validation errors without parsing or digesting yet.
+1. **C1a1: data types and structured error model** ✓
 2. **C1a2: strict parsing, unknown-field handling, and recursive duplicate-key
-   rejection** - parse manifest JSON while rejecting duplicate keys in every
-   object recursively, including arbitrary schema objects. Decide and document
-   unknown-field behaviour for top-level manifest objects and for nested
-   extension points.
-3. **C1b1: investigate and verify the JCS implementation/dependency** - review
-   maintained Rust RFC 8785/JCS implementations and verify the selected
-   candidate against official RFC 8785 examples and test vectors. If no
-   suitable implementation is verified, stop for a separate design decision.
-4. **C1b2: canonicalisation, SHA-256, and official/golden vectors** - compute
-   the fixed SHA-256 digest over RFC 8785 canonical bytes, add official and
-   project golden vectors, and prove `manifest_format_version`, complete
-   schemas, provider, binding, retry, idempotency, and all other authoritative
-   fields affect the digest.
-5. **C1c: semantic and cross-field validation** - validate capability identity,
-   scope, effects, confirmation, credential injection declarations, output
-   schema constraints, idempotency/retry consistency, provider binding proof,
-   and digest/pinned-binding consistency.
+   rejection** ✓
+3. **C1b1: investigate and verify the JCS implementation/dependency** ✓
+   — selected `serde_json_canonicalizer` 0.3.x.
+4. **C1b2: canonicalisation, SHA-256, and official/golden vectors** ✓
+5. **C1c: semantic and cross-field validation** ✓
 
-Later post-C1 implementation pieces remain deferred:
+Three settled C1c invariants:
 
-- Trusted manifest store keyed by `(capability_name, capability_version)` and
-  retrievable by digest.
+- Null `permission_scope` → `per_call_required` must be `true`.
+- `output_schema` must not be empty `{}` or boolean `true`.
+- `idempotency.mechanism` is `"none"` + effectful effects + `max_retries > 0`
+  is invalid.
+
+Reserved error codes awaiting future implementation: `InvalidEffects`,
+`InvalidIdempotency`, `ContainsCredentials`, `DigestMismatch`.
+
+## 17. Columbo C2 — Trusted Manifest Store
+
+C2 establishes the boundary between:
+
+- structurally and semantically valid manifests (C1);
+- manifests whose declared digest has been verified (C2a);
+- manifests admitted to the trusted store (C2b).
+
+The trusted store must never accept an ordinary parsed `TrustedManifest` or
+unchecked JSON directly. Its insertion boundary must require the verified
+representation produced by C2a.
+
+C2 does not establish provider trust merely because a manifest's digest
+matches. Digest verification proves content identity and integrity relative to
+the declared digest; it does not prove who authored, supplied or authorised the
+manifest.
+
+Planned task boundaries:
+
+- **C2a** — Verify declared manifest digest.
+- **C2b** — Store verified manifests with identity and digest indexes.
+- **C2c** — Define and implement insertion conflicts, idempotency, and
+  retrieval semantics.
+
+### 17.1 C2a — Verify declared manifest digest
+
+#### Input
+
+Original manifest JSON text containing a supplied top-level `digest` field.
+
+#### Verification pipeline
+
+1. Duplicate-aware strict JSON parsing (C1a2).
+2. Authoritative field, type, and enum validation (C1a2).
+3. C1c semantic cross-field validation.
+4. Accepted IEEE-754/I-JSON number-domain enforcement.
+5. RFC 8785/JCS canonicalisation of the original strict-parsed `Value` after
+   excluding only top-level `digest`, `title`, and `description`.
+6. SHA-256 calculation over the canonical bytes.
+7. Supplied-digest format validation.
+8. Constant, deterministic comparison of supplied and calculated digest.
+9. Production of a `VerifiedManifest` only after equality succeeds.
+
+#### Digest syntax
+
+- A supplied top-level `digest` is mandatory for C2a verification.
+- Syntax: `sha256:` followed by exactly 64 lowercase hexadecimal characters.
+- Uppercase hexadecimal is rejected rather than normalised.
+- Leading/trailing whitespace is rejected rather than trimmed.
+- Other algorithm prefixes are rejected.
+- No `digest_algorithm` field is introduced.
+- The supplied digest value is excluded from its own canonical digest input.
+- Top-level `title` and `description` remain excluded.
+- Verification never overwrites or repairs a supplied digest.
+
+#### Error mappings
+
+| Condition | Error code | Field pointer |
+|---|---|---|
+| `digest` missing | `MissingField` | `/digest` |
+| `digest` not a string | `InvalidType` | `/digest` |
+| `digest` syntax malformed | `InvalidValue` | `/digest` |
+| Digest mismatch | `DigestMismatch` | `/digest` |
+
+#### Verified representation (`VerifiedManifest`)
+
+A new type carrying at minimum:
+
+- `capability_name`: `String`
+- `capability_version`: `u32`
+- `verified_digest`: `String`
+- `manifest`: `TrustedManifest` (the fully validated manifest data)
+
+The `VerifiedManifest` type exists so that C2b insertion and C2c retrieval
+signatures can accept `VerifiedManifest` rather than `TrustedManifest`, making
+unverified insertion impossible at compile time.
+
+`VerifiedManifest` must not contain canonical bytes or the original JSON/Value
+unless a later task demonstrates a concrete need. The `verified_digest` field
+is always the calculated digest, never the supplied string copied verbatim
+without verification.
+
+#### Trust boundary
+
+A matching digest means:
+
+- the manifest content matches its declared content identity;
+- canonical bytes reproduce the declared SHA-256 value.
+
+It does **not** mean:
+
+- the provider is trusted;
+- the manifest is authorised for installation;
+- credentials may be supplied;
+- the capability may be dispatched;
+- Actions may execute;
+- approval is granted.
+
+Use "verified manifest" for the C2a result. Reserve "trusted store" for the
+host-controlled collection that admits verified manifests under later C2b/C2c
+rules.
+
+#### C2a scope exclusions
+
+C2a must not implement:
+
+- manifest storage or persistence;
+- MCP discovery or schema-drift checking;
+- capability registry or projection;
+- provider identity or provider trust;
+- credential scanning, loading, or injection;
+- dispatch, networking, approvals, or Action execution;
+- Trail writing;
+- OCaml changes;
+- broader semantic validation;
+- algorithm agility.
+
+#### Later C2 boundaries (defined here, not implemented)
+
+**C2b — Store verified manifests:**
+
+- Insertion accepts only `VerifiedManifest` (the C2a type).
+- Primary identity key: `(capability_name, capability_version)`.
+- Retrieval by exact digest.
+- Retrieval by exact name/version.
+- Initial implementation is deterministic in-memory unless canonical documents
+  already require persistence.
+
+**C2c — Insertion conflicts, idempotency, and retrieval semantics:**
+
+C2c will settle:
+
+- Reinsertion of the same identity and same digest.
+- Same identity with a different digest.
+- Digest collision or inconsistent index state.
+- Replacement/version policy.
+- Deterministic error mappings.
+- Retrieval and conflict tests.
+
+C2c conflict policy is not settled here. The unresolved choices are:
+
+- Whether same-identity-same-digest reinsertion quietly succeeds or explicitly
+  signals idempotency.
+- Whether same-identity-different-digest is rejected unconditionally or
+  permitted under a policy switch.
+- Whether digest collision (same digest, different identity) is an error or
+  merely a warning.
+
+### Remaining deferred items (beyond C2)
+
 - MCP discovery adapter and schema-drift checker.
 - Capability registry/projection supplied to the planner as deterministic input.
 - Host dispatcher, provider-specific scope validators, credential injection,

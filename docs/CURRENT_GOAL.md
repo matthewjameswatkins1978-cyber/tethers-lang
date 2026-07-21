@@ -348,16 +348,23 @@ Columbo C1 architecture correction on 2026-07-21:
   finish in ten minutes.
 
 Columbo implementation checkpoints on 2026-07-21:
+
+C1 is complete. Final checkpoint: `34330b3` — feat: validate Columbo manifest
+semantics.
+
 - C1a1 added manifest data types and the structured error model.
 - C1a2 added strict parsing, authoritative unknown-field rejection, recursive
   duplicate-key rejection, and trailing-token rejection.
 - C1b1 selected `serde_json_canonicalizer` 0.3.x, reviewed at 0.3.2, for RFC
-  8785/JCS canonical byte generation after C1a2 strict parsing. Columbo still
-  owns I-JSON and number-domain enforcement, digest field filtering, SHA-256
-  digesting, and project golden vectors.
+  8785/JCS canonical byte generation.
+- C1b2 added canonicalisation, fixed SHA-256 digesting, and official/golden
+  vectors.
+- C1c added semantic cross-field validation: null scope requires per-call
+  confirmation; empty or bool-true output_schema rejected; idempotency/retry
+  consistency enforced for effectful Actions.
 
-Next phase: Columbo C1b2 canonicalisation, fixed SHA-256 digesting, and
-official/golden vectors. No M8 is defined in the canonical plan.
+Next phase: Columbo C2 — Trusted Manifest Store, beginning with
+C2a — Verify declared manifest digest.
 
 ## Fixture Contract Follow-Up
 
