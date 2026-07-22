@@ -100,13 +100,39 @@ impl ProviderAvailability {
 #[derive(Debug, Clone)]
 pub struct ResolvedCapability {
     /// Exact (capability_name, capability_version).
-    pub identity: CapabilityIdentity,
+    identity: CapabilityIdentity,
     /// Host-assigned provider identity from the manifest.
-    pub provider_identity: String,
+    provider_identity: String,
     /// Verified cryptographic digest of the manifest.
-    pub manifest_digest: String,
+    manifest_digest: String,
     /// The complete underlying verified manifest for later dispatch use.
-    pub manifest: VerifiedManifest,
+    manifest: VerifiedManifest,
+}
+
+impl ResolvedCapability {
+    pub fn identity(&self) -> &CapabilityIdentity {
+        &self.identity
+    }
+
+    pub fn capability_name(&self) -> &str {
+        &self.identity.name
+    }
+
+    pub fn capability_version(&self) -> u32 {
+        self.identity.version
+    }
+
+    pub fn provider_identity(&self) -> &str {
+        &self.provider_identity
+    }
+
+    pub fn manifest_digest(&self) -> &str {
+        &self.manifest_digest
+    }
+
+    pub fn manifest(&self) -> &VerifiedManifest {
+        &self.manifest
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -381,10 +407,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved.identity.name, "notes.note.read");
-        assert_eq!(resolved.identity.version, 1);
-        assert_eq!(resolved.provider_identity, "obsidian-local");
-        assert_eq!(resolved.manifest_digest, verified_read().verified_digest());
+        assert_eq!(resolved.capability_name(), "notes.note.read");
+        assert_eq!(resolved.capability_version(), 1);
+        assert_eq!(resolved.provider_identity(), "obsidian-local");
+        assert_eq!(
+            resolved.manifest_digest(),
+            verified_read().verified_digest()
+        );
     }
 
     #[test]
@@ -401,8 +430,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved.identity.name, "notes.note.read");
-        assert_eq!(resolved.provider_identity, "obsidian-local");
+        assert_eq!(resolved.capability_name(), "notes.note.read");
+        assert_eq!(resolved.provider_identity(), "obsidian-local");
     }
 
     #[test]
@@ -419,8 +448,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved.identity.name, "notes.note.create");
-        assert_eq!(resolved.provider_identity, "obsidian-local");
+        assert_eq!(resolved.capability_name(), "notes.note.create");
+        assert_eq!(resolved.provider_identity(), "obsidian-local");
     }
 
     // -- no admitted manifest --
@@ -496,7 +525,7 @@ mod tests {
             Some("obsidian-local"),
         )
         .unwrap();
-        assert_eq!(v1.identity.version, 1);
+        assert_eq!(v1.capability_version(), 1);
 
         let v2 = resolve_capability(
             &store,
@@ -506,8 +535,8 @@ mod tests {
             Some("obsidian-local"),
         )
         .unwrap();
-        assert_eq!(v2.identity.version, 2);
-        assert_ne!(v1.manifest_digest, v2.manifest_digest);
+        assert_eq!(v2.capability_version(), 2);
+        assert_ne!(v1.manifest_digest(), v2.manifest_digest());
     }
 
     // -- provider unavailable --
@@ -656,8 +685,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(r1.manifest_digest, r2.manifest_digest);
-        assert_eq!(r1.provider_identity, r2.provider_identity);
+        assert_eq!(r1.manifest_digest(), r2.manifest_digest());
+        assert_eq!(r1.provider_identity(), r2.provider_identity());
     }
 
     // -- live but unadmitted capability does not resolve --

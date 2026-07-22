@@ -23,9 +23,9 @@
 //
 // - Action arguments are preserved raw.  Full JSON Schema validation
 //   against the manifest's `input_schema` is a later boundary.
-// - The `PermissionDecision::Allow` enum variant carries no embedded
-//   identity.  `AllowIdentity` provides the smallest explicit binding
-//   and is verified against the resolved capability.
+// - `PermissionDecision::Allow` carries a policy-created
+//   `AllowedCapability` token.  `prepare_and_record` verifies that
+//   token against the resolved capability before recording intent.
 // ---------------------------------------------------------------------------
 
 use crate::policy::PermissionDecision;
@@ -47,39 +47,14 @@ pub struct ExecutionId(pub String);
 pub struct ActionId(pub String);
 
 // ---------------------------------------------------------------------------
-// Allow identity binding
-// ---------------------------------------------------------------------------
-
-/// The exact capability identity for which an Allow decision was obtained.
-///
-/// `PermissionDecision::Allow` carries no embedded identity.  This struct
-/// is the smallest explicit binding between an Allow decision and the
-/// capability it authorises.  `prepare_and_record` requires it and
-/// verifies it matches the resolved capability.
-///
-/// Without this binding, a bare `PermissionDecision::Allow` obtained
-/// for capability A could be passed alongside a `ResolvedCapability`
-/// for capability B.  `AllowIdentity` makes that mismatch detectable.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AllowIdentity {
-    pub capability_name: String,
-    pub capability_version: u32,
-}
-
-impl AllowIdentity {
-    pub fn new(name: impl Into<String>, version: u32) -> Self {
-        Self {
-            capability_name: name.into(),
-            capability_version: version,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Intent entry
 // ---------------------------------------------------------------------------
 
 /// A durable intent record written before any effectful call.
+///
+/// This is the smallest provisional intent record for the current
+/// proof boundary.  It is not yet the complete execution Trail
+/// envelope described by the architecture docs.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IntentEntry {
     pub execution_id: String,
@@ -188,10 +163,13 @@ pub enum PrepareError {
     },
     /// Empty execution or action identifier.
     EmptyIdentifier { field: &'static str },
-    /// Serialization or write failure during intent append.
+    /// Serialization or write failure during intent append.  No
+    /// dispatch-ready token was returned; the file may contain no bytes,
+    /// a partial record, or an unconfirmed complete record.
     IntentWriteFailed { message: String },
-    /// Sync/durability failure after write.
-    /// A partial record may exist on disk, but no provider call occurred.
+    /// Flush/sync/durability failure after write.  No dispatch-ready
+    /// token was returned; the file may contain no bytes, a partial
+    /// record, or an unconfirmed complete record.
     IntentFlushFailed { message: String },
 }
 
@@ -207,17 +185,19 @@ pub trait Trail {
     /// Serialize, append, flush userspace buffers, and sync to durable
     /// storage.  Returns `Ok(())` only when the intent is durable.
     ///
-    /// Errors distinguish write failure from sync failure so callers
-    /// know whether a partial record may exist on disk.
+    /// On any error, callers must not dispatch.  A failed write, flush,
+    /// or sync may still leave no bytes, a partial record, or an
+    /// unconfirmed complete record at the tail.
     fn append_and_flush_intent(&mut self, entry: &IntentEntry) -> Result<(), TrailError>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TrailError {
-    /// Serialization or write failed.  No partial record on disk.
+    /// Serialization or write failed.  The file may contain no bytes,
+    /// a partial record, or an unconfirmed complete record.
     WriteFailed(String),
-    /// Sync/durability failed.  A partial record may exist, but no
-    /// provider call has occurred.
+    /// Flush/sync/durability failed.  The file may contain no bytes,
+    /// a partial record, or an unconfirmed complete record.
     FlushFailed(String),
 }
 
@@ -228,8 +208,11 @@ pub enum TrailError {
 /// Append-only JSONL Trail backed by a filesystem file.
 ///
 /// Each intent is serialized as one JSON line, written, buffered,
-/// and `sync_data()`ed before reporting success.  Uses only the
-/// Rust standard library — no database or external dependency.
+/// and `sync_data()`ed before reporting success.  A failed write,
+/// flush, or sync returns no dispatch-ready token, but this is a
+/// serial-use append helper, not an atomic multi-writer JSONL store
+/// or crash-recovery mechanism.  Uses only the Rust standard library
+/// — no database or external dependency.
 pub struct FileTrail {
     file: fs::File,
     path: PathBuf,
@@ -313,10 +296,8 @@ impl Trail for RecordingTrail {
 ///
 /// # Arguments
 ///
-/// * `decision` — effective permission decision from policy evaluation.
-/// * `allowed` — the exact capability identity for which Allow was
-///   granted.  This provides the identity binding that
-///   `PermissionDecision::Allow` itself lacks.
+/// * `decision` — effective permission decision from policy evaluation,
+///   including a policy-created `AllowedCapability` token for Allow.
 /// * `resolved` — the resolved capability (admitted, verified, available).
 /// * `execution_id` — caller-supplied stable execution identifier.
 /// * `action_id` — caller-supplied stable action identifier.
@@ -324,20 +305,19 @@ impl Trail for RecordingTrail {
 /// * `trail` — durable intent recorder.
 pub fn prepare_and_record(
     decision: PermissionDecision,
-    allowed: &AllowIdentity,
     resolved: &ResolvedCapability,
     execution_id: ExecutionId,
     action_id: ActionId,
     arguments: serde_json::Value,
     trail: &mut dyn Trail,
 ) -> Result<DispatchReadyAction, PrepareError> {
-    // 1. Decision must be Allow.
-    match decision {
-        PermissionDecision::Allow => {}
+    // 1. Decision must be Allow and must carry a policy-created token.
+    let allowed = match decision {
+        PermissionDecision::Allow(allowed) => allowed,
         PermissionDecision::Ask => return Err(PrepareError::Ask),
         PermissionDecision::Deny => return Err(PrepareError::Deny),
         PermissionDecision::Unavailable => return Err(PrepareError::Unavailable),
-    }
+    };
 
     // 2. Validate non-empty identifiers.
     if execution_id.0.is_empty() {
@@ -351,30 +331,34 @@ pub fn prepare_and_record(
 
     // 3. Identity binding: the AllowedIdentity must match the resolved
     //    capability.
-    if allowed.capability_name != resolved.identity.name
-        || allowed.capability_version != resolved.identity.version
+    if allowed.capability_name() != resolved.capability_name()
+        || allowed.capability_version() != resolved.capability_version()
     {
         return Err(PrepareError::CapabilityIdentityMismatch {
-            allowed_name: allowed.capability_name.clone(),
-            allowed_version: allowed.capability_version,
-            resolved_name: resolved.identity.name.clone(),
-            resolved_version: resolved.identity.version,
+            allowed_name: allowed.capability_name().to_owned(),
+            allowed_version: allowed.capability_version(),
+            resolved_name: resolved.capability_name().to_owned(),
+            resolved_version: resolved.capability_version(),
         });
     }
 
-    let capability_name = &resolved.identity.name;
-    let capability_version = resolved.identity.version;
-    let provider_identity = &resolved.provider_identity;
-    let manifest_digest = &resolved.manifest_digest;
+    let capability_name = resolved.capability_name();
+    let capability_version = resolved.capability_version();
+    let provider_identity = resolved.provider_identity();
+    let manifest_digest = resolved.manifest_digest();
+
+    debug_assert_eq!(resolved.manifest().capability_name(), capability_name);
+    debug_assert_eq!(resolved.manifest().capability_version(), capability_version);
+    debug_assert_eq!(resolved.manifest().verified_digest(), manifest_digest);
 
     // 4. Build intent entry.
     let entry = IntentEntry {
         execution_id: execution_id.0.clone(),
         action_id: action_id.0.clone(),
-        capability_name: capability_name.clone(),
+        capability_name: capability_name.to_owned(),
         capability_version,
-        provider_identity: provider_identity.clone(),
-        manifest_digest: manifest_digest.clone(),
+        provider_identity: provider_identity.to_owned(),
+        manifest_digest: manifest_digest.to_owned(),
         arguments: arguments.clone(),
     };
 
@@ -388,11 +372,11 @@ pub fn prepare_and_record(
     Ok(DispatchReadyAction {
         execution_id,
         action_id,
-        capability_name: capability_name.clone(),
+        capability_name: capability_name.to_owned(),
         capability_version,
-        provider_identity: provider_identity.clone(),
-        manifest_digest: manifest_digest.clone(),
-        verified_manifest: resolved.manifest.clone(),
+        provider_identity: provider_identity.to_owned(),
+        manifest_digest: manifest_digest.to_owned(),
+        verified_manifest: resolved.manifest().clone(),
         arguments,
     })
 }
@@ -406,7 +390,8 @@ mod tests {
     use super::*;
     use crate::manifest::VerifiedManifest;
     use crate::policy::{
-        evaluate_permission_resolved, CapabilityRequirement, HostLocalPolicy, PolicyRule,
+        evaluate_permission_resolved, CapabilityRequirement, HostLocalPolicy, PermissionDecision,
+        PolicyRule,
     };
     use crate::resolver::{self, ProviderAvailability};
     use crate::trusted_store::TrustedManifestStore;
@@ -499,12 +484,26 @@ mod tests {
         (store, availability, resolved)
     }
 
-    fn allow_identity_read() -> AllowIdentity {
-        AllowIdentity::new("notes.note.read", 1)
-    }
-
     fn allow_all_policy() -> HostLocalPolicy {
         HostLocalPolicy::new(PolicyRule::Allow)
+    }
+
+    fn allow_decision_for(resolved: &ResolvedCapability) -> PermissionDecision {
+        let requirements = vec![CapabilityRequirement::new(
+            resolved.capability_name().to_owned(),
+            resolved.capability_version(),
+        )];
+        evaluate_permission_resolved(&requirements, resolved, &allow_all_policy())
+    }
+
+    fn assert_allowed(decision: &PermissionDecision, name: &str, version: u32) {
+        match decision {
+            PermissionDecision::Allow(allowed) => {
+                assert_eq!(allowed.capability_name(), name);
+                assert_eq!(allowed.capability_version(), version);
+            }
+            other => panic!("expected Allow, got {other:?}"),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -515,12 +514,11 @@ mod tests {
     #[test]
     fn allow_with_valid_resolved_capability_returns_dispatch_ready_action() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let policy = allow_all_policy();
         let requirements = vec![notes_read_requirement()];
 
         let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
-        assert_eq!(decision, PermissionDecision::Allow);
+        assert_allowed(&decision, "notes.note.read", 1);
 
         let mut trail = RecordingTrail::new();
         let args = json!({"path": "projects/test.md"});
@@ -529,7 +527,6 @@ mod tests {
 
         let ready = prepare_and_record(
             decision,
-            &allowed,
             &resolved,
             exec_id.clone(),
             action_id.clone(),
@@ -543,7 +540,7 @@ mod tests {
         assert_eq!(ready.capability_name(), "notes.note.read");
         assert_eq!(ready.capability_version(), 1);
         assert_eq!(ready.provider_identity(), "obsidian-local");
-        assert_eq!(ready.manifest_digest(), resolved.manifest_digest);
+        assert_eq!(ready.manifest_digest(), resolved.manifest_digest());
         assert_eq!(ready.arguments(), &args);
     }
 
@@ -554,7 +551,6 @@ mod tests {
     #[test]
     fn intent_is_recorded_before_ready_action_is_returned() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let policy = allow_all_policy();
         let requirements = vec![notes_read_requirement()];
         let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
@@ -564,7 +560,6 @@ mod tests {
 
         let _ready = prepare_and_record(
             decision,
-            &allowed,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -589,7 +584,6 @@ mod tests {
     #[test]
     fn ask_returns_not_ready_and_writes_no_intent() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let policy = HostLocalPolicy::new(PolicyRule::Ask);
         let requirements = vec![notes_read_requirement()];
         let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
@@ -598,7 +592,6 @@ mod tests {
         let mut trail = RecordingTrail::new();
         let err = prepare_and_record(
             decision,
-            &allowed,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -618,7 +611,6 @@ mod tests {
     #[test]
     fn deny_returns_no_ready_action_and_writes_no_intent() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let policy = HostLocalPolicy::new(PolicyRule::Deny);
         let requirements = vec![notes_read_requirement()];
         let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
@@ -627,7 +619,6 @@ mod tests {
         let mut trail = RecordingTrail::new();
         let err = prepare_and_record(
             decision,
-            &allowed,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -647,11 +638,9 @@ mod tests {
     #[test]
     fn unavailable_returns_no_ready_action_and_writes_no_intent() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let mut trail = RecordingTrail::new();
         let err = prepare_and_record(
             PermissionDecision::Unavailable,
-            &allowed,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -665,20 +654,39 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 6: Mismatched capability name (AllowedIdentity vs resolved) cannot
-    //         produce a ready action.
+    // Test 6: Allow for capability A cannot prepare capability B.
     // -----------------------------------------------------------------------
 
     #[test]
-    fn mismatched_allow_identity_name_rejected() {
-        let (_store, _availability, resolved) = resolved_read();
-        let wrong_allowed = AllowIdentity::new("notes.note.create", 1);
+    fn allow_for_capability_a_cannot_prepare_capability_b() {
+        let (_store, _availability, resolved_b) = resolved_read();
+        let mut store = TrustedManifestStore::new();
+        let mut create_json = read_manifest_json();
+        create_json["capability_name"] = json!("notes.note.create");
+        create_json["effects"] = json!(["filesystem.write"]);
+        create_json["binding"]["tool_name"] = json!("obsidian_create_note");
+        let (_, digest) =
+            crate::manifest::canonicalize_and_digest(&create_json.to_string()).unwrap();
+        create_json["digest"] = json!(digest);
+        store
+            .insert(crate::manifest::verify_manifest(&create_json.to_string()).unwrap())
+            .unwrap();
+        let availability = ProviderAvailability::from_identities(["obsidian-local"]);
+        let resolved_a = resolver::resolve_capability(
+            &store,
+            &availability,
+            "notes.note.create",
+            1,
+            Some("obsidian-local"),
+        )
+        .unwrap();
+        let decision_for_a = allow_decision_for(&resolved_a);
+        assert_allowed(&decision_for_a, "notes.note.create", 1);
         let mut trail = RecordingTrail::new();
 
         let err = prepare_and_record(
-            PermissionDecision::Allow,
-            &wrong_allowed,
-            &resolved,
+            decision_for_a,
+            &resolved_b,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
             json!({}),
@@ -706,12 +714,30 @@ mod tests {
     #[test]
     fn mismatched_allow_identity_version_rejected() {
         let (_store, _availability, resolved) = resolved_read();
-        let wrong_allowed = AllowIdentity::new("notes.note.read", 2);
+        let mut store = TrustedManifestStore::new();
+        let mut read_v2_json = read_manifest_json();
+        read_v2_json["capability_version"] = json!(2);
+        let (_, digest) =
+            crate::manifest::canonicalize_and_digest(&read_v2_json.to_string()).unwrap();
+        read_v2_json["digest"] = json!(digest);
+        store
+            .insert(crate::manifest::verify_manifest(&read_v2_json.to_string()).unwrap())
+            .unwrap();
+        let availability = ProviderAvailability::from_identities(["obsidian-local"]);
+        let resolved_v2 = resolver::resolve_capability(
+            &store,
+            &availability,
+            "notes.note.read",
+            2,
+            Some("obsidian-local"),
+        )
+        .unwrap();
+        let decision_for_v2 = allow_decision_for(&resolved_v2);
+        assert_allowed(&decision_for_v2, "notes.note.read", 2);
         let mut trail = RecordingTrail::new();
 
         let err = prepare_and_record(
-            PermissionDecision::Allow,
-            &wrong_allowed,
+            decision_for_v2,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -739,7 +765,6 @@ mod tests {
     #[test]
     fn ready_action_carries_resolved_provider_and_digest_not_substituted_values() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let policy = allow_all_policy();
         let requirements = vec![notes_read_requirement()];
         let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
@@ -747,7 +772,6 @@ mod tests {
         let mut trail = RecordingTrail::new();
         let ready = prepare_and_record(
             decision,
-            &allowed,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -757,10 +781,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(ready.provider_identity(), "obsidian-local");
-        assert_eq!(ready.manifest_digest(), resolved.manifest_digest);
+        assert_eq!(ready.manifest_digest(), resolved.manifest_digest());
         let intent = &trail.entries[0];
         assert_eq!(intent.provider_identity, "obsidian-local");
-        assert_eq!(intent.manifest_digest, resolved.manifest_digest);
+        assert_eq!(intent.manifest_digest, resolved.manifest_digest());
     }
 
     // -----------------------------------------------------------------------
@@ -770,14 +794,13 @@ mod tests {
     #[test]
     fn trail_write_failure_returns_error_and_no_ready_action() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
+        let decision = allow_decision_for(&resolved);
 
         let mut trail = RecordingTrail::new();
         trail.injected_error = Some(TrailError::WriteFailed("disk full".into()));
 
         let err = prepare_and_record(
-            PermissionDecision::Allow,
-            &allowed,
+            decision,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -801,14 +824,13 @@ mod tests {
     #[test]
     fn trail_flush_failure_returns_error_and_no_ready_action() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
+        let decision = allow_decision_for(&resolved);
 
         let mut trail = RecordingTrail::new();
         trail.injected_error = Some(TrailError::FlushFailed("sync_data failed".into()));
 
         let err = prepare_and_record(
-            PermissionDecision::Allow,
-            &allowed,
+            decision,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -833,7 +855,6 @@ mod tests {
     #[test]
     fn stable_identifiers_appear_unchanged() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let policy = allow_all_policy();
         let requirements = vec![notes_read_requirement()];
         let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
@@ -844,7 +865,6 @@ mod tests {
 
         let ready = prepare_and_record(
             decision,
-            &allowed,
             &resolved,
             exec_id.clone(),
             action_id.clone(),
@@ -868,16 +888,14 @@ mod tests {
     #[test]
     fn repeated_prepare_and_record_is_deterministic() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let policy = allow_all_policy();
         let requirements = vec![notes_read_requirement()];
-        let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
 
         for _ in 0..3 {
+            let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
             let mut trail = RecordingTrail::new();
             let ready = prepare_and_record(
                 decision,
-                &allowed,
                 &resolved,
                 ExecutionId("exec-001".into()),
                 ActionId("action_1".into()),
@@ -899,7 +917,6 @@ mod tests {
     #[test]
     fn prepare_and_record_produces_no_provider_invocation() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
         let policy = allow_all_policy();
         let requirements = vec![notes_read_requirement()];
         let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
@@ -907,7 +924,6 @@ mod tests {
         let mut trail = RecordingTrail::new();
         let _ready = prepare_and_record(
             decision,
-            &allowed,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId("action_1".into()),
@@ -934,13 +950,12 @@ mod tests {
         let trail_path = dir.join("trail.jsonl");
 
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
+        let decision = allow_decision_for(&resolved);
 
         {
             let mut trail = FileTrail::open(&trail_path).unwrap();
             let _ready = prepare_and_record(
-                PermissionDecision::Allow,
-                &allowed,
+                decision,
                 &resolved,
                 ExecutionId("exec-file-001".into()),
                 ActionId("action_file_1".into()),
@@ -968,10 +983,7 @@ mod tests {
         assert_eq!(parsed[0]["capability_name"], "notes.note.read");
         assert_eq!(parsed[0]["capability_version"], 1);
         assert_eq!(parsed[0]["provider_identity"], "obsidian-local");
-        assert_eq!(
-            parsed[0]["manifest_digest"],
-            resolved.manifest_digest.as_str()
-        );
+        assert_eq!(parsed[0]["manifest_digest"], resolved.manifest_digest());
         assert_eq!(parsed[0]["arguments"]["path"], "projects/file-test.md");
 
         let _ = fs::remove_file(&trail_path);
@@ -985,12 +997,11 @@ mod tests {
     #[test]
     fn empty_execution_id_rejected() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
+        let decision = allow_decision_for(&resolved);
         let mut trail = RecordingTrail::new();
 
         let err = prepare_and_record(
-            PermissionDecision::Allow,
-            &allowed,
+            decision,
             &resolved,
             ExecutionId(String::new()),
             ActionId("action_1".into()),
@@ -1014,12 +1025,11 @@ mod tests {
     #[test]
     fn empty_action_id_rejected() {
         let (_store, _availability, resolved) = resolved_read();
-        let allowed = allow_identity_read();
+        let decision = allow_decision_for(&resolved);
         let mut trail = RecordingTrail::new();
 
         let err = prepare_and_record(
-            PermissionDecision::Allow,
-            &allowed,
+            decision,
             &resolved,
             ExecutionId("exec-001".into()),
             ActionId(String::new()),

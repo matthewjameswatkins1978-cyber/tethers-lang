@@ -115,6 +115,30 @@ impl HostLocalPolicy {
 // Permission decision
 // ---------------------------------------------------------------------------
 
+/// Policy-created proof that one exact capability identity was allowed.
+///
+/// The readiness-establishing field is private: callers can inspect or
+/// clone a token they were given, but only this policy module can create
+/// one from an effective permission evaluation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AllowedCapability {
+    identity: CapabilityIdentity,
+}
+
+impl AllowedCapability {
+    fn new(identity: CapabilityIdentity) -> Self {
+        Self { identity }
+    }
+
+    pub fn capability_name(&self) -> &str {
+        &self.identity.name
+    }
+
+    pub fn capability_version(&self) -> u32 {
+        self.identity.version
+    }
+}
+
 /// The effective permission outcome for one requested capability.
 ///
 /// These match the canonical architecture §4.7:
@@ -130,9 +154,9 @@ impl HostLocalPolicy {
 /// the capability cannot be resolved as currently usable — the
 /// provider is not reachable, the manifest was never admitted, or
 /// the exact version does not exist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionDecision {
-    Allow,
+    Allow(AllowedCapability),
     Ask,
     Deny,
     Unavailable,
@@ -194,7 +218,9 @@ pub fn evaluate_permission(
             match policy.rule_for(capability_name, capability_version) {
                 PolicyRule::Deny => PermissionDecision::Deny,
                 PolicyRule::Ask => PermissionDecision::Ask,
-                PolicyRule::Allow => PermissionDecision::Allow,
+                PolicyRule::Allow => PermissionDecision::Allow(AllowedCapability::new(
+                    CapabilityIdentity::new(capability_name, capability_version),
+                )),
             }
         }
         Err(_) => PermissionDecision::Unavailable,
@@ -209,13 +235,12 @@ pub fn evaluate_permission_resolved(
     resolved: &ResolvedCapability,
     policy: &HostLocalPolicy,
 ) -> PermissionDecision {
-    let capability_name = &resolved.identity.name;
-    let capability_version = resolved.identity.version;
+    let capability_name = resolved.capability_name();
+    let capability_version = resolved.capability_version();
 
     // 1. Tether Set declaration check.
     let requirement = requirements.iter().find(|r| {
-        r.capability_name.as_str() == capability_name.as_str()
-            && r.capability_version == capability_version
+        r.capability_name.as_str() == capability_name && r.capability_version == capability_version
     });
 
     if requirement.is_none() {
@@ -226,7 +251,9 @@ pub fn evaluate_permission_resolved(
     match policy.rule_for(capability_name, capability_version) {
         PolicyRule::Deny => PermissionDecision::Deny,
         PolicyRule::Ask => PermissionDecision::Ask,
-        PolicyRule::Allow => PermissionDecision::Allow,
+        PolicyRule::Allow => {
+            PermissionDecision::Allow(AllowedCapability::new(resolved.identity().clone()))
+        }
     }
 }
 
@@ -342,6 +369,16 @@ mod tests {
         HostLocalPolicy::new(PolicyRule::Deny)
     }
 
+    fn assert_allow(decision: &PermissionDecision, name: &str, version: u32) {
+        match decision {
+            PermissionDecision::Allow(allowed) => {
+                assert_eq!(allowed.capability_name(), name);
+                assert_eq!(allowed.capability_version(), version);
+            }
+            other => panic!("expected Allow, got {other:?}"),
+        }
+    }
+
     // -- declared + live admitted + local allow → allow --
 
     #[test]
@@ -361,7 +398,7 @@ mod tests {
             Some("obsidian-local"),
         );
 
-        assert_eq!(decision, PermissionDecision::Allow);
+        assert_allow(&decision, "notes.note.read", 1);
     }
 
     // -- declared + live admitted + local ask → ask --
@@ -456,7 +493,7 @@ mod tests {
         );
 
         // Override says Allow even though default is Deny.
-        assert_eq!(decision, PermissionDecision::Allow);
+        assert_allow(&decision, "notes.note.read", 1);
     }
 
     // -- declared but not live or admitted → unavailable --
@@ -630,7 +667,7 @@ mod tests {
         );
 
         assert_eq!(d1, d2);
-        assert_eq!(d1, PermissionDecision::Allow);
+        assert_allow(&d1, "notes.note.read", 1);
         assert_eq!(store.len(), len_before);
     }
 
@@ -654,7 +691,7 @@ mod tests {
             Some("obsidian-local"),
         );
 
-        assert_eq!(decision, PermissionDecision::Allow);
+        assert_allow(&decision, "notes.note.read", 1);
     }
 
     #[test]
@@ -685,7 +722,7 @@ mod tests {
             Some("obsidian-local"),
         );
 
-        assert_eq!(v1, PermissionDecision::Allow);
+        assert_allow(&v1, "notes.note.read", 1);
         assert_eq!(v2, PermissionDecision::Ask);
     }
 
@@ -771,7 +808,7 @@ mod tests {
         let policy = allow_all_policy();
         let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
 
-        assert_eq!(decision, PermissionDecision::Allow);
+        assert_allow(&decision, "notes.note.read", 1);
     }
 
     #[test]
@@ -886,7 +923,7 @@ mod tests {
                 1,
                 Some("obsidian-local"),
             );
-            assert_eq!(decision, PermissionDecision::Allow);
+            assert_allow(&decision, "notes.note.read", 1);
         }
         // No process spawn, no file I/O, no Trail append — the store
         // is unchanged.

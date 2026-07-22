@@ -386,6 +386,19 @@ older idea of stretching the remaining work into separate C3-through-C12
 architecture layers; existing small checkpoint names may remain as commit-sized
 implementation slices under the one runtime goal.
 
+Dispatch-intent audit correction on 2026-07-22:
+- The dispatch preparation proof boundary now uses a policy-created
+  `AllowedCapability` token carried by `PermissionDecision::Allow`; callers can
+  inspect the allowed identity but cannot fabricate the token through public
+  fields or an unchecked constructor.
+- `ResolvedCapability` fields are private and read-only outside `resolver.rs`,
+  so provider identity, manifest digest, verified manifest, and exact
+  capability identity remain bound to the resolver result.
+- `FileTrail` documentation now states the true partial-write guarantee: any
+  write, flush, or sync failure returns no `DispatchReadyAction`, but the JSONL
+  tail may contain no bytes, a partial record, or an unconfirmed complete
+  record. Crash recovery and global execution enforcement remain deferred.
+
 ## Fixture Contract Follow-Up
 
 The evaluation fixture contract now covers the canonical happy path, Anchor

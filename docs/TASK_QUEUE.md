@@ -98,6 +98,12 @@ Next:
 5. [ ] Dispatch serially with no automatic retries, intent-first Trail entries,
    honest `succeeded`/`failed`/`uncertain` classification, output validation,
    and standard result Anchors.
+   - [x] Dispatch intent preparation proof boundary hardened: `Allow` now
+         carries a policy-created exact-capability token, resolved capability
+         fields are private/read-only outside the resolver, and write failures
+         return no dispatch-ready token without claiming atomic JSONL append.
+         This does not yet integrate provider execution or enforce the boundary
+         globally.
 
 Later:
 
