@@ -16,6 +16,39 @@ Rules:
 - Architecture or language changes return to Lucy before implementation.
 - Tests and fixtures determine correctness—not model confidence.
 
+## Cline and DeepSeek task construction
+
+ChatGPT/Lucy acts as the task compiler:
+
+Matthew's intention -> architectural contract -> bounded implementation task -> observable proof.
+
+Each implementation task should contain:
+
+1. Goal: one clear outcome.
+2. Invariants: the behaviours and architectural boundaries that must remain true.
+3. Evidence: observable acceptance criteria and the checks needed to prove them.
+4. Boundaries: explicit exclusions, permissions, Git handling, and stopping conditions.
+
+Rules:
+
+- Give Cline the right context, not the maximum context.
+- Keep persistent project constraints in repository rules instead of repeating them in every task.
+- Point to relevant entry files, then allow Cline to follow references.
+- Do not combine implementation, independent audit, Git administration, and a large retrospective report into one confused task.
+- Use focused checks during development and proportionate final verification.
+- A documentation-only correction does not normally require rebuilding the entire project.
+- Treat a ten-minute limit as a runaway brake, not a target that rewards rushed or unverified work.
+- If time expires, stop at a coherent, recoverable point and report exact remaining work.
+- Reports should contain evidence: changed files, design decision, checks actually run, unresolved discrepancies, and Git status.
+- Do not restate the entire task in the report.
+
+Normal workflow:
+
+implementation -> one independent read-only audit -> targeted correction of concrete findings, if required -> focused recheck -> push
+
+Do not restart the original implementation task after a narrow audit finding.
+Do not create repeated audit loops without new evidence.
+
 Current platform:
 
 - Windows
