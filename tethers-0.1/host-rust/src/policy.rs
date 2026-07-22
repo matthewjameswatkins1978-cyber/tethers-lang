@@ -12,7 +12,7 @@
 // Missing any of the three → not permitted (deny for undeclared,
 // unavailable for no current provider, deny for explicit prohibition).
 
-use crate::resolver::{self, ProviderAvailability, ResolvedCapability};
+use crate::resolver::{self, CapabilityIdentity, ProviderAvailability, ResolvedCapability};
 use crate::trusted_store::TrustedManifestStore;
 use std::collections::HashMap;
 
@@ -63,9 +63,8 @@ pub enum PolicyRule {
 
 /// Host-local policy: default posture plus per-capability overrides.
 ///
-/// Matches by exact capability name (not version — the version is
-/// governed by the Tether Set declaration and admission, not by
-/// host policy).  Overrides take precedence over the default.
+/// Matches by exact capability identity: name + version. Overrides
+/// take precedence over the default for that exact identity only.
 ///
 /// This is host-controlled, in-memory policy.  It does not grant
 /// permission to an undeclared or unavailable capability, and does
@@ -74,8 +73,8 @@ pub enum PolicyRule {
 pub struct HostLocalPolicy {
     /// Default posture for capabilities not listed in `overrides`.
     default_posture: PolicyRule,
-    /// Per-capability overrides keyed by exact capability name.
-    overrides: HashMap<String, PolicyRule>,
+    /// Per-capability overrides keyed by exact capability name + version.
+    overrides: HashMap<CapabilityIdentity, PolicyRule>,
 }
 
 impl HostLocalPolicy {
@@ -87,15 +86,26 @@ impl HostLocalPolicy {
         }
     }
 
-    /// Insert a per-capability override.
-    pub fn insert(&mut self, capability_name: impl Into<String>, rule: PolicyRule) {
-        self.overrides.insert(capability_name.into(), rule);
+    /// Insert a per-capability override for an exact name/version pair.
+    pub fn insert(
+        &mut self,
+        capability_name: impl Into<String>,
+        capability_version: u32,
+        rule: PolicyRule,
+    ) {
+        self.overrides.insert(
+            CapabilityIdentity::new(capability_name, capability_version),
+            rule,
+        );
     }
 
-    /// What rule applies to a given capability name?
-    pub fn rule_for(&self, capability_name: &str) -> PolicyRule {
+    /// What rule applies to a given exact capability identity?
+    pub fn rule_for(&self, capability_name: &str, capability_version: u32) -> PolicyRule {
         self.overrides
-            .get(capability_name)
+            .get(&CapabilityIdentity::new(
+                capability_name,
+                capability_version,
+            ))
             .copied()
             .unwrap_or(self.default_posture)
     }
@@ -147,8 +157,8 @@ pub enum PermissionDecision {
 ///    capabilities it did not declare.
 /// 2. Not admitted or unavailable → `Unavailable`.  Honest report:
 ///    the binding cannot currently be obtained.
-/// 3. Host policy deny → `Deny`.  An explicit denial overrides
-///    everything.
+/// 3. Host policy deny → `Deny`.  Once a declared capability has a
+///    current provider binding, an explicit denial prevents dispatch.
 /// 4. Host policy ask → `Ask`.
 /// 5. Host policy allow → `Allow`.
 ///
@@ -181,7 +191,7 @@ pub fn evaluate_permission(
     ) {
         Ok(_resolved) => {
             // 3. Host-local policy.
-            match policy.rule_for(capability_name) {
+            match policy.rule_for(capability_name, capability_version) {
                 PolicyRule::Deny => PermissionDecision::Deny,
                 PolicyRule::Ask => PermissionDecision::Ask,
                 PolicyRule::Allow => PermissionDecision::Allow,
@@ -213,7 +223,7 @@ pub fn evaluate_permission_resolved(
     }
 
     // 2. Already resolved — skip to policy.
-    match policy.rule_for(capability_name) {
+    match policy.rule_for(capability_name, capability_version) {
         PolicyRule::Deny => PermissionDecision::Deny,
         PolicyRule::Ask => PermissionDecision::Ask,
         PolicyRule::Allow => PermissionDecision::Allow,
@@ -293,6 +303,14 @@ mod tests {
         verify_manifest(&m.to_string()).unwrap()
     }
 
+    fn verified_read_version(version: u32) -> VerifiedManifest {
+        let mut m = read_manifest_json();
+        m["capability_version"] = json!(version);
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        m["digest"] = json!(digest);
+        verify_manifest(&m.to_string()).unwrap()
+    }
+
     fn obsidian_available() -> ProviderAvailability {
         ProviderAvailability::from_identities(["obsidian-local"])
     }
@@ -307,8 +325,9 @@ mod tests {
         CapabilityRequirement::new("notes.note.read", 1).with_reason("Read notes from the vault")
     }
 
-    fn notes_write_requirement() -> CapabilityRequirement {
-        CapabilityRequirement::new("notes.note.create", 1).with_reason("Create notes in the vault")
+    fn notes_read_v2_requirement() -> CapabilityRequirement {
+        CapabilityRequirement::new("notes.note.read", 2)
+            .with_reason("Read notes from the vault using the v2 contract")
     }
 
     fn allow_all_policy() -> HostLocalPolicy {
@@ -400,7 +419,7 @@ mod tests {
         let availability = obsidian_available();
 
         let mut policy = HostLocalPolicy::new(PolicyRule::Allow);
-        policy.insert("notes.note.read", PolicyRule::Deny);
+        policy.insert("notes.note.read", 1, PolicyRule::Deny);
 
         let decision = evaluate_permission(
             &requirements,
@@ -424,7 +443,7 @@ mod tests {
         let availability = obsidian_available();
 
         let mut policy = HostLocalPolicy::new(PolicyRule::Deny);
-        policy.insert("notes.note.read", PolicyRule::Allow);
+        policy.insert("notes.note.read", 1, PolicyRule::Allow);
 
         let decision = evaluate_permission(
             &requirements,
@@ -477,6 +496,26 @@ mod tests {
             &policy,
             "notes.note.read",
             1,
+            Some("obsidian-local"),
+        );
+
+        assert_eq!(decision, PermissionDecision::Unavailable);
+    }
+
+    #[test]
+    fn declared_same_name_different_version_but_not_admitted_returns_unavailable() {
+        let requirements = vec![notes_read_v2_requirement()];
+        let store = admitted_store(); // contains notes.note.read@1 only
+        let availability = obsidian_available();
+        let policy = allow_all_policy();
+
+        let decision = evaluate_permission(
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            "notes.note.read",
+            2,
             Some("obsidian-local"),
         );
 
@@ -595,6 +634,124 @@ mod tests {
         assert_eq!(store.len(), len_before);
     }
 
+    // -- exact-version policy overrides --
+
+    #[test]
+    fn exact_version_override_applies_to_its_identity() {
+        let requirements = vec![notes_read_requirement()];
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let mut policy = HostLocalPolicy::new(PolicyRule::Deny);
+        policy.insert("notes.note.read", 1, PolicyRule::Allow);
+
+        let decision = evaluate_permission(
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            "notes.note.read",
+            1,
+            Some("obsidian-local"),
+        );
+
+        assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn same_name_other_version_does_not_inherit_override_and_uses_default() {
+        let requirements = vec![notes_read_requirement(), notes_read_v2_requirement()];
+        let mut store = admitted_store();
+        store.insert(verified_read_version(2)).unwrap();
+        let availability = obsidian_available();
+        let mut policy = HostLocalPolicy::new(PolicyRule::Ask);
+        policy.insert("notes.note.read", 1, PolicyRule::Allow);
+
+        let v1 = evaluate_permission(
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            "notes.note.read",
+            1,
+            Some("obsidian-local"),
+        );
+        let v2 = evaluate_permission(
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            "notes.note.read",
+            2,
+            Some("obsidian-local"),
+        );
+
+        assert_eq!(v1, PermissionDecision::Allow);
+        assert_eq!(v2, PermissionDecision::Ask);
+    }
+
+    #[test]
+    fn exact_version_ask_override_works() {
+        let requirements = vec![notes_read_requirement()];
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let mut policy = HostLocalPolicy::new(PolicyRule::Deny);
+        policy.insert("notes.note.read", 1, PolicyRule::Ask);
+
+        let decision = evaluate_permission(
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            "notes.note.read",
+            1,
+            Some("obsidian-local"),
+        );
+
+        assert_eq!(decision, PermissionDecision::Ask);
+    }
+
+    #[test]
+    fn exact_version_deny_override_works() {
+        let requirements = vec![notes_read_requirement()];
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let mut policy = HostLocalPolicy::new(PolicyRule::Allow);
+        policy.insert("notes.note.read", 1, PolicyRule::Deny);
+
+        let decision = evaluate_permission(
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            "notes.note.read",
+            1,
+            Some("obsidian-local"),
+        );
+
+        assert_eq!(decision, PermissionDecision::Deny);
+    }
+
+    #[test]
+    fn unavailable_takes_precedence_over_explicit_deny_for_declared_capability() {
+        let requirements = vec![notes_read_requirement()];
+        let store = admitted_store();
+        let availability = ProviderAvailability::empty();
+        let mut policy = HostLocalPolicy::new(PolicyRule::Allow);
+        policy.insert("notes.note.read", 1, PolicyRule::Deny);
+
+        let decision = evaluate_permission(
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            "notes.note.read",
+            1,
+            Some("obsidian-local"),
+        );
+
+        assert_eq!(decision, PermissionDecision::Unavailable);
+    }
+
     // -- evaluate_permission_resolved with allowed policy --
 
     #[test]
@@ -688,6 +845,27 @@ mod tests {
         assert_eq!(decision, PermissionDecision::Deny);
     }
 
+    #[test]
+    fn resolved_same_name_different_version_does_not_authorise_other_requirement() {
+        let requirements = vec![notes_read_requirement()];
+        let mut store = admitted_store();
+        store.insert(verified_read_version(2)).unwrap();
+        let availability = obsidian_available();
+        let resolved = resolver::resolve_capability(
+            &store,
+            &availability,
+            "notes.note.read",
+            2,
+            Some("obsidian-local"),
+        )
+        .unwrap();
+
+        let policy = allow_all_policy();
+        let decision = evaluate_permission_resolved(&requirements, &resolved, &policy);
+
+        assert_eq!(decision, PermissionDecision::Deny);
+    }
+
     // -- no dispatch, Trail or Anchor side effect --
 
     #[test]
@@ -720,15 +898,16 @@ mod tests {
     #[test]
     fn default_posture_applies_to_unknown_capabilities() {
         let policy = HostLocalPolicy::new(PolicyRule::Ask);
-        assert_eq!(policy.rule_for("anything"), PolicyRule::Ask);
+        assert_eq!(policy.rule_for("anything", 1), PolicyRule::Ask);
     }
 
     #[test]
     fn insert_override_is_retrievable() {
         let mut policy = HostLocalPolicy::new(PolicyRule::Ask);
-        policy.insert("notes.note.read", PolicyRule::Allow);
-        assert_eq!(policy.rule_for("notes.note.read"), PolicyRule::Allow);
-        assert_eq!(policy.rule_for("other"), PolicyRule::Ask);
+        policy.insert("notes.note.read", 1, PolicyRule::Allow);
+        assert_eq!(policy.rule_for("notes.note.read", 1), PolicyRule::Allow);
+        assert_eq!(policy.rule_for("notes.note.read", 2), PolicyRule::Ask);
+        assert_eq!(policy.rule_for("other", 1), PolicyRule::Ask);
     }
 
     // -- unavailable is distinct from deny --
