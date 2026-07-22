@@ -5,17 +5,17 @@
 // has been durably recorded.
 //
 // ---------------------------------------------------------------------------
-// Existing bypass (not fixed in this increment)
+// Enforcement boundary
 // ---------------------------------------------------------------------------
 //
-// `authorise_and_execute()` in `main.rs` performs effects while
-// writing only an in-memory `Vec<Value>` Trail.  It does not use
-// `DispatchReadyAction` and does not write intents durably.
+// `prepare_and_record()` establishes a usable dispatch-intent proof
+// boundary.  It returns `DispatchReadyAction` only after successful
+// durable intent recording.
 //
-// The architecture-wide invariant ("no effect before durable intent")
-// becomes globally enforced only when execution is changed to require
-// `DispatchReadyAction`.  This increment adds the boundary; the
-// existing demo path in `main.rs` is unchanged.
+// The existing `authorise_and_execute()` effect path in `main.rs` does
+// not yet consume that token, so the boundary is not yet globally
+// enforced.  Global enforcement requires every production effectful path
+// to require `DispatchReadyAction` before invoking a provider/executor.
 //
 // ---------------------------------------------------------------------------
 // Missing validation (explicitly deferred)
