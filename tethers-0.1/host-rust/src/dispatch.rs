@@ -177,11 +177,15 @@ pub enum PrepareError {
 // Trail abstraction
 // ---------------------------------------------------------------------------
 
+mod sealed {
+    pub trait Sealed {}
+}
+
 /// Durable intent recording.
 ///
 /// Implementations must ensure that a successful `append_and_flush_intent`
 /// means the intent record has reached durable storage.
-pub trait Trail {
+pub trait Trail: sealed::Sealed {
     /// Serialize, append, flush userspace buffers, and sync to durable
     /// storage.  Returns `Ok(())` only when the intent is durable.
     ///
@@ -231,6 +235,8 @@ impl FileTrail {
     }
 }
 
+impl sealed::Sealed for FileTrail {}
+
 impl Trail for FileTrail {
     fn append_and_flush_intent(&mut self, entry: &IntentEntry) -> Result<(), TrailError> {
         let line = serde_json::to_string(entry)
@@ -260,11 +266,13 @@ impl Trail for FileTrail {
 /// ordering without touching the filesystem.
 ///
 /// An optional `injected_error` simulates write or flush failure.
+#[cfg(test)]
 pub struct RecordingTrail {
     pub entries: Vec<IntentEntry>,
     pub injected_error: Option<TrailError>,
 }
 
+#[cfg(test)]
 impl RecordingTrail {
     pub fn new() -> Self {
         Self {
@@ -274,6 +282,10 @@ impl RecordingTrail {
     }
 }
 
+#[cfg(test)]
+impl sealed::Sealed for RecordingTrail {}
+
+#[cfg(test)]
 impl Trail for RecordingTrail {
     fn append_and_flush_intent(&mut self, entry: &IntentEntry) -> Result<(), TrailError> {
         if let Some(err) = self.injected_error.take() {

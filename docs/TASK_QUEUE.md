@@ -102,6 +102,8 @@ Next:
          carries a policy-created exact-capability token, resolved capability
          fields are private/read-only outside the resolver, and write failures
          return no dispatch-ready token without claiming atomic JSONL append.
+         The production intent recorder trait is sealed to the file-backed
+         append/flush/sync implementation; the non-durable recorder is test-only.
          This does not yet integrate provider execution or enforce the boundary
          globally.
 

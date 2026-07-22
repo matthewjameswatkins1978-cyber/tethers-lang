@@ -398,6 +398,10 @@ Dispatch-intent audit correction on 2026-07-22:
   write, flush, or sync failure returns no `DispatchReadyAction`, but the JSONL
   tail may contain no bytes, a partial record, or an unconfirmed complete
   record. Crash recovery and global execution enforcement remain deferred.
+- The intent recorder trait is sealed and the non-durable in-memory
+  `RecordingTrail` exists only under tests, so production callers cannot provide
+  an arbitrary always-success recorder to mint readiness without the file-backed
+  append/flush/sync path.
 
 ## Fixture Contract Follow-Up
 
