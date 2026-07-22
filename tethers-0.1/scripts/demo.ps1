@@ -40,35 +40,44 @@ if (-not (Test-Path -LiteralPath $EnginePath -PathType Leaf)) {
     throw "Dune build completed but engine executable was not found at $EnginePath"
 }
 
-Push-Location $HostDir
+# Unique temp trail per run, cleaned in finally block.
+$trailDir = Join-Path ([System.IO.Path]::GetTempPath()) "tethers-demo-$([System.Guid]::NewGuid())"
+$trailPath = Join-Path $trailDir "trail.jsonl"
 try {
-    $output = & cargo run -- $EnginePath $RequestPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Rust reference host demo failed with exit code $LASTEXITCODE."
+    Push-Location $HostDir
+    try {
+        $output = & cargo run -- $EnginePath $RequestPath "allow" $trailPath "success"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Rust reference host demo failed with exit code $LASTEXITCODE."
+        }
     }
+    finally {
+        Pop-Location
+    }
+
+    $text = ($output -join "`n").Trim()
+    if ($text -eq "") {
+        throw "Rust reference host produced no JSON output."
+    }
+
+    try {
+        $response = $text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "Rust reference host produced invalid JSON: $($_.Exception.Message)"
+    }
+
+    if ($response.status -ne "matched") {
+        throw "Demo completed but response status was '$($response.status)', expected 'matched'."
+    }
+
+    if ($response.execution_status -ne "completed") {
+        throw "Demo completed but execution_status was '$($response.execution_status)', expected 'completed'."
+    }
+
+    $text
 }
 finally {
-    Pop-Location
+    Remove-Item -LiteralPath $trailPath -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $trailDir -ErrorAction SilentlyContinue
 }
-
-$text = ($output -join "`n").Trim()
-if ($text -eq "") {
-    throw "Rust reference host produced no JSON output."
-}
-
-try {
-    $response = $text | ConvertFrom-Json -ErrorAction Stop
-}
-catch {
-    throw "Rust reference host produced invalid JSON: $($_.Exception.Message)"
-}
-
-if ($response.status -ne "matched") {
-    throw "Demo completed but response status was '$($response.status)', expected 'matched'."
-}
-
-if ($response.execution_status -ne "completed") {
-    throw "Demo completed but execution_status was '$($response.execution_status)', expected 'completed'."
-}
-
-$text

@@ -386,6 +386,66 @@ older idea of stretching the remaining work into separate C3-through-C12
 architecture layers; existing small checkpoint names may remain as commit-sized
 implementation slices under the one runtime goal.
 
+Dispatch-proof enforcement boundary integrated on 2026-07-22:
+- Every production provider/executor invocation now requires
+  `&DispatchReadyAction`.  The compiler enforces that no effectful call can
+  bypass durable intent preparation.
+- `CapabilityExecutor::execute()` accepts only a `DispatchReadyAction` token;
+  capability name, version, provider identity, manifest digest, and arguments
+  are bound from one resolved binding through the readiness token.
+- `authorise_and_execute()` enforces exactly one Action per Plan, verifies
+  the Action's capability name matches the resolved capability, verifies the
+  executor's `provider_identity()` matches the resolved provider identity,
+  and calls `prepare_and_record()` before the single invocation attempt.
+- On any preparation failure (Ask, Deny, Unavailable, identity mismatch,
+  write failure, flush/durability failure): zero executor calls occur.
+- The old `HostPolicy` effect-name check was removed — all policy evaluation
+  now flows through Columbo's `evaluate_permission_resolved()`.
+- `MockExecutor` now carries `"lantern-local"` as its honest provider
+  identity, which is verified against the resolved capability.
+- 212 Rust tests pass (193 pre-existing + 19 focused dispatch-boundary tests).
+- `scripts/test-host-denial.ps1` remains an active process-level integration
+  test.  It exercises the real OCaml engine -> Rust host route, uses manifest
+  verification/admission, trusted-store resolution, and Deny policy evaluation,
+  then confirms denial occurs before either executor is invoked.  It asserts
+  `execution_status: "denied"`, observes the canonical `intent_failed` Trail
+  entry, asserts zero `action_started`, `action_failed`, and `action_completed`
+  entries, and uses a unique GUID-based temporary Trail path that is cleaned in
+  a `finally` block.
+- `scripts/test-host-execution-failure.ps1` remains an active process-level
+  integration test.  It exercises the real OCaml engine -> Rust host route with
+  Allow policy, the normal manifest verification/admission, trusted-store
+  resolution, and durable `prepare_and_record()` route, then invokes the host
+  with executor mode `fail`.  `FailingExecutor` has provider identity
+  `lantern-local`, receives only `&DispatchReadyAction`, and fails inside
+  `execute()` with `executor failed as requested`.  The script asserts
+  `execution_status: "failed"`, exactly one durable intent, one
+  `action_started`, one `action_failed`, zero `action_completed` entries, and
+  uses a unique GUID-based temporary Trail path that is cleaned in a `finally`
+  block.
+- Rust tests and the PowerShell process scripts are complementary: Rust tests
+  cover focused internal invariants and branches, while the scripts cover the
+  real engine-to-host process boundary.
+
+Not yet implemented (explicitly deferred):
+- Outcome Trail records.
+- Result Anchors.
+- Response-schema validation.
+- JSON Schema argument validation.
+- Detailed failure classification.
+- Confirmation workflow.
+- Retries, deadlines, or cancellation.
+- Crash recovery or damaged-tail repair.
+- Concurrency or locking.
+- Idempotency enforcement.
+- New transports, networking, provider launching.
+- MCP expansion or Lantern Keeper integration.
+- Persistent Trail configuration for direct host invocation.  `demo.ps1`
+  creates a unique GUID-based directory under the system temporary directory,
+  explicitly passes that Trail path to the host, and removes the Trail file and
+  directory in a `finally` block; consecutive demo runs do not share Trail
+  state and do not modify the repository.
+
 Dispatch-intent audit correction on 2026-07-22:
 - The dispatch preparation proof boundary now uses a policy-created
   `AllowedCapability` token carried by `PermissionDecision::Allow`; callers can
@@ -529,22 +589,28 @@ protocol version), not the request value. SPEC §11.1 now explicitly
 enumerates the four categories of pre-evaluation errors.
 
 The host-denial integration test (`scripts/test-host-denial.ps1`) proves the
-end-to-end denied-plan boundary. A happy-path request with the Capability
-effect changed to `network.write` produces a valid `matched` Plan from the
-engine. The Rust host inspects `required_effects`, finds an unpermitted
-effect, denies the Plan, appends a `plan_denied` Trail entry, sets
-`execution_status: "denied"`, and executes zero Actions. The Plan remains
-present and atomic despite denial.
+current end-to-end denied dispatch boundary. It sends the happy-path request
+through the real OCaml engine and Rust host, then runs the host with Deny
+policy through the same manifest verification/admission, trusted-store
+resolution, and policy evaluation route as normal dispatch. Denial occurs
+inside `prepare_and_record()` before either executor is invoked. The script
+asserts `execution_status: "denied"`, exactly one `intent_failed` entry, zero
+`action_started`, `action_failed`, and `action_completed` entries, and a
+present atomic Plan. It uses a unique GUID-based temporary Trail and cleans it
+afterward.
 
 The host-execution-failure integration test (`scripts/test-host-execution-failure.ps1`)
-proves the authorised-but-failed boundary. A happy-path request uses an
-unsupported Capability (`lantern.task.fail`) with a permitted effect
-(`lantern.write`). The engine produces a valid `matched` Plan. The host
-authorises it (`plan_authorised`), starts the Action (`action_started`),
-receives the executor error `"no host executor is installed for
-lantern.task.fail"`, records `action_failed`, sets `execution_status:
-"failed"`, and stops without attempting further Actions. No `action_completed`
-entry appears.
+proves the current authorised-but-failed executor boundary. It sends the
+happy-path request through the real OCaml engine and Rust host, uses Allow
+policy, and follows the normal manifest verification/admission, trusted-store
+resolution, and durable `prepare_and_record()` route. The host is invoked with
+executor mode `fail`, so `FailingExecutor` receives only
+`&DispatchReadyAction` and returns the executor error
+`"executor failed as requested"` from inside `execute()`. The script asserts
+`execution_status: "failed"`, exactly one durable intent record, exactly one
+`action_started`, exactly one `action_failed`, zero `action_completed`
+entries, failure phase `execution`, action ID `action_1`, and cleanup of its
+unique GUID-based temporary Trail.
 
 Condition expected values are now restricted to literals (strings, integers,
 booleans). The `parse_condition_value` function in `tether_parser.ml` rejects

@@ -98,14 +98,29 @@ Next:
 5. [ ] Dispatch serially with no automatic retries, intent-first Trail entries,
    honest `succeeded`/`failed`/`uncertain` classification, output validation,
    and standard result Anchors.
-   - [x] Dispatch intent preparation proof boundary hardened: `Allow` now
-         carries a policy-created exact-capability token, resolved capability
-         fields are private/read-only outside the resolver, and write failures
-         return no dispatch-ready token without claiming atomic JSONL append.
-         The production intent recorder trait is sealed to the file-backed
-         append/flush/sync implementation; the non-durable recorder is test-only.
-         This does not yet integrate provider execution or enforce the boundary
-         globally.
+    - [x] Dispatch intent preparation proof boundary hardened: `Allow` now
+          carries a policy-created exact-capability token, resolved capability
+          fields are private/read-only outside the resolver, and write failures
+          return no dispatch-ready token without claiming atomic JSONL append.
+          The production intent recorder trait is sealed to the file-backed
+          append/flush/sync implementation; the non-durable recorder is test-only.
+    - [x] Dispatch proof boundary globally enforced: every production
+          provider/executor invocation requires `&DispatchReadyAction`.
+          `authorise_and_execute()` now enforces exactly one Action, verifies
+          capability name and provider identity match the resolved binding,
+          calls `prepare_and_record()` before execution, and performs zero
+          executor calls on any preparation failure.  The old `HostPolicy`
+          effect-check bypass has been removed.  19 focused Rust tests prove
+          internal dispatch-boundary invariants and branches (212 total, all
+          pass).
+    - [x] Active process-level host scripts complement the Rust tests:
+          `test-host-denial.ps1` exercises the real OCaml engine -> Rust host
+          route through Deny policy and canonical `intent_failed` behaviour,
+          while `test-host-execution-failure.ps1` uses Allow policy, durable
+          `prepare_and_record()`, executor mode `fail`, and `FailingExecutor`
+          to prove one durable intent, one `action_started`, one
+          `action_failed`, and zero `action_completed` entries.  Both scripts
+          use unique GUID-based temporary Trails and clean them afterward.
 
 Later:
 
@@ -118,8 +133,10 @@ Later:
 ## 0.1 Finishing Queue
 
 1. [x] Add version-rejection fixtures (`incompatible_protocol`, `incompatible_language`).
-2. [x] Add denied-plan host integration test (prove `execution_status: denied` end-to-end).
-3. [x] Add execution-failure host test (prove `action_failed` path).
+2. [x] Add denied host integration test (prove `execution_status: denied`
+       and canonical `intent_failed` behaviour end-to-end).
+3. [x] Add execution-failure host test (prove process-level
+       `action_failed` path through `FailingExecutor` after durable intent).
 4. [x] Clarify or restrict Condition expected values to literals (no fixture proves `anchor.*` references in Condition expected-value position).
 5. [x] Add focused `contains` and boolean Condition fixtures (all four operators now covered).
 6. [x] Final 0.1 milestone review and sign-off.

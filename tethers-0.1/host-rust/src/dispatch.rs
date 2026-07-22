@@ -12,10 +12,9 @@
 // boundary.  It returns `DispatchReadyAction` only after successful
 // durable intent recording.
 //
-// The existing `authorise_and_execute()` effect path in `main.rs` does
-// not yet consume that token, so the boundary is not yet globally
-// enforced.  Global enforcement requires every production effectful path
-// to require `DispatchReadyAction` before invoking a provider/executor.
+// `authorise_and_execute()` in `main.rs` now requires `&DispatchReadyAction`
+// for every provider/executor invocation.  The compiler enforces that no
+// production effectful path can bypass durable intent preparation.
 //
 // ---------------------------------------------------------------------------
 // Missing validation (explicitly deferred)
