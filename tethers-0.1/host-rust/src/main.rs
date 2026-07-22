@@ -1,3 +1,4 @@
+pub mod dispatch;
 mod manifest;
 pub mod policy;
 pub mod provider;
