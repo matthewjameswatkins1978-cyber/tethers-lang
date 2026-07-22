@@ -1,4 +1,5 @@
 mod manifest;
+pub mod policy;
 pub mod provider;
 pub mod resolver;
 pub mod trusted_store;
