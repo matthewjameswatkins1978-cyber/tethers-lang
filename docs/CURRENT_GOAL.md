@@ -439,8 +439,9 @@ Not yet implemented (explicitly deferred):
 - Crash recovery or damaged-tail repair.
 - Concurrency or locking.
 - Idempotency enforcement.
-- New transports, networking, provider launching.
-- MCP expansion or Lantern Keeper integration.
+- Additional transports, networking, automatic provider discovery, or
+  production restart/reconnect lifecycle.
+- MCP capability execution or Lantern Keeper integration.
 - Persistent Trail configuration for direct host invocation.  `demo.ps1`
   creates a unique GUID-based directory under the system temporary directory,
   explicitly passes that Trail path to the host, and removes the Trail file and
@@ -481,6 +482,23 @@ Executor output validation on 2026-07-23:
   array `items`, `enum`, `const`, and schema-valued `additionalProperties` are
   now enforced, while unsupported assertion keywords fail validation explicitly
   instead of being silently ignored.
+
+Configured stdio MCP admission on 2026-07-23:
+- The Rust host can launch one explicitly configured local stdio provider,
+  complete the MCP `initialize` / `notifications/initialized` lifecycle, and
+  discover its advertised tools through `tools/list`.
+- The authoritative `fixture.ping` manifest is separately authored under
+  `protocol/capability-manifests` and its reviewed digest is pinned in host
+  configuration. Provider discovery never creates or mutates trusted-manifest
+  fields.
+- The live MCP server name, configured tool name, input schema, and output
+  schema must match the host-owned binding before the pre-verified manifest is
+  admitted. Missing or duplicate tools, malformed JSON-RPC, initialization
+  failure, schema drift, pin mismatch, and premature provider exit all fail
+  closed without store mutation.
+- This increment proves configured discovery and admission only. MCP
+  `tools/call`, production restart/reconnect, automatic discovery, and the
+  Tether Set capability projection remain deferred.
 
 ## Fixture Contract Follow-Up
 

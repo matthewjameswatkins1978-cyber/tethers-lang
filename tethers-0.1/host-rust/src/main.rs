@@ -4,6 +4,7 @@ pub mod policy;
 pub mod provider;
 pub mod resolver;
 mod result_anchor;
+pub mod stdio_provider;
 pub mod trusted_store;
 mod validation;
 

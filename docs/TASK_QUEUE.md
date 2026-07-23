@@ -85,8 +85,13 @@ resolution, permission, dispatch, result Anchors, and Trail writing.
 
 Next:
 
-1. [ ] Define the smallest configured local provider binding and one real stdio
+1. [x] Define the smallest configured local provider binding and one real stdio
    MCP provider fixture.
+   - The host now performs a real MCP initialization lifecycle and `tools/list`
+     against a deterministic stdio fixture.
+   - Discovery remains untrusted evidence: it is checked against a separately
+     authored, host-pinned manifest before that pre-verified manifest is
+     admitted.
 2. [ ] Admit one verified manifest through the Trusted Manifest Store and derive
    the live capability projection for one Tether Set with exact capability
    versions.
