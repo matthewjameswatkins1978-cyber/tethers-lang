@@ -5,9 +5,11 @@
 // for 0.1 runtime validation is supported:
 //
 //   - type          (string or array of strings)
+//   - enum / const
 //   - properties    (object of per-property schemas)
 //   - required      (array of required property names)
-//   - additionalProperties (boolean only; false rejects undeclared fields)
+//   - additionalProperties (boolean or schema)
+//   - items         (one schema applied to every array element)
 //
 // Unsupported schema forms that reach this function are rejected explicitly
 // rather than silently ignored.
@@ -42,32 +44,67 @@ impl ValidationError {
 /// Returns `Ok(())` when the result conforms, or `Err(ValidationError)`
 /// with a descriptive human-readable message.
 pub fn validate_output(schema: &Value, result: &Value) -> Result<(), ValidationError> {
-    match schema {
-        Value::Object(schema_obj) => validate_against_object_schema(schema_obj, result, "$"),
-        Value::Bool(false) => {
-            // JSON Schema `false` means "reject everything".  No valid
-            // provider output exists for a capability that declares
-            // `"output_schema": false`.
-            Err(ValidationError::new(
-                "$: output_schema is boolean false (no valid result possible)",
-            ))
-        }
-        _ => Err(ValidationError::new(format!(
-            "$: unsupported output_schema form: {}",
-            schema
-        ))),
-    }
+    validate_schema(schema, result, "$", true)
 }
 
 // ---------------------------------------------------------------------------
 // Internal validation
 // ---------------------------------------------------------------------------
 
+fn validate_schema(
+    schema: &Value,
+    value: &Value,
+    path: &str,
+    top_level: bool,
+) -> Result<(), ValidationError> {
+    match schema {
+        Value::Object(schema_obj) => validate_against_object_schema(schema_obj, value, path),
+        Value::Bool(true) if !top_level => Ok(()),
+        Value::Bool(false) => Err(ValidationError::new(format!(
+            "{}: schema is boolean false (no valid value possible)",
+            path
+        ))),
+        _ => Err(ValidationError::new(format!(
+            "{}: unsupported output_schema form: {}",
+            path, schema
+        ))),
+    }
+}
+
 fn validate_against_object_schema(
     schema: &serde_json::Map<String, Value>,
     value: &Value,
     path: &str,
 ) -> Result<(), ValidationError> {
+    reject_unsupported_keywords(schema, path)?;
+
+    if let Some(expected) = schema.get("const") {
+        if value != expected {
+            return Err(ValidationError::new(format!(
+                "{}: value does not match const {}",
+                path, expected
+            )));
+        }
+    }
+
+    if let Some(allowed) = schema.get("enum") {
+        let values = allowed.as_array().ok_or_else(|| {
+            ValidationError::new(format!("{}: enum must be an array in output_schema", path))
+        })?;
+        if values.is_empty() {
+            return Err(ValidationError::new(format!(
+                "{}: enum must contain at least one value",
+                path
+            )));
+        }
+        if !values.iter().any(|candidate| candidate == value) {
+            return Err(ValidationError::new(format!(
+                "{}: value is not one of the allowed enum values",
+                path
+            )));
+        }
+    }
+
     // --- type check ---
     let declared_type = schema.get("type");
     match declared_type {
@@ -114,9 +151,14 @@ fn validate_against_object_schema(
         Value::Object(result_obj) => {
             validate_object_properties(schema, result_obj, path)?;
         }
-        _ => {
-            // Non-object values have no property/required checks.
+        Value::Array(items) => {
+            if let Some(item_schema) = schema.get("items") {
+                for (index, item) in items.iter().enumerate() {
+                    validate_schema(item_schema, item, &format!("{}[{}]", path, index), false)?;
+                }
+            }
         }
+        _ => {}
     }
 
     Ok(())
@@ -190,26 +232,7 @@ fn validate_object_properties(
                 for (prop_name, prop_schema) in props {
                     if let Some(prop_value) = result.get(prop_name) {
                         let prop_path = format!("{}.{}", path, escape_json_pointer(prop_name));
-                        match prop_schema {
-                            Value::Object(ps) => {
-                                validate_against_object_schema(ps, prop_value, &prop_path)?;
-                            }
-                            Value::Bool(true) => {
-                                // `true` schema accepts everything.
-                            }
-                            Value::Bool(false) => {
-                                return Err(ValidationError::new(format!(
-                                    "{}: property declared as false schema (no valid value)",
-                                    prop_path
-                                )));
-                            }
-                            _ => {
-                                return Err(ValidationError::new(format!(
-                                    "{}: unsupported property schema form: {}",
-                                    prop_path, prop_schema
-                                )));
-                            }
-                        }
+                        validate_schema(prop_schema, prop_value, &prop_path, false)?;
                     }
                 }
             }
@@ -223,26 +246,71 @@ fn validate_object_properties(
     }
 
     // --- additionalProperties ---
-    if let Some(Value::Bool(false)) = schema.get("additionalProperties") {
-        // Collect declared property names from `properties`.
-        let declared: Vec<&str> = if let Some(Value::Object(props)) = schema.get("properties") {
-            props.keys().map(String::as_str).collect()
-        } else {
-            Vec::new()
-        };
+    if let Some(additional_schema) = schema.get("additionalProperties") {
+        let declared = schema.get("properties").and_then(Value::as_object);
 
-        for key in result.keys() {
-            if !declared.contains(&key.as_str()) {
-                let prop_path = format!("{}.{}", path, escape_json_pointer(key));
-                return Err(ValidationError::new(format!(
-                    "{}: additional property not allowed at {}",
-                    path, prop_path
-                )));
+        for (key, prop_value) in result {
+            if declared.is_some_and(|properties| properties.contains_key(key)) {
+                continue;
+            }
+
+            let prop_path = format!("{}.{}", path, escape_json_pointer(key));
+            match additional_schema {
+                Value::Bool(true) => {}
+                Value::Bool(false) => {
+                    return Err(ValidationError::new(format!(
+                        "{}: additional property not allowed at {}",
+                        path, prop_path
+                    )));
+                }
+                Value::Object(_) => {
+                    validate_schema(additional_schema, prop_value, &prop_path, false)?;
+                }
+                _ => {
+                    return Err(ValidationError::new(format!(
+                        "{}: additionalProperties must be a boolean or schema",
+                        path
+                    )));
+                }
             }
         }
     }
-    // When additionalProperties is true or absent, extra keys are accepted.
 
+    Ok(())
+}
+
+fn reject_unsupported_keywords(
+    schema: &serde_json::Map<String, Value>,
+    path: &str,
+) -> Result<(), ValidationError> {
+    const SUPPORTED: &[&str] = &[
+        "type",
+        "enum",
+        "const",
+        "properties",
+        "required",
+        "additionalProperties",
+        "items",
+        "$schema",
+        "$id",
+        "$comment",
+        "title",
+        "description",
+        "default",
+        "examples",
+        "deprecated",
+        "readOnly",
+        "writeOnly",
+    ];
+
+    for keyword in schema.keys() {
+        if !SUPPORTED.contains(&keyword.as_str()) {
+            return Err(ValidationError::new(format!(
+                "{}: unsupported output_schema keyword '{}'; refusing partial validation",
+                path, keyword
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -485,6 +553,52 @@ mod tests {
         });
         let result = json!({"status": "done"});
         assert!(validate_output(&schema, &result).is_ok());
+    }
+
+    #[test]
+    fn array_items_are_validated() {
+        let schema = json!({
+            "type": "array",
+            "items": {"type": "string"}
+        });
+
+        assert!(validate_output(&schema, &json!(["one", "two"])).is_ok());
+        let err = validate_output(&schema, &json!(["one", 2])).unwrap_err();
+        assert!(err.message.contains("$[1]"));
+        assert!(err.message.contains("type mismatch"));
+    }
+
+    #[test]
+    fn enum_values_are_validated() {
+        let schema = json!({"enum": ["succeeded", "failed"]});
+
+        assert!(validate_output(&schema, &json!("succeeded")).is_ok());
+        let err = validate_output(&schema, &json!("unknown")).unwrap_err();
+        assert!(err.message.contains("allowed enum values"));
+    }
+
+    #[test]
+    fn additional_property_schema_is_enforced() {
+        let schema = json!({
+            "type": "object",
+            "properties": {"status": {"type": "string"}},
+            "additionalProperties": {"type": "integer"}
+        });
+
+        assert!(validate_output(&schema, &json!({"status": "ok", "count": 2})).is_ok());
+        let err = validate_output(&schema, &json!({"status": "ok", "count": "two"})).unwrap_err();
+        assert!(err.message.contains("$.count"));
+        assert!(err.message.contains("type mismatch"));
+    }
+
+    #[test]
+    fn unsupported_assertion_is_rejected_instead_of_ignored() {
+        let schema = json!({"type": "string", "minLength": 5});
+        let err = validate_output(&schema, &json!("x")).unwrap_err();
+        assert!(err
+            .message
+            .contains("unsupported output_schema keyword 'minLength'"));
+        assert!(err.message.contains("refusing partial validation"));
     }
 
     // -----------------------------------------------------------------------

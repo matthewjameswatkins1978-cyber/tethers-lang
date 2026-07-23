@@ -473,6 +473,10 @@ Executor output validation on 2026-07-23:
   error remains the failure cause.
 - This is limited to output validation. Result Anchors, input argument JSON
   Schema validation, retries, recovery, and transport changes remain deferred.
+- Independent review corrected a fail-open gap in the initial validator:
+  array `items`, `enum`, `const`, and schema-valued `additionalProperties` are
+  now enforced, while unsupported assertion keywords fail validation explicitly
+  instead of being silently ignored.
 
 ## Fixture Contract Follow-Up
 

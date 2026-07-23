@@ -126,7 +126,9 @@ Next:
           Validation failures record one failed durable outcome with no result,
           append `action_failed`, preserve failed status, and do not retry.
           Executor errors bypass output validation and keep their original
-          failure message.
+          failure message. Independent review also closed fail-open handling of
+          array items, enum/const constraints, schema-valued additional
+          properties, and unsupported assertion keywords.
 
 Later:
 
