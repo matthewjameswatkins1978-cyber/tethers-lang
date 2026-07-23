@@ -5,6 +5,9 @@ type capability = {
   version : string;
   inputs : (string * string) list;
   effects : string list;
+  manifest_digest : string option;
+  bridge_capability_version : int option;
+  bridge_provider_identity : string option;
 }
 
 let json_assoc name json =
@@ -21,6 +24,18 @@ let json_list name json =
   match Yojson.Safe.Util.member name json with
   | `List values -> values
   | _ -> fail "invalid_request" ("Expected array field: " ^ name)
+
+let json_optional_string name json =
+  match Yojson.Safe.Util.member name json with
+  | `Null -> None
+  | `String value -> Some value
+  | _ -> fail "invalid_capability" ("Expected string field: " ^ name)
+
+let json_optional_int name json =
+  match Yojson.Safe.Util.member name json with
+  | `Null -> None
+  | `Int value -> Some value
+  | _ -> fail "invalid_capability" ("Expected integer field: " ^ name)
 
 let value_of_json = function
   | `String value -> String_value value
@@ -48,7 +63,31 @@ let parse_capability json =
          | `String value -> value
          | _ -> fail "invalid_capability" "Effects must be strings")
   in
-  { name = json_string "name" json; version = json_string "version" json; inputs; effects }
+  let manifest_digest = json_optional_string "manifest_digest" json in
+  let bridge_capability_version =
+    json_optional_int "bridge_capability_version" json
+  in
+  let bridge_provider_identity =
+    json_optional_string "bridge_provider_identity" json
+  in
+  (match
+     ( manifest_digest,
+       bridge_capability_version,
+       bridge_provider_identity )
+   with
+  | None, None, None | Some _, Some _, Some _ -> ()
+  | _ ->
+      fail "invalid_capability"
+        "bridge capability requires manifest_digest, integer bridge_capability_version, and bridge_provider_identity together");
+  {
+    name = json_string "name" json;
+    version = json_string "version" json;
+    inputs;
+    effects;
+    manifest_digest;
+    bridge_capability_version;
+    bridge_provider_identity;
+  }
 
 let check_unique_capabilities capabilities =
   let rec check seen = function

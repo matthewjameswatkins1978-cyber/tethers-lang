@@ -209,21 +209,34 @@ let evaluate_request request =
                            (name, resolve_value event_data raw |> json_of_value))
                   in
                   let action_id = "action_" ^ string_of_int index in
-                  let planned_action =
-                    `Assoc
-                      [
-                        ("action_id", `String action_id);
-                        ( "idempotency_key",
-                          `String (evaluation_id ^ "/" ^ action_id) );
-                        ("capability", `String schema.name);
-                        ("capability_version", `String schema.version);
-                        ("arguments", `Assoc arguments);
-                        ( "effects",
-                          `List
-                            (List.map
-                               (fun item -> `String item)
-                               schema.effects) );
-                      ]
+                  let base_fields =
+                    [
+                      ("action_id", `String action_id);
+                      ( "idempotency_key",
+                        `String (evaluation_id ^ "/" ^ action_id) );
+                      ("capability", `String schema.name);
+                      ("capability_version", `String schema.version);
+                      ("arguments", `Assoc arguments);
+                      ( "effects",
+                        `List
+                          (List.map (fun item -> `String item) schema.effects)
+                      );
+                    ]
+                  in
+                  let bridge_fields =
+                    (match schema.manifest_digest with
+                    | Some digest -> [ ("manifest_digest", `String digest) ]
+                    | None -> [])
+                    @ (match schema.bridge_capability_version with
+                      | Some version ->
+                          [ ("bridge_capability_version", `Int version) ]
+                      | None -> [])
+                    @ (match schema.bridge_provider_identity with
+                      | Some provider ->
+                          [ ("bridge_provider_identity", `String provider) ]
+                      | None -> [])
+                  in
+                  let planned_action = `Assoc (base_fields @ bridge_fields)
                   in
                   let entry =
                     trail_entry sequence "evaluation" "action_planned" "accepted"

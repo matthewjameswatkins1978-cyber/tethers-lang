@@ -13,6 +13,7 @@ use policy::PermissionDecision;
 use resolver::ResolvedCapability;
 use result_anchor::{ResultAnchor, ResultAnchorKind};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -33,91 +34,95 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trail_path = args.next();
     let executor_mode = args.next().unwrap_or_else(|| "success".to_string());
 
-    let request: Value = serde_json::from_str(&fs::read_to_string(request_path)?)?;
+    let mut request: Value = serde_json::from_str(&fs::read_to_string(request_path)?)?;
+
+    // --- Build the approved capability view before planner evaluation ---
+
+    // 1. Build, verify, and admit a demo manifest for lantern.task.record.
+    let mut manifest_json = json!({
+        "manifest_format_version": "1.0",
+        "capability_name": "lantern.task.record",
+        "capability_version": 1,
+        "title": "Record a task",
+        "description": "Record a task in Lantern Keeper.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "task": { "type": "string" }
+            },
+            "required": ["project", "task"],
+            "additionalProperties": false
+        },
+        "output_schema": {
+            "type": "object",
+            "properties": {
+                "status": { "type": "string" },
+                "project": { "type": "string" },
+                "task": { "type": "string" }
+            },
+            "required": ["status"],
+            "additionalProperties": false
+        },
+        "effects": ["lantern.write"],
+        "permission_scope": {
+            "kind": "path_prefix",
+            "allowed_prefixes": ["projects/"]
+        },
+        "reversibility": "compensatable",
+        "determinism": "deterministic",
+        "idempotency": {
+            "mechanism": "argument_key",
+            "argument_name": "idempotency_key",
+            "key_source": "evaluation_id/action_id"
+        },
+        "confirmation_policy": {
+            "standing_permitted": true,
+            "per_call_required": false
+        },
+        "timeout_ms": 10000,
+        "retry_policy": {
+            "max_retries": 0,
+            "backoff_ms": 500,
+            "allowed_on": ["outcome_unknown"],
+            "requires_idempotency_proof": false
+        },
+        "provider": {
+            "identity": "lantern-local",
+            "display_name": "Lantern Keeper (local mock)",
+            "identity_source": "host_configuration",
+            "description": "Demo mock executor for 0.1 round-trip."
+        },
+        "binding": {
+            "kind": "mcp",
+            "server_name": "lantern",
+            "tool_name": "task_record",
+            "adapter": null
+        }
+    });
+
+    let manifest_str = serde_json::to_string(&manifest_json)?;
+    let (_, digest) = manifest::canonicalize_and_digest(&manifest_str)
+        .map_err(|e| format!("manifest canonicalization failed: {e:?}"))?;
+    manifest_json["digest"] = json!(digest);
+    let verified = manifest::verify_manifest(&serde_json::to_string(&manifest_json)?)
+        .map_err(|e| format!("manifest verification failed: {e:?}"))?;
+
+    // 2. Admit into the trusted store.
+    let mut store = trusted_store::TrustedManifestStore::new();
+    store
+        .insert(verified)
+        .map_err(|e| format!("store insertion failed: {e:?}"))?;
+
+    // 3. Report provider availability.
+    let availability = resolver::ProviderAvailability::from_identities(["lantern-local"]);
+
+    // 4. Project before evaluation and inject bridge pins into request capabilities.
+    inject_bridge_projection_into_request(&mut request, &store, &availability)?;
+
     let mut response = call_engine(&engine_path, &request)?;
 
     if response.get("status") == Some(&Value::String("matched".into())) {
-        // --- Wire through the full Columbo pipeline ---
-
-        // 1. Build, verify, and admit a demo manifest for lantern.task.record.
-        let mut manifest_json = json!({
-            "manifest_format_version": "1.0",
-            "capability_name": "lantern.task.record",
-            "capability_version": 1,
-            "title": "Record a task",
-            "description": "Record a task in Lantern Keeper.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "project": { "type": "string" },
-                    "task": { "type": "string" }
-                },
-                "required": ["project", "task"],
-                "additionalProperties": false
-            },
-            "output_schema": {
-                "type": "object",
-                "properties": {
-                    "status": { "type": "string" },
-                    "project": { "type": "string" },
-                    "task": { "type": "string" }
-                },
-                "required": ["status"],
-                "additionalProperties": false
-            },
-            "effects": ["lantern.write"],
-            "permission_scope": {
-                "kind": "path_prefix",
-                "allowed_prefixes": ["projects/"]
-            },
-            "reversibility": "compensatable",
-            "determinism": "deterministic",
-            "idempotency": {
-                "mechanism": "argument_key",
-                "argument_name": "idempotency_key",
-                "key_source": "evaluation_id/action_id"
-            },
-            "confirmation_policy": {
-                "standing_permitted": true,
-                "per_call_required": false
-            },
-            "timeout_ms": 10000,
-            "retry_policy": {
-                "max_retries": 0,
-                "backoff_ms": 500,
-                "allowed_on": ["outcome_unknown"],
-                "requires_idempotency_proof": false
-            },
-            "provider": {
-                "identity": "lantern-local",
-                "display_name": "Lantern Keeper (local mock)",
-                "identity_source": "host_configuration",
-                "description": "Demo mock executor for 0.1 round-trip."
-            },
-            "binding": {
-                "kind": "mcp",
-                "server_name": "lantern",
-                "tool_name": "task_record",
-                "adapter": null
-            }
-        });
-
-        let manifest_str = serde_json::to_string(&manifest_json)?;
-        let (_, digest) = manifest::canonicalize_and_digest(&manifest_str)
-            .map_err(|e| format!("manifest canonicalization failed: {e:?}"))?;
-        manifest_json["digest"] = json!(digest);
-        let verified = manifest::verify_manifest(&serde_json::to_string(&manifest_json)?)
-            .map_err(|e| format!("manifest verification failed: {e:?}"))?;
-
-        // 2. Admit into the trusted store.
-        let mut store = trusted_store::TrustedManifestStore::new();
-        store
-            .insert(verified)
-            .map_err(|e| format!("store insertion failed: {e:?}"))?;
-
-        // 3. Report provider availability.
-        let availability = resolver::ProviderAvailability::from_identities(["lantern-local"]);
-
         // 4. Resolve the capability.
         let resolved = resolver::resolve_capability(
             &store,
@@ -212,6 +217,135 @@ fn call_engine(engine_path: &str, request: &Value) -> Result<Value, Box<dyn std:
         return Err("engine returned no response".into());
     }
     Ok(serde_json::from_str(&line)?)
+}
+
+/// Planner capability versions are explicitly represented as `<major>.0.0`.
+///
+/// Bridge-backed projection pinning converts trusted manifest major versions
+/// to planner strings using this exact rule and rejects other formats.
+fn planner_version_from_manifest_major(major: u32) -> String {
+    format!("{major}.0.0")
+}
+
+fn manifest_major_from_planner_version(
+    planner_version: &str,
+) -> Result<u32, Box<dyn std::error::Error>> {
+    let parts: Vec<&str> = planner_version.split('.').collect();
+    if parts.len() != 3 {
+        return Err(format!(
+            "unsupported planner capability version '{}': expected '<major>.0.0'",
+            planner_version
+        )
+        .into());
+    }
+
+    if parts[1] != "0" || parts[2] != "0" {
+        return Err(format!(
+            "unsupported planner capability version '{}': only '<major>.0.0' is bridge-mappable",
+            planner_version
+        )
+        .into());
+    }
+
+    let major = parts[0].parse::<u32>().map_err(|_| {
+        format!(
+            "unsupported planner capability version '{}': major is not a positive integer",
+            planner_version
+        )
+    })?;
+    if major == 0 {
+        return Err(format!(
+            "unsupported planner capability version '{}': major is not a positive integer",
+            planner_version
+        )
+        .into());
+    }
+    Ok(major)
+}
+
+/// Inject approved bridge projection pins into request capabilities before
+/// planner evaluation.
+///
+/// For each planner capability whose version is representable by the explicit
+/// `<major>.0.0` rule, projection supplies:
+/// - exact major version (`bridge_capability_version`),
+/// - opaque manifest digest (`manifest_digest`),
+/// - provider identity (`bridge_provider_identity`).
+///
+/// Non-bridge capability entries remain unchanged, preserving existing fixture
+/// compatibility.
+fn inject_bridge_projection_into_request(
+    request: &mut Value,
+    store: &trusted_store::TrustedManifestStore,
+    availability: &resolver::ProviderAvailability,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let capabilities = request
+        .get_mut("capabilities")
+        .and_then(Value::as_array_mut)
+        .ok_or("request capabilities must be an array")?;
+
+    let mut requirements = Vec::<(String, u32)>::new();
+    for capability in capabilities.iter() {
+        let Some(obj) = capability.as_object() else {
+            continue;
+        };
+        let Some(name) = obj.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(version) = obj.get("version").and_then(Value::as_str) else {
+            continue;
+        };
+
+        if let Ok(major) = manifest_major_from_planner_version(version) {
+            requirements.push((name.to_owned(), major));
+        }
+    }
+
+    let projection = resolver::project_capabilities(&requirements, store, availability);
+    let projected_by_identity: HashMap<(String, u32), resolver::ProjectedCapability> = projection
+        .into_iter()
+        .map(|p| ((p.capability_name.clone(), p.capability_version), p))
+        .collect();
+
+    for capability in capabilities.iter_mut() {
+        let Some(obj) = capability.as_object_mut() else {
+            continue;
+        };
+        let Some(name) = obj.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(version) = obj.get("version").and_then(Value::as_str) else {
+            continue;
+        };
+
+        let major = match manifest_major_from_planner_version(version) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        if let Some(projected) = projected_by_identity.get(&(name.to_owned(), major)) {
+            obj.insert(
+                "version".to_owned(),
+                Value::String(planner_version_from_manifest_major(
+                    projected.capability_version,
+                )),
+            );
+            obj.insert(
+                "bridge_capability_version".to_owned(),
+                Value::Number(projected.capability_version.into()),
+            );
+            obj.insert(
+                "manifest_digest".to_owned(),
+                Value::String(projected.manifest_digest.clone()),
+            );
+            obj.insert(
+                "bridge_provider_identity".to_owned(),
+                Value::String(projected.provider_identity.clone()),
+            );
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +471,46 @@ fn authorise_and_execute(
     executor: &mut dyn CapabilityExecutor,
     original_event_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    authorise_and_execute_inner(
+        response,
+        decision,
+        resolved,
+        trail,
+        executor,
+        original_event_id,
+        true,
+    )
+}
+
+#[cfg(test)]
+fn authorise_and_execute_without_bridge_pins(
+    response: &mut Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    original_event_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    authorise_and_execute_inner(
+        response,
+        decision,
+        resolved,
+        trail,
+        executor,
+        original_event_id,
+        false,
+    )
+}
+
+fn authorise_and_execute_inner(
+    response: &mut Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    original_event_id: &str,
+    bridge_pins_required: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let plan = response.get("plan").ok_or("matched response had no plan")?;
     let actions = plan
         .get("actions")
@@ -361,6 +535,10 @@ fn authorise_and_execute(
         )
         .into());
     }
+
+    // Bridge-backed actions may pin digest/version/provider from planning.
+    // The host must fail closed when the currently verified binding differs.
+    verify_action_bridge_pins(action, resolved, bridge_pins_required)?;
 
     // Verify executor identity matches the resolved provider.
     if executor.provider_identity() != resolved.provider_identity() {
@@ -603,6 +781,93 @@ fn required_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, Box<dyn st
         .ok_or_else(|| format!("expected string field {field}").into())
 }
 
+fn verify_action_bridge_pins(
+    action: &Value,
+    resolved: &ResolvedCapability,
+    bridge_pins_required: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let has_digest = action.get("manifest_digest").is_some();
+    let has_version = action.get("bridge_capability_version").is_some();
+    let has_provider = action.get("bridge_provider_identity").is_some();
+    let has_any_bridge_pin = has_digest || has_version || has_provider;
+    let has_complete_bridge_pins = has_digest && has_version && has_provider;
+
+    if (bridge_pins_required || has_any_bridge_pin) && !has_complete_bridge_pins {
+        return Err(
+            "bridge Action requires manifest_digest, bridge_capability_version, and bridge_provider_identity together"
+                .into(),
+        );
+    }
+
+    if !has_complete_bridge_pins {
+        return Ok(());
+    }
+
+    if let Some(pinned_digest) = action.get("manifest_digest") {
+        let pinned_digest = pinned_digest
+            .as_str()
+            .ok_or("manifest_digest must be a string when present")?;
+        if pinned_digest != resolved.manifest_digest() {
+            return Err(format!(
+                "stale plan digest for '{}' v{}: planned '{}', current '{}'",
+                resolved.capability_name(),
+                resolved.capability_version(),
+                pinned_digest,
+                resolved.manifest_digest()
+            )
+            .into());
+        }
+    }
+
+    if let Some(pinned_version) = action.get("bridge_capability_version") {
+        let pinned_version_u64 = pinned_version
+            .as_u64()
+            .ok_or("bridge_capability_version must be an integer when present")?;
+        let pinned_version = u32::try_from(pinned_version_u64)
+            .map_err(|_| "bridge_capability_version exceeds u32 range")?;
+        if pinned_version == 0 {
+            return Err("bridge_capability_version must be a positive integer".into());
+        }
+        if pinned_version != resolved.capability_version() {
+            return Err(format!(
+                "stale plan capability version for '{}': planned {}, current {}",
+                resolved.capability_name(),
+                pinned_version,
+                resolved.capability_version()
+            )
+            .into());
+        }
+
+        let planner_version = required_str(action, "capability_version")?;
+        let mapped_version = manifest_major_from_planner_version(planner_version)?;
+        if mapped_version != pinned_version {
+            return Err(format!(
+                "Action capability_version '{}' does not match bridge_capability_version {}",
+                planner_version, pinned_version
+            )
+            .into());
+        }
+    }
+
+    if let Some(pinned_provider) = action.get("bridge_provider_identity") {
+        let pinned_provider = pinned_provider
+            .as_str()
+            .ok_or("bridge_provider_identity must be a string when present")?;
+        if pinned_provider != resolved.provider_identity() {
+            return Err(format!(
+                "stale plan provider for '{}' v{}: planned '{}', current '{}'",
+                resolved.capability_name(),
+                resolved.capability_version(),
+                pinned_provider,
+                resolved.provider_identity()
+            )
+            .into());
+        }
+    }
+
+    Ok(())
+}
+
 fn trail_entry(
     sequence: u64,
     phase: &str,
@@ -785,6 +1050,35 @@ mod tests {
             },
             "trail": []
         })
+    }
+
+    fn make_bridge_matched_response(resolved: &resolver::ResolvedCapability) -> Value {
+        let mut response = make_matched_response(
+            "eval-bridge-001",
+            "action_1",
+            resolved.capability_name(),
+            json!({"project": "p", "task": "t"}),
+        );
+        let action = response["plan"]["actions"][0].as_object_mut().unwrap();
+        action.insert(
+            "capability_version".to_owned(),
+            Value::String(planner_version_from_manifest_major(
+                resolved.capability_version(),
+            )),
+        );
+        action.insert(
+            "bridge_capability_version".to_owned(),
+            Value::from(resolved.capability_version()),
+        );
+        action.insert(
+            "manifest_digest".to_owned(),
+            Value::String(resolved.manifest_digest().to_owned()),
+        );
+        action.insert(
+            "bridge_provider_identity".to_owned(),
+            Value::String(resolved.provider_identity().to_owned()),
+        );
+        response
     }
 
     fn assert_allow(decision: &PermissionDecision, name: &str, version: u32) {
@@ -1192,7 +1486,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1221,7 +1515,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn capability_mismatch_rejected_by_authorise_and_execute() {
+    fn capability_mismatch_rejected_by_authorise_and_execute_without_bridge_pins() {
         let (_store, resolved) = resolved_lantern();
         let decision = allow_decision_for(&resolved);
         // Action says "wrong.capability" but resolved says "lantern.task.record".
@@ -1234,7 +1528,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        let result = authorise_and_execute(
+        let result = authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1277,7 +1571,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = OtherExecutor;
-        let result = authorise_and_execute(
+        let result = authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1310,7 +1604,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        let result = authorise_and_execute(
+        let result = authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1356,7 +1650,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        let result = authorise_and_execute(
+        let result = authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1413,7 +1707,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = FailingExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1476,7 +1770,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1526,7 +1820,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = FailingExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1572,7 +1866,7 @@ mod tests {
             "outcome sync_data failed".into(),
         ));
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1625,7 +1919,7 @@ mod tests {
             "outcome disk full".into(),
         ));
         let mut executor = FailingExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1665,7 +1959,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1710,7 +2004,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MissingStatusExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1776,7 +2070,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = WrongTypeExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1829,7 +2123,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = ExtraPropExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1880,7 +2174,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = ExtraPropExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1919,7 +2213,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = FailingExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -1973,7 +2267,7 @@ mod tests {
             "outcome disk full".into(),
         ));
         let mut executor = MissingStatusExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2019,7 +2313,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2049,7 +2343,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2104,7 +2398,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = FailingExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2163,7 +2457,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MissingStatusExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2210,7 +2504,7 @@ mod tests {
         );
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             PermissionDecision::Deny,
             &resolved,
@@ -2234,7 +2528,7 @@ mod tests {
         );
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             PermissionDecision::Ask,
             &resolved,
@@ -2258,7 +2552,7 @@ mod tests {
         );
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             PermissionDecision::Unavailable,
             &resolved,
@@ -2284,7 +2578,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = MockExecutor::new();
-        let result = authorise_and_execute(
+        let result = authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2319,7 +2613,7 @@ mod tests {
         );
         let mut trail = RecordingTrail::new();
         let mut executor = OtherExecutor;
-        let result = authorise_and_execute(
+        let result = authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2344,7 +2638,7 @@ mod tests {
         let mut trail = RecordingTrail::new();
         trail.injected_intent_error = Some(dispatch::TrailError::WriteFailed("disk full".into()));
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2371,7 +2665,7 @@ mod tests {
         trail.injected_intent_error =
             Some(dispatch::TrailError::FlushFailed("sync_data failed".into()));
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2404,7 +2698,7 @@ mod tests {
             "outcome sync_data failed".into(),
         ));
         let mut executor = MockExecutor::new();
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2442,7 +2736,7 @@ mod tests {
             "outcome disk full".into(),
         ));
         let mut executor = FailingExecutor;
-        authorise_and_execute(
+        authorise_and_execute_without_bridge_pins(
             &mut response,
             decision,
             &resolved,
@@ -2459,5 +2753,253 @@ mod tests {
         let error = &anchor["facts"]["error"];
         assert_eq!(error["code"], "provider_error");
         assert_eq!(error["message"], "executor failed as requested");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 36: Explicit planner version mapping for bridge pinning.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn planner_version_mapping_is_explicit_and_strict() {
+        assert_eq!(planner_version_from_manifest_major(1), "1.0.0");
+        assert_eq!(manifest_major_from_planner_version("1.0.0").unwrap(), 1);
+
+        let not_bridge = manifest_major_from_planner_version("1.2.3");
+        assert!(not_bridge.is_err());
+        let malformed = manifest_major_from_planner_version("v1");
+        assert!(malformed.is_err());
+        let zero = manifest_major_from_planner_version("0.0.0");
+        assert!(zero.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 37: Pre-evaluation projection injects bridge pins into request.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn projection_injected_into_request_capabilities() {
+        let (store, _resolved) = resolved_lantern();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let mut request = json!({
+            "capabilities": [
+                {
+                    "name": "lantern.task.record",
+                    "version": "1.0.0",
+                    "inputs": {"project": "string", "task": "string"},
+                    "effects": ["lantern.write"]
+                },
+                {
+                    "name": "legacy.non.bridge",
+                    "version": "beta",
+                    "inputs": {},
+                    "effects": []
+                }
+            ]
+        });
+
+        inject_bridge_projection_into_request(&mut request, &store, &availability).unwrap();
+
+        let caps = request["capabilities"].as_array().unwrap();
+        let projected = caps[0].as_object().unwrap();
+        assert_eq!(projected["version"], "1.0.0");
+        assert_eq!(projected["bridge_capability_version"], 1);
+        assert!(projected
+            .get("manifest_digest")
+            .and_then(Value::as_str)
+            .unwrap()
+            .starts_with("sha256:"));
+        assert_eq!(projected["bridge_provider_identity"], "lantern-local");
+
+        let legacy = caps[1].as_object().unwrap();
+        assert!(legacy.get("manifest_digest").is_none());
+        assert!(legacy.get("bridge_capability_version").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 38: Stale plan digest D1 fails closed against current D2 binding.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn stale_plan_digest_fails_closed_before_dispatch() {
+        // Snapshot T1: plan built from manifest digest D1.
+        let (store_t1, resolved_t1) = resolved_lantern();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let mut request_t1 = json!({
+            "capabilities": [
+                {
+                    "name": "lantern.task.record",
+                    "version": "1.0.0",
+                    "inputs": {"project": "string", "task": "string"},
+                    "effects": ["lantern.write"]
+                }
+            ]
+        });
+        inject_bridge_projection_into_request(&mut request_t1, &store_t1, &availability).unwrap();
+
+        let stale_digest = request_t1["capabilities"][0]["manifest_digest"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        // Snapshot T2: current verified binding now resolves to digest D2.
+        let mut manifest_t2 = lantern_manifest_json();
+        manifest_t2["effects"] = json!(["lantern.write", "network.access"]);
+        let (store_t2, resolved_t2) = resolved_lantern_with_manifest(manifest_t2);
+        assert_ne!(stale_digest, resolved_t2.manifest_digest());
+
+        struct CallCountingExecutor {
+            calls: u32,
+        }
+        impl CapabilityExecutor for CallCountingExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                self.calls += 1;
+                Err("must not be called".into())
+            }
+        }
+
+        let decision = allow_decision_for(&resolved_t2);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        response["plan"]["actions"][0]["manifest_digest"] = Value::String(stale_digest);
+        response["plan"]["actions"][0]["bridge_capability_version"] = Value::from(1u64);
+        response["plan"]["actions"][0]["bridge_provider_identity"] =
+            Value::String("lantern-local".to_owned());
+        response["plan"]["actions"][0]["capability_version"] = Value::String("1.0.0".to_owned());
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = CallCountingExecutor { calls: 0 };
+        let err = authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved_t2,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .expect_err("stale digest must fail closed");
+
+        assert!(err.to_string().contains("stale plan digest"));
+        assert_eq!(executor.calls, 0);
+        assert_eq!(store_t2.len(), 1);
+
+        // Sanity: dispatch remains executable when digest is current.
+        let mut success_response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        success_response["plan"]["actions"][0]["manifest_digest"] =
+            Value::String(resolved_t2.manifest_digest().to_owned());
+        success_response["plan"]["actions"][0]["bridge_capability_version"] = Value::from(1u64);
+        success_response["plan"]["actions"][0]["bridge_provider_identity"] =
+            Value::String(resolved_t2.provider_identity().to_owned());
+        success_response["plan"]["actions"][0]["capability_version"] =
+            Value::String("1.0.0".to_owned());
+
+        authorise_and_execute(
+            &mut success_response,
+            allow_decision_for(&resolved_t2),
+            &resolved_t2,
+            &mut RecordingTrail::new(),
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+        assert_eq!(executor.calls, 1);
+        assert_eq!(
+            resolved_t1.provider_identity(),
+            resolved_t2.provider_identity()
+        );
+    }
+
+    #[test]
+    fn incomplete_or_invalid_bridge_pins_fail_closed_before_dispatch() {
+        struct CallCountingExecutor {
+            calls: u32,
+        }
+        impl CapabilityExecutor for CallCountingExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                self.calls += 1;
+                Err("must not be called".into())
+            }
+        }
+
+        let (_store, resolved) = resolved_lantern();
+        let mut cases = Vec::<(&str, Value)>::new();
+
+        let mut missing_all = make_bridge_matched_response(&resolved);
+        let missing_all_action = missing_all["plan"]["actions"][0].as_object_mut().unwrap();
+        missing_all_action.remove("manifest_digest");
+        missing_all_action.remove("bridge_capability_version");
+        missing_all_action.remove("bridge_provider_identity");
+        cases.push(("missing all bridge pins", missing_all));
+
+        let mut missing_digest = make_bridge_matched_response(&resolved);
+        missing_digest["plan"]["actions"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("manifest_digest");
+        cases.push(("missing digest pin", missing_digest));
+
+        let mut missing_version = make_bridge_matched_response(&resolved);
+        missing_version["plan"]["actions"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("bridge_capability_version");
+        cases.push(("missing version pin", missing_version));
+
+        let mut missing_provider = make_bridge_matched_response(&resolved);
+        missing_provider["plan"]["actions"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("bridge_provider_identity");
+        cases.push(("missing provider pin", missing_provider));
+
+        let mut stale_version = make_bridge_matched_response(&resolved);
+        stale_version["plan"]["actions"][0]["bridge_capability_version"] = Value::from(2u64);
+        cases.push(("stale version pin", stale_version));
+
+        let mut stale_provider = make_bridge_matched_response(&resolved);
+        stale_provider["plan"]["actions"][0]["bridge_provider_identity"] =
+            Value::String("other-provider".to_owned());
+        cases.push(("stale provider pin", stale_provider));
+
+        let mut oversized_version = make_bridge_matched_response(&resolved);
+        oversized_version["plan"]["actions"][0]["bridge_capability_version"] =
+            Value::from(u64::from(u32::MAX) + 1);
+        cases.push(("oversized version pin", oversized_version));
+
+        let mut inconsistent_version = make_bridge_matched_response(&resolved);
+        inconsistent_version["plan"]["actions"][0]["capability_version"] =
+            Value::String("2.0.0".to_owned());
+        cases.push(("inconsistent planner version", inconsistent_version));
+
+        for (label, mut response) in cases {
+            let mut executor = CallCountingExecutor { calls: 0 };
+            let err = authorise_and_execute(
+                &mut response,
+                allow_decision_for(&resolved),
+                &resolved,
+                &mut RecordingTrail::new(),
+                &mut executor,
+                "evt_input_001",
+            )
+            .expect_err(label);
+
+            assert!(!err.to_string().is_empty(), "{label}");
+            assert_eq!(executor.calls, 0, "{label}");
+        }
     }
 }

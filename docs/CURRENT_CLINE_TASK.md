@@ -1,134 +1,148 @@
 # Current Cline Task
 
-Status: `PROPOSED`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
 Base branch: `main`
 
-Base commit: `444d8a5e1235947588e30ae9381eeb8b87f99791`
+Base commit: `372dcc4a970bcea007d4406ffe692bdb16805c80`
 
 ## Objective
 
-Derive the smallest host-owned live capability projection for one Tether Set
-requirement from admitted verified manifests and explicit provider
-availability, without changing planner semantics or transport behaviour.
+Correct Joint Runtime Slice item 3 so the opaque `manifest_digest` is carried
+through the real planner-to-dispatch path defined by the capability-bridge
+contract, then fail closed on stale plans.
 
 ## Relevant background and existing behaviour
 
-- Joint Runtime Slice queue item 1 is complete: configured local provider
-  binding plus real stdio MCP fixture admission is now verified.
-- Admission currently proves one separately authored trusted manifest can be
-  admitted only after discovery evidence matches host-owned binding checks.
-- `ProviderAvailability` and `resolve_capability()` already enforce explicit
-  host-supplied availability and exact capability name/version identity.
-- The next unchecked queue item is deriving a live capability projection for
-  one Tether Set with exact versions.
+- `project_capabilities()` exists in `resolver.rs` and currently projects a
+  deterministic capability view from admitted manifests and live availability.
+- The present host pin step (`pin_projected_digest()`) compares projection and
+  resolution after planning, so it does not prove that planning consumed the
+  projected digest input.
+- A focused mismatch test currently proves failure by mixing projection from one
+  store with resolution from another. That branch is artificial relative to the
+  production path, which uses one current store for both values.
+- Existing fixtures and behaviour for non-bridge capabilities must remain valid.
 
 ## Required behaviour
 
-1. Add one host-side projection boundary that accepts:
-   - one declared Tether Set requirement list (exact capability name/version),
-   - the Trusted Manifest Store,
-   - explicit `ProviderAvailability`.
-2. Return a deterministic projection for planning that contains, per projected
-   capability:
-   - exact capability name,
-   - exact capability version,
-   - required effects,
-   - opaque manifest digest.
-3. Projection must fail closed per capability: missing admission, unavailable
-   provider, provider mismatch, or version mismatch yields no projected entry.
-4. Keep projection read-only and deterministic: no process launch, no dispatch,
-   no policy decision, no planner I/O, and no protocol mutation.
-5. Keep this increment bounded to one fixture-backed capability path already
-   present in repository tests.
+1. Build the approved capability projection before evaluation and supply it as
+   deterministic planner input.
+2. Ensure bridge-backed capability planner input includes opaque
+   `manifest_digest`.
+3. Ensure the planner copies `manifest_digest` from capability input into the
+   proposed Action without inspecting or transforming digest contents.
+4. Host dispatch must compare the Action-pinned digest with the currently
+   verified manifest/provider binding before execution.
+5. A stale plan created when digest = D1 must fail closed when current binding
+   resolves to D2.
+6. Preserve compatibility via explicitly additive design so existing non-bridge
+   capability fixtures continue to pass without migration.
+7. Resolve the manifest/planner version-representation difference explicitly
+   (manifest `1` vs planner `"1.0.0"`) before implementation. Do not introduce
+   implicit conversion.
+8. Correct projection documentation/tests that label ordinary provider
+   unavailability as "provider mismatch".
+9. Remove or replace the artificial mismatch proof that uses different stores
+   for projection vs resolution; replace it with production-path-consistent
+   evidence.
+10. Update `docs/CURRENT_GOAL.md` and `docs/TASK_QUEUE.md` only after the real
+    planner-to-dispatch digest flow is proven by focused tests and full
+    verification.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/resolver.rs`
-- `tethers-0.1/host-rust/src/policy.rs`
-- `tethers-0.1/host-rust/src/provider.rs`
-- `tethers-0.1/host-rust/src/stdio_provider.rs`
 - `tethers-0.1/host-rust/src/main.rs`
-- `docs/CURRENT_GOAL.md`
+- `tethers-0.1/host-rust/src/resolver.rs`
+- `tethers-0.1/host-rust/src/provider.rs`
+- `tethers-0.1/host-rust/src/validation.rs`
+- `tethers-0.1/protocol/cases/`
+- `docs/CAPABILITY_BRIDGE.md`
 - `docs/TASK_QUEUE.md`
-
-Follow existing structure. Stop before editing if the smallest correct change
-requires planner protocol/schema changes outside this boundary.
+- `docs/CURRENT_GOAL.md`
 
 ## Invariants
 
-- Tethers Core remains deterministic planner only.
-- Provider discovery metadata remains untrusted evidence.
-- Trusted manifest authority remains host-owned and pre-verified.
-- Capability identity remains exact name + exact version.
-- Projection carries opaque digest only; planner must not inspect full
-  manifest content.
-- Explicit host availability input remains authoritative; no implicit discovery.
-- No trust-boundary relaxation, retries, automatic restart/reconnect,
-  or application-specific branching.
+- Tethers Core remains deterministic and application-agnostic.
+- Planner does not inspect full manifests.
+- Planner copies opaque digest bytes/strings exactly as supplied.
+- Host owns trust checks for current manifest/provider binding at dispatch.
+- No hidden version coercion between manifest and planner representations.
+- No change to existing non-bridge semantics unless explicitly additive.
 
 ## Acceptance criteria
 
-1. One focused host test proves a declared requirement projects if and only if
-   it is admitted, available, and exact-version resolved.
-2. Focused host tests prove fail-closed omission for every declared mismatch
-   branch: missing admission, unavailable provider, provider mismatch, and
-   exact-version mismatch.
-3. Projection output includes exact capability name/version, effects,
-   and manifest digest.
-4. Projection logic has no side effects and does not mutate store or
-   availability snapshots.
-5. Existing admission, resolver, policy, dispatch, denial, execution-failure,
-   and demo behaviour remains unchanged.
-6. `docs/CURRENT_GOAL.md` and `docs/TASK_QUEUE.md` are updated only after
-   projection behaviour is fully verified.
+1. Evaluation request path is fed by approved pre-evaluation projection for
+   bridge-backed capabilities.
+2. Planner output Action contains pinned `manifest_digest` copied from planner
+   input for matched bridge-backed Actions.
+3. Dispatch verifies pinned digest against current verified binding and fails
+   closed on D1 != D2 before execution.
+4. Focused mismatch proof uses production-path-consistent inputs (single live
+   store path), not split-store artificial setup.
+5. Version representation rule (`1` vs `"1.0.0"`) is explicit, documented in
+   code/tests, and covered by focused checks.
+6. Existing non-bridge fixture cases remain green unchanged.
+7. Full regression suite remains green.
 
 ## Required verification
 
 Run sequentially from `tethers-0.1`:
 
 ```powershell
+Set-Location host-rust; cargo fmt --check; cargo test; Set-Location ..
 pwsh -NoProfile -File scripts/check-fixtures.ps1
+pwsh -NoProfile -File scripts/test-engine.ps1
 pwsh -NoProfile -File scripts/test-mcp-transcripts.ps1
 pwsh -NoProfile -File scripts/test-host-denial.ps1
 pwsh -NoProfile -File scripts/test-host-execution-failure.ps1
 pwsh -NoProfile -File scripts/demo.ps1
 Set-Location engine-ocaml; opam exec -- dune build; Set-Location ..
-Set-Location host-rust; cargo fmt --check; cargo test; Set-Location ..
 git diff --check
 git status --short
 ```
 
-If a named script does not exist or the repository requires a different
-working directory, inspect and use the canonical equivalent; report the
-adjustment exactly.
+Focused evidence must include:
+
+- bridge-backed planner-input digest pinning path;
+- stale-plan D1/D2 fail-closed path with no executor call;
+- explicit version-representation handling path;
+- corrected provider-unavailability labeling path.
 
 ## Forbidden changes
 
-- No OCaml language or planner semantic changes.
-- No `tethers-0.1/SPEC.md` change.
-- No new dependency.
-- No network service, FFI, database, or message broker.
-- No retries, automatic discovery, or automatic provider restart/reconnect.
-- No execution-path expansion (no `tools/call` work in this increment).
-- No capability-projection-to-planner protocol mutation.
-- No commit, push, merge, amend, tag, deletion, or installation unless this
-  packet is explicitly approved for implementation.
+- No commit, push, merge, amend, or tag.
+- No protocol/schema mutation without explicit architectural approval.
+- No implicit manifest-version to planner-version conversion.
+- No removal or regression of existing non-bridge fixture behaviour.
 
 ## Stop conditions
 
 Stop and report before implementation if:
 
-- projection requires planner protocol/schema changes not already approved;
-- provider identity ownership would move outside host configuration;
-- projection requirements conflict with current resolver trust boundaries;
-- unrelated working-tree changes overlap implementation files;
-- two focused correction attempts fail to converge.
+- introducing planner input digest pinning requires unapproved protocol/
+  semantic changes;
+- explicit version-representation handling cannot be made deterministic and
+  additive with existing fixtures;
+- required fail-closed stale-plan proof conflicts with current dispatch
+  boundary invariants.
 
 ## Expected pre-existing changes
 
-None. The working tree was clean when this packet was prepared.
+Captured dirty snapshot for this packet:
+
+- `docs/TASK_QUEUE.md`
+- `docs/CURRENT_GOAL.md`
+- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_protocol.ml`
+- `tethers-0.1/host-rust/src/main.rs`
+- `tethers-0.1/host-rust/src/resolver.rs`
+- `tethers-0.1/protocol/cases/bridge-digest-pass-through/expected-response.json`
+- `tethers-0.1/protocol/cases/bridge-digest-pass-through/request.json`
+
+Planning-control file `docs/CURRENT_CLINE_TASK.md` is intentionally excluded by
+the task-packet checker from the non-planning dirty-path comparison.
 
 Do not stage or commit unrelated files.

@@ -92,12 +92,40 @@ Next:
    - Discovery remains untrusted evidence: it is checked against a separately
      authored, host-pinned manifest before that pre-verified manifest is
      admitted.
-2. [ ] Admit one verified manifest through the Trusted Manifest Store and derive
+2. [x] Admit one verified manifest through the Trusted Manifest Store and derive
    the live capability projection for one Tether Set with exact capability
    versions.
-3. [ ] Carry the opaque manifest digest through deterministic planning for
+   - `ProjectedCapability` and `project_capabilities()` in `resolver.rs`
+     produce a deterministic live capability view from (requirements, store,
+     availability).
+   - Projection fails closed per capability: missing admission, unavailable
+     provider, or exact-version mismatch silently omits the entry.
+   - Each projected entry carries exact name, exact version, required effects,
+     and opaque manifest digest.
+   - 9 focused projection tests cover: success, multiple requirements, missing
+     admission omission, version mismatch omission, two unavailable-provider
+     snapshots, read-only semantics, determinism, and empty/full-failure edge
+     cases.
+3. [x] Carry the opaque manifest digest through deterministic planning for
    bridge-backed capabilities without making Tethers Core inspect complete
    manifests.
+   - Host now constructs approved capability projection before evaluation and
+     injects additive bridge planner input fields.
+   - Bridge-backed capability planner input carries opaque
+     `manifest_digest`, explicit `bridge_capability_version`, and
+     `bridge_provider_identity`.
+   - OCaml planner copies bridge fields into proposed Actions without
+     inspecting digest contents.
+   - Dispatch now fails closed on stale plans by comparing Action pins against
+     the currently resolved trusted binding (digest/version/provider) before
+     intent recording and execution.
+   - Production-path stale-plan D1/D2 mismatch is covered by focused host test
+     with zero executor calls on mismatch.
+   - Existing non-bridge fixtures remain compatible through additive design.
+   - Version representation is handled explicitly by bridge mapping rule
+     `<major>.0.0` <-> `bridge_capability_version` integer.
+   - Projection test/documentation now labels the unavailable-provider case
+     correctly.
 4. [ ] Implement conservative effective policy outcomes:
    `allow`, `ask`, `deny`, and `unavailable`.
 5. [ ] Dispatch serially with no automatic retries, intent-first Trail entries,

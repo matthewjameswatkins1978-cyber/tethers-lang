@@ -145,6 +145,7 @@ Next milestone: M4 minimal OCaml stdio server.
 M4 is complete on 2026-07-21.
 
 The real OCaml stdio MCP server passes all eleven transcript cases:
+
 - `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` — JSON-RPC parsing, lifecycle state machine, method dispatch, `tethers.evaluate` delegation to `Tethers_evaluator.evaluate_request`.
 - `tethers-0.1/engine-ocaml/bin/tethers_mcp_main.ml` — stdio loop executable; reads one JSON-RPC message per line, writes only protocol JSON to stdout, sends diagnostics to stderr, exits cleanly on EOF.
 - `tethers-0.1/engine-ocaml/bin/dune` — builds both `tethers_engine` (existing) and `tethers_mcp_server` (new) executables from shared source modules.
@@ -160,6 +161,7 @@ Notifications (including unknown) are silently ignored; no response for EOF.
 Uses only Yojson; no new dependencies added.
 
 Verification after M4:
+
 - `scripts/check-fixtures.ps1`: passed.
 - `scripts/test-mcp-transcripts.ps1`: passed all eleven transcript cases.
 - Deterministic repeat of `test-mcp-transcripts.ps1`: passed.
@@ -177,11 +179,13 @@ Next milestone: M5 — Real client verification per `docs/MCP_PLAN.md`.
 M5 Cline real-client verification is complete on 2026-07-21.
 
 Cline MCP configuration:
+
 - Settings file: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
 - Launcher: `pwsh.exe -NoProfile -File "D:\The Next Thing\Tethers Lang\tethers-0.1\scripts\launch-mcp-server.ps1"`
 - The launcher invokes `opam exec -- tethers_mcp_main.exe` within the project-local opam switch at `tethers-0.1/engine-ocaml`.
 
 Real-client evidence:
+
 - Cline discovered `tethers.evaluate` via `tools/list` with the declared input schema (`request` object, `additionalProperties: false`).
 - A matched call using the happy-path Tether returned `status: "matched"`, a Plan with one Action (`lantern.task.record`), and a full 5-entry evaluation Trail.
 - A not-matched call using the same Tether with `coding.task_started` returned `status: "not_matched"`, null Plan, and a 2-entry evaluation Trail.
@@ -193,11 +197,13 @@ Real-client evidence:
 M5 Codex real-client verification is complete on 2026-07-21.
 
 Codex MCP configuration:
+
 - Project-scoped settings file: `.codex/config.toml`
 - Launcher: `pwsh.exe -NoProfile -File .\tethers-0.1\scripts\launch-mcp-server.ps1`
 - The launcher invokes `opam exec -- tethers_mcp_main.exe` within the project-local opam switch at `tethers-0.1/engine-ocaml`.
 
 Real-client evidence:
+
 - `codex mcp list` and `codex mcp get tethers` showed the enabled `tethers` stdio server from the project-scoped config.
 - A Codex `exec` session discovered and called `tethers/tethers.evaluate` through Codex's MCP client.
 - The matched call returned `status: "matched"`, Plan `eval_demo_001/plan`, required Effects `["lantern.write"]`, one proposed Action (`lantern.task.record`), and a 5-entry evaluation Trail.
@@ -214,6 +220,7 @@ M6 is complete on 2026-07-21.
 and structure without requiring event data, Facts, or Capability schemas.
 
 The validate tool accepts a single string argument `source` and returns:
+
 - `valid: true`, `title`, `anchor`, `condition_count`, and `action_count` for
   well-formed Tether source;
 - `valid: false` with a structured `error` object (`code` and `message`) for
@@ -228,6 +235,7 @@ planner diagnostics, not transport failures.
 with their respective input schemas.
 
 Three new MCP transcript fixture cases cover the validate tool:
+
 - `validate-valid` — canonical happy-path Tether returns `valid: true` with
   correct metadata;
 - `validate-invalid` — syntactically broken source returns `valid: false` with
@@ -243,6 +251,7 @@ No new dependency added. No Action executed. No Rust host invoked.
 No Tethers language syntax or semantics changed.
 
 Verification after M6:
+
 - `scripts/check-fixtures.ps1`: passed (44 JSON files, 30 JSONL files).
 - `scripts/test-mcp-transcripts.ps1`: passed all fifteen transcript cases.
 - Deterministic repeat of `test-mcp-transcripts.ps1`: passed.
@@ -257,6 +266,37 @@ Verification after M6:
 - `tethers.validate` confirmed functional through fresh server process
   (transcript tests). Live client requires server restart to pick up the new
   binary.
+
+## Verified State On 2026-07-23
+
+Joint Runtime Slice item 3 correction is now implemented and verified.
+
+- The host constructs approved projection before planner evaluation and injects
+  additive bridge fields into capability input:
+  `manifest_digest`, `bridge_capability_version`, and
+  `bridge_provider_identity`.
+- The OCaml planner copies these fields into the proposed Action verbatim for
+  bridge-backed capabilities; non-bridge capabilities remain unchanged.
+- Dispatch requires the complete bridge pin set and fails closed before
+  execution when any Action pin is missing, malformed, out of range, or stale
+  against the current trusted binding (digest/version/provider mismatch).
+- Explicit version-representation rule implemented for bridge pinning:
+  planner `"<major>.0.0"` maps to integer `bridge_capability_version` and no
+  implicit conversion path is accepted.
+
+Verification evidence:
+
+- `cargo fmt --check`: passed.
+- `cargo test`: passed, `297 passed; 0 failed`.
+- `scripts/check-fixtures.ps1`: passed, `46 JSON files, 30 JSONL files`.
+- `scripts/test-engine.ps1`: passed all fixture cases, including
+  `bridge-digest-pass-through`, plus deterministic repeat.
+- `scripts/test-mcp-transcripts.ps1`: passed, `15 cases`.
+- `scripts/test-host-denial.ps1`: passed.
+- `scripts/test-host-execution-failure.ps1`: passed.
+- `scripts/demo.ps1`: passed; Plan Action includes `manifest_digest` bridge pin.
+- `opam exec -- dune build`: passed.
+- `git diff --check`: passed.
 
 M7 is complete on 2026-07-21.
 
@@ -322,6 +362,7 @@ The design establishes:
 
 The MCP plan milestone sequence (M0-M7) defined in `docs/MCP_PLAN.md` is now
 complete. Genuinely deferred work from the MCP plan includes:
+
 - Streamable HTTP, remote deployment, OAuth, network listeners.
 - Action execution through permissioned hosts.
 - Automatic MCP server discovery.
@@ -334,11 +375,13 @@ complete. Genuinely deferred work from the MCP plan includes:
 No new milestone is invented beyond the canonical plan.
 
 Verification after M7:
+
 - Only documentation changed.
 - Working tree was clean before M7.
 - `git diff --check`: whitespace clean.
 
 M7 correction on 2026-07-21:
+
 - `docs/CAPABILITY_BRIDGE.md` now states that bridge-backed planning requires a
   future additive capability projection containing the opaque
   `manifest_digest`; the planner copies that digest into proposed bridge
@@ -349,6 +392,7 @@ M7 correction on 2026-07-21:
   invalidated manifest are denied.
 
 Columbo C1 architecture correction on 2026-07-21:
+
 - `digest_algorithm` is removed from the manifest; SHA-256 is fixed.
 - `manifest_format_version` and complete input/output schemas are covered by
   the digest.
@@ -387,6 +431,7 @@ architecture layers; existing small checkpoint names may remain as commit-sized
 implementation slices under the one runtime goal.
 
 Dispatch-proof enforcement boundary integrated on 2026-07-22:
+
 - Every production provider/executor invocation now requires
   `&DispatchReadyAction`.  The compiler enforces that no effectful call can
   bypass durable intent preparation.
@@ -428,6 +473,7 @@ Dispatch-proof enforcement boundary integrated on 2026-07-22:
   real engine-to-host process boundary.
 
 Not yet implemented (explicitly deferred):
+
 - `capability.uncertain` Result Anchors, generated-event queuing,
   deduplication, causal-depth enforcement, and follow-up evaluation remain
   deferred.
@@ -449,6 +495,7 @@ Not yet implemented (explicitly deferred):
   state and do not modify the repository.
 
 Dispatch-intent audit correction on 2026-07-22:
+
 - The dispatch preparation proof boundary now uses a policy-created
   `AllowedCapability` token carried by `PermissionDecision::Allow`; callers can
   inspect the allowed identity but cannot fabricate the token through public
@@ -466,6 +513,7 @@ Dispatch-intent audit correction on 2026-07-22:
   append/flush/sync path.
 
 Executor output validation on 2026-07-23:
+
 - After an executor returns `Ok(result)`, the Rust host validates that result
   against the resolved verified manifest's `output_schema` before recording a
   successful durable outcome or appending `action_completed`.
@@ -484,6 +532,7 @@ Executor output validation on 2026-07-23:
   instead of being silently ignored.
 
 Configured stdio MCP admission on 2026-07-23:
+
 - The Rust host can launch one explicitly configured local stdio provider,
   complete the MCP `initialize` / `notifications/initialized` lifecycle, and
   discover its advertised tools through `tools/list`.

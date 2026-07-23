@@ -1,0 +1,39 @@
+{
+    "protocol_version": "0.1",
+    "language_version": "0.1",
+    "evaluation_id": "eval_bridge_001",
+    "tether": {
+        "id": "record-completed-task",
+        "version": "demo-v1",
+        "source": "tether \"Record completed software task\"\n\nanchor\n    coding.task_completed\n\nwhen\n    project.type is \"software\"\n    and task.changed_files greater_than 0\n\ndo\n    lantern.task.record\n        project: anchor.project\n        task: anchor.task\n"
+    },
+    "event": {
+        "id": "evt_bridge_001",
+        "name": "coding.task_completed",
+        "data": {
+            "project": "lantern-keeper",
+            "task": "LK-39"
+        }
+    },
+    "facts": {
+        "project.type": "software",
+        "task.changed_files": 3
+    },
+    "capabilities": [
+        {
+            "name": "lantern.task.record",
+            "version": "1.0.0",
+            "bridge_capability_version": 1,
+            "manifest_digest": "sha256:bridgefixture001",
+            "bridge_provider_identity": "lantern-local",
+            "inputs": {
+                "project": "string",
+                "task": "string"
+            },
+            "effects": [
+                "lantern.write"
+            ],
+            "reversibility": "compensatable"
+        }
+    ]
+}

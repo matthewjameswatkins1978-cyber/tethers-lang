@@ -165,6 +165,71 @@ pub enum ResolutionError {
 }
 
 // ---------------------------------------------------------------------------
+// Live capability projection
+// ---------------------------------------------------------------------------
+
+/// One projected capability entry for planning.
+///
+/// Produced by projecting a Tether Set requirement through the trusted
+/// manifest store and explicit provider availability.  Contains only
+/// the fields planning needs: exact identity, required effects, and
+/// the opaque manifest digest.
+///
+/// Projection is read-only and deterministic.  It carries no execution
+/// permission, makes no dispatch decisions, and does not mutate the
+/// store or availability snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectedCapability {
+    /// Exact capability name.
+    pub capability_name: String,
+    /// Exact capability version.
+    pub capability_version: u32,
+    /// Required effects declared by the capability's manifest.
+    pub required_effects: Vec<String>,
+    /// Opaque verified manifest digest for later dispatch binding.
+    pub manifest_digest: String,
+    /// Provider identity currently owning this projected capability.
+    pub provider_identity: String,
+}
+
+/// Project a list of Tether Set capability requirements into a
+/// deterministic live capability view for planning.
+///
+/// Each requirement is independently resolved through the trusted
+/// manifest store and provider availability snapshot.  Failures are
+/// silently omitted — the projection fails closed per capability.
+///
+/// Resolution failures that cause omission:
+/// - No admitted manifest for the exact (name, version).
+/// - Admitted manifest exists but provider is not in the availability snapshot.
+/// - Provider identity mismatch between manifest and expected provider.
+///
+/// The projection is read-only: no process launch, no dispatch, no
+/// policy decision, no planner I/O, and no protocol mutation.
+pub fn project_capabilities(
+    requirements: &[(String, u32)],
+    store: &TrustedManifestStore,
+    availability: &ProviderAvailability,
+) -> Vec<ProjectedCapability> {
+    requirements
+        .iter()
+        .filter_map(|(name, version)| {
+            let resolved = resolve_capability(store, availability, name, *version, None).ok()?;
+
+            let effects = resolved.manifest().manifest().effects.clone();
+
+            Some(ProjectedCapability {
+                capability_name: resolved.capability_name().to_owned(),
+                capability_version: resolved.capability_version(),
+                required_effects: effects,
+                manifest_digest: resolved.manifest_digest().to_owned(),
+                provider_identity: resolved.provider_identity().to_owned(),
+            })
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Resolution
 // ---------------------------------------------------------------------------
 
@@ -755,5 +820,166 @@ mod tests {
         assert!(availability.is_available("obsidian-local"));
         assert!(availability.is_available("notes-provider"));
         assert!(!availability.is_available("unknown-provider"));
+    }
+
+    // -- projection: admitted + available → projected --
+
+    #[test]
+    fn declared_requirement_projects_when_admitted_and_available() {
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let requirements = vec![("notes.note.read".to_owned(), 1u32)];
+
+        let projection = project_capabilities(&requirements, &store, &availability);
+
+        assert_eq!(projection.len(), 1);
+        assert_eq!(projection[0].capability_name, "notes.note.read");
+        assert_eq!(projection[0].capability_version, 1);
+        assert_eq!(projection[0].required_effects, vec!["filesystem.read"]);
+        assert_eq!(
+            projection[0].manifest_digest,
+            verified_read().verified_digest()
+        );
+    }
+
+    #[test]
+    fn multiple_declared_requirements_all_project() {
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let requirements = vec![
+            ("notes.note.read".to_owned(), 1u32),
+            ("notes.note.create".to_owned(), 1u32),
+        ];
+
+        let projection = project_capabilities(&requirements, &store, &availability);
+
+        assert_eq!(projection.len(), 2);
+        assert_eq!(projection[0].capability_name, "notes.note.read");
+        assert_eq!(projection[0].required_effects, vec!["filesystem.read"]);
+        assert_eq!(projection[1].capability_name, "notes.note.create");
+        assert_eq!(projection[1].required_effects, vec!["filesystem.write"]);
+    }
+
+    // -- projection: missing admission → omitted --
+
+    #[test]
+    fn missing_admission_omitted_from_projection() {
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let requirements = vec![
+            ("notes.note.read".to_owned(), 1u32),
+            ("notes.note.delete".to_owned(), 1u32), // never admitted
+        ];
+
+        let projection = project_capabilities(&requirements, &store, &availability);
+
+        assert_eq!(projection.len(), 1);
+        assert_eq!(projection[0].capability_name, "notes.note.read");
+    }
+
+    // -- projection: version mismatch → omitted --
+
+    #[test]
+    fn exact_version_mismatch_omitted_from_projection() {
+        let store = admitted_store(); // has notes.note.read@1 only
+        let availability = obsidian_available();
+        let requirements = vec![
+            ("notes.note.read".to_owned(), 2u32), // version 2 not admitted
+        ];
+
+        let projection = project_capabilities(&requirements, &store, &availability);
+
+        assert!(projection.is_empty());
+    }
+
+    // -- projection: unavailable provider → omitted --
+
+    #[test]
+    fn unavailable_provider_omitted_from_projection() {
+        let store = admitted_store();
+        // Provider not in availability snapshot.
+        let availability = ProviderAvailability::empty();
+        let requirements = vec![("notes.note.read".to_owned(), 1u32)];
+
+        let projection = project_capabilities(&requirements, &store, &availability);
+
+        assert!(projection.is_empty());
+    }
+
+    // -- projection: unavailable provider identity → omitted --
+
+    #[test]
+    fn unavailable_provider_identity_omitted_from_projection() {
+        // Admitted manifest belongs to obsidian-local.  If the
+        // availability snapshot contains a different provider identity,
+        // obsidian-local is unavailable and the requirement is omitted.
+        let store = admitted_store();
+        let availability = ProviderAvailability::from_identities(["other-provider"]);
+        let requirements = vec![("notes.note.read".to_owned(), 1u32)];
+
+        let projection = project_capabilities(&requirements, &store, &availability);
+
+        // obsidian-local is not in the availability set → omitted.
+        assert!(projection.is_empty());
+    }
+
+    // -- projection: projection is read-only --
+
+    #[test]
+    fn projection_is_read_only() {
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let len_before = store.len();
+
+        let requirements = vec![("notes.note.read".to_owned(), 1u32)];
+        let _projection = project_capabilities(&requirements, &store, &availability);
+
+        assert_eq!(store.len(), len_before);
+        assert!(store.get_by_name_version("notes.note.read", 1).is_some());
+    }
+
+    // -- projection: deterministic repeat --
+
+    #[test]
+    fn projection_is_deterministic() {
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let requirements = vec![
+            ("notes.note.read".to_owned(), 1u32),
+            ("notes.note.create".to_owned(), 1u32),
+        ];
+
+        let p1 = project_capabilities(&requirements, &store, &availability);
+        let p2 = project_capabilities(&requirements, &store, &availability);
+
+        assert_eq!(p1, p2);
+    }
+
+    // -- projection: empty requirements → empty projection --
+
+    #[test]
+    fn empty_requirements_produces_empty_projection() {
+        let store = admitted_store();
+        let availability = obsidian_available();
+
+        let projection = project_capabilities(&[], &store, &availability);
+
+        assert!(projection.is_empty());
+    }
+
+    // -- projection: non-empty requirements but all fail → empty --
+
+    #[test]
+    fn all_requirements_fail_produces_empty_projection() {
+        let store = TrustedManifestStore::new(); // empty store
+        let availability = ProviderAvailability::empty();
+        let requirements = vec![
+            ("notes.note.read".to_owned(), 1u32),
+            ("notes.note.create".to_owned(), 1u32),
+        ];
+
+        let projection = project_capabilities(&requirements, &store, &availability);
+
+        assert!(projection.is_empty());
     }
 }
