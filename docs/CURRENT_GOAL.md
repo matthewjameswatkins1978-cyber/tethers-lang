@@ -428,7 +428,9 @@ Dispatch-proof enforcement boundary integrated on 2026-07-22:
   real engine-to-host process boundary.
 
 Not yet implemented (explicitly deferred):
-- Result Anchors.
+- `capability.uncertain` Result Anchors, generated-event queuing,
+  deduplication, causal-depth enforcement, and follow-up evaluation remain
+  deferred.
 - Response-schema validation beyond executor output validation.
 - JSON Schema argument validation.
 - Detailed failure classification.
@@ -471,8 +473,10 @@ Executor output validation on 2026-07-23:
   execution.
 - Executor `Err(...)` still bypasses output validation so the original executor
   error remains the failure cause.
-- This is limited to output validation. Result Anchors, input argument JSON
-  Schema validation, retries, recovery, and transport changes remain deferred.
+- This is limited to output validation. Known-outcome Result Anchors
+  (`capability.succeeded`, `capability.failed`) are now emitted. Input argument
+  JSON Schema validation, retries, recovery, and transport changes remain
+  deferred.
 - Independent review corrected a fail-open gap in the initial validator:
   array `items`, `enum`, `const`, and schema-valued `additionalProperties` are
   now enforced, while unsupported assertion keywords fail validation explicitly

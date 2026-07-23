@@ -121,14 +121,22 @@ Next:
           to prove one durable intent, one `action_started`, one
           `action_failed`, and zero `action_completed` entries.  Both scripts
           use unique GUID-based temporary Trails and clean them afterward.
-    - [x] Executor output validation now runs after executor `Ok(result)` and
-          before durable success outcome recording or `action_completed`.
-          Validation failures record one failed durable outcome with no result,
-          append `action_failed`, preserve failed status, and do not retry.
-          Executor errors bypass output validation and keep their original
-          failure message. Independent review also closed fail-open handling of
-          array items, enum/const constraints, schema-valued additional
-          properties, and unsupported assertion keywords.
+     - [x] Executor output validation now runs after executor `Ok(result)` and
+           before durable success outcome recording or `action_completed`.
+           Validation failures record one failed durable outcome with no result,
+           append `action_failed`, preserve failed status, and do not retry.
+           Executor errors bypass output validation and keep their original
+           failure message. Independent review also closed fail-open handling of
+           array items, enum/const constraints, schema-valued additional
+           properties, and unsupported assertion keywords.
+     - [x] Known-outcome Result Anchors (`capability.succeeded` after valid
+           successful output, `capability.failed` after executor error,
+           `capability.failed` after output-validation failure) emitted through
+           a focused `result_anchor` module.  No Result Anchor is created when
+           the Action was never attempted (Ask, Deny, Unavailable, identity
+           mismatch, intent-write failure).  `capability.uncertain`, event
+           queuing, deduplication, causal-depth enforcement, and follow-up
+           evaluation remain deferred.
 
 Later:
 

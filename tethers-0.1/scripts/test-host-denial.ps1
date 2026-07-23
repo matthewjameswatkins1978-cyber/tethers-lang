@@ -100,6 +100,11 @@ try {
         throw "intent_failed outcome expected 'failed', got '$($intentFailed[0].outcome)'."
     }
 
+    # No Result Anchor when no Action was attempted.
+    if ($null -ne $response.PSObject.Properties['result_anchor']) {
+        throw "Expected no result_anchor on denial, but it was present."
+    }
+
     # Plan remains atomic.
     if ($null -eq $response.plan.actions -or $response.plan.actions.Count -eq 0) {
         throw "Plan actions array is missing or empty."

@@ -145,6 +145,46 @@ try {
         throw "action_failed action_id expected 'action_1', got '$($failed[0].action_id)'."
     }
 
+    # --- Result Anchor assertions ---
+
+    if ($null -eq $response.result_anchor) {
+        throw "Expected result_anchor to exist on execution failure."
+    }
+
+    $anchor = $response.result_anchor
+
+    if ($anchor.event_name -ne "capability.failed") {
+        throw "Expected result_anchor.event_name 'capability.failed', got '$($anchor.event_name)'."
+    }
+
+    if ($null -eq $anchor.facts.error) {
+        throw "Expected result_anchor.facts.error to exist on failure."
+    }
+    if ($anchor.facts.error.code -ne "provider_error") {
+        throw "Expected error.code 'provider_error', got '$($anchor.facts.error.code)'."
+    }
+    if ($anchor.facts.error.message -ne "executor failed as requested") {
+        throw "Expected error.message 'executor failed as requested', got '$($anchor.facts.error.message)'."
+    }
+
+    if ($null -ne $anchor.facts.PSObject.Properties['result']) {
+        throw "Failed anchor must not have a result field."
+    }
+
+    if ($anchor.facts.capability.name -ne "lantern.task.record") {
+        throw "Expected facts.capability.name 'lantern.task.record', got '$($anchor.facts.capability.name)'."
+    }
+    if ($anchor.facts.capability.version -ne 1) {
+        throw "Expected facts.capability.version 1, got $($anchor.facts.capability.version)."
+    }
+
+    if ($anchor.correlation_id -ne $response.event_id) {
+        throw "Expected correlation_id '$($response.event_id)', got '$($anchor.correlation_id)'."
+    }
+    if ($anchor.causation_id -ne $response.event_id) {
+        throw "Expected causation_id '$($response.event_id)', got '$($anchor.causation_id)'."
+    }
+
     # Plan remains atomic.
     if ($null -eq $response.plan.actions -or $response.plan.actions.Count -eq 0) {
         throw "Plan actions array is missing or empty."

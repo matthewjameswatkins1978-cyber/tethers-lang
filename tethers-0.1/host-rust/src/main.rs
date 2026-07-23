@@ -3,12 +3,14 @@ mod manifest;
 pub mod policy;
 pub mod provider;
 pub mod resolver;
+mod result_anchor;
 pub mod trusted_store;
 mod validation;
 
 use dispatch::DispatchReadyAction;
 use policy::PermissionDecision;
 use resolver::ResolvedCapability;
+use result_anchor::{ResultAnchor, ResultAnchorKind};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::env;
@@ -150,6 +152,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let mut file_trail = dispatch::FileTrail::open(&trail_path)?;
 
+        // Extract the original input event ID for Result Anchor correlation.
+        let original_event_id = request["event"]["id"]
+            .as_str()
+            .ok_or("request event had no id")?;
+
         // 7. Select executor by mode, then dispatch through the proof boundary.
         match executor_mode.as_str() {
             "success" => {
@@ -160,6 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &resolved,
                     &mut file_trail,
                     &mut executor,
+                    original_event_id,
                 )?;
             }
             "fail" => {
@@ -170,6 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &resolved,
                     &mut file_trail,
                     &mut executor,
+                    original_event_id,
                 )?;
             }
             other => return Err(format!("unknown executor mode: {other}").into()),
@@ -325,6 +334,7 @@ fn authorise_and_execute(
     resolved: &ResolvedCapability,
     trail: &mut dyn dispatch::Trail,
     executor: &mut dyn CapabilityExecutor,
+    original_event_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plan = response.get("plan").ok_or("matched response had no plan")?;
     let actions = plan
@@ -364,7 +374,8 @@ fn authorise_and_execute(
     let evaluation_id = response
         .get("evaluation_id")
         .and_then(Value::as_str)
-        .ok_or("response had no evaluation_id")?;
+        .ok_or("response had no evaluation_id")?
+        .to_owned();
 
     let execution_id = dispatch::ExecutionId(evaluation_id.to_owned());
     let action_id = dispatch::ActionId(action_id_str.to_owned());
@@ -418,7 +429,7 @@ fn authorise_and_execute(
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default();
 
-    match executor.execute(&ready) {
+    let result_anchor = match executor.execute(&ready) {
         Ok(result) => {
             // Validate result against the capability's output_schema.
             let output_schema = &ready.verified_manifest().manifest().output_schema;
@@ -456,9 +467,24 @@ fn authorise_and_execute(
                         format!("Completed {}", ready.capability_name()),
                         Some(&ready.action_id().0),
                     );
+                    // Clone before moving into the trail entry so the anchor
+                    // receives the same validated result.
+                    let result_for_anchor = result.clone();
                     entry["result"] = result;
                     json_trail.push(entry);
                     response["execution_status"] = Value::String("completed".into());
+
+                    Some(ResultAnchor::new(
+                        ResultAnchorKind::Succeeded(result_for_anchor),
+                        &evaluation_id,
+                        &action_id.0,
+                        ready.capability_name(),
+                        ready.capability_version(),
+                        ready.manifest_digest(),
+                        ready.provider_identity(),
+                        timestamp_ms,
+                        original_event_id,
+                    ))
                 }
                 Err(validation_err) => {
                     let message = format!("output validation failed: {}", validation_err.message);
@@ -491,10 +517,22 @@ fn authorise_and_execute(
                         "execution",
                         "action_failed",
                         "failed",
-                        message,
+                        message.clone(),
                         Some(&ready.action_id().0),
                     ));
                     response["execution_status"] = Value::String("failed".into());
+
+                    Some(ResultAnchor::new(
+                        ResultAnchorKind::ResultValidationFailed(message),
+                        &evaluation_id,
+                        &action_id.0,
+                        ready.capability_name(),
+                        ready.capability_version(),
+                        ready.manifest_digest(),
+                        ready.provider_identity(),
+                        timestamp_ms,
+                        original_event_id,
+                    ))
                 }
             }
         }
@@ -528,11 +566,30 @@ fn authorise_and_execute(
                 "execution",
                 "action_failed",
                 "failed",
-                message,
+                message.clone(),
                 Some(&ready.action_id().0),
             ));
             response["execution_status"] = Value::String("failed".into());
+
+            Some(ResultAnchor::new(
+                ResultAnchorKind::ProviderError(message),
+                &evaluation_id,
+                &action_id.0,
+                ready.capability_name(),
+                ready.capability_version(),
+                ready.manifest_digest(),
+                ready.provider_identity(),
+                timestamp_ms,
+                original_event_id,
+            ))
         }
+    };
+
+    // Attach the Result Anchor to the response.  No Result Anchor is
+    // created for the preparation-failure path (Ask, Deny, Unavailable,
+    // identity mismatch, intent-write failure), which returns early above.
+    if let Some(anchor) = result_anchor {
+        response["result_anchor"] = serde_json::to_value(&anchor)?;
     }
 
     Ok(())
@@ -1140,6 +1197,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1181,6 +1239,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         );
 
         assert!(result.is_err());
@@ -1223,6 +1282,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         );
 
         assert!(result.is_err());
@@ -1255,6 +1315,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         );
 
         assert!(result.is_err());
@@ -1300,6 +1361,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         );
 
         assert!(result.is_err());
@@ -1356,6 +1418,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1418,6 +1481,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1467,6 +1531,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1512,6 +1577,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1564,6 +1630,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1603,6 +1670,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1647,6 +1715,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1712,6 +1781,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1764,6 +1834,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1814,6 +1885,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1852,6 +1924,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1905,6 +1978,7 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
@@ -1950,9 +2024,439 @@ mod tests {
             &resolved,
             &mut trail,
             &mut executor,
+            "evt_input_001",
         )
         .unwrap();
 
         assert_eq!(response["execution_status"], "completed");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 31: Result Anchor — success path assertions.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn result_anchor_success_integration() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "completed");
+
+        let anchor = &response["result_anchor"];
+        assert_eq!(anchor["event_id"], "eval-001/action_1/result");
+        assert_eq!(anchor["event_name"], "capability.succeeded");
+        assert_eq!(anchor["producer"], "tethers-reference-host");
+        assert_eq!(anchor["correlation_id"], "evt_input_001");
+        assert_eq!(anchor["causation_id"], "evt_input_001");
+        assert_eq!(anchor["generation"], 1);
+
+        let facts = &anchor["facts"];
+        assert_eq!(facts["evaluation_id"], "eval-001");
+        assert_eq!(facts["action_id"], "action_1");
+        assert_eq!(facts["capability"]["name"], "lantern.task.record");
+        assert_eq!(facts["capability"]["version"], 1);
+        assert_eq!(facts["manifest_digest"], resolved.manifest_digest());
+        assert_eq!(facts["provider_identity"], "lantern-local");
+
+        assert_eq!(
+            facts["result"],
+            json!({"status": "recorded", "project": "lantern-keeper", "task": "LK-39"})
+        );
+        assert!(facts.get("error").is_none());
+
+        let outcome = &trail.outcome_entries[0];
+        assert_eq!(anchor["occurred_at"], outcome.timestamp_unix_ms);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 32: Result Anchor — executor error path.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn result_anchor_executor_error_integration() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = FailingExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "failed");
+
+        let anchor = &response["result_anchor"];
+        assert_eq!(anchor["event_name"], "capability.failed");
+        assert_eq!(anchor["correlation_id"], "evt_input_001");
+        assert_eq!(anchor["causation_id"], "evt_input_001");
+
+        let facts = &anchor["facts"];
+        assert_eq!(facts["capability"]["name"], "lantern.task.record");
+        assert_eq!(facts["capability"]["version"], 1);
+        assert_eq!(facts["manifest_digest"], resolved.manifest_digest());
+        assert_eq!(facts["provider_identity"], "lantern-local");
+
+        assert!(facts.get("result").is_none());
+        let error = &facts["error"];
+        assert_eq!(error["code"], "provider_error");
+        assert_eq!(error["message"], "executor failed as requested");
+
+        let outcome = &trail.outcome_entries[0];
+        assert_eq!(anchor["occurred_at"], outcome.timestamp_unix_ms);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 33: Result Anchor — output-validation failure path.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn result_anchor_validation_failure_integration() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        struct MissingStatusExecutor;
+        impl CapabilityExecutor for MissingStatusExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                Ok(json!({"wrong_field": 1}))
+            }
+        }
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = MissingStatusExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "failed");
+
+        let anchor = &response["result_anchor"];
+        assert_eq!(anchor["event_name"], "capability.failed");
+
+        let facts = &anchor["facts"];
+        assert!(facts.get("result").is_none());
+        let error = &facts["error"];
+        assert_eq!(error["code"], "result_validation_failed");
+        assert!(error["message"]
+            .as_str()
+            .unwrap()
+            .contains("output validation failed"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 34: No Result Anchor for preparation failures.
+    // -----------------------------------------------------------------------
+
+    fn assert_no_result_anchor(response: &Value, description: &str) {
+        assert!(
+            response.get("result_anchor").is_none(),
+            "result_anchor must be absent for {description}"
+        );
+    }
+
+    #[test]
+    fn no_result_anchor_on_deny() {
+        let (_store, resolved) = resolved_lantern();
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut trail = RecordingTrail::new();
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            PermissionDecision::Deny,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+        assert_no_result_anchor(&response, "Deny");
+        assert_eq!(response["execution_status"], "denied");
+    }
+
+    #[test]
+    fn no_result_anchor_on_ask() {
+        let (_store, resolved) = resolved_lantern();
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut trail = RecordingTrail::new();
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            PermissionDecision::Ask,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+        assert_no_result_anchor(&response, "Ask");
+        assert_eq!(response["execution_status"], "denied");
+    }
+
+    #[test]
+    fn no_result_anchor_on_unavailable() {
+        let (_store, resolved) = resolved_lantern();
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut trail = RecordingTrail::new();
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            PermissionDecision::Unavailable,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+        assert_no_result_anchor(&response, "Unavailable");
+        assert_eq!(response["execution_status"], "denied");
+    }
+
+    #[test]
+    fn no_result_anchor_on_capability_mismatch() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "wrong.capability",
+            json!({"project": "x", "task": "y"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = MockExecutor::new();
+        let result = authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        );
+        assert!(result.is_err());
+        assert_no_result_anchor(&response, "capability mismatch");
+    }
+
+    #[test]
+    fn no_result_anchor_on_provider_identity_mismatch() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+
+        struct OtherExecutor;
+        impl CapabilityExecutor for OtherExecutor {
+            fn provider_identity(&self) -> &str {
+                "other-provider"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                panic!("must not be called");
+            }
+        }
+
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut trail = RecordingTrail::new();
+        let mut executor = OtherExecutor;
+        let result = authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        );
+        assert!(result.is_err());
+        assert_no_result_anchor(&response, "provider identity mismatch");
+    }
+
+    #[test]
+    fn no_result_anchor_on_intent_write_failure() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut trail = RecordingTrail::new();
+        trail.injected_intent_error = Some(dispatch::TrailError::WriteFailed("disk full".into()));
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+        assert_no_result_anchor(&response, "intent write failure");
+        assert_eq!(response["execution_status"], "denied");
+    }
+
+    #[test]
+    fn no_result_anchor_on_intent_flush_failure() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut trail = RecordingTrail::new();
+        trail.injected_intent_error =
+            Some(dispatch::TrailError::FlushFailed("sync_data failed".into()));
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+        assert_no_result_anchor(&response, "intent flush failure");
+        assert_eq!(response["execution_status"], "denied");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 35: Outcome-write audit failure preserves Result Anchor outcome.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn outcome_write_audit_failure_preserves_result_anchor() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        trail.injected_outcome_error = Some(dispatch::TrailError::FlushFailed(
+            "outcome sync_data failed".into(),
+        ));
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "completed");
+
+        let anchor = &response["result_anchor"];
+        assert_eq!(anchor["event_name"], "capability.succeeded");
+        let facts = &anchor["facts"];
+        assert_eq!(
+            facts["result"],
+            json!({"status": "recorded", "project": "lantern-keeper", "task": "LK-39"})
+        );
+        assert!(facts.get("error").is_none());
+    }
+
+    #[test]
+    fn outcome_write_audit_failure_after_executor_error_preserves_failed_anchor() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
+            "outcome disk full".into(),
+        ));
+        let mut executor = FailingExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "evt_input_001",
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "failed");
+
+        let anchor = &response["result_anchor"];
+        assert_eq!(anchor["event_name"], "capability.failed");
+        let error = &anchor["facts"]["error"];
+        assert_eq!(error["code"], "provider_error");
+        assert_eq!(error["message"], "executor failed as requested");
     }
 }
