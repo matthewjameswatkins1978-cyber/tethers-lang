@@ -428,9 +428,8 @@ Dispatch-proof enforcement boundary integrated on 2026-07-22:
   real engine-to-host process boundary.
 
 Not yet implemented (explicitly deferred):
-- Outcome Trail records.
 - Result Anchors.
-- Response-schema validation.
+- Response-schema validation beyond executor output validation.
 - JSON Schema argument validation.
 - Detailed failure classification.
 - Confirmation workflow.
@@ -462,6 +461,18 @@ Dispatch-intent audit correction on 2026-07-22:
   `RecordingTrail` exists only under tests, so production callers cannot provide
   an arbitrary always-success recorder to mint readiness without the file-backed
   append/flush/sync path.
+
+Executor output validation on 2026-07-23:
+- After an executor returns `Ok(result)`, the Rust host validates that result
+  against the resolved verified manifest's `output_schema` before recording a
+  successful durable outcome or appending `action_completed`.
+- Validation failure records one failed durable outcome with no `result`, appends
+  `action_failed`, preserves `execution_status: "failed"`, and does not retry
+  execution.
+- Executor `Err(...)` still bypasses output validation so the original executor
+  error remains the failure cause.
+- This is limited to output validation. Result Anchors, input argument JSON
+  Schema validation, retries, recovery, and transport changes remain deferred.
 
 ## Fixture Contract Follow-Up
 

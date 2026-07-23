@@ -4,6 +4,7 @@ pub mod policy;
 pub mod provider;
 pub mod resolver;
 pub mod trusted_store;
+mod validation;
 
 use dispatch::DispatchReadyAction;
 use policy::PermissionDecision;
@@ -53,8 +54,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             "output_schema": {
                 "type": "object",
-                "properties": { "status": { "type": "string" } },
-                "required": ["status"]
+                "properties": {
+                    "status": { "type": "string" },
+                    "project": { "type": "string" },
+                    "task": { "type": "string" }
+                },
+                "required": ["status"],
+                "additionalProperties": false
             },
             "effects": ["lantern.write"],
             "permission_scope": {
@@ -414,41 +420,83 @@ fn authorise_and_execute(
 
     match executor.execute(&ready) {
         Ok(result) => {
-            // Durably record outcome before appending to response Trail.
-            let outcome = dispatch::OutcomeEntry {
-                execution_id: ready.execution_id().0.clone(),
-                action_id: ready.action_id().0.clone(),
-                status: "succeeded".into(),
-                result: Some(result.clone()),
-                error_message: None,
-                timestamp_unix_ms: timestamp_ms,
-            };
-            match trail.append_outcome(&outcome) {
-                Ok(()) => {}
-                Err(e) => {
+            // Validate result against the capability's output_schema.
+            let output_schema = &ready.verified_manifest().manifest().output_schema;
+            match validation::validate_output(output_schema, &result) {
+                Ok(()) => {
+                    // Durably record succeeded outcome.
+                    let outcome = dispatch::OutcomeEntry {
+                        execution_id: ready.execution_id().0.clone(),
+                        action_id: ready.action_id().0.clone(),
+                        status: "succeeded".into(),
+                        result: Some(result.clone()),
+                        error_message: None,
+                        timestamp_unix_ms: timestamp_ms,
+                    };
+                    match trail.append_outcome(&outcome) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            json_trail.push(trail_entry(
+                                sequence,
+                                "execution",
+                                "audit_failure",
+                                "failed",
+                                format!("outcome write failed after succeeded Action: {e:?}"),
+                                Some(&ready.action_id().0),
+                            ));
+                            sequence += 1;
+                        }
+                    }
+
+                    let mut entry = trail_entry(
+                        sequence,
+                        "execution",
+                        "action_completed",
+                        "succeeded",
+                        format!("Completed {}", ready.capability_name()),
+                        Some(&ready.action_id().0),
+                    );
+                    entry["result"] = result;
+                    json_trail.push(entry);
+                    response["execution_status"] = Value::String("completed".into());
+                }
+                Err(validation_err) => {
+                    let message = format!("output validation failed: {}", validation_err.message);
+                    // Durably record failed outcome.
+                    let outcome = dispatch::OutcomeEntry {
+                        execution_id: ready.execution_id().0.clone(),
+                        action_id: ready.action_id().0.clone(),
+                        status: "failed".into(),
+                        result: None,
+                        error_message: Some(message.clone()),
+                        timestamp_unix_ms: timestamp_ms,
+                    };
+                    match trail.append_outcome(&outcome) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            json_trail.push(trail_entry(
+                                sequence,
+                                "execution",
+                                "audit_failure",
+                                "failed",
+                                format!("outcome write failed after validation failure: {e:?}"),
+                                Some(&ready.action_id().0),
+                            ));
+                            sequence += 1;
+                        }
+                    }
+
                     json_trail.push(trail_entry(
                         sequence,
                         "execution",
-                        "audit_failure",
+                        "action_failed",
                         "failed",
-                        format!("outcome write failed after succeeded Action: {e:?}"),
+                        message,
                         Some(&ready.action_id().0),
                     ));
-                    sequence += 1;
+                    response["execution_status"] = Value::String("failed".into());
                 }
             }
-
-            let mut entry = trail_entry(
-                sequence,
-                "execution",
-                "action_completed",
-                "succeeded",
-                format!("Completed {}", ready.capability_name()),
-                Some(&ready.action_id().0),
-            );
-            entry["result"] = result;
-            json_trail.push(entry);
-            response["execution_status"] = Value::String("completed".into());
         }
         Err(message) => {
             // Durably record outcome before appending to response Trail.
@@ -557,8 +605,13 @@ mod tests {
             },
             "output_schema": {
                 "type": "object",
-                "properties": { "status": { "type": "string" } },
-                "required": ["status"]
+                "properties": {
+                    "status": { "type": "string" },
+                    "project": { "type": "string" },
+                    "task": { "type": "string" }
+                },
+                "required": ["status"],
+                "additionalProperties": false
             },
             "effects": ["lantern.write"],
             "permission_scope": {
@@ -608,6 +661,29 @@ mod tests {
     fn resolved_lantern() -> (TrustedManifestStore, resolver::ResolvedCapability) {
         let mut store = TrustedManifestStore::new();
         store.insert(verified_lantern()).unwrap();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let resolved = resolver::resolve_capability(
+            &store,
+            &availability,
+            "lantern.task.record",
+            1,
+            Some("lantern-local"),
+        )
+        .unwrap();
+        (store, resolved)
+    }
+
+    fn resolved_lantern_with_manifest(
+        manifest_json: Value,
+    ) -> (TrustedManifestStore, resolver::ResolvedCapability) {
+        let mut manifest_json = manifest_json;
+        let (_, digest) =
+            crate::manifest::canonicalize_and_digest(&manifest_json.to_string()).unwrap();
+        manifest_json["digest"] = json!(digest);
+        let verified = crate::manifest::verify_manifest(&manifest_json.to_string()).unwrap();
+
+        let mut store = TrustedManifestStore::new();
+        store.insert(verified).unwrap();
         let availability = ProviderAvailability::from_identities(["lantern-local"]);
         let resolved = resolver::resolve_capability(
             &store,
@@ -1502,5 +1578,381 @@ mod tests {
             .filter(|e| e["kind"] == "audit_failure")
             .count();
         assert_eq!(audit_count, 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 24: Conforming output passes validation and succeeds.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn conforming_output_passes_validation_and_succeeds() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "completed");
+        let json_trail = response["trail"].as_array().unwrap();
+        assert!(json_trail.iter().any(|e| e["kind"] == "action_completed"));
+        assert!(!json_trail.iter().any(|e| e["kind"] == "action_failed"));
+        assert_eq!(trail.outcome_entries.len(), 1);
+        assert_eq!(trail.outcome_entries[0].status, "succeeded");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 25: Missing required field in output produces validation failure.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn missing_required_output_field_fails_validation() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        struct MissingStatusExecutor;
+        impl CapabilityExecutor for MissingStatusExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                Ok(json!({"wrong_field": 1}))
+            }
+        }
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = MissingStatusExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "failed");
+        let json_trail = response["trail"].as_array().unwrap();
+        assert!(json_trail.iter().any(|e| e["kind"] == "action_failed"));
+        assert!(!json_trail.iter().any(|e| e["kind"] == "action_completed"));
+
+        let failed = json_trail
+            .iter()
+            .find(|e| e["kind"] == "action_failed")
+            .unwrap();
+        assert!(failed["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("output validation failed:"));
+        assert!(failed["message"]
+            .as_str()
+            .unwrap()
+            .contains("missing required property"));
+
+        assert_eq!(trail.outcome_entries.len(), 1);
+        let outcome = &trail.outcome_entries[0];
+        assert_eq!(outcome.status, "failed");
+        assert!(outcome
+            .error_message
+            .as_ref()
+            .unwrap()
+            .starts_with("output validation failed:"));
+        assert_eq!(outcome.result, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 26: Wrong property type produces validation failure.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn wrong_property_type_fails_validation() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        struct WrongTypeExecutor;
+        impl CapabilityExecutor for WrongTypeExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                Ok(json!({"status": 123}))
+            }
+        }
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = WrongTypeExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "failed");
+        let json_trail = response["trail"].as_array().unwrap();
+        let failed = json_trail
+            .iter()
+            .find(|e| e["kind"] == "action_failed")
+            .unwrap();
+        assert!(failed["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("output validation failed:"));
+        assert!(failed["message"]
+            .as_str()
+            .unwrap()
+            .contains("type mismatch"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 27: Additional property rejected when additionalProperties false.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn additional_property_fails_validation() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        struct ExtraPropExecutor;
+        impl CapabilityExecutor for ExtraPropExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                Ok(json!({"status": "ok", "extra": true}))
+            }
+        }
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = ExtraPropExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "failed");
+        let json_trail = response["trail"].as_array().unwrap();
+        let failed = json_trail
+            .iter()
+            .find(|e| e["kind"] == "action_failed")
+            .unwrap();
+        assert!(failed["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("output validation failed:"));
+        assert!(failed["message"]
+            .as_str()
+            .unwrap()
+            .contains("additional property"));
+    }
+
+    #[test]
+    fn additional_property_allowed_when_schema_permits_it() {
+        let mut manifest = lantern_manifest_json();
+        manifest["output_schema"]["additionalProperties"] = json!(true);
+        let (_store, resolved) = resolved_lantern_with_manifest(manifest);
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        struct ExtraPropExecutor;
+        impl CapabilityExecutor for ExtraPropExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                Ok(json!({"status": "ok", "extra": true}))
+            }
+        }
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = ExtraPropExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "completed");
+        let json_trail = response["trail"].as_array().unwrap();
+        assert!(json_trail.iter().any(|e| e["kind"] == "action_completed"));
+        assert!(!json_trail.iter().any(|e| e["kind"] == "action_failed"));
+        assert_eq!(trail.outcome_entries.len(), 1);
+        assert_eq!(trail.outcome_entries[0].status, "succeeded");
+        assert_eq!(
+            trail.outcome_entries[0].result.as_ref().unwrap()["extra"],
+            true
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 28: Executor Err message is preserved, not replaced by validation.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn executor_error_is_not_replaced_by_validation() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = FailingExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "failed");
+        let json_trail = response["trail"].as_array().unwrap();
+        let failed = json_trail
+            .iter()
+            .find(|e| e["kind"] == "action_failed")
+            .unwrap();
+        assert_eq!(failed["message"], "executor failed as requested");
+        assert!(!failed["message"]
+            .as_str()
+            .unwrap()
+            .contains("output validation"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 29: Output validation failure + outcome-write failure preserves
+    //          execution_status "failed" and audits.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validation_failure_with_outcome_write_failure_audits() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        struct MissingStatusExecutor;
+        impl CapabilityExecutor for MissingStatusExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                Ok(json!({"wrong_field": 1}))
+            }
+        }
+
+        let mut trail = RecordingTrail::new();
+        trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
+            "outcome disk full".into(),
+        ));
+        let mut executor = MissingStatusExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "failed");
+        let json_trail = response["trail"].as_array().unwrap();
+        let audit_count = json_trail
+            .iter()
+            .filter(|e| e["kind"] == "audit_failure")
+            .count();
+        assert_eq!(audit_count, 1);
+        assert!(json_trail.iter().any(|e| e["kind"] == "action_failed"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 30: Schema comes from verified manifest, not hard-coded.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn schema_read_from_verified_manifest_not_hard_coded() {
+        let (_store, resolved) = resolved_lantern();
+        let manifest_schema = resolved.manifest().manifest().output_schema.clone();
+        assert_eq!(manifest_schema["type"], "object");
+        assert_eq!(manifest_schema["required"][0], "status");
+        assert_eq!(manifest_schema["properties"]["status"]["type"], "string");
+        assert_eq!(manifest_schema["properties"]["project"]["type"], "string");
+        assert_eq!(manifest_schema["properties"]["task"]["type"], "string");
+        assert_eq!(manifest_schema["additionalProperties"], false);
+
+        // Now use authorise_and_execute with conforming output.
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(response["execution_status"], "completed");
     }
 }

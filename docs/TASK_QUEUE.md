@@ -121,6 +121,12 @@ Next:
           to prove one durable intent, one `action_started`, one
           `action_failed`, and zero `action_completed` entries.  Both scripts
           use unique GUID-based temporary Trails and clean them afterward.
+    - [x] Executor output validation now runs after executor `Ok(result)` and
+          before durable success outcome recording or `action_completed`.
+          Validation failures record one failed durable outcome with no result,
+          append `action_failed`, preserve failed status, and do not retry.
+          Executor errors bypass output validation and keep their original
+          failure message.
 
 Later:
 
