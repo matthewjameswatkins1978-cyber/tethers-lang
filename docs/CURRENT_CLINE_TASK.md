@@ -6,7 +6,7 @@ Task colour: `Red`
 
 Base branch: `main`
 
-Base commit: `bc4e0779baf04aa2d9731668c231412e8bc39e11`
+Base commit: `444d8a5e1235947588e30ae9381eeb8b87f99791`
 
 ## Objective
 
@@ -73,9 +73,9 @@ requires planner protocol/schema changes outside this boundary.
 
 1. One focused host test proves a declared requirement projects if and only if
    it is admitted, available, and exact-version resolved.
-2. One focused host test proves fail-closed omission for at least one mismatch
-   branch (missing admission, unavailable provider, provider mismatch, or
-   version mismatch).
+2. Focused host tests prove fail-closed omission for every declared mismatch
+   branch: missing admission, unavailable provider, provider mismatch, and
+   exact-version mismatch.
 3. Projection output includes exact capability name/version, effects,
    and manifest digest.
 4. Projection logic has no side effects and does not mutate store or
@@ -129,19 +129,6 @@ Stop and report before implementation if:
 
 ## Expected pre-existing changes
 
-These are expected and must be preserved:
-
-- `.clinerules/20-project-workflow.md`
-- `AGENTS.md`
-- `.cline/`
-- `.clinerules/workflows/`
-- `.github/`
-- `docs/AGENT_WORKFLOW.md`
-- `docs/CLINE_HANDOFF.md`
-- `docs/COPILOT_TRIAL.md`
-- `docs/CURRENT_CLINE_TASK.md`
-- provider-admission implementation files under `tethers-0.1/host-rust/`
-- provider fixture/manifests under `tethers-0.1/scripts/` and
-  `tethers-0.1/protocol/capability-manifests/`
+None. The working tree was clean when this packet was prepared.
 
 Do not stage or commit unrelated files.
