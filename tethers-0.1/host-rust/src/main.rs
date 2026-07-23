@@ -407,8 +407,37 @@ fn authorise_and_execute(
     ));
     sequence += 1;
 
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default();
+
     match executor.execute(&ready) {
         Ok(result) => {
+            // Durably record outcome before appending to response Trail.
+            let outcome = dispatch::OutcomeEntry {
+                execution_id: ready.execution_id().0.clone(),
+                action_id: ready.action_id().0.clone(),
+                status: "succeeded".into(),
+                result: Some(result.clone()),
+                error_message: None,
+                timestamp_unix_ms: timestamp_ms,
+            };
+            match trail.append_outcome(&outcome) {
+                Ok(()) => {}
+                Err(e) => {
+                    json_trail.push(trail_entry(
+                        sequence,
+                        "execution",
+                        "audit_failure",
+                        "failed",
+                        format!("outcome write failed after succeeded Action: {e:?}"),
+                        Some(&ready.action_id().0),
+                    ));
+                    sequence += 1;
+                }
+            }
+
             let mut entry = trail_entry(
                 sequence,
                 "execution",
@@ -422,6 +451,30 @@ fn authorise_and_execute(
             response["execution_status"] = Value::String("completed".into());
         }
         Err(message) => {
+            // Durably record outcome before appending to response Trail.
+            let outcome = dispatch::OutcomeEntry {
+                execution_id: ready.execution_id().0.clone(),
+                action_id: ready.action_id().0.clone(),
+                status: "failed".into(),
+                result: None,
+                error_message: Some(message.clone()),
+                timestamp_unix_ms: timestamp_ms,
+            };
+            match trail.append_outcome(&outcome) {
+                Ok(()) => {}
+                Err(e) => {
+                    json_trail.push(trail_entry(
+                        sequence,
+                        "execution",
+                        "audit_failure",
+                        "failed",
+                        format!("outcome write failed after failed Action: {e:?}"),
+                        Some(&ready.action_id().0),
+                    ));
+                    sequence += 1;
+                }
+            }
+
             json_trail.push(trail_entry(
                 sequence,
                 "execution",
@@ -841,7 +894,7 @@ mod tests {
         let decision = allow_decision_for(&resolved);
 
         let mut trail = RecordingTrail::new();
-        trail.injected_error = Some(dispatch::TrailError::WriteFailed("disk full".into()));
+        trail.injected_intent_error = Some(dispatch::TrailError::WriteFailed("disk full".into()));
 
         let err = dispatch::prepare_and_record(
             decision,
@@ -871,7 +924,8 @@ mod tests {
         let decision = allow_decision_for(&resolved);
 
         let mut trail = RecordingTrail::new();
-        trail.injected_error = Some(dispatch::TrailError::FlushFailed("sync_data failed".into()));
+        trail.injected_intent_error =
+            Some(dispatch::TrailError::FlushFailed("sync_data failed".into()));
 
         let err = dispatch::prepare_and_record(
             decision,
@@ -1262,5 +1316,191 @@ mod tests {
         assert_eq!(failed["action_id"], "action_1");
         assert_eq!(failed["phase"], "execution");
         assert_eq!(failed["outcome"], "failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 20: authorise_and_execute writes a succeeded outcome to the
+    //          durable Trail before appending action_completed.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn authorise_and_execute_writes_succeeded_outcome() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(trail.entries.len(), 1);
+        assert_eq!(trail.outcome_entries.len(), 1);
+
+        let outcome = &trail.outcome_entries[0];
+        assert_eq!(outcome.execution_id, "eval-001");
+        assert_eq!(outcome.action_id, "action_1");
+        assert_eq!(outcome.status, "succeeded");
+        assert_eq!(
+            outcome.result,
+            Some(json!({"status": "recorded", "project": "lantern-keeper", "task": "LK-39"}))
+        );
+        assert_eq!(outcome.error_message, None);
+        assert_eq!(response["execution_status"], "completed");
+
+        let json_trail = response["trail"].as_array().unwrap();
+        let audit_count = json_trail
+            .iter()
+            .filter(|e| e["kind"] == "audit_failure")
+            .count();
+        assert_eq!(audit_count, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 21: authorise_and_execute writes a failed outcome to the
+    //          durable Trail before appending action_failed.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn authorise_and_execute_writes_failed_outcome() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        let mut executor = FailingExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(trail.entries.len(), 1);
+        assert_eq!(trail.outcome_entries.len(), 1);
+
+        let outcome = &trail.outcome_entries[0];
+        assert_eq!(outcome.execution_id, "eval-001");
+        assert_eq!(outcome.action_id, "action_1");
+        assert_eq!(outcome.status, "failed");
+        assert_eq!(outcome.result, None);
+        assert_eq!(
+            outcome.error_message,
+            Some("executor failed as requested".into())
+        );
+        assert_eq!(response["execution_status"], "failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 22: Outcome write failure after executor success preserves
+    //          execution_status "completed" and appends audit_failure.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn outcome_write_failure_after_success_preserves_status_and_audits() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        trail.injected_outcome_error = Some(dispatch::TrailError::FlushFailed(
+            "outcome sync_data failed".into(),
+        ));
+        let mut executor = MockExecutor::new();
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(trail.entries.len(), 1);
+        assert!(trail.outcome_entries.is_empty());
+
+        assert_eq!(response["execution_status"], "completed");
+
+        let json_trail = response["trail"].as_array().unwrap();
+        let audit_count = json_trail
+            .iter()
+            .filter(|e| e["kind"] == "audit_failure")
+            .count();
+        assert_eq!(audit_count, 1);
+        let audit = json_trail
+            .iter()
+            .find(|e| e["kind"] == "audit_failure")
+            .unwrap();
+        assert_eq!(audit["action_id"], "action_1");
+        assert!(audit["message"]
+            .as_str()
+            .unwrap()
+            .contains("outcome write failed after succeeded Action"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 23: Outcome write failure after executor failure preserves
+    //          execution_status "failed" and appends audit_failure.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn outcome_write_failure_after_failure_preserves_status_and_audits() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "lantern-keeper", "task": "LK-39"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
+            "outcome disk full".into(),
+        ));
+        let mut executor = FailingExecutor;
+        authorise_and_execute(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+        )
+        .unwrap();
+
+        assert_eq!(trail.entries.len(), 1);
+        assert!(trail.outcome_entries.is_empty());
+
+        assert_eq!(response["execution_status"], "failed");
+
+        let json_trail = response["trail"].as_array().unwrap();
+        let audit_count = json_trail
+            .iter()
+            .filter(|e| e["kind"] == "audit_failure")
+            .count();
+        assert_eq!(audit_count, 1);
     }
 }

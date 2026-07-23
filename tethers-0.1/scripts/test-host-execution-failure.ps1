@@ -96,15 +96,14 @@ try {
         throw "Expected 0 action_completed, found $($completed.Count)."
     }
 
-    # Verify intent was recorded before execution.
-    # The durable intent is outside the JSON Trail; verify the JSONL file exists and contains
-    # exactly one record for this evaluation.
-    $intentText = Get-Content -Raw -LiteralPath $trailPath
-    $intentLines = @($intentText -split "\r?\n" | Where-Object { $_.Trim() -ne "" })
-    if ($intentLines.Count -ne 1) {
-        throw "Expected exactly 1 durable intent line in Trail file, found $($intentLines.Count)."
+    # Verify intent and outcome were recorded in the durable Trail.
+    $trailText = Get-Content -Raw -LiteralPath $trailPath
+    $trailRecords = @($trailText -split "\r?\n" | Where-Object { $_.Trim() -ne "" })
+    if ($trailRecords.Count -ne 2) {
+        throw "Expected exactly 2 durable records (intent + outcome) in Trail file, found $($trailRecords.Count)."
     }
-    $intent = $intentLines[0] | ConvertFrom-Json -ErrorAction Stop
+
+    $intent = $trailRecords[0] | ConvertFrom-Json -ErrorAction Stop
     if ($intent.execution_id -ne $response.evaluation_id) {
         throw "Intent execution_id '$($intent.execution_id)' does not match response evaluation_id '$($response.evaluation_id)'."
     }
@@ -113,6 +112,23 @@ try {
     }
     if ($intent.capability_name -ne "lantern.task.record") {
         throw "Intent capability_name '$($intent.capability_name)' expected 'lantern.task.record'."
+    }
+
+    $outcome = $trailRecords[1] | ConvertFrom-Json -ErrorAction Stop
+    if ($outcome.execution_id -ne $response.evaluation_id) {
+        throw "Outcome execution_id '$($outcome.execution_id)' does not match response evaluation_id '$($response.evaluation_id)'."
+    }
+    if ($outcome.action_id -ne "action_1") {
+        throw "Outcome action_id '$($outcome.action_id)' expected 'action_1'."
+    }
+    if ($outcome.status -ne "failed") {
+        throw "Outcome status '$($outcome.status)' expected 'failed'."
+    }
+    if ($outcome.error_message -ne "executor failed as requested") {
+        throw "Outcome error_message '$($outcome.error_message)' expected 'executor failed as requested'."
+    }
+    if ($null -ne $outcome.PSObject.Properties['result']) {
+        throw "Failed outcome must not have a result field, got '$($outcome.PSObject.Properties['result'].Value)'."
     }
 
     # Verify failure entry content.
@@ -138,7 +154,7 @@ try {
     Write-Output "Engine status: $($response.status)"
     Write-Output "Execution status: $($response.execution_status)"
     Write-Output "Intent execution_id: $($intent.execution_id)"
-    Write-Output "Durable intent lines: $($intentLines.Count)"
+    Write-Output "Durable records: $($trailRecords.Count)"
     Write-Output "action_started: $($started.Count)"
     Write-Output "action_failed: $($failed.Count)"
     Write-Output "action_completed: $($completed.Count)"

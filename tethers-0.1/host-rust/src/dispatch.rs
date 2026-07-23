@@ -71,6 +71,30 @@ pub struct IntentEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Outcome entry
+// ---------------------------------------------------------------------------
+
+/// A durable execution-outcome record written after the executor returns.
+///
+/// Written after `IntentEntry` in the durable Trail.  The status field
+/// is `"succeeded"` or `"failed"`.  The `result` and `error_message`
+/// fields are mutually exclusive: a succeeded outcome carries a result;
+/// a failed outcome carries an error message.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct OutcomeEntry {
+    pub execution_id: String,
+    pub action_id: String,
+    /// `"succeeded"` or `"failed"`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+    /// Host-supplied wall-clock timestamp in milliseconds since Unix epoch.
+    pub timestamp_unix_ms: u64,
+}
+
+// ---------------------------------------------------------------------------
 // DispatchReadyAction — proof token
 // ---------------------------------------------------------------------------
 
@@ -180,10 +204,10 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Durable intent recording.
+/// Durable intent and outcome recording.
 ///
 /// Implementations must ensure that a successful `append_and_flush_intent`
-/// means the intent record has reached durable storage.
+/// or `append_outcome` means the record has reached durable storage.
 pub trait Trail: sealed::Sealed {
     /// Serialize, append, flush userspace buffers, and sync to durable
     /// storage.  Returns `Ok(())` only when the intent is durable.
@@ -192,6 +216,14 @@ pub trait Trail: sealed::Sealed {
     /// or sync may still leave no bytes, a partial record, or an
     /// unconfirmed complete record at the tail.
     fn append_and_flush_intent(&mut self, entry: &IntentEntry) -> Result<(), TrailError>;
+
+    /// Serialize, append, flush, and sync an execution outcome to durable
+    /// storage.  Returns `Ok(())` only when the outcome is durable.
+    ///
+    /// Called after the executor returns.  On failure, the Action has
+    /// already occurred; callers must preserve the known execution status
+    /// and record an audit-failure entry in the response Trail.
+    fn append_outcome(&mut self, entry: &OutcomeEntry) -> Result<(), TrailError>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -254,6 +286,24 @@ impl Trail for FileTrail {
 
         Ok(())
     }
+
+    fn append_outcome(&mut self, entry: &OutcomeEntry) -> Result<(), TrailError> {
+        let line = serde_json::to_string(entry)
+            .map_err(|e| TrailError::WriteFailed(format!("serialization failed: {e}")))?;
+
+        writeln!(self.file, "{line}")
+            .map_err(|e| TrailError::WriteFailed(format!("write failed: {e}")))?;
+
+        self.file
+            .flush()
+            .map_err(|e| TrailError::FlushFailed(format!("flush failed: {e}")))?;
+
+        self.file
+            .sync_data()
+            .map_err(|e| TrailError::FlushFailed(format!("sync_data failed: {e}")))?;
+
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -264,11 +314,14 @@ impl Trail for FileTrail {
 /// **no durability**.  Used in tests to verify intent content and
 /// ordering without touching the filesystem.
 ///
-/// An optional `injected_error` simulates write or flush failure.
+/// `injected_intent_error` simulates an intent write or flush failure.
+/// `injected_outcome_error` simulates an outcome write or flush failure.
 #[cfg(test)]
 pub struct RecordingTrail {
     pub entries: Vec<IntentEntry>,
-    pub injected_error: Option<TrailError>,
+    pub outcome_entries: Vec<OutcomeEntry>,
+    pub injected_intent_error: Option<TrailError>,
+    pub injected_outcome_error: Option<TrailError>,
 }
 
 #[cfg(test)]
@@ -276,7 +329,9 @@ impl RecordingTrail {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
-            injected_error: None,
+            outcome_entries: Vec::new(),
+            injected_intent_error: None,
+            injected_outcome_error: None,
         }
     }
 }
@@ -287,10 +342,18 @@ impl sealed::Sealed for RecordingTrail {}
 #[cfg(test)]
 impl Trail for RecordingTrail {
     fn append_and_flush_intent(&mut self, entry: &IntentEntry) -> Result<(), TrailError> {
-        if let Some(err) = self.injected_error.take() {
+        if let Some(err) = self.injected_intent_error.take() {
             return Err(err);
         }
         self.entries.push(entry.clone());
+        Ok(())
+    }
+
+    fn append_outcome(&mut self, entry: &OutcomeEntry) -> Result<(), TrailError> {
+        if let Some(err) = self.injected_outcome_error.take() {
+            return Err(err);
+        }
+        self.outcome_entries.push(entry.clone());
         Ok(())
     }
 }
@@ -808,7 +871,7 @@ mod tests {
         let decision = allow_decision_for(&resolved);
 
         let mut trail = RecordingTrail::new();
-        trail.injected_error = Some(TrailError::WriteFailed("disk full".into()));
+        trail.injected_intent_error = Some(TrailError::WriteFailed("disk full".into()));
 
         let err = prepare_and_record(
             decision,
@@ -838,7 +901,7 @@ mod tests {
         let decision = allow_decision_for(&resolved);
 
         let mut trail = RecordingTrail::new();
-        trail.injected_error = Some(TrailError::FlushFailed("sync_data failed".into()));
+        trail.injected_intent_error = Some(TrailError::FlushFailed("sync_data failed".into()));
 
         let err = prepare_and_record(
             decision,
@@ -1050,5 +1113,210 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err, PrepareError::EmptyIdentifier { field: "action_id" });
+    }
+
+    // -----------------------------------------------------------------------
+    // Outcome tests
+    // -----------------------------------------------------------------------
+
+    // Test O1: Intent is recorded before outcome.
+    #[test]
+    fn intent_recorded_before_outcome() {
+        let mut trail = RecordingTrail::new();
+        trail
+            .append_and_flush_intent(&IntentEntry {
+                execution_id: "exec-001".into(),
+                action_id: "action_1".into(),
+                capability_name: "test.cap".into(),
+                capability_version: 1,
+                provider_identity: "test-prov".into(),
+                manifest_digest: "sha256:abc".into(),
+                arguments: json!({}),
+            })
+            .unwrap();
+
+        trail
+            .append_outcome(&OutcomeEntry {
+                execution_id: "exec-001".into(),
+                action_id: "action_1".into(),
+                status: "succeeded".into(),
+                result: Some(json!({"ok": true})),
+                error_message: None,
+                timestamp_unix_ms: 1000,
+            })
+            .unwrap();
+
+        assert_eq!(trail.entries.len(), 1);
+        assert_eq!(trail.outcome_entries.len(), 1);
+        assert_eq!(trail.entries[0].execution_id, "exec-001");
+        assert_eq!(trail.outcome_entries[0].execution_id, "exec-001");
+    }
+
+    // Test O2: Success outcome carries correct identifiers, status, and result.
+    #[test]
+    fn success_outcome_carries_correct_content() {
+        let mut trail = RecordingTrail::new();
+        trail
+            .append_outcome(&OutcomeEntry {
+                execution_id: "eval-abc".into(),
+                action_id: "action_1".into(),
+                status: "succeeded".into(),
+                result: Some(json!({"status": "recorded", "project": "p", "task": "t"})),
+                error_message: None,
+                timestamp_unix_ms: 42,
+            })
+            .unwrap();
+
+        let outcome = &trail.outcome_entries[0];
+        assert_eq!(outcome.execution_id, "eval-abc");
+        assert_eq!(outcome.action_id, "action_1");
+        assert_eq!(outcome.status, "succeeded");
+        assert_eq!(
+            outcome.result,
+            Some(json!({"status": "recorded", "project": "p", "task": "t"}))
+        );
+        assert_eq!(outcome.error_message, None);
+        assert_eq!(outcome.timestamp_unix_ms, 42);
+    }
+
+    // Test O3: Failure outcome carries error message, no result.
+    #[test]
+    fn failure_outcome_carries_error_message_not_result() {
+        let mut trail = RecordingTrail::new();
+        trail
+            .append_outcome(&OutcomeEntry {
+                execution_id: "eval-abc".into(),
+                action_id: "action_1".into(),
+                status: "failed".into(),
+                result: None,
+                error_message: Some("executor failed as requested".into()),
+                timestamp_unix_ms: 99,
+            })
+            .unwrap();
+
+        let outcome = &trail.outcome_entries[0];
+        assert_eq!(outcome.status, "failed");
+        assert_eq!(outcome.result, None);
+        assert_eq!(
+            outcome.error_message,
+            Some("executor failed as requested".into())
+        );
+        assert_eq!(outcome.timestamp_unix_ms, 99);
+    }
+
+    // Test O4: Outcome write failure does not call the executor again.
+    // The RecordingTrail's injected_outcome_error simulates this.
+    #[test]
+    fn outcome_write_failure_returns_error_and_preserves_entries() {
+        let mut trail = RecordingTrail::new();
+        trail
+            .append_and_flush_intent(&IntentEntry {
+                execution_id: "exec-001".into(),
+                action_id: "action_1".into(),
+                capability_name: "test.cap".into(),
+                capability_version: 1,
+                provider_identity: "test-prov".into(),
+                manifest_digest: "sha256:abc".into(),
+                arguments: json!({}),
+            })
+            .unwrap();
+
+        trail.injected_outcome_error = Some(TrailError::WriteFailed("outcome disk full".into()));
+
+        let err = trail
+            .append_outcome(&OutcomeEntry {
+                execution_id: "exec-001".into(),
+                action_id: "action_1".into(),
+                status: "succeeded".into(),
+                result: Some(json!({"ok": true})),
+                error_message: None,
+                timestamp_unix_ms: 1000,
+            })
+            .unwrap_err();
+
+        assert_eq!(err, TrailError::WriteFailed("outcome disk full".into()));
+        // Intent still present, no outcome recorded.
+        assert_eq!(trail.entries.len(), 1);
+        assert!(trail.outcome_entries.is_empty());
+    }
+
+    // Test O5: Deterministic OutcomeEntry serialization.
+    #[test]
+    fn outcome_entry_serialization_is_deterministic() {
+        let entry = OutcomeEntry {
+            execution_id: "exec-001".into(),
+            action_id: "action_1".into(),
+            status: "succeeded".into(),
+            result: Some(json!({"ok": true})),
+            error_message: None,
+            timestamp_unix_ms: 1000,
+        };
+
+        let line1 = serde_json::to_string(&entry).unwrap();
+        let line2 = serde_json::to_string(&entry).unwrap();
+        assert_eq!(line1, line2);
+    }
+
+    // Test O6: FileTrail durability — intent + outcome survive close and re-read.
+    #[test]
+    fn file_trail_writes_durable_intent_and_outcome() {
+        let dir = std::env::temp_dir().join("tethers-dispatch-test-intent-outcome");
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let (_store, _availability, resolved) = resolved_read();
+        let decision = allow_decision_for(&resolved);
+
+        {
+            let mut trail = FileTrail::open(&trail_path).unwrap();
+            let _ready = prepare_and_record(
+                decision,
+                &resolved,
+                ExecutionId("exec-out-001".into()),
+                ActionId("action_out_1".into()),
+                json!({"path": "projects/outcome-test.md"}),
+                &mut trail,
+            )
+            .unwrap();
+
+            trail
+                .append_outcome(&OutcomeEntry {
+                    execution_id: "exec-out-001".into(),
+                    action_id: "action_out_1".into(),
+                    status: "succeeded".into(),
+                    result: Some(json!({"status": "recorded"})),
+                    error_message: None,
+                    timestamp_unix_ms: 5000,
+                })
+                .unwrap();
+        }
+
+        let mut contents = String::new();
+        fs::File::open(&trail_path)
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+
+        let parsed: Vec<serde_json::Value> = contents
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+
+        assert_eq!(parsed.len(), 2, "expected intent + outcome");
+
+        // First line: intent
+        assert_eq!(parsed[0]["execution_id"], "exec-out-001");
+        assert_eq!(parsed[0]["capability_name"], "notes.note.read");
+
+        // Second line: outcome
+        assert_eq!(parsed[1]["execution_id"], "exec-out-001");
+        assert_eq!(parsed[1]["action_id"], "action_out_1");
+        assert_eq!(parsed[1]["status"], "succeeded");
+        assert_eq!(parsed[1]["result"]["status"], "recorded");
+        assert_eq!(parsed[1]["timestamp_unix_ms"], 5000);
+
+        let _ = fs::remove_file(&trail_path);
+        let _ = fs::remove_dir(&dir);
     }
 }

@@ -75,6 +75,38 @@ try {
         throw "Demo completed but execution_status was '$($response.execution_status)', expected 'completed'."
     }
 
+    # Verify intent and outcome in the durable Trail.
+    $trailText = Get-Content -Raw -LiteralPath $trailPath
+    $trailRecords = @($trailText -split "\r?\n" | Where-Object { $_.Trim() -ne "" })
+    if ($trailRecords.Count -ne 2) {
+        throw "Expected exactly 2 durable records (intent + outcome) in Trail file, found $($trailRecords.Count)."
+    }
+
+    $intent = $trailRecords[0] | ConvertFrom-Json -ErrorAction Stop
+    if ($intent.execution_id -ne $response.evaluation_id) {
+        throw "Intent execution_id '$($intent.execution_id)' does not match response evaluation_id '$($response.evaluation_id)'."
+    }
+    if ($intent.action_id -ne "action_1") {
+        throw "Intent action_id '$($intent.action_id)' expected 'action_1'."
+    }
+    if ($intent.capability_name -ne "lantern.task.record") {
+        throw "Intent capability_name '$($intent.capability_name)' expected 'lantern.task.record'."
+    }
+
+    $outcome = $trailRecords[1] | ConvertFrom-Json -ErrorAction Stop
+    if ($outcome.execution_id -ne $response.evaluation_id) {
+        throw "Outcome execution_id '$($outcome.execution_id)' does not match response evaluation_id '$($response.evaluation_id)'."
+    }
+    if ($outcome.action_id -ne "action_1") {
+        throw "Outcome action_id '$($outcome.action_id)' expected 'action_1'."
+    }
+    if ($outcome.status -ne "succeeded") {
+        throw "Outcome status '$($outcome.status)' expected 'succeeded'."
+    }
+    if ($outcome.result.status -ne "recorded") {
+        throw "Outcome result.status '$($outcome.result.status)' expected 'recorded'."
+    }
+
     $text
 }
 finally {
