@@ -49,6 +49,22 @@ implementation -> one independent read-only audit -> targeted correction of conc
 Do not restart the original implementation task after a narrow audit finding.
 Do not create repeated audit loops without new evidence.
 
+## Frictionless task handoff
+
+Use the project workflow `/tethers-task.md` for ordinary handoffs. Its
+instructions live at `.clinerules/workflows/tethers-task.md`, the matching
+on-demand skill lives at `.cline/skills/tethers-task/SKILL.md`, and the approved
+task contract lives at `docs/CURRENT_CLINE_TASK.md`.
+
+- A `READY` packet authorises only the bounded implementation and verification
+  it contains.
+- A `PROPOSED` packet is read-only until Matthew explicitly approves it.
+- A `COMPLETE` or `BLOCKED` packet must not be silently replaced with invented
+  work.
+- The skill must verify the packet against the live Git state before editing.
+- The packet never grants permission to commit or push unless it says so
+  explicitly.
+
 Current platform:
 
 - Windows

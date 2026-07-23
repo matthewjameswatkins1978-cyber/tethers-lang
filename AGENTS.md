@@ -1,6 +1,6 @@
-# Tethers — Project Guidance for Codex
+# Tethers — Project Guidance for Coding Agents
 
-Read this file, `docs/CONSTITUTION.md`, `tethers-0.1/SPEC.md`,
+Read this file, `docs/AGENT_WORKFLOW.md`, `docs/CONSTITUTION.md`, `tethers-0.1/SPEC.md`,
 `docs/MCP_PLAN.md`, `docs/CURRENT_GOAL.md`, and `docs/TASK_QUEUE.md` before
 making changes.
 
