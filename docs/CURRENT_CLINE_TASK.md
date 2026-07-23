@@ -6,7 +6,7 @@ Task colour: `Red`
 
 Base branch: `main`
 
-Base commit: `372dcc4a970bcea007d4406ffe692bdb16805c80`
+Base commit: `9ed81b8335c20e6287925b0341dc16da86780508`
 
 ## Objective
 
@@ -131,16 +131,7 @@ Stop and report before implementation if:
 
 ## Expected pre-existing changes
 
-Captured dirty snapshot for this packet:
-
-- `docs/TASK_QUEUE.md`
-- `docs/CURRENT_GOAL.md`
-- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_protocol.ml`
-- `tethers-0.1/host-rust/src/main.rs`
-- `tethers-0.1/host-rust/src/resolver.rs`
-- `tethers-0.1/protocol/cases/bridge-digest-pass-through/expected-response.json`
-- `tethers-0.1/protocol/cases/bridge-digest-pass-through/request.json`
+None. The completed implementation is checkpointed at the Base commit above.
 
 Planning-control file `docs/CURRENT_CLINE_TASK.md` is intentionally excluded by
 the task-packet checker from the non-planning dirty-path comparison.
