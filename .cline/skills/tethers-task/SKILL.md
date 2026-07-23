@@ -16,6 +16,7 @@ Then inspect:
 ```powershell
 git status --short --branch
 git rev-parse HEAD
+pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 ```
 
 Do not edit anything until the task packet and live Git state agree.
@@ -24,9 +25,13 @@ Do not edit anything until the task packet and live Git state agree.
 
 ### `READY`
 
-1. Confirm `Base commit` matches `HEAD`.
-2. Confirm every pre-existing dirty path is listed under `Expected pre-existing
-   changes`.
+1. Run `.github/scripts/check-tethers-task-packet.ps1` and stop if it fails.
+   `Base commit` may equal `HEAD`, or it may be an ancestor followed only by
+   committed planning changes to `CURRENT_CLINE_TASK.md` and
+   `COPILOT_TRIAL.md`. This avoids the impossible requirement for a committed
+   packet to contain its own commit SHA.
+2. Confirm the checker's live dirty-path result matches `Expected pre-existing
+   changes`; planning-control documents being authored are excluded by design.
 3. Read `AGENTS.md`, `.clinerules/`, and only the authoritative documents and
    code named by the packet.
 4. Reinspect the relevant implementation before trusting the packet.

@@ -48,3 +48,30 @@ When a Codex milestone review is due, stop the continuation loop. Explicitly
 tell Matthew to ask Codex for milestone sign-off, include the standard
 copy-ready sign-off request from `/next-tethers-task`, and do not authorise or
 start another implementation until Codex records its verdict.
+
+## Task-packet consistency
+
+Before authoring a next-task packet, capture:
+
+- the current implementation checkpoint from `git rev-parse HEAD`;
+- the exact pre-existing dirty paths from `git status --short`.
+
+Use that implementation checkpoint as `Base commit`. If the packet and trial
+log are later committed as a planning-only commit, do not replace the base with
+the packet commit: a committed file cannot contain its own commit SHA. The base
+may be behind `HEAD` only when every intervening path is
+`docs/CURRENT_CLINE_TASK.md` or `docs/COPILOT_TRIAL.md`.
+
+`Expected pre-existing changes` must reproduce the captured dirty paths
+exactly, using file paths rather than directory shorthand. Write `None` when
+the snapshot was clean. Do not copy a stale list from the previous packet.
+
+Every failure or mismatch named under Required behaviour must have a matching
+acceptance criterion and focused verification. Do not weaken several required
+branches into “at least one representative branch.”
+
+Run this after writing a packet and again before handing it off:
+
+```powershell
+pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
+```

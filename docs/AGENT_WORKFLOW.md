@@ -102,6 +102,32 @@ Other agents should express implementation plans using the same task-packet
 fields. Red work remains `PROPOSED` until its architectural decision is
 explicitly approved.
 
+### Task-packet consistency gate
+
+The packet's `Base commit` identifies the implementation checkpoint inspected
+when the next task was designed. A later commit containing only
+`docs/CURRENT_CLINE_TASK.md` and `docs/COPILOT_TRIAL.md` may sit above that
+checkpoint. Requiring the packet to contain its own commit SHA is impossible
+and must not be attempted.
+
+Before writing a packet, record the implementation checkpoint and exact dirty
+paths. `Expected pre-existing changes` is that snapshot, not a copied list from
+an older task. Use exact file paths and write `None` for a clean snapshot.
+
+Every required failure or mismatch branch must map to an acceptance criterion
+and focused check. A representative negative test is not sufficient evidence
+for several separately required branches.
+
+Both packet producers and implementation agents run:
+
+```powershell
+pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
+```
+
+The checker permits descendants of the base only when they change the two
+planning-control documents above, and it compares live non-planning dirty paths
+with the packet's expected list.
+
 ## Low-Codex continuation loop
 
 After Cline finishes, Matthew normally runs this Copilot workspace prompt:

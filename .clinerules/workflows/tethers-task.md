@@ -5,13 +5,15 @@ Read `docs/CURRENT_CLINE_TASK.md`, then inspect:
 ```powershell
 git status --short --branch
 git rev-parse HEAD
+pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 ```
 
 Do not edit until the packet and live Git state agree.
 
 If the packet is `READY`:
 
-1. Verify its base commit and expected pre-existing changes.
+1. Require the packet checker to pass. Stop rather than guessing when its base
+   commit, planning-only descendants, or expected dirty paths disagree.
 2. Read `AGENTS.md`, `.clinerules/`, and only the task-relevant documents and
    code named by the packet.
 3. Reinspect the implementation before trusting the handover.

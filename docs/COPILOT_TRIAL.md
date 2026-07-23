@@ -51,9 +51,8 @@ Copilot status dashboard when available; do not estimate missing numbers.
 
 ## Codex milestone cadence
 
-Cadence baseline: `bc4e077` — Result Anchor checkpoint and agent-workflow
-transition starting point. This is a counting marker, not a fresh technical
-sign-off.
+Cadence baseline: `c93d746` — configured stdio MCP provider admission
+milestone, signed off by Codex after the trust-boundary correction.
 
 Ask for a Codex milestone review:
 
