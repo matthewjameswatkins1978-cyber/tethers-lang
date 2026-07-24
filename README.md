@@ -17,6 +17,7 @@ Tethers is governed by two complementary documents:
 - `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the
   two sides of each agent handoff.
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
+- `docs/ROAD_TO_0_2.md` is the dependency-ordered release programme, job routing and handoff map through Tethers 0.2.
 
 The active prototype tree is `tethers-0.1/`.
 
