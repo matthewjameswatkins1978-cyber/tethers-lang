@@ -14,6 +14,8 @@ Tethers is governed by two complementary documents:
   coding agents.
 - `docs/PROJECT_CONTROL.md` defines the bounded task, ownership, evidence,
   worker-note, and review loop used to build the project.
+- `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the
+  two sides of each agent handoff.
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
 
 The active prototype tree is `tethers-0.1/`.
