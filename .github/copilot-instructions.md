@@ -34,8 +34,9 @@ work, use the workspace prompt `/next-tethers-task` instead of asking him to
 carry a technical handover between agents.
 
 That prompt must independently inspect the repository and Git before trusting
-Cline's report. It may update only `docs/CURRENT_CLINE_TASK.md` and the factual
-evidence log in `docs/COPILOT_TRIAL.md`; it must not repair or implement code.
+Cline's report. It may update only `docs/CURRENT_CLINE_TASK.md`, the factual evidence log in
+`docs/COPILOT_TRIAL.md`, and `docs/PROJECT_DASHBOARD.md`; it must not repair or
+implement code.
 
 Do not prepare a next task while Cline is still working. A completed task should
 lead to one bounded `PROPOSED` packet and one plain routing verdict.
@@ -53,7 +54,7 @@ start another implementation until Codex records its verdict.
 
 ## Task-packet consistency
 
-Every newly authored packet uses `Control contract: `1`` and includes
+Every newly authored packet includes the exact field `Control contract: 1` and
 `Owner`, `Route`, and `Worker note` fields. It uses the heading
 `Frozen decisions and invariants`. Each numbered required behaviour has at
 least one numbered acceptance criterion. Legacy packets may be reviewed and
@@ -66,9 +67,9 @@ Before authoring a next-task packet, capture:
 
 Use that implementation checkpoint as `Base commit`. If the packet and trial
 log are later committed as a planning-only commit, do not replace the base with
-the packet commit: a committed file cannot contain its own commit SHA. The base
-may be behind `HEAD` only when every intervening path is
-`docs/CURRENT_CLINE_TASK.md` or `docs/COPILOT_TRIAL.md`.
+the packet commit: a committed file cannot contain its own commit SHA. The base may be behind `HEAD` before work only when every intervening path is
+`docs/CURRENT_CLINE_TASK.md`, `docs/COPILOT_TRIAL.md`, or
+`docs/PROJECT_DASHBOARD.md`.
 
 `Expected pre-existing changes` must reproduce the captured dirty paths
 exactly, using file paths rather than directory shorthand. Write `None` when
