@@ -1,8 +1,14 @@
 # Tethers — Project Guidance for Coding Agents
 
-Read this file, `docs/AGENT_WORKFLOW.md`, `docs/CONSTITUTION.md`, `tethers-0.1/SPEC.md`,
-`docs/MCP_PLAN.md`, `docs/CURRENT_GOAL.md`, and `docs/TASK_QUEUE.md` before
-making changes.
+Read this file, `docs/PROJECT_CONTROL.md`, `docs/AGENT_WORKFLOW.md`,
+`docs/CURRENT_CLINE_TASK.md`, and `docs/PROJECT_DASHBOARD.md` before making
+changes.
+
+Then read only the authoritative documents, code, tests, and prior worker notes
+named by the current task packet. Architecture reviewers may load wider
+Constitution, specification, decision, and milestone context when the task risk
+requires it. Implementation workers must not read the entire project archive by
+default.
 
 `docs/CONSTITUTION.md` governs enduring Tethers design principles.
 `tethers-0.1/SPEC.md` defines the current precise 0.1 language and protocol
@@ -530,14 +536,14 @@ Do not install software without explicit permission.
 
 Before every task:
 
-1. Read this file.
-2. Read `docs/CONSTITUTION.md`.
-3. Read `tethers-0.1/SPEC.md`.
-4. Read `docs/MCP_PLAN.md`.
-5. Read `docs/CURRENT_GOAL.md`.
-6. Read `docs/TASK_QUEUE.md`.
-7. Inspect Git status.
-8. Preserve unrelated and user-authored changes.
+1. Read this file and `docs/PROJECT_CONTROL.md`.
+2. Read the active packet and short project dashboard.
+3. Confirm the packet state, named owner, route, worker-note path, and base.
+4. Read the task-relevant authoritative documents and code named by the packet.
+5. Inspect Git status.
+6. Run the task-packet consistency gate.
+7. Preserve unrelated and user-authored changes.
+8. Stop if another owner already has the task `IN_PROGRESS`.
 
 For OCaml implementation tasks, read the relevant section of
 `docs/OCAML_GUIDE_FOR_AGENTS.md` and consult the linked official documentation
@@ -559,12 +565,15 @@ During work:
 
 After work:
 
-1. Run the relevant tests.
-2. Report exact results, including blocked tests.
-3. List files changed.
-4. Update `docs/CURRENT_GOAL.md`.
-5. Update `docs/TASK_QUEUE.md`.
-6. State the smallest useful next task.
+1. Run the relevant tests and inspect the complete diff and Git status.
+2. Report exact results, including blocked and unrun tests.
+3. Create the worker note at the exact path named by the packet.
+4. Update the packet to `COMPLETE` or `BLOCKED`; completion requires work,
+   evidence, and the worker note.
+5. Update `docs/CURRENT_GOAL.md`, `docs/TASK_QUEUE.md`, and
+   `docs/PROJECT_DASHBOARD.md` only with facts established by this task.
+6. State the smallest useful next task, but do not begin it.
+7. Stop. Do not continue into speculative cleanup or repeated validation.
 
 ## Project constitution
 
