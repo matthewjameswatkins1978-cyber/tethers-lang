@@ -22,10 +22,8 @@ function Get-Field {
         [string]$Name
     )
 
-    $match = [regex]::Match(
-        $Content,
-        "(?m)^$([regex]::Escape($Name)):\s*`([^`]+)`\s*$"
-    )
+    $pattern = '(?m)^{0}:\s*`([^`]+)`\s*$' -f [regex]::Escape($Name)
+    $match = [regex]::Match($Content, $pattern)
     if (-not $match.Success) {
         throw "Task packet must contain '${Name}: ``value``'."
     }
@@ -38,10 +36,8 @@ function Get-Section {
         [string]$Name
     )
 
-    $match = [regex]::Match(
-        $Content,
-        "(?ms)^## $([regex]::Escape($Name))\s*(.*?)(?=^## |\z)"
-    )
+    $pattern = '(?ms)^## {0}\s*(.*?)(?=^## |\z)' -f [regex]::Escape($Name)
+    $match = [regex]::Match($Content, $pattern)
     if (-not $match.Success) {
         throw "Task packet is missing section: $Name"
     }
