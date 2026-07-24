@@ -59,7 +59,8 @@ When classification is uncertain, treat the task as the higher-risk colour.
 
 ## Standard task handover
 
-Every control-v1 implementation task should state:
+Every control-v1 implementation task starts from
+`docs/TASK_PACKET_TEMPLATE.md` and should state:
 
 1. Control contract version, state, colour, one owner, and current route.
 2. Base branch, base commit, and exact worker-note path.
