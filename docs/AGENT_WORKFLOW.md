@@ -8,6 +8,10 @@ correctness, determinism, permission boundaries, or auditability.
 Repository documents, code, tests, and Git are the source of truth. Agent
 reports are claims to verify, not evidence by themselves.
 
+`docs/PROJECT_CONTROL.md` is the operational contract for ownership, task
+states, bounded context, worker notes, verification, and stopping. This file
+applies that contract to the current Tethers agent stack.
+
 ## Roles
 
 - **Architecture reviewer (Sol/Codex):** semantics, trust boundaries,
@@ -22,8 +26,13 @@ reports are claims to verify, not evidence by themselves.
 - **Compiler, tests, fixtures, scripts, and Git:** objective acceptance
   evidence.
 
+These assignments are current routes, not definitions of the task colours.
+Change them when measured cost or reliability changes; never lower a task's risk
+class to fit a cheaper model.
+
 No agent may approve its own architectural change merely because its tests
-pass.
+pass. One task has one named implementation owner. A second agent may verify,
+but may not reimplement the task unless it is formally rejected or reassigned.
 
 ## Task classification
 
@@ -50,18 +59,23 @@ When classification is uncertain, treat the task as the higher-risk colour.
 
 ## Standard task handover
 
-Every implementation task should state:
+Every control-v1 implementation task should state:
 
-1. Objective.
-2. Relevant background and existing behaviour.
-3. Required behaviour.
-4. Relevant files and components.
-5. Invariants.
-6. Forbidden changes.
-7. Acceptance criteria.
-8. Required verification.
-9. Stop conditions.
-10. Required final report.
+1. Control contract version, state, colour, one owner, and current route.
+2. Base branch, base commit, and exact worker-note path.
+3. Objective.
+4. Relevant background and existing behaviour.
+5. Required behaviour.
+6. Relevant files and components.
+7. Frozen decisions and invariants.
+8. Forbidden changes.
+9. Acceptance criteria paired with required behaviour.
+10. Required verification.
+11. Stop conditions.
+12. Expected pre-existing changes.
+
+The worker note uses `docs/WORKER_NOTE_TEMPLATE.md` and is part of completion,
+not an optional report pasted into chat.
 
 An implementation agent must stop and report when requirements conflict, a
 semantic or architectural decision is missing, a safety boundary is unclear,
@@ -80,8 +94,11 @@ converging.
 7. Run the formatter, compiler, focused tests, full relevant regression suite,
    integration scripts, and Git whitespace checks.
 8. Inspect the complete diff and final Git status.
-9. Report evidence, assumptions, unresolved risks, and the smallest next task.
-10. Do not commit, push, merge, amend, tag, or open a pull request unless the
+9. Write the worker note named by the packet, update the task state and short
+   dashboard, and report evidence, assumptions, unresolved risks, and the
+   smallest next task.
+10. Stop when the contract is satisfied. Do not begin cleanup or the next task.
+11. Do not commit, push, merge, amend, tag, or open a pull request unless the
     task explicitly authorises it.
 
 ## Cline handoff
@@ -204,3 +221,7 @@ Record trial evidence in `docs/COPILOT_TRIAL.md`.
   budgets only by Matthew's explicit decision.
 - Do not let subagents multiply work or usage unless the task benefits from
   independently verifiable parallel work.
+- After two materially similar failures, stop and return exact evidence plus one
+  smallest unresolved question.
+- Do not use Matthew as the transport for technical handovers. Put the packet,
+  note, dashboard state, and evidence references in the repository.
