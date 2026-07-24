@@ -126,6 +126,10 @@ Next:
      `<major>.0.0` <-> `bridge_capability_version` integer.
    - Projection test/documentation now labels the unavailable-provider case
      correctly.
+   - Independent Red review signed off on 2026-07-24 against implementation
+     checkpoint `9ed81b8` and review checkpoint `539dc4c`; no defect was
+     found in the projection, opaque copy, stale-plan, version-mapping, or
+     non-bridge compatibility boundary.
 4. [ ] Implement conservative effective policy outcomes:
    `allow`, `ask`, `deny`, and `unavailable`.
 5. [ ] Dispatch serially with no automatic retries, intent-first Trail entries,
