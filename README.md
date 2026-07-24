@@ -12,6 +12,13 @@ Tethers is governed by two complementary documents:
   Tethers MCP interface.
 - `docs/OCAML_GUIDE_FOR_AGENTS.md` gives version-specific OCaml guidance for AI
   coding agents.
+- `docs/PROJECT_CONTROL.md` defines the bounded task, ownership, evidence,
+  worker-note, and review loop used to build the project.
+- `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the
+  two sides of each agent handoff.
+- `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
+- `docs/ROAD_TO_0_2.md` is the dependency-ordered release programme, job
+  routing and handoff map through Tethers 0.2.
 
 The active prototype tree is `tethers-0.1/`.
 

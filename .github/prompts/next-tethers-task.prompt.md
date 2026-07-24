@@ -10,8 +10,12 @@ Prepare the next Tethers task with minimal involvement from Matthew or Codex.
 First read:
 
 - [project instructions](../copilot-instructions.md)
+- [project control loop](../../docs/PROJECT_CONTROL.md)
 - [agent workflow](../../docs/AGENT_WORKFLOW.md)
 - [current Cline task](../../docs/CURRENT_CLINE_TASK.md)
+- [project dashboard](../../docs/PROJECT_DASHBOARD.md)
+- [task packet template](../../docs/TASK_PACKET_TEMPLATE.md)
+- [worker note template](../../docs/WORKER_NOTE_TEMPLATE.md)
 - [current goal](../../docs/CURRENT_GOAL.md)
 - [task queue](../../docs/TASK_QUEUE.md)
 - [Copilot trial and milestone counter](../../docs/COPILOT_TRIAL.md)
@@ -31,29 +35,35 @@ evidence is still needed and stop.
 
 When the increment is complete:
 
-1. Check scope, behaviour, trust boundaries, failure handling, documentation,
+1. For a control-v1 task, require and inspect the exact worker note named by the
+   packet. Check it against the live diff, tests, Git state, and referenced
+   evidence. Legacy tasks may be closed without inventing a retrospective note.
+2. Check scope, behaviour, trust boundaries, failure handling, documentation,
    verification evidence, and unrelated working-tree changes.
-2. If there is a concrete defect, prepare only the smallest correction.
-3. Otherwise select the next smallest coherent increment from the current goal
+3. Return one verdict: accepted, smallest correction required, or milestone
+   review due. Do not repair or reimplement the completed task.
+4. If there is a concrete defect, compile only the smallest correction.
+5. Otherwise select the next smallest coherent increment from the current goal
    and task queue.
-4. Classify it Green, Amber, or Red. When uncertain, choose the higher risk.
-5. Write the correction or next task to `docs/CURRENT_CLINE_TASK.md` with status
-   `PROPOSED`, using the existing field order and including acceptance criteria,
-   verification, exclusions, pre-existing changes, and stop conditions.
-   Use the saved implementation checkpoint as `Base commit`. If a later
-   planning-only commit contains this packet, leave the base pointing to the
-   implementation checkpoint; do not attempt to put a commit's own SHA inside
-   itself.
-6. Add one factual row to `docs/COPILOT_TRIAL.md` only when the completed task
-   can be classified as accepted, corrected, or rejected. Do not estimate
-   unavailable usage.
-7. Check that every failure or mismatch named under Required behaviour has a
-   corresponding acceptance criterion and focused verification. “At least one”
-   is insufficient when several branches are required.
-8. Run
-   `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`.
-   Correct every failure before handoff.
-9. Do not implement the proposed task. Do not commit or push.
+6. Classify risk as Green, Amber, or Red, then choose the current cheapest
+   demonstrated route capable of that class.
+7. Start from `docs/TASK_PACKET_TEMPLATE.md` and write a control-v1 packet to
+   `docs/CURRENT_CLINE_TASK.md` with status
+   `PROPOSED`. Include one `Owner`, one `Route`, and one unused safe
+   `Worker note` path under `docs/worker-notes/`. Use `Frozen decisions and
+   invariants` and include at least one numbered acceptance criterion for every
+   numbered required behaviour.
+8. Use the saved implementation checkpoint as `Base commit`. A later
+   planning-only commit may sit above it; never attempt to place a commit's own
+   SHA inside itself.
+9. Add one factual row to `docs/COPILOT_TRIAL.md` only when the completed task
+   is accepted, corrected, or rejected. Do not estimate unavailable usage.
+10. Update `docs/PROJECT_DASHBOARD.md` with the verdict, current state, next
+    route, and any real cost/risk drift.
+11. Run
+    `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`.
+    Correct every failure before handoff.
+12. Do not implement the proposed task. Do not commit or push.
 
 Require a Codex milestone review immediately when the completed or proposed
 work involves language or protocol semantics, permissions, capability trust,
