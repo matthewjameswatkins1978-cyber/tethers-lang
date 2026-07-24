@@ -252,6 +252,20 @@ if ($controlV1) {
             -ExpectedPacketPath $PacketPath
     }
 }
+else {
+    $legacyStatusMatch = [regex]::Match(
+        $packet,
+        '(?m)^Status:\s*`([^`]+)`\s*$'
+    )
+    if ($legacyStatusMatch.Success) {
+        $taskStatus = $legacyStatusMatch.Groups[1].Value.Trim()
+    }
+}
+
+$isPreWorkState = (
+    $null -eq $taskStatus -or
+    $taskStatus -in @("PROPOSED", "READY")
+)
 
 $planningPaths = @(
     "docs/CURRENT_CLINE_TASK.md",
@@ -261,7 +275,7 @@ $planningPaths = @(
 
 if (
     $baseCommit -ne $headCommit -and
-    (-not $controlV1 -or $taskStatus -in @("PROPOSED", "READY"))
+    $isPreWorkState
 ) {
     $descendantPaths = @(
         Invoke-Git diff --name-only "$baseCommit..$headCommit" --
@@ -279,7 +293,7 @@ if (
 
 $shouldCheckPreWorktree = (
     -not $SkipWorktreeCheck -and
-    (-not $controlV1 -or $taskStatus -in @("PROPOSED", "READY"))
+    $isPreWorkState
 )
 
 if ($shouldCheckPreWorktree) {
@@ -328,7 +342,15 @@ if ($shouldCheckPreWorktree) {
     }
 }
 
-$contractLabel = if ($controlV1) { "control-v1/$taskStatus" } else { "legacy" }
+$contractLabel = if ($controlV1) {
+    "control-v1/$taskStatus"
+}
+elseif ($null -ne $taskStatus) {
+    "legacy/$taskStatus"
+}
+else {
+    "legacy/unknown"
+}
 Write-Host (
     "PASS task packet consistency ({0}): base {1}, HEAD {2}" -f
     $contractLabel,
