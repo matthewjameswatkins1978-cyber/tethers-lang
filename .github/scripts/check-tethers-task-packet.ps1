@@ -48,7 +48,10 @@ function Assert-WorkerNote {
     param(
         [string]$RepositoryRoot,
         [string]$RelativePath,
-        [string]$ExpectedTaskStatus
+        [string]$ExpectedTaskStatus,
+        [string]$ExpectedOwner,
+        [string]$ExpectedBaseCommit,
+        [string]$ExpectedPacketPath
     )
 
     if ($RelativePath -notmatch '^docs/worker-notes/[a-z0-9][a-z0-9._-]*\.md$') {
@@ -73,7 +76,10 @@ function Assert-WorkerNote {
         "Implementation checkpoint"
     )
     foreach ($field in $requiredNoteFields) {
-        [void](Get-Field -Content $note -Name $field)
+        $fieldValue = Get-Field -Content $note -Name $field
+        if ($fieldValue.Contains("<")) {
+            throw "Worker note contains an unresolved placeholder in: $field"
+        }
     }
 
     $requiredNoteSections = @(
@@ -91,6 +97,36 @@ function Assert-WorkerNote {
         if ([string]::IsNullOrWhiteSpace($body)) {
             throw "Worker note section is empty: $section"
         }
+        if (
+            $body -match '(?i)^(state|list|record|give|include|say)\s+(what|exact|only|one|unexpected)'
+        ) {
+            throw "Worker note still contains template instructions: $section"
+        }
+    }
+
+    $noteOwner = Get-Field -Content $note -Name "Owner"
+    if ($noteOwner -ne $ExpectedOwner) {
+        throw "Worker note Owner does not match task packet Owner."
+    }
+    $noteBaseCommit = Get-Field -Content $note -Name "Base commit"
+    if ($noteBaseCommit.ToLowerInvariant() -ne $ExpectedBaseCommit) {
+        throw "Worker note Base commit does not match the task packet."
+    }
+    $notePacketPath = Get-Field -Content $note -Name "Task packet"
+    if ($notePacketPath -ne $ExpectedPacketPath) {
+        throw "Worker note Task packet does not match the checked packet path."
+    }
+    $implementationCheckpoint = Get-Field `
+        -Content $note `
+        -Name "Implementation checkpoint"
+    if (
+        $implementationCheckpoint -ne "WORKTREE" -and
+        $implementationCheckpoint -notmatch '^[0-9a-fA-F]{40}$'
+    ) {
+        throw (
+            "Implementation checkpoint must be WORKTREE or one full " +
+            "40-character commit SHA."
+        )
     }
 
     $noteStatus = Get-Field -Content $note -Name "Status"
@@ -159,7 +195,12 @@ if ($controlV1) {
     if ($taskColour -notin @("Green", "Amber", "Red")) {
         throw "Invalid Task colour: $taskColour"
     }
-    if ([string]::IsNullOrWhiteSpace($owner)) {
+    if (
+        [string]::IsNullOrWhiteSpace($owner) -or
+        $owner.Contains("<") -or
+        $owner.Contains(",") -or
+        $owner -match '(?i)\s+and\s+'
+    ) {
         throw "Owner must name exactly one implementation owner."
     }
     if ([string]::IsNullOrWhiteSpace($route)) {
@@ -205,7 +246,10 @@ if ($controlV1) {
         Assert-WorkerNote `
             -RepositoryRoot $repositoryRoot `
             -RelativePath $workerNotePath `
-            -ExpectedTaskStatus $taskStatus
+            -ExpectedTaskStatus $taskStatus `
+            -ExpectedOwner $owner `
+            -ExpectedBaseCommit $baseCommit `
+            -ExpectedPacketPath $PacketPath
     }
 }
 
