@@ -14,6 +14,7 @@ First read:
 - [agent workflow](../../docs/AGENT_WORKFLOW.md)
 - [current Cline task](../../docs/CURRENT_CLINE_TASK.md)
 - [project dashboard](../../docs/PROJECT_DASHBOARD.md)
+- [task packet template](../../docs/TASK_PACKET_TEMPLATE.md)
 - [worker note template](../../docs/WORKER_NOTE_TEMPLATE.md)
 - [current goal](../../docs/CURRENT_GOAL.md)
 - [task queue](../../docs/TASK_QUEUE.md)
@@ -46,7 +47,8 @@ When the increment is complete:
    and task queue.
 6. Classify risk as Green, Amber, or Red, then choose the current cheapest
    demonstrated route capable of that class.
-7. Write a control-v1 packet to `docs/CURRENT_CLINE_TASK.md` with status
+7. Start from `docs/TASK_PACKET_TEMPLATE.md` and write a control-v1 packet to
+   `docs/CURRENT_CLINE_TASK.md` with status
    `PROPOSED`. Include one `Owner`, one `Route`, and one unused safe
    `Worker note` path under `docs/worker-notes/`. Use `Frozen decisions and
    invariants` and include at least one numbered acceptance criterion for every
