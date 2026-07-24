@@ -122,9 +122,9 @@ explicitly approved.
 ### Task-packet consistency gate
 
 The packet's `Base commit` identifies the implementation checkpoint inspected
-when the next task was designed. A later commit containing only
-`docs/CURRENT_CLINE_TASK.md` and `docs/COPILOT_TRIAL.md` may sit above that
-checkpoint. Requiring the packet to contain its own commit SHA is impossible
+when the next task was designed. Before implementation, later commits containing only
+`docs/CURRENT_CLINE_TASK.md`, `docs/COPILOT_TRIAL.md`, and
+`docs/PROJECT_DASHBOARD.md` may sit above that checkpoint. Requiring the packet to contain its own commit SHA is impossible
 and must not be attempted.
 
 Before writing a packet, record the implementation checkpoint and exact dirty
@@ -141,9 +141,11 @@ Both packet producers and implementation agents run:
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 ```
 
-The checker permits descendants of the base only when they change the two
-planning-control documents above, and it compares live non-planning dirty paths
-with the packet's expected list.
+For `PROPOSED` and `READY`, the checker permits only planning-control
+commits above the base and compares live non-planning dirty paths with the
+packet's expected pre-work list. For later states it allows implementation
+changes, validates the control contract, and requires the named worker note for
+`BLOCKED`, `COMPLETE`, `ACCEPTED`, and `REJECTED`.
 
 ## Low-Codex continuation loop
 
