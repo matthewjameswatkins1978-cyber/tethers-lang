@@ -54,8 +54,8 @@ start another implementation until Codex records its verdict.
 
 ## Task-packet consistency
 
-Every newly authored packet includes the exact field `Control contract: 1` and
-`Owner`, `Route`, and `Worker note` fields. It uses the heading
+Every newly authored packet starts from `docs/TASK_PACKET_TEMPLATE.md` and
+includes its control-contract, `Owner`, `Route`, and `Worker note` fields. It uses the heading
 `Frozen decisions and invariants`. Each numbered required behaviour has at
 least one numbered acceptance criterion. Legacy packets may be reviewed and
 closed without retroactively fabricating a worker note.
