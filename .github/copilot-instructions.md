@@ -1,8 +1,9 @@
 # Tethers Copilot instructions
 
-Treat `AGENTS.md` as the always-on project authority. Read every document it
-requires before changing code, then read the task-relevant implementation and
-tests.
+Treat `AGENTS.md`, `docs/PROJECT_CONTROL.md`, and
+`docs/AGENT_WORKFLOW.md` as the always-on operating authority. Read the active
+packet and dashboard, then load only the authoritative documents, prior worker
+notes, implementation, and tests relevant to that packet.
 
 Also follow `docs/AGENT_WORKFLOW.md`:
 
@@ -23,7 +24,8 @@ or `jq` for the native verified workflows.
 
 Final reports must list the outcome, files changed, design choices, commands
 and tests run, exact results, assumptions, unresolved risks, and the smallest
-next task.
+next task. They must also create the evidence-backed worker note at the exact
+path named by a control-v1 packet. No task is `COMPLETE` without that note.
 
 ## Low-Codex continuation loop
 
@@ -51,6 +53,12 @@ start another implementation until Codex records its verdict.
 
 ## Task-packet consistency
 
+Every newly authored packet uses `Control contract: `1`` and includes
+`Owner`, `Route`, and `Worker note` fields. It uses the heading
+`Frozen decisions and invariants`. Each numbered required behaviour has at
+least one numbered acceptance criterion. Legacy packets may be reviewed and
+closed without retroactively fabricating a worker note.
+
 Before authoring a next-task packet, capture:
 
 - the current implementation checkpoint from `git rev-parse HEAD`;
@@ -70,7 +78,10 @@ Every failure or mismatch named under Required behaviour must have a matching
 acceptance criterion and focused verification. Do not weaken several required
 branches into “at least one representative branch.”
 
-Run this after writing a packet and again before handing it off:
+Run this after writing a packet, before handoff, and after the named worker
+note exists. For `PROPOSED` and `READY`, the checker validates the captured
+pre-work Git state. For later states, it validates the control contract and
+worker-note return journey without pretending the worktree is still untouched:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
