@@ -8,11 +8,12 @@ Open the Tethers workspace in VS Code, select Cline, and type:
 /tethers-task.md
 ```
 
-That project workflow loads the reusable Tethers instructions. Cline reads
-`docs/CURRENT_CLINE_TASK.md`, verifies the live Git state, loads only the
-relevant project context, and either implements the approved task or stops on a
-real contradiction. The matching project skill is also available for natural
-requests such as "run the current Tethers task."
+That project workflow verifies the live Git state, confirms Cline is the one
+named owner, loads only the context named by the packet, and either implements
+the approved task or stops on a real contradiction. Completion automatically
+includes the evidence-backed worker note named by the packet. The matching
+project skill is also available for natural requests such as "run the current
+Tethers task."
 
 If Cline is in Plan mode, let it finish the short plan, switch to Act mode, and
 say:
@@ -31,10 +32,10 @@ Open Copilot and run:
 /next-tethers-task
 ```
 
-Copilot independently checks the live result, prepares the next `PROPOSED`
-packet, and tells Matthew whether to continue with Cline, use Copilot for an
-Amber implementation, or request a Codex milestone review. Pasting Cline's
-report is optional.
+Copilot independently checks the live result and worker note, records the
+verdict in the short dashboard, and either prepares one next `PROPOSED` packet
+or stops for Codex milestone review. Pasting Cline's report is unnecessary
+unless repository evidence is genuinely unavailable.
 
 ## Hand Cline a new task
 
@@ -56,10 +57,10 @@ unresolved architectural decision into code.
 
 ## When no task is ready
 
-Run `/tethers-task.md` anyway. If the current packet is complete, blocked, or
-missing, Cline will inspect `CURRENT_GOAL.md` and `TASK_QUEUE.md` and propose the
-next smallest task. It will not implement Red work until the architectural
-decision is explicitly approved.
+Do not ask Cline to invent the next task. Run `/next-tethers-task` in Copilot.
+It verifies the return note and repository evidence, then compiles one bounded
+proposal or stops for Codex. This keeps task compilation separate from
+implementation ownership.
 
 ## Safety
 
@@ -68,3 +69,7 @@ decision is explicitly approved.
 - Cline never commits or pushes unless the task packet explicitly says so.
 - Existing unrelated changes must be preserved.
 - Tests and Git evidence—not an agent's confidence—decide completion.
+- Work, required evidence, and the named worker note are all required before
+  `COMPLETE`.
+- Cline stops after its task; Copilot compiles the next packet; Codex handles Red
+  and milestone gates.
