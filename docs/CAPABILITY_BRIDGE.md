@@ -757,9 +757,13 @@ When confirmation is required, the host must present:
 
 ### Denial and cancellation
 
-- Confirmation denied -> `action_failed` with `confirmation_denied`.
-- Confirmation cancelled (e.g., timeout waiting for user) -> `action_failed` with `confirmation_cancelled`.
-- Both produce explicit Trail entries.
+- Confirmation denied -> authorisation-phase `confirmation_denied`; the Action
+  is not dispatched and creates no standard result Anchor.
+- Confirmation cancelled (e.g., timeout waiting for user) ->
+  authorisation-phase `confirmation_cancelled`; the Action is not dispatched
+  and creates no standard result Anchor.
+- Both produce explicit Trail entries. They are not execution failures because
+  no provider call was attempted.
 
 ---
 
@@ -990,11 +994,11 @@ The execution Trail entries must record, where applicable:
 | `provider_identity` | Host-assigned provider identity from manifest | Always |
 | `execution_id` | Stable identifier for this execution (one per Action) | Always |
 | `attempt_id` | Incrementing attempt within one execution | Always |
-| `permission_decision` | `authorised` or `denied` | Authorisation phase |
+| `permission_decision` | `authorised`, `denied`, `asked`, or `unavailable` | Authorisation phase |
 | `confirmation_decision` | `confirmed`, `denied`, `cancelled`, or `standing` | When confirmation policy applies |
 | `dispatch_state` | `dispatched`, `not_dispatched` | Execution phase |
 | `result_validation` | `passed`, `failed`, `skipped` (no output schema) | On completion |
-| `status` | `completed`, `failed`, `denied`, `outcome_unknown` | Always |
+| `status` | `completed`, `failed`, `denied`, `unavailable`, `pending`, or `outcome_unknown` | Always |
 | `timestamp` | Host wall-clock time (not in planner output) | Execution phase |
 
 For stale-Plan or schema-drift denial, the Trail must record that the Action was
@@ -1385,8 +1389,9 @@ execution with `scope_violation`. Confirmation cannot override scope.
 ### Case 6: Required confirmation denied
 
 The manifest requires `per_call_required: true`. The host presents the
-confirmation prompt. The user denies. The host records `action_failed` with
-`confirmation_denied`. The Action is not dispatched.
+confirmation prompt. The user denies. The host records the authorisation-phase
+`confirmation_denied` entry. The Action is not dispatched and creates no
+standard result Anchor.
 
 ### Case 7: Non-idempotent write after an outcome-unknown timeout
 

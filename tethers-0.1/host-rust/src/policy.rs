@@ -258,6 +258,280 @@ pub fn evaluate_permission_resolved(
 }
 
 // ---------------------------------------------------------------------------
+// J04 — complete effective-policy resolution (docs/DECISIONS.md J03/J03a/J03b)
+// ---------------------------------------------------------------------------
+
+/// Host-owned scope assessment supplied by the caller (J03b).
+///
+/// The policy resolver never inspects raw Action arguments to derive this
+/// itself. A trusted host/binding-specific assessor produces it from the
+/// verified manifest's declared `permission_scope`, the resolved non-secret
+/// Action arguments, and the configured provider binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeAssessment {
+    /// The host checked the declared scope against the resolved arguments
+    /// and the Action is within it.
+    WithinScope,
+    /// The host checked the declared scope and the Action falls outside it.
+    ScopeViolation,
+    /// No trusted binding-specific assessor exists, the required argument is
+    /// absent or ambiguous, or the assessment otherwise cannot be made.
+    ScopeNotEstablished,
+}
+
+/// A proposed Action's identity, bridge pins, and resolved non-secret
+/// arguments, as supplied by the caller for effective-policy resolution.
+///
+/// Every capability resolved through this host is bridge-backed (MCP
+/// binding), so all three bridge pins are required for a `Deny`-free
+/// evaluation; a missing pin is treated as a malformed Action identity.
+#[derive(Debug, Clone)]
+pub struct ProposedAction {
+    pub evaluation_id: String,
+    pub plan_id: String,
+    pub action_id: String,
+    pub capability_name: String,
+    /// Opaque verified manifest digest pinned by the Plan.
+    pub manifest_digest: Option<String>,
+    /// Exact resolvable capability version pinned by the Plan.
+    pub bridge_capability_version: Option<u32>,
+    /// Provider identity pinned by the Plan.
+    pub bridge_provider_identity: Option<String>,
+    /// Resolved non-secret Action arguments.
+    pub arguments: serde_json::Value,
+}
+
+/// A distinct, inspectable reason for an effective-policy outcome.
+///
+/// Carried alongside `PermissionDecision` rather than inside it, so every
+/// existing `PermissionDecision` caller (including `dispatch.rs`) remains
+/// unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PolicyReason {
+    /// A required Action identifier was missing or empty.
+    EmptyIdentifier(&'static str),
+    /// A required bridge pin was missing.
+    MissingBridgePin(&'static str),
+    /// The capability/version was not declared by the selected Tether Set.
+    UndeclaredCapability,
+    /// Resolved Action arguments failed the manifest's `input_schema`.
+    InputSchemaViolation(String),
+    /// The host-owned scope assessment reported a violation.
+    ScopeViolation,
+    /// The host-owned scope assessment could not establish scope.
+    ScopeNotEstablished,
+    /// No admitted manifest exists for the exact capability identity.
+    NoAdmittedManifest,
+    /// The admitted manifest's provider is not currently available.
+    ProviderUnavailable,
+    /// The Action's pinned provider identity does not match the admitted
+    /// manifest's provider identity.
+    ProviderIdentityMismatch,
+    /// The Action's pinned manifest digest does not match the current
+    /// verified manifest digest.
+    ManifestDigestMismatch,
+    /// An exact host-local `Deny` rule applied.
+    HostPolicyDeny,
+    /// The manifest's `confirmation_policy.per_call_required` is `true`.
+    ManifestRequiresConfirmation,
+    /// An exact host-local `Ask` rule applied.
+    HostPolicyAsk,
+    /// An exact host-local `Allow` rule applied.
+    HostPolicyAllow,
+    /// Every other omitted, malformed, or unsupported policy configuration.
+    UnsupportedPolicyConfiguration,
+}
+
+/// The complete effective-policy result: a `PermissionDecision` plus the
+/// distinct reason that produced it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolicyEvaluation {
+    pub decision: PermissionDecision,
+    pub reason: PolicyReason,
+}
+
+impl PolicyEvaluation {
+    fn deny(reason: PolicyReason) -> Self {
+        Self {
+            decision: PermissionDecision::Deny,
+            reason,
+        }
+    }
+
+    fn unavailable(reason: PolicyReason) -> Self {
+        Self {
+            decision: PermissionDecision::Unavailable,
+            reason,
+        }
+    }
+
+    fn ask(reason: PolicyReason) -> Self {
+        Self {
+            decision: PermissionDecision::Ask,
+            reason,
+        }
+    }
+
+    fn allow(reason: PolicyReason, allowed: AllowedCapability) -> Self {
+        Self {
+            decision: PermissionDecision::Allow(allowed),
+            reason,
+        }
+    }
+}
+
+/// Evaluate the complete fail-closed effective policy for one proposed
+/// Action (J03, corrected by J03a and J03b).
+///
+/// Precedence, in order (first match wins); the Ask-approval-resume step
+/// (J03/J03a precedence step 4) is intentionally absent — it is reserved
+/// for J05:
+///
+/// 1. Malformed/missing Action identity or a missing required bridge pin
+///    → `Deny`.
+/// 2. Capability/version not declared by the selected Tether Set → `Deny`.
+/// 3. No admitted manifest, provider absent from availability, or a stale
+///    manifest/provider pin against the admitted manifest → `Unavailable`.
+/// 4. Resolved Action arguments fail the manifest `input_schema` → `Deny`.
+/// 5. Host-owned scope assessment: `scope_violation` or
+///    `scope_not_established` for a structured scope → `Deny`; `within_scope`
+///    continues; `Unrestricted` relies on its structural
+///    `per_call_required: true` invariant.
+/// 6. An exact host-local `Deny` rule → `Deny`.
+/// 7. Manifest `confirmation_policy.per_call_required: true`, or an exact
+///    host-local `Ask` rule → `Ask`.
+/// 8. An exact host-local `Allow` rule → `Allow`.
+/// 9. Every other omitted, malformed, or unsupported policy configuration
+///    → `Deny`.
+///
+/// Pure and deterministic: identical `action`, `store`, and `availability`
+/// content always yields an identical `PolicyEvaluation`. Performs no I/O,
+/// dispatch, executor call, or Trail write.
+pub fn evaluate_effective_policy(
+    action: &ProposedAction,
+    requirements: &[CapabilityRequirement],
+    store: &TrustedManifestStore,
+    availability: &ProviderAvailability,
+    policy: &HostLocalPolicy,
+    scope_assessment: ScopeAssessment,
+) -> PolicyEvaluation {
+    // 1. Action identity and bridge-pin well-formedness.
+    if action.evaluation_id.is_empty() {
+        return PolicyEvaluation::deny(PolicyReason::EmptyIdentifier("evaluation_id"));
+    }
+    if action.plan_id.is_empty() {
+        return PolicyEvaluation::deny(PolicyReason::EmptyIdentifier("plan_id"));
+    }
+    if action.action_id.is_empty() {
+        return PolicyEvaluation::deny(PolicyReason::EmptyIdentifier("action_id"));
+    }
+    let Some(manifest_digest) = action.manifest_digest.as_deref() else {
+        return PolicyEvaluation::deny(PolicyReason::MissingBridgePin("manifest_digest"));
+    };
+    if manifest_digest.is_empty() {
+        return PolicyEvaluation::deny(PolicyReason::MissingBridgePin("manifest_digest"));
+    }
+    let Some(capability_version) = action.bridge_capability_version else {
+        return PolicyEvaluation::deny(PolicyReason::MissingBridgePin("bridge_capability_version"));
+    };
+    let Some(provider_identity) = action.bridge_provider_identity.as_deref() else {
+        return PolicyEvaluation::deny(PolicyReason::MissingBridgePin("bridge_provider_identity"));
+    };
+    if provider_identity.is_empty() {
+        return PolicyEvaluation::deny(PolicyReason::MissingBridgePin("bridge_provider_identity"));
+    }
+
+    // 2. Tether Set declaration check.
+    let declared = requirements.iter().any(|r| {
+        r.capability_name == action.capability_name && r.capability_version == capability_version
+    });
+    if !declared {
+        return PolicyEvaluation::deny(PolicyReason::UndeclaredCapability);
+    }
+
+    // 3. Live admitted resolution. The pinned provider identity is checked
+    //    here, against the manifest's actual provider — a mismatch is a
+    //    binding fact (`Unavailable`), not a policy override.
+    let resolved = match resolver::resolve_capability(
+        store,
+        availability,
+        &action.capability_name,
+        capability_version,
+        Some(provider_identity),
+    ) {
+        Ok(resolved) => resolved,
+        Err(resolver::ResolutionError::NoAdmittedManifest { .. }) => {
+            return PolicyEvaluation::unavailable(PolicyReason::NoAdmittedManifest);
+        }
+        Err(resolver::ResolutionError::ProviderUnavailable { .. }) => {
+            return PolicyEvaluation::unavailable(PolicyReason::ProviderUnavailable);
+        }
+        Err(resolver::ResolutionError::ProviderIdentityMismatch { .. }) => {
+            return PolicyEvaluation::unavailable(PolicyReason::ProviderIdentityMismatch);
+        }
+    };
+
+    // The Plan must remain pinned to this exact verified manifest. A
+    // non-empty digest is not sufficient: admitting a newer manifest under
+    // the same capability identity must invalidate the older Plan.
+    if manifest_digest != resolved.manifest_digest() {
+        return PolicyEvaluation::unavailable(PolicyReason::ManifestDigestMismatch);
+    }
+
+    let manifest = resolved.manifest().manifest();
+
+    // 4. Action input-schema validation.
+    if let Err(err) =
+        crate::validation::validate_against_schema(&manifest.input_schema, &action.arguments)
+    {
+        return PolicyEvaluation::deny(PolicyReason::InputSchemaViolation(err.message));
+    }
+
+    // 5. Host-owned scope assessment (J03b). `Unrestricted` scopes rely on
+    //    their existing structural `per_call_required: true` invariant and
+    //    are not subject to this assessment.
+    if !matches!(
+        manifest.permission_scope,
+        crate::manifest::PermissionScope::Unrestricted
+    ) {
+        match scope_assessment {
+            ScopeAssessment::ScopeViolation => {
+                return PolicyEvaluation::deny(PolicyReason::ScopeViolation);
+            }
+            ScopeAssessment::ScopeNotEstablished => {
+                return PolicyEvaluation::deny(PolicyReason::ScopeNotEstablished);
+            }
+            ScopeAssessment::WithinScope => {}
+        }
+    }
+
+    // 6. Exact host-local Deny rule.
+    let rule = policy.rule_for(&action.capability_name, capability_version);
+    if matches!(rule, PolicyRule::Deny) {
+        return PolicyEvaluation::deny(PolicyReason::HostPolicyDeny);
+    }
+
+    // 7. Mandatory manifest confirmation, or an exact host-local Ask rule.
+    if manifest.confirmation_policy.per_call_required {
+        return PolicyEvaluation::ask(PolicyReason::ManifestRequiresConfirmation);
+    }
+    if matches!(rule, PolicyRule::Ask) {
+        return PolicyEvaluation::ask(PolicyReason::HostPolicyAsk);
+    }
+
+    // 8. Exact host-local Allow rule.
+    if matches!(rule, PolicyRule::Allow) {
+        return PolicyEvaluation::allow(
+            PolicyReason::HostPolicyAllow,
+            AllowedCapability::new(resolved.identity().clone()),
+        );
+    }
+
+    // 9. Every other omitted, malformed, or unsupported policy configuration.
+    PolicyEvaluation::deny(PolicyReason::UnsupportedPolicyConfiguration)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -961,5 +1235,470 @@ mod tests {
         let req = CapabilityRequirement::new("notes.note.read", 1);
         assert_eq!(req.capability_name, "notes.note.read");
         assert_eq!(req.capability_version, 1);
+    }
+
+    // -----------------------------------------------------------------
+    // J04 — evaluate_effective_policy
+    // -----------------------------------------------------------------
+
+    fn read_manifest_digest() -> String {
+        let m = read_manifest_json();
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        digest
+    }
+
+    fn verified_read_confirmation_required() -> VerifiedManifest {
+        let mut m = read_manifest_json();
+        m["confirmation_policy"] = json!({
+            "standing_permitted": true,
+            "per_call_required": true
+        });
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        m["digest"] = json!(digest);
+        verify_manifest(&m.to_string()).unwrap()
+    }
+
+    fn unrestricted_manifest_json() -> serde_json::Value {
+        json!({
+            "manifest_format_version": "1.0",
+            "capability_name": "chaos.write",
+            "capability_version": 1,
+            "title": "Write without a declared scope",
+            "description": "Write without a declared scope.",
+            "input_schema": {
+                "type": "object",
+                "properties": { "value": { "type": "string" } },
+                "required": ["value"],
+                "additionalProperties": false
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": { "status": { "type": "string" } },
+                "required": ["status"]
+            },
+            "effects": ["filesystem.write"],
+            "permission_scope": null,
+            "reversibility": "irreversible",
+            "determinism": "deterministic",
+            "idempotency": { "mechanism": "none" },
+            "confirmation_policy": {
+                "standing_permitted": false,
+                "per_call_required": true
+            },
+            "timeout_ms": 5000,
+            "retry_policy": {
+                "max_retries": 0,
+                "backoff_ms": 500,
+                "allowed_on": ["outcome_unknown"],
+                "requires_idempotency_proof": false
+            },
+            "provider": {
+                "identity": "chaos-local",
+                "display_name": "Chaos (local)",
+                "identity_source": "host_configuration",
+                "description": "Host-assigned."
+            },
+            "binding": {
+                "kind": "mcp",
+                "server_name": "chaos",
+                "tool_name": "chaos_write",
+                "adapter": null
+            }
+        })
+    }
+
+    fn verified_unrestricted() -> VerifiedManifest {
+        let mut m = unrestricted_manifest_json();
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        m["digest"] = json!(digest);
+        verify_manifest(&m.to_string()).unwrap()
+    }
+
+    fn valid_read_action() -> ProposedAction {
+        ProposedAction {
+            evaluation_id: "eval_1".into(),
+            plan_id: "eval_1/plan".into(),
+            action_id: "action_1".into(),
+            capability_name: "notes.note.read".into(),
+            manifest_digest: Some(read_manifest_digest()),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("obsidian-local".into()),
+            arguments: json!({"path": "projects/x"}),
+        }
+    }
+
+    fn assert_deny_reason(evaluation: &PolicyEvaluation, expected_reason: &PolicyReason) {
+        assert_eq!(evaluation.decision, PermissionDecision::Deny);
+        assert_eq!(&evaluation.reason, expected_reason);
+    }
+
+    fn assert_unavailable_reason(evaluation: &PolicyEvaluation, expected_reason: &PolicyReason) {
+        assert_eq!(evaluation.decision, PermissionDecision::Unavailable);
+        assert_eq!(&evaluation.reason, expected_reason);
+    }
+
+    #[test]
+    fn effective_policy_denies_empty_evaluation_id() {
+        let mut action = valid_read_action();
+        action.evaluation_id = String::new();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_deny_reason(&evaluation, &PolicyReason::EmptyIdentifier("evaluation_id"));
+    }
+
+    #[test]
+    fn effective_policy_denies_empty_plan_id() {
+        let mut action = valid_read_action();
+        action.plan_id = String::new();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_deny_reason(&evaluation, &PolicyReason::EmptyIdentifier("plan_id"));
+    }
+
+    #[test]
+    fn effective_policy_denies_empty_action_id() {
+        let mut action = valid_read_action();
+        action.action_id = String::new();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_deny_reason(&evaluation, &PolicyReason::EmptyIdentifier("action_id"));
+    }
+
+    #[test]
+    fn effective_policy_denies_missing_manifest_digest_pin() {
+        let mut action = valid_read_action();
+        action.manifest_digest = None;
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_deny_reason(
+            &evaluation,
+            &PolicyReason::MissingBridgePin("manifest_digest"),
+        );
+    }
+
+    #[test]
+    fn effective_policy_denies_missing_bridge_capability_version_pin() {
+        let mut action = valid_read_action();
+        action.bridge_capability_version = None;
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_deny_reason(
+            &evaluation,
+            &PolicyReason::MissingBridgePin("bridge_capability_version"),
+        );
+    }
+
+    #[test]
+    fn effective_policy_denies_missing_bridge_provider_identity_pin() {
+        let mut action = valid_read_action();
+        action.bridge_provider_identity = None;
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_deny_reason(
+            &evaluation,
+            &PolicyReason::MissingBridgePin("bridge_provider_identity"),
+        );
+    }
+
+    #[test]
+    fn effective_policy_denies_undeclared_capability() {
+        let action = valid_read_action();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[], // Tether Set declares nothing.
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_deny_reason(&evaluation, &PolicyReason::UndeclaredCapability);
+    }
+
+    #[test]
+    fn effective_policy_reports_unavailable_for_no_admitted_manifest() {
+        let action = valid_read_action();
+        let empty_store = TrustedManifestStore::new();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &empty_store,
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_unavailable_reason(&evaluation, &PolicyReason::NoAdmittedManifest);
+    }
+
+    #[test]
+    fn effective_policy_reports_unavailable_for_absent_provider() {
+        let action = valid_read_action();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &ProviderAvailability::empty(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_unavailable_reason(&evaluation, &PolicyReason::ProviderUnavailable);
+    }
+
+    #[test]
+    fn effective_policy_reports_unavailable_for_provider_identity_mismatch() {
+        let mut action = valid_read_action();
+        action.bridge_provider_identity = Some("wrong-provider".into());
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_unavailable_reason(&evaluation, &PolicyReason::ProviderIdentityMismatch);
+    }
+
+    #[test]
+    fn effective_policy_reports_unavailable_for_stale_manifest_digest() {
+        let mut action = valid_read_action();
+        action.manifest_digest =
+            Some("sha256:0000000000000000000000000000000000000000000000000000000000000000".into());
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_unavailable_reason(&evaluation, &PolicyReason::ManifestDigestMismatch);
+    }
+
+    #[test]
+    fn effective_policy_denies_input_schema_violation() {
+        let mut action = valid_read_action();
+        action.arguments = json!({}); // missing required "path"
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_eq!(evaluation.decision, PermissionDecision::Deny);
+        assert!(matches!(
+            evaluation.reason,
+            PolicyReason::InputSchemaViolation(_)
+        ));
+    }
+
+    #[test]
+    fn effective_policy_valid_arguments_reach_allow() {
+        let action = valid_read_action();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_allow(&evaluation.decision, "notes.note.read", 1);
+        assert_eq!(evaluation.reason, PolicyReason::HostPolicyAllow);
+    }
+
+    #[test]
+    fn effective_policy_valid_arguments_reach_ask() {
+        let action = valid_read_action();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &ask_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_eq!(evaluation.decision, PermissionDecision::Ask);
+        assert_eq!(evaluation.reason, PolicyReason::HostPolicyAsk);
+    }
+
+    #[test]
+    fn effective_policy_denies_scope_violation_before_local_allow() {
+        let action = valid_read_action();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::ScopeViolation,
+        );
+        assert_deny_reason(&evaluation, &PolicyReason::ScopeViolation);
+    }
+
+    #[test]
+    fn effective_policy_denies_scope_not_established_before_local_allow() {
+        let action = valid_read_action();
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::ScopeNotEstablished,
+        );
+        assert_deny_reason(&evaluation, &PolicyReason::ScopeNotEstablished);
+    }
+
+    #[test]
+    fn effective_policy_exact_deny_overrides_default_allow() {
+        let action = valid_read_action();
+        let mut policy = HostLocalPolicy::new(PolicyRule::Allow);
+        policy.insert("notes.note.read", 1, PolicyRule::Deny);
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &admitted_store(),
+            &obsidian_available(),
+            &policy,
+            ScopeAssessment::WithinScope,
+        );
+        assert_deny_reason(&evaluation, &PolicyReason::HostPolicyDeny);
+    }
+
+    #[test]
+    fn effective_policy_manifest_confirmation_overrides_local_allow() {
+        let mut store = TrustedManifestStore::new();
+        store.insert(verified_read_confirmation_required()).unwrap();
+
+        let mut m = read_manifest_json();
+        m["confirmation_policy"] = json!({
+            "standing_permitted": true,
+            "per_call_required": true
+        });
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+
+        let mut action = valid_read_action();
+        action.manifest_digest = Some(digest);
+
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &[notes_read_requirement()],
+            &store,
+            &obsidian_available(),
+            &allow_all_policy(),
+            ScopeAssessment::WithinScope,
+        );
+        assert_eq!(evaluation.decision, PermissionDecision::Ask);
+        assert_eq!(
+            evaluation.reason,
+            PolicyReason::ManifestRequiresConfirmation
+        );
+    }
+
+    #[test]
+    fn effective_policy_unrestricted_scope_ignores_scope_assessment() {
+        let mut store = TrustedManifestStore::new();
+        store.insert(verified_unrestricted()).unwrap();
+
+        let (_, digest) =
+            crate::manifest::canonicalize_and_digest(&unrestricted_manifest_json().to_string())
+                .unwrap();
+
+        let action = ProposedAction {
+            evaluation_id: "eval_2".into(),
+            plan_id: "eval_2/plan".into(),
+            action_id: "action_2".into(),
+            capability_name: "chaos.write".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("chaos-local".into()),
+            arguments: json!({"value": "anything"}),
+        };
+        let requirements = vec![CapabilityRequirement::new("chaos.write", 1)];
+        let availability = ProviderAvailability::from_identities(["chaos-local"]);
+
+        // Unrestricted scope must not consult the (deliberately hostile)
+        // scope assessment; its mandatory confirmation invariant applies.
+        let evaluation = evaluate_effective_policy(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &allow_all_policy(),
+            ScopeAssessment::ScopeNotEstablished,
+        );
+        assert_eq!(evaluation.decision, PermissionDecision::Ask);
+        assert_eq!(
+            evaluation.reason,
+            PolicyReason::ManifestRequiresConfirmation
+        );
+    }
+
+    #[test]
+    fn effective_policy_is_deterministic_across_repeated_calls() {
+        let action = valid_read_action();
+        let requirements = vec![notes_read_requirement()];
+        let store = admitted_store();
+        let availability = obsidian_available();
+        let policy = allow_all_policy();
+
+        let first = evaluate_effective_policy(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            ScopeAssessment::WithinScope,
+        );
+        let second = evaluate_effective_policy(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            ScopeAssessment::WithinScope,
+        );
+        assert_eq!(first, second);
+        // No I/O, dispatch, or Trail side effects: repeating resolution does
+        // not mutate the store or availability snapshot.
+        assert_eq!(store.len(), 1);
     }
 }

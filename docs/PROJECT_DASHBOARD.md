@@ -41,24 +41,74 @@ accepted.
 
 ## Matthew decision required
 
-None. The next task is a bounded Red design decision, not a product-direction
-decision.
-
-## Next route
-
-J03 — freeze the four-outcome policy contract (`allow`, `ask`, `deny`,
-`unavailable`). Lucy/Codex designs and records the contract; no implementation
-increment starts until that design is accepted and a fresh live task packet is
-compiled.
+None. J04a is corrected, verified, and accepted; J05 has not been started.
 
 ## Cadence and drift
 
-- Cadence: J00 project-control validation and J02 Red sign-off are complete.
-  The programme advances to J03; J04 is not yet authorised.
-- Cost: reserve Codex for J03 and later Red gates, not routine Green work.
+- Cadence: J00 project-control validation, J02 Red sign-off, J03 policy
+  design, J03a's correction, J03b's scope-assessment boundary, and J04 review
+  are complete. J04 was rejected on two bounded fail-closed defects; J04a
+  corrected both and is accepted. J05 remains unauthorised.
+- Cost: reserve Codex for later Red gates, not routine Amber/Green work.
 - Process: the legacy milestone is accepted without a worker note only because
   it predates the control loop. Every new task requires evidence and a worker
   note before completion.
-- Risk: the manifest-pin chain is now the accepted baseline for later policy,
-  dispatch, and result-Anchor work; do not reopen it without a demonstrated
-  defect.
+- Risk: the manifest-pin chain and the corrected J03/J03a policy contract are
+  now the accepted baseline for policy implementation; do not reopen either
+  without a demonstrated defect.
+
+## Last signed-off design gate
+
+- Task: J03a one-shot approval correction
+- Verdict: `SIGNED OFF`
+- State: `ACCEPTED`
+- Risk: Red design
+- Owner: Lucy/Codex
+- Packet history: superseded by the J04 packet below in
+  `docs/CURRENT_CLINE_TASK.md`
+- Worker note: `docs/worker-notes/2026-07-24-j03a-one-shot-approval-correction.md`
+- Review: Codex controller review, 2026-07-24
+
+The corrected contract freezes a default-deny, exact name/version and
+scope-aware policy resolver; fail-closed binding precedence; a canonical
+one-shot Ask proof that satisfies only its matching mandatory confirmation;
+approval invalidation and consumption; and no standard result Anchor for any
+unattempted Action.
+
+J03b additionally freezes the scope-assessment boundary: a trusted host/binding
+assessor reports `within_scope`, `scope_violation`, or
+`scope_not_established`; J04 combines that input and never guesses resource
+arguments from the Plan. Missing structured-scope evidence denies safely.
+
+## Current implementation gate
+
+- Task: J04 effective policy resolution
+- State: `REJECTED`
+- Risk: Amber
+- Owner: Copilot (isolated worktree)
+- Packet: `docs/CURRENT_CLINE_TASK.md`
+- Worker note: `docs/worker-notes/2026-07-24-j04-effective-policy-resolution.md`
+
+Independent review found two contract failures despite otherwise clean test
+evidence: J04 does not compare a non-empty Plan digest to the live verified
+digest, and the demo supplies `WithinScope` even though it expressly has no
+scope assessor. Both can let a structured-scope Action reach Allow. The review
+record is `docs/worker-notes/2026-07-24-j04-codex-review.md`.
+
+## Next route
+
+J04a is accepted. Stop here; J05 and all further dispatch/approval work remain
+unauthorised until a separate Red approval/resume design packet is compiled.
+
+## Accepted correction
+
+- Task: J04a effective-policy fail-closed correction
+- State: `ACCEPTED`
+- Risk: Amber
+- Owner: Codex
+- Worker note: `docs/worker-notes/2026-07-24-j04a-effective-policy-correction.md`
+
+J04a compares every non-empty Action digest to the current verified digest and
+returns `unavailable` for a mismatch. It also removes the demo's unsupported
+`WithinScope` assertion: without a binding-specific assessor, structured scope
+denies before durable intent, executor invocation, or a result Anchor.

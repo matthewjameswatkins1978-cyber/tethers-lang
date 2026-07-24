@@ -328,3 +328,176 @@ credential values never appear in declarative artifacts.
 
 - Whether future documentation should live at the workspace root, inside
   `tethers-0.1/`, or both.
+
+## 2026-07-24: J03 Four-Outcome Host Policy Contract
+
+Decision: Tethers 0.2 policy resolution is host-owned and returns exactly one
+of `allow`, `ask`, `deny`, or `unavailable` for each proposed Action. This
+decision freezes the contract for J04 and J05; it adds no runtime behaviour.
+
+### Effective-policy inputs
+
+The host evaluates a proposed Action against these explicit inputs only:
+
+1. the selected Tether Set's exact declared capability requirement (name and
+   version);
+2. the planned Action's `evaluation_id`, `plan_id`, `action_id`, capability
+   name/version, resolved non-secret arguments, and bridge pins;
+3. the current trusted-manifest-store resolution for that exact capability,
+   including verified `manifest_digest`, host-assigned `provider_identity`,
+   live provider binding, manifest input schema, permission scope, and
+   `confirmation_policy`;
+4. host-local policy rules, keyed by exact capability name and version, plus
+   their configured resource scope; and
+5. for a resumed Ask only, one host-issued approval record bound as specified
+   below.
+
+Capability schemas describe. Policies authorise. Hosts enforce. Trails record.
+The planner, a Tether Set, a manifest, a discovered provider, and AI are never
+policy authorities.
+
+### Fail-closed precedence
+
+Evaluate in this order. The first matching rule wins:
+
+1. Missing, malformed, or non-matching Action identity; missing required
+   bridge pin; Action capability/version not exactly declared by the selected
+   Tether Set; failed input-schema validation; or permission-scope violation
+   -> `deny` with a precise host reason.
+2. No admitted manifest; revoked, stale, or mismatched manifest digest;
+   provider identity/binding mismatch; or provider absent from the current
+   availability snapshot -> `unavailable`. This is a binding fact, not a
+   policy override.
+3. An exact host-local `deny` rule -> `deny`.
+4. On an Ask resume only, a host-issued approved record whose complete proof
+   still matches returns one `allow` after the host atomically consumes it.
+   This is a confirmation of this exact Action, not a standing Allow.
+5. Manifest `per_call_required: true`, or an exact host-local `ask` rule ->
+   `ask`.
+6. An exact host-local `allow` rule whose configured scope covers the Action
+   -> `allow`.
+7. Every omitted, malformed, ambiguous, unsupported, or out-of-scope policy
+   rule -> `deny`.
+
+Exact name/version rules override the host default. The host default is
+`deny`. A local Allow cannot bypass a mandatory per-call confirmation, schema
+validation, scope enforcement, or current binding proof. A current binding is
+checked before every dispatch, including an Ask resume. A valid one-shot human
+approval satisfies that single mandatory confirmation; it does not bypass any
+other check or authorise another Action.
+
+### Ask proof and one-shot decision
+
+`ask` creates a host-local pending approval record. Its proof contains these
+literal fields and their SHA-256/JCS digests:
+
+- `evaluation_id`, `plan_id`, and `action_id`;
+- capability name and semantic version;
+- `argument_digest`: `sha256:` plus SHA-256 of RFC 8785/JCS bytes of the
+  complete resolved non-secret Action arguments;
+- `manifest_digest`; and
+- `provider_identity`.
+
+The host also computes `approval_binding_digest` as SHA-256/JCS over that
+complete proof object with `approval_format_version: "1"`. J05 must compare
+the constituent fields and the binding digest; the digest is not a substitute
+for field-by-field checking. Credential values injected at dispatch are not
+part of the Action, either digest, the approval record, or the Trail.
+
+Only a host-recognised human decision endpoint may mark this exact pending
+record approved or denied. AI, a Tether, a provider, a manifest, and a caller
+cannot self-approve. The UI/API for that endpoint is deliberately deferred.
+
+An approval is valid only until the first matching resume attempt. The host
+first re-evaluates every non-approval input, including current binding, schema,
+scope and Deny. Only if those checks pass and the ordinary result is Ask does
+it atomically consume the matching approval and issue the one Allow proof for
+intent preparation. Any changed proof field, changed binding, policy or scope
+failure, explicit cancellation/denial, or host-process restart discards the
+record. A consumed approval is never restored if intent recording fails; a
+later attempt must begin a new Ask. No standing or reusable approval is
+created by this contract.
+
+### Dispatch and Trail contract
+
+All host entries include the Action identifiers, capability name/version,
+manifest digest and provider identity when known, a reason code, and a
+redacted argument summary or `argument_digest`; they never record credentials.
+
+| Outcome or state | Required host Trail record | Dispatch / result Anchor |
+| --- | --- | --- |
+| `allow` | `policy_allowed` with exact policy-rule source | May proceed to durable intent; no Anchor until an attempted call has an outcome. |
+| `ask` pending | `approval_requested` with the complete approval proof | No intent, executor call, execution outcome, or standard result Anchor. |
+| Ask approved then resumed | `approval_granted`, then `approval_consumed` before intent preparation | May proceed only if fresh re-evaluation returns Allow. |
+| Ask denied, cancelled, stale, or invalidated | `approval_denied`, `approval_cancelled`, or `approval_invalidated` in the authorisation phase | Not dispatched; no standard result Anchor. |
+| `deny` | `policy_denied` with the precise rule/validation/scope reason | Not dispatched; no standard result Anchor. |
+| `unavailable` | `capability_unavailable` with the binding-resolution reason | Not dispatched; no standard result Anchor. |
+
+An unresolved or otherwise unattempted Action is never represented as
+`succeeded`, `failed`, or `uncertain`. Only a provider call that crossed the
+intent/dispatch boundary may later produce a standard `capability.succeeded`,
+`capability.failed`, or `capability.uncertain` result Anchor.
+
+### J04/J05 acceptance matrix
+
+1. A declared, exactly resolved, schema-valid, in-scope Action with an exact
+   local Allow and no mandatory confirmation returns Allow deterministically.
+2. A missing policy rule, malformed policy record, unsupported scope rule, or
+   out-of-scope local Allow returns Deny; no intent, executor call, or result
+   Anchor occurs.
+3. An undeclared capability/version, malformed Action identity or pins, input
+   validation failure, and manifest permission-scope violation each return
+   Deny with distinct reason evidence.
+4. Missing admission, revoked/stale digest, unavailable provider, and provider
+   identity/binding mismatch each return Unavailable before dispatch, even
+   when a local Allow exists.
+5. An exact Deny overrides an exact Allow/default; a mandatory per-call
+   confirmation overrides Allow; exact name/version rules cannot authorise a
+   different version.
+6. An Ask record contains each required proof field and the independently
+   reproduced `argument_digest` and `approval_binding_digest`; it contains no
+   credential value.
+7. While Ask is pending, exactly one `approval_requested` Trail record exists
+   and there are zero intent records, executor calls, outcome records, and
+   standard result Anchors.
+8. A human approval resumes only the same proof once. Changing arguments,
+   manifest digest, provider identity, capability version, evaluation/plan/
+   Action ID, or either proof digest invalidates it and prevents dispatch.
+9. A matching approved resume first rechecks all non-approval gates, then
+   consumes the approval before intent preparation; it cannot be reused after
+   intent failure, executor failure, completion, or host restart.
+10. Human denial, cancellation, expiry by restart, and invalidation each emit
+    the specified Trail record and make zero executor calls/result Anchors.
+11. Every Allow, Ask, Deny, Unavailable, approval decision, and invalidation
+    Trail entry preserves known pins and redacts arguments/credentials.
+12. Repeating resolution with the same declared inputs and snapshots yields the
+    same outcome and proof digest; policy resolution performs no I/O or
+    dispatch.
+
+### J03b: scope assessment boundary for J04
+
+Decision: J04 combines an explicit host-produced scope assessment into the
+effective-policy result; it does not infer resource-bearing Action arguments
+from names such as `path`, `repository`, or `calendar`.
+
+The scope assessor is host/binding-owned. It receives the verified manifest,
+its declared `permission_scope`, the resolved non-secret Action arguments, and
+the configured provider binding. It returns exactly one of:
+
+- `within_scope` — the host has checked the declared scope against the resolved
+  arguments;
+- `scope_violation` — the checked arguments fall outside that scope; or
+- `scope_not_established` — no trusted binding-specific assessor exists, the
+  required argument is absent/ambiguous, or the assessment cannot be made.
+
+For a structured manifest scope (`path_prefix`, `repository`, or `calendar`),
+`scope_violation` and `scope_not_established` both yield `deny` before any
+local Allow or Ask rule. `within_scope` continues through normal J03/J03a
+precedence. For `Unrestricted`, the manifest's existing mandatory per-call
+confirmation applies and no automatic Allow is created from scope.
+
+The policy resolver must not accept a Plan-supplied boolean as proof of scope.
+The caller supplies a host-owned assessment object; J04 defines and tests the
+policy boundary, while a later binding/adapter task implements concrete
+path/repository/calendar extraction. This is fail closed without inventing a
+generic argument-name convention or changing the manifest format.

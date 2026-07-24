@@ -1,5 +1,20 @@
 # Task Queue
 
+## 0.2 Runtime Slice
+
+- [x] J03a — Corrected the one-shot Ask resume rule and confirmation-denial
+      Trail wording. Codex controller sign-off recorded; J04 may now be
+      compiled from a fresh live packet.
+- [x] J03b — Froze the host-owned scope-assessment boundary. Policy combines
+      the assessment and denies absent/violating structured scope; only a later
+      binding/adapter task extracts resource arguments.
+- [!] J04 — Rejected in Codex review: the policy omitted comparison of the
+      Plan digest to the live verified digest, and the demo asserted
+      `WithinScope` despite no assessor. See the review note and J04a packet.
+- [x] J04a — Corrected the two J04 fail-closed paths: digest mismatch returns
+      `Unavailable`, and an unassessed structured scope denies before intent
+      or executor invocation. Accepted; J05 remains unauthorised.
+
 ## Completed Milestones
 
 - [x] Initial workspace inspection, extraction, and integration.

@@ -44,7 +44,17 @@ impl ValidationError {
 /// Returns `Ok(())` when the result conforms, or `Err(ValidationError)`
 /// with a descriptive human-readable message.
 pub fn validate_output(schema: &Value, result: &Value) -> Result<(), ValidationError> {
-    validate_schema(schema, result, "$", true)
+    validate_against_schema(schema, result)
+}
+
+/// Validate `value` against `schema` using the same supported JSON Schema
+/// subset as [`validate_output`].
+///
+/// Shared by executor output validation and, for J04, proposed Action
+/// argument validation against a manifest's `input_schema`. Both directions
+/// use the same conservative, explicitly-rejecting schema subset.
+pub fn validate_against_schema(schema: &Value, value: &Value) -> Result<(), ValidationError> {
+    validate_schema(schema, value, "$", true)
 }
 
 // ---------------------------------------------------------------------------

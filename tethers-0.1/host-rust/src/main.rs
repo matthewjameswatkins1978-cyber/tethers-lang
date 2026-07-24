@@ -133,7 +133,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .map_err(|e| format!("capability resolution failed: {e:?}"))?;
 
-        // 5. Evaluate policy — posture from CLI, defaults to Allow.
+        // 5. Evaluate the complete J04 effective policy from the Plan's
+        //    proposed Action, the Tether Set declaration, and host-local
+        //    policy — posture from CLI, defaults to Allow.
         let requirements = vec![policy::CapabilityRequirement::new("lantern.task.record", 1)];
         let rule = match policy_posture.as_str() {
             "allow" => policy::PolicyRule::Allow,
@@ -142,7 +144,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             other => return Err(format!("unknown policy posture: {other}").into()),
         };
         let host_policy = policy::HostLocalPolicy::new(rule);
-        let decision = policy::evaluate_permission_resolved(&requirements, &resolved, &host_policy);
+        let proposed_action = extract_proposed_action(&response)?;
+        // No concrete host/binding-specific scope assessor exists yet for
+        // this demo manifest's `path_prefix` scope (deferred; see J03b in
+        // docs/DECISIONS.md). The host must therefore fail closed rather than
+        // assert that `project` or `task` is a scope-bearing argument.
+        let evaluation = policy::evaluate_effective_policy(
+            &proposed_action,
+            &requirements,
+            &store,
+            &availability,
+            &host_policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+        );
+        let decision = evaluation.decision;
 
         // 6. Open file-backed durable Trail for intent recording.
         //    When no explicit path is supplied, use a temporary directory
@@ -346,6 +361,57 @@ fn inject_bridge_projection_into_request(
     }
 
     Ok(())
+}
+
+/// Extract the single proposed Action's identity, bridge pins, and
+/// arguments from an engine response for J04 effective-policy resolution.
+///
+/// Reads only already-produced planner output; performs no I/O and makes
+/// no dispatch decision.
+fn extract_proposed_action(
+    response: &Value,
+) -> Result<policy::ProposedAction, Box<dyn std::error::Error>> {
+    let evaluation_id = required_str(response, "evaluation_id")?.to_owned();
+    let plan_id = response
+        .get("plan")
+        .and_then(|plan| plan.get("id"))
+        .and_then(Value::as_str)
+        .ok_or("response plan had no id")?
+        .to_owned();
+
+    let action = response
+        .get("plan")
+        .and_then(|plan| plan.get("actions"))
+        .and_then(Value::as_array)
+        .and_then(|actions| actions.first())
+        .ok_or("plan had no actions")?;
+
+    let action_id = required_str(action, "action_id")?.to_owned();
+    let capability_name = required_str(action, "capability")?.to_owned();
+    let manifest_digest = action
+        .get("manifest_digest")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let bridge_capability_version = action
+        .get("bridge_capability_version")
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok());
+    let bridge_provider_identity = action
+        .get("bridge_provider_identity")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let arguments = action.get("arguments").cloned().unwrap_or(Value::Null);
+
+    Ok(policy::ProposedAction {
+        evaluation_id,
+        plan_id,
+        action_id,
+        capability_name,
+        manifest_digest,
+        bridge_capability_version,
+        bridge_provider_identity,
+        arguments,
+    })
 }
 
 // ---------------------------------------------------------------------------
