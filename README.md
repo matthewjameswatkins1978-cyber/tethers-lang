@@ -15,13 +15,26 @@ Tethers uses a layered set of authoritative and operational documents:
   MCP interface.
 - `docs/OCAML_GUIDE_FOR_AGENTS.md` gives version-specific OCaml environment and
   project guidance.
-- `docs/PROJECT_CONTROL.md` defines the bounded task, ownership, evidence,
-  worker-note, and review loop used to build the project.
+- `docs/PROJECT_CONTROL.md` defines task ownership, evidence, worker notes, and
+  review.
+- `docs/AGENT_WORKFLOW.md` defines the current **Gorilla Coding 🦄** route.
+- `docs/CLINE_HANDOFF.md` defines the short Cline-to-Lucy return journey.
 - `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the
-  two sides of each agent handoff.
+  two durable sides of each implementation handoff.
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
-- `docs/ROAD_TO_0_2.md` is the dependency-ordered release programme, job routing,
-  and handoff map through Tethers 0.2.
+- `docs/ROAD_TO_0_2.md` is the dependency-ordered release programme through
+  Tethers 0.2.
+
+Current operating route:
+
+```text
+Lucy controls architecture, tasks, review, and continuation
+-> Cline implements ordinary Green and Amber work
+-> Codex handles Red or difficult machine work
+-> Matthew routes Cline's concise report back to Lucy
+```
+
+Copilot is not part of the active workflow.
 
 The active prototype and runtime development tree is `tethers-0.1/`.
 
