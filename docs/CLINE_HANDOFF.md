@@ -1,6 +1,6 @@
-# Frictionless Cline Handoff
+# Gorilla Coding Cline Handoff 🦄
 
-## Run the current approved task
+## Run The Current Approved Task
 
 Open the Tethers workspace in VS Code, select Cline, and type:
 
@@ -8,68 +8,79 @@ Open the Tethers workspace in VS Code, select Cline, and type:
 /tethers-task.md
 ```
 
-That project workflow verifies the live Git state, confirms Cline is the one
-named owner, loads only the context named by the packet, and either implements
-the approved task or stops on a real contradiction. Completion automatically
-includes the evidence-backed worker note named by the packet. The matching
-project skill is also available for natural requests such as "run the current
-Tethers task."
+The workflow reads `docs/CURRENT_CLINE_TASK.md`, verifies the live Git state,
+loads only task-relevant context, and implements only when the packet is `READY`
+and Cline is the named owner.
 
-If Cline is in Plan mode, let it finish the short plan, switch to Act mode, and
+If Cline is in Plan mode, let it return its short plan, switch to Act mode, and
 say:
 
 ```text
 Implement the approved current task.
 ```
 
-No technical report needs to be copied between agents.
+## After Cline Finishes
 
-## After Cline finishes
+Cline must stop with either `COMPLETE` or `BLOCKED`, write the named worker note,
+and return a concise report containing:
 
-Open Copilot and run:
+- files changed;
+- important implementation choices;
+- checks run and exact results;
+- checks not run;
+- unresolved risks or smallest blocker;
+- worker-note path;
+- final Git status;
+- pushed commit or branch reference when available.
+
+Paste that report to Lucy in ordinary chat.
+
+Lucy then inspects the pushed GitHub evidence and decides one of:
+
+1. `ACCEPTED`;
+2. one bounded correction for Cline;
+3. escalation to Codex because the task is Red or requires local machine access,
+   Git/environment work, recovery, or difficult diagnosis.
+
+Pasting the report is an accepted Gorilla Coding handoff. The report is not the
+source of truth; the packet, worker note, code, tests, and Git remain the durable
+evidence.
+
+## Hand Cline A New Task
+
+Lucy compiles or updates `docs/CURRENT_CLINE_TASK.md`. Once it is approved and
+marked `READY`, run:
 
 ```text
-/next-tethers-task
+/tethers-task.md
 ```
 
-Copilot independently checks the live result and worker note, records the
-verdict in the short dashboard, and either prepares one next `PROPOSED` packet
-or stops for Codex milestone review. Pasting Cline's report is unnecessary
-unless repository evidence is genuinely unavailable.
-
-## Hand Cline a new task
-
-The preferred route is to replace the contents of
-`docs/CURRENT_CLINE_TASK.md` with an approved task packet, then run
-`/tethers-task`.
-
-If another agent gives you a handover instead, paste it after the slash command:
+A task may also be pasted after the command when necessary:
 
 ```text
 /tethers-task.md
 
-<paste the handover here>
+<paste the approved Lucy task here>
 ```
 
-Cline will inspect the repository, normalize the handover into the task packet,
-and ask only for any approval that is genuinely missing. It must not turn an
-unresolved architectural decision into code.
+Cline reinspects the live repository and normalises only an explicitly approved
+handover. It must not turn an unresolved Red decision into code.
 
-## When no task is ready
+## When No Task Is Ready
 
-Do not ask Cline to invent the next task. Run `/next-tethers-task` in Copilot.
-It verifies the return note and repository evidence, then compiles one bounded
-proposal or stops for Codex. This keeps task compilation separate from
-implementation ownership.
+Return to Lucy. Cline must not invent, compile, authorise, or begin the next task.
+Lucy inspects GitHub, reviews the previous result, and provides the next bounded
+task or routes the work to Codex.
 
 ## Safety
 
-- The repository and Git are always the source of truth.
-- `READY` means implementation is authorised, not committing or publishing.
-- Cline never commits or pushes unless the task packet explicitly says so.
+- The repository and Git are the source of evidence.
+- `READY` authorises only the named bounded implementation.
+- Cline does not commit or push unless the task explicitly authorises it.
 - Existing unrelated changes must be preserved.
-- Tests and Git evidence—not an agent's confidence—decide completion.
-- Work, required evidence, and the named worker note are all required before
-  `COMPLETE`.
-- Cline stops after its task; Copilot compiles the next packet; Codex handles Red
-  and milestone gates.
+- Tests, compiler output, fixtures, Trails, and Git decide completion.
+- Work, evidence, report, and worker note are required before `COMPLETE`.
+- Cline stops after its task.
+- Lucy controls continuation and acceptance.
+- Codex handles Red work, difficult local failures, Git/environment recovery, and
+  machine-required diagnosis.
