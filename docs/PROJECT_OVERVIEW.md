@@ -7,55 +7,78 @@ Tethers Lang
 ## Purpose
 
 Tethers is a deterministic behaviour language and capability protocol. It lets
-applications expose typed events, facts, and actions, then lets readable rules
-connect those inputs to planned effects.
+applications expose typed events, Facts, and Capabilities, then lets readable
+rules connect those inputs to planned Effects.
 
 The joint Tethers/Lantern Keeper build foundation is
 [`architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md`](architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md).
 It keeps Tethers as the general coordination layer: Tethers plans with exact
 capability versions, hosts authorise and execute, AI judgement is an explicit
-capability Action, and application meanings such as Lantern Keeper memory
+Capability Action, and application meanings such as Lantern Keeper memory
 remain outside Tethers Core.
 
-The imported `tethers-0.1` prototype is the active development tree for the
-entire 0.1 cycle. It proves a narrow reference round trip:
+The imported `tethers-0.1` prototype is the active development tree. It proves
+the signed-off 0.1 round trip and now hosts the first 0.2 runtime slice:
 
-1. A host supplies an event, facts, capability schemas, and Tether source.
-2. The OCaml engine parses, validates, evaluates, and returns a plan.
-3. The Rust reference host authorises the required effects.
-4. The host executes a mock capability exactly once using an idempotency key.
-5. Evaluation, authorisation, and execution are joined into one Trail.
+1. A host supplies an event, immutable Facts, Capability schemas, and Tether
+   source.
+2. The OCaml engine parses, validates, evaluates, and returns a Plan.
+3. The Rust host resolves trusted manifests and effective policy.
+4. Approved Actions cross an intent-first dispatch boundary before execution.
+5. Results are validated and joined to evaluation and execution through the
+   Trail and known-outcome Result Anchors.
+
+## Authority And Engineering Standards
+
+- `docs/CONSTITUTION.md`: enduring Tethers language principles.
+- `tethers-0.1/SPEC.md`: precise 0.1 language and protocol semantics.
+- `docs/DECISIONS.md`: accepted architectural decisions.
+- `docs/CAPABILITY_BRIDGE.md`: trusted manifest and host bridge contract.
+- `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md`: implementation technique for
+  senior engineers and AI coding agents.
+- `docs/CURRENT_GOAL.md`: present objective, boundaries, and next authorised work.
+
+The Constitution's demand for a small, human-clear Tethers language does not
+require elementary implementation code. OCaml, Rust, PowerShell, and future
+implementation languages should be used idiomatically and to the depth justified
+by the problem.
 
 ## Current Contents
 
-- `Tethers-0.1-Prototype.tar.gz`: preserved local source archive, not committed.
-- `tethers-0.1/`: active 0.1 development tree.
-- `tethers-0.1/SPEC.md`: 0.1 semantics and project constitution.
-- `tethers-0.1/engine-ocaml/`: reference deterministic planner.
-- `tethers-0.1/host-rust/`: reference host and mock executor.
-- `tethers-0.1/protocol/`: request and expected response fixtures.
-- `tethers-0.1/examples/`: first sample Tether.
-- `tethers-0.1/scripts/`: demo and fixture scripts.
+- `tethers-0.1/`: active prototype and runtime development tree.
+- `tethers-0.1/SPEC.md`: authoritative 0.1 semantics.
+- `tethers-0.1/engine-ocaml/`: deterministic planner and MCP tools.
+- `tethers-0.1/host-rust/`: trusted host, manifest store, policy, dispatch, and
+  provider integration.
+- `tethers-0.1/protocol/`: protocol, manifest, fixture, and transcript contracts.
+- `tethers-0.1/scripts/`: build, verification, integration, and demo automation.
+- `docs/worker-notes/`: durable implementation and review evidence.
 
-## Scope Of 0.1
+## Scope Of The Tethers Language
 
-The prototype is intentionally small. It supports one rule shape, immutable
-facts, deterministic evaluation, typed capability validation, ordered plans,
-host-side authorisation, host-side execution, idempotency keys, and a causal
-Trail.
+The language remains intentionally small. It supports a canonical rule shape,
+immutable Facts, deterministic evaluation, typed Capability validation, ordered
+Plans, host-side authorisation, and causal Trails.
 
-The prototype deliberately excludes loops, parallel actions, action-result
-conditions, live fact queries, retries, compensation execution, adapters,
-package management, scheduling, HQ, and AI integration.
+Language features such as loops, arbitrary mutation, hidden I/O, parallel
+Actions, direct Action-result chaining, or application-specific modes remain
+outside the signed-off 0.1 language unless an explicit design gate authorises a
+future change.
 
-## Integration Status
+This restriction applies to the Tethers language surface, not to the power of
+the general-purpose languages used to implement it.
 
-The native Windows baseline has been verified with opam, OCaml, Dune, yojson,
-PowerShell fixture checks, Rust tests, the OCaml engine build, the golden
-engine-response test, and the full Rust -> OCaml -> Rust demo.
+## Current Integration Status
 
-Columbo manifest verification and the Trusted Manifest Store are complete
-through checkpoint `25ab2bb`. The next integration target is one vertical
-runtime slice around provider admission, live capability projection, effective
-policy, conservative serial dispatch, honest uncertain outcomes, result
-Anchors, and execution Trail writing.
+Latest accepted implementation checkpoint:
+`d5ed278d4a2cae5e9ab8a3e1d8700fdcba7ae851`.
+
+The accepted runtime baseline includes verified manifest admission, deterministic
+capability projection, planner-to-dispatch manifest and provider pins,
+configured stdio MCP provider admission, intent-first serial dispatch, executor
+output validation, known-outcome Result Anchors, and effective policy outcomes
+of `allow`, `ask`, `deny`, and `unavailable`.
+
+The stale-digest and unestablished-structured-scope paths fail closed. J04a is
+accepted. No J05 implementation is authorised until a separate Red design gate
+freezes approval and resume semantics.
