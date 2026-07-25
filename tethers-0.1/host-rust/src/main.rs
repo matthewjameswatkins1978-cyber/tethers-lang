@@ -1,3 +1,4 @@
+pub mod approval;
 pub mod dispatch;
 mod manifest;
 pub mod policy;
@@ -515,6 +516,225 @@ impl CapabilityExecutor for FailingExecutor {
     fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
         Err("executor failed as requested".to_string())
     }
+}
+
+// ---------------------------------------------------------------------------
+// J05 exact Ask orchestration seam
+// ---------------------------------------------------------------------------
+
+/// The only host-facing approval operations.  These are deliberately separate
+/// from planner and provider input: a caller cannot supply an already-approved
+/// policy result or manufacture a human decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HumanApprovalDecision {
+    Approve,
+    Deny,
+    Cancel,
+}
+
+fn approval_trail_entry(
+    proof: &approval::ApprovalProof,
+    kind: &str,
+    reason_code: &str,
+) -> dispatch::AuthorisationEntry {
+    dispatch::AuthorisationEntry {
+        execution_id: proof.evaluation_id.clone(),
+        action_id: proof.action_id.clone(),
+        capability_name: proof.capability_name.clone(),
+        capability_version: proof.capability_version,
+        provider_identity: proof.provider_identity.clone(),
+        manifest_digest: proof.manifest_digest.clone(),
+        kind: kind.to_owned(),
+        reason_code: reason_code.to_owned(),
+        argument_digest: proof.argument_digest.clone(),
+    }
+}
+
+/// Request an approval only after current ordinary policy independently says
+/// Ask.  Duplicate requests for a live proof reuse the pending record and do
+/// not create a second Trail claim.
+fn request_exact_approval(
+    action: &policy::ProposedAction,
+    requirements: &[policy::CapabilityRequirement],
+    store: &trusted_store::TrustedManifestStore,
+    availability: &resolver::ProviderAvailability,
+    host_policy: &policy::HostLocalPolicy,
+    scope: policy::ScopeAssessment,
+    approvals: &mut approval::ApprovalStore,
+    trail: &mut dyn dispatch::Trail,
+) -> Result<Option<approval::ApprovalRecord>, Box<dyn std::error::Error>> {
+    let evaluation = policy::evaluate_effective_policy(
+        action,
+        requirements,
+        store,
+        availability,
+        host_policy,
+        scope,
+    );
+    if evaluation.decision != PermissionDecision::Ask {
+        return Ok(None);
+    }
+    let proof = approval::ApprovalProof::from_action(action)?;
+    // The exact proof may be requested repeatedly while pending.  This lookup
+    // is only for request idempotency; resumes are addressed by approval_id.
+    if let Some(record) = approvals.pending_matching(&proof) {
+        return Ok(Some(record.clone()));
+    }
+    let record = approvals.request(proof.clone());
+    trail.append_authorisation(&approval_trail_entry(&proof, "approval_requested", "ask"))?;
+    Ok(Some(record))
+}
+
+/// This is the host-recognised decision boundary.  The state transition is
+/// performed first; a failed Trail append cannot claim a transition that did
+/// not happen, and the caller must not resume after its error.
+fn record_human_approval_decision(
+    approval_id: &str,
+    decision: HumanApprovalDecision,
+    approvals: &mut approval::ApprovalStore,
+    trail: &mut dyn dispatch::Trail,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (next, kind) = match decision {
+        HumanApprovalDecision::Approve => (approval::ApprovalState::Approved, "approval_granted"),
+        HumanApprovalDecision::Deny => (approval::ApprovalState::Denied, "approval_denied"),
+        HumanApprovalDecision::Cancel => (approval::ApprovalState::Cancelled, "approval_cancelled"),
+    };
+    let record = approvals.decide(approval_id, next)?;
+    trail.append_authorisation(&approval_trail_entry(&record.proof, kind, "human_decision"))?;
+    Ok(())
+}
+
+/// Re-resolve every ordinary policy input inside the resume seam.  An
+/// approval record is evidence only for an otherwise-current Ask: it cannot
+/// turn Deny, Unavailable, schema failure, scope failure, or stale pins into
+/// an Allow.
+fn resume_exact_approval(
+    action: &policy::ProposedAction,
+    approval_id: &str,
+    requirements: &[policy::CapabilityRequirement],
+    store: &trusted_store::TrustedManifestStore,
+    availability: &resolver::ProviderAvailability,
+    host_policy: &policy::HostLocalPolicy,
+    scope: policy::ScopeAssessment,
+    approvals: &mut approval::ApprovalStore,
+    trail: &mut dyn dispatch::Trail,
+) -> Result<PermissionDecision, Box<dyn std::error::Error>> {
+    let evaluation = policy::evaluate_effective_policy(
+        action,
+        requirements,
+        store,
+        availability,
+        host_policy,
+        scope,
+    );
+    let fresh_proof = approval::ApprovalProof::from_action(action);
+    let needs_invalidation = evaluation.decision != PermissionDecision::Ask || fresh_proof.is_err();
+    if needs_invalidation {
+        if let Ok(Some(record)) = approvals.invalidate_live(approval_id) {
+            trail.append_authorisation(&approval_trail_entry(
+                &record.proof,
+                "approval_invalidated",
+                "fresh_policy_or_proof_failed",
+            ))?;
+        }
+        return Ok(evaluation.decision);
+    }
+    let fresh_proof = fresh_proof?;
+    let matching = approvals
+        .record(approval_id)
+        .map(|record| record.proof.exactly_matches(&fresh_proof))
+        .unwrap_or(false);
+    if !matching {
+        if let Ok(Some(record)) = approvals.invalidate_live(approval_id) {
+            trail.append_authorisation(&approval_trail_entry(
+                &record.proof,
+                "approval_invalidated",
+                "approval_proof_mismatch",
+            ))?;
+        }
+        return Ok(PermissionDecision::Ask);
+    }
+    let consumed = match approvals.consume(approval_id, &fresh_proof) {
+        Ok(record) => record,
+        Err(
+            approval::ApprovalError::Denied
+            | approval::ApprovalError::Cancelled
+            | approval::ApprovalError::Invalidated
+            | approval::ApprovalError::Consumed
+            | approval::ApprovalError::Missing
+            | approval::ApprovalError::Pending,
+        ) => {
+            return Ok(PermissionDecision::Ask);
+        }
+        Err(error) => return Err(format!("approval consumption failed: {error:?}").into()),
+    };
+    trail.append_authorisation(&approval_trail_entry(
+        &consumed.proof,
+        "approval_consumed",
+        "exact_approved_ask",
+    ))?;
+
+    // Re-resolve the exact current identity only after the complete fresh
+    // evaluation and atomic consume have succeeded.  The resulting proof is
+    // created only by policy, never by approval storage or the caller.
+    let resolved = resolver::resolve_capability(
+        store,
+        availability,
+        &action.capability_name,
+        action
+            .bridge_capability_version
+            .expect("fresh proof required version"),
+        action.bridge_provider_identity.as_deref(),
+    )?;
+    Ok(policy::allow_after_exact_approval(&resolved))
+}
+
+/// Production orchestration: this calls the same intent-first dispatch path as
+/// ordinary Allows, but only after `resume_exact_approval` has freshly checked
+/// policy and atomically consumed the exact host-issued approval.
+#[allow(clippy::too_many_arguments)]
+fn resume_and_execute_exact_approval(
+    response: &mut Value,
+    approval_id: &str,
+    requirements: &[policy::CapabilityRequirement],
+    store: &trusted_store::TrustedManifestStore,
+    availability: &resolver::ProviderAvailability,
+    host_policy: &policy::HostLocalPolicy,
+    scope: policy::ScopeAssessment,
+    approvals: &mut approval::ApprovalStore,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    original_event_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let action = extract_proposed_action(response)?;
+    let decision = resume_exact_approval(
+        &action,
+        approval_id,
+        requirements,
+        store,
+        availability,
+        host_policy,
+        scope,
+        approvals,
+        trail,
+    )?;
+    let resolved = resolver::resolve_capability(
+        store,
+        availability,
+        &action.capability_name,
+        action
+            .bridge_capability_version
+            .ok_or("missing bridge capability version")?,
+        action.bridge_provider_identity.as_deref(),
+    )?;
+    authorise_and_execute(
+        response,
+        decision,
+        &resolved,
+        trail,
+        executor,
+        original_event_id,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,6 +1298,35 @@ mod tests {
             &store,
             &availability,
             "lantern.task.record",
+            1,
+            Some("lantern-local"),
+        )
+        .unwrap();
+        (store, resolved)
+    }
+
+    /// J05's dedicated, test-only capability.  Its unrestricted manifest
+    /// honestly reaches Ask through mandatory per-call confirmation, without
+    /// changing the structured-scope demonstration's fail-closed assessment.
+    fn resolved_approval_fixture() -> (TrustedManifestStore, resolver::ResolvedCapability) {
+        let mut manifest = lantern_manifest_json();
+        manifest["capability_name"] = json!("fixture.ask");
+        manifest["permission_scope"] = Value::Null;
+        manifest["confirmation_policy"] = json!({
+            "standing_permitted": false,
+            "per_call_required": true
+        });
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&manifest.to_string()).unwrap();
+        manifest["digest"] = json!(digest);
+        let mut store = TrustedManifestStore::new();
+        store
+            .insert(crate::manifest::verify_manifest(&manifest.to_string()).unwrap())
+            .unwrap();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let resolved = resolver::resolve_capability(
+            &store,
+            &availability,
+            "fixture.ask",
             1,
             Some("lantern-local"),
         )
@@ -3066,6 +3315,190 @@ mod tests {
 
             assert!(!err.to_string().is_empty(), "{label}");
             assert_eq!(executor.calls, 0, "{label}");
+        }
+    }
+
+    #[test]
+    fn j05_production_seam_consumes_exact_approved_fixture_before_intent() {
+        struct FixtureExecutor {
+            calls: u32,
+        }
+        impl CapabilityExecutor for FixtureExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                self.calls += 1;
+                Ok(json!({"status": "recorded", "project": "p", "task": "t"}))
+            }
+        }
+        let (store, resolved) = resolved_approval_fixture();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let requirements = vec![CapabilityRequirement::new("fixture.ask", 1)];
+        let host_policy = HostLocalPolicy::new(PolicyRule::Allow);
+        let mut response = make_bridge_matched_response(&resolved);
+        let action = extract_proposed_action(&response).unwrap();
+        let mut approvals = approval::ApprovalStore::default();
+        let mut trail = RecordingTrail::new();
+        let request = request_exact_approval(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &host_policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail,
+        )
+        .unwrap()
+        .unwrap();
+        let duplicate = request_exact_approval(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &host_policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(request.approval_id, duplicate.approval_id);
+        assert_eq!(trail.authorisation_entries.len(), 1);
+        record_human_approval_decision(
+            &request.approval_id,
+            HumanApprovalDecision::Approve,
+            &mut approvals,
+            &mut trail,
+        )
+        .unwrap();
+        let mut executor = FixtureExecutor { calls: 0 };
+        resume_and_execute_exact_approval(
+            &mut response,
+            &request.approval_id,
+            &requirements,
+            &store,
+            &availability,
+            &host_policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail,
+            &mut executor,
+            "evt-j05",
+        )
+        .unwrap();
+        assert_eq!(executor.calls, 1);
+        assert_eq!(
+            approvals.record(&request.approval_id).unwrap().state,
+            approval::ApprovalState::Consumed
+        );
+        assert_eq!(trail.entries.len(), 1);
+        assert_eq!(trail.outcome_entries.len(), 1);
+        assert_eq!(
+            trail
+                .authorisation_entries
+                .iter()
+                .map(|entry| entry.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "approval_requested",
+                "approval_granted",
+                "approval_consumed"
+            ]
+        );
+    }
+
+    #[test]
+    fn j05_fresh_deny_invalidates_and_never_dispatches() {
+        let (store, resolved) = resolved_approval_fixture();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let requirements = vec![CapabilityRequirement::new("fixture.ask", 1)];
+        let mut response = make_bridge_matched_response(&resolved);
+        let action = extract_proposed_action(&response).unwrap();
+        let mut approvals = approval::ApprovalStore::default();
+        let mut trail = RecordingTrail::new();
+        let ask_policy = HostLocalPolicy::new(PolicyRule::Allow);
+        let request = request_exact_approval(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &ask_policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail,
+        )
+        .unwrap()
+        .unwrap();
+        record_human_approval_decision(
+            &request.approval_id,
+            HumanApprovalDecision::Approve,
+            &mut approvals,
+            &mut trail,
+        )
+        .unwrap();
+        let mut executor = MockExecutor::new();
+        resume_and_execute_exact_approval(
+            &mut response,
+            &request.approval_id,
+            &requirements,
+            &store,
+            &availability,
+            &HostLocalPolicy::new(PolicyRule::Deny),
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail,
+            &mut executor,
+            "evt-j05",
+        )
+        .unwrap();
+        assert!(executor.completed.is_empty());
+        assert!(trail.entries.is_empty());
+        assert!(trail.outcome_entries.is_empty());
+        assert!(response.get("result_anchor").is_none());
+        assert_eq!(
+            approvals.record(&request.approval_id).unwrap().state,
+            approval::ApprovalState::Invalidated
+        );
+    }
+
+    #[test]
+    fn j05_human_denial_and_cancellation_are_terminal_without_dispatch() {
+        let (store, resolved) = resolved_approval_fixture();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let requirements = vec![CapabilityRequirement::new("fixture.ask", 1)];
+        let policy = HostLocalPolicy::new(PolicyRule::Allow);
+        for decision in [HumanApprovalDecision::Deny, HumanApprovalDecision::Cancel] {
+            let response = make_bridge_matched_response(&resolved);
+            let action = extract_proposed_action(&response).unwrap();
+            let mut approvals = approval::ApprovalStore::default();
+            let mut trail = RecordingTrail::new();
+            let request = request_exact_approval(
+                &action,
+                &requirements,
+                &store,
+                &availability,
+                &policy,
+                policy::ScopeAssessment::ScopeNotEstablished,
+                &mut approvals,
+                &mut trail,
+            )
+            .unwrap()
+            .unwrap();
+            record_human_approval_decision(
+                &request.approval_id,
+                decision,
+                &mut approvals,
+                &mut trail,
+            )
+            .unwrap();
+            assert!(matches!(
+                approvals.record(&request.approval_id).unwrap().state,
+                approval::ApprovalState::Denied | approval::ApprovalState::Cancelled
+            ));
+            assert!(trail.entries.is_empty());
+            assert!(trail.outcome_entries.is_empty());
         }
     }
 }

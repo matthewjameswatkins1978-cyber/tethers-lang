@@ -164,6 +164,14 @@ pub enum ResolutionError {
     },
 }
 
+impl std::fmt::Display for ResolutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "resolution error: {self:?}")
+    }
+}
+
+impl std::error::Error for ResolutionError {}
+
 // ---------------------------------------------------------------------------
 // Live capability projection
 // ---------------------------------------------------------------------------

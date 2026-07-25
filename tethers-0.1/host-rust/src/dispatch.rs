@@ -94,6 +94,19 @@ pub struct OutcomeEntry {
     pub timestamp_unix_ms: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AuthorisationEntry {
+    pub execution_id: String,
+    pub action_id: String,
+    pub capability_name: String,
+    pub capability_version: u32,
+    pub provider_identity: String,
+    pub manifest_digest: String,
+    pub kind: String,
+    pub reason_code: String,
+    pub argument_digest: String,
+}
+
 // ---------------------------------------------------------------------------
 // DispatchReadyAction — proof token
 // ---------------------------------------------------------------------------
@@ -216,6 +229,7 @@ pub trait Trail: sealed::Sealed {
     /// or sync may still leave no bytes, a partial record, or an
     /// unconfirmed complete record at the tail.
     fn append_and_flush_intent(&mut self, entry: &IntentEntry) -> Result<(), TrailError>;
+    fn append_authorisation(&mut self, entry: &AuthorisationEntry) -> Result<(), TrailError>;
 
     /// Serialize, append, flush, and sync an execution outcome to durable
     /// storage.  Returns `Ok(())` only when the outcome is durable.
@@ -235,6 +249,14 @@ pub enum TrailError {
     /// a partial record, or an unconfirmed complete record.
     FlushFailed(String),
 }
+
+impl std::fmt::Display for TrailError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "trail error: {self:?}")
+    }
+}
+
+impl std::error::Error for TrailError {}
 
 // ---------------------------------------------------------------------------
 // File-backed Trail (real durable)
@@ -287,6 +309,18 @@ impl Trail for FileTrail {
         Ok(())
     }
 
+    fn append_authorisation(&mut self, entry: &AuthorisationEntry) -> Result<(), TrailError> {
+        let line =
+            serde_json::to_string(entry).map_err(|e| TrailError::WriteFailed(e.to_string()))?;
+        writeln!(self.file, "{line}").map_err(|e| TrailError::WriteFailed(e.to_string()))?;
+        self.file
+            .flush()
+            .map_err(|e| TrailError::FlushFailed(e.to_string()))?;
+        self.file
+            .sync_data()
+            .map_err(|e| TrailError::FlushFailed(e.to_string()))
+    }
+
     fn append_outcome(&mut self, entry: &OutcomeEntry) -> Result<(), TrailError> {
         let line = serde_json::to_string(entry)
             .map_err(|e| TrailError::WriteFailed(format!("serialization failed: {e}")))?;
@@ -319,8 +353,10 @@ impl Trail for FileTrail {
 #[cfg(test)]
 pub struct RecordingTrail {
     pub entries: Vec<IntentEntry>,
+    pub authorisation_entries: Vec<AuthorisationEntry>,
     pub outcome_entries: Vec<OutcomeEntry>,
     pub injected_intent_error: Option<TrailError>,
+    pub injected_authorisation_error: Option<TrailError>,
     pub injected_outcome_error: Option<TrailError>,
 }
 
@@ -329,8 +365,10 @@ impl RecordingTrail {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            authorisation_entries: Vec::new(),
             outcome_entries: Vec::new(),
             injected_intent_error: None,
+            injected_authorisation_error: None,
             injected_outcome_error: None,
         }
     }
@@ -346,6 +384,14 @@ impl Trail for RecordingTrail {
             return Err(err);
         }
         self.entries.push(entry.clone());
+        Ok(())
+    }
+
+    fn append_authorisation(&mut self, entry: &AuthorisationEntry) -> Result<(), TrailError> {
+        if let Some(err) = self.injected_authorisation_error.take() {
+            return Err(err);
+        }
+        self.authorisation_entries.push(entry.clone());
         Ok(())
     }
 

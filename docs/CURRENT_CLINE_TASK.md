@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J05 exact one-shot Ask approval and resume`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Task colour: `Red`
 

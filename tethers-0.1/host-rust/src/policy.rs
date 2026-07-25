@@ -139,6 +139,12 @@ impl AllowedCapability {
     }
 }
 
+/// J05's only route from a consumed exact approval to dispatch readiness.
+/// Kept crate-private so approval storage cannot manufacture authority.
+pub(crate) fn allow_after_exact_approval(resolved: &ResolvedCapability) -> PermissionDecision {
+    PermissionDecision::Allow(AllowedCapability::new(resolved.identity().clone()))
+}
+
 /// The effective permission outcome for one requested capability.
 ///
 /// These match the canonical architecture §4.7:
