@@ -25,7 +25,7 @@ Implement the authoritative one-shot Ask approval and resume boundary defined in
 as reference and rebuilding the production orchestration seam from current
 `main`.
 
-## Relevant Background And Existing Behaviour
+## Relevant background and existing behaviour
 
 - J04a is the accepted implementation baseline.
 - The immutable safety branch
