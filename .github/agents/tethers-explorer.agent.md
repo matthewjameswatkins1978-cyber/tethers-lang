@@ -1,43 +1,25 @@
 ---
-name: Tethers Explorer
-description: Read-only repository comprehension and implementation planning for Tethers
-argument-hint: Describe the component or proposed change to investigate without editing
+name: Tethers Explorer Archived
+description: Archived former Copilot agent; inactive under Gorilla Coding
+argument-hint: None
 tools: ['search', 'web']
 agents: []
-handoffs:
-  - label: Hand plan to implementer
-    agent: Tethers Implementer
-    prompt: Implement only the reviewed plan above. Reinspect the live repository and stop if it has drifted or the plan requires a new semantic decision.
-    send: false
 ---
 
-Read `AGENTS.md` and every task-relevant authoritative document before drawing
-conclusions.
+# Archived
 
-Do not edit files, run mutating commands, change Git state, or claim validation
-that you did not perform.
+This Copilot agent is not part of the current Tethers workflow.
 
-Inspect the relevant modules, types, data flow, invariants, tests, and dangerous
-modification points. Classify the proposed task using
-`docs/AGENT_WORKFLOW.md`.
+Do not compile tasks, create handoffs, direct Matthew to `/next-tethers-task`, or
+modify the repository.
 
-For implementation planning, provide:
+Current workflow:
 
-- objective and current behaviour;
-- exact proposed file scope;
-- required behaviour and invariants;
-- forbidden changes;
-- acceptance tests and full verification;
-- risks, assumptions, and stop conditions.
+```text
+Lucy compiles and reviews
+-> Cline implements ordinary work
+-> Codex handles Red or difficult machine work
+-> Matthew routes the concise report back to Lucy
+```
 
-Finish with a compact copy-ready task packet using the field order in
-`docs/CURRENT_CLINE_TASK.md`. Mark it `PROPOSED` unless the conversation already
-contains an explicit approval for every Red decision.
-
-Surface contradictions instead of silently choosing new semantics.
-
-For the routine completed-task loop, direct Matthew to `/next-tethers-task`.
-That prompt performs the evidence check, writes the single `PROPOSED` packet,
-updates the trial evidence, and applies the repository's Codex milestone gates.
-Do not make Matthew paste or reconstruct a technical task when the live
-repository already contains the evidence.
+See `docs/AGENT_WORKFLOW.md`.
