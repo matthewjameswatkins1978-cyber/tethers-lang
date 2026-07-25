@@ -1,12 +1,13 @@
-# Tethers Project Guidance for Coding Agents
+# Tethers Project Guidance For Coding Agents
 
 ## Start Here
 
 Before changing the repository, read:
 
 1. `docs/PROJECT_CONTROL.md`
-2. `docs/CURRENT_CLINE_TASK.md`
-3. `docs/PROJECT_DASHBOARD.md`
+2. `docs/AGENT_WORKFLOW.md`
+3. `docs/CURRENT_CLINE_TASK.md`
+4. `docs/PROJECT_DASHBOARD.md`
 
 Before changing implementation code, also read
 `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` and the task-relevant language guide.
@@ -16,6 +17,21 @@ by the current task packet. Do not load the complete project archive by default.
 
 For OCaml work, read the task-relevant section of
 `docs/OCAML_GUIDE_FOR_AGENTS.md`.
+
+## Current Operating Mode
+
+**Gorilla Coding 🦄**
+
+- Lucy in ordinary chat controls architecture, task compilation, GitHub-visible
+  review, acceptance, and continuation.
+- Cline is the default implementation owner for ordinary Green and Amber work.
+- Codex handles Red implementation or sign-off, difficult local failure,
+  Git/environment/recovery, and machine-required diagnosis.
+- Matthew may paste Cline's concise report to Lucy as the normal return handoff.
+- Copilot is not part of the active route.
+
+No implementation agent invents or begins the next task. Lucy controls
+continuation.
 
 ## Project Definition
 
@@ -42,8 +58,9 @@ Use the narrowest applicable authority:
 4. `docs/CAPABILITY_BRIDGE.md` for the manifest, trust, and host bridge contract.
 5. `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` for implementation technique and
    language use. It never overrides product semantics or trust boundaries.
-6. The current task packet for this task's frozen scope and acceptance criteria.
-7. Code, tests, fixtures, Trails, and Git for implementation evidence.
+6. The current task packet for frozen scope and acceptance criteria.
+7. Code, tests, fixtures, Trails, compiler output, and Git for implementation
+   evidence.
 
 `docs/TETHERS_LUCY_NOTES.md` is optional orientation, not specification.
 Agent reports are claims until repository evidence verifies them.
@@ -134,7 +151,7 @@ Before work:
    pre-existing changes.
 2. Inspect Git status.
 3. Run the task-packet checker.
-4. Read only the packet-named context and task-relevant code.
+4. Read only packet-named context and task-relevant code.
 5. Stop if another owner already has the task `IN_PROGRESS`.
 
 During work:
@@ -143,12 +160,12 @@ During work:
 - Preserve unrelated and user-authored changes.
 - Fix demonstrated defects, not speculative future problems.
 - Use the implementation language idiomatically and to its appropriate depth.
-  Do not make production code primitive merely to make it easier for Matthew to
-  read; explain the design outside the code instead.
+  Do not make production code primitive merely so Matthew can read it; explain
+  the design outside the code instead.
 - Do not add dependencies or alter safety boundaries merely to make tests pass.
-- Prefer small focused tests that prove one required behaviour.
+- Prefer focused tests that prove one required behaviour or failure branch.
 - Stop when requirements conflict or a missing design decision blocks safe work.
-- After two materially similar failed attempts, stop and record exact evidence
+- After two materially similar failed attempts, stop and return exact evidence
   plus one smallest unresolved question.
 
 After work:
@@ -158,11 +175,11 @@ After work:
 2. Inspect the complete diff and final Git status.
 3. Write the worker note at the exact path named by the packet.
 4. Update the packet to `COMPLETE` or `BLOCKED` with honest evidence.
-5. Update current-state documents only with facts established by this task.
-6. State the smallest useful next task and stop. Do not begin it.
+5. Return the concise report defined by `docs/CLINE_HANDOFF.md`.
+6. Stop. Do not select, compile, authorise, or begin the next task.
 
-Do not commit, push, merge, amend, tag, publish, or open a pull request unless
-the current task explicitly authorises it.
+Do not commit, push, merge, amend, tag, publish, install, or open a pull request
+unless the current task explicitly authorises it.
 
 ## Development Environment
 
