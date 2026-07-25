@@ -37,7 +37,7 @@ as reference and rebuilding the production orchestration seam from current
   code. Neither may be imported wholesale.
 - `docs/J05_EXACT_ASK_APPROVAL_DESIGN.md` is the sole J05 authority.
 
-## Required Behaviour
+## Required behaviour
 
 1. Add the exact approval proof, binding digest, state model, and one-shot atomic
    consume boundary from the authoritative design.
@@ -60,7 +60,7 @@ as reference and rebuilding the production orchestration seam from current
 9. Implement the complete 28-case focused verification matrix from the design,
    plus proportionate integration and regression coverage.
 
-## Relevant Components
+## Relevant components
 
 - `docs/J05_EXACT_ASK_APPROVAL_DESIGN.md`
 - `docs/DECISIONS.md` (J03, J03a, J03b, J04a)
@@ -74,7 +74,7 @@ as reference and rebuilding the production orchestration seam from current
 - safety commit `f74999aba9135f0493cf28693ba6444c22388294`
   for selective reference only
 
-## Frozen Decisions And Invariants
+## Frozen decisions and invariants
 
 - The authoritative J05 design controls all approval semantics.
 - Approval confirms one exact Action; it never becomes standing permission.
@@ -87,23 +87,31 @@ as reference and rebuilding the production orchestration seam from current
 - J06 documentation and all J07 implementation are out of scope.
 - Gorilla Coding workflow files from current `main` remain authoritative.
 
-## Acceptance Criteria
+## Acceptance criteria
 
-1. Every Required Behaviour item is proved by focused tests and exact evidence.
-2. All 28 cases in `docs/J05_EXACT_ASK_APPROVAL_DESIGN.md` have individually
-   identifiable tests or a documented one-to-one mapping to focused cases.
-3. Production host processing reaches the J05 request and resume seam; tests do
-   not merely call otherwise-unused helper functions.
-4. The complete diff contains no obsolete workflow transplant and no J07 clock,
-   deadline, or uncertain-outcome implementation.
-5. Rust formatting and full Rust tests pass, followed by relevant host scripts,
-   protocol/fixture checks, OCaml build, packet checker, whitespace check, and
-   final Git-state inspection.
-6. Independent Red review can trace each Trail claim to a completed store or
-   policy transition and prove zero dispatch/Anchor activity on every
-   unattempted branch.
+1. The exact approval proof, constituent-field checks, binding digest, state
+   vocabulary, and atomic consume primitive match the authoritative design and
+   are proved by focused tests.
+2. A production-path integration test proves real host processing reaches the
+   J05 request and resume seam rather than otherwise-unused helpers.
+3. Resume tests prove fresh resolution, schema, scope, binding, and effective
+   policy evaluation occur inside the seam and caller-supplied policy cannot
+   authorise dispatch.
+4. Changed proof fields and fresh Deny, Unavailable, schema, binding, and scope
+   failures invalidate the matching live record and make zero executor calls.
+5. Tests prove every authorisation Trail claim follows a successful state or
+   policy transition, and failed transitions produce no false claim.
+6. Missing, denied, cancelled, invalidated, consumed, and existing terminal
+   records produce distinct state-correct outcomes and are not reused as pending.
+7. Concurrency and replay tests prove one matching approval is consumed exactly
+   once before intent and is never restored after later failure.
+8. Every unattempted branch is proved to create zero durable intents, provider
+   calls, execution outcomes, and standard result Anchors.
+9. All 28 design cases have individually identifiable tests or a documented
+   one-to-one mapping, and the full required verification passes or is reported
+   precisely.
 
-## Required Verification
+## Required verification
 
 Run sequentially from `tethers-0.1`:
 
@@ -135,7 +143,7 @@ git diff
 
 Record every command and exact result. Never claim an unrun check passed.
 
-## Forbidden Changes
+## Forbidden changes
 
 - Do not modify or delete the safety branch or preservation commit.
 - Do not merge or cherry-pick the preservation commit.
@@ -148,7 +156,7 @@ Record every command and exact result. Never claim an unrun check passed.
 - Do not change Tethers language, OCaml planner, manifest format, or MCP protocol.
 - Do not push, merge, tag, or publish unless Matthew explicitly authorises it.
 
-## Stop Conditions
+## Stop conditions
 
 Stop with exact evidence and one smallest unresolved question when:
 
@@ -161,7 +169,7 @@ Stop with exact evidence and one smallest unresolved question when:
 - an unrelated repository or environment failure prevents trustworthy
   verification.
 
-## Expected Pre-existing Changes
+## Expected pre-existing changes
 
 None. Start from a clean fresh branch created from current `origin/main` at or
 after `2c9b161579a7bdf016754dc6814bde9c4f1b79b7`.
