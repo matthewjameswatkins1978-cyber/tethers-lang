@@ -16,7 +16,7 @@ Worker note: `docs/worker-notes/2026-07-25-j05-authoritative-implementation.md`
 
 Base branch: `main`
 
-Base commit: `acfe31618ec3a690910ab0a7f0222cec69da90d7`
+Base commit: `d7962642fc85a433a7d4257de73a9f2417f4418f`
 
 ## Objective
 
@@ -36,7 +36,16 @@ as reference and rebuilding the production orchestration seam from current
 - The safety snapshot also contains obsolete workflow files and incomplete J07
   code. Neither may be imported wholesale.
 - `docs/J05_EXACT_ASK_APPROVAL_DESIGN.md` is the sole J05 authority.
-- The packet checker now matches field and section names case-insensitively.
+- The packet checker matches field and section names case-insensitively.
+- The current demonstration host deliberately returns
+  `ScopeAssessment::ScopeNotEstablished` for its structured manifest. J03b must
+  therefore deny that Action before Ask. J05 must not weaken this boundary or
+  invent a `project`/`task` argument convention.
+- J05 production-path evidence may instead use a dedicated, test-only capability
+  and binding fixture whose scope can already be established honestly, or an
+  `Unrestricted` fixture whose mandatory per-call confirmation produces Ask.
+  This fixture exists to exercise the real host orchestration seam, not to alter
+  production scope semantics or make the existing demo dispatchable.
 
 ## Preflight self-repair authority
 
@@ -73,8 +82,10 @@ implementation attempts.
 
 1. Add the exact approval proof, binding digest, state model, and one-shot atomic
    consume boundary from the authoritative design.
-2. Connect J05 to the real production host path rather than test-only helper
-   functions.
+2. Connect J05 to the real production host orchestration path rather than
+   test-only helper functions. Exercise that path with a dedicated authorised
+   test capability/binding fixture that can honestly reach Ask under J03b. Do not
+   change the existing structured-scope demo's fail-closed behaviour.
 3. The resume seam must perform fresh current resolution, schema validation,
    host-owned scope assessment, and effective policy evaluation itself. It must
    not trust a caller-supplied final policy result.
@@ -102,6 +113,8 @@ implementation attempts.
 - `tethers-0.1/host-rust/src/main.rs`
 - `tethers-0.1/host-rust/src/result_anchor.rs`
 - new focused approval module if justified
+- a dedicated test capability/binding fixture and production-path integration
+  harness if needed
 - relevant existing Rust and host integration tests
 - safety commit `f74999aba9135f0493cf28693ba6444c22388294`
   for selective reference only
@@ -118,6 +131,11 @@ implementation attempts.
 - Tethers Core and OCaml protocol semantics remain unchanged.
 - J06 documentation and all J07 implementation are out of scope.
 - Gorilla Coding workflow files from current `main` remain authoritative.
+- The existing structured-scope demo remains `ScopeNotEstablished` and denied.
+- A J05 test fixture must use declared, trusted data and an honest host-owned
+  assessment. It may not infer scope from convenient argument names.
+- A test-only fixture proves reachability of the production orchestration seam;
+  it does not create a new production capability or change manifest semantics.
 
 ## Acceptance criteria
 
@@ -125,7 +143,9 @@ implementation attempts.
    vocabulary, and atomic consume primitive match the authoritative design and
    are proved by focused tests.
 2. A production-path integration test proves real host processing reaches the
-   J05 request and resume seam rather than otherwise-unused helpers.
+   J05 request and resume seam through the dedicated authorised fixture rather
+   than otherwise-unused helpers. The existing structured-scope demo remains
+   safely denied before Ask.
 3. Resume tests prove fresh resolution, schema, scope, binding, and effective
    policy evaluation occur inside the seam and caller-supplied policy cannot
    authorise dispatch.
@@ -182,6 +202,9 @@ Record every command and exact result. Never claim an unrun check passed.
 - Do not import old workflow, Copilot, Cline-control, or task-control files from
   the safety branch.
 - Do not transplant preserved `main.rs` wholesale.
+- Do not make the existing structured-scope demo reach Ask by inventing a scope
+  mapping or returning `WithinScope` without a trusted assessor.
+- Do not turn a test fixture into a general production scope assessor.
 - Do not implement J06, deadlines, monotonic clocks, J07, or uncertain outcomes.
 - Do not add durable cross-restart approval persistence, GUI, remote approval
   endpoint, standing approval, retry, or compensation.
@@ -193,8 +216,9 @@ Record every command and exact result. Never claim an unrun check passed.
 Stop with exact evidence and one smallest unresolved question when:
 
 - the authoritative design conflicts with accepted J03/J04a behaviour;
-- a fresh-policy resume cannot be connected without changing an unapproved
-  trust boundary;
+- the real host orchestration seam cannot be exercised even with a dedicated
+  honest test capability/binding fixture without changing an unapproved trust
+  boundary;
 - two materially similar implementation attempts fail;
 - the safety reference and current code cannot be reconciled without importing
   unrelated or J07 work;
@@ -203,6 +227,10 @@ Stop with exact evidence and one smallest unresolved question when:
 - a preflight repair would alter semantics, weaken a safety control, conceal
   unexpected source changes, or risk losing work.
 
+Do not stop merely because the existing structured-scope demo correctly denies
+before Ask. Use the authorised fixture route, preserve the demo's fail-closed
+behaviour, prove both paths, and continue.
+
 Do not stop merely because a packet heading, base SHA, worker-note field, ignored
 evidence file, or equivalent mechanical control-plane detail is stale or
 malformed. Repair it, prove the gate, and continue.
@@ -210,4 +238,4 @@ malformed. Repair it, prove the gate, and continue.
 ## Expected pre-existing changes
 
 None. Start from a clean fresh branch created from current `origin/main` at or
-after `acfe31618ec3a690910ab0a7f0222cec69da90d7`.
+after `d7962642fc85a433a7d4257de73a9f2417f4418f`.
