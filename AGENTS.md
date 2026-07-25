@@ -1,316 +1,61 @@
-# Tethers — Project Guidance for Coding Agents
+# Tethers Project Guidance for Coding Agents
 
-Read this file, `docs/PROJECT_CONTROL.md`, `docs/AGENT_WORKFLOW.md`,
-`docs/CURRENT_CLINE_TASK.md`, and `docs/PROJECT_DASHBOARD.md` before making
-changes.
+## Start Here
 
-Then read only the authoritative documents, code, tests, and prior worker notes
-named by the current task packet. Architecture reviewers may load wider
-Constitution, specification, decision, and milestone context when the task risk
-requires it. Implementation workers must not read the entire project archive by
-default.
+Before changing the repository, read:
 
-`docs/CONSTITUTION.md` governs enduring Tethers design principles.
-`tethers-0.1/SPEC.md` defines the current precise 0.1 language and protocol
-semantics.
-`docs/MCP_PLAN.md` records the approved post-0.1 MCP direction: Tethers owns
-its MCP interface directly in OCaml, while Lantern Keeper remains a host and
-capability provider.
-For OCaml implementation tasks, also read the task-relevant section of
+1. `docs/PROJECT_CONTROL.md`
+2. `docs/CURRENT_CLINE_TASK.md`
+3. `docs/PROJECT_DASHBOARD.md`
+
+Then read only the authoritative documents, code, tests, and worker notes named
+by the current task packet. Do not load the complete project archive by default.
+
+For OCaml work, read the task-relevant section of
 `docs/OCAML_GUIDE_FOR_AGENTS.md`.
-For optional project orientation, `docs/TETHERS_LUCY_NOTES.md` can help recover
-the conceptual model, but it is not an authoritative specification.
 
-## Project definition
+## Project Definition
 
-Tethers is a small deterministic behaviour language and capability protocol for connecting applications through clear, typed, permissioned rules.
-
-Friendly description:
+Tethers is a small deterministic behaviour language and capability protocol for
+connecting applications through clear, typed, permissioned rules.
 
 > Apps provide the sockets. Tethers provides the cables.
 
-A Tether expresses:
+A Tether means:
 
-> When this event happens, check these known facts, then propose these permitted actions.
+> When this event happens, check these known facts, then propose these permitted
+> actions.
 
-Tethers is not:
+Tethers is a deterministic planner. It does not grant permission and does not
+execute Actions.
 
-- a general-purpose programming language;
-- Lantern Keeper’s database language;
-- Lantern Keeper’s internal implementation language;
-- an AI prompting language;
-- an integration catalogue;
-- an application-specific workflow engine;
-- an authority that grants permissions;
-- the component that executes Actions.
+## Authority Order
 
-Tethers is a deterministic planner.
+Use the narrowest applicable authority:
 
-## Core architecture
+1. `docs/CONSTITUTION.md` for enduring design principles.
+2. `tethers-0.1/SPEC.md` for precise 0.1 language and protocol semantics.
+3. `docs/DECISIONS.md` for accepted design decisions.
+4. `docs/CAPABILITY_BRIDGE.md` for the manifest, trust, and host bridge contract.
+5. The current task packet for this task's frozen scope and acceptance criteria.
+6. Code, tests, fixtures, Trails, and Git for implementation evidence.
 
-The initial reference architecture is:
+`docs/TETHERS_LUCY_NOTES.md` is optional orientation, not specification.
+Agent reports are claims until repository evidence verifies them.
+
+## Core Boundary
 
 ```text
-Lantern Keeper or another host
-    sends:
-    - Tether source and version
-    - event
-    - immutable Fact snapshot
-    - available Capability schemas
+Host application
+    supplies event + immutable Facts + Capability schemas + Tether source
         ↓
 Tethers Core — OCaml
-    - parses the Tether
-    - validates structure and types
-    - evaluates Conditions
-    - produces an Action Plan
-    - records the evaluation Trail
+    parses, validates, evaluates, and proposes an ordered Plan
         ↓
-Host application — initially Rust
-    - checks real permissions
-    - executes approved Actions
-    - records results
-    - appends the execution Trail
-    - emits result events where appropriate
+Host application
+    resolves policy, records durable intent, executes approved Actions,
+    validates results, and appends host Trail entries
 ```
-
-For Lantern Keeper:
-
-```text
-Lantern Keeper knows things.
-Tethers responds to things.
-Capabilities do things.
-```
-
-Lantern Keeper is the first serious host, but Tethers must not contain Lantern Keeper-specific language features or branches.
-
-Never add logic resembling:
-
-```text
-if application == "Lantern Keeper"
-```
-
-Lantern Keeper integration belongs in Capability schemas, host code, and adapters.
-
-## Canonical vocabulary
-
-Use these terms consistently:
-
-| Term       | Meaning                                                   |
-| ---------- | --------------------------------------------------------- |
-| Tether     | One behavioural rule                                      |
-| Tether Set | An installable collection of related Tethers              |
-| Anchor     | The event that wakes a Tether                             |
-| Fact       | Immutable input available to Conditions                   |
-| Condition  | Deterministic test over a Fact                            |
-| Action     | A requested Capability invocation                         |
-| Capability | A typed operation exposed by a host or adapter            |
-| Effect     | An external consequence declared by a Capability          |
-| Plan       | Ordered Actions proposed by Tethers                       |
-| Trail      | Causal record of evaluation, authorisation, and execution |
-| Host       | Application supplying input and enforcing policy          |
-| Adapter    | Component exposing another system as Capabilities         |
-| HQ         | Future visual editor, tester, and Trail inspector         |
-
-Do not casually introduce synonyms such as trigger, command, operation, workflow node, or execution log when one of the canonical terms already applies.
-
-## Example Tether
-
-```tethers
-tether "Record completed software task"
-
-anchor
-    coding.task_completed
-
-when
-    project.type is "software"
-    and task.changed_files greater_than 0
-
-do
-    lantern.task.record
-        project: anchor.project
-        task: anchor.task
-```
-
-Meaning:
-
-1. A `coding.task_completed` event arrives.
-2. Tethers checks the supplied Facts.
-3. If the project is software and files changed, Tethers proposes `lantern.task.record`.
-4. The host decides whether the Action is permitted.
-5. The host executes it through the declared Capability.
-6. The complete decision and result are added to the Trail.
-
-The Action does not write directly into Lantern Keeper’s database. It submits a request through Lantern Keeper’s public Capability. Lantern Keeper retains control over classification, deduplication, confidence, provenance, retention, rejection, and storage.
-
-## Determinism
-
-The complete deterministic input is:
-
-```text
-(
-    protocol version,
-    language version,
-    Tether source and version,
-    event envelope,
-    immutable Fact snapshot,
-    Capability schemas
-)
-```
-
-Given the same complete input, Tethers must produce the same semantic Action Plan and evaluation Trail.
-
-The engine must never secretly read:
-
-- the system clock;
-- environment variables;
-- random values;
-- the filesystem;
-- the network;
-- the host database;
-- live application state;
-- undeclared configuration.
-
-If time or changing state matters, the host must supply it explicitly as event data or Facts.
-
-Object key order is not semantically meaningful.
-
-## Minimal language shape
-
-A Tether has:
-
-```text
-Tether
-    Anchor
-    Conditions
-    Actions
-```
-
-The Trail is produced while the rule is evaluated and executed; it is not written as part of the rule.
-
-Version 0.1 operators:
-
-```text
-is
-contains
-greater_than
-greater_than_or_equal
-```
-
-Version 0.1 values:
-
-- quoted strings;
-- integers;
-- booleans;
-- dotted references beginning with `anchor.`.
-
-Version 0.1 deliberately excludes:
-
-- loops;
-- arithmetic;
-- user-defined functions;
-- arbitrary mutation;
-- implicit I/O;
-- hidden type coercion;
-- parallel Actions;
-- branching inside `do`;
-- Conditions that inspect Action results;
-- direct Action-result chaining.
-
-Do not expand this list without an explicit semantic decision.
-
-## Evaluation lifecycle
-
-The engine must:
-
-1. Parse the Tether.
-2. Validate the protocol and language versions.
-3. Validate the Tether’s structure.
-4. Compare the Anchor with the incoming event.
-5. Resolve Conditions using only the immutable Fact snapshot.
-6. Stop evaluation on the first false Condition.
-7. Validate each Action against an available Capability schema.
-8. Resolve constants and `anchor.*` references.
-9. Produce an ordered Action Plan.
-10. Report the Effects required by that Plan.
-11. Produce the deterministic evaluation portion of the Trail.
-
-A false Condition is not an error. It produces `not_matched` and no Plan.
-
-Malformed source, missing Facts, unknown Capabilities, missing arguments, incompatible versions, and type mismatches are errors.
-
-## Action semantics
-
-Actions are ordered.
-
-The host executes them sequentially and stops on the first failure.
-
-Version 0.1 does not allow one Action to inspect the result of an earlier Action. Result-dependent behaviour should use a new visible event:
-
-```text
-Action completes
-    ↓
-Host records result
-    ↓
-Host emits result event
-    ↓
-Another Tether evaluates that event
-```
-
-Example:
-
-```tethers
-tether "Pause after serious architectural conflict"
-
-anchor
-    coding.review_completed
-
-when
-    review.architecture_conflict is true
-    and review.confidence greater_than_or_equal 85
-
-do
-    project.pause_task
-        task: anchor.task
-```
-
-AI may produce the review, but the AI does not secretly determine the workflow response. Its result becomes visible data, and a Tether applies known policy to it.
-
-## Capability model
-
-Applications expose typed Capabilities.
-
-Conceptual example:
-
-```tethers
-capability file.move
-    version: "1.0.0"
-    description: "Move a file into another folder"
-
-    inputs
-        file: File
-        destination: Folder
-
-    effects
-        filesystem.read
-        filesystem.write
-
-    reversibility: reversible
-```
-
-Capability schemas describe:
-
-- name;
-- version;
-- inputs;
-- outputs;
-- Effects;
-- reversibility.
-
-Capability schemas do not grant permission.
-
-The language must not gain separate file, music, Lantern Keeper, GitHub, email, or AI modes. These are Capability sets, not grammar features.
-
-## Permissions
 
 Keep these responsibilities separate:
 
@@ -321,277 +66,113 @@ Hosts enforce.
 Trails record.
 ```
 
-Tethers may report that a Plan requires:
-
-```text
-filesystem.read
-filesystem.write
-lantern.write
-network.access
-```
-
-Only the host decides whether those Effects are allowed for that Tether, user, project, resource, and execution.
-
-A Plan is a request, not permission.
-
-Production hosts must enforce resource scope at the execution boundary. A Capability schema claiming safe behaviour must not be treated as proof that an adapter is safe.
-
-## Identity and replay
-
-The protocol uses:
-
-- `event_id` — identifies the incoming host event;
-- `evaluation_id` — identifies one Tether evaluation;
-- `plan_id` — identifies the resulting Plan;
-- `action_id` — identifies an Action’s position within the Plan;
-- `idempotency_key` — prevents accidental duplicate execution.
-
-The 0.1 idempotency key is:
-
-```text
-evaluation_id/action_id
-```
-
-Externally significant hosts should persist successful idempotency keys atomically with the external Effect whenever possible.
-
-Retries must not duplicate emails, file moves, memory records, or other significant Effects.
-
-## Trail ownership
-
-The Trail has four stages:
-
-1. Reception
-2. Evaluation
-3. Authorisation
-4. Execution
-
-Tethers writes deterministic Reception and Evaluation entries.
-
-The host appends Authorisation and Execution entries, including:
-
-- permission decisions;
-- timestamps;
-- Action starts;
-- results;
-- failures;
-- retries;
-- resulting event IDs.
-
-Tethers must not claim an Action happened when it only proposed it.
-
-Do not add wall-clock timestamps to deterministic engine output. Host timestamps belong to host-generated Trail entries.
-
-## Reversibility
-
-Do not describe all Actions as undoable.
-
-Use these distinctions:
-
-- `reversible` — the host can reliably restore the previous state;
-- `compensatable` — another Action may counteract the Effect;
-- `irreversible` — no meaningful automatic reversal exists.
-
-“Undo support” means declared reversal or compensation, not magical rollback.
-
-## Tether Sets
-
-Tether Sets provide project-specific behaviour without hard-coding project modes into Lantern Keeper.
-
-Possible software-project sets:
-
-- Software Project Stewardship
-- Architecture Protection
-- Coding Handover
-- Milestone Audit
-
-Possible music-project sets:
-
-- Song Version Tracking
-- Mix Decision Memory
-- Export Archiving
-- Creative Direction Review
-
-Possible research-project sets:
-
-- Source Verification
-- Contradiction Detection
-- Evidence Confidence
-- Research Digest
-
-Tether Sets are future-facing. Do not implement package management or a Set marketplace during 0.1.
-
-## What belongs in Tethers
-
-Use Tethers where behaviour should be:
-
-- visible;
-- configurable;
-- disableable;
-- permissioned;
-- explainable;
-- auditable;
-- replaceable;
-- triggered across component boundaries.
-
-Use ordinary Rust, OCaml, TypeScript, or other implementation code for:
-
-- database internals;
-- byte conversion;
-- ordinary function calls;
-- UI rendering;
-- algorithms;
-- low-level error handling;
-- performance-critical machinery;
-- internal operations required for the host to function.
-
-Decision test:
-
-> Would a project owner reasonably want to inspect, change, disable, or audit this behaviour?
-
-If yes, it may belong in Tethers.
-
-If not, it probably belongs in ordinary code.
-
-## Tethers 0.1 goal
-
-Version 0.1 must prove one complete round trip:
-
-```text
-Rust host
-    sends event + Facts + Capability schemas + Tether
-        ↓
-OCaml engine
-    parses + validates + evaluates
-        ↓
-OCaml engine
-    returns Action Plan + evaluation Trail
-        ↓
-Rust host
-    authorises + executes mock Capability
-        ↓
-Rust host
-    appends execution Trail
-```
-
-Success criteria:
-
-- textual Tether parses;
-- Anchor matching works;
-- supported Conditions evaluate correctly;
-- missing or incorrectly typed inputs fail clearly;
-- Action arguments resolve correctly;
-- required Effects are reported;
-- host permission checking works;
-- mock Action execution works;
-- idempotency works;
-- golden response fixture passes;
-- complete Trail is visible.
-
-Do not add AI, GitHub, email, scheduling, adapters, package management, visual diagrams, or HQ before this round trip is reliable.
-
-## Implementation structure
-
-Expected prototype areas:
-
-```text
-tethers-0.1/
-    README.md
-    SPEC.md
-    examples/
-    protocol/
-    engine-ocaml/
-    host-rust/
-    scripts/
-```
-
-Primary implementation:
-
-```text
-engine-ocaml/bin/main.ml
-host-rust/src/main.rs
-```
-
-Protocol fixtures:
-
-```text
-protocol/request.json
-protocol/expected-response.json
-```
-
-The engine communicates using newline-delimited JSON over standard input and output.
-
-Do not introduce an FFI, local network service, database, or message broker for 0.1.
-
-## Windows development
-
-The primary current development machine is Windows.
-
-Provide native PowerShell entry points for development tasks. Unix shell equivalents may remain for portability, but Windows verification must not require Bash or jq unnecessarily.
-
-Native Windows opam is the preferred OCaml setup. Do not introduce WSL or Docker solely to compile this prototype unless Matthew explicitly chooses that route.
-
-Do not install software without explicit permission.
-
-## Working rules for Codex
-
-Before every task:
-
-1. Read this file and `docs/PROJECT_CONTROL.md`.
-2. Read the active packet and short project dashboard.
-3. Confirm the packet state, named owner, route, worker-note path, and base.
-4. Read the task-relevant authoritative documents and code named by the packet.
-5. Inspect Git status.
-6. Run the task-packet consistency gate.
-7. Preserve unrelated and user-authored changes.
-8. Stop if another owner already has the task `IN_PROGRESS`.
-
-For OCaml implementation tasks, read the relevant section of
-`docs/OCAML_GUIDE_FOR_AGENTS.md` and consult the linked official documentation
-before relying on model memory for unfamiliar syntax, APIs, or tooling.
+Tethers Core must remain application-agnostic. Do not add Lantern Keeper,
+GitHub, email, files, music, AI, or other product-specific grammar or branches.
+Those belong in Capabilities, adapters, host policy, or host code.
+
+## Canonical Vocabulary
+
+Use these terms consistently:
+
+| Term | Meaning |
+| --- | --- |
+| Tether | One behavioural rule |
+| Tether Set | A collection of related Tethers |
+| Anchor | Event that wakes a Tether |
+| Fact | Immutable input available to Conditions |
+| Condition | Deterministic test over a Fact |
+| Action | Requested Capability invocation |
+| Capability | Typed operation exposed by a host or adapter |
+| Effect | External consequence declared by a Capability |
+| Plan | Ordered Actions proposed by Tethers |
+| Trail | Causal record of evaluation, authorisation, and execution |
+| Host | Application supplying input and enforcing policy |
+| Adapter | Component exposing another system as Capabilities |
+| HQ | Future visual editor, tester, and Trail inspector |
+
+Avoid casual synonyms when a canonical term applies.
+
+## Non-Negotiable Invariants
+
+- Given the same complete deterministic input, Core produces the same semantic
+  Plan and evaluation Trail.
+- Core does not secretly read the clock, environment, filesystem, network,
+  database, live state, randomness, or undeclared configuration.
+- Time and changing state must arrive explicitly as event data or Facts.
+- A Plan is a request, not permission.
+- The planner never inspects or trusts complete capability manifests.
+- Current manifest and provider pins must be checked before dispatch.
+- Structured scope without a host/binding-owned assessment fails closed.
+- Do not infer argument-to-resource mappings without an approved binding or
+  adapter contract.
+- AI judgement is an explicit Capability Action whose structured result becomes
+  visible data for a later Anchor. It never runs invisibly in Conditions.
+- Actions are ordered and initially dispatched serially.
+- No automatic retry until idempotency is proved end to end.
+- Tethers must not claim that an Action happened when it only proposed it.
+- Do not change 0.1 syntax or semantics without an explicit design gate.
+
+## Current Language Shape
+
+A Tether contains one Anchor, zero or more Conditions, and one or more Actions.
+The current precise syntax is defined only by `tethers-0.1/SPEC.md`.
+
+Do not use this guidance file as a substitute for the specification. In
+particular, do not invent loops, arithmetic, functions, hidden coercion,
+parallel Actions, branching inside `do`, or direct Action-result chaining.
+
+## Working Rules
+
+Before work:
+
+1. Confirm packet state, owner, route, worker-note path, base commit, and expected
+   pre-existing changes.
+2. Inspect Git status.
+3. Run the task-packet checker.
+4. Read only the packet-named context and task-relevant code.
+5. Stop if another owner already has the task `IN_PROGRESS`.
 
 During work:
 
-- Keep each implementation step under approximately 10 minutes.
-- Do not expand scope to fill available time.
-- Fix clear defects, not speculative future problems.
-- Do not silently change language semantics.
-- Do not add dependencies without justification.
-- Keep Core application-agnostic.
-- Maintain deterministic output.
-- Keep protocol fixtures synchronized with intentional changes.
-- Prefer small tests proving one behaviour.
-- Do not replace working foundations to make a demonstration easier.
-- Never modify permissions or safety boundaries merely to make a test pass.
+- Keep the change bounded to the packet.
+- Preserve unrelated and user-authored changes.
+- Fix demonstrated defects, not speculative future problems.
+- Do not add dependencies or alter safety boundaries merely to make tests pass.
+- Prefer small focused tests that prove one required behaviour.
+- Stop when requirements conflict or a missing design decision blocks safe work.
+- After two materially similar failed attempts, stop and record exact evidence
+  plus one smallest unresolved question.
 
 After work:
 
-1. Run the relevant tests and inspect the complete diff and Git status.
-2. Report exact results, including blocked and unrun tests.
-3. Create the worker note at the exact path named by the packet.
-4. Update the packet to `COMPLETE` or `BLOCKED`; completion requires work,
-   evidence, and the worker note.
-5. Update `docs/CURRENT_GOAL.md`, `docs/TASK_QUEUE.md`, and
-   `docs/PROJECT_DASHBOARD.md` only with facts established by this task.
-6. State the smallest useful next task, but do not begin it.
-7. Stop. Do not continue into speculative cleanup or repeated validation.
+1. Run the required formatter, compiler, focused checks, relevant regression
+   suite, integration scripts, and whitespace checks.
+2. Inspect the complete diff and final Git status.
+3. Write the worker note at the exact path named by the packet.
+4. Update the packet to `COMPLETE` or `BLOCKED` with honest evidence.
+5. Update current-state documents only with facts established by this task.
+6. State the smallest useful next task and stop. Do not begin it.
 
-## Project constitution
+Do not commit, push, merge, amend, tag, publish, or open a pull request unless
+the current task explicitly authorises it.
 
-The authoritative project constitution is `docs/CONSTITUTION.md`. It governs
-enduring design principles. `tethers-0.1/SPEC.md` remains authoritative for the
-current precise 0.1 language and protocol semantics.
+## Development Environment
 
-## Final scope warning
+- Active prototype tree: `tethers-0.1/`.
+- Primary development environment: native Windows.
+- Required automation shell: PowerShell 7 (`pwsh.exe`).
+- Native Windows opam is the preferred OCaml setup.
+- Do not introduce WSL, Docker, Bash, jq, a database, FFI, network service, or
+  message broker merely for convenience.
+- Do not install software without Matthew's explicit permission.
 
-The main project risk is not whether Tethers can support many applications. It can.
+## Control Check
 
-The risk is allowing attractive future uses to enlarge the language before its core semantics are proven.
+Run before handoff and before claiming completion:
 
-Files, GitHub, email, music software, calendars, AI agents, Home Assistant, and Lantern Keeper are demonstrations of the Capability model—not version 0.1 requirements.
-
-The Core should remain stubbornly ignorant:
-
-> It knows rules, values, schemas, Plans, and Trails.
-> It does not know what an invoice, song, repository, email, or memory is.
-
+```powershell
+pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 ```
+
+The goal is not to use the most agents or produce the most documentation. The
+goal is the least total compute and Matthew effort per accepted, correct change.
