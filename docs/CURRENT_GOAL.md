@@ -86,12 +86,19 @@ No J05 implementation is authorised merely because J04a is complete.
 
 ## Active Development Posture
 
+Current operating mode: **Gorilla Coding 🦄**.
+
+- Lucy in ordinary chat controls architecture, task compilation, GitHub-visible
+  review, acceptance, and continuation.
+- Cline is the default implementation owner for ordinary Green and Amber work.
+- Codex enters for Red implementation or sign-off, difficult local failure,
+  Git/environment/recovery work, or machine-required diagnosis.
+- Matthew may paste Cline's concise report to Lucy as the normal return handoff.
+- Copilot is not part of the active route.
 - Active prototype tree: `tethers-0.1/`.
 - Required automation shell: PowerShell 7 (`pwsh.exe`).
 - Keep implementation tasks small, bounded, and owned by one worker.
 - Require focused regressions plus the complete relevant verification suite.
-- Reserve Lucy/Codex for Red design gates, independent review, difficult local
-  diagnosis, and work that genuinely requires direct computer access.
 - Do not load the whole project history for routine implementation tasks.
 
 ## Authoritative References
@@ -111,7 +118,8 @@ No J05 implementation is authorised merely because J04a is complete.
 ## Historical Record
 
 This file is intentionally limited to the present goal, accepted baseline,
-frozen boundaries, and next authorised work. Completed milestone narratives,
-toolchain setup history, fixture-by-fixture records, and prior verification
-results belong in the task queue, decisions, worker notes, dashboard, and Git
-history rather than in every agent's default current-context package.
+frozen boundaries, next authorised work, and current operating posture.
+Completed milestone narratives, toolchain setup history, fixture-by-fixture
+records, and prior verification results belong in the task queue, decisions,
+worker notes, dashboard, and Git history rather than in every agent's default
+current-context package.
