@@ -1,25 +1,27 @@
 # Tethers — Lucy's Project Notes
 
-This is a compact orientation file for Lucy when returning to Tethers. It is not the language specification, constitution, task queue, or source of truth for current behaviour. Read the authoritative project files before changing semantics.
+This is compact orientation for returning to Tethers. It is not the language
+specification, Constitution, task queue, implementation standard, or source of
+truth for current behaviour. Read the authoritative project files before
+changing semantics or code.
 
-## The idea
+## The Idea
 
-Tethers is a small deterministic behaviour language and capability protocol for connecting events to clear, typed, permissioned actions.
-
-Friendly formulation:
+Tethers is a small deterministic behaviour language and capability protocol for
+connecting events to clear, typed, permissioned Actions.
 
 > Apps provide the sockets. Tethers provides the cables.
 
-Lantern Keeper may host Tethers, but Tethers must remain independent of it:
+Lantern Keeper may host Tethers, but Tethers remains independent:
 
 - Lantern Keeper remembers things.
-- Tethers responds to things and creates action plans.
-- Hosts, plugins, and agents perform actions.
+- Tethers responds to things and creates Plans.
+- Hosts, adapters, and providers perform Actions.
 - The Trail records what happened and why.
 
-## Design test
+## Design Test
 
-Tethers should remain:
+The Tethers language should remain:
 
 - small and elegant;
 - predictable and deterministic;
@@ -29,33 +31,39 @@ Tethers should remain:
 - permissioned, explainable, and auditable;
 - useful without becoming a general-purpose programming language.
 
-Prefer one clear, canonical way to express each idea. Do not add aliases or alternative spellings merely for convenience. Every extra form increases ambiguity for humans, AI authors, documentation, formatting, and HQ.
+Prefer one canonical expression for each language concept. Additional aliases,
+spellings, and decorative forms increase ambiguity for humans, AI, formatting,
+documentation, and HQ.
 
-## Architectural boundary
+This small-language rule does not restrict the implementation languages. OCaml,
+Rust, PowerShell, and future implementation code follow
+`docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` and should use the language's real
+strengths where justified.
 
-The intended execution boundary is:
+## Architectural Boundary
 
-1. A host sends JSON containing an event, facts, capabilities, and Tether source.
-2. The OCaml engine parses, validates, and evaluates it.
-3. The engine returns a JSON action plan and Trail.
-4. The host independently checks permissions and conflicts.
-5. The relevant host or adapter executes each authorised action.
+1. A host sends an event, immutable Facts, Capability schemas, and Tether source.
+2. The OCaml engine parses, validates, evaluates, and proposes an ordered Plan.
+3. The host resolves current trusted capability and policy state.
+4. Approved Actions cross a durable intent boundary before execution.
+5. The host validates outcomes and appends authorisation and execution Trail
+   entries.
+6. Known outcomes may generate visible Result Anchors for later evaluation.
 
-The engine plans; it does not secretly perform external effects.
+The engine plans. It does not secretly perform external Effects or grant itself
+permission.
 
-Applications expose:
+Applications expose Anchors, Facts, and Capabilities. Tethers Core must not
+contain application-specific branches or modes. Files, Lantern Keeper, GitHub,
+music tools, AI, and other integrations are Capability sets, not grammar
+features.
 
-- Anchors: events that wake rules;
-- Facts: simple visible state inspected by Conditions;
-- Capabilities: typed actions with declared inputs, outputs, effects, and permission requirements.
+An application Capability is a request through the application's public
+judgement boundary. For example, `lantern.memory.record` asks Lantern Keeper to
+process material according to its own memory rules; it must not bypass those
+rules and mutate storage directly.
 
-Tethers Core must not contain application-specific branches or modes. Files, Lantern Keeper, GitHub, music tools, AI, and other integrations are capability sets—not grammar features.
-
-An application capability is a request through that application's public judgement boundary. For example, `lantern.memory.record` asks Lantern Keeper to process material according to its own memory rules; it must not bypass those rules and directly mutate storage.
-
-## Language model
-
-The conceptual shape is:
+## Language Model
 
 ```tethers
 tether "Name"
@@ -73,101 +81,110 @@ do
 ```
 
 - Anchor: what starts evaluation.
-- Conditions: facts that must match.
-- Actions: capabilities to include in the plan.
-- Trail: the engine-generated explanation of reception, evaluation, authorisation, and execution reporting.
+- Conditions: deterministic tests over supplied Facts.
+- Actions: Capability invocations proposed in the Plan.
+- Trail: the explanation of reception, evaluation, authorisation, and execution.
 
-The same event, facts, capabilities, permissions, and Tether version should produce the same action plan and evaluation Trail. AI may be called only as an explicit capability. AI output becomes recorded data that later deterministic rules may inspect.
+The same complete deterministic input should produce the same semantic Plan and
+evaluation Trail. AI may be called only as an explicit Capability. Its structured
+output becomes visible data that later deterministic rules may inspect.
 
-## Error principles
+## Error And Trust Principles
 
-- Errors discovered after evaluation context exists should preserve correlation identifiers and accumulated Trail where the specification says so.
-- No Action should be planned after a failed Condition or Action-planning error.
-- Expected evaluator outcomes should use explicit OCaml variants where practical.
-- Exceptions should remain narrow and be caught at deliberate boundaries; do not use them as casual general control flow.
-- Fixtures define and protect observable 0.1 behaviour. Change a frozen fixture only with an intentional semantic decision and corresponding specification update.
+- Preserve correlation identifiers and trustworthy accumulated Trail context
+  where the specification requires them.
+- No Action is planned after a failed Condition or planning error.
+- Model distinct outcomes distinctly; do not merge denied, unavailable, failed,
+  cancelled, timed out, and uncertain states.
+- Exceptions belong at deliberate boundaries, not as casual general control
+  flow.
+- Fixtures protect observable 0.1 behaviour. Change a frozen fixture only with
+  an authorised semantic decision and corresponding specification update.
+- The planner never trusts complete manifests or provider claims.
+- Hosts check current manifest, provider, policy, and scope state before dispatch.
+- Unknown or unestablished trust state fails closed.
 
 ## HQ
 
-HQ is a visual editor and live view generated from the same underlying rule representation as the text. Text and diagram must never become separate sources of truth.
+HQ is a visual editor and live view of the same underlying Tether as the text.
+They must never become separate sources of truth.
 
-HQ should make these immediately visible:
+HQ should make the Anchor, Conditions, Actions, Effects, permission state, Trail,
+preview results, and supported reversal visible. Do not design syntax solely for
+visual prettiness, but every language construct needs one unambiguous visual
+representation.
 
-- the Anchor;
-- each Condition and its pass/fail path;
-- planned Actions;
-- required effects and permissions;
-- Trail and execution history;
-- preview/test results;
-- undo availability where the host supports it.
+## Current Orientation
 
-Do not design text syntax solely for visual prettiness, but ensure every language construct has one unambiguous visual representation.
+Verify current details in the repository because they change. The principal
+starting points are:
 
-## Current implementation orientation
+1. `docs/CONSTITUTION.md` — enduring Tethers language principles.
+2. `tethers-0.1/SPEC.md` — precise signed-off 0.1 semantics.
+3. `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` — code and language-use standard.
+4. `AGENTS.md` — concise operating guidance.
+5. `docs/PROJECT_CONTROL.md` — ownership and task-state contract.
+6. `docs/DECISIONS.md` — accepted architectural decisions.
+7. `docs/CURRENT_GOAL.md` and `docs/PROJECT_DASHBOARD.md` — current state.
+8. `docs/OCAML_GUIDE_FOR_AGENTS.md` — verified OCaml environment and cautions.
 
-Verify these details in the repository because they can change:
+Current implementation uses OCaml 5.5, Rust, PowerShell 7, Yojson, native Windows
+opam, JSON fixtures, and MCP transcript tests. The project-local OCaml switch is
+path-bound, so do not casually move its directory.
 
-- active development tree: `tethers-0.1/`;
-- engine: OCaml 5.5, Dune, Yojson;
-- host/demo executor: Rust;
-- native Windows workflow using PowerShell 7;
-- local opam switch is path-bound, so do not casually move the tree;
-- protocol behaviour is protected by discoverable JSON fixture cases and deterministic-repeat testing;
-- the OCaml code has been separated into parser, protocol, and evaluator/I/O responsibilities.
+For language-specific work, consult the exact official documentation rather than
+relying on model memory. The controlling semantic documents decide intended
+behaviour; the compiler and tests determine whether the implementation actually
+satisfies it.
 
-Known project documents to read before substantial work:
+## Collaboration
 
-1. `docs/CONSTITUTION.md` — enduring values and boundaries.
-2. `AGENTS.md` — agent operating rules.
-3. `tethers-0.1/SPEC.md` — authoritative current 0.1 semantics.
-4. `docs/DECISIONS.md` — accepted architectural decisions.
-5. `docs/CURRENT_GOAL.md` — current checkpoint.
-6. `docs/TASK_QUEUE.md` — planned work.
-7. `docs/OCAML_GUIDE_FOR_AGENTS.md` — verified OCaml environment and house style.
+Matthew owns product intent and final judgement. Current role assignment and
+routing live in `docs/PROJECT_CONTROL.md` and `docs/AGENT_WORKFLOW.md`; this
+orientation file does not freeze vendors or models.
 
-For OCaml-specific work, consult the relevant section of the official OCaml 5.5 manual instead of relying on memory. In particular, revisit variants, pattern matching, exceptions, modules/compilation units, and the exact standard-library APIs touched by the task.
+Ordinary chat Lucy can inspect pushed GitHub state and handle architecture,
+review, task compilation, and acceptance checking. Computer-enabled workers are
+used when implementation or local machine access is genuinely required. One task
+has one owner, and reports are not proof until repository evidence supports them.
 
-## Collaboration model
-
-Matthew owns product intent and final judgement.
-
-Lucy helps maintain the conceptual model, compress ideas, identify the next bounded milestone, and watch for architectural drift.
-
-Cline with DeepSeek is useful for narrow implementation tasks with explicit scope, files, forbidden changes, tests, and a short timebox. It should normally leave work uncommitted for review.
-
-Codex should inspect the actual diff, correct mistakes or confusion, run proportional verification, update project state when warranted, and handle Git commits. Neither agent's report is proof; trust but verify.
-
-## Before proposing or reviewing a change
+## Before Proposing Or Reviewing A Change
 
 Ask:
 
-1. Does this make the language smaller or merely more capable?
-2. Is there already one way to express it?
-3. Is it visible, deterministic, typed, permissioned, and explainable?
-4. Does it belong in Tethers, or in the host/application's normal code?
-5. Can HQ represent it without inventing a second model?
-6. Can a human understand it at a glance?
-7. Can an AI generate it reliably from the specification?
-8. Is the behaviour protected by a focused fixture?
-9. Does the Trail explain both success and failure?
-10. Has the relevant current documentation and actual source been checked?
+1. Does it belong in the Tethers language, a Capability, an adapter, or ordinary
+   implementation code?
+2. Is there already one canonical way to express the language concept?
+3. Is behaviour visible, deterministic, typed, permissioned, and explainable?
+4. Can HQ represent it without inventing a second model?
+5. Can an AI generate the Tether reliably from the specification?
+6. Does the implementation use its programming language idiomatically and make
+   invalid states difficult?
+7. Is each abstraction justified by a current invariant or boundary?
+8. Do focused tests and fixtures prove both success and required failure paths?
+9. Does the Trail explain the outcome honestly?
+10. Has the live source and current authoritative documentation been checked?
 
-## Warning signs
+## Warning Signs
 
 Pause if a proposal introduces:
 
-- application-specific grammar or language modes;
-- arbitrary scripting or hidden computation;
+- application-specific grammar or modes;
+- arbitrary scripting or hidden computation in Tethers;
 - invisible AI judgement controlling workflow;
-- direct side effects inside the evaluator;
-- multiple spellings for the same concept;
+- direct Effects inside the evaluator;
+- multiple language spellings for one concept;
 - permission checks performed only by the planner;
 - a visual model that can drift from source text;
-- behaviour not represented in fixtures and the specification;
-- abstraction added before the concrete 0.1 behaviour requires it.
+- behaviour absent from the specification and fixtures;
+- speculative framework layers with no current invariant or boundary;
+- primitive implementation representations chosen only to appear simple;
+- advanced implementation technique with no concrete engineering benefit.
 
-## North star
+## North Star
 
-Tethers should feel less like programming an automation platform and more like stating a small, inspectable agreement:
+Tethers should feel less like programming an automation platform and more like
+stating a small, inspectable agreement:
 
-> When this happens, if these visible facts are true, request these permitted actions—and leave a complete Trail.
+> When this happens, if these visible Facts are true, request these permitted
+> Actions, and leave a complete Trail.
