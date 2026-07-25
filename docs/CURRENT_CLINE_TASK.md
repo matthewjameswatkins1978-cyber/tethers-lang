@@ -16,7 +16,7 @@ Worker note: `docs/worker-notes/2026-07-25-j05-authoritative-implementation.md`
 
 Base branch: `main`
 
-Base commit: `2c9b161579a7bdf016754dc6814bde9c4f1b79b7`
+Base commit: `acfe31618ec3a690910ab0a7f0222cec69da90d7`
 
 ## Objective
 
@@ -36,6 +36,38 @@ as reference and rebuilding the production orchestration seam from current
 - The safety snapshot also contains obsolete workflow files and incomplete J07
   code. Neither may be imported wholesale.
 - `docs/J05_EXACT_ASK_APPROVAL_DESIGN.md` is the sole J05 authority.
+- The packet checker now matches field and section names case-insensitively.
+
+## Preflight self-repair authority
+
+Codex must fix bounded control-plane or preflight defects itself, rerun the gate,
+and continue without returning to Lucy when the correction does not alter product
+semantics, trust boundaries, implementation scope, or accepted architecture.
+
+Codex is authorised to:
+
+- restore this packet and its worker note after a previous preflight-only
+  `BLOCKED` attempt;
+- update `Base commit` to the current clean `origin/main` HEAD when no product
+  implementation has started and intervening commits have already been accepted
+  on remote `main`;
+- correct packet formatting, heading capitalisation, stale status, worker-note
+  metadata, expected-clean-state declarations, ignored local evidence files, and
+  equivalent mechanical checker-contract faults;
+- make the smallest necessary change to the packet checker when the checker is
+  clearly rejecting semantically equivalent packet formatting rather than
+  detecting a real safety problem;
+- record every self-repair in the final worker note and include before/after gate
+  evidence.
+
+Codex must not use self-repair authority to change J05 behaviour, acceptance
+meaning, permissions, security boundaries, frozen decisions, implementation
+scope, or forbidden changes. Stop only when repair would require one of those
+changes, risk loss of work, conceal unexpected source drift, or weaken a safety
+control.
+
+A preflight-only correction is not counted as one of the two failed
+implementation attempts.
 
 ## Required behaviour
 
@@ -167,9 +199,15 @@ Stop with exact evidence and one smallest unresolved question when:
 - the safety reference and current code cannot be reconciled without importing
   unrelated or J07 work;
 - an unrelated repository or environment failure prevents trustworthy
-  verification.
+  verification;
+- a preflight repair would alter semantics, weaken a safety control, conceal
+  unexpected source changes, or risk losing work.
+
+Do not stop merely because a packet heading, base SHA, worker-note field, ignored
+evidence file, or equivalent mechanical control-plane detail is stale or
+malformed. Repair it, prove the gate, and continue.
 
 ## Expected pre-existing changes
 
 None. Start from a clean fresh branch created from current `origin/main` at or
-after `2c9b161579a7bdf016754dc6814bde9c4f1b79b7`.
+after `acfe31618ec3a690910ab0a7f0222cec69da90d7`.
