@@ -1,15 +1,21 @@
 ---
 name: tethers-task
-description: Run, review, or prepare the current bounded Tethers implementation task. Use when Matthew invokes /tethers-task.md, asks for the next Tethers job, pastes an approved handover, or wants Cline to continue from docs/CURRENT_CLINE_TASK.md.
+description: Run or review the current bounded Tethers implementation task. Use when Matthew invokes /tethers-task.md, pastes an approved Lucy handover, or wants Cline to continue from docs/CURRENT_CLINE_TASK.md. Do not use this skill to invent or compile the next task.
 ---
 
 # Tethers Task
 
-This skill is the low-friction entry point for bounded Tethers work.
+This skill is the low-friction Cline entry point for Gorilla Coding 🦄.
 
-## First action
+## First Action
 
-Read `docs/CURRENT_CLINE_TASK.md`.
+Read:
+
+- `AGENTS.md`
+- `docs/PROJECT_CONTROL.md`
+- `docs/AGENT_WORKFLOW.md`
+- `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md`
+- `docs/CURRENT_CLINE_TASK.md`
 
 Then inspect:
 
@@ -19,69 +25,82 @@ git rev-parse HEAD
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 ```
 
-Do not edit anything until the task packet and live Git state agree.
+Do not edit anything until the packet and live Git state agree.
 
-## Task packet states
+## Task Packet States
 
 ### `READY`
 
-1. Run `.github/scripts/check-tethers-task-packet.ps1` and stop if it fails.
-   `Base commit` may equal `HEAD`, or it may be an ancestor followed only by
-   committed planning changes to `CURRENT_CLINE_TASK.md` and
-   `COPILOT_TRIAL.md`. This avoids the impossible requirement for a committed
-   packet to contain its own commit SHA.
-2. Confirm the checker's live dirty-path result matches `Expected pre-existing
-   changes`; planning-control documents being authored are excluded by design.
-3. Read `AGENTS.md`, `.clinerules/`, and only the authoritative documents and
-   code named by the packet.
-4. Reinspect the relevant implementation before trusting the packet.
-5. If Cline is in Plan mode, produce a plan of at most eight concrete steps and
-   ask Matthew to toggle to Act mode. Do not repeat the task text.
-6. In Act mode, implement only the packet.
-7. Run every required check in the stated order.
-8. Inspect the complete diff and final Git status.
-9. Change the packet status to `COMPLETE` only if every acceptance criterion is
-   met. Otherwise change it to `BLOCKED` and record the exact blocker.
-10. Do not commit, push, merge, amend, tag, install software, or start the next
-    task unless the packet explicitly authorises it.
+1. Run the packet checker and stop if it fails.
+2. Confirm Cline is the named owner or route.
+3. Confirm live dirty paths match `Expected pre-existing changes`.
+4. Read only the task-named authoritative documents, code, tests, and worker
+   notes.
+5. Reinspect the relevant implementation before trusting the packet or pasted
+   handover.
+6. In Plan mode, produce at most eight concrete steps. In Act mode, implement
+   only the packet.
+7. Use the target language idiomatically under the implementation standard.
+8. Run every required check in the stated order.
+9. Inspect the complete diff and final Git status.
+10. Write the exact worker note named by the packet.
+11. Mark the packet `COMPLETE` only when every acceptance criterion and evidence
+    requirement is met. Otherwise mark it `BLOCKED`.
+12. Run the packet checker again.
+13. Return the concise report defined by `docs/CLINE_HANDOFF.md`.
+14. Stop. Do not commit, push, merge, amend, tag, install software, clean up
+    beyond scope, or start the next task unless explicitly authorised.
 
 ### `PROPOSED`
 
-Review the proposal against the repository. Do not implement it. Return one
-short approval sentence and only the genuine unresolved decisions. If Matthew
-approves it, update the packet to `READY`; implementation begins only after
-that explicit approval.
+Review without implementation. Do not authorise it yourself. State any concrete
+contradiction or missing approval and stop. Lucy controls task approval and
+continuation.
 
-### `COMPLETE`, `BLOCKED`, or missing
+### `IN_PROGRESS`
 
-Do not silently invent a new task. Read `docs/CURRENT_GOAL.md` and
-`docs/TASK_QUEUE.md`, inspect the relevant code, and write the next smallest
-coherent task to `docs/CURRENT_CLINE_TASK.md` using status `PROPOSED`. Summarize
-it in plain English and ask Matthew for one approval. Treat uncertain work as
-the higher risk colour. Red work requires an explicit architectural decision
-before its status can become `READY`.
+Continue only when Cline is the named owner and this is the same task session.
+Otherwise stop to avoid two owners.
 
-## Pasted handovers
+### `COMPLETE`, `ACCEPTED`, or `REJECTED`
 
-If Matthew invokes this skill with a pasted handover:
+Do not implement or compile anything else. Tell Matthew to paste the current
+report to Lucy.
 
-1. Reinspect the live repository.
-2. Normalize the handover into the structure used by
-   `docs/CURRENT_CLINE_TASK.md`.
-3. Preserve explicit decisions, exclusions, tests, and stop conditions.
-4. Do not convert an unresolved Red decision into implementation work.
-5. Ask only for the single approval genuinely required, then save the approved
-   packet as `READY`.
+### `BLOCKED`
+
+Do not guess or invent a replacement. Return the exact evidence and smallest
+unresolved question for Lucy. After two materially similar failed attempts,
+Codex is the normal escalation.
+
+### Missing Packet
+
+Stop and tell Matthew to obtain the next bounded task from Lucy. Cline must not
+infer the next job from `CURRENT_GOAL.md`, `TASK_QUEUE.md`, or the roadmap.
+
+## Pasted Approved Handovers
+
+When Matthew provides an explicitly approved Lucy handover:
+
+1. reinspect the live repository;
+2. preserve decisions, exclusions, tests, and stop conditions;
+3. normalise it into `docs/CURRENT_CLINE_TASK.md` only when that write is
+   authorised;
+4. do not convert unresolved Red design into implementation;
+5. implement only after the resulting packet is `READY`.
 
 ## Reporting
 
-Keep the final report short:
+Return only:
 
-- outcome;
+- `COMPLETE` or `BLOCKED`;
 - files changed;
-- checks and exact results;
-- unresolved issue, if any;
+- important implementation choices;
+- checks run and exact results;
+- checks not run;
+- unresolved risks or smallest blocker;
+- worker-note path;
 - final Git status;
-- smallest next task.
+- pushed commit or branch reference when available.
 
-Never report an unrun check as passed.
+Never report an unrun check as passed. Copilot is not part of the current route.
