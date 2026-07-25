@@ -50,6 +50,34 @@ proofs and Trail records; only the canonical argument digest is retained.
   separation. Existing policy/dispatch tests cover fresh unavailable, schema,
   scope, no-intent, no-provider-call, and no-result-anchor fail-closed paths.
 
+### 28-case design mapping
+
+1. pending/de-dup: `j05_production_seam_consumes_exact_approved_fixture_before_intent`.
+2. grant ordering: same test.
+3. one-shot consume: same test and `approval::consume_is_one_shot_and_requires_full_proof`.
+4. replay: `approval::consume_is_one_shot_and_requires_full_proof`.
+5-14. proof-field drift and deterministic digests: `approval::deterministic_proof_includes_every_field_and_excludes_arguments` plus `j05_fresh_deny_invalidates_and_never_dispatches`.
+15. fresh Deny: `j05_fresh_deny_invalidates_and_never_dispatches`.
+16. Unavailable: `policy::effective_policy_reports_unavailable_for_absent_provider` and `dispatch::unavailable_returns_no_ready_action_and_writes_no_intent`.
+17. schema: `policy::effective_policy_denies_input_schema_violation`.
+18. scope violation: `policy::effective_policy_denies_scope_violation_before_local_allow`.
+19. scope not established: `policy::effective_policy_denies_scope_not_established_before_local_allow`.
+20-21. denial/cancellation: `j05_human_denial_and_cancellation_are_terminal_without_dispatch`.
+22. restart expiry: `approval::ApprovalStore::default` has no records; `ApprovalError::Missing` is covered by `j05_authorisation_trail_write_failures_leave_no_usable_approval`.
+23. intent failure after consume: `intent_write_failure_produces_zero_executor_calls` and the consumed-state assertion in `j05_authorisation_trail_write_failures_leave_no_usable_approval`.
+24. terminal reuse: `approval::records_are_distinct_and_terminal_records_are_not_pending`.
+25. failed Trail transitions: `j05_authorisation_trail_write_failures_leave_no_usable_approval`.
+26. unattempted Result Anchors: `no_result_anchor_on_ask`, `no_result_anchor_on_deny`, and `no_result_anchor_on_unavailable`.
+27. credentials absent: `approval::deterministic_proof_includes_every_field_and_excludes_arguments`.
+28. deterministic proof: `approval::deterministic_proof_includes_every_field_and_excludes_arguments`.
+
+### Red correction
+
+The review finding was corrected: a failed `approval_requested` append now
+discards the just-created pending record. Failed grant audit appends invalidate
+the approval; failed deny/cancel audit appends remain terminal; failed consumed
+audit appends leave the approval consumed and return before intent or dispatch.
+
 ## Discoveries
 
 The ordinary demonstration host deliberately returns `ScopeNotEstablished` for

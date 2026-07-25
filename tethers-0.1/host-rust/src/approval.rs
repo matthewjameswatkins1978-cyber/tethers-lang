@@ -209,6 +209,20 @@ impl ApprovalStore {
         })
     }
 
+    /// Roll back a newly-created pending record when its required request
+    /// audit record was not made durable.  It must never become approvable.
+    pub fn discard_pending(&mut self, approval_id: &str) -> Result<(), ApprovalError> {
+        let record = self
+            .records
+            .get(approval_id)
+            .ok_or(ApprovalError::Missing)?;
+        if record.state != ApprovalState::Pending {
+            return Err(ApprovalError::from_state(record.state));
+        }
+        self.records.remove(approval_id);
+        Ok(())
+    }
+
     pub fn decide(
         &mut self,
         approval_id: &str,

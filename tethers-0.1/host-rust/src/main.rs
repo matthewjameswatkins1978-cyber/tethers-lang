@@ -581,7 +581,12 @@ fn request_exact_approval(
         return Ok(Some(record.clone()));
     }
     let record = approvals.request(proof.clone());
-    trail.append_authorisation(&approval_trail_entry(&proof, "approval_requested", "ask"))?;
+    if let Err(error) =
+        trail.append_authorisation(&approval_trail_entry(&proof, "approval_requested", "ask"))
+    {
+        approvals.discard_pending(&record.approval_id)?;
+        return Err(error.into());
+    }
     Ok(Some(record))
 }
 
@@ -600,7 +605,16 @@ fn record_human_approval_decision(
         HumanApprovalDecision::Cancel => (approval::ApprovalState::Cancelled, "approval_cancelled"),
     };
     let record = approvals.decide(approval_id, next)?;
-    trail.append_authorisation(&approval_trail_entry(&record.proof, kind, "human_decision"))?;
+    if let Err(error) =
+        trail.append_authorisation(&approval_trail_entry(&record.proof, kind, "human_decision"))
+    {
+        // A failed grant audit must not leave dispatchable authority.  Denial
+        // and cancellation remain terminal, so neither can be reused.
+        if next == approval::ApprovalState::Approved {
+            approvals.invalidate_live(approval_id)?;
+        }
+        return Err(error.into());
+    }
     Ok(())
 }
 
@@ -3500,5 +3514,116 @@ mod tests {
             assert!(trail.entries.is_empty());
             assert!(trail.outcome_entries.is_empty());
         }
+    }
+
+    #[test]
+    fn j05_authorisation_trail_write_failures_leave_no_usable_approval() {
+        let (store, resolved) = resolved_approval_fixture();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let requirements = vec![CapabilityRequirement::new("fixture.ask", 1)];
+        let policy = HostLocalPolicy::new(PolicyRule::Allow);
+        let response = make_bridge_matched_response(&resolved);
+        let action = extract_proposed_action(&response).unwrap();
+
+        let mut approvals = approval::ApprovalStore::default();
+        let mut trail = RecordingTrail::new();
+        trail.injected_authorisation_error = Some(dispatch::TrailError::WriteFailed("full".into()));
+        assert!(request_exact_approval(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail
+        )
+        .is_err());
+        assert_eq!(
+            approvals.record("approval-1"),
+            Err(approval::ApprovalError::Missing)
+        );
+        let request = request_exact_approval(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail,
+        )
+        .unwrap()
+        .unwrap();
+
+        for decision in [
+            HumanApprovalDecision::Approve,
+            HumanApprovalDecision::Deny,
+            HumanApprovalDecision::Cancel,
+        ] {
+            let mut trial = approval::ApprovalStore::default();
+            let mut trial_trail = RecordingTrail::new();
+            let record = request_exact_approval(
+                &action,
+                &requirements,
+                &store,
+                &availability,
+                &policy,
+                policy::ScopeAssessment::ScopeNotEstablished,
+                &mut trial,
+                &mut trial_trail,
+            )
+            .unwrap()
+            .unwrap();
+            trial_trail.injected_authorisation_error =
+                Some(dispatch::TrailError::WriteFailed("full".into()));
+            assert!(record_human_approval_decision(
+                &record.approval_id,
+                decision,
+                &mut trial,
+                &mut trial_trail
+            )
+            .is_err());
+            let state = trial.record(&record.approval_id).unwrap().state;
+            assert!(matches!(
+                state,
+                approval::ApprovalState::Invalidated
+                    | approval::ApprovalState::Denied
+                    | approval::ApprovalState::Cancelled
+            ));
+        }
+
+        record_human_approval_decision(
+            &request.approval_id,
+            HumanApprovalDecision::Approve,
+            &mut approvals,
+            &mut trail,
+        )
+        .unwrap();
+        trail.injected_authorisation_error = Some(dispatch::TrailError::WriteFailed("full".into()));
+        let mut response = make_bridge_matched_response(&resolved);
+        let mut executor = MockExecutor::new();
+        assert!(resume_and_execute_exact_approval(
+            &mut response,
+            &request.approval_id,
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail,
+            &mut executor,
+            "evt-j05"
+        )
+        .is_err());
+        assert_eq!(
+            approvals.record(&request.approval_id).unwrap().state,
+            approval::ApprovalState::Consumed
+        );
+        assert!(trail.entries.is_empty());
+        assert!(trail.outcome_entries.is_empty());
+        assert!(executor.completed.is_empty());
+        assert!(response.get("result_anchor").is_none());
     }
 }
