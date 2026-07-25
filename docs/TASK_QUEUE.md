@@ -1,223 +1,143 @@
 # Task Queue
 
-## 0.2 Runtime Slice
+Updated: 2026-07-25
 
-- [x] J03a — Corrected the one-shot Ask resume rule and confirmation-denial
-      Trail wording. Codex controller sign-off recorded; J04 may now be
-      compiled from a fresh live packet.
-- [x] J03b — Froze the host-owned scope-assessment boundary. Policy combines
-      the assessment and denies absent/violating structured scope; only a later
-      binding/adapter task extracts resource arguments.
-- [!] J04 — Rejected in Codex review: the policy omitted comparison of the
-      Plan digest to the live verified digest, and the demo asserted
-      `WithinScope` despite no assessor. See the review note and J04a packet.
-- [x] J04a — Corrected the two J04 fail-closed paths: digest mismatch returns
-      `Unavailable`, and an unassessed structured scope denies before intent
-      or executor invocation. Accepted; J05 remains unauthorised.
+## Current State
 
-## Completed Milestones
+Latest accepted implementation checkpoint:
 
-- [x] Initial workspace inspection, extraction, and integration.
-- [x] Native Windows opam, OCaml 5.5.0, Dune, and yojson toolchain.
-- [x] Fixture validation, Rust tests, OCaml build, golden engine test, full demo.
-- [x] Verified native Windows baseline committed locally.
-- [x] PowerShell 7 automation scripts for all verification workflows.
-- [x] OCaml parser, protocol helpers, and correlated error envelopes.
-- [x] Fixture contract covering happy path, anchor mismatch, false condition,
-      condition boundary, condition errors, action planning errors, parse errors,
-      invalid indentation, argument uniqueness, argument reuse, and
-      capability-name uniqueness.
-- [x] `docs/CONSTITUTION.md`, `docs/DECISIONS.md`, `docs/CURRENT_GOAL.md`,
-      `docs/OCAML_GUIDE_FOR_AGENTS.md`, and `.clinerules/` established.
-- [x] Tethers 0.1 semantic baseline signed off.
+`d5ed278d4a2cae5e9ab8a3e1d8700fdcba7ae851`
 
-## MCP Direction Queue
+- [x] Tethers 0.1 semantic and protocol baseline signed off.
+- [x] OCaml MCP planner and validation surface complete.
+- [x] Manifest parsing, canonicalisation, digesting, and trusted store complete.
+- [x] Configured local stdio provider discovery and fail-closed admission complete.
+- [x] Deterministic capability projection complete.
+- [x] Planner-to-dispatch manifest, version, and provider pinning complete.
+- [x] Intent-first dispatch proof boundary complete.
+- [x] Executor output validation complete.
+- [x] Known-outcome Result Anchors complete.
+- [x] Four-outcome effective policy complete:
+  `allow`, `ask`, `deny`, and `unavailable`.
+- [x] J04a stale-digest and unestablished-scope correction accepted.
 
-1. [x] M0 documentation checkpoint: preserve `docs/MCP_PLAN.md`, reference it
-   from project guidance, and record the OCaml-owned MCP decision.
-2. [x] M1 read-only OCaml MCP dependency survey: inspect `ocaml-mcp`,
-   `snf_mcp`, and the OCaml `jsonrpc` package for identity, licence, MCP
-   revision, stdio framing, tools support, errors, tests, OCaml/Dune/Yojson
-   compatibility, Windows-native behaviour, and reproducible use.
-3. [x] M2 extract one canonical OCaml evaluator boundary used by both the
-   existing engine executable and any future MCP tool.
-4. [x] M3 MCP transcript fixtures covering initialization, tools/list,
-   tethers.evaluate, planner-error pass-through, malformed MCP calls, unknown
-   tools, call-before-initialization, and clean EOF/shutdown.
-5. [x] M4 minimal OCaml stdio server.
-6. [x] M5 real client verification:
-   - [x] Cline configured and verified (initialize, tools/list, matched
-     and not-matched tethers.evaluate calls, no Action executed, no Rust
-     host invoked).
-   - [x] Codex configured and verified through the project-scoped
-     `.codex/config.toml` and launcher.
-   - [x] M5 fully complete after both Cline and Codex real-client verification.
-7. [x] M6 MCP authoring support: `tethers.validate` tool using shared
-   `parse_tether` boundary, three new transcript fixtures
-   (validate-valid, validate-invalid, validate-missing-source), `tools/list`
-   updated to advertise both tools, all fifteen MCP transcript cases pass, full
-   regression suite passes.
-8. [x] M7 capability bridge design, not automatic execution.
-   - [x] Corrected the deterministic `manifest_digest` flow and schema-drift
-         fail-closed rules in `docs/CAPABILITY_BRIDGE.md`.
+The rejected J04 attempt remains in worker notes and Git history. It is not
+current project state.
 
-## Columbo Manifest Validation Queue
+## Active Gate
 
-### C1 — Manifest Parsing and Digesting (complete)
+- [ ] J05 Red design: exact one-shot Ask approval and resume semantics.
 
-Final checkpoint: `34330b3` — feat: validate Columbo manifest semantics
+No J05 implementation is authorised until Lucy freezes:
 
-1. [x] C1a1 data types and structured error model.
-2. [x] C1a2 strict parsing, unknown-field handling, and recursive duplicate-key
-   rejection.
-3. [x] C1b1 investigate and verify the RFC 8785/JCS implementation/dependency
-   against official vectors. Selected `serde_json_canonicalizer` 0.3.x.
-4. [x] C1b2 canonicalisation, fixed SHA-256 digesting, and official/golden
-   vectors.
-5. [x] C1c semantic and cross-field validation.
+- exact approval identity and Action proof binding;
+- creation, expiry, cancellation, invalidation, and consumption;
+- resumed-Ask precedence;
+- denial and cancellation Trail behaviour;
+- unattempted Action and Result Anchor behaviour;
+- replay, stale-plan, and double-consumption failure cases.
 
-### C2 — Trusted Manifest Store (complete)
+Expected route:
 
-Final checkpoint: `25ab2bb` — feat: add trusted manifest store
+- Lucy: design and task compilation.
+- Codex: Red implementation or computer-enabled sign-off.
+- Cline: only later bounded Green or Amber subwork explicitly routed by Lucy.
 
-1. [x] C2a verify declared manifest digest.
-2. [x] C2b store verified manifests with identity and digest indexes,
-   insertion conflicts, idempotency, and retrieval semantics.
-3. [x] C2c merged into C2b because conflict and duplicate detection are part of
-   the insertion contract.
+## Remaining 0.2 Queue
 
-The 10-minute implementation-step limit is a clean-stop limit, not a promise
-that each task must finish in ten minutes. Incomplete tasks must stop cleanly
-and report remaining work.
+### Exact Approval
 
-## Joint Runtime Slice Queue
+- [ ] J05 implement and prove exact one-shot Ask resolution.
 
-The accepted build foundation is
-[`architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md`](architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md).
-It maps the remaining Tethers work into one immediate vertical runtime slice
-rather than separate architectural empires for provider admission, capability
-resolution, permission, dispatch, result Anchors, and Trail writing.
+### Honest Execution
 
-Next:
+- [ ] J06 freeze deadline and outcome classification.
+- [ ] J07 implement deadlines and first-class `uncertain` outcomes.
+- [ ] J08 emit `capability.uncertain` Result Anchors.
+- [ ] J09 add durable replay protection.
 
-1. [x] Define the smallest configured local provider binding and one real stdio
-   MCP provider fixture.
-   - The host now performs a real MCP initialization lifecycle and `tools/list`
-     against a deterministic stdio fixture.
-   - Discovery remains untrusted evidence: it is checked against a separately
-     authored, host-pinned manifest before that pre-verified manifest is
-     admitted.
-2. [x] Admit one verified manifest through the Trusted Manifest Store and derive
-   the live capability projection for one Tether Set with exact capability
-   versions.
-   - `ProjectedCapability` and `project_capabilities()` in `resolver.rs`
-     produce a deterministic live capability view from (requirements, store,
-     availability).
-   - Projection fails closed per capability: missing admission, unavailable
-     provider, or exact-version mismatch silently omits the entry.
-   - Each projected entry carries exact name, exact version, required effects,
-     and opaque manifest digest.
-   - 9 focused projection tests cover: success, multiple requirements, missing
-     admission omission, version mismatch omission, two unavailable-provider
-     snapshots, read-only semantics, determinism, and empty/full-failure edge
-     cases.
-3. [x] Carry the opaque manifest digest through deterministic planning for
-   bridge-backed capabilities without making Tethers Core inspect complete
-   manifests.
-   - Host now constructs approved capability projection before evaluation and
-     injects additive bridge planner input fields.
-   - Bridge-backed capability planner input carries opaque
-     `manifest_digest`, explicit `bridge_capability_version`, and
-     `bridge_provider_identity`.
-   - OCaml planner copies bridge fields into proposed Actions without
-     inspecting digest contents.
-   - Dispatch now fails closed on stale plans by comparing Action pins against
-     the currently resolved trusted binding (digest/version/provider) before
-     intent recording and execution.
-   - Production-path stale-plan D1/D2 mismatch is covered by focused host test
-     with zero executor calls on mismatch.
-   - Existing non-bridge fixtures remain compatible through additive design.
-   - Version representation is handled explicitly by bridge mapping rule
-     `<major>.0.0` <-> `bridge_capability_version` integer.
-   - Projection test/documentation now labels the unavailable-provider case
-     correctly.
-   - Independent Red review signed off on 2026-07-24 against implementation
-     checkpoint `9ed81b8` and review checkpoint `539dc4c`; no defect was
-     found in the projection, opaque copy, stale-plan, version-mapping, or
-     non-bridge compatibility boundary.
-4. [ ] Implement conservative effective policy outcomes:
-   `allow`, `ask`, `deny`, and `unavailable`.
-5. [ ] Dispatch serially with no automatic retries, intent-first Trail entries,
-   honest `succeeded`/`failed`/`uncertain` classification, output validation,
-   and standard result Anchors.
-    - [x] Dispatch intent preparation proof boundary hardened: `Allow` now
-          carries a policy-created exact-capability token, resolved capability
-          fields are private/read-only outside the resolver, and write failures
-          return no dispatch-ready token without claiming atomic JSONL append.
-          The production intent recorder trait is sealed to the file-backed
-          append/flush/sync implementation; the non-durable recorder is test-only.
-    - [x] Dispatch proof boundary globally enforced: every production
-          provider/executor invocation requires `&DispatchReadyAction`.
-          `authorise_and_execute()` now enforces exactly one Action, verifies
-          capability name and provider identity match the resolved binding,
-          calls `prepare_and_record()` before execution, and performs zero
-          executor calls on any preparation failure.  The old `HostPolicy`
-          effect-check bypass has been removed.  19 focused Rust tests prove
-          internal dispatch-boundary invariants and branches (212 total, all
-          pass).
-    - [x] Active process-level host scripts complement the Rust tests:
-          `test-host-denial.ps1` exercises the real OCaml engine -> Rust host
-          route through Deny policy and canonical `intent_failed` behaviour,
-          while `test-host-execution-failure.ps1` uses Allow policy, durable
-          `prepare_and_record()`, executor mode `fail`, and `FailingExecutor`
-          to prove one durable intent, one `action_started`, one
-          `action_failed`, and zero `action_completed` entries.  Both scripts
-          use unique GUID-based temporary Trails and clean them afterward.
-     - [x] Executor output validation now runs after executor `Ok(result)` and
-           before durable success outcome recording or `action_completed`.
-           Validation failures record one failed durable outcome with no result,
-           append `action_failed`, preserve failed status, and do not retry.
-           Executor errors bypass output validation and keep their original
-           failure message. Independent review also closed fail-open handling of
-           array items, enum/const constraints, schema-valued additional
-           properties, and unsupported assertion keywords.
-     - [x] Known-outcome Result Anchors (`capability.succeeded` after valid
-           successful output, `capability.failed` after executor error,
-           `capability.failed` after output-validation failure) emitted through
-           a focused `result_anchor` module.  No Result Anchor is created when
-           the Action was never attempted (Ask, Deny, Unavailable, identity
-           mismatch, intent-write failure).  `capability.uncertain`, event
-           queuing, deduplication, causal-depth enforcement, and follow-up
-           evaluation remain deferred.
+### Event Continuation
 
-Later:
+- [ ] J10 queue generated Result Anchors serially.
+- [ ] J11 reject duplicate event IDs and enforce causal depth eight.
 
-- Lantern Keeper capability-provider integration after Lantern Keeper exposes a
-  small stable capability surface.
-- Safe retry only after idempotency is proved end to end.
-- Additional providers, automatic discovery, HQ, remote transports, and
-  package/marketplace work.
+### Operable Runtime
 
-## 0.1 Finishing Queue
+- [ ] J12 freeze the minimal runnable Tether Set and configuration boundary.
+- [ ] J13 implement local `check`, `run`, and `trail` routes.
+- [ ] J14 prove one complete real local scenario and required negative cases.
 
-1. [x] Add version-rejection fixtures (`incompatible_protocol`, `incompatible_language`).
-2. [x] Add denied host integration test (prove `execution_status: denied`
-       and canonical `intent_failed` behaviour end-to-end).
-3. [x] Add execution-failure host test (prove process-level
-       `action_failed` path through `FailingExecutor` after durable intent).
-4. [x] Clarify or restrict Condition expected values to literals (no fixture proves `anchor.*` references in Condition expected-value position).
-5. [x] Add focused `contains` and boolean Condition fixtures (all four operators now covered).
-6. [x] Final 0.1 milestone review and sign-off.
+### Hardening And Release
 
-## Deferred
+- [ ] J15 consolidate the 0.2 failure matrix.
+- [ ] J16 prove clean-checkout, restart, and replay behaviour.
+- [ ] J17 independently sign off and tag 0.2.0.
 
-- Installing WSL, Docker, Bash, jq, or unrelated OCaml editor tooling.
-- Installing, pinning, vendoring, or selecting an MCP dependency before the M1
-  survey is reviewed. M1 is now recorded in `docs/MCP_DEPENDENCY_SURVEY.md`;
-  future dependency changes still require an explicit implementation task.
-- Implementing MCP server code before the M3 transcript fixtures. M3 is now
-  complete; server implementation belongs to M4.
-- Changing parser, evaluator, host, fixtures, scripts, or examples beyond definite build defects.
-- Adding adapters, package management, scheduling, HQ, or AI integration.
-- Production CLI polishing, contribution setup notes, release/changelog.
-- Architecture notes for adapters, HQ, and Trail inspection.
+The detailed dependency and acceptance map lives in `docs/ROAD_TO_0_2.md`.
+Executable tasks are compiled just in time into `docs/CURRENT_CLINE_TASK.md`.
+
+## Gorilla Coding Route 🦄
+
+```text
+Lucy inspects and compiles
+-> Matthew routes to Cline or Codex
+-> one worker implements and verifies
+-> worker writes the note and concise report
+-> Matthew pastes the report to Lucy
+-> Lucy accepts, corrects, or escalates
+```
+
+- Cline is the default Green and Amber implementation owner.
+- Codex handles Red work, difficult local failure, Git/environment/recovery, and
+  machine-required verification.
+- Copilot is not part of the active workflow.
+- Cline does not compile or begin the next task.
+
+## Completed Foundations
+
+### Toolchain And Verification
+
+- [x] Native Windows OCaml 5.5.0, Dune, Yojson, Rust, and PowerShell 7 workflows.
+- [x] Fixture validation, OCaml build, Rust tests, golden engine tests, MCP
+  transcripts, host denial/failure tests, demo, and whitespace checks.
+- [x] Deterministic-repeat and focused failure-branch coverage.
+
+### Tethers 0.1
+
+- [x] Parser, protocol helpers, deterministic evaluator, ordered Plans, and causal
+  evaluation Trails.
+- [x] Correlated evaluation and planning errors.
+- [x] Version rejection, indentation, argument uniqueness, type, missing Fact,
+  unknown Capability, and operator fixtures.
+- [x] Host authorisation, execution, idempotency identity, and execution Trail.
+
+### MCP And Capability Bridge
+
+- [x] M0-M7 MCP planning and authoring direction.
+- [x] `tethers.evaluate` and `tethers.validate` over stdio.
+- [x] Trusted manifest and provider binding design.
+- [x] Exact capability projection and opaque digest pass-through.
+
+### Columbo
+
+- [x] C1 manifest parsing, duplicate-key rejection, RFC 8785/JCS canonicalisation,
+  SHA-256 digesting, and semantic validation.
+- [x] C2 verified manifest admission and identity/digest indexes.
+
+## Deferred Beyond 0.2
+
+- Lantern Keeper provider integration until it exposes a small stable capability
+  surface.
+- Safe retry until idempotency is proved end to end.
+- Additional providers and automatic discovery.
+- Remote transports, OAuth, and network listeners.
+- HQ, package management, marketplace, scheduling, and adapters.
+- General plugin or AI-agent framework features.
+- Cosmetic rename of `tethers-0.1/` while the local opam switch remains
+  path-bound.
+
+## Working Rule
+
+The ten-minute implementation-step limit is a runaway brake, not a deadline.
+Stop at a coherent recoverable point and return exact evidence rather than rush,
+repeat attempts blindly, or invent missing decisions.
