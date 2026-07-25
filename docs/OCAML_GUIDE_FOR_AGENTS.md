@@ -14,8 +14,10 @@ Tethers currently targets OCaml `5.5.0` in its project-local opam switch. Do
 not assume syntax or APIs from Rust, F#, Haskell, Standard ML, Base, Core, or
 another ML-family environment apply to OCaml.
 
-When behaviour is version-specific or unfamiliar, check the linked official
-documentation. The compiler and Tethers contract tests are the final authority.
+When language behaviour is version-specific or unfamiliar, check the linked
+official documentation. Controlling specifications and decisions define intended
+Tethers behaviour; the compiler and contract tests verify whether the
+implementation satisfies it.
 
 ## B. Exact Environment
 
