@@ -22,7 +22,7 @@ function Get-Field {
         [string]$Name
     )
 
-    $pattern = '(?m)^{0}:\s*`([^`]+)`\s*$' -f [regex]::Escape($Name)
+    $pattern = '(?mi)^{0}:\s*`([^`]+)`\s*$' -f [regex]::Escape($Name)
     $match = [regex]::Match($Content, $pattern)
     if (-not $match.Success) {
         throw "Task packet must contain '${Name}: ``value``'."
@@ -36,7 +36,7 @@ function Get-Section {
         [string]$Name
     )
 
-    $pattern = '(?ms)^## {0}\s*(.*?)(?=^## |\z)' -f [regex]::Escape($Name)
+    $pattern = '(?ims)^## {0}\s*(.*?)(?=^## |\z)' -f [regex]::Escape($Name)
     $match = [regex]::Match($Content, $pattern)
     if (-not $match.Success) {
         throw "Task packet is missing section: $Name"
@@ -150,7 +150,7 @@ if (-not (Test-Path -LiteralPath $packetFullPath -PathType Leaf)) {
 $packet = Get-Content -LiteralPath $packetFullPath -Raw
 $baseMatch = [regex]::Match(
     $packet,
-    '(?m)^Base commit:\s*`([0-9a-fA-F]{40})`\s*$'
+    '(?mi)^Base commit:\s*`([0-9a-fA-F]{40})`\s*$'
 )
 if (-not $baseMatch.Success) {
     throw "Task packet must contain one full 40-character Base commit SHA."
@@ -169,7 +169,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Base commit $baseCommit is not an ancestor of HEAD $headCommit."
 }
 
-$controlV1 = $packet -match '(?m)^Control contract:\s*`1`\s*$'
+$controlV1 = $packet -match '(?mi)^Control contract:\s*`1`\s*$'
 $taskStatus = $null
 $workerNotePath = $null
 
@@ -255,7 +255,7 @@ if ($controlV1) {
 else {
     $legacyStatusMatch = [regex]::Match(
         $packet,
-        '(?m)^Status:\s*`([^`]+)`\s*$'
+        '(?mi)^Status:\s*`([^`]+)`\s*$'
     )
     if ($legacyStatusMatch.Success) {
         $taskStatus = $legacyStatusMatch.Groups[1].Value.Trim()
