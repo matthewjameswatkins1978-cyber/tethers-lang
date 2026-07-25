@@ -8,6 +8,9 @@ Before changing the repository, read:
 2. `docs/CURRENT_CLINE_TASK.md`
 3. `docs/PROJECT_DASHBOARD.md`
 
+Before changing implementation code, also read
+`docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` and the task-relevant language guide.
+
 Then read only the authoritative documents, code, tests, and worker notes named
 by the current task packet. Do not load the complete project archive by default.
 
@@ -33,12 +36,14 @@ execute Actions.
 
 Use the narrowest applicable authority:
 
-1. `docs/CONSTITUTION.md` for enduring design principles.
+1. `docs/CONSTITUTION.md` for enduring Tethers design principles.
 2. `tethers-0.1/SPEC.md` for precise 0.1 language and protocol semantics.
 3. `docs/DECISIONS.md` for accepted design decisions.
 4. `docs/CAPABILITY_BRIDGE.md` for the manifest, trust, and host bridge contract.
-5. The current task packet for this task's frozen scope and acceptance criteria.
-6. Code, tests, fixtures, Trails, and Git for implementation evidence.
+5. `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` for implementation technique and
+   language use. It never overrides product semantics or trust boundaries.
+6. The current task packet for this task's frozen scope and acceptance criteria.
+7. Code, tests, fixtures, Trails, and Git for implementation evidence.
 
 `docs/TETHERS_LUCY_NOTES.md` is optional orientation, not specification.
 Agent reports are claims until repository evidence verifies them.
@@ -137,6 +142,9 @@ During work:
 - Keep the change bounded to the packet.
 - Preserve unrelated and user-authored changes.
 - Fix demonstrated defects, not speculative future problems.
+- Use the implementation language idiomatically and to its appropriate depth.
+  Do not make production code primitive merely to make it easier for Matthew to
+  read; explain the design outside the code instead.
 - Do not add dependencies or alter safety boundaries merely to make tests pass.
 - Prefer small focused tests that prove one required behaviour.
 - Stop when requirements conflict or a missing design decision blocks safe work.
