@@ -1,91 +1,113 @@
 # Tethers Agent Development Workflow
 
+Status: current operating workflow
+
 ## Purpose
 
-Use the least expensive capable route for each task without weakening Tethers'
-correctness, determinism, permission boundaries, implementation quality, or
-auditability.
+Build Tethers with the least friction and compute that still produces correct,
+well-evidenced software.
+
+The current operating mode is **Gorilla Coding**: a deliberately small command
+chain built for speed, continuity, and scarce computer-enabled model usage.
+It is not permission to lower engineering standards.
 
 Repository documents, code, compiler output, tests, fixtures, Trails, and Git are
-the source of evidence. Agent reports are claims to verify.
+the evidence. Agent reports are useful handovers, but remain claims until checked
+against that evidence.
 
-`docs/PROJECT_CONTROL.md` defines ownership, task states, bounded context,
-worker notes, review, and stopping. `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md`
-defines how production implementation languages are used. This document applies
-those contracts to the available agent routes.
+`docs/PROJECT_CONTROL.md` defines task state and evidence.  
+`docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` defines implementation technique.
 
-## Roles, Not Brands
+## Current Team
 
-Treat roles as responsibilities rather than permanent model assignments:
+- **Matthew, product owner:** direction, priorities, consequential trade-offs,
+  consent, and final product judgement.
+- **Lucy in ordinary chat, architect and controller:** inspects pushed GitHub
+  state, resolves ambiguity, makes architecture and semantic decisions, compiles
+  the next bounded task, reviews Cline's result, accepts or rejects work, and
+  decides when Codex is required.
+- **Cline, primary implementation owner:** performs ordinary Green and Amber
+  implementation, runs the required checks, records evidence, writes the worker
+  note, and stops.
+- **Codex, escalation engineer:** enters for Red implementation or review, a
+  difficult local failure, Git or environment work, recovery, or a problem Cline
+  cannot resolve cleanly.
+- **Repository and toolchain:** hold durable state and objective evidence.
 
-- **Product owner, Matthew:** direction, priorities, taste, consequential
-  trade-offs, consent, and final product judgement.
-- **Task compiler and architecture reviewer, usually Lucy/Codex:** resolves
-  ambiguity, freezes decisions, classifies risk, prepares the bounded packet,
-  and performs independent review where required.
-- **Implementation owner:** one named worker owns the authorised change,
-  verification, and worker note.
-- **Verifier:** independently checks evidence and returns `ACCEPTED`,
-  `REJECTED`, or a bounded correction verdict.
-- **Repository and toolchain:** durable task state and objective evidence.
+Copilot is not part of the current active workflow. Historical Copilot notes may
+remain as history, but they do not route new work.
 
-Ordinary chat Lucy may inspect pushed GitHub state and perform architecture,
-review, task compilation, and acceptance checking when local machine access is
-not required. Codex is reserved for Red gates, difficult local diagnosis, Git or
-environment work, and tasks that genuinely require direct computer access.
+## Routing Rule
 
-Current preferred implementation routes are:
+Default route:
 
-- Green: Cline/DeepSeek or another reliable low-cost worker.
-- Amber: Copilot or another repository-aware worker, normally isolated.
-- Red: design and sign-off by Lucy/Codex; implementation by the most suitable
-  authorised worker.
+```text
+Matthew and Lucy decide direction
+    -> Lucy compiles one bounded task
+    -> Matthew gives it to Cline
+    -> Cline implements, verifies, and reports
+    -> Matthew gives the report to Lucy
+    -> Lucy inspects GitHub evidence and decides: accept, correct, or escalate
+```
 
-These routes may change with measured cost, reliability, and availability. Never
-lower a task's risk class to fit a cheaper worker.
+Use Codex when:
 
-## Task Classification
+- the task is Red;
+- Cline reports a genuine architectural contradiction;
+- Cline has made two materially similar failed attempts;
+- the problem depends on unpushed local state, terminal behaviour, Git recovery,
+  environment configuration, or machine access Lucy does not have;
+- pushed evidence is incomplete or cannot establish the truth;
+- a milestone or release gate requires independent computer-enabled review.
+
+Lucy has final say on technical routing and acceptance within Matthew's product
+authority. Matthew may perform the physical routing between chat, Cline, and
+Codex.
+
+## Risk Classification
 
 ### Green
 
 Narrow, reversible, follows an established pattern, and has objective focused
-verification. Self-verification may be sufficient when the packet permits it.
+verification. Cline implements. Lucy may accept from the pushed diff, tests, and
+worker note.
 
 ### Amber
 
 Crosses several files or modules and requires moderate implementation judgement,
-but the behaviour and invariants are already specified. Requires one bounded
-final review.
+but behaviour and invariants are already specified. Cline remains the default
+implementation owner. Lucy performs one bounded final review.
 
 ### Red
 
 Changes language or protocol semantics, permissions, capability trust,
 persistence, compatibility, concurrency, determinism, security boundaries, or
-hard-to-reverse architecture. Design must be frozen before implementation and
-independently signed off afterward.
+hard-to-reverse architecture.
+
+Lucy freezes the design before implementation. Codex normally implements or
+performs the computer-enabled final review. A Red implementation owner never
+signs off its own architectural work.
 
 When classification is genuinely uncertain, use the higher class.
 
-## Implementation Language
+## Implementation Standard
 
 All production code follows `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md`.
 
-Task scope and code sophistication are separate questions. A small task should
-produce a small diff, but may use powerful, idiomatic language features when
-those features make the domain safer, clearer, or easier to maintain.
+Task size and language sophistication are separate. A bounded task should make a
+bounded diff, but may use powerful, idiomatic OCaml or Rust features when they
+make the domain safer, clearer, or easier to maintain.
 
-Do not write OCaml, Rust, PowerShell, or future implementation code as a tutorial
-for Matthew. Explain technical choices in the packet, worker note, or review.
-Do not use advanced technique decoratively. Use the least complicated technique
-that accurately expresses and protects the design.
+Do not write implementation code as a tutorial for Matthew. Explain unfamiliar
+but justified technique in the task packet, Cline report, worker note, or review.
+Do not use advanced technique decoratively.
 
-## Standard Task Packet
+## Task Packet
 
-Every control-v1 implementation task starts from
-`docs/TASK_PACKET_TEMPLATE.md` and identifies:
+Every implementation task uses `docs/CURRENT_CLINE_TASK.md` and identifies:
 
-1. control contract, state, colour, one owner, and route;
-2. base branch, implementation checkpoint, and worker-note path;
+1. state, risk, one owner, and route;
+2. base branch, implementation checkpoint, and expected pre-existing changes;
 3. objective and relevant existing behaviour;
 4. required behaviour;
 5. relevant files and interfaces;
@@ -93,81 +115,74 @@ Every control-v1 implementation task starts from
 7. permitted and forbidden changes;
 8. acceptance criteria paired with verification;
 9. stop conditions;
-10. exact expected pre-existing changes.
+10. exact worker-note path.
 
-The worker note uses `docs/WORKER_NOTE_TEMPLATE.md` and is part of completion,
-not an optional chat report.
+`PROPOSED` is design-ready but not authorised.  
+`READY` authorises the named implementation.  
+`IN_PROGRESS` belongs to that owner.  
+`COMPLETE` is Cline's evidence-backed completion claim.  
+`BLOCKED` is a clean stop with one smallest unresolved question.  
+`ACCEPTED` and `REJECTED` are Lucy or the required verifier's verdicts.
 
-A worker must stop when requirements conflict, an architectural or safety
-decision is missing, unrelated failures prevent trustworthy verification, or two
-materially similar attempts fail to converge.
+## Normal Work Sequence
 
-## Working Sequence
+1. Lucy inspects the current GitHub state and compiles one task.
+2. Matthew gives the approved task to Cline, normally through
+   `/tethers-task.md`.
+3. Cline verifies packet state and live local Git state before editing.
+4. Cline implements only the authorised scope using the target language
+   idiomatically.
+5. Cline runs every required check, inspects the complete diff and Git status,
+   writes the worker note, and marks the task `COMPLETE` or `BLOCKED`.
+6. Cline returns a concise report to Matthew.
+7. Matthew pastes that report to Lucy. This is an accepted handoff in Gorilla
+   Coding mode, not a process failure.
+8. Lucy checks pushed GitHub evidence where available, reads the relevant worker
+   note and diff, then records one verdict or compiles one bounded correction.
+9. Matthew routes the next task to Cline or Codex as Lucy directs.
 
-1. Inspect the live repository, packet, and Git state.
-2. Confirm task class, owner, route, base, and expected pre-existing changes.
-3. Run the packet consistency checker.
-4. Read only task-relevant authoritative documents and code.
-5. Agree a design first when the task crosses a Red boundary.
-6. Implement only the accepted scope using the target language idiomatically.
-7. Run formatter, compiler, focused tests, relevant regression tests,
-   integration scripts, and whitespace checks required by the packet.
-8. Inspect the complete diff and final Git status.
-9. Write the exact worker note, update the task state honestly, and update short
-   current-state documents only with established facts.
-10. State the smallest useful next action and stop.
+Cline must not invent, authorise, or begin the next task. Lucy controls
+continuation.
 
-Do not commit, push, merge, amend, tag, publish, or open a pull request unless
-the task explicitly authorises it.
+## Report Contract
 
-## Handoff And Continuation
+Cline's return report should contain only:
 
-The normal Cline entry point is `/tethers-task.md`. It reads the approved
-contract from `docs/CURRENT_CLINE_TASK.md`, checks live Git state, and loads only
-task-relevant context.
+- outcome: `COMPLETE` or `BLOCKED`;
+- files changed;
+- important implementation choices;
+- commands and checks actually run, with exact results;
+- commands not run;
+- unresolved risks or the smallest blocker;
+- worker-note path;
+- final Git status;
+- commit or pushed branch reference when one exists.
 
-The local `/next-tethers-task` Copilot prompt is optional. Use it when direct
-checkout inspection materially helps. Ordinary chat Lucy can instead inspect
-pushed GitHub evidence and compile or review the next task without consuming
-Codex computer credits.
+The report may be pasted into chat. Durable decisions and evidence still belong
+in the packet, worker note, code, tests, dashboard, and Git.
 
-A completed task leads to one review verdict and, when appropriate, one bounded
-`PROPOSED` next packet. Do not prepare the next task while the implementation
-owner is still working. Do not create repeated audit loops without new evidence.
+## Failure And Stop Rules
 
-A milestone gate, Red decision, agent disagreement, ambiguous evidence, or
-untrustworthy local state must stop ordinary continuation and route to the
-appropriate independent reviewer.
+- One task has one implementation owner.
+- Do not let Cline and Codex edit the same task or checkout simultaneously.
+- After two materially similar failed attempts, stop and escalate with exact
+  evidence.
+- Do not turn a missing semantic, permission, or trust decision into code.
+- Do not use repeated audit loops without new evidence.
+- Do not begin cleanup or the next task after completion.
+- Commit, push, merge, amend, tag, installation, and publication require explicit
+  authority in the task or from Matthew.
+- Never claim an unrun check passed.
 
-## Task-Packet Consistency
+## Cost Posture
 
-Before authoring a packet, capture the implementation checkpoint and exact dirty
-paths. `Expected pre-existing changes` is that live snapshot, not a copied list
-from an older task.
+- Use ordinary chat Lucy for all repository-visible architecture, planning,
+  review, and acceptance work.
+- Use Cline as the normal coding engine.
+- Spend Codex only where machine access, Red risk, recovery, or demonstrated
+  Cline difficulty justifies it.
+- Optimise total compute and Matthew effort per accepted correct change, not the
+  number of agents involved.
 
-Each required negative branch must have a matching acceptance criterion and
-focused check. A representative failure case is not evidence for several
-separate fail-closed requirements.
-
-Run before handoff and before claiming completion:
-
-```powershell
-pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-```
-
-The checker validates control structure, ownership, base and dirty-state
-consistency, acceptance-to-verification mapping, and required worker-note state.
-
-## Cost And Safety Posture
-
-- Optimise total compute and Matthew effort per accepted correct change.
-- Prefer ordinary chat Lucy for repository-visible thought and review.
-- Reserve computer-enabled frontier work for tasks that need the machine or Red
-  judgement.
-- Do not multiply agents unless independent parallel evidence has real value.
-- Do not enable additional paid usage merely to avoid a clean stop.
-- Preserve terminal and consequential-action approval boundaries.
-- After two materially similar failures, stop with exact evidence and one
-  smallest unresolved question.
-- Put durable handovers in the repository. Do not use Matthew as the network
-  cable between agents.
+That is Gorilla Coding: few participants, short supply lines, strong evidence,
+and no ceremonial paperwork jungle.
