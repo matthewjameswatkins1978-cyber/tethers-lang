@@ -16,7 +16,7 @@ Worker note: `docs/worker-notes/2026-07-25-j06-deadline-outcome-implementation.m
 
 Base branch: `main`
 
-Base commit: `1f984ff3c89c66b5580e8b6e7936b8e41d9db93d`
+Base commit: `95976fdac466db61aaa1a88b5a1f0e8574101526`
 
 ## Objective
 
@@ -158,6 +158,18 @@ conceal source drift, risk losing work, or import unrelated code.
 14. Existing J03-J05 trust and regression tests remain green.
 15. The complete required verification passes and the worker note records exact
     commands and results.
+16. Tests prove outcome-audit failure preserves known or uncertain in-memory
+    truth, adds no standard Result Anchor, and authorises no retry.
+17. Tests prove the pure redaction boundary emits stable safe reasons for
+    durable outcome and Result Anchor records.
+18. Tests prove raw diagnostics, credentials, arguments, and provider-private
+    payloads do not cross durable boundaries.
+19. Tests prove consumed J05 approval remains consumed after all later outcome
+    and audit paths.
+20. Tests prove no automatic retry, implicit compensation, restart replay, or
+    J07 recovery behaviour is introduced.
+21. The 48-case J06 design matrix has individually identifiable test evidence
+    or an explicit one-to-one mapping.
 
 ## Required verification
 
@@ -228,4 +240,4 @@ completed module, or ordinary compiler/test failures. Continue until the task is
 ## Expected pre-existing changes
 
 None. Start from a clean fresh branch created from current `origin/main` at or
-after `1f984ff3c89c66b5580e8b6e7936b8e41d9db93d`.
+after `95976fdac466db61aaa1a88b5a1f0e8574101526`.
