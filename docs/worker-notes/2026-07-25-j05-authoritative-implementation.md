@@ -56,7 +56,16 @@ proofs and Trail records; only the canonical argument digest is retained.
 2. grant ordering: same test.
 3. one-shot consume: same test and `approval::consume_is_one_shot_and_requires_full_proof`.
 4. replay: `approval::consume_is_one_shot_and_requires_full_proof`.
-5-14. proof-field drift and deterministic digests: `approval::deterministic_proof_includes_every_field_and_excludes_arguments` plus `j05_fresh_deny_invalidates_and_never_dispatches`.
+5. `approval_format_version`: `approval::approved_record_rejects_each_independently_changed_proof_field` case `approval_format_version`.
+6. `evaluation_id`: same test case `evaluation_id`.
+7. `plan_id`: same test case `plan_id`.
+8. `action_id`: same test case `action_id`.
+9. `capability_name`: same test case `capability_name`.
+10. `capability_version`: same test case `capability_version`.
+11. changed arguments/`argument_digest`: same test case `argument_digest_from_changed_arguments`.
+12. `manifest_digest`: same test case `manifest_digest`.
+13. `provider_identity`: same test case `provider_identity`.
+14. forged/stale `approval_binding_digest`: same test case `forged_approval_binding_digest`.
 15. fresh Deny: `j05_fresh_deny_invalidates_and_never_dispatches`.
 16. Unavailable: `policy::effective_policy_reports_unavailable_for_absent_provider` and `dispatch::unavailable_returns_no_ready_action_and_writes_no_intent`.
 17. schema: `policy::effective_policy_denies_input_schema_violation`.

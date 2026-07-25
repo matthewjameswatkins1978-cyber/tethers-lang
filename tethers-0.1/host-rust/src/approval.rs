@@ -353,4 +353,69 @@ mod tests {
             Err(ApprovalError::Consumed)
         );
     }
+
+    #[test]
+    fn approved_record_rejects_each_independently_changed_proof_field() {
+        let original = proof();
+        let mut changed_format = original.clone();
+        changed_format.approval_format_version = "2".into();
+        let mut changed_evaluation = original.clone();
+        changed_evaluation.evaluation_id = "other-evaluation".into();
+        let mut changed_plan = original.clone();
+        changed_plan.plan_id = "other-plan".into();
+        let mut changed_action = original.clone();
+        changed_action.action_id = "other-action".into();
+        let mut changed_capability = original.clone();
+        changed_capability.capability_name = "other.capability".into();
+        let mut changed_version = original.clone();
+        changed_version.capability_version = 2;
+        let changed_arguments = ApprovalProof::new(
+            original.evaluation_id.clone(),
+            original.plan_id.clone(),
+            original.action_id.clone(),
+            original.capability_name.clone(),
+            original.capability_version,
+            &json!({"value": "changed"}),
+            original.manifest_digest.clone(),
+            original.provider_identity.clone(),
+        );
+        let mut changed_manifest = original.clone();
+        changed_manifest.manifest_digest = "sha256:other-manifest".into();
+        let mut changed_provider = original.clone();
+        changed_provider.provider_identity = "other-provider".into();
+        let mut forged_binding = original.clone();
+        forged_binding.approval_binding_digest = "sha256:forged".into();
+
+        let cases = vec![
+            ("approval_format_version", changed_format),
+            ("evaluation_id", changed_evaluation),
+            ("plan_id", changed_plan),
+            ("action_id", changed_action),
+            ("capability_name", changed_capability),
+            ("capability_version", changed_version),
+            ("argument_digest_from_changed_arguments", changed_arguments),
+            ("manifest_digest", changed_manifest),
+            ("provider_identity", changed_provider),
+            ("forged_approval_binding_digest", forged_binding),
+        ];
+
+        for (name, changed) in cases {
+            assert!(!original.exactly_matches(&changed), "{name}");
+            let mut store = ApprovalStore::default();
+            let record = store.request(original.clone());
+            store
+                .decide(&record.approval_id, ApprovalState::Approved)
+                .unwrap();
+            assert_eq!(
+                store.consume(&record.approval_id, &changed),
+                Err(ApprovalError::ProofMismatch),
+                "{name}"
+            );
+            assert_eq!(
+                store.record(&record.approval_id).unwrap().state,
+                ApprovalState::Approved,
+                "{name}"
+            );
+        }
+    }
 }
