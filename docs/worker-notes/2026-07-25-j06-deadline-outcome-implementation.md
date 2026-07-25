@@ -16,6 +16,8 @@ retry, compensation, protocol, planner, or manifest changes.
 
 Added host-owned monotonic deadline classification, typed adapter diagnostics,
 redacted durable reason codes, uncertain Result Anchors, and focused tests.
+The Red correction makes legacy string errors uncertain by default and passes a
+host-computed remaining monotonic duration into every typed provider call.
 
 ## Decisions and assumptions
 
@@ -36,10 +38,12 @@ the objective evidence for this worktree checkpoint.
 
 ## Discoveries
 
-The existing executor's untyped string error could not truthfully distinguish
-an explicit provider failure from post-invocation transport ambiguity.  J06
-therefore adds a typed classified-execution seam while preserving the existing
-string-based executor method for legacy executors.
+The Red review correctly identified that an untyped string error cannot prove
+provider-declared failure and that checking a clock only after synchronous
+execution cannot make an adapter deadline-aware.  The corrected compatibility
+seam maps legacy errors to `NoFinalResponse`; only an override can return
+`ExplicitProviderError`.  The typed seam receives the remaining monotonic
+duration immediately before invocation.
 
 ## Remaining risks
 
@@ -61,25 +65,25 @@ Independent Red review of this uncommitted J06 worktree.
 | Case | Evidence |
 | --- | --- |
 | 1 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor` proves durable intent exists before the deadline check. |
-| 2 | `tests::j06_elapsed_before_authorisation_does_not_consume_execution_deadline` (added below) proves elapsed injected time before dispatch does not consume the clock. |
-| 3 | `tests::j06_elapsed_before_authorisation_does_not_consume_execution_deadline` covers approval waiting for the same host-owned post-intent boundary. |
+| 2 | `tests::j06_elapsed_before_authorisation_does_not_consume_execution_deadline` proves elapsed injected planning time before intent leaves the provider a full `10s` remaining duration. |
+| 3 | Same test covers approval waiting before intent using the same full remaining duration. |
 | 4 | `outcome::ProductionMonotonicClock` uses `std::time::Instant`; `outcome::tests::deterministic_clock_advances_only_when_directed` exercises its deadline abstraction. |
-| 5 | `outcome::tests::deterministic_clock_advances_only_when_directed`. |
+| 5 | `outcome::tests::deterministic_clock_advances_only_when_directed` and `tests::j06_elapsed_before_authorisation_does_not_consume_execution_deadline`. |
 | 6 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor`. |
 | 7 | Same test (`calls == 0`). |
 | 8 | Same test (`outcome_entries.is_empty()`). |
 | 9 | Same test (`result_anchor` absent). |
 | 10 | `tests::authorise_and_execute_writes_succeeded_outcome`. |
-| 11 | `tests::authorise_and_execute_writes_failed_outcome`. |
+| 11 | `tests::authorise_and_execute_writes_failed_outcome` uses `FailingExecutor`'s explicit typed provider-error override. |
 | 12 | `tests::missing_required_output_field_fails_validation`. |
 | 13 | `tests::j06_response_observed_at_deadline_is_uncertain_even_when_provider_succeeds`. |
 | 14 | `tests::j06_post_invocation_transport_ambiguities_are_uncertain_and_redacted` table case `ProcessLost`. |
 | 15 | Same table case `ResponseMalformed`. |
 | 16 | Same table case `ResponseTruncated`. |
 | 17 | Same table case `ProtocolInterrupted`. |
-| 18 | Same table case `NoFinalResponse`. |
+| 18 | Same table case `NoFinalResponse`, now returned through the deadline-aware typed executor contract. |
 | 19 | `tests::j06_response_observed_at_deadline_is_uncertain_even_when_provider_succeeds`. |
-| 20 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor` and existing identity-mismatch regressions prove pre-boundary no dispatch. |
+| 20 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor` proves zero remaining duration causes no typed invocation; identity-mismatch regressions prove the other pre-boundary case. |
 | 21 | `tests::no_result_anchor_on_unavailable`. |
 | 22 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor`. |
 | 23 | `tests::no_result_anchor_on_deny`, `no_result_anchor_on_ask`, `no_result_anchor_on_unavailable`, and J06 pre-invocation test. |
@@ -123,7 +127,8 @@ Independent Red review of this uncommitted J06 worktree.
 ## Verification
 
 - `cargo fmt --check` — PASS.
-- `cargo test` — PASS, 332 tests passed, 0 failed.
+- `cargo test` — PASS, 333 tests passed, 0 failed, including the Red
+  regressions for legacy-string uncertainty and remaining-duration delivery.
 - `pwsh -NoProfile -File scripts/check-fixtures.ps1` — PASS, 46 JSON and 30
   JSONL fixtures valid.
 - `pwsh -NoProfile -File scripts/test-engine.ps1` — PASS, all listed engine

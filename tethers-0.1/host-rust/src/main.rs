@@ -440,16 +440,21 @@ trait CapabilityExecutor {
     /// not use independently supplied identity fields.
     fn execute(&mut self, ready: &DispatchReadyAction) -> Result<Value, String>;
 
-    /// Report only a trusted, typed provider outcome.  Existing executors that
-    /// expose just a string error are conservatively treated as an explicit
-    /// provider-declared failure; transports must override this method for
-    /// loss, malformed framing, interruption, or missing-final-response.
+    /// Execute with the host-computed remaining monotonic deadline.  Adapters
+    /// must bound their wait by `remaining` and report a typed ambiguity when
+    /// no trustworthy final response is available in time.
+    ///
+    /// The compatibility implementation never treats an untyped string error
+    /// as provider-declared failure: it is post-invocation uncertainty.
+    /// Adapters with a trusted explicit provider error must override this
+    /// method and return `ExplicitProviderError` themselves.
     fn execute_classified(
         &mut self,
         ready: &DispatchReadyAction,
+        _remaining: Duration,
     ) -> Result<Value, outcome::ProviderDiagnostic> {
         self.execute(ready)
-            .map_err(|_| outcome::ProviderDiagnostic::ExplicitProviderError)
+            .map_err(|_| outcome::ProviderDiagnostic::NoFinalResponse)
     }
 }
 
@@ -507,6 +512,15 @@ impl CapabilityExecutor for MockExecutor {
         self.completed.insert(idempotency_key);
         Ok(result)
     }
+
+    fn execute_classified(
+        &mut self,
+        ready: &DispatchReadyAction,
+        _remaining: Duration,
+    ) -> Result<Value, outcome::ProviderDiagnostic> {
+        self.execute(ready)
+            .map_err(|_| outcome::ProviderDiagnostic::NoFinalResponse)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -528,6 +542,14 @@ impl CapabilityExecutor for FailingExecutor {
 
     fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
         Err("executor failed as requested".to_string())
+    }
+
+    fn execute_classified(
+        &mut self,
+        _ready: &DispatchReadyAction,
+        _remaining: Duration,
+    ) -> Result<Value, outcome::ProviderDiagnostic> {
+        Err(outcome::ProviderDiagnostic::ExplicitProviderError)
     }
 }
 
@@ -935,7 +957,7 @@ fn authorise_and_execute_inner(
     // approvals, and a failed intent write have already happened outside it.
     let deadline_start = clock.now();
     let deadline = Duration::from_millis(ready.verified_manifest().manifest().timeout_ms);
-    if outcome::deadline_expired(clock, deadline_start, deadline) {
+    if outcome::remaining_until_deadline(clock, deadline_start, deadline).is_none() {
         json_trail.push(trail_entry(
             sequence,
             "execution",
@@ -962,7 +984,16 @@ fn authorise_and_execute_inner(
         Some(&ready.action_id().0),
     ));
     sequence += 1;
-    let provider_result = executor.execute_classified(&ready);
+    // Recheck from the same post-intent monotonic start at the actual call
+    // boundary.  A zero remaining duration is still unattempted.
+    let remaining = match outcome::remaining_until_deadline(clock, deadline_start, deadline) {
+        Some(remaining) => remaining,
+        None => {
+            response["execution_status"] = Value::String("unattempted".into());
+            return Ok(());
+        }
+    };
+    let provider_result = executor.execute_classified(&ready, remaining);
     let observed_after_deadline = outcome::deadline_expired(clock, deadline_start, deadline);
     let timestamp_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -3647,6 +3678,7 @@ mod tests {
         clock: &'a outcome::TestMonotonicClock,
         advance: Duration,
         result: Result<Value, outcome::ProviderDiagnostic>,
+        remaining: Option<Duration>,
         calls: u32,
     }
 
@@ -3662,8 +3694,10 @@ mod tests {
         fn execute_classified(
             &mut self,
             _ready: &DispatchReadyAction,
+            remaining: Duration,
         ) -> Result<Value, outcome::ProviderDiagnostic> {
             self.calls += 1;
+            self.remaining = Some(remaining);
             self.clock.advance(self.advance);
             self.result.clone()
         }
@@ -3700,11 +3734,13 @@ mod tests {
             clock: &clock,
             advance: Duration::ZERO,
             result: Ok(json!({"status": "recorded"})),
+            remaining: None,
             calls: 0,
         };
         let mut trail = RecordingTrail::new();
         let response = run_j06_case(&mut executor, &mut trail);
         assert_eq!(executor.calls, 1);
+        assert_eq!(executor.remaining, Some(Duration::from_secs(10)));
         assert_eq!(trail.outcome_entries[0].status, "succeeded");
         assert_eq!(response["execution_status"], "completed");
     }
@@ -3719,6 +3755,7 @@ mod tests {
             clock: &clock,
             advance: Duration::ZERO,
             result: Ok(json!({"status": "recorded"})),
+            remaining: None,
             calls: 0,
         };
         let mut response = make_matched_response(
@@ -3740,6 +3777,7 @@ mod tests {
         .unwrap();
         assert_eq!(trail.entries.len(), 1, "intent precedes the deadline start");
         assert_eq!(executor.calls, 0);
+        assert_eq!(executor.remaining, None);
         assert!(trail.outcome_entries.is_empty());
         assert!(response.get("result_anchor").is_none());
         assert_eq!(response["execution_status"], "unattempted");
@@ -3752,6 +3790,7 @@ mod tests {
             clock: &clock,
             advance: Duration::from_secs(10),
             result: Ok(json!({"status": "recorded"})),
+            remaining: None,
             calls: 0,
         };
         let mut trail = RecordingTrail::new();
@@ -3766,6 +3805,53 @@ mod tests {
             response["result_anchor"]["event_name"],
             "capability.uncertain"
         );
+    }
+
+    #[test]
+    fn j06_legacy_string_error_is_uncertain_not_known_provider_failure() {
+        struct LegacyStringErrorExecutor;
+        impl CapabilityExecutor for LegacyStringErrorExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                Err("connection reset; token=secret".into())
+            }
+        }
+
+        let (_store, resolved) = resolved_lantern();
+        let clock = outcome::TestMonotonicClock::new();
+        let mut executor = LegacyStringErrorExecutor;
+        let mut trail = RecordingTrail::new();
+        let mut response = make_matched_response(
+            "j06-legacy",
+            "j06-action",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        authorise_and_execute_without_bridge_pins_with_clock(
+            &mut response,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "j06-input",
+            &clock,
+        )
+        .unwrap();
+
+        assert_eq!(trail.outcome_entries[0].status, "uncertain");
+        assert_eq!(
+            trail.outcome_entries[0].reason_code.as_deref(),
+            Some("provider_outcome_uncertain")
+        );
+        assert_eq!(
+            response["result_anchor"]["event_name"],
+            "capability.uncertain"
+        );
+        assert_ne!(response["result_anchor"]["event_name"], "capability.failed");
+        assert!(!response.to_string().contains("token=secret"));
     }
 
     #[test]
@@ -3798,6 +3884,7 @@ mod tests {
                 clock: &clock,
                 advance: Duration::ZERO,
                 result: Err(diagnostic),
+                remaining: None,
                 calls: 0,
             };
             let mut trail = RecordingTrail::new();
@@ -3822,6 +3909,7 @@ mod tests {
             clock: &clock,
             advance: Duration::ZERO,
             result: Err(outcome::ProviderDiagnostic::ProcessLost),
+            remaining: None,
             calls: 0,
         };
         let mut trail = RecordingTrail::new();

@@ -137,6 +137,20 @@ pub fn deadline_expired(clock: &dyn MonotonicClock, start: Duration, deadline: D
     clock.now().saturating_sub(start) >= deadline
 }
 
+/// The host computes this immediately before the provider invocation boundary.
+/// `None` means the deadline has already elapsed and the Action is still
+/// unattempted, so no adapter call is permitted.
+pub fn remaining_until_deadline(
+    clock: &dyn MonotonicClock,
+    start: Duration,
+    deadline: Duration,
+) -> Option<Duration> {
+    let elapsed = clock.now().saturating_sub(start);
+    deadline
+        .checked_sub(elapsed)
+        .filter(|remaining| !remaining.is_zero())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
