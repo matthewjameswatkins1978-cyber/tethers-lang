@@ -89,6 +89,12 @@ A person should be able to identify, at a glance:
 
 Clever compression is rejected when it damages clarity.
 
+This principle governs the user-facing Tethers language, its diagnostics, and
+its explanations. It does not require the OCaml, Rust, PowerShell, or other
+implementation code to be written as a beginner tutorial or restricted subset.
+Implementation code follows `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` and may
+use the full language where that improves correctness, safety, or structure.
+
 ## 11. Ordinary machinery remains ordinary code
 
 Tethers is for behaviour that owners may reasonably want to inspect, alter, disable or audit.
