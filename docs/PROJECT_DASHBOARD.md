@@ -54,20 +54,38 @@ None.
 
 ## Next Route
 
-Compile a separate Red design packet for J05 approval and resume semantics.
-Do not begin implementation until that design is explicitly approved.
+Lucy compiles the separate Red J05 design packet for approval and resume
+semantics. No implementation begins until that design is explicit.
+
+After design approval, Codex is the expected Red implementation or
+computer-enabled review route. Cline may receive only later bounded work that
+Lucy classifies as Green or Amber.
 
 The design must freeze one-shot approval binding, creation, expiry,
 invalidation, consumption, resumed-Ask precedence, denial/cancellation Trail
 semantics, replay protection, stale-plan handling, and double-consumption
 failure behaviour.
 
-## Cost and Drift
+## Operating Mode
 
-- Use ordinary chat Lucy for architecture, repository review, task compilation,
-  and acceptance checking where direct computer access is unnecessary.
-- Reserve Codex for Red gates, difficult local diagnosis, and tasks requiring
-  direct machine operation.
+**Gorilla Coding 🦄**
+
+- Lucy: architecture, task compilation, GitHub review, acceptance, continuation.
+- Cline: ordinary Green and Amber implementation, checks, report, worker note.
+- Codex: Red work, difficult local diagnosis, Git/environment/recovery, and
+  machine-required verification.
+- Matthew: product authority and the short report-routing bridge.
+- Copilot: not in the active workflow.
+
+Matthew may paste Cline's concise report to Lucy. The report is a handoff; Git,
+code, tests, Trails, packets, and worker notes remain evidence.
+
+## Cost And Drift
+
+- Use ordinary chat Lucy for all repository-visible thought and review.
+- Use Cline as the normal coding engine.
+- Spend Codex only when Red risk, machine access, recovery, or demonstrated Cline
+  difficulty justifies it.
 - Use one implementation owner per task.
 - Load task-bounded context, not the project archive.
 - Do not reopen accepted manifest-pin or J03/J03a/J03b policy decisions without a
@@ -77,7 +95,9 @@ failure behaviour.
 
 - Present goal and boundaries: `docs/CURRENT_GOAL.md`
 - Active task contract: `docs/CURRENT_CLINE_TASK.md`
+- Operating workflow: `docs/AGENT_WORKFLOW.md`
+- Cline handoff: `docs/CLINE_HANDOFF.md`
+- Runtime programme: `docs/ROAD_TO_0_2.md`
 - Detailed queue and completed milestones: `docs/TASK_QUEUE.md`
 - Accepted design decisions: `docs/DECISIONS.md`
 - Evidence and reviews: `docs/worker-notes/`
-- Runtime programme: `docs/ROAD_TO_0_2.md`
