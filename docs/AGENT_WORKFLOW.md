@@ -2,229 +2,172 @@
 
 ## Purpose
 
-Use the least expensive capable agent for each task without weakening Tethers'
-correctness, determinism, permission boundaries, or auditability.
+Use the least expensive capable route for each task without weakening Tethers'
+correctness, determinism, permission boundaries, implementation quality, or
+auditability.
 
-Repository documents, code, tests, and Git are the source of truth. Agent
-reports are claims to verify, not evidence by themselves.
+Repository documents, code, compiler output, tests, fixtures, Trails, and Git are
+the source of evidence. Agent reports are claims to verify.
 
-`docs/PROJECT_CONTROL.md` is the operational contract for ownership, task
-states, bounded context, worker notes, verification, and stopping. This file
-applies that contract to the current Tethers agent stack.
+`docs/PROJECT_CONTROL.md` defines ownership, task states, bounded context,
+worker notes, review, and stopping. `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md`
+defines how production implementation languages are used. This document applies
+those contracts to the available agent routes.
 
-## Roles
+## Roles, Not Brands
 
-- **Architecture reviewer (Sol/Codex):** semantics, trust boundaries,
-  architectural decisions, contradictions, high-risk task design, and bounded
-  final review.
-- **GitHub Copilot:** primary implementer for repository-aware, multi-file work
-  whose required behaviour is already specified.
-- **Cline/DeepSeek:** narrow, mechanical, easily verified changes following an
-  established pattern.
-- **Gemini:** external research, language-mechanism consultation, reduced
-  reproductions, and alternative technical approaches.
-- **Compiler, tests, fixtures, scripts, and Git:** objective acceptance
-  evidence.
+Treat roles as responsibilities rather than permanent model assignments:
 
-These assignments are current routes, not definitions of the task colours.
-Change them when measured cost or reliability changes; never lower a task's risk
-class to fit a cheaper model.
+- **Product owner, Matthew:** direction, priorities, taste, consequential
+  trade-offs, consent, and final product judgement.
+- **Task compiler and architecture reviewer, usually Lucy/Codex:** resolves
+  ambiguity, freezes decisions, classifies risk, prepares the bounded packet,
+  and performs independent review where required.
+- **Implementation owner:** one named worker owns the authorised change,
+  verification, and worker note.
+- **Verifier:** independently checks evidence and returns `ACCEPTED`,
+  `REJECTED`, or a bounded correction verdict.
+- **Repository and toolchain:** durable task state and objective evidence.
 
-No agent may approve its own architectural change merely because its tests
-pass. One task has one named implementation owner. A second agent may verify,
-but may not reimplement the task unless it is formally rejected or reassigned.
+Ordinary chat Lucy may inspect pushed GitHub state and perform architecture,
+review, task compilation, and acceptance checking when local machine access is
+not required. Codex is reserved for Red gates, difficult local diagnosis, Git or
+environment work, and tasks that genuinely require direct computer access.
 
-## Task classification
+Current preferred implementation routes are:
+
+- Green: Cline/DeepSeek or another reliable low-cost worker.
+- Amber: Copilot or another repository-aware worker, normally isolated.
+- Red: design and sign-off by Lucy/Codex; implementation by the most suitable
+  authorised worker.
+
+These routes may change with measured cost, reliability, and availability. Never
+lower a task's risk class to fit a cheaper worker.
+
+## Task Classification
 
 ### Green
 
-One or two files, an existing pattern, low risk, reversible, and easy to test.
-Prefer Cline/DeepSeek. Architecture review is normally unnecessary when the
-diff is narrow and every acceptance check passes.
+Narrow, reversible, follows an established pattern, and has objective focused
+verification. Self-verification may be sufficient when the packet permits it.
 
 ### Amber
 
-Several files or module interactions, moderate implementation judgement, and
-explicitly specified behaviour without new semantics. Prefer GitHub Copilot in
-an isolated worktree. Use one bounded final architecture review.
+Crosses several files or modules and requires moderate implementation judgement,
+but the behaviour and invariants are already specified. Requires one bounded
+final review.
 
 ### Red
 
-Language or protocol semantics, permissions, capability trust, persistence,
-compatibility, concurrency, determinism, or hard-to-reverse architecture.
-The architecture reviewer defines the design and invariants first. Copilot may
-implement the accepted design; the architecture reviewer signs off the result.
+Changes language or protocol semantics, permissions, capability trust,
+persistence, compatibility, concurrency, determinism, security boundaries, or
+hard-to-reverse architecture. Design must be frozen before implementation and
+independently signed off afterward.
 
-When classification is uncertain, treat the task as the higher-risk colour.
+When classification is genuinely uncertain, use the higher class.
 
-## Standard task handover
+## Implementation Language
+
+All production code follows `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md`.
+
+Task scope and code sophistication are separate questions. A small task should
+produce a small diff, but may use powerful, idiomatic language features when
+those features make the domain safer, clearer, or easier to maintain.
+
+Do not write OCaml, Rust, PowerShell, or future implementation code as a tutorial
+for Matthew. Explain technical choices in the packet, worker note, or review.
+Do not use advanced technique decoratively. Use the least complicated technique
+that accurately expresses and protects the design.
+
+## Standard Task Packet
 
 Every control-v1 implementation task starts from
-`docs/TASK_PACKET_TEMPLATE.md` and should state:
+`docs/TASK_PACKET_TEMPLATE.md` and identifies:
 
-1. Control contract version, state, colour, one owner, and current route.
-2. Base branch, base commit, and exact worker-note path.
-3. Objective.
-4. Relevant background and existing behaviour.
-5. Required behaviour.
-6. Relevant files and components.
-7. Frozen decisions and invariants.
-8. Forbidden changes.
-9. Acceptance criteria paired with required behaviour.
-10. Required verification.
-11. Stop conditions.
-12. Expected pre-existing changes.
+1. control contract, state, colour, one owner, and route;
+2. base branch, implementation checkpoint, and worker-note path;
+3. objective and relevant existing behaviour;
+4. required behaviour;
+5. relevant files and interfaces;
+6. frozen decisions and invariants;
+7. permitted and forbidden changes;
+8. acceptance criteria paired with verification;
+9. stop conditions;
+10. exact expected pre-existing changes.
 
 The worker note uses `docs/WORKER_NOTE_TEMPLATE.md` and is part of completion,
-not an optional report pasted into chat.
+not an optional chat report.
 
-An implementation agent must stop and report when requirements conflict, a
-semantic or architectural decision is missing, a safety boundary is unclear,
-unrelated failures prevent safe completion, or repeated attempts are not
-converging.
+A worker must stop when requirements conflict, an architectural or safety
+decision is missing, unrelated failures prevent trustworthy verification, or two
+materially similar attempts fail to converge.
 
-## Working sequence
+## Working Sequence
 
-1. Inspect the live repository and Git state.
-2. Read the authoritative task-relevant documents.
-3. Classify the task.
-4. For Amber and Red work, create an isolated worktree when practical.
-5. Agree a plan before implementation when the task crosses a trust or module
-   boundary.
-6. Implement only the accepted scope.
-7. Run the formatter, compiler, focused tests, full relevant regression suite,
-   integration scripts, and Git whitespace checks.
+1. Inspect the live repository, packet, and Git state.
+2. Confirm task class, owner, route, base, and expected pre-existing changes.
+3. Run the packet consistency checker.
+4. Read only task-relevant authoritative documents and code.
+5. Agree a design first when the task crosses a Red boundary.
+6. Implement only the accepted scope using the target language idiomatically.
+7. Run formatter, compiler, focused tests, relevant regression tests,
+   integration scripts, and whitespace checks required by the packet.
 8. Inspect the complete diff and final Git status.
-9. Write the worker note named by the packet, update the task state and short
-   dashboard, and report evidence, assumptions, unresolved risks, and the
-   smallest next task.
-10. Stop when the contract is satisfied. Do not begin cleanup or the next task.
-11. Do not commit, push, merge, amend, tag, or open a pull request unless the
-    task explicitly authorises it.
+9. Write the exact worker note, update the task state honestly, and update short
+   current-state documents only with established facts.
+10. State the smallest useful next action and stop.
 
-## Cline handoff
+Do not commit, push, merge, amend, tag, publish, or open a pull request unless
+the task explicitly authorises it.
 
-The normal low-friction Cline entry point is:
+## Handoff And Continuation
 
-```text
-/tethers-task.md
-```
+The normal Cline entry point is `/tethers-task.md`. It reads the approved
+contract from `docs/CURRENT_CLINE_TASK.md`, checks live Git state, and loads only
+task-relevant context.
 
-The project workflow at `.clinerules/workflows/tethers-task.md` reads the
-approved contract from `docs/CURRENT_CLINE_TASK.md`, verifies it against the
-live Git state, and loads only task-relevant context. The matching project skill
-supports natural-language activation. See `docs/CLINE_HANDOFF.md` for the short
-Matthew-facing workflow.
+The local `/next-tethers-task` Copilot prompt is optional. Use it when direct
+checkout inspection materially helps. Ordinary chat Lucy can instead inspect
+pushed GitHub evidence and compile or review the next task without consuming
+Codex computer credits.
 
-Other agents should express implementation plans using the same task-packet
-fields. Red work remains `PROPOSED` until its architectural decision is
-explicitly approved.
+A completed task leads to one review verdict and, when appropriate, one bounded
+`PROPOSED` next packet. Do not prepare the next task while the implementation
+owner is still working. Do not create repeated audit loops without new evidence.
 
-### Task-packet consistency gate
+A milestone gate, Red decision, agent disagreement, ambiguous evidence, or
+untrustworthy local state must stop ordinary continuation and route to the
+appropriate independent reviewer.
 
-The packet's `Base commit` identifies the implementation checkpoint inspected
-when the next task was designed. Before implementation, later commits containing only
-`docs/CURRENT_CLINE_TASK.md`, `docs/COPILOT_TRIAL.md`, and
-`docs/PROJECT_DASHBOARD.md` may sit above that checkpoint. Requiring the packet to contain its own commit SHA is impossible
-and must not be attempted.
+## Task-Packet Consistency
 
-Before writing a packet, record the implementation checkpoint and exact dirty
-paths. `Expected pre-existing changes` is that snapshot, not a copied list from
-an older task. Use exact file paths and write `None` for a clean snapshot.
+Before authoring a packet, capture the implementation checkpoint and exact dirty
+paths. `Expected pre-existing changes` is that live snapshot, not a copied list
+from an older task.
 
-Every required failure or mismatch branch must map to an acceptance criterion
-and focused check. A representative negative test is not sufficient evidence
-for several separately required branches.
+Each required negative branch must have a matching acceptance criterion and
+focused check. A representative failure case is not evidence for several
+separate fail-closed requirements.
 
-Both packet producers and implementation agents run:
+Run before handoff and before claiming completion:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 ```
 
-For `PROPOSED` and `READY`, the checker permits only planning-control
-commits above the base and compares live non-planning dirty paths with the
-packet's expected pre-work list. For later states it allows implementation
-changes, validates the control contract, and requires the named worker note for
-`BLOCKED`, `COMPLETE`, `ACCEPTED`, and `REJECTED`.
+The checker validates control structure, ownership, base and dirty-state
+consistency, acceptance-to-verification mapping, and required worker-note state.
 
-## Low-Codex continuation loop
+## Cost And Safety Posture
 
-After Cline finishes, Matthew normally runs this Copilot workspace prompt:
-
-```text
-/next-tethers-task
-```
-
-Copilot independently checks the completed increment and the live repository,
-then writes one `PROPOSED` packet for the smallest correction or next task.
-Matthew should not need to paste a technical report unless the live evidence is
-incomplete.
-
-The prompt ends with one route:
-
-- continue with Cline for a proposed Green task;
-- use Copilot for a reviewed Amber implementation;
-- request a Codex milestone review when a milestone gate is reached.
-
-Codex is not required after every Green increment. It is required for Red work,
-before publishing a meaningful milestone, after three accepted or corrected
-increments since the cadence baseline, when agents disagree, or when tests and
-Git cannot establish the truth.
-
-When any milestone gate is reached, Copilot must stop and tell Matthew:
-
-```text
-Please ask Codex to sign off the current Tethers milestone before continuing.
-```
-
-It must also provide the standard copy-ready Codex request and must not prepare
-or authorise another implementation until Codex records `SIGNED OFF` or
-`NOT SIGNED OFF`.
-
-## Copilot trial
-
-Evaluate Copilot across representative work:
-
-1. repository comprehension with no code changes;
-2. a bounded two-or-three-file feature;
-3. a contained implementation with one real language-level difficulty;
-4. a reproduced bug plus regression test;
-5. an autonomous worktree task with a complete evidence report.
-
-For each accepted task record:
-
-- task colour and model;
-- first-pass correctness;
-- files and lines changed;
-- verification completed;
-- number of correction loops;
-- architecture-review time required;
-- included or additional AI usage;
-- assumptions or scope escapes;
-- accepted, corrected, or rejected outcome.
-
-The useful metric is total agent usage plus architecture-review effort per
-accepted change, not how impressive one response sounds.
-
-Review routing after approximately ten real tasks. Keep or change the workflow
-based on evidence.
-
-Record trial evidence in `docs/COPILOT_TRIAL.md`.
-
-## Cost and safety posture
-
-- Prefer Auto or a lower-cost capable model for Green and ordinary Amber work.
-- Reserve frontier reasoning models for Red work and failed or ambiguous
-  implementations.
-- Use worktree isolation for background changes.
-- Keep terminal and consequential tool approval at the default prompt boundary;
-  do not broadly auto-approve shell commands.
-- Do not enable additional paid usage merely to avoid a task stopping. Change
-  budgets only by Matthew's explicit decision.
-- Do not let subagents multiply work or usage unless the task benefits from
-  independently verifiable parallel work.
-- After two materially similar failures, stop and return exact evidence plus one
+- Optimise total compute and Matthew effort per accepted correct change.
+- Prefer ordinary chat Lucy for repository-visible thought and review.
+- Reserve computer-enabled frontier work for tasks that need the machine or Red
+  judgement.
+- Do not multiply agents unless independent parallel evidence has real value.
+- Do not enable additional paid usage merely to avoid a clean stop.
+- Preserve terminal and consequential-action approval boundaries.
+- After two materially similar failures, stop with exact evidence and one
   smallest unresolved question.
-- Do not use Matthew as the transport for technical handovers. Put the packet,
-  note, dashboard state, and evidence references in the repository.
+- Put durable handovers in the repository. Do not use Matthew as the network
+  cable between agents.
