@@ -17,6 +17,7 @@ Tethers-0.1-Prototype.tar.gz
 *.swp
 *.swo
 *~
+.tethers-batch-evidence.json
 
 # Editor-local files
 .vscode/
