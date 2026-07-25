@@ -5,6 +5,11 @@
 This guide is for AI coding agents making OCaml changes in Tethers. It is a
 compact project guide, not a replacement for the official OCaml manual.
 
+`docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` controls the general engineering
+approach. This guide supplies the verified OCaml environment, current project
+shape, and language-specific cautions. The current codebase is small; that is not
+a rule restricting future work to an elementary OCaml subset.
+
 Tethers currently targets OCaml `5.5.0` in its project-local opam switch. Do
 not assume syntax or APIs from Rust, F#, Haskell, Standard ML, Base, Core, or
 another ML-family environment apply to OCaml.
@@ -68,9 +73,12 @@ pwsh -NoProfile -Command 'Push-Location .\tethers-0.1\host-rust; cargo test; exi
 Compile immediately after a small OCaml edit. Treat compiler diagnostics as
 evidence, not as an invitation to speculative rewrites.
 
-## D. OCaml Subset Used By Tethers
+## D. Current OCaml Surface, Not A Restriction
 
-Tethers currently uses a small, ordinary OCaml subset.
+The current Tethers engine uses a small set of ordinary OCaml features because
+the implemented problem is still small. Agents may use the full supported OCaml
+5.5 language when a feature improves the domain model, safety, modularity, or
+maintainability and remains within the authorised task.
 
 Algebraic data types model closed choices:
 
@@ -112,7 +120,9 @@ let rec check_conditions sequence trail = function
 ```
 
 Modules are ordinary compilation units. The project has no `.mli` interfaces
-yet, so exported names come from the `.ml` files themselves.
+yet, so exported names come from the `.ml` files themselves. Add an `.mli` when
+a stable module boundary would benefit from a deliberately smaller public
+surface, not merely to satisfy ceremony.
 
 Exceptions currently carry structured engine error codes:
 
@@ -121,8 +131,10 @@ exception Tethers_error of string * string
 let fail code message = raise (Tethers_error (code, message))
 ```
 
-Keep existing error codes and messages stable unless a fixture intentionally
-changes them.
+Keep existing observable error codes and messages stable unless a fixture and
+authorised semantic change intentionally revise them. New local expected states
+may be better represented by variants or `result`; use exceptions where the
+boundary and catch point make them the clearest honest model.
 
 Options are handled explicitly with `Some` and `None`, for example
 `List.assoc_opt`, `String.index_opt`, and `int_of_string_opt`.
@@ -157,8 +169,9 @@ compilation-unit name from the file name. Other modules refer to that unit by
 the capitalised form.
 
 This project uses `open Tethers_protocol` and `open Tether_parser` in `main.ml`
-to keep the small reference engine readable. Use `open` sparingly. If a future
-module becomes large or names collide, prefer qualified names.
+to keep the small reference engine readable. Use `open` when it clarifies a
+bounded scope. Prefer qualified names when modules are large, provenance matters,
+or names may collide.
 
 Parser or protocol extraction must preserve behaviour and be protected by the
 fixture suite. After moving code, run `opam exec -- dune build` and
@@ -190,17 +203,28 @@ source.
 
 ## G. Project OCaml Style
 
-- Favour small explicit algebraic data types.
-- Prefer clear pattern matching over clever control flow.
-- Use immutable data unless mutation has a concrete justification.
-- Avoid combinator-heavy code that obscures Tether semantics.
-- Avoid unnecessary abstraction.
-- Preserve exact error codes and messages during refactors.
+- Use OCaml's type system to represent domain states and exclude invalid ones.
+- Favour explicit algebraic data types, records, modules, and exhaustive pattern
+  matching for closed behaviour.
+- Use immutable data by default; use controlled mutation when it is the clearest
+  or most efficient honest model.
+- Use recursion, iterators, maps, folds, pipelines, and higher-order functions
+  according to which form exposes the data flow most clearly.
+- Combinators are welcome when they reduce noise and keep transitions visible.
+  Avoid dense chains or point-free constructions that conceal Tethers semantics.
+- Add abstractions that name a stable concept, enforce an invariant, isolate an
+  effect, or remove repeated policy. Do not avoid a justified abstraction merely
+  to keep the code elementary.
+- Use signatures, first-class modules, functors, GADTs, effects, or other OCaml
+  features when a concrete present problem justifies them and the task includes
+  the necessary tests and explanation. Novelty alone is not justification.
+- Preserve exact observable error contracts during mechanical refactors.
 - Keep deterministic ordering for Conditions, Actions, Effects, and Trail.
-- Avoid hidden I/O in evaluation code.
-- Do not add Base, Core, or another alternative standard library.
-- Do not use new OCaml 5.5 features merely because they exist.
-- Use the simplest stable OCaml feature that clearly expresses the behaviour.
+- Keep evaluation free of hidden I/O.
+- Do not add Base, Core, or another alternative standard library without an
+  explicit dependency decision.
+- Prefer the least complicated feature that accurately expresses and protects
+  the design. Do not confuse least complicated with least powerful.
 
 ## H. Common AI Mistakes
 
@@ -214,6 +238,8 @@ source.
 - Turning deterministic evaluation into filesystem, clock, environment, or
   network access.
 - Using a wildcard case that hides newly added variants.
+- Avoiding an appropriate OCaml feature because it may be unfamiliar to Matthew.
+- Using an advanced feature without a concrete domain or safety benefit.
 - Claiming an unrun test passed.
 - Reformatting an entire file for a small change.
 
