@@ -69,8 +69,8 @@ Independent Red review of this uncommitted J06 worktree.
 | 3 | Same test covers approval waiting before intent using the same full remaining duration. |
 | 4 | `outcome::ProductionMonotonicClock` uses `std::time::Instant`; `outcome::tests::deterministic_clock_advances_only_when_directed` exercises its deadline abstraction. |
 | 5 | `outcome::tests::deterministic_clock_advances_only_when_directed` and `tests::j06_elapsed_before_authorisation_does_not_consume_execution_deadline`. |
-| 6 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor`. |
-| 7 | Same test (`calls == 0`). |
+| 6 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor` proves the final remaining-duration check precedes presentation. |
+| 7 | Same test (`calls == 0`, no `action_started`). |
 | 8 | Same test (`outcome_entries.is_empty()`). |
 | 9 | Same test (`result_anchor` absent). |
 | 10 | `tests::authorise_and_execute_writes_succeeded_outcome`. |
@@ -83,7 +83,7 @@ Independent Red review of this uncommitted J06 worktree.
 | 17 | Same table case `ProtocolInterrupted`. |
 | 18 | Same table case `NoFinalResponse`, now returned through the deadline-aware typed executor contract. |
 | 19 | `tests::j06_response_observed_at_deadline_is_uncertain_even_when_provider_succeeds`. |
-| 20 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor` proves zero remaining duration causes no typed invocation; identity-mismatch regressions prove the other pre-boundary case. |
+| 20 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor` proves zero remaining duration creates neither invocation nor `action_started`; identity-mismatch regressions prove the other pre-boundary case. |
 | 21 | `tests::no_result_anchor_on_unavailable`. |
 | 22 | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor`. |
 | 23 | `tests::no_result_anchor_on_deny`, `no_result_anchor_on_ask`, `no_result_anchor_on_unavailable`, and J06 pre-invocation test. |

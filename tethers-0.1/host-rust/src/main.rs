@@ -957,20 +957,24 @@ fn authorise_and_execute_inner(
     // approvals, and a failed intent write have already happened outside it.
     let deadline_start = clock.now();
     let deadline = Duration::from_millis(ready.verified_manifest().manifest().timeout_ms);
-    if outcome::remaining_until_deadline(clock, deadline_start, deadline).is_none() {
-        json_trail.push(trail_entry(
-            sequence,
-            "execution",
-            "deadline_before_invocation",
-            "unattempted",
-            outcome::deadline_reason().message.into(),
-            Some(&ready.action_id().0),
-        ));
-        // The response Trail is presentation-only; no attempted outcome or
-        // standard Result Anchor exists on this pre-invocation path.
-        response["execution_status"] = Value::String("unattempted".into());
-        return Ok(());
-    }
+    // This is the final pre-invocation check.  It obtains the exact duration
+    // given to the adapter; no presentation Trail may claim a start until it
+    // succeeds.
+    let remaining = match outcome::remaining_until_deadline(clock, deadline_start, deadline) {
+        Some(remaining) => remaining,
+        None => {
+            json_trail.push(trail_entry(
+                sequence,
+                "execution",
+                "deadline_before_invocation",
+                "unattempted",
+                outcome::deadline_reason().message.into(),
+                Some(&ready.action_id().0),
+            ));
+            response["execution_status"] = Value::String("unattempted".into());
+            return Ok(());
+        }
+    };
 
     // This volatile state transition is the invocation boundary: immediately
     // after it the provider may have caused an effect, so ambiguity is never
@@ -984,15 +988,6 @@ fn authorise_and_execute_inner(
         Some(&ready.action_id().0),
     ));
     sequence += 1;
-    // Recheck from the same post-intent monotonic start at the actual call
-    // boundary.  A zero remaining duration is still unattempted.
-    let remaining = match outcome::remaining_until_deadline(clock, deadline_start, deadline) {
-        Some(remaining) => remaining,
-        None => {
-            response["execution_status"] = Value::String("unattempted".into());
-            return Ok(());
-        }
-    };
     let provider_result = executor.execute_classified(&ready, remaining);
     let observed_after_deadline = outcome::deadline_expired(clock, deadline_start, deadline);
     let timestamp_ms = SystemTime::now()
@@ -3778,6 +3773,14 @@ mod tests {
         assert_eq!(trail.entries.len(), 1, "intent precedes the deadline start");
         assert_eq!(executor.calls, 0);
         assert_eq!(executor.remaining, None);
+        assert!(
+            !response["trail"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["kind"] == "action_started"),
+            "unattempted action must not claim action_started"
+        );
         assert!(trail.outcome_entries.is_empty());
         assert!(response.get("result_anchor").is_none());
         assert_eq!(response["execution_status"], "unattempted");
