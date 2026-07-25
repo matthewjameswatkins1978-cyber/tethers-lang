@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J06 monotonic deadline and truthful outcome classification`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Task colour: `Red`
 

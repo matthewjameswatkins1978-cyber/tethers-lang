@@ -77,19 +77,22 @@ pub struct IntentEntry {
 /// A durable execution-outcome record written after the executor returns.
 ///
 /// Written after `IntentEntry` in the durable Trail.  The status field
-/// is `"succeeded"` or `"failed"`.  The `result` and `error_message`
+/// is `"succeeded"`, `"failed"`, or `"uncertain"`.  The `result` and `error_message`
 /// fields are mutually exclusive: a succeeded outcome carries a result;
 /// a failed outcome carries an error message.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct OutcomeEntry {
     pub execution_id: String,
     pub action_id: String,
-    /// `"succeeded"` or `"failed"`.
+    /// `"succeeded"`, `"failed"`, or `"uncertain"`.
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
+    /// Stable host-owned redacted reason code for failed or uncertain outcomes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
     /// Host-supplied wall-clock timestamp in milliseconds since Unix epoch.
     pub timestamp_unix_ms: u64,
 }
@@ -1188,6 +1191,7 @@ mod tests {
                 status: "succeeded".into(),
                 result: Some(json!({"ok": true})),
                 error_message: None,
+                reason_code: None,
                 timestamp_unix_ms: 1000,
             })
             .unwrap();
@@ -1209,6 +1213,7 @@ mod tests {
                 status: "succeeded".into(),
                 result: Some(json!({"status": "recorded", "project": "p", "task": "t"})),
                 error_message: None,
+                reason_code: None,
                 timestamp_unix_ms: 42,
             })
             .unwrap();
@@ -1236,6 +1241,7 @@ mod tests {
                 status: "failed".into(),
                 result: None,
                 error_message: Some("executor failed as requested".into()),
+                reason_code: Some("provider_error".into()),
                 timestamp_unix_ms: 99,
             })
             .unwrap();
@@ -1276,6 +1282,7 @@ mod tests {
                 status: "succeeded".into(),
                 result: Some(json!({"ok": true})),
                 error_message: None,
+                reason_code: None,
                 timestamp_unix_ms: 1000,
             })
             .unwrap_err();
@@ -1295,6 +1302,7 @@ mod tests {
             status: "succeeded".into(),
             result: Some(json!({"ok": true})),
             error_message: None,
+            reason_code: None,
             timestamp_unix_ms: 1000,
         };
 
@@ -1332,6 +1340,7 @@ mod tests {
                     status: "succeeded".into(),
                     result: Some(json!({"status": "recorded"})),
                     error_message: None,
+                    reason_code: None,
                     timestamp_unix_ms: 5000,
                 })
                 .unwrap();

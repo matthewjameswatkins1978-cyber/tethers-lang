@@ -1,6 +1,7 @@
 pub mod approval;
 pub mod dispatch;
 mod manifest;
+mod outcome;
 pub mod policy;
 pub mod provider;
 pub mod resolver;
@@ -21,7 +22,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
@@ -438,6 +439,18 @@ trait CapabilityExecutor {
     /// execution/action identifiers from the readiness token.  It must
     /// not use independently supplied identity fields.
     fn execute(&mut self, ready: &DispatchReadyAction) -> Result<Value, String>;
+
+    /// Report only a trusted, typed provider outcome.  Existing executors that
+    /// expose just a string error are conservatively treated as an explicit
+    /// provider-declared failure; transports must override this method for
+    /// loss, malformed framing, interruption, or missing-final-response.
+    fn execute_classified(
+        &mut self,
+        ready: &DispatchReadyAction,
+    ) -> Result<Value, outcome::ProviderDiagnostic> {
+        self.execute(ready)
+            .map_err(|_| outcome::ProviderDiagnostic::ExplicitProviderError)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -771,6 +784,7 @@ fn authorise_and_execute(
     executor: &mut dyn CapabilityExecutor,
     original_event_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let clock = outcome::ProductionMonotonicClock::new();
     authorise_and_execute_inner(
         response,
         decision,
@@ -779,6 +793,7 @@ fn authorise_and_execute(
         executor,
         original_event_id,
         true,
+        &clock,
     )
 }
 
@@ -791,6 +806,28 @@ fn authorise_and_execute_without_bridge_pins(
     executor: &mut dyn CapabilityExecutor,
     original_event_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let clock = outcome::ProductionMonotonicClock::new();
+    authorise_and_execute_without_bridge_pins_with_clock(
+        response,
+        decision,
+        resolved,
+        trail,
+        executor,
+        original_event_id,
+        &clock,
+    )
+}
+
+#[cfg(test)]
+fn authorise_and_execute_without_bridge_pins_with_clock(
+    response: &mut Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    original_event_id: &str,
+    clock: &dyn outcome::MonotonicClock,
+) -> Result<(), Box<dyn std::error::Error>> {
     authorise_and_execute_inner(
         response,
         decision,
@@ -799,6 +836,7 @@ fn authorise_and_execute_without_bridge_pins(
         executor,
         original_event_id,
         false,
+        clock,
     )
 }
 
@@ -810,6 +848,7 @@ fn authorise_and_execute_inner(
     executor: &mut dyn CapabilityExecutor,
     original_event_id: &str,
     bridge_pins_required: bool,
+    clock: &dyn outcome::MonotonicClock,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plan = response.get("plan").ok_or("matched response had no plan")?;
     let actions = plan
@@ -892,7 +931,28 @@ fn authorise_and_execute_inner(
         }
     };
 
-    // Intent is durably recorded.  Execute exactly once.
+    // Intent is durable.  The execution deadline starts only now; policy,
+    // approvals, and a failed intent write have already happened outside it.
+    let deadline_start = clock.now();
+    let deadline = Duration::from_millis(ready.verified_manifest().manifest().timeout_ms);
+    if outcome::deadline_expired(clock, deadline_start, deadline) {
+        json_trail.push(trail_entry(
+            sequence,
+            "execution",
+            "deadline_before_invocation",
+            "unattempted",
+            outcome::deadline_reason().message.into(),
+            Some(&ready.action_id().0),
+        ));
+        // The response Trail is presentation-only; no attempted outcome or
+        // standard Result Anchor exists on this pre-invocation path.
+        response["execution_status"] = Value::String("unattempted".into());
+        return Ok(());
+    }
+
+    // This volatile state transition is the invocation boundary: immediately
+    // after it the provider may have caused an effect, so ambiguity is never
+    // guessed to be a failure.
     json_trail.push(trail_entry(
         sequence,
         "execution",
@@ -902,172 +962,149 @@ fn authorise_and_execute_inner(
         Some(&ready.action_id().0),
     ));
     sequence += 1;
-
+    let provider_result = executor.execute_classified(&ready);
+    let observed_after_deadline = outcome::deadline_expired(clock, deadline_start, deadline);
     let timestamp_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default();
 
-    let result_anchor = match executor.execute(&ready) {
-        Ok(result) => {
-            // Validate result against the capability's output_schema.
-            let output_schema = &ready.verified_manifest().manifest().output_schema;
-            match validation::validate_output(output_schema, &result) {
-                Ok(()) => {
-                    // Durably record succeeded outcome.
-                    let outcome = dispatch::OutcomeEntry {
-                        execution_id: ready.execution_id().0.clone(),
-                        action_id: ready.action_id().0.clone(),
-                        status: "succeeded".into(),
-                        result: Some(result.clone()),
-                        error_message: None,
-                        timestamp_unix_ms: timestamp_ms,
-                    };
-                    match trail.append_outcome(&outcome) {
-                        Ok(()) => {}
-                        Err(e) => {
-                            json_trail.push(trail_entry(
-                                sequence,
-                                "execution",
-                                "audit_failure",
-                                "failed",
-                                format!("outcome write failed after succeeded Action: {e:?}"),
-                                Some(&ready.action_id().0),
-                            ));
-                            sequence += 1;
-                        }
-                    }
-
-                    let mut entry = trail_entry(
-                        sequence,
-                        "execution",
-                        "action_completed",
-                        "succeeded",
-                        format!("Completed {}", ready.capability_name()),
-                        Some(&ready.action_id().0),
-                    );
-                    // Clone before moving into the trail entry so the anchor
-                    // receives the same validated result.
-                    let result_for_anchor = result.clone();
-                    entry["result"] = result;
-                    json_trail.push(entry);
-                    response["execution_status"] = Value::String("completed".into());
-
-                    Some(ResultAnchor::new(
-                        ResultAnchorKind::Succeeded(result_for_anchor),
-                        &evaluation_id,
-                        &action_id.0,
-                        ready.capability_name(),
-                        ready.capability_version(),
-                        ready.manifest_digest(),
-                        ready.provider_identity(),
-                        timestamp_ms,
-                        original_event_id,
-                    ))
-                }
-                Err(validation_err) => {
-                    let message = format!("output validation failed: {}", validation_err.message);
-                    // Durably record failed outcome.
-                    let outcome = dispatch::OutcomeEntry {
-                        execution_id: ready.execution_id().0.clone(),
-                        action_id: ready.action_id().0.clone(),
-                        status: "failed".into(),
-                        result: None,
-                        error_message: Some(message.clone()),
-                        timestamp_unix_ms: timestamp_ms,
-                    };
-                    match trail.append_outcome(&outcome) {
-                        Ok(()) => {}
-                        Err(e) => {
-                            json_trail.push(trail_entry(
-                                sequence,
-                                "execution",
-                                "audit_failure",
-                                "failed",
-                                format!("outcome write failed after validation failure: {e:?}"),
-                                Some(&ready.action_id().0),
-                            ));
-                            sequence += 1;
-                        }
-                    }
-
-                    json_trail.push(trail_entry(
-                        sequence,
-                        "execution",
-                        "action_failed",
-                        "failed",
-                        message.clone(),
-                        Some(&ready.action_id().0),
-                    ));
-                    response["execution_status"] = Value::String("failed".into());
-
-                    Some(ResultAnchor::new(
-                        ResultAnchorKind::ResultValidationFailed(message),
-                        &evaluation_id,
-                        &action_id.0,
-                        ready.capability_name(),
-                        ready.capability_version(),
-                        ready.manifest_digest(),
-                        ready.provider_identity(),
-                        timestamp_ms,
-                        original_event_id,
-                    ))
-                }
-            }
+    let execution_outcome = if observed_after_deadline {
+        outcome::ExecutionOutcome::Uncertain {
+            reason: outcome::deadline_reason(),
         }
-        Err(message) => {
-            // Durably record outcome before appending to response Trail.
-            let outcome = dispatch::OutcomeEntry {
-                execution_id: ready.execution_id().0.clone(),
-                action_id: ready.action_id().0.clone(),
-                status: "failed".into(),
-                result: None,
-                error_message: Some(message.clone()),
-                timestamp_unix_ms: timestamp_ms,
-            };
-            match trail.append_outcome(&outcome) {
-                Ok(()) => {}
-                Err(e) => {
-                    json_trail.push(trail_entry(
-                        sequence,
-                        "execution",
-                        "audit_failure",
-                        "failed",
-                        format!("outcome write failed after failed Action: {e:?}"),
-                        Some(&ready.action_id().0),
-                    ));
-                    sequence += 1;
+    } else {
+        match provider_result {
+            Ok(result) => {
+                let output_schema = &ready.verified_manifest().manifest().output_schema;
+                if validation::validate_output(output_schema, &result).is_ok() {
+                    outcome::ExecutionOutcome::Succeeded(result)
+                } else {
+                    outcome::ExecutionOutcome::Failed {
+                        reason: outcome::validation_reason(),
+                    }
                 }
             }
-
-            json_trail.push(trail_entry(
-                sequence,
-                "execution",
-                "action_failed",
-                "failed",
-                message.clone(),
-                Some(&ready.action_id().0),
-            ));
-            response["execution_status"] = Value::String("failed".into());
-
-            Some(ResultAnchor::new(
-                ResultAnchorKind::ProviderError(message),
-                &evaluation_id,
-                &action_id.0,
-                ready.capability_name(),
-                ready.capability_version(),
-                ready.manifest_digest(),
-                ready.provider_identity(),
-                timestamp_ms,
-                original_event_id,
-            ))
+            Err(outcome::ProviderDiagnostic::ExplicitProviderError) => {
+                outcome::ExecutionOutcome::Failed {
+                    reason: outcome::redact(outcome::ProviderDiagnostic::ExplicitProviderError),
+                }
+            }
+            Err(diagnostic) => outcome::ExecutionOutcome::Uncertain {
+                reason: outcome::redact(diagnostic),
+            },
         }
     };
 
-    // Attach the Result Anchor to the response.  No Result Anchor is
-    // created for the preparation-failure path (Ask, Deny, Unavailable,
-    // identity mismatch, intent-write failure), which returns early above.
-    if let Some(anchor) = result_anchor {
+    let (status, result, reason, anchor_kind, presentation_kind) = match &execution_outcome {
+        outcome::ExecutionOutcome::Succeeded(result) => (
+            "succeeded",
+            Some(result.clone()),
+            None,
+            Some(ResultAnchorKind::Succeeded(result.clone())),
+            "action_completed",
+        ),
+        outcome::ExecutionOutcome::Failed { reason } => (
+            "failed",
+            None,
+            Some(reason.clone()),
+            Some(ResultAnchorKind::Failed {
+                code: reason.code.to_string(),
+                message: reason.message.to_string(),
+            }),
+            "action_failed",
+        ),
+        outcome::ExecutionOutcome::Uncertain { reason } => (
+            "uncertain",
+            None,
+            Some(reason.clone()),
+            Some(ResultAnchorKind::Uncertain {
+                code: reason.code.to_string(),
+                message: reason.message.to_string(),
+            }),
+            "action_uncertain",
+        ),
+    };
+    let outcome_entry = dispatch::OutcomeEntry {
+        execution_id: ready.execution_id().0.clone(),
+        action_id: ready.action_id().0.clone(),
+        status: status.into(),
+        result,
+        error_message: reason.as_ref().map(|reason| reason.message.to_string()),
+        reason_code: reason.as_ref().map(|reason| reason.code.to_string()),
+        timestamp_unix_ms: timestamp_ms,
+    };
+
+    if trail.append_outcome(&outcome_entry).is_err() {
+        // The in-memory classification above remains truthful, but it is not
+        // auditable enough for a Result Anchor or retry authority.
+        json_trail.push(trail_entry(
+            sequence,
+            "execution",
+            "audit_failure",
+            "failed",
+            outcome::audit_failure_reason().message.into(),
+            Some(&ready.action_id().0),
+        ));
+        sequence += 1;
+        json_trail.push(trail_entry(
+            sequence,
+            "execution",
+            presentation_kind,
+            status,
+            reason
+                .as_ref()
+                .map(|reason| reason.message.to_string())
+                .unwrap_or_else(|| format!("Completed {}", ready.capability_name())),
+            Some(&ready.action_id().0),
+        ));
+        response["execution_status"] = Value::String(
+            if status == "succeeded" {
+                "completed"
+            } else {
+                status
+            }
+            .into(),
+        );
+        return Ok(());
+    }
+
+    let presentation_status = if status == "succeeded" {
+        "succeeded"
+    } else {
+        status
+    };
+    json_trail.push(trail_entry(
+        sequence,
+        "execution",
+        presentation_kind,
+        presentation_status,
+        reason
+            .as_ref()
+            .map(|reason| reason.message.to_string())
+            .unwrap_or_else(|| format!("Completed {}", ready.capability_name())),
+        Some(&ready.action_id().0),
+    ));
+    response["execution_status"] = Value::String(
+        if status == "succeeded" {
+            "completed"
+        } else {
+            status
+        }
+        .into(),
+    );
+    if let Some(anchor_kind) = anchor_kind {
+        let anchor = ResultAnchor::new(
+            anchor_kind,
+            &evaluation_id,
+            &action_id.0,
+            ready.capability_name(),
+            ready.capability_version(),
+            ready.manifest_digest(),
+            ready.provider_identity(),
+            timestamp_ms,
+            original_event_id,
+        );
         response["result_anchor"] = serde_json::to_value(&anchor)?;
     }
 
@@ -2075,7 +2112,7 @@ mod tests {
             .iter()
             .find(|e| e["kind"] == "action_failed")
             .unwrap();
-        assert_eq!(failed["message"], "executor failed as requested");
+        assert_eq!(failed["message"], "provider reported an error");
         assert_eq!(failed["action_id"], "action_1");
         assert_eq!(failed["phase"], "execution");
         assert_eq!(failed["outcome"], "failed");
@@ -2169,7 +2206,7 @@ mod tests {
         assert_eq!(outcome.result, None);
         assert_eq!(
             outcome.error_message,
-            Some("executor failed as requested".into())
+            Some("provider reported an error".into())
         );
         assert_eq!(response["execution_status"], "failed");
     }
@@ -2221,10 +2258,7 @@ mod tests {
             .find(|e| e["kind"] == "audit_failure")
             .unwrap();
         assert_eq!(audit["action_id"], "action_1");
-        assert!(audit["message"]
-            .as_str()
-            .unwrap()
-            .contains("outcome write failed after succeeded Action"));
+        assert_eq!(audit["message"], "outcome audit write failed");
     }
 
     // -----------------------------------------------------------------------
@@ -2355,11 +2389,7 @@ mod tests {
         assert!(failed["message"]
             .as_str()
             .unwrap()
-            .starts_with("output validation failed:"));
-        assert!(failed["message"]
-            .as_str()
-            .unwrap()
-            .contains("missing required property"));
+            .eq("provider result failed validation"));
 
         assert_eq!(trail.outcome_entries.len(), 1);
         let outcome = &trail.outcome_entries[0];
@@ -2368,7 +2398,7 @@ mod tests {
             .error_message
             .as_ref()
             .unwrap()
-            .starts_with("output validation failed:"));
+            .eq("provider result failed validation"));
         assert_eq!(outcome.result, None);
     }
 
@@ -2418,11 +2448,7 @@ mod tests {
         assert!(failed["message"]
             .as_str()
             .unwrap()
-            .starts_with("output validation failed:"));
-        assert!(failed["message"]
-            .as_str()
-            .unwrap()
-            .contains("type mismatch"));
+            .eq("provider result failed validation"));
     }
 
     // -----------------------------------------------------------------------
@@ -2471,11 +2497,8 @@ mod tests {
         assert!(failed["message"]
             .as_str()
             .unwrap()
-            .starts_with("output validation failed:"));
-        assert!(failed["message"]
-            .as_str()
-            .unwrap()
-            .contains("additional property"));
+            .eq("provider result failed validation"));
+        assert_eq!(failed["message"], "provider result failed validation");
     }
 
     #[test]
@@ -2558,7 +2581,7 @@ mod tests {
             .iter()
             .find(|e| e["kind"] == "action_failed")
             .unwrap();
-        assert_eq!(failed["message"], "executor failed as requested");
+        assert_eq!(failed["message"], "provider reported an error");
         assert!(!failed["message"]
             .as_str()
             .unwrap()
@@ -2753,7 +2776,7 @@ mod tests {
         assert!(facts.get("result").is_none());
         let error = &facts["error"];
         assert_eq!(error["code"], "provider_error");
-        assert_eq!(error["message"], "executor failed as requested");
+        assert_eq!(error["message"], "provider reported an error");
 
         let outcome = &trail.outcome_entries[0];
         assert_eq!(anchor["occurred_at"], outcome.timestamp_unix_ms);
@@ -2808,7 +2831,7 @@ mod tests {
         assert!(error["message"]
             .as_str()
             .unwrap()
-            .contains("output validation failed"));
+            .eq("provider result failed validation"));
     }
 
     // -----------------------------------------------------------------------
@@ -3008,11 +3031,12 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 35: Outcome-write audit failure preserves Result Anchor outcome.
+    // Test 35: Outcome-write audit failure preserves classification but never
+    //          creates an unaudited Result Anchor.
     // -----------------------------------------------------------------------
 
     #[test]
-    fn outcome_write_audit_failure_preserves_result_anchor() {
+    fn outcome_write_audit_failure_withholds_result_anchor() {
         let (_store, resolved) = resolved_lantern();
         let decision = allow_decision_for(&resolved);
         let mut response = make_matched_response(
@@ -3039,18 +3063,11 @@ mod tests {
 
         assert_eq!(response["execution_status"], "completed");
 
-        let anchor = &response["result_anchor"];
-        assert_eq!(anchor["event_name"], "capability.succeeded");
-        let facts = &anchor["facts"];
-        assert_eq!(
-            facts["result"],
-            json!({"status": "recorded", "project": "lantern-keeper", "task": "LK-39"})
-        );
-        assert!(facts.get("error").is_none());
+        assert!(response.get("result_anchor").is_none());
     }
 
     #[test]
-    fn outcome_write_audit_failure_after_executor_error_preserves_failed_anchor() {
+    fn outcome_write_audit_failure_after_executor_error_withholds_failed_anchor() {
         let (_store, resolved) = resolved_lantern();
         let decision = allow_decision_for(&resolved);
         let mut response = make_matched_response(
@@ -3077,11 +3094,7 @@ mod tests {
 
         assert_eq!(response["execution_status"], "failed");
 
-        let anchor = &response["result_anchor"];
-        assert_eq!(anchor["event_name"], "capability.failed");
-        let error = &anchor["facts"]["error"];
-        assert_eq!(error["code"], "provider_error");
-        assert_eq!(error["message"], "executor failed as requested");
+        assert!(response.get("result_anchor").is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -3625,5 +3638,208 @@ mod tests {
         assert!(trail.outcome_entries.is_empty());
         assert!(executor.completed.is_empty());
         assert!(response.get("result_anchor").is_none());
+    }
+
+    // J06 focused execution truth table.  The executor advances the injected
+    // monotonic clock at the response-observation boundary; no wall clock or
+    // scheduler timing participates in these assertions.
+    struct J06Executor<'a> {
+        clock: &'a outcome::TestMonotonicClock,
+        advance: Duration,
+        result: Result<Value, outcome::ProviderDiagnostic>,
+        calls: u32,
+    }
+
+    impl CapabilityExecutor for J06Executor<'_> {
+        fn provider_identity(&self) -> &str {
+            "lantern-local"
+        }
+
+        fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+            panic!("J06Executor uses execute_classified")
+        }
+
+        fn execute_classified(
+            &mut self,
+            _ready: &DispatchReadyAction,
+        ) -> Result<Value, outcome::ProviderDiagnostic> {
+            self.calls += 1;
+            self.clock.advance(self.advance);
+            self.result.clone()
+        }
+    }
+
+    fn run_j06_case(executor: &mut J06Executor<'_>, trail: &mut RecordingTrail) -> Value {
+        let (_store, resolved) = resolved_lantern();
+        let mut response = make_matched_response(
+            "j06-eval",
+            "j06-action",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        let clock = executor.clock;
+        authorise_and_execute_without_bridge_pins_with_clock(
+            &mut response,
+            allow_decision_for(&resolved),
+            &resolved,
+            trail,
+            executor,
+            "j06-input",
+            clock,
+        )
+        .unwrap();
+        response
+    }
+
+    #[test]
+    fn j06_elapsed_before_authorisation_does_not_consume_execution_deadline() {
+        let clock = outcome::TestMonotonicClock::new();
+        // This represents planning and approval waiting before durable intent.
+        clock.advance(Duration::from_secs(600));
+        let mut executor = J06Executor {
+            clock: &clock,
+            advance: Duration::ZERO,
+            result: Ok(json!({"status": "recorded"})),
+            calls: 0,
+        };
+        let mut trail = RecordingTrail::new();
+        let response = run_j06_case(&mut executor, &mut trail);
+        assert_eq!(executor.calls, 1);
+        assert_eq!(trail.outcome_entries[0].status, "succeeded");
+        assert_eq!(response["execution_status"], "completed");
+    }
+
+    #[test]
+    fn j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor() {
+        let mut manifest = lantern_manifest_json();
+        manifest["timeout_ms"] = json!(0);
+        let (_store, resolved) = resolved_lantern_with_manifest(manifest);
+        let clock = outcome::TestMonotonicClock::new();
+        let mut executor = J06Executor {
+            clock: &clock,
+            advance: Duration::ZERO,
+            result: Ok(json!({"status": "recorded"})),
+            calls: 0,
+        };
+        let mut response = make_matched_response(
+            "j06-eval",
+            "j06-action",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut trail = RecordingTrail::new();
+        authorise_and_execute_without_bridge_pins_with_clock(
+            &mut response,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            "j06-input",
+            &clock,
+        )
+        .unwrap();
+        assert_eq!(trail.entries.len(), 1, "intent precedes the deadline start");
+        assert_eq!(executor.calls, 0);
+        assert!(trail.outcome_entries.is_empty());
+        assert!(response.get("result_anchor").is_none());
+        assert_eq!(response["execution_status"], "unattempted");
+    }
+
+    #[test]
+    fn j06_response_observed_at_deadline_is_uncertain_even_when_provider_succeeds() {
+        let clock = outcome::TestMonotonicClock::new();
+        let mut executor = J06Executor {
+            clock: &clock,
+            advance: Duration::from_secs(10),
+            result: Ok(json!({"status": "recorded"})),
+            calls: 0,
+        };
+        let mut trail = RecordingTrail::new();
+        let response = run_j06_case(&mut executor, &mut trail);
+        assert_eq!(executor.calls, 1);
+        assert_eq!(trail.outcome_entries[0].status, "uncertain");
+        assert_eq!(
+            trail.outcome_entries[0].error_message.as_deref(),
+            Some("execution deadline exceeded")
+        );
+        assert_eq!(
+            response["result_anchor"]["event_name"],
+            "capability.uncertain"
+        );
+    }
+
+    #[test]
+    fn j06_post_invocation_transport_ambiguities_are_uncertain_and_redacted() {
+        let cases = [
+            (
+                outcome::ProviderDiagnostic::ProcessLost,
+                "provider_process_lost",
+            ),
+            (
+                outcome::ProviderDiagnostic::ResponseMalformed,
+                "provider_response_invalid",
+            ),
+            (
+                outcome::ProviderDiagnostic::ResponseTruncated,
+                "provider_response_invalid",
+            ),
+            (
+                outcome::ProviderDiagnostic::ProtocolInterrupted,
+                "provider_protocol_interrupted",
+            ),
+            (
+                outcome::ProviderDiagnostic::NoFinalResponse,
+                "provider_outcome_uncertain",
+            ),
+        ];
+        for (diagnostic, code) in cases {
+            let clock = outcome::TestMonotonicClock::new();
+            let mut executor = J06Executor {
+                clock: &clock,
+                advance: Duration::ZERO,
+                result: Err(diagnostic),
+                calls: 0,
+            };
+            let mut trail = RecordingTrail::new();
+            let response = run_j06_case(&mut executor, &mut trail);
+            assert_eq!(executor.calls, 1, "{code}");
+            assert_eq!(trail.outcome_entries[0].status, "uncertain", "{code}");
+            assert_eq!(
+                response["result_anchor"]["event_name"], "capability.uncertain",
+                "{code}"
+            );
+            assert_eq!(
+                response["result_anchor"]["facts"]["error"]["code"], code,
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn j06_outcome_audit_failure_keeps_uncertainty_but_withholds_anchor() {
+        let clock = outcome::TestMonotonicClock::new();
+        let mut executor = J06Executor {
+            clock: &clock,
+            advance: Duration::ZERO,
+            result: Err(outcome::ProviderDiagnostic::ProcessLost),
+            calls: 0,
+        };
+        let mut trail = RecordingTrail::new();
+        trail.injected_outcome_error =
+            Some(dispatch::TrailError::WriteFailed("raw token=secret".into()));
+        let response = run_j06_case(&mut executor, &mut trail);
+        assert_eq!(response["execution_status"], "uncertain");
+        assert!(trail.outcome_entries.is_empty());
+        assert!(response.get("result_anchor").is_none());
+        assert_eq!(
+            response["trail"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["kind"] == "audit_failure")
+                .unwrap()["message"],
+            "outcome audit write failed"
+        );
+        assert!(!response.to_string().contains("token=secret"));
     }
 }

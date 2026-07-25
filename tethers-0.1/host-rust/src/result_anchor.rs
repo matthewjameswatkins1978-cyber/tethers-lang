@@ -40,6 +40,11 @@ pub enum ResultAnchorKind {
     ProviderError(String),
     /// Executor returned output that failed validation.
     ResultValidationFailed(String),
+    /// A provider invocation may have begun but no trustworthy final evidence
+    /// was observed before the host deadline.
+    Uncertain { code: String, message: String },
+    /// J06's redacted known-failure representation.
+    Failed { code: String, message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +142,16 @@ impl ResultAnchor {
                     code: "result_validation_failed".to_string(),
                     message,
                 }),
+            ),
+            ResultAnchorKind::Uncertain { code, message } => (
+                "capability.uncertain".to_string(),
+                None,
+                Some(ResultAnchorError { code, message }),
+            ),
+            ResultAnchorKind::Failed { code, message } => (
+                "capability.failed".to_string(),
+                None,
+                Some(ResultAnchorError { code, message }),
             ),
         };
 
