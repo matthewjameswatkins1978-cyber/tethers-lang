@@ -24,23 +24,31 @@ call happened.
 
 ## Terms and host-owned identity lifecycle
 
-`AnchorEventId` is the existing input Anchor's event ID. It is a logical
-execution reference, not an execution identity and not a permission. The host
-must validate it as a non-empty canonical event ID before it evaluates a
+`AnchorEventId` is the existing input Anchor's event ID. Together with the
+planner's `EvaluationId` and one proposed `ActionId`, it identifies one logical
+execution; it is not itself an execution identity or a permission. The host
+must validate all three as non-empty canonical IDs before it admits a
 dispatchable Action. A caller can supply neither an `ExecutionId` nor a replay
 path, ledger record, or recovered identity.
 
 `LogicalExecutionKey` is the SHA-256 digest of RFC 8785/JCS bytes for:
 
 ```json
-{"format":"tethers-logical-execution-v1","anchor_event_id":"<AnchorEventId>"}
+{
+  "format": "tethers-logical-execution-v1",
+  "anchor_event_id": "<AnchorEventId>",
+  "evaluation_id": "<EvaluationId>",
+  "action_id": "<ActionId>"
+}
 ```
 
-Only the digest is persisted. A distinct Anchor event ID is ordinary new work;
-reusing an Anchor event ID means resuming or repeating the same logical
-execution. A caller that chooses a new Anchor event ID is proposing new work,
-not supplying a replacement execution identity. J11's later event
-deduplication may add its own event rule, but J09 does not wait for or alter it.
+Only the digest is persisted. The same exact event/evaluation/Action tuple
+means resuming or repeating the same logical execution. A different Action in
+one ordered Plan, a different evaluation of one event, or a different Anchor
+event ID is a distinct logical execution and receives a distinct claim and
+host UUID. A caller that chooses a new tuple is proposing new work, not
+supplying a replacement execution identity. J11's later event deduplication
+may add its own event rule, but J09 does not wait for or alter it.
 
 `ExecutionId` is an opaque, canonical lower-case UUID v4 prefixed `exec_`. The
 host creates it exactly once, inside the successful fresh identity-claim
@@ -63,10 +71,13 @@ arguments, paths, payloads, stderr, and stacks never enter the ledger.
 
 The identity lifecycle is fixed as follows.
 
-1. The host reads the existing Anchor event ID at input admission, validates it,
-   and derives `LogicalExecutionKey`. It creates no UUID yet.
+1. The host reads and validates the existing Anchor event ID. After planner
+   evaluation it validates that evaluation ID and each proposed Action ID. For
+   each Action it derives `LogicalExecutionKey` from that exact three-ID tuple.
+   It creates no UUID yet.
 2. Fresh ordinary resolution, schema, scope, manifest/provider pins, and
-   policy are evaluated. The host then builds the exact `ExecutionBinding`.
+   policy are evaluated for that Action. The host then builds the exact
+   `ExecutionBinding`.
 3. For an ordinary Allow, or an approved Ask resume, the host calls
    `admit_or_recover(LogicalExecutionKey, ExecutionBinding)` before durable
    intent. Under the logical-key lock it either recovers an existing claim or
@@ -74,32 +85,37 @@ The identity lifecycle is fixed as follows.
 4. The returned private `HostExecutionAdmission` carries the host-issued
    `ExecutionId`, the validated binding, and the still-held identity exclusion.
    Only this private value may reach the J09-aware intent boundary.
-5. On restart or a repeated input, the same Anchor event ID derives the same
-   logical key. The host reads the immutable claim, validates every binding
-   field, recovers the stored host UUID, and selects its ledger state. It never
-   generates a replacement UUID for an existing logical key.
+5. On restart or a repeated input, the same exact event/evaluation/Action tuple
+   derives the same logical key. The host reads the immutable claim, validates
+   every binding field, recovers the stored host UUID, and selects its ledger
+   state. It never generates a replacement UUID for an existing logical key.
 6. A different binding for an existing logical key is
    `ReplayBindingMismatch` and fails closed. It neither consumes approval nor
    reaches intent, provider, outcome, or Result Anchor handling.
-7. Ordinary new work must carry a fresh Anchor event ID, which yields a new
+7. Ordinary new work must carry a fresh logical tuple: a fresh Anchor event ID,
+   a different evaluation ID, or a different Action ID. Each yields a new
    logical key and permits one fresh host-created UUID. Terminal identities are
    never reused, overwritten, or reassigned.
 8. J12 and J13 preserve this lifecycle by passing the already-existing Anchor
-   event ID unchanged into the local host admission seam. `check` performs no
-   admission. `run` calls host admission; a repeat uses the same input Anchor
-   event ID. `trail` may look up by the host-derived logical-key digest. No
-   execution UUID crosses the planner, manifest, provider, or MCP boundary,
-   and no new public configuration field is required.
+   event ID unchanged into the local host admission seam and using the
+   evaluation ID and Action ID already returned by the planner. `check`
+   performs no admission. `run` admits each planned Action independently; a
+   repeat uses the same exact tuple. `trail` may look up by the host-derived
+   logical-key digest. No execution UUID crosses the planner, manifest,
+   provider, or MCP boundary, and no new public configuration field is
+   required.
 9. The current implementation seam is `main.rs` before
-   `authorise_and_execute_inner`, which already has the input event ID and the
-   fully resolved Action. J09 inserts host admission there and passes the
-   private admission into a narrowed dispatch preparation API. It must stop
-   deriving an execution identity from planner `evaluation_id`.
+   `authorise_and_execute_inner`, which has the input event ID, planner
+   evaluation ID, and proposed Action. J09 inserts host admission there for
+   each Action and passes the private admission into a narrowed dispatch
+   preparation API. It must stop deriving an execution identity from planner
+   `evaluation_id`.
 10. The J09 implementation must prove both that a completed execution,
-    restarted with the preserved Anchor event ID, makes zero provider calls,
-    and that a simulated restart cannot accidentally regenerate a new UUID for
-    the same Anchor event ID. No protocol or product decision remains: this
-    uses the existing host Anchor event-ID seam only.
+    restarted with the preserved exact tuple, makes zero provider calls, and
+    that a simulated restart cannot accidentally regenerate a new UUID for the
+    same tuple or collide with a sibling Action. No protocol or product decision
+    remains: this uses existing host input, planner evaluation, and Action seams
+    only.
 
 ## Immutable storage model
 
@@ -107,9 +123,10 @@ J09 uses one immutable identity claim plus an immutable, per-identity
 generation chain. It has no mutable head pointer, no in-place record edit, and
 no scan of Trails to invent state.
 
-The provisioned host data root has this exact layout. `<lk>` and `<eid>` below
-are lower-case SHA-256 hex digests, not raw event IDs or arguments. `<nonce>`
-is a host-generated lower-case UUID without the `exec_` prefix.
+The provisioned host data root has this exact layout. `<lk>` is the lower-case
+SHA-256 hex digest of the canonical event/evaluation/Action tuple; `<eid>` is
+the digest of the host UUID. Neither is a raw ID or argument. `<nonce>` is a
+host-generated lower-case UUID without the `exec_` prefix.
 
 ```text
 <host-data-root>/replay/v1/
@@ -228,10 +245,14 @@ A process may not repair, complete, delete, or reuse an identity automatically:
 - A crash between generations leaves the preceding state selected and
   manual-only. In particular, `invocation_armed` does not claim an effect but
   prohibits another call.
-- A temporary, orphaned identity directory, keyed temporary, unknown filename,
-  partial record, or abandoned lock-file contents are evidence that publication
-  cannot be proved. The affected logical key fails closed and needs an
-  separately authorised maintenance process; J09 performs no cleanup.
+- A keyed temporary, unknown filename, partial record, or abandoned lock-file
+  contents are evidence that publication cannot be proved. The affected logical
+  key fails closed and needs a separately authorised maintenance process; J09
+  performs no cleanup.
+- A chain directory whose execution-ID digest has no valid claim with that
+  execution-ID digest cannot be mapped to an affected logical key. It is
+  ledger/root corruption, so the entire ledger fails closed until separately
+  authorised maintenance resolves it.
 - A checksum failure, malformed JSON, unsupported version, generation gap,
   duplicate numbered generation, predecessor mismatch, unexpected terminal
   extension, permission error, or root anomaly is
@@ -275,8 +296,9 @@ allowed. This is the required fail-closed result, not a portability fallback.
 
 The normal and Ask-resume orders are fixed.
 
-1. Validate host input and derive the logical key; perform fresh resolution,
-   pins, schema, scope, and ordinary policy evaluation.
+1. Validate the Anchor event ID, evaluation ID, and Action ID; derive one
+   logical key per exact tuple; perform fresh resolution, pins, schema, scope,
+   and ordinary policy evaluation for that Action.
 2. For a fresh Ask request, create only the J05 pending approval. It creates no
    execution identity and makes no replay claim.
 3. For Allow, and for an approved Ask resume after all J05 fresh checks, acquire
@@ -332,67 +354,76 @@ one-to-one mapping to an existing regression.
    records contain no secrets, raw arguments, paths, payloads, or diagnostics.
 3. The host, not the request, creates canonical UUID `ExecutionId`; supplied or
    substituted execution-ID fields are rejected.
-4. The same Anchor event ID across restart recovers the same host UUID.
-5. A completed recovered identity makes zero provider calls and no duplicate
+4. The same exact event/evaluation/Action tuple across restart recovers the
+   same host UUID.
+5. A completed recovered tuple makes zero provider calls and no duplicate
    Result Anchor.
 6. A simulated host restart cannot accidentally generate a new UUID for the
-   same Anchor event ID.
-7. A new Anchor event ID creates a distinct logical key and fresh UUID.
-8. Existing logical key plus changed binding fails before approval, intent, or
-   provider work.
-9. Claim is durable before J05 consumption; crash after claim before generation
+   same exact tuple.
+7. One event with `action_1` and `action_2` creates two distinct logical keys,
+   claims, and host UUIDs.
+8. Replay of `action_1` recovers its original UUID.
+9. Replay of `action_1` never collides with `action_2`.
+10. Different evaluations of one Anchor event produce distinct logical keys and
+    host UUIDs.
+11. Existing exact tuple plus changed binding fails before approval consumption,
+    intent, or provider work.
+12. Claim is durable before J05 consumption; crash after claim before generation
    zero selects `claimed_no_state` and is manual-only.
-10. Generation zero is immutable, follows the claim digest, and precedes Trail
+13. Generation zero is immutable, follows the claim digest, and precedes Trail
     intent and every provider call.
-11. Generation one is immutable, follows generation zero, and precedes every
+14. Generation one is immutable, follows generation zero, and precedes every
     possible provider call.
-12. Final generation follows generation one, includes the durable J06 outcome
+15. Final generation follows generation one, includes the durable J06 outcome
     digest, and precedes the standard Result Anchor.
-13. Only the exact `0 -> 1 -> 2` chain and final-state vocabulary are accepted.
-14. Current state is selected by full contiguous-chain validation, never a
+16. Only the exact `0 -> 1 -> 2` chain and final-state vocabulary are accepted.
+17. Current state is selected by full contiguous-chain validation, never a
     mutable head pointer.
-15. Gap, duplicate number, invalid predecessor, checksum failure, malformed
+18. Gap, duplicate number, invalid predecessor, checksum failure, malformed
     record, unsupported version, or unexpected extension fails closed.
-16. A crash after generation zero before Trail intent makes zero calls on
+19. A crash after generation zero before Trail intent makes zero calls on
     restart and writes no compensating Trail entry.
-17. A crash between generation zero and one is manual-only and makes zero calls.
-18. A crash after generation one before/during/after a possible provider call
+20. A crash between generation zero and one is manual-only and makes zero calls.
+21. A crash after generation one before/during/after a possible provider call
     is manual-only and never retries.
-19. Crash after durable J06 outcome but before final generation is replay
+22. Crash after durable J06 outcome but before final generation is replay
     blocked with no synthetic Anchor.
-20. Crash after final generation but before Anchor is replay blocked with no
+23. Crash after final generation but before Anchor is replay blocked with no
     duplicate Anchor.
-21. Keyed temporary files, orphan identity directories, and partial files fail
-    closed and are never silently deleted by J09.
-22. Temporary write, file flush, no-replace publish, directory-durability, read,
+24. Keyed temporary files and partial files fail closed and are never silently
+    deleted by J09.
+25. A chain directory with no valid matching claim is ledger/root corruption and
+    fails the entire ledger closed until separately authorised maintenance.
+26. Temporary write, file flush, no-replace publish, directory-durability, read,
     validation, permission, and lock failures each block before dispatch.
-23. Two concurrent same-key admissions create exactly one claim and one UUID.
-24. A competing writer observes the first claim/chain after exclusion and makes
+27. Two concurrent same-key admissions create exactly one claim and one UUID.
+28. A competing writer observes the first claim/chain after exclusion and makes
     zero provider calls.
-25. A duplicate generation publication is accepted only when its expected
+29. A duplicate generation publication is accepted only when its expected
     immutable bytes and predecessor already validate; any other collision fails
     closed.
-26. Cross-process lock loss, unavailable lock primitive, or unsupported volume
+30. Cross-process lock loss, unavailable lock primitive, or unsupported volume
     fails before J05 consumption and dispatch.
-27. Existing replay-blocked success, failure, uncertain, armed, intent, and
+31. Existing replay-blocked success, failure, uncertain, armed, intent, and
     claim-only states all consume zero additional J05 approvals.
-28. Fresh approved Ask consumes exactly once only after fresh replay admission;
+32. Fresh approved Ask consumes exactly once only after fresh replay admission;
     claim, J05, intent, and armed ordering is observable in the test double.
-29. J05 consumption failure leaves no dispatch authority; its claim is
+33. J05 consumption failure leaves no dispatch authority; its claim is
     manual-only and approval is not restored.
-30. Trail-intent failure after generation zero, armed-publication failure, and
+34. Trail-intent failure after generation zero, armed-publication failure, and
     pre-invocation deadline expiry each make zero provider calls.
-31. J06 known success, known failure, and uncertainty write outcome then final
+35. J06 known success, known failure, and uncertainty write outcome then final
     generation then exactly one corresponding standard Anchor.
-32. J06 outcome write failure or final-generation failure preserves the known
+36. J06 outcome write failure or final-generation failure preserves the known
     classification where applicable, creates no Anchor, and never retries.
-33. Terminal success and failure are permanently replay-blocked; terminal
+37. Terminal success and failure are permanently replay-blocked; terminal
     records are never reused or overwritten.
-34. Incomplete and uncertain states are manual-only; J09 has no automatic
+38. Incomplete and uncertain states are manual-only; J09 has no automatic
     resolution, compensation, approval restoration, or recovery executor.
-35. J12/J13 integration preserves only the existing Anchor event ID at host
-    admission and does not alter planner, manifest, provider, or MCP messages.
-36. Full Rust, host integration, protocol, OCaml, packet, whitespace, complete
+39. J12/J13 integration preserves the existing Anchor event ID plus the
+    planner-produced evaluation ID and Action ID at host admission; it does not
+    alter planner, manifest, provider, or MCP messages.
+40. Full Rust, host integration, protocol, OCaml, packet, whitespace, complete
     diff, Windows primitive, and restart tests pass from the accepted J06 base.
 
 ## Implementation boundary
