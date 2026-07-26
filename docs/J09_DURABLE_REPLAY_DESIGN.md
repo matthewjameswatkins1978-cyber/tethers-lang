@@ -15,7 +15,10 @@ J06; they are historical provenance only.
 J09 adds no retry, compensation, recovery executor, approval restoration,
 planner/OCaml, manifest, provider, MCP protocol, or J10 queue work. It does not
 reconstruct a ledger from Trail entries, import safety-branch material, or make
-the Trail the replay authority.
+the Trail the replay authority. Its only configuration addition is the
+host-local reference-host storage authority defined below; it changes none of
+the Tethers protocol, request or response JSON, planner output, manifest,
+provider contract, or public Tethers language configuration.
 
 The accepted J06 Trail remains the audit record. The J09 ledger is a separate,
 host-owned admission and replay authority. A Trail write never replaces a
@@ -102,8 +105,9 @@ The identity lifecycle is fixed as follows.
    performs no admission. `run` admits each planned Action independently; a
    repeat uses the same exact tuple. `trail` may look up by the host-derived
    logical-key digest. No execution UUID crosses the planner, manifest,
-   provider, or MCP boundary, and no new public configuration field is
-   required.
+   provider, or MCP boundary. J12/J13 may carry the host-local
+   `--host-data-root` option unchanged, without adding a planner, protocol,
+   manifest, or provider message.
 9. The current implementation seam is `main.rs` before
    `authorise_and_execute_inner`, which has the input event ID, planner
    evaluation ID, and proposed Action. J09 inserts host admission there for
@@ -116,6 +120,56 @@ The identity lifecycle is fixed as follows.
     same tuple or collide with a sibling Action. No protocol or product decision
     remains: this uses existing host input, planner evaluation, and Action seams
     only.
+
+## Host data root and explicit provisioning authority
+
+The reference host has one explicit, host-local storage authority for normal
+execution:
+
+```text
+--host-data-root <ABSOLUTE_PATH>
+```
+
+It has no default or fallback. The path is never derived from `TRAIL_PATH`, a
+Trail parent, request file, working or executable directory, temporary
+directory, environment variable, or provider configuration. `TRAIL_PATH`
+remains independent audit storage. A branch that may dispatch must receive a
+valid, already-provisioned root before J05 consumption or provider work. An
+Allow or approved Ask without it returns `ReplayPersistenceUnavailable` with
+zero J05 consumption, intent, provider call, outcome, or standard Result
+Anchor. Evaluation-only, unmatched, denied, and pending-Ask paths do not open
+or provision replay storage because they cannot invoke a provider.
+
+The only operation allowed to establish storage is:
+
+```text
+tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>
+```
+
+The supplied host-data root itself must already exist and be absolute. The
+provisioner never guesses or creates it. It is a separate authority from normal
+execution, which never calls the provisioner or creates a missing directory or
+`FORMAT.json` internally. After validating the existing root as described in
+the Windows substrate section, the provisioner may create only:
+
+```text
+<host-data-root>/replay/
+<host-data-root>/replay/v1/
+<host-data-root>/replay/v1/FORMAT.json
+<host-data-root>/replay/v1/locks/
+<host-data-root>/replay/v1/claims/
+<host-data-root>/replay/v1/chains/
+```
+
+Every directory is created with create-new semantics, then handle-validated;
+`FORMAT.json` is published with the frozen no-replace primitive, reopened, and
+validated before success. An absent replay subtree may be created. The exact
+complete valid v1 structure returns `AlreadyProvisioned` without mutation. A
+partial, malformed, unknown, mismatched, or unsupported structure fails closed
+without repair, deletion, replacement, or cleanup. Normal admission validates
+the complete pre-existing structure and treats missing or incomplete
+provisioning as `ReplayPersistenceUnavailable` before approval consumption or
+dispatch.
 
 ## Immutable storage model
 
@@ -145,12 +199,12 @@ host-generated lower-case UUID without the `exec_` prefix.
         g<generation>.<nonce>.tmp
 ```
 
-`FORMAT.json` is created during explicit host provisioning with create-new
+`FORMAT.json` is created only by the explicit provisioner with create-new
 semantics and records `replay_format_version: 1`. J09 never silently creates an
-empty established root at startup or lookup. The root must be owned and
-writeable only by the host identity; reparse points, network filesystems,
-unexpected ACLs, and unsupported volume types are unavailable rather than
-best-effort.
+empty established root at startup or lookup, and normal execution never treats
+Trail storage as this root. The root must be owned and writeable only by the
+host identity; reparse points, network filesystems, unexpected ACLs, and
+unsupported volume types are unavailable rather than best-effort.
 
 The immutable claim is the identity-claim primitive. Its canonical payload
 contains:
@@ -287,7 +341,9 @@ the exact compatible patch versions:
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
-    "Win32_System_IO"
+    "Win32_System_IO",
+    "Win32_Security",
+    "Win32_System_Threading"
 ] }
 
 uuid = { version = "1", features = ["v4"] }
@@ -300,13 +356,36 @@ temporary nonces; every durable UUID is validated as canonical lower-case format
 
 #### Storage verification
 
-Before ledger use, the Windows backend opens and inspects the configured ledger
-root and every relevant parent component through `CreateFileW`. It uses
+Before ledger use, the Windows backend requires the absolute configured
+host-data root, opens and inspects it and every relevant existing parent
+component through `CreateFileW`, and then validates the complete provisioned
+replay subtree. It uses
 reparse-point-safe opening and inspection, rejects any component carrying
 reparse-point semantics, and uses `GetVolumeInformationByHandleW` or an
 equivalent handle-bound query to require filesystem name `NTFS` and a local
 fixed volume. Validation remains handle-bound after path validation; path
-strings alone are not authority.
+strings alone are not authority. A missing root, missing child, relative path,
+or substitution at any validation point is `ReplayPersistenceUnavailable`.
+
+#### Owner and DACL validation
+
+Before mutating the root, and after creating every replay directory, the
+provisioner opens its directory handle with `READ_CONTROL`, obtains owner and
+DACL through `GetKernelObjectSecurity`, and obtains the current process user
+SID through `OpenProcessToken` plus `GetTokenInformation(TokenUser)`. It uses
+caller-owned buffers only; no path-based security lookup is authority.
+`CreateWellKnownSid` may create comparison SIDs for LocalSystem and Builtin
+Administrators.
+
+The security descriptor must be valid, have a present non-null DACL, and have
+an owner SID equal to the current process user SID. Write-capable allow ACEs
+may grant write authority only to that current user, LocalSystem, or Builtin
+Administrators. An unrelated principal may have read-only authority, but may
+not receive write, append, create-child, delete, change-permission,
+take-ownership, or full-control authority. Malformed, unsupported, or
+unprovable ACE forms, owner mismatch, null or absent DACL, or an impermissible
+write grant fails closed as `ReplayPersistenceUnavailable`. J09 never rewrites
+or repairs the operator's ACL.
 
 #### Cross-process exclusion
 
@@ -351,9 +430,10 @@ The normal and Ask-resume orders are fixed.
    and ordinary policy evaluation for that Action.
 2. For a fresh Ask request, create only the J05 pending approval. It creates no
    execution identity and makes no replay claim.
-3. For Allow, and for an approved Ask resume after all J05 fresh checks, acquire
-   replay admission under the logical-key lock. Existing, blocked, corrupt, or
-   mismatched identities stop here.
+3. For Allow, and for an approved Ask resume after all J05 fresh checks, require
+   a valid already-provisioned absolute `--host-data-root`, then acquire replay
+   admission under the logical-key lock. Missing, relative, unproven, existing,
+   blocked, corrupt, or mismatched identities stop here before J05 consumption.
 4. Only a fresh Ask resume with a newly admitted identity atomically consumes
    the J05 approval. Thus a duplicate or blocked identity never consumes a new
    approval merely to discover that replay is forbidden. A consumption failure
@@ -488,12 +568,37 @@ one-to-one mapping to an existing regression.
 47. Only the authorised target-specific `windows-sys` and `uuid` dependencies
     are added; no generic directory `fsync`, volume flush, hard-link,
     replace-capable rename, or `std::fs::rename` publication path exists.
+48. Allow without `--host-data-root` fails before J05 consumption, durable
+    intent, dispatch, outcome, or Result Anchor.
+49. Approved Ask without `--host-data-root` does not consume its approval.
+50. `TRAIL_PATH` is neither used nor inspected as replay-root authority, and
+    Trail and replay roots may be completely different paths.
+51. A relative host-data-root path is rejected and a missing host-data root is
+    never created.
+52. Normal execution never provisions replay storage.
+53. Explicit provisioning creates exactly the specified complete v1 structure.
+54. Repeated provisioning of that exact valid structure returns
+    `AlreadyProvisioned` without mutation.
+55. Partial provisioning fails closed and is not repaired; unknown files or
+    versions fail closed.
+56. Host-root owner mismatch fails closed.
+57. Null or missing DACL fails closed.
+58. Broad or unknown write authority fails closed.
+59. A read-only unrelated principal does not automatically fail validation.
+60. Write authority for the current user, LocalSystem, and Builtin
+    Administrators is accepted.
+61. ACL inspection remains handle-bound and reparse substitution between path
+    parsing and ACL validation fails closed.
+62. Provisioned valid storage permits later replay admission.
+63. Existing unmatched, denied, and pending-Ask behaviour remains provider-free
+    without opening or provisioning replay storage.
 
 ## Implementation boundary
 
 J09 may add focused host replay-ledger and host-admission code, a small
 target-specific Windows persistence module, the two authorised target-specific
-dependencies, tests, and minimal dispatch orchestration. It must not change
-Tethers Core, OCaml, capability manifests, MCP messages, provider contracts,
-Result Anchor queueing, the public configuration format, or the preserved
-safety branch.
+dependencies, tests, minimal dispatch orchestration, the host-local
+`--host-data-root` option, and the separate `provision-replay` operation. It
+must not change Tethers Core, OCaml, capability manifests, MCP messages,
+provider contracts, Result Anchor queueing, public Tethers language
+configuration, or the preserved safety branch.
