@@ -208,36 +208,35 @@ verdict.
   provider crash, EOF, malformed response, cancellation, invalid success output,
   final Trail failure, and no-retry behaviour.
 
-### J07: Implement Deadlines And `uncertain`
+### J07: Historical — absorbed into accepted J06
 
-- Risk: Red implementation.
-- Owner: Codex.
-- Depends on: J06.
-- Outcome: provider calls obey the frozen deadline contract and classify outcomes
-  honestly.
-- Evidence must prove pre-dispatch failure, ordinary failure, timeout after
-  possible effect, malformed success, valid success, exact call counts, and no
-  retry.
+- Historical intent: implement J06's frozen monotonic deadline and truthful
+  `uncertain` outcome boundary.
+- Disposition: absorbed into the accepted J06 implementation on `main`. J06's
+  worker note records the resulting deadline, classification, redaction, and
+  no-retry evidence. J07 is retained as historical provenance, not an active
+  implementation job.
 
-### J08: Emit `capability.uncertain`
+### J08: Historical — absorbed into accepted J06
 
-- Risk: Green when it follows the accepted Result Anchor pattern.
-- Owner: Cline.
-- Reviewer: Lucy.
-- Depends on: J07 accepted.
-- Outcome: exactly one uncertain Result Anchor after an attempted call with
-  uncertain outcome; no Result Anchor for unattempted Actions.
+- Historical intent: emit one `capability.uncertain` Result Anchor for an
+  attempted Action with a durably recorded uncertain outcome, and none for an
+  unattempted Action.
+- Disposition: absorbed into the accepted J06 implementation and its evidence.
+  J08 is retained as historical provenance, not an active implementation job.
 
 ### J09: Durable Replay Protection
 
 - Risk: Red persistence boundary.
 - Architect: Lucy.
 - Owner: Codex.
-- Depends on: J07.
-- Outcome: a completed execution identity cannot repeat its external effect after
-  restart.
-- Corrupted or missing persistence fails closed. Uncertain identities are
-  surfaced for resolution and are never automatically retried.
+- Depends on: accepted J06 (including the historical J07 and J08 outcomes).
+- Status: next active milestone; authoritative design is
+  `docs/J09_DURABLE_REPLAY_DESIGN.md`.
+- Outcome: an execution identity can never repeat its external effect after
+  restart. Corrupted or missing persistence fails closed. Uncertain and
+  incomplete identities are surfaced for manual resolution and are never
+  automatically retried.
 
 ### J10: Queue Generated Result Events Serially
 

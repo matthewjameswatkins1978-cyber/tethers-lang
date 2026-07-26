@@ -1,6 +1,6 @@
 # Task Queue
 
-Updated: 2026-07-25
+Updated: 2026-07-26
 
 ## Current State
 
@@ -26,35 +26,31 @@ current project state.
 
 ## Active Gate
 
-- [ ] J05 Red design: exact one-shot Ask approval and resume semantics.
+- [ ] J09 Red implementation: durable replay protection.
 
-No J05 implementation is authorised until Lucy freezes:
-
-- exact approval identity and Action proof binding;
-- creation, expiry, cancellation, invalidation, and consumption;
-- resumed-Ask precedence;
-- denial and cancellation Trail behaviour;
-- unattempted Action and Result Anchor behaviour;
-- replay, stale-plan, and double-consumption failure cases.
+J05 and J06 are accepted. The historical J07 deadline/uncertainty and J08
+uncertain-Result-Anchor outcomes were absorbed into accepted J06; their entries
+remain in the roadmap as provenance and are not separate active jobs. J09 is
+the next milestone. Its frozen authority is `docs/J09_DURABLE_REPLAY_DESIGN.md`.
 
 Expected route:
 
-- Lucy: design and task compilation.
-- Codex: Red implementation or computer-enabled sign-off.
-- Cline: only later bounded Green or Amber subwork explicitly routed by Lucy.
+- Lucy: architecture and acceptance.
+- Codex: Red implementation and local verification.
+- Cline: no J09 work unless Lucy later compiles and routes a bounded subtask.
 
 ## Remaining 0.2 Queue
 
 ### Exact Approval
 
-- [ ] J05 implement and prove exact one-shot Ask resolution.
+- [x] J05 exact one-shot Ask resolution accepted.
 
 ### Honest Execution
 
-- [ ] J06 freeze deadline and outcome classification.
-- [ ] J07 implement deadlines and first-class `uncertain` outcomes.
-- [ ] J08 emit `capability.uncertain` Result Anchors.
-- [ ] J09 add durable replay protection.
+- [x] J06 deadline and truthful outcome classification accepted.
+- [x] J07 historical deadline and `uncertain` outcome intent absorbed into J06.
+- [x] J08 historical `capability.uncertain` Result Anchor intent absorbed into J06.
+- [ ] J09 durable replay protection — next active milestone; design frozen.
 
 ### Event Continuation
 
