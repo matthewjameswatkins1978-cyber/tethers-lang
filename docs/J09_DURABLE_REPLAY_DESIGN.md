@@ -266,31 +266,81 @@ them. A process may hold the lock from admission through final generation
 publication. It must not release it between replay admission and provider
 boundary.
 
-### Native Windows durability gate
+### Supported native Windows substrate
 
-The active implementation environment is native Windows. A J09 Windows backend
-is admissible only when it proves every required primitive on the actual local
-filesystem:
+J09 0.2 supports only native Windows on a local fixed NTFS volume. It rejects a
+network filesystem; a reparse point, symlink, junction, mount-point traversal,
+or unsupported volume; and every anomalous or unprovable storage condition.
+Unsupported storage returns `ReplayPersistenceUnavailable` before J05 approval
+consumption or dispatch.
 
-1. open temporary and final files with no-follow/reparse-safe, create-new
-   semantics on the same local volume;
-2. write and `FlushFileBuffers` the complete temporary file successfully;
-3. atomically create the final name without replacement (not
-   `MOVEFILE_REPLACE_EXISTING`, `ReplaceFile`, copy, or a replace-capable
-   rename);
-4. prove the final name and parent directory metadata durable after publication;
-   and
-5. acquire and hold the documented cross-process exclusion above.
+The proof boundary is the documented Windows/NTFS API contract plus runtime
+verification that every required call succeeds. J09 does not claim protection
+against storage hardware or firmware that violates the operating system's
+completed-write contract.
 
-The implementation may use a tested native primitive such as a same-volume
-atomic no-replace link/create only if its no-replace and crash-durability
-properties are demonstrated for the supported Windows filesystem. It must not
-assume that a Rust `rename`, a best-effort head file, a successful data-file
-flush, or a directory handle alone proves durable publication. Where Windows or
-the chosen volume cannot prove a required primitive, ledger initialisation,
-lookup, claim, or generation publication returns
-`ReplayPersistenceUnavailable`; no J05 approval is consumed and no dispatch is
-allowed. This is the required fail-closed result, not a portability fallback.
+The runtime may add only these target-specific dependencies, with Cargo choosing
+the exact compatible patch versions:
+
+```toml
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO"
+] }
+
+uuid = { version = "1", features = ["v4"] }
+```
+
+No other dependency is authorised. `windows-sys` is confined to one small
+Windows persistence module whose safe Rust wrappers contain, document, and test
+every unsafe Win32 call. `uuid::Uuid::new_v4()` creates host execution IDs and
+temporary nonces; every durable UUID is validated as canonical lower-case format.
+
+#### Storage verification
+
+Before ledger use, the Windows backend opens and inspects the configured ledger
+root and every relevant parent component through `CreateFileW`. It uses
+reparse-point-safe opening and inspection, rejects any component carrying
+reparse-point semantics, and uses `GetVolumeInformationByHandleW` or an
+equivalent handle-bound query to require filesystem name `NTFS` and a local
+fixed volume. Validation remains handle-bound after path validation; path
+strings alone are not authority.
+
+#### Cross-process exclusion
+
+The backend opens the lock file through `CreateFileW`, obtains OS-backed
+exclusive access with `LockFileEx` over a documented byte range, and holds the
+handle for the lock lifetime. A competing process may wait or fail closed, but
+it must never proceed concurrently. The admission process holds that exclusion
+through at least the provider boundary and, where practical, through final
+generation publication.
+
+#### Temporary-file publication
+
+For every immutable claim or generation, the backend must create a uniquely
+named temporary file with `CREATE_NEW` in the verified destination directory,
+open it with `FILE_FLAG_WRITE_THROUGH`, write complete canonical bytes, and
+require `FlushFileBuffers` success. It renames the still-open temporary handle
+with `SetFileInformationByHandle` using `FileRenameInfo` or `FileRenameInfoEx`
+with replacement disabled; source and destination must remain in the same
+verified NTFS volume and directory. It then requires a second
+`FlushFileBuffers`, reopens, and validates the final file through the validated
+root before treating publication as durable.
+
+The durability argument is that `FILE_FLAG_WRITE_THROUGH` is the documented
+NTFS mechanism for flushing metadata changes including rename,
+`FlushFileBuffers` confirms complete contents, and handle-based no-replace
+rename supplies the atomic namespace operation. J09 does not require or pretend
+to perform generic POSIX-style parent-directory `fsync` on Windows.
+
+The backend must not use replace-capable rename,
+`MOVEFILE_REPLACE_EXISTING`, `ReplaceFile`, copy-and-delete, hard links,
+ordinary `std::fs::rename` as the durability primitive, an administrator-only
+volume flush, or best-effort cleanup after ambiguous publication. Any failed or
+unprovable call returns `ReplayPersistenceUnavailable`; no J05 approval is
+consumed and no dispatch is allowed.
 
 ## Dispatch ordering and J05/J06 interaction
 
@@ -425,11 +475,25 @@ one-to-one mapping to an existing regression.
     alter planner, manifest, provider, or MCP messages.
 40. Full Rust, host integration, protocol, OCaml, packet, whitespace, complete
     diff, Windows primitive, and restart tests pass from the accepted J06 base.
+41. A supported local fixed NTFS volume is admitted; non-NTFS and remote storage
+    are rejected before approval consumption or dispatch.
+42. Reparse-point, symlink, junction, mount-point traversal, and unsupported
+    volume paths are rejected through handle-bound storage validation.
+43. Two processes cannot hold the same logical-key lock concurrently.
+44. Destination collision never replaces existing final bytes; competing
+    publishers produce exactly one accepted final file.
+45. Write, flush, rename, reopen, and final-verification mismatch faults fail
+    closed, and a published final file validates after closing/reopening handles.
+46. The safe Windows wrapper contains and documents every unsafe Win32 call.
+47. Only the authorised target-specific `windows-sys` and `uuid` dependencies
+    are added; no generic directory `fsync`, volume flush, hard-link,
+    replace-capable rename, or `std::fs::rename` publication path exists.
 
 ## Implementation boundary
 
-J09 may add focused host replay-ledger and host-admission code, tests, and the
-minimal dispatch orchestration needed to carry a private admission. It must not
-change Tethers Core, OCaml, capability manifests, MCP messages, provider
-contracts, Result Anchor queueing, the public configuration format, or the
-preserved safety branch.
+J09 may add focused host replay-ledger and host-admission code, a small
+target-specific Windows persistence module, the two authorised target-specific
+dependencies, tests, and minimal dispatch orchestration. It must not change
+Tethers Core, OCaml, capability manifests, MCP messages, provider contracts,
+Result Anchor queueing, the public configuration format, or the preserved
+safety branch.
