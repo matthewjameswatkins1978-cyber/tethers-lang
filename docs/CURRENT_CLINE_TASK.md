@@ -2,242 +2,127 @@
 
 Control contract: `1`
 
-Task: `J06 monotonic deadline and truthful outcome classification`
+Task: `J09 durable replay protection`
 
-Status: `COMPLETE`
+Status: `PROPOSED`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Codex — fresh implementation branch from current origin/main`
+Route: `Codex — later Red implementation branch from current origin/main after Lucy authorisation`
 
-Worker note: `docs/worker-notes/2026-07-25-j06-deadline-outcome-implementation.md`
+Worker note: `docs/worker-notes/2026-07-26-j09-durable-replay-implementation.md`
 
 Base branch: `main`
 
-Base commit: `95976fdac466db61aaa1a88b5a1f0e8574101526`
+Base commit: `d67771ff2d93e7fe0909835e13c0988fa10a0c18`
+
+Base rationale: this is the amended J09 native Windows substrate design
+checkpoint on the review branch. It supersedes the earlier action-tuple
+design-only checkpoint `99ecd9261fe07f3a7b50666f49fa1011a1b61981`; the current
+packet commit is its planning-only descendant. Neither is a runtime baseline.
+The accepted runtime implementation base remains `main` at
+`e679338e2887510d907d3b1c77eaf7a922dfad37`, as recorded by the authoritative
+J09 design. A later implementation branch starts from that accepted `main`,
+with this corrected design checkpoint as its reviewed authority.
 
 ## Objective
 
-Implement the authoritative J06 deadline and outcome boundary defined in
-`docs/J06_DEADLINE_OUTCOME_DESIGN.md`.
-
-J06 must use monotonic timing, distinguish unattempted, known success, known
-failure, and uncertain execution truthfully, preserve J05 one-shot approval
-consumption, redact durable reasons, and introduce no retry or J07 behaviour.
+Implement the frozen J09 host-owned durable replay ledger so an execution identity can never repeat an external effect after restart. This is design-ready only; `PROPOSED` does not authorise implementation.
 
 ## Relevant background and existing behaviour
 
-- J05 is accepted and merged on `main` at
-  `1f984ff3c89c66b5580e8b6e7936b8e41d9db93d`.
-- Durable intent already precedes provider execution.
-- Existing Result Anchors represent known success and known failure.
-- Existing unattempted paths create no standard Result Anchor.
-- `docs/J06_DEADLINE_OUTCOME_DESIGN.md` is the sole J06 authority.
-- `docs/J06_DEADLINE_OUTCOME_DESIGN_CANDIDATE.md` is provenance only.
-- The immutable safety branch
-  `safety/preserve-local-main-20260725` at
-  `f74999aba9135f0493cf28693ba6444c22388294` may be inspected selectively, but
-  its partial J07-style runtime code is rejected and must not be transplanted.
-
-## Preflight self-repair authority
-
-Codex must repair bounded mechanical control-plane defects itself and continue
-when the correction does not change product semantics, trust boundaries,
-security, implementation scope, or accepted architecture.
-
-Codex may:
-
-- update the Base commit to current clean `origin/main` before implementation
-  starts when intervening remote commits are already accepted;
-- correct packet formatting, status, headings, worker-note metadata, ignored
-  local evidence files, and equivalent checker-contract defects;
-- make the smallest checker correction when it rejects semantically equivalent
-  packet formatting;
-- record every self-repair in the worker note.
-
-Codex must stop when repair would alter J06 semantics, weaken a safety boundary,
-conceal source drift, risk losing work, or import unrelated code.
+- `docs/J09_DURABLE_REPLAY_DESIGN.md` is the sole J09 authority.
+- J05 approval consumption and J06 deadline, truthful outcome, redaction, and Result Anchor semantics are accepted on `main`.
+- Historical J07/J08 outcomes are absorbed into J06; do not create separate J07/J08 work.
+- Existing intent/outcome Trail is evidence, not replay-admission authority.
+- The preserved safety branch is out of scope and must not be inspected for implementation material.
 
 ## Required behaviour
 
-1. Add a host-owned monotonic clock abstraction for execution deadlines.
-2. Add a deterministic controllable clock for tests.
-3. Start the deadline only after durable intent has succeeded.
-4. Keep planning, approval waiting, approval consumption, policy evaluation, and
-   failed intent persistence outside the execution deadline.
-5. Mark the provider invocation boundary immediately before a valid
-   `DispatchReadyAction` may cause external effects.
-6. Classify failures before that boundary as `Unattempted`.
-7. Classify trusted provider success with valid output as `Succeeded`.
-8. Classify explicit provider-declared errors as known `Failed`.
-9. Classify trusted provider success with schema-invalid output as known
-   `Failed` with `result_validation_failed`.
-10. Classify deadline expiry or transport ambiguity after invocation may have
-    begun as `Uncertain`, never guessed `Failed`.
-11. Cover process loss, malformed/truncated responses, protocol interruption,
-    and absence of trustworthy final evidence.
-12. Use the deterministic rule that a response first observed after the
-    monotonic deadline is `Uncertain`.
-13. Durably persist attempted outcomes before creating their standard Result
-    Anchor.
-14. Add `capability.uncertain` without weakening the existing success/failure
-    Anchor contracts.
-15. Produce no standard Result Anchor for `Unattempted`.
-16. Preserve a known or uncertain in-memory classification after outcome-audit
-    failure, report audit failure separately, create no standard Result Anchor,
-    and authorise no retry.
-17. Add a pure explicit redaction boundary for durable outcome and Result Anchor
-    reasons.
-18. Prevent raw stderr, transport payloads, paths, credentials, tokens,
-    arguments, stack traces, and provider-private messages from crossing durable
-    boundaries.
-19. Preserve J05 approval consumption after every later outcome or audit path.
-20. Add no automatic retry, implicit compensation, restart replay, or J07
-    recovery behaviour.
-21. Implement all 48 design cases with individually identifiable tests or an
-    explicit one-to-one mapping.
+1. Create one host-owned canonical stable execution identity per attempt.
+2. Bind identity to the exact non-secret dispatch proof fields.
+3. Persist replay state in the host-owned versioned ledger specified by J09.
+4. Fail closed for missing, corrupt, partial, unreadable, or unprovable persistence.
+5. Publish `intent_recorded` before Trail intent and provider invocation.
+6. Publish `invocation_armed` before the provider invocation boundary.
+7. Block every duplicate identity before and after possible provider invocation.
+8. Persist J06 known success, known failure, and uncertainty as final replay states.
+9. Require manual resolution for incomplete and uncertain states.
+10. Create no duplicate standard Result Anchor on any replay block.
+11. Preserve J05 consumption and J06 truth; add no retry or compensation.
+12. Provide deterministic persistence and clock-related test seams.
+13. Use only the frozen native Windows NTFS substrate and fail closed before
+    approval consumption or dispatch when its storage proof cannot be made.
 
 ## Relevant components
 
-- `docs/J06_DEADLINE_OUTCOME_DESIGN.md`
+- `docs/J09_DURABLE_REPLAY_DESIGN.md`
 - `docs/J05_EXACT_ASK_APPROVAL_DESIGN.md`
-- `docs/DECISIONS.md`
-- `docs/CAPABILITY_BRIDGE.md`
+- `docs/J06_DEADLINE_OUTCOME_DESIGN.md`
 - `tethers-0.1/host-rust/src/dispatch.rs`
 - `tethers-0.1/host-rust/src/main.rs`
+- `tethers-0.1/host-rust/src/outcome.rs`
 - `tethers-0.1/host-rust/src/result_anchor.rs`
-- `tethers-0.1/host-rust/src/provider.rs`
-- `tethers-0.1/host-rust/src/stdio_provider.rs`
-- focused new clock/outcome/redaction modules when justified
-- existing Rust and integration tests
-- safety commit `f74999aba9135f0493cf28693ba6444c22388294`
-  for selective design reference only
+- focused new host replay-ledger and target-specific Windows persistence modules
+- `tethers-0.1/host-rust/Cargo.toml` and `Cargo.lock` for the only authorised
+  target-specific dependencies
 
 ## Frozen decisions and invariants
 
-- The authoritative J06 design controls all deadline and outcome semantics.
-- Deadline decisions use monotonic time only.
-- Wall-clock timestamps may label events but never decide classification.
-- Deadline starts after durable intent and before provider invocation.
-- Before invocation is unattempted.
-- Ambiguity after invocation may have begun is uncertain.
-- Explicit provider failure is known failed.
-- Schema-invalid successful output is known failed.
-- Known outcomes remain known after later audit failure.
-- Uncertain outcomes remain uncertain after later audit failure.
-- No outcome-write failure authorises retry.
-- No automatic retry or compensation.
-- No consumed J05 approval is restored.
-- No standard Result Anchor for unattempted Actions.
-- Durable reasons must be redacted and stable.
-- Tethers Core, OCaml planner semantics, manifest format, and MCP protocol remain
-  unchanged.
-- The existing structured-scope demo remains fail-closed.
-- J07 is entirely out of scope.
+- The J09 design controls replay semantics.
+- Completed success and known failure are permanently replay-blocked.
+- Incomplete and uncertain identities are never automatically retried.
+- A new attempt needs a new execution identity; no consumed J05 approval is restored.
+- Replay persistence failure fails closed at startup and lookup.
+- Runtime persistence supports only local fixed NTFS after handle-bound,
+  reparse-safe verification; all other storage is unavailable before approval
+  consumption or dispatch.
+- `windows-sys` and `uuid` are authorised only as specified by the frozen J09
+  design; no other dependency is authorised.
+- Result Anchor queueing is J10 work and remains absent.
+- No planner, manifest, protocol, provider-contract, or safety-branch change is permitted.
 
 ## Acceptance criteria
 
-1. Focused tests prove the deadline starts only after durable intent.
-2. Production deadline decisions use a monotonic clock abstraction.
-3. Tests inject and control a deterministic clock.
-4. Tests prove the exact invocation boundary and all unattempted cases.
-5. Tests prove known success, explicit provider failure, and schema-invalid
-   provider success classifications.
-6. Tests prove each post-invocation ambiguity becomes `Uncertain`.
-7. Tests prove a response observed after deadline remains uncertain.
-8. Tests prove durable outcome precedes standard Result Anchor for success,
-   failure, and uncertainty.
-9. Tests prove outcome persistence failure preserves in-memory truth, creates no
-   standard Result Anchor, and authorises no retry.
-10. Tests prove durable and Result Anchor reasons are redacted.
-11. Tests prove J05 approval remains consumed after every later path.
-12. Tests prove no automatic retry or compensation occurs.
-13. All 48 design cases have one-to-one evidence.
-14. Existing J03-J05 trust and regression tests remain green.
-15. The complete required verification passes and the worker note records exact
-    commands and results.
-16. Tests prove outcome-audit failure preserves known or uncertain in-memory
-    truth, adds no standard Result Anchor, and authorises no retry.
-17. Tests prove the pure redaction boundary emits stable safe reasons for
-    durable outcome and Result Anchor records.
-18. Tests prove raw diagnostics, credentials, arguments, and provider-private
-    payloads do not cross durable boundaries.
-19. Tests prove consumed J05 approval remains consumed after all later outcome
-    and audit paths.
-20. Tests prove no automatic retry, implicit compensation, restart replay, or
-    J07 recovery behaviour is introduced.
-21. The 48-case J06 design matrix has individually identifiable test evidence
-    or an explicit one-to-one mapping.
+1. Tests prove canonical host-created identities and binding mismatch rejection.
+2. Tests prove a host-owned ledger stores only redacted bound data.
+3. Tests prove record publication is complete, durable, and non-replacing.
+4. Tests prove every persistence read/validation/write/flush/publish failure fails closed.
+5. Tests prove intent ledger state precedes Trail intent and zero calls follow failure.
+6. Tests prove armed state precedes every possible provider call.
+7. Tests prove duplicate attempts make zero calls in each ledger state.
+8. Tests prove final state ordering for J06 success, failure, and uncertainty.
+9. Tests prove restart reconstruction blocks incomplete/uncertain states for manual resolution.
+10. Tests prove replay blocks create no duplicate standard Result Anchor.
+11. Tests prove J05 approval remains consumed and no retry/compensation exists.
+12. Tests prove deterministic fault and clock seams cover the numbered J09 matrix.
+13. Native Windows tests prove storage admission, reparse rejection,
+    cross-process exclusion, no-replace publication, flush/reopen fault closure,
+    and documented containment of unsafe Win32 calls.
 
 ## Required verification
 
-Run sequentially from `tethers-0.1`:
-
-```powershell
-Set-Location host-rust
-cargo fmt --check
-cargo test
-Set-Location ..
-pwsh -NoProfile -File scripts/check-fixtures.ps1
-pwsh -NoProfile -File scripts/test-engine.ps1
-pwsh -NoProfile -File scripts/test-mcp-transcripts.ps1
-pwsh -NoProfile -File scripts/test-host-denial.ps1
-pwsh -NoProfile -File scripts/test-host-execution-failure.ps1
-pwsh -NoProfile -File scripts/demo.ps1
-Set-Location engine-ocaml
-opam exec -- dune build
-Set-Location ..
-```
-
-Then from repository root:
-
-```powershell
-pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-git diff --check
-git status --short --branch
-git diff --stat
-git diff
-```
-
-Record every command and exact result. Never claim an unrun check passed.
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
+- `Set-Location tethers-0.1/host-rust; cargo fmt --check; cargo test`
+- relevant native PowerShell host integration checks named by implementation evidence
+- `git diff --check`
+- inspect complete diff and final `git status --short`
 
 ## Forbidden changes
 
-- Do not modify, delete, merge, cherry-pick, or push the safety branch.
-- Do not transplant preserved `main.rs`, J07 code, workflow files, or corrupted
-  safety-branch runtime code.
-- Do not use wall-clock `SystemTime` for deadline decisions.
-- Do not add automatic retry, compensation, or recovery replay.
-- Do not restore consumed J05 approvals.
-- Do not classify post-invocation ambiguity as known failure.
-- Do not create standard Result Anchors for unattempted Actions.
-- Do not persist raw uncertain reasons, credentials, arguments, stack traces,
-  transport payloads, or provider-private diagnostics.
-- Do not change Tethers language, OCaml planner, manifest format, or MCP protocol.
-- Do not implement J07.
-- Do not push, merge, tag, or publish unless Matthew explicitly authorises it.
+- No automatic retry, compensation, recovery execution, approval restoration, or event queueing.
+- No J10/J11 work, planner/OCaml, manifest, MCP protocol, provider contract,
+  install, merge, or safety-branch change.
+- No dependency except the design-authorised target-specific `windows-sys` 0.61
+  feature set and `uuid` v4 feature; no other dependency is authorised.
+- No raw secret, argument, payload, path, stderr, or stack diagnostic in durable replay/audit/Anchor data.
 
 ## Stop conditions
 
-Stop with exact evidence and one smallest unresolved question only when:
-
-- the authoritative design conflicts with accepted J03-J05 behaviour;
-- a monotonic deadline cannot be introduced without changing an unapproved
-  protocol or trust boundary;
-- truthful uncertainty cannot be represented without an unavoidable protocol
-  change;
-- two materially similar implementation attempts fail;
-- unrelated repository or environment failure prevents trustworthy verification;
-- preflight repair would alter semantics, weaken safety, conceal drift, or risk
-  losing work.
-
-Do not stop for progress reports, safe increments, a passing focused test, one
-completed module, or ordinary compiler/test failures. Continue until the task is
-`COMPLETE` or a genuine stop condition exists.
+Stop for a semantic, trust, security, atomic-durability, or platform-primitive conflict; do not substitute best-effort persistence. Stop after two materially similar failures with exact evidence and one smallest unresolved question.
 
 ## Expected pre-existing changes
 
-None. Start from a clean fresh branch created from current `origin/main` at or
-after `95976fdac466db61aaa1a88b5a1f0e8574101526`.
+None.
