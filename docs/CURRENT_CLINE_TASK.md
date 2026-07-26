@@ -16,13 +16,13 @@ Worker note: `docs/worker-notes/2026-07-26-j09-durable-replay-implementation.md`
 
 Base branch: `main`
 
-Base commit: `99ecd9261fe07f3a7b50666f49fa1011a1b61981`
+Base commit: `d67771ff2d93e7fe0909835e13c0988fa10a0c18`
 
-Base rationale: this is the corrected action-tuple J09 design checkpoint on the
-review branch. It supersedes the earlier design-only checkpoint
-`068ebd9ae14f63c932a059e827b746cdf5b4ded6`; the current packet commit is its
-planning-only descendant. Neither is a runtime baseline. The accepted runtime
-implementation base remains `main` at
+Base rationale: this is the amended J09 native Windows substrate design
+checkpoint on the review branch. It supersedes the earlier action-tuple
+design-only checkpoint `99ecd9261fe07f3a7b50666f49fa1011a1b61981`; the current
+packet commit is its planning-only descendant. Neither is a runtime baseline.
+The accepted runtime implementation base remains `main` at
 `e679338e2887510d907d3b1c77eaf7a922dfad37`, as recorded by the authoritative
 J09 design. A later implementation branch starts from that accepted `main`,
 with this corrected design checkpoint as its reviewed authority.
@@ -53,6 +53,8 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 10. Create no duplicate standard Result Anchor on any replay block.
 11. Preserve J05 consumption and J06 truth; add no retry or compensation.
 12. Provide deterministic persistence and clock-related test seams.
+13. Use only the frozen native Windows NTFS substrate and fail closed before
+    approval consumption or dispatch when its storage proof cannot be made.
 
 ## Relevant components
 
@@ -63,7 +65,9 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 - `tethers-0.1/host-rust/src/main.rs`
 - `tethers-0.1/host-rust/src/outcome.rs`
 - `tethers-0.1/host-rust/src/result_anchor.rs`
-- focused new host replay-ledger module and tests when justified
+- focused new host replay-ledger and target-specific Windows persistence modules
+- `tethers-0.1/host-rust/Cargo.toml` and `Cargo.lock` for the only authorised
+  target-specific dependencies
 
 ## Frozen decisions and invariants
 
@@ -72,6 +76,11 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 - Incomplete and uncertain identities are never automatically retried.
 - A new attempt needs a new execution identity; no consumed J05 approval is restored.
 - Replay persistence failure fails closed at startup and lookup.
+- Runtime persistence supports only local fixed NTFS after handle-bound,
+  reparse-safe verification; all other storage is unavailable before approval
+  consumption or dispatch.
+- `windows-sys` and `uuid` are authorised only as specified by the frozen J09
+  design; no other dependency is authorised.
 - Result Anchor queueing is J10 work and remains absent.
 - No planner, manifest, protocol, provider-contract, or safety-branch change is permitted.
 
@@ -89,6 +98,9 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 10. Tests prove replay blocks create no duplicate standard Result Anchor.
 11. Tests prove J05 approval remains consumed and no retry/compensation exists.
 12. Tests prove deterministic fault and clock seams cover the numbered J09 matrix.
+13. Native Windows tests prove storage admission, reparse rejection,
+    cross-process exclusion, no-replace publication, flush/reopen fault closure,
+    and documented containment of unsafe Win32 calls.
 
 ## Required verification
 
@@ -101,7 +113,10 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 ## Forbidden changes
 
 - No automatic retry, compensation, recovery execution, approval restoration, or event queueing.
-- No J10/J11 work, planner/OCaml, manifest, MCP protocol, provider contract, dependency, install, push, merge, or safety-branch change.
+- No J10/J11 work, planner/OCaml, manifest, MCP protocol, provider contract,
+  install, merge, or safety-branch change.
+- No dependency except the design-authorised target-specific `windows-sys` 0.61
+  feature set and `uuid` v4 feature; no other dependency is authorised.
 - No raw secret, argument, payload, path, stderr, or stack diagnostic in durable replay/audit/Anchor data.
 
 ## Stop conditions
