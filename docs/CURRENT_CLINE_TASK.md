@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J09 durable replay protection`
 
-Status: `PROPOSED`
+Status: `BLOCKED`
 
 Task colour: `Red`
 
@@ -16,20 +16,19 @@ Worker note: `docs/worker-notes/2026-07-26-j09-durable-replay-implementation.md`
 
 Base branch: `main`
 
-Base commit: `d67771ff2d93e7fe0909835e13c0988fa10a0c18`
+Base commit: `edab172d45cbec248a82002a949c2790696bb320`
 
-Base rationale: this is the amended J09 native Windows substrate design
-checkpoint on the review branch. It supersedes the earlier action-tuple
-design-only checkpoint `99ecd9261fe07f3a7b50666f49fa1011a1b61981`; the current
-packet commit is its planning-only descendant. Neither is a runtime baseline.
-The accepted runtime implementation base remains `main` at
-`e679338e2887510d907d3b1c77eaf7a922dfad37`, as recorded by the authoritative
-J09 design. A later implementation branch starts from that accepted `main`,
-with this corrected design checkpoint as its reviewed authority.
+Base rationale: `edab172d45cbec248a82002a949c2790696bb320` stages the exact
+reviewed J09 design and packet snapshots onto the runtime branch. The accepted
+runtime implementation base remains `main` at
+`e679338e2887510d907d3b1c77eaf7a922dfad37`; the frozen Windows substrate
+authority remains `d67771ff2d93e7fe0909835e13c0988fa10a0c18` on the review
+branch. No runtime implementation was started after the blocking conflict
+below was demonstrated.
 
 ## Objective
 
-Implement the frozen J09 host-owned durable replay ledger so an execution identity can never repeat an external effect after restart. This is design-ready only; `PROPOSED` does not authorise implementation.
+Implement the frozen J09 host-owned durable replay ledger so an execution identity can never repeat an external effect after restart. This work is blocked before runtime implementation because the accepted host has no explicit, provisioned replay-root authority.
 
 ## Relevant background and existing behaviour
 
@@ -122,6 +121,21 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 ## Stop conditions
 
 Stop for a semantic, trust, security, atomic-durability, or platform-primitive conflict; do not substitute best-effort persistence. Stop after two materially similar failures with exact evidence and one smallest unresolved question.
+
+## Blocker
+
+The frozen design requires an explicitly provisioned host data root and forbids
+silently creating an established replay root at startup or lookup. The accepted
+runtime exposes only optional `TRAIL_PATH`; `main.rs` treats it as audit storage
+and calls `create_dir_all` on its parent. It neither carries a replay-root
+configuration nor exposes an explicit provisioning operation. Deriving a replay
+root from that audit path would silently introduce a storage-location policy and
+automatic provisioning, contrary to the frozen design and forbidden
+public-configuration change. The smallest product decision is whether the host
+may add an explicit provisioned replay-root configuration/lifecycle, or may use
+an explicitly approved deterministic mapping from an already-provisioned host
+data root. No J09 runtime code, dependency, or test is valid until that choice
+is frozen.
 
 ## Expected pre-existing changes
 
