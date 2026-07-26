@@ -16,7 +16,7 @@ Worker note: `docs/worker-notes/2026-07-26-j09-durable-replay-implementation.md`
 
 Base branch: `main`
 
-Base commit: `e679338e2887510d907d3b1c77eaf7a922dfad37`
+Base commit: `1b3a96168bac1cc14d390e20dd6ca58e5df325a7`
 
 ## Objective
 
@@ -102,5 +102,3 @@ Stop for a semantic, trust, security, atomic-durability, or platform-primitive c
 ## Expected pre-existing changes
 
 - `docs/J09_DURABLE_REPLAY_DESIGN.md`
-- `docs/ROAD_TO_0_2.md`
-- `docs/TASK_QUEUE.md`

@@ -1,7 +1,7 @@
 # J09 Durable Replay Protection Design
 
-Status: authoritative Red implementation design  
-Date: 2026-07-26  
+Status: authoritative Red implementation design
+Date: 2026-07-26
 Base: `main` at `e679338e2887510d907d3b1c77eaf7a922dfad37`
 
 ## Contract
