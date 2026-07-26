@@ -16,11 +16,11 @@ Worker note: `docs/worker-notes/2026-07-26-j09-durable-replay-implementation.md`
 
 Base branch: `main`
 
-Base commit: `068ebd9ae14f63c932a059e827b746cdf5b4ded6`
+Base commit: `99ecd9261fe07f3a7b50666f49fa1011a1b61981`
 
-Base rationale: this is the corrected frozen J09 design checkpoint on the
+Base rationale: this is the corrected action-tuple J09 design checkpoint on the
 review branch. It supersedes the earlier design-only checkpoint
-`c708e035ef74e19d7c333344a659c79469659a2b`; the current packet commit is its
+`068ebd9ae14f63c932a059e827b746cdf5b4ded6`; the current packet commit is its
 planning-only descendant. Neither is a runtime baseline. The accepted runtime
 implementation base remains `main` at
 `e679338e2887510d907d3b1c77eaf7a922dfad37`, as recorded by the authoritative
