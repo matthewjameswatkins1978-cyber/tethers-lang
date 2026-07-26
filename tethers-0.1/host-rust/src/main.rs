@@ -4,6 +4,9 @@ mod manifest;
 mod outcome;
 pub mod policy;
 pub mod provider;
+pub mod replay;
+#[cfg(windows)]
+pub mod replay_windows;
 pub mod resolver;
 mod result_anchor;
 pub mod stdio_provider;
