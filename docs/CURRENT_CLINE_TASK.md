@@ -4,31 +4,33 @@ Control contract: `1`
 
 Task: `J09 durable replay protection`
 
-Status: `BLOCKED`
+Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Codex — later Red implementation branch from current origin/main after Lucy authorisation`
+Route: `Codex — J09 runtime implementation on dedicated branch`
 
 Worker note: `docs/worker-notes/2026-07-26-j09-durable-replay-implementation.md`
 
 Base branch: `main`
 
-Base commit: `edab172d45cbec248a82002a949c2790696bb320`
+Base commit: `055f52186ec2bf6adbd015b5684a57cd2152b8c0`
 
-Base rationale: `edab172d45cbec248a82002a949c2790696bb320` stages the exact
-reviewed J09 design and packet snapshots onto the runtime branch. The accepted
-runtime implementation base remains `main` at
-`e679338e2887510d907d3b1c77eaf7a922dfad37`; the frozen Windows substrate
-authority remains `d67771ff2d93e7fe0909835e13c0988fa10a0c18` on the review
-branch. No runtime implementation was started after the blocking conflict
-below was demonstrated.
+Base rationale: `055f52186ec2bf6adbd015b5684a57cd2152b8c0` stages the final
+independently reviewed J09 design authority
+`15e6f8a4dab7fe6c1c4a21266f9fe826e69a51b7` on this dedicated runtime branch.
+Lucy authorised implementation after reviewing that design. The accepted
+original runtime base remains `main` at
+`e679338e2887510d907d3b1c77eaf7a922dfad37`. Earlier runtime documentation
+commits `edab172d45cbec248a82002a949c2790696bb320` and
+`674072d9076a1a52b4f536aa4e90c0ffcaa0b210` are expected pre-existing history,
+not runtime implementation.
 
 ## Objective
 
-Implement the frozen J09 host-owned durable replay ledger so an execution identity can never repeat an external effect after restart. This work is blocked before runtime implementation because the accepted host has no explicit, provisioned replay-root authority.
+Implement the frozen J09 host-owned durable replay ledger so an execution identity can never repeat an external effect after restart. The final reviewed design is authorised for implementation on this dedicated branch.
 
 ## Relevant background and existing behaviour
 
@@ -36,6 +38,9 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 - J05 approval consumption and J06 deadline, truthful outcome, redaction, and Result Anchor semantics are accepted on `main`.
 - Historical J07/J08 outcomes are absorbed into J06; do not create separate J07/J08 work.
 - Existing intent/outcome Trail is evidence, not replay-admission authority.
+- The host-local `--host-data-root` option and separate `provision-replay`
+  operation are the sole J09 storage authority; `TRAIL_PATH` remains independent
+  audit storage and is never a replay-root fallback.
 - The preserved safety branch is out of scope and must not be inspected for implementation material.
 
 ## Required behaviour
@@ -78,8 +83,15 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 - Runtime persistence supports only local fixed NTFS after handle-bound,
   reparse-safe verification; all other storage is unavailable before approval
   consumption or dispatch.
-- `windows-sys` and `uuid` are authorised only as specified by the frozen J09
-  design; no other dependency is authorised.
+- An Allow or approved Ask requires an absolute, already-provisioned host data
+  root; missing, incomplete, unproven, or relative roots fail before J05
+  consumption and dispatch. Normal execution never provisions replay storage.
+- Provisioning alone may create the exact v1 replay subtree after handle-bound
+  local-NTFS, owner, and DACL validation; it is narrowly idempotent and never
+  repairs or rewrites operator storage or ACLs.
+- `windows-sys` with the frozen Foundation, Storage_FileSystem, System_IO,
+  Security, and System_Threading features, plus `uuid` v4, are authorised only
+  as specified by the frozen J09 design; no other dependency is authorised.
 - Result Anchor queueing is J10 work and remains absent.
 - No planner, manifest, protocol, provider-contract, or safety-branch change is permitted.
 
@@ -100,6 +112,17 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
 13. Native Windows tests prove storage admission, reparse rejection,
     cross-process exclusion, no-replace publication, flush/reopen fault closure,
     and documented containment of unsafe Win32 calls.
+14. Tests prove missing or relative host-data-root fails before J05 consumption
+    and dispatch, while unmatched, denied, and pending-Ask paths remain
+    provider-free without replay storage.
+15. Tests prove only explicit provisioning creates the exact complete v1
+    hierarchy, exact reprovisioning is non-mutating `AlreadyProvisioned`, and
+    partial or unknown storage is never repaired.
+16. Tests prove handle-bound root owner and DACL validation accepts only the
+    frozen authority set and rejects reparse substitution or unprovable ACLs.
+17. The worker note maps every numbered J09 verification case, including the
+    host-data-root and provisioning cases, to focused evidence or an existing
+    regression.
 
 ## Required verification
 
@@ -116,26 +139,17 @@ Implement the frozen J09 host-owned durable replay ledger so an execution identi
   install, merge, or safety-branch change.
 - No dependency except the design-authorised target-specific `windows-sys` 0.61
   feature set and `uuid` v4 feature; no other dependency is authorised.
+- No public Tethers language configuration change. The only permitted
+  reference-host configuration addition is `--host-data-root <ABSOLUTE_PATH>`
+  and the only permitted storage establishment operation is
+  `provision-replay <ABSOLUTE_HOST_DATA_ROOT>`; neither may infer a root from
+  Trail, request, environment, provider, temporary, executable, or working
+  directory paths.
 - No raw secret, argument, payload, path, stderr, or stack diagnostic in durable replay/audit/Anchor data.
 
 ## Stop conditions
 
 Stop for a semantic, trust, security, atomic-durability, or platform-primitive conflict; do not substitute best-effort persistence. Stop after two materially similar failures with exact evidence and one smallest unresolved question.
-
-## Blocker
-
-The frozen design requires an explicitly provisioned host data root and forbids
-silently creating an established replay root at startup or lookup. The accepted
-runtime exposes only optional `TRAIL_PATH`; `main.rs` treats it as audit storage
-and calls `create_dir_all` on its parent. It neither carries a replay-root
-configuration nor exposes an explicit provisioning operation. Deriving a replay
-root from that audit path would silently introduce a storage-location policy and
-automatic provisioning, contrary to the frozen design and forbidden
-public-configuration change. The smallest product decision is whether the host
-may add an explicit provisioned replay-root configuration/lifecycle, or may use
-an explicitly approved deterministic mapping from an already-provisioned host
-data root. No J09 runtime code, dependency, or test is valid until that choice
-is frozen.
 
 ## Expected pre-existing changes
 
