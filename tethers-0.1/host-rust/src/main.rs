@@ -29,6 +29,25 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
+    if matches!(args.next().as_deref(), Some("provision-replay")) {
+        let root = args
+            .next()
+            .ok_or("usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>")?;
+        if args.next().is_some() {
+            return Err(
+                "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>".into(),
+            );
+        }
+        #[cfg(windows)]
+        {
+            let result = replay_windows::provision_replay(PathBuf::from(root).as_path())?;
+            println!("{}", result.as_str());
+            return Ok(());
+        }
+        #[cfg(not(windows))]
+        return Err("replay persistence is available only on native Windows".into());
+    }
+    let mut args = env::args().skip(1);
     let engine_path = args.next().ok_or(
         "usage: tethers-reference-host ENGINE REQUEST_JSON [POLICY] [TRAIL_PATH] [EXECUTOR_MODE]",
     )?;
