@@ -4,15 +4,19 @@
 //! it has been parsed: each existing component is opened without reparse-point
 //! following, and the final directory handle carries the volume and ACL proof.
 
-use crate::replay::ReplayError;
+use crate::replay::{
+    validate_chain, Claim, ExecutionBinding, ExecutionId, Generation, LogicalExecutionKey,
+    ReplayError, ReplayState,
+};
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::mem::{size_of, MaybeUninit};
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf, Prefix};
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, GENERIC_ALL, GENERIC_READ, GENERIC_WRITE, HANDLE,
-    INVALID_HANDLE_VALUE,
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND,
+    GENERIC_ALL, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Security::{
     AclSizeInformation, CreateWellKnownSid, EqualSid, GetAce, GetAclInformation,
@@ -24,15 +28,17 @@ use windows_sys::Win32::Security::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateDirectoryW, CreateFileW, FileRenameInfo, FlushFileBuffers, GetDriveTypeW,
-    GetFileInformationByHandle, GetVolumeInformationByHandleW, ReadFile,
+    GetFileInformationByHandle, GetFileSizeEx, GetVolumeInformationByHandleW, LockFileEx, ReadFile,
     SetFileInformationByHandle, WriteFile, BY_HANDLE_FILE_INFORMATION, CREATE_NEW, DELETE,
-    FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL,
-    FILE_ATTRIBUTE_REPARSE_POINT, FILE_DELETE_CHILD, FILE_FLAG_BACKUP_SEMANTICS,
-    FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_WRITE_THROUGH, FILE_GENERIC_READ, FILE_RENAME_INFO,
-    FILE_RENAME_INFO_0, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA,
-    FILE_WRITE_EA, OPEN_EXISTING, READ_CONTROL, WRITE_DAC, WRITE_OWNER,
+    FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_APPEND_DATA, FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DELETE_CHILD,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_WRITE_THROUGH,
+    FILE_GENERIC_READ, FILE_RENAME_INFO, FILE_RENAME_INFO_0, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FILE_WRITE_EA, LOCKFILE_EXCLUSIVE_LOCK, OPEN_ALWAYS,
+    OPEN_EXISTING, READ_CONTROL, WRITE_DAC, WRITE_OWNER,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::IO::OVERLAPPED;
 
 const SECURITY_INFORMATION: u32 =
     OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
@@ -54,6 +60,50 @@ const ACCESS_ALLOWED_ACE_TYPE: u8 = 0;
 const ACCESS_DENIED_ACE_TYPE: u8 = 1;
 const DRIVE_FIXED: u32 = 3;
 const FORMAT_BYTES: &[u8] = br#"{"replay_format_version":1}"#;
+const MAX_REPLAY_RECORD_BYTES: i64 = 64 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PersistenceFaultPoint {
+    LockFileOpen,
+    LockAcquisition,
+    ClaimRead,
+    ClaimPublication,
+    ClaimCollisionReopen,
+    ChainDirectoryValidation,
+    GenerationZeroPublication,
+    GenerationOnePublication,
+    GenerationTwoPublication,
+    GenerationReopen,
+    DigestVerification,
+    RestartScan,
+    OrphanDetection,
+}
+
+#[cfg(test)]
+thread_local! {
+    static INJECTED_PERSISTENCE_FAULT: std::cell::Cell<Option<PersistenceFaultPoint>> =
+        const { std::cell::Cell::new(None) };
+}
+
+fn persistence_fault(point: PersistenceFaultPoint) -> Result<(), ReplayError> {
+    #[cfg(test)]
+    if INJECTED_PERSISTENCE_FAULT.with(|fault| fault.get() == Some(point)) {
+        return unavailable();
+    }
+    #[cfg(not(test))]
+    let _ = point;
+    Ok(())
+}
+
+#[cfg(test)]
+fn with_persistence_fault<T>(point: PersistenceFaultPoint, operation: impl FnOnce() -> T) -> T {
+    INJECTED_PERSISTENCE_FAULT.with(|fault| {
+        let previous = fault.replace(Some(point));
+        let result = operation();
+        fault.set(previous);
+        result
+    })
+}
 
 fn unavailable<T>() -> Result<T, ReplayError> {
     Err(ReplayError::PersistenceUnavailable)
@@ -839,11 +889,25 @@ pub fn publish_new_canonical_file(
     final_name: &ValidatedLeafName,
     bytes: &[u8],
 ) -> Result<PublishNewOutcome, ReplayError> {
+    publish_new_canonical_file_with_temporary_stem(
+        directory,
+        final_name,
+        final_name.as_str(),
+        bytes,
+    )
+}
+
+fn publish_new_canonical_file_with_temporary_stem(
+    directory: &ValidatedDirectory,
+    final_name: &ValidatedLeafName,
+    temporary_stem: &str,
+    bytes: &[u8],
+) -> Result<PublishNewOutcome, ReplayError> {
     #[cfg(test)]
     clear_native_publish_diagnostic();
     let temporary = ValidatedLeafName::new(&format!(
         "{}.{}.tmp",
-        final_name.as_str(),
+        temporary_stem,
         Uuid::new_v4().simple()
     ))?;
     let temporary_path = directory.path.join(temporary.as_str());
@@ -961,8 +1025,7 @@ fn validate_complete_hierarchy(root: ValidatedHostRoot) -> Result<(), ReplayErro
     exact_directory_entries(&version.path, &["FORMAT.json", "chains", "claims", "locks"])?;
     validate_format(&version)?;
     for name in ["locks", "claims", "chains"] {
-        let child = version.child_directory(&ValidatedLeafName::new(name)?)?;
-        exact_directory_entries(&child.path, &[])?;
+        let _child = version.child_directory(&ValidatedLeafName::new(name)?)?;
     }
     Ok(())
 }
@@ -973,6 +1036,7 @@ pub fn provision_replay(root_path: &Path) -> Result<ProvisionReplayOutcome, Repl
     let root = validate_existing_root(root_path)?;
     if child_exists(root.path(), "replay") {
         validate_complete_hierarchy(root)?;
+        let _validated_ledger = ReplayLedger::open(root_path)?;
         return Ok(ProvisionReplayOutcome::AlreadyProvisioned);
     }
     exact_directory_entries(root.path(), &[])?;
@@ -999,14 +1063,553 @@ pub fn provision_replay(root_path: &Path) -> Result<ProvisionReplayOutcome, Repl
     Ok(ProvisionReplayOutcome::Provisioned)
 }
 
+fn is_lower_hex(value: &str, length: usize) -> bool {
+    value.len() == length
+        && value
+            .as_bytes()
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+fn directory_entry_names(directory: &ValidatedDirectory) -> Result<Vec<String>, ReplayError> {
+    let mut names = std::fs::read_dir(&directory.path)
+        .map_err(|_| ReplayError::PersistenceUnavailable)?
+        .map(|entry| entry.map(|item| item.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| ReplayError::PersistenceUnavailable)?;
+    names.sort();
+    Ok(names)
+}
+
+fn open_existing_regular_file(path: &Path) -> Result<Option<OwnedHandle>, ReplayError> {
+    let path_w = wide(path);
+    // SAFETY: the nul-terminated path lives through the call. Sharing is
+    // disabled so validation and complete reads observe one immutable file.
+    let raw = unsafe {
+        CreateFileW(
+            path_w.as_ptr(),
+            GENERIC_READ,
+            0,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID_HANDLE_VALUE {
+        // SAFETY: captured immediately after the failed CreateFileW call.
+        return match unsafe { GetLastError() } {
+            ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND => Ok(None),
+            _ => unavailable(),
+        };
+    }
+    let handle = OwnedHandle(raw);
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: handle is live and information is caller-owned writable storage.
+    if unsafe { GetFileInformationByHandle(handle.0, &mut information) } == 0
+        || information.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
+            != 0
+    {
+        return unavailable();
+    }
+    Ok(Some(handle))
+}
+
+fn read_replay_record(handle: HANDLE) -> Result<Vec<u8>, ReplayError> {
+    let mut length = 0i64;
+    // SAFETY: handle is a live regular-file handle and length is writable.
+    if unsafe { GetFileSizeEx(handle, &mut length) } == 0
+        || length <= 0
+        || length > MAX_REPLAY_RECORD_BYTES
+    {
+        return unavailable();
+    }
+    read_complete(handle, length as usize)
+}
+
+/// Owning authority for the documented byte-zero, length-one logical-key
+/// exclusion. Closing this handle releases both the byte-range lock and the
+/// share-denying file open, including on process termination.
+pub struct LogicalKeyLock {
+    _handle: OwnedHandle,
+}
+
+impl LogicalKeyLock {
+    fn acquire(
+        directory: &ValidatedDirectory,
+        logical_key: &LogicalExecutionKey,
+    ) -> Result<Self, ReplayError> {
+        persistence_fault(PersistenceFaultPoint::LockFileOpen)?;
+        let leaf = ValidatedLeafName::new(&format!("{}.lock", logical_key.filename_digest()))?;
+        let path_w = wide(&directory.path.join(leaf.as_str()));
+        // SAFETY: path is one validated leaf beneath retained authority.
+        // OPEN_ALWAYS makes file existence irrelevant; sharing zero makes a
+        // competing process fail closed before it could reach the byte lock.
+        let raw = unsafe {
+            CreateFileW(
+                path_w.as_ptr(),
+                GENERIC_READ | GENERIC_WRITE,
+                0,
+                std::ptr::null(),
+                OPEN_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+                std::ptr::null_mut(),
+            )
+        };
+        if raw == INVALID_HANDLE_VALUE {
+            return unavailable();
+        }
+        let handle = OwnedHandle(raw);
+        let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: handle is live and information is writable.
+        if unsafe { GetFileInformationByHandle(handle.0, &mut information) } == 0
+            || information.dwFileAttributes
+                & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
+                != 0
+        {
+            return unavailable();
+        }
+        persistence_fault(PersistenceFaultPoint::LockAcquisition)?;
+        let mut overlapped = OVERLAPPED::default();
+        // SAFETY: the synchronous handle is live; the zeroed OVERLAPPED fixes
+        // the offset at byte zero. The exclusive range is low=1, high=0.
+        if unsafe { LockFileEx(handle.0, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &mut overlapped) } == 0 {
+            return unavailable();
+        }
+        Ok(Self { _handle: handle })
+    }
+}
+
+fn open_or_create_directory(
+    parent: &ValidatedDirectory,
+    name: &str,
+) -> Result<ValidatedDirectory, ReplayError> {
+    let leaf = ValidatedLeafName::new(name)?;
+    let path = parent.path.join(leaf.as_str());
+    let wide_path = wide(&path);
+    // SAFETY: target is one validated leaf beneath a retained parent.
+    if unsafe { CreateDirectoryW(wide_path.as_ptr(), std::ptr::null()) } == 0 {
+        // SAFETY: captured immediately after the failed CreateDirectoryW call.
+        if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
+            return unavailable();
+        }
+    }
+    parent.child_directory(&leaf)
+}
+
+fn existing_child_directory(
+    parent: &ValidatedDirectory,
+    name: &str,
+) -> Result<Option<ValidatedDirectory>, ReplayError> {
+    let leaf = ValidatedLeafName::new(name)?;
+    let path = parent.path.join(leaf.as_str());
+    if !path.exists() {
+        return Ok(None);
+    }
+    parent.child_directory(&leaf).map(Some)
+}
+
+fn generation_filename(number: u64) -> Result<ValidatedLeafName, ReplayError> {
+    if number > 2 {
+        return unavailable();
+    }
+    ValidatedLeafName::new(&format!("g{number:016}.json"))
+}
+
+fn parse_generation_filename(value: &str) -> Result<u64, ReplayError> {
+    if value.len() != 22 || !value.starts_with('g') || !value.ends_with(".json") {
+        return unavailable();
+    }
+    let digits = &value[1..17];
+    if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return unavailable();
+    }
+    let number = digits
+        .parse::<u64>()
+        .map_err(|_| ReplayError::PersistenceUnavailable)?;
+    if number > 2 || generation_filename(number)?.as_str() != value {
+        return unavailable();
+    }
+    Ok(number)
+}
+
+fn model_unavailable<T>(result: Result<T, ReplayError>) -> Result<T, ReplayError> {
+    result.map_err(|error| match error {
+        ReplayError::BindingMismatch => ReplayError::BindingMismatch,
+        _ => ReplayError::PersistenceUnavailable,
+    })
+}
+
+pub struct ReplayLedger {
+    locks: ValidatedDirectory,
+    claims: ValidatedDirectory,
+    chains: ValidatedDirectory,
+}
+
+impl ReplayLedger {
+    /// Admit the already-provisioned hierarchy and reconstruct every durable
+    /// record. Unknown entries and orphan chains fail the whole ledger closed.
+    pub fn open(root_path: &Path) -> Result<Self, ReplayError> {
+        persistence_fault(PersistenceFaultPoint::RestartScan)?;
+        validate_complete_hierarchy(validate_existing_root(root_path)?)?;
+        let version = validate_existing_root(root_path)?
+            .into_directory()?
+            .child_directory(&ValidatedLeafName::new("replay")?)?
+            .child_directory(&ValidatedLeafName::new("v1")?)?;
+        let ledger = Self {
+            locks: version.child_directory(&ValidatedLeafName::new("locks")?)?,
+            claims: version.child_directory(&ValidatedLeafName::new("claims")?)?,
+            chains: version.child_directory(&ValidatedLeafName::new("chains")?)?,
+        };
+        ledger.validate_whole_ledger()?;
+        Ok(ledger)
+    }
+
+    fn validate_whole_ledger(&self) -> Result<(), ReplayError> {
+        self.validate_lock_entries()?;
+        let claims = self.scan_claims()?;
+        persistence_fault(PersistenceFaultPoint::OrphanDetection)?;
+        self.scan_chains(&claims)?;
+        Ok(())
+    }
+
+    fn validate_lock_entries(&self) -> Result<(), ReplayError> {
+        let entries =
+            std::fs::read_dir(&self.locks.path).map_err(|_| ReplayError::PersistenceUnavailable)?;
+        for entry in entries {
+            let entry = entry.map_err(|_| ReplayError::PersistenceUnavailable)?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(digest) = name.strip_suffix(".lock") else {
+                return unavailable();
+            };
+            let file_type = entry
+                .file_type()
+                .map_err(|_| ReplayError::PersistenceUnavailable)?;
+            if !is_lower_hex(digest, 64) || !file_type.is_file() || file_type.is_symlink() {
+                return unavailable();
+            }
+        }
+        Ok(())
+    }
+
+    fn scan_claims(&self) -> Result<HashMap<String, Claim>, ReplayError> {
+        let mut by_execution = HashMap::new();
+        for name in directory_entry_names(&self.claims)? {
+            let Some(digest) = name.strip_suffix(".claim.json") else {
+                return unavailable();
+            };
+            if !is_lower_hex(digest, 64) {
+                return unavailable();
+            }
+            let logical_key =
+                model_unavailable(LogicalExecutionKey::from_digest(format!("sha256:{digest}")))?;
+            let claim =
+                self.read_claim_named(&logical_key, &name, PersistenceFaultPoint::ClaimRead)?;
+            let execution_digest = claim.execution_id.filename_digest();
+            if by_execution.insert(execution_digest, claim).is_some() {
+                return unavailable();
+            }
+        }
+        Ok(by_execution)
+    }
+
+    fn scan_chains(&self, claims: &HashMap<String, Claim>) -> Result<(), ReplayError> {
+        let mut seen = HashSet::new();
+        for prefix_name in directory_entry_names(&self.chains)? {
+            if !is_lower_hex(&prefix_name, 2) {
+                return unavailable();
+            }
+            let prefix = self
+                .chains
+                .child_directory(&ValidatedLeafName::new(&prefix_name)?)?;
+            let execution_names = directory_entry_names(&prefix)?;
+            if execution_names.is_empty() {
+                return unavailable();
+            }
+            for execution_name in execution_names {
+                if !is_lower_hex(&execution_name, 64)
+                    || !execution_name.starts_with(&prefix_name)
+                    || !seen.insert(execution_name.clone())
+                {
+                    return unavailable();
+                }
+                let Some(claim) = claims.get(&execution_name) else {
+                    return unavailable();
+                };
+                let execution =
+                    prefix.child_directory(&ValidatedLeafName::new(&execution_name)?)?;
+                let generations = self.read_generation_directory(&execution)?;
+                model_unavailable(validate_chain(claim, &generations))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_claim_named(
+        &self,
+        logical_key: &LogicalExecutionKey,
+        name: &str,
+        fault_point: PersistenceFaultPoint,
+    ) -> Result<Claim, ReplayError> {
+        persistence_fault(fault_point)?;
+        let Some(handle) = open_existing_regular_file(&self.claims.path.join(name))? else {
+            return unavailable();
+        };
+        let bytes = read_replay_record(handle.0)?;
+        persistence_fault(PersistenceFaultPoint::DigestVerification)?;
+        model_unavailable(Claim::from_canonical_bytes(&bytes, logical_key))
+    }
+
+    fn existing_claim(
+        &self,
+        logical_key: &LogicalExecutionKey,
+        fault_point: PersistenceFaultPoint,
+    ) -> Result<Option<Claim>, ReplayError> {
+        let name = format!("{}.claim.json", logical_key.filename_digest());
+        if open_existing_regular_file(&self.claims.path.join(&name))?.is_none() {
+            return Ok(None);
+        }
+        self.read_claim_named(logical_key, &name, fault_point)
+            .map(Some)
+    }
+
+    fn read_generation_directory(
+        &self,
+        directory: &ValidatedDirectory,
+    ) -> Result<Vec<Generation>, ReplayError> {
+        persistence_fault(PersistenceFaultPoint::ChainDirectoryValidation)?;
+        let mut numbered = Vec::new();
+        for name in directory_entry_names(directory)? {
+            numbered.push((parse_generation_filename(&name)?, name));
+        }
+        numbered.sort_by_key(|(number, _)| *number);
+        let mut generations = Vec::with_capacity(numbered.len());
+        for (expected, (number, name)) in numbered.into_iter().enumerate() {
+            if number != expected as u64 {
+                return unavailable();
+            }
+            persistence_fault(PersistenceFaultPoint::GenerationReopen)?;
+            let Some(handle) = open_existing_regular_file(&directory.path.join(name))? else {
+                return unavailable();
+            };
+            let bytes = read_replay_record(handle.0)?;
+            persistence_fault(PersistenceFaultPoint::DigestVerification)?;
+            generations.push(model_unavailable(Generation::from_canonical_bytes(&bytes))?);
+        }
+        Ok(generations)
+    }
+
+    fn reconstruct(&self, claim: &Claim) -> Result<(ReplayState, Vec<Generation>), ReplayError> {
+        persistence_fault(PersistenceFaultPoint::ChainDirectoryValidation)?;
+        let execution_digest = claim.execution_id.filename_digest();
+        let prefix_name = &execution_digest[..2];
+        let Some(prefix) = existing_child_directory(&self.chains, prefix_name)? else {
+            return Ok((ReplayState::ClaimedNoState, Vec::new()));
+        };
+        let Some(execution) = existing_child_directory(&prefix, &execution_digest)? else {
+            return Ok((ReplayState::ClaimedNoState, Vec::new()));
+        };
+        let generations = self.read_generation_directory(&execution)?;
+        let state = model_unavailable(validate_chain(claim, &generations))?;
+        Ok((state, generations))
+    }
+
+    fn ensure_execution_directory(&self, claim: &Claim) -> Result<ValidatedDirectory, ReplayError> {
+        persistence_fault(PersistenceFaultPoint::ChainDirectoryValidation)?;
+        let execution_digest = claim.execution_id.filename_digest();
+        let prefix = open_or_create_directory(&self.chains, &execution_digest[..2])?;
+        open_or_create_directory(&prefix, &execution_digest)
+    }
+
+    pub fn admit_or_recover(
+        &self,
+        logical_key: LogicalExecutionKey,
+        binding: ExecutionBinding,
+    ) -> Result<ReplayAdmission<'_>, ReplayError> {
+        let lock = LogicalKeyLock::acquire(&self.locks, &logical_key)?;
+        if let Some(claim) = self.existing_claim(&logical_key, PersistenceFaultPoint::ClaimRead)? {
+            persistence_fault(PersistenceFaultPoint::ClaimCollisionReopen)?;
+            claim.require_binding(&binding)?;
+            let (state, generations) = self.reconstruct(&claim)?;
+            return Ok(ReplayAdmission {
+                ledger: self,
+                _lock: lock,
+                claim,
+                generations,
+                state,
+                fresh: false,
+            });
+        }
+
+        let claim = model_unavailable(Claim::new(logical_key, ExecutionId::generate(), binding))?;
+        let bytes = model_unavailable(claim.canonical_bytes())?;
+        persistence_fault(PersistenceFaultPoint::ClaimPublication)?;
+        let name = ValidatedLeafName::new(&format!(
+            "{}.claim.json",
+            claim.logical_key.filename_digest()
+        ))?;
+        match publish_new_canonical_file_with_temporary_stem(
+            &self.claims,
+            &name,
+            claim.logical_key.filename_digest(),
+            &bytes,
+        ) {
+            Ok(PublishNewOutcome::Published) => {}
+            // The native primitive intentionally retains its keyed temporary
+            // after an ambiguous or collision failure. Such evidence can
+            // never accompany a usable admission.
+            Err(_) => return unavailable(),
+        }
+        let published = self
+            .existing_claim(
+                &claim.logical_key,
+                PersistenceFaultPoint::ClaimCollisionReopen,
+            )?
+            .ok_or(ReplayError::PersistenceUnavailable)?;
+        if published != claim {
+            return unavailable();
+        }
+        Ok(ReplayAdmission {
+            ledger: self,
+            _lock: lock,
+            claim,
+            generations: Vec::new(),
+            state: ReplayState::ClaimedNoState,
+            fresh: true,
+        })
+    }
+}
+
+pub struct ReplayAdmission<'a> {
+    ledger: &'a ReplayLedger,
+    _lock: LogicalKeyLock,
+    claim: Claim,
+    generations: Vec<Generation>,
+    state: ReplayState,
+    fresh: bool,
+}
+
+impl ReplayAdmission<'_> {
+    pub fn execution_id(&self) -> &str {
+        self.claim.execution_id.as_str()
+    }
+
+    pub fn state(&self) -> ReplayState {
+        self.state
+    }
+
+    pub fn is_fresh(&self) -> bool {
+        self.fresh
+    }
+
+    pub fn publish_intent(&mut self) -> Result<(), ReplayError> {
+        if !self.fresh || self.state != ReplayState::ClaimedNoState || !self.generations.is_empty()
+        {
+            return unavailable();
+        }
+        let generation = model_unavailable(Generation::intent(&self.claim))?;
+        self.publish_generation(generation, PersistenceFaultPoint::GenerationZeroPublication)
+    }
+
+    pub fn publish_armed(&mut self) -> Result<(), ReplayError> {
+        if !self.fresh || self.state != ReplayState::IntentRecorded || self.generations.len() != 1 {
+            return unavailable();
+        }
+        let generation = model_unavailable(Generation::armed(&self.claim, &self.generations[0]))?;
+        self.publish_generation(generation, PersistenceFaultPoint::GenerationOnePublication)
+    }
+
+    pub fn publish_terminal(
+        &mut self,
+        state: ReplayState,
+        durable_outcome_digest: String,
+    ) -> Result<(), ReplayError> {
+        if !self.fresh || self.state != ReplayState::InvocationArmed || self.generations.len() != 2
+        {
+            return unavailable();
+        }
+        let generation = model_unavailable(Generation::terminal(
+            &self.claim,
+            &self.generations[1],
+            state,
+            durable_outcome_digest,
+        ))?;
+        self.publish_generation(generation, PersistenceFaultPoint::GenerationTwoPublication)
+    }
+
+    fn publish_generation(
+        &mut self,
+        generation: Generation,
+        fault_point: PersistenceFaultPoint,
+    ) -> Result<(), ReplayError> {
+        if generation.number != self.generations.len() as u64 {
+            return unavailable();
+        }
+        let (durable_state, durable_generations) = self.ledger.reconstruct(&self.claim)?;
+        if durable_generations == self.generations && durable_state == self.state {
+            // The expected generation is not present yet.
+        } else if durable_generations.len() == self.generations.len() + 1
+            && durable_generations[..self.generations.len()] == self.generations
+            && durable_generations.last() == Some(&generation)
+        {
+            // An exact immutable generation won before this in-flight
+            // publication. Full reconstruction, not byte equality alone,
+            // established its identity, predecessor, and transition.
+            self.state = generation.state;
+            self.generations.push(generation);
+            return Ok(());
+        } else {
+            return unavailable();
+        }
+        let directory = self.ledger.ensure_execution_directory(&self.claim)?;
+        let name = generation_filename(generation.number)?;
+        let expected = model_unavailable(generation.canonical_bytes())?;
+        if open_existing_regular_file(&directory.path.join(name.as_str()))?.is_some() {
+            return unavailable();
+        }
+        persistence_fault(fault_point)?;
+        let temporary_stem = format!("g{:016}", generation.number);
+        publish_new_canonical_file_with_temporary_stem(
+            &directory,
+            &name,
+            &temporary_stem,
+            &expected,
+        )?;
+        persistence_fault(PersistenceFaultPoint::GenerationReopen)?;
+        let Some(reopened) = open_existing_regular_file(&directory.path.join(name.as_str()))?
+        else {
+            return unavailable();
+        };
+        let actual = read_replay_record(reopened.0)?;
+        if actual != expected {
+            return unavailable();
+        }
+        persistence_fault(PersistenceFaultPoint::DigestVerification)?;
+        let recovered = model_unavailable(Generation::from_canonical_bytes(&actual))?;
+        if recovered != generation {
+            return unavailable();
+        }
+        self.state = generation.state;
+        self.generations.push(generation);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
+    use sha2::{Digest, Sha256};
+    use std::process::{Child, Command};
     use std::sync::{Arc, Barrier};
+    use std::time::{Duration, Instant};
 
-    fn fresh_native_test_root(label: &str) -> Option<PathBuf> {
+    fn fresh_native_test_root(_label: &str) -> Option<PathBuf> {
         let base = std::env::var_os("TETHERS_J09_NATIVE_PROVISION_ROOT")?;
-        let root = PathBuf::from(base).join(format!("{label}-{}", Uuid::new_v4().simple()));
+        // Claim and generation temporary names are deliberately long digests.
+        // Keep the test child short so an operator-supplied diagnostic base can
+        // still exercise the actual Win32 path rather than MAX_PATH.
+        let root = PathBuf::from(base).join(Uuid::new_v4().simple().to_string());
         std::fs::create_dir(&root).unwrap();
         Some(root)
     }
@@ -1059,6 +1662,104 @@ mod tests {
         let mut entries = Vec::new();
         collect(root, root, &mut entries);
         entries
+    }
+
+    fn test_digest(label: &str) -> String {
+        format!("sha256:{:x}", Sha256::digest(label.as_bytes()))
+    }
+
+    fn test_binding(action_id: &str) -> ExecutionBinding {
+        ExecutionBinding {
+            evaluation_id: "eval-ledger".into(),
+            action_id: action_id.into(),
+            capability_name: "calendar.create".into(),
+            capability_version: 1,
+            manifest_digest: test_digest("manifest"),
+            provider_identity: "provider-local".into(),
+            argument_digest: test_digest("redacted-arguments"),
+        }
+    }
+
+    fn test_key(action_id: &str) -> LogicalExecutionKey {
+        LogicalExecutionKey::derive("event-ledger", "eval-ledger", action_id).unwrap()
+    }
+
+    fn provisioned_test_root(label: &str) -> Option<PathBuf> {
+        let root = fresh_native_test_root(label)?;
+        assert_eq!(
+            provision_replay(&root),
+            Ok(ProvisionReplayOutcome::Provisioned)
+        );
+        Some(root)
+    }
+
+    fn claim_path(root: &Path, key: &LogicalExecutionKey) -> PathBuf {
+        root.join("replay")
+            .join("v1")
+            .join("claims")
+            .join(format!("{}.claim.json", key.filename_digest()))
+    }
+
+    fn execution_directory(root: &Path, execution_id: &str) -> PathBuf {
+        let execution_id = ExecutionId::parse(execution_id.to_owned()).unwrap();
+        let digest = execution_id.filename_digest();
+        root.join("replay")
+            .join("v1")
+            .join("chains")
+            .join(&digest[..2])
+            .join(digest)
+    }
+
+    fn wait_for_signal(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !path.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "child signal did not arrive: {}",
+                path.display()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn lock_control_directory(label: &str) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("tethers-j09-{label}-{}", Uuid::new_v4().simple()));
+        std::fs::create_dir(&path).unwrap();
+        path
+    }
+
+    fn spawn_lock_child(
+        root: &Path,
+        action_id: &str,
+        role: &str,
+        signal: &Path,
+        release: Option<&Path>,
+    ) -> Child {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .arg("replay_windows::tests::native_lock_child_process_entry")
+            .arg("--exact")
+            .arg("--nocapture")
+            .arg("--test-threads=1")
+            .env("TETHERS_J09_LOCK_CHILD_ROLE", role)
+            .env("TETHERS_J09_LOCK_CHILD_ROOT", root)
+            .env("TETHERS_J09_LOCK_CHILD_ACTION", action_id)
+            .env("TETHERS_J09_LOCK_CHILD_SIGNAL", signal);
+        if let Some(release) = release {
+            command.env("TETHERS_J09_LOCK_CHILD_RELEASE", release);
+        }
+        command.spawn().unwrap()
+    }
+
+    fn rewrite_enclosing_digest(value: &mut serde_json::Map<String, Value>, field: &str) {
+        value.remove(field).unwrap();
+        let unsigned = serde_json_canonicalizer::to_vec(&Value::Object(value.clone())).unwrap();
+        value.insert(field.into(), Value::String(test_digest_bytes(&unsigned)));
+    }
+
+    fn test_digest_bytes(bytes: &[u8]) -> String {
+        format!("sha256:{:x}", Sha256::digest(bytes))
     }
 
     #[test]
@@ -1325,5 +2026,849 @@ mod tests {
             ),
             Err(error) => panic!("unexpected replay error: {error:?}"),
         }
+    }
+
+    #[test]
+    fn native_lock_child_process_entry() {
+        let Ok(role) = std::env::var("TETHERS_J09_LOCK_CHILD_ROLE") else {
+            return;
+        };
+        let root = PathBuf::from(std::env::var_os("TETHERS_J09_LOCK_CHILD_ROOT").unwrap());
+        let action_id = std::env::var("TETHERS_J09_LOCK_CHILD_ACTION").unwrap();
+        let signal = PathBuf::from(std::env::var_os("TETHERS_J09_LOCK_CHILD_SIGNAL").unwrap());
+        let ledger = ReplayLedger::open(&root);
+        let acquired = ledger
+            .as_ref()
+            .ok()
+            .and_then(|ledger| LogicalKeyLock::acquire(&ledger.locks, &test_key(&action_id)).ok());
+        match role.as_str() {
+            "hold" => {
+                let _guard = acquired.expect("holding child must acquire the requested lock");
+                std::fs::write(&signal, b"held").unwrap();
+                let release =
+                    PathBuf::from(std::env::var_os("TETHERS_J09_LOCK_CHILD_RELEASE").unwrap());
+                wait_for_signal(&release);
+            }
+            "try" => {
+                std::fs::write(
+                    &signal,
+                    if acquired.is_some() {
+                        b"acquired".as_slice()
+                    } else {
+                        b"blocked".as_slice()
+                    },
+                )
+                .unwrap();
+            }
+            _ => panic!("unknown child role"),
+        }
+    }
+
+    #[test]
+    fn ledger_01_real_second_process_exclusion_and_release() {
+        let Some(root) = provisioned_test_root("ledger-lock-exclusion") else {
+            return;
+        };
+        let control = lock_control_directory("lock-exclusion");
+        let held = control.join("held");
+        let release = control.join("release");
+        let blocked = control.join("blocked");
+        let acquired = control.join("acquired");
+        let mut holder = spawn_lock_child(&root, "same-key", "hold", &held, Some(&release));
+        wait_for_signal(&held);
+        let mut contender = spawn_lock_child(&root, "same-key", "try", &blocked, None);
+        assert!(contender.wait().unwrap().success());
+        assert_eq!(std::fs::read(&blocked).unwrap(), b"blocked");
+        std::fs::write(&release, b"release").unwrap();
+        assert!(holder.wait().unwrap().success());
+        let mut successor = spawn_lock_child(&root, "same-key", "try", &acquired, None);
+        assert!(successor.wait().unwrap().success());
+        assert_eq!(std::fs::read(&acquired).unwrap(), b"acquired");
+    }
+
+    #[test]
+    fn ledger_02_process_termination_releases_lock() {
+        let Some(root) = provisioned_test_root("ledger-lock-termination") else {
+            return;
+        };
+        let control = lock_control_directory("lock-termination");
+        let held = control.join("held");
+        let never_release = control.join("never-release");
+        let acquired = control.join("acquired");
+        let mut holder =
+            spawn_lock_child(&root, "terminated-key", "hold", &held, Some(&never_release));
+        wait_for_signal(&held);
+        holder.kill().unwrap();
+        let _ = holder.wait().unwrap();
+        let mut successor = spawn_lock_child(&root, "terminated-key", "try", &acquired, None);
+        assert!(successor.wait().unwrap().success());
+        assert_eq!(std::fs::read(&acquired).unwrap(), b"acquired");
+    }
+
+    #[test]
+    fn ledger_03_different_logical_keys_are_independent() {
+        let Some(root) = provisioned_test_root("ledger-lock-independent") else {
+            return;
+        };
+        let control = lock_control_directory("lock-independent");
+        let held = control.join("held");
+        let release = control.join("release");
+        let acquired = control.join("acquired");
+        let mut holder = spawn_lock_child(&root, "key-a", "hold", &held, Some(&release));
+        wait_for_signal(&held);
+        let mut independent = spawn_lock_child(&root, "key-b", "try", &acquired, None);
+        assert!(independent.wait().unwrap().success());
+        assert_eq!(std::fs::read(&acquired).unwrap(), b"acquired");
+        std::fs::write(&release, b"release").unwrap();
+        assert!(holder.wait().unwrap().success());
+    }
+
+    #[test]
+    fn ledger_04_lock_open_and_acquisition_faults_fail_closed() {
+        let Some(root) = provisioned_test_root("ledger-lock-faults") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        for point in [
+            PersistenceFaultPoint::LockFileOpen,
+            PersistenceFaultPoint::LockAcquisition,
+        ] {
+            let result = with_persistence_fault(point, || {
+                ledger.admit_or_recover(test_key("lock-fault"), test_binding("lock-fault"))
+            });
+            assert!(matches!(result, Err(ReplayError::PersistenceUnavailable)));
+        }
+        assert!(directory_names(&root.join("replay").join("v1").join("claims")).is_empty());
+    }
+
+    #[test]
+    fn ledger_05_fresh_claim_creates_one_host_execution_identity() {
+        let Some(root) = provisioned_test_root("ledger-fresh-claim") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let admission = ledger
+            .admit_or_recover(test_key("fresh"), test_binding("fresh"))
+            .unwrap();
+        assert!(admission.is_fresh());
+        assert!(ExecutionId::parse(admission.execution_id().to_owned()).is_ok());
+        assert_eq!(
+            directory_names(&root.join("replay").join("v1").join("claims")).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn ledger_06_restart_recovers_same_execution_identity() {
+        let Some(root) = provisioned_test_root("ledger-claim-restart") else {
+            return;
+        };
+        let key = test_key("restart");
+        let binding = test_binding("restart");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let first = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap()
+            .execution_id()
+            .to_owned();
+        drop(ledger);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        assert!(!recovered.is_fresh());
+        assert_eq!(recovered.execution_id(), first);
+    }
+
+    #[test]
+    fn ledger_07_sibling_actions_have_distinct_keys_claims_and_identities() {
+        let Some(root) = provisioned_test_root("ledger-siblings") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let first = ledger
+            .admit_or_recover(test_key("sibling-a"), test_binding("sibling-a"))
+            .unwrap()
+            .execution_id()
+            .to_owned();
+        let second = ledger
+            .admit_or_recover(test_key("sibling-b"), test_binding("sibling-b"))
+            .unwrap()
+            .execution_id()
+            .to_owned();
+        assert_ne!(test_key("sibling-a"), test_key("sibling-b"));
+        assert_ne!(first, second);
+        assert_eq!(
+            directory_names(&root.join("replay").join("v1").join("claims")).len(),
+            2
+        );
+    }
+
+    #[test]
+    fn ledger_08_exact_claim_collision_recovers_only_valid_winner() {
+        let Some(root) = provisioned_test_root("ledger-claim-collision") else {
+            return;
+        };
+        let key = test_key("claim-collision");
+        let binding = test_binding("claim-collision");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let winner = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap()
+            .execution_id()
+            .to_owned();
+        drop(ledger);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        assert!(!recovered.is_fresh());
+        assert_eq!(recovered.execution_id(), winner);
+    }
+
+    #[test]
+    fn ledger_09_binding_mismatch_fails_closed() {
+        let Some(root) = provisioned_test_root("ledger-binding-mismatch") else {
+            return;
+        };
+        let key = test_key("binding-mismatch");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        drop(
+            ledger
+                .admit_or_recover(key.clone(), test_binding("binding-mismatch"))
+                .unwrap(),
+        );
+        let mut changed = test_binding("binding-mismatch");
+        changed.argument_digest = test_digest("changed");
+        assert!(matches!(
+            ledger.admit_or_recover(key, changed),
+            Err(ReplayError::BindingMismatch)
+        ));
+    }
+
+    #[test]
+    fn ledger_10_malformed_or_digest_invalid_claim_fails_closed() {
+        let Some(root) = provisioned_test_root("ledger-malformed-claim") else {
+            return;
+        };
+        let key = test_key("malformed-claim");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        drop(
+            ledger
+                .admit_or_recover(key.clone(), test_binding("malformed-claim"))
+                .unwrap(),
+        );
+        drop(ledger);
+        let path = claim_path(&root, &key);
+        let mut value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("claim_digest".into(), Value::String(test_digest("forged")));
+        std::fs::write(&path, serde_json_canonicalizer::to_vec(&value).unwrap()).unwrap();
+        assert!(matches!(
+            ReplayLedger::open(&root),
+            Err(ReplayError::PersistenceUnavailable)
+        ));
+    }
+
+    #[test]
+    fn ledger_11_claim_publication_fault_grants_no_authority() {
+        let Some(root) = provisioned_test_root("ledger-claim-publication-fault") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let result = with_persistence_fault(PersistenceFaultPoint::ClaimPublication, || {
+            ledger.admit_or_recover(
+                test_key("claim-publication-fault"),
+                test_binding("claim-publication-fault"),
+            )
+        });
+        assert!(matches!(result, Err(ReplayError::PersistenceUnavailable)));
+        assert!(directory_names(&root.join("replay").join("v1").join("claims")).is_empty());
+    }
+
+    #[test]
+    fn ledger_12_valid_generation_zero_publication() {
+        let Some(root) = provisioned_test_root("ledger-g0") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(test_key("g0"), test_binding("g0"))
+            .unwrap();
+        admission.publish_intent().unwrap();
+        assert_eq!(admission.state(), ReplayState::IntentRecorded);
+        let path = execution_directory(&root, admission.execution_id());
+        assert_eq!(directory_names(&path), vec!["g0000000000000000.json"]);
+    }
+
+    #[test]
+    fn ledger_13_valid_generation_zero_to_one_transition() {
+        let Some(root) = provisioned_test_root("ledger-g1") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(test_key("g1"), test_binding("g1"))
+            .unwrap();
+        admission.publish_intent().unwrap();
+        admission.publish_armed().unwrap();
+        assert_eq!(admission.state(), ReplayState::InvocationArmed);
+    }
+
+    #[test]
+    fn ledger_14_each_valid_generation_two_terminal_state() {
+        for state in [
+            ReplayState::Succeeded,
+            ReplayState::Failed,
+            ReplayState::Uncertain,
+        ] {
+            let Some(root) = provisioned_test_root(&format!("ledger-g2-{state:?}")) else {
+                return;
+            };
+            let action = format!("g2-{state:?}");
+            let ledger = ReplayLedger::open(&root).unwrap();
+            let mut admission = ledger
+                .admit_or_recover(test_key(&action), test_binding(&action))
+                .unwrap();
+            admission.publish_intent().unwrap();
+            admission.publish_armed().unwrap();
+            admission
+                .publish_terminal(state, test_digest("durable-outcome"))
+                .unwrap();
+            assert_eq!(admission.state(), state);
+        }
+    }
+
+    #[test]
+    fn ledger_15_generation_one_without_zero_is_rejected() {
+        let Some(root) = provisioned_test_root("ledger-g1-without-g0") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let admission = ledger
+            .admit_or_recover(test_key("g1-without-g0"), test_binding("g1-without-g0"))
+            .unwrap();
+        let g0 = Generation::intent(&admission.claim).unwrap();
+        let g1 = Generation::armed(&admission.claim, &g0).unwrap();
+        let directory = execution_directory(&root, admission.execution_id());
+        drop(admission);
+        drop(ledger);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("g0000000000000001.json"),
+            g1.canonical_bytes().unwrap(),
+        )
+        .unwrap();
+        assert!(ReplayLedger::open(&root).is_err());
+    }
+
+    #[test]
+    fn ledger_16_generation_two_without_one_is_rejected() {
+        let Some(root) = provisioned_test_root("ledger-g2-without-g1") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let admission = ledger
+            .admit_or_recover(test_key("g2-without-g1"), test_binding("g2-without-g1"))
+            .unwrap();
+        let g0 = Generation::intent(&admission.claim).unwrap();
+        let g1 = Generation::armed(&admission.claim, &g0).unwrap();
+        let g2 = Generation::terminal(
+            &admission.claim,
+            &g1,
+            ReplayState::Succeeded,
+            test_digest("outcome"),
+        )
+        .unwrap();
+        let directory = execution_directory(&root, admission.execution_id());
+        drop(admission);
+        drop(ledger);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("g0000000000000000.json"),
+            g0.canonical_bytes().unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("g0000000000000002.json"),
+            g2.canonical_bytes().unwrap(),
+        )
+        .unwrap();
+        assert!(ReplayLedger::open(&root).is_err());
+    }
+
+    #[test]
+    fn ledger_17_illegal_state_transition_is_rejected() {
+        let Some(root) = provisioned_test_root("ledger-illegal-transition") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let admission = ledger
+            .admit_or_recover(
+                test_key("illegal-transition"),
+                test_binding("illegal-transition"),
+            )
+            .unwrap();
+        let g0 = Generation::intent(&admission.claim).unwrap();
+        let mut value: Value = serde_json::from_slice(&g0.canonical_bytes().unwrap()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert("state".into(), Value::String("succeeded".into()));
+        object.insert(
+            "state_data".into(),
+            json!({"durable_outcome_digest":test_digest("outcome")}),
+        );
+        rewrite_enclosing_digest(object, "record_digest");
+        let bytes = serde_json_canonicalizer::to_vec(&value).unwrap();
+        let directory = execution_directory(&root, admission.execution_id());
+        drop(admission);
+        drop(ledger);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("g0000000000000000.json"), bytes).unwrap();
+        assert!(ReplayLedger::open(&root).is_err());
+    }
+
+    #[test]
+    fn ledger_18_predecessor_mismatch_is_rejected() {
+        let Some(root) = provisioned_test_root("ledger-predecessor") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let admission = ledger
+            .admit_or_recover(test_key("predecessor"), test_binding("predecessor"))
+            .unwrap();
+        let g0 = Generation::intent(&admission.claim).unwrap();
+        let g1 = Generation::armed(&admission.claim, &g0).unwrap();
+        let mut value: Value = serde_json::from_slice(&g1.canonical_bytes().unwrap()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert(
+            "predecessor_digest".into(),
+            Value::String(test_digest("wrong-predecessor")),
+        );
+        rewrite_enclosing_digest(object, "record_digest");
+        let directory = execution_directory(&root, admission.execution_id());
+        drop(admission);
+        drop(ledger);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("g0000000000000000.json"),
+            g0.canonical_bytes().unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("g0000000000000001.json"),
+            serde_json_canonicalizer::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+        assert!(ReplayLedger::open(&root).is_err());
+    }
+
+    #[test]
+    fn ledger_19_generation_collision_never_replaces_bytes() {
+        let Some(root) = provisioned_test_root("ledger-generation-collision") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(
+                test_key("generation-collision"),
+                test_binding("generation-collision"),
+            )
+            .unwrap();
+        let g0 = Generation::intent(&admission.claim).unwrap();
+        let directory = execution_directory(&root, admission.execution_id());
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("g0000000000000000.json"),
+            g0.canonical_bytes().unwrap(),
+        )
+        .unwrap();
+        admission.publish_intent().unwrap();
+        let collision = directory.join("g0000000000000001.json");
+        std::fs::write(&collision, b"different-immutable-bytes").unwrap();
+        assert!(admission.publish_armed().is_err());
+        assert_eq!(
+            std::fs::read(collision).unwrap(),
+            b"different-immutable-bytes"
+        );
+    }
+
+    #[test]
+    fn ledger_20_generation_three_is_rejected() {
+        assert!(generation_filename(3).is_err());
+        let Some(root) = provisioned_test_root("ledger-generation-three") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(
+                test_key("generation-three"),
+                test_binding("generation-three"),
+            )
+            .unwrap();
+        admission.publish_intent().unwrap();
+        admission.publish_armed().unwrap();
+        admission
+            .publish_terminal(ReplayState::Succeeded, test_digest("outcome"))
+            .unwrap();
+        assert!(admission
+            .publish_terminal(ReplayState::Failed, test_digest("second-outcome"))
+            .is_err());
+    }
+
+    #[test]
+    fn ledger_21_claim_only_reconstructs_blocked_incomplete() {
+        let Some(root) = provisioned_test_root("ledger-reconstruct-claim") else {
+            return;
+        };
+        let key = test_key("reconstruct-claim");
+        let binding = test_binding("reconstruct-claim");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        drop(
+            ledger
+                .admit_or_recover(key.clone(), binding.clone())
+                .unwrap(),
+        );
+        drop(ledger);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        assert!(!recovered.is_fresh());
+        assert_eq!(recovered.state(), ReplayState::ClaimedNoState);
+    }
+
+    #[test]
+    fn ledger_22_generation_zero_reconstructs_blocked_incomplete() {
+        let Some(root) = provisioned_test_root("ledger-reconstruct-g0") else {
+            return;
+        };
+        let key = test_key("reconstruct-g0");
+        let binding = test_binding("reconstruct-g0");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap();
+        admission.publish_intent().unwrap();
+        drop(admission);
+        drop(ledger);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        assert_eq!(recovered.state(), ReplayState::IntentRecorded);
+    }
+
+    #[test]
+    fn ledger_23_armed_reconstructs_blocked_possible_invocation() {
+        let Some(root) = provisioned_test_root("ledger-reconstruct-g1") else {
+            return;
+        };
+        let key = test_key("reconstruct-g1");
+        let binding = test_binding("reconstruct-g1");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap();
+        admission.publish_intent().unwrap();
+        admission.publish_armed().unwrap();
+        drop(admission);
+        drop(ledger);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        assert_eq!(
+            ledger.admit_or_recover(key, binding).unwrap().state(),
+            ReplayState::InvocationArmed
+        );
+    }
+
+    #[test]
+    fn ledger_24_succeeded_reconstructs_permanently_blocked() {
+        assert_terminal_reconstruction(ReplayState::Succeeded, "succeeded");
+    }
+
+    #[test]
+    fn ledger_25_failed_reconstructs_permanently_blocked() {
+        assert_terminal_reconstruction(ReplayState::Failed, "failed");
+    }
+
+    #[test]
+    fn ledger_26_uncertain_reconstructs_manual_resolution() {
+        assert_terminal_reconstruction(ReplayState::Uncertain, "uncertain");
+    }
+
+    fn assert_terminal_reconstruction(state: ReplayState, label: &str) {
+        let Some(root) = provisioned_test_root(&format!("ledger-reconstruct-{label}")) else {
+            return;
+        };
+        let action = format!("reconstruct-{label}");
+        let key = test_key(&action);
+        let binding = test_binding(&action);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap();
+        admission.publish_intent().unwrap();
+        admission.publish_armed().unwrap();
+        admission
+            .publish_terminal(state, test_digest("durable-outcome"))
+            .unwrap();
+        drop(admission);
+        drop(ledger);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        assert!(!recovered.is_fresh());
+        assert_eq!(recovered.state(), state);
+    }
+
+    #[test]
+    fn recovered_claim_g0_and_g1_admissions_cannot_advance_or_mutate() {
+        for (label, generations) in [("claim", 0usize), ("g0", 1), ("g1", 2)] {
+            let Some(root) = provisioned_test_root(&format!("ledger-recovered-{label}")) else {
+                return;
+            };
+            let action = format!("recovered-{label}");
+            let key = test_key(&action);
+            let binding = test_binding(&action);
+            let ledger = ReplayLedger::open(&root).unwrap();
+            let mut fresh = ledger
+                .admit_or_recover(key.clone(), binding.clone())
+                .unwrap();
+            if generations >= 1 {
+                fresh.publish_intent().unwrap();
+            }
+            if generations >= 2 {
+                fresh.publish_armed().unwrap();
+            }
+            drop(fresh);
+            drop(ledger);
+
+            let ledger = ReplayLedger::open(&root).unwrap();
+            let mut recovered = ledger.admit_or_recover(key, binding).unwrap();
+            assert!(!recovered.is_fresh());
+            let before = tree_snapshot(&root);
+            let result = match generations {
+                0 => recovered.publish_intent(),
+                1 => recovered.publish_armed(),
+                2 => recovered.publish_terminal(ReplayState::Succeeded, test_digest("outcome")),
+                _ => unreachable!(),
+            };
+            assert!(matches!(result, Err(ReplayError::PersistenceUnavailable)));
+            assert_eq!(tree_snapshot(&root), before);
+        }
+    }
+
+    #[test]
+    fn recovered_terminal_admission_cannot_publish_or_mutate() {
+        let Some(root) = provisioned_test_root("ledger-recovered-terminal") else {
+            return;
+        };
+        let key = test_key("recovered-terminal");
+        let binding = test_binding("recovered-terminal");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut fresh = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap();
+        fresh.publish_intent().unwrap();
+        fresh.publish_armed().unwrap();
+        fresh
+            .publish_terminal(ReplayState::Succeeded, test_digest("outcome"))
+            .unwrap();
+        drop(fresh);
+        drop(ledger);
+
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut recovered = ledger.admit_or_recover(key, binding).unwrap();
+        assert!(!recovered.is_fresh());
+        let before = tree_snapshot(&root);
+        assert!(recovered.publish_intent().is_err());
+        assert!(recovered.publish_armed().is_err());
+        assert!(recovered
+            .publish_terminal(ReplayState::Failed, test_digest("other-outcome"))
+            .is_err());
+        assert_eq!(tree_snapshot(&root), before);
+    }
+
+    #[test]
+    fn ledger_27_orphan_chain_fails_whole_ledger_closed() {
+        let Some(root) = provisioned_test_root("ledger-orphan") else {
+            return;
+        };
+        let digest = "ab00000000000000000000000000000000000000000000000000000000000000";
+        std::fs::create_dir_all(
+            root.join("replay")
+                .join("v1")
+                .join("chains")
+                .join("ab")
+                .join(digest),
+        )
+        .unwrap();
+        assert!(matches!(
+            ReplayLedger::open(&root),
+            Err(ReplayError::PersistenceUnavailable)
+        ));
+    }
+
+    #[test]
+    fn ledger_28_malformed_chain_fails_closed() {
+        let Some(root) = provisioned_test_root("ledger-malformed-chain") else {
+            return;
+        };
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let admission = ledger
+            .admit_or_recover(test_key("malformed-chain"), test_binding("malformed-chain"))
+            .unwrap();
+        let directory = execution_directory(&root, admission.execution_id());
+        drop(admission);
+        drop(ledger);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("g0000000000000000.json"), b"{").unwrap();
+        assert!(ReplayLedger::open(&root).is_err());
+    }
+
+    #[test]
+    fn ledger_29_unexpected_ledger_entry_fails_closed() {
+        let Some(root) = provisioned_test_root("ledger-unexpected-entry") else {
+            return;
+        };
+        std::fs::write(
+            root.join("replay").join("v1").join("claims").join(format!(
+                "{}.{}.tmp",
+                test_key("unexpected-entry").filename_digest(),
+                Uuid::new_v4().simple()
+            )),
+            b"debris",
+        )
+        .unwrap();
+        assert!(matches!(
+            ReplayLedger::open(&root),
+            Err(ReplayError::PersistenceUnavailable)
+        ));
+    }
+
+    #[test]
+    fn ledger_30_restart_never_generates_new_uuid_for_existing_tuple() {
+        let Some(root) = provisioned_test_root("ledger-no-new-uuid") else {
+            return;
+        };
+        let key = test_key("no-new-uuid");
+        let binding = test_binding("no-new-uuid");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let first = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap()
+            .execution_id()
+            .to_owned();
+        drop(ledger);
+        let claim_before = std::fs::read(claim_path(&root, &key)).unwrap();
+        for _ in 0..2 {
+            let ledger = ReplayLedger::open(&root).unwrap();
+            let recovered = ledger
+                .admit_or_recover(key.clone(), binding.clone())
+                .unwrap();
+            assert_eq!(recovered.execution_id(), first);
+        }
+        assert_eq!(
+            std::fs::read(claim_path(&root, &key)).unwrap(),
+            claim_before
+        );
+    }
+
+    #[test]
+    fn ledger_populated_valid_subtrees_reopen_without_reprovisioning() {
+        let Some(root) = provisioned_test_root("ledger-populated-reopen") else {
+            return;
+        };
+        let key = test_key("populated-reopen");
+        let binding = test_binding("populated-reopen");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap();
+        admission.publish_intent().unwrap();
+        admission.publish_armed().unwrap();
+        admission
+            .publish_terminal(ReplayState::Succeeded, test_digest("outcome"))
+            .unwrap();
+        drop(admission);
+        drop(ledger);
+        let before = tree_snapshot(&root);
+        assert_eq!(
+            provision_replay(&root),
+            Ok(ProvisionReplayOutcome::AlreadyProvisioned)
+        );
+        assert_eq!(tree_snapshot(&root), before);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        assert_eq!(
+            ledger.admit_or_recover(key, binding).unwrap().state(),
+            ReplayState::Succeeded
+        );
+    }
+
+    #[test]
+    fn ledger_all_bounded_persistence_seams_fail_closed() {
+        let Some(root) = provisioned_test_root("ledger-fault-seams") else {
+            return;
+        };
+        for point in [
+            PersistenceFaultPoint::RestartScan,
+            PersistenceFaultPoint::OrphanDetection,
+        ] {
+            assert!(matches!(
+                with_persistence_fault(point, || ReplayLedger::open(&root)),
+                Err(ReplayError::PersistenceUnavailable)
+            ));
+        }
+
+        let key = test_key("fault-seams");
+        let binding = test_binding("fault-seams");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap();
+        for point in [
+            PersistenceFaultPoint::ChainDirectoryValidation,
+            PersistenceFaultPoint::GenerationZeroPublication,
+        ] {
+            assert!(matches!(
+                with_persistence_fault(point, || admission.publish_intent()),
+                Err(ReplayError::PersistenceUnavailable)
+            ));
+        }
+        admission.publish_intent().unwrap();
+        assert!(
+            with_persistence_fault(PersistenceFaultPoint::GenerationOnePublication, || {
+                admission.publish_armed()
+            })
+            .is_err()
+        );
+        admission.publish_armed().unwrap();
+        assert!(
+            with_persistence_fault(PersistenceFaultPoint::GenerationTwoPublication, || {
+                admission.publish_terminal(ReplayState::Succeeded, test_digest("outcome"))
+            })
+            .is_err()
+        );
+        drop(admission);
+        drop(ledger);
+
+        for point in [
+            PersistenceFaultPoint::ClaimRead,
+            PersistenceFaultPoint::GenerationReopen,
+            PersistenceFaultPoint::DigestVerification,
+            PersistenceFaultPoint::ChainDirectoryValidation,
+        ] {
+            let ledger = ReplayLedger::open(&root).unwrap();
+            assert!(matches!(
+                with_persistence_fault(point, || {
+                    ledger.admit_or_recover(key.clone(), binding.clone())
+                }),
+                Err(ReplayError::PersistenceUnavailable)
+            ));
+        }
+
+        let collision_root = provisioned_test_root("ledger-collision-reopen-fault").unwrap();
+        let collision_ledger = ReplayLedger::open(&collision_root).unwrap();
+        assert!(
+            with_persistence_fault(PersistenceFaultPoint::ClaimCollisionReopen, || {
+                collision_ledger.admit_or_recover(
+                    test_key("collision-reopen"),
+                    test_binding("collision-reopen"),
+                )
+            })
+            .is_err()
+        );
     }
 }
