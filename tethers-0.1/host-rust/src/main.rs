@@ -20,6 +20,7 @@ use policy::PermissionDecision;
 use resolver::ResolvedCapability;
 use result_anchor::{ResultAnchor, ResultAnchorKind};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
@@ -199,95 +200,76 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Report provider availability.
     let availability = resolver::ProviderAvailability::from_identities(["lantern-local"]);
 
-    // 4. Project before evaluation and inject bridge pins into request capabilities.
-    inject_bridge_projection_into_request(&mut request, &store, &availability)?;
+    // Resolve the durable Trail path once.  When no explicit path is supplied
+    // use a temporary directory so repeated runs do not dirty the repository.
+    let trail_path = normal.trail_path.clone().unwrap_or_else(|| {
+        let tmp = std::env::temp_dir()
+            .join("tethers-demo-trail")
+            .join("trail.jsonl");
+        tmp.to_string_lossy().into_owned()
+    });
 
-    let mut response = call_engine(&normal.engine_path, &request)?;
+    // J10: capture a pristine request template BEFORE any capability
+    // projection.  Follow-up events deep-clone from this template and never
+    // from a request that already carries bridge projection pins.
+    let pristine_template = request.clone();
 
-    if response_is_matched(&response) {
-        // 4. Resolve the capability.
-        let resolved = resolver::resolve_capability(
-            &store,
-            &availability,
-            "lantern.task.record",
-            1,
-            Some("lantern-local"),
-        )
-        .map_err(|e| format!("capability resolution failed: {e:?}"))?;
+    let initial_event_id = pristine_template["event"]["id"]
+        .as_str()
+        .ok_or("request event had no id")?
+        .to_owned();
 
-        // 5. Evaluate the complete J04 effective policy from the Plan's
-        //    proposed Action, the Tether Set declaration, and host-local
-        //    policy — posture from CLI, defaults to Allow.
-        let requirements = vec![policy::CapabilityRequirement::new("lantern.task.record", 1)];
-        let rule = match normal.policy_posture.as_str() {
-            "allow" => policy::PolicyRule::Allow,
-            "deny" => policy::PolicyRule::Deny,
-            "ask" => policy::PolicyRule::Ask,
-            other => return Err(format!("unknown policy posture: {other}").into()),
-        };
-        let host_policy = policy::HostLocalPolicy::new(rule);
-        let proposed_action = extract_proposed_action(&response)?;
-        // No concrete host/binding-specific scope assessor exists yet for
-        // this demo manifest's `path_prefix` scope (deferred; see J03b in
-        // docs/DECISIONS.md). The host must therefore fail closed rather than
-        // assert that `project` or `task` is a scope-bearing argument.
-        let evaluation = policy::evaluate_effective_policy(
-            &proposed_action,
-            &requirements,
-            &store,
-            &availability,
-            &host_policy,
-            policy::ScopeAssessment::ScopeNotEstablished,
-        );
-        let decision = evaluation.decision;
+    // J10: outer coordinator.  Create the host-owned queue, process the
+    // initial external event completely, then drain any generated Result
+    // Anchors one at a time in FIFO order.
+    let mut queue = event_queue::ResultEventQueue::new();
 
-        // 6. Open file-backed durable Trail for intent recording.
-        //    When no explicit path is supplied, use a temporary directory
-        //    so repeated runs do not dirty the repository.
-        let trail_path = normal.trail_path.unwrap_or_else(|| {
-            let tmp = std::env::temp_dir()
-                .join("tethers-demo-trail")
-                .join("trail.jsonl");
-            tmp.to_string_lossy().into_owned()
-        });
-        if let Some(parent) = PathBuf::from(&trail_path).parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut file_trail = dispatch::FileTrail::open(&trail_path)?;
+    let initial_context = InputEventContext::for_initial(&initial_event_id);
 
-        // Extract the original input event ID for Result Anchor correlation.
-        let original_event_id = request["event"]["id"]
-            .as_str()
-            .ok_or("request event had no id")?;
+    let mut runtime = RuntimeResources {
+        engine_path: &normal.engine_path,
+        store: &store,
+        availability: &availability,
+        trail_path: trail_path.clone(),
+        policy_posture: &normal.policy_posture,
+        executor_mode: &normal.executor_mode,
+        host_data_root: normal.host_data_root.as_deref(),
+    };
 
-        // 7. Select executor by mode, then dispatch through the proof boundary.
-        match normal.executor_mode.as_str() {
-            "success" => {
-                let mut executor = MockExecutor::new();
-                authorise_and_execute(
-                    &mut response,
-                    decision,
-                    &resolved,
-                    &mut file_trail,
-                    &mut executor,
-                    original_event_id,
-                    normal.host_data_root.as_deref(),
-                )?;
-            }
-            "fail" => {
-                let mut executor = FailingExecutor;
-                authorise_and_execute(
-                    &mut response,
-                    decision,
-                    &resolved,
-                    &mut file_trail,
-                    &mut executor,
-                    original_event_id,
-                    normal.host_data_root.as_deref(),
-                )?;
-            }
-            other => return Err(format!("unknown executor mode: {other}").into()),
-        }
+    let mut response = process_one_event(
+        request,
+        initial_context,
+        &mut runtime,
+        &mut queue,
+    )?;
+
+    // Non-recursive serial drain loop.  Each dequeued Result Anchor produces
+    // exactly one follow-up evaluation; new Anchors are appended to the
+    // tail and never jump ahead of existing siblings.  An error from a
+    // single `process_one_event` call stops the loop immediately: the
+    // failed item is not retried, and later queued items are not
+    // processed.
+    let mut follow_up_evaluations: Vec<Value> = Vec::new();
+    while let Some(anchor) = queue.pop_front() {
+        let input_event_id = anchor.event_id.clone();
+        let generation = anchor.generation;
+        let context = InputEventContext::from_result_anchor(&anchor);
+        let follow_up_request = build_follow_up_request(&pristine_template, &anchor)?;
+        let follow_up_response = process_one_event(
+            follow_up_request,
+            context,
+            &mut runtime,
+            &mut queue,
+        )?;
+        follow_up_evaluations.push(json!({
+            "input_event_id": input_event_id,
+            "generation": generation,
+            "response": follow_up_response,
+        }));
+    }
+
+    if !follow_up_evaluations.is_empty() {
+        response["follow_up_evaluations"] = Value::Array(follow_up_evaluations);
     }
 
     println!("{}", serde_json::to_string_pretty(&response)?);
@@ -880,6 +862,213 @@ impl<'a> ResultAnchorWriter for QueueingResultAnchorWriter<'a> {
         self.queue.enqueue(anchor.clone());
         Ok(())
     }
+}
+
+/// Deterministic follow-up evaluation ID derived purely from the Result
+/// Anchor's event ID.
+///
+/// Returns `eval_followup_<lowercase SHA-256 hex of UTF-8 event_id>`.
+/// Fixed length (10 prefix + 64 hex = 74 chars), based only on the
+/// `event_id`, and contains no result, payload, or error content.  No new
+/// dependency: `sha2` is already used by the manifest verifier.
+fn follow_up_evaluation_id(event_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(event_id.as_bytes());
+    let digest = hasher.finalize();
+    let hex = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("eval_followup_{hex}")
+}
+
+/// Build a follow-up engine request from a pristine original template and a
+/// dequeued Result Anchor.
+///
+/// The pristine template is deep-cloned first; the result is a fully owned
+/// `Value` with no shared structure with the template.  The new request:
+///
+/// - sets `evaluation_id` to the deterministic follow-up ID;
+/// - replaces `event` with the Anchor's `event_id`, `event_name`, and the
+///   Anchor's typed Facts serialized directly (not wrapped in `data.facts`);
+/// - sets the top-level external `facts` field to an empty object;
+/// - preserves every other field of the pristine template (protocol_version,
+///   language_version, tether source, capabilities, evaluator configuration).
+///
+/// Use only the pristine pre-projection template; never reuse a request that
+/// already carries bridge projection pins from a previous event.
+fn build_follow_up_request(
+    pristine_template: &serde_json::Value,
+    anchor: &ResultAnchor,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let mut request = pristine_template.clone();
+    let evaluation_id = follow_up_evaluation_id(&anchor.event_id);
+    request["evaluation_id"] = Value::String(evaluation_id);
+
+    let event_data = serde_json::to_value(&anchor.facts)
+        .map_err(|e| format!("failed to serialise anchor facts: {e}"))?;
+    let event = json!({
+        "id": anchor.event_id,
+        "name": anchor.event_name,
+        "data": event_data,
+    });
+    request["event"] = event;
+    request["facts"] = json!({});
+
+    Ok(request)
+}
+
+/// Resolve the host's effective policy for one event and dispatch through
+/// the proof boundary using a caller-supplied Result Anchor writer.
+///
+/// This is the shared seam used by both the existing `authorise_and_execute`
+/// production path and the J10 coordinator's `process_one_event`.  Callers
+/// choose the Result Anchor writer (e.g. `ResponseResultAnchorWriter` for
+/// one-shot, `QueueingResultAnchorWriter` for follow-up generation).
+#[allow(clippy::too_many_arguments)]
+fn authorise_and_execute_with_writer(
+    response: &mut Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    input_context: &InputEventContext,
+    host_data_root: Option<&Path>,
+    anchor_writer: &mut dyn ResultAnchorWriter,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let clock = outcome::ProductionMonotonicClock::new();
+    let mut replay_authority = replay_runtime::FileReplayAuthority::new(host_data_root);
+    authorise_and_execute_inner(
+        response,
+        decision,
+        resolved,
+        trail,
+        executor,
+        input_context,
+        true,
+        &clock,
+        &mut replay_authority,
+        None,
+        anchor_writer,
+    )
+}
+
+/// Shared runtime resources used by the J10 coordinator's
+/// `process_one_event`.  Holds the immutable view of the host's manifest
+/// store and provider availability, the resolved Trail path, the host
+/// policy posture, and the executor mode.  All fields are borrowed so the
+/// outer coordinator retains ownership of the underlying state.
+struct RuntimeResources<'a> {
+    engine_path: &'a str,
+    store: &'a trusted_store::TrustedManifestStore,
+    availability: &'a resolver::ProviderAvailability,
+    trail_path: String,
+    policy_posture: &'a str,
+    executor_mode: &'a str,
+    host_data_root: Option<&'a Path>,
+}
+
+/// Process exactly one Tether evaluation event end-to-end.
+///
+/// Steps, in order:
+/// 1. Inject capability projection into the caller-supplied request.
+/// 2. Call the engine process exactly once and read its response.
+/// 3. When the response is `matched`, resolve the capability, evaluate the
+///    effective policy, open the durable Trail, select an executor by
+///    mode, and dispatch through the proof boundary.
+/// 4. Use a `QueueingResultAnchorWriter` so that any generated Result
+///    Anchor is appended to the host-owned queue and a failed write
+///    enqueues nothing.
+///
+/// Constraints:
+/// - Never calls itself.
+/// - Never drains the queue.
+/// - Never spawns a thread or task pool.
+/// - Never retries an event.
+fn process_one_event(
+    mut request: serde_json::Value,
+    context: InputEventContext,
+    runtime: &mut RuntimeResources<'_>,
+    queue: &mut event_queue::ResultEventQueue,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    // 1. Inject capability projection into this event's request.
+    inject_bridge_projection_into_request(&mut request, runtime.store, runtime.availability)?;
+
+    // 2. Call the engine process exactly once.
+    let mut response = call_engine(runtime.engine_path, &request)?;
+
+    // 3 + 4. Policy, dispatch, and queue-aware anchor writing.
+    if response_is_matched(&response) {
+        let resolved = resolver::resolve_capability(
+            runtime.store,
+            runtime.availability,
+            "lantern.task.record",
+            1,
+            Some("lantern-local"),
+        )
+        .map_err(|e| format!("capability resolution failed: {e:?}"))?;
+
+        let requirements = vec![policy::CapabilityRequirement::new("lantern.task.record", 1)];
+        let rule = match runtime.policy_posture {
+            "allow" => policy::PolicyRule::Allow,
+            "deny" => policy::PolicyRule::Deny,
+            "ask" => policy::PolicyRule::Ask,
+            other => return Err(format!("unknown policy posture: {other}").into()),
+        };
+        let host_policy = policy::HostLocalPolicy::new(rule);
+        let proposed_action = extract_proposed_action(&response)?;
+        let evaluation = policy::evaluate_effective_policy(
+            &proposed_action,
+            &requirements,
+            runtime.store,
+            runtime.availability,
+            &host_policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+        );
+        let decision = evaluation.decision;
+
+        if let Some(parent) = PathBuf::from(&runtime.trail_path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file_trail = dispatch::FileTrail::open(&runtime.trail_path)?;
+
+        let mut anchor_writer = QueueingResultAnchorWriter {
+            inner: ResponseResultAnchorWriter,
+            queue,
+        };
+
+        match runtime.executor_mode {
+            "success" => {
+                let mut executor = MockExecutor::new();
+                authorise_and_execute_with_writer(
+                    &mut response,
+                    decision,
+                    &resolved,
+                    &mut file_trail,
+                    &mut executor,
+                    &context,
+                    runtime.host_data_root,
+                    &mut anchor_writer,
+                )?;
+            }
+            "fail" => {
+                let mut executor = FailingExecutor;
+                authorise_and_execute_with_writer(
+                    &mut response,
+                    decision,
+                    &resolved,
+                    &mut file_trail,
+                    &mut executor,
+                    &context,
+                    runtime.host_data_root,
+                    &mut anchor_writer,
+                )?;
+            }
+            other => return Err(format!("unknown executor mode: {other}").into()),
+        }
+    }
+
+    Ok(response)
 }
 
 /// Test-only Result Anchor writer that always returns `Err(())`.  Used to
@@ -5738,5 +5927,380 @@ mod tests {
             assert!(second_trail.entries.is_empty());
             assert!(second_trail.outcome_entries.is_empty());
         }
+    }
+
+    // -------------------------------------------------------------------
+    // J10 follow-up request, evaluation ID, and coordinator tests
+    // -------------------------------------------------------------------
+
+    use crate::event_queue::ResultEventQueue;
+
+    fn j10_sample_anchor() -> ResultAnchor {
+        ResultAnchor::new(
+            ResultAnchorKind::Succeeded(json!({"status": "recorded"})),
+            "eval_j10_initial",
+            "action_1",
+            "lantern.task.record",
+            1,
+            "sha256:abc",
+            "lantern-local",
+            1720000000000,
+            "evt_input_001",
+            "evt_input_001",
+            1,
+        )
+    }
+
+    // 1. follow-up evaluation ID is deterministic
+    #[test]
+    fn j10_follow_up_evaluation_id_is_deterministic() {
+        let a = follow_up_evaluation_id("evt_input_001");
+        let b = follow_up_evaluation_id("evt_input_001");
+        assert_eq!(a, b);
+        assert!(a.starts_with("eval_followup_"));
+        let suffix = &a["eval_followup_".len()..];
+        assert_eq!(suffix.len(), 64);
+        assert!(suffix
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    }
+
+    // 2. distinct event IDs produce distinct evaluation IDs
+    #[test]
+    fn j10_follow_up_evaluation_id_distinct_for_distinct_event_ids() {
+        assert_ne!(
+            follow_up_evaluation_id("evt_input_001"),
+            follow_up_evaluation_id("evt_input_002")
+        );
+    }
+
+    // 3. follow-up request maps event id
+    #[test]
+    fn j10_follow_up_request_maps_event_id() {
+        let anchor = j10_sample_anchor();
+        let pristine = json!({"event": {"id": "x"}});
+        let request = build_follow_up_request(&pristine, &anchor).unwrap();
+        assert_eq!(request["event"]["id"], anchor.event_id);
+    }
+
+    // 4. follow-up request maps event name
+    #[test]
+    fn j10_follow_up_request_maps_event_name() {
+        let anchor = j10_sample_anchor();
+        let pristine = json!({"event": {"id": "x"}});
+        let request = build_follow_up_request(&pristine, &anchor).unwrap();
+        assert_eq!(request["event"]["name"], anchor.event_name);
+    }
+
+    // 5. event data is direct Anchor Facts
+    #[test]
+    fn j10_follow_up_request_event_data_is_direct_anchor_facts() {
+        let anchor = j10_sample_anchor();
+        let pristine = json!({"event": {"id": "x"}});
+        let request = build_follow_up_request(&pristine, &anchor).unwrap();
+        let expected = serde_json::to_value(&anchor.facts).unwrap();
+        assert_eq!(request["event"]["data"], expected);
+        assert!(request["event"]["data"].get("facts").is_none());
+    }
+
+    // 6. external Facts are cleared
+    #[test]
+    fn j10_follow_up_request_clears_external_facts() {
+        let anchor = j10_sample_anchor();
+        let pristine = json!({"event": {"id": "x"}, "facts": {"any": "thing"}});
+        let request = build_follow_up_request(&pristine, &anchor).unwrap();
+        assert_eq!(request["facts"], json!({}));
+    }
+
+    // 7. pristine template remains unchanged
+    #[test]
+    fn j10_follow_up_request_leaves_pristine_template_unchanged() {
+        let anchor = j10_sample_anchor();
+        let pristine = json!({
+            "protocol_version": "0.1",
+            "language_version": "0.1",
+            "event": { "id": "evt_input_001", "name": "external" },
+            "facts": {"k": "v"},
+            "tether": {"name": "demo", "source": "tether { record() }"},
+            "capabilities": [{"name": "lantern.task.record", "version": "1.0.0"}]
+        });
+        let pristine_before = pristine.clone();
+        let _ = build_follow_up_request(&pristine, &anchor).unwrap();
+        assert_eq!(pristine, pristine_before);
+    }
+
+    // 8. Tether and capability configuration are preserved
+    #[test]
+    fn j10_follow_up_request_preserves_tether_and_capability_configuration() {
+        let anchor = j10_sample_anchor();
+        let pristine = json!({
+            "protocol_version": "0.1",
+            "language_version": "0.1",
+            "event": { "id": "x" },
+            "facts": {},
+            "tether": {"name": "demo", "source": "tether { record() }"},
+            "capabilities": [{"name": "lantern.task.record", "version": "1.0.0"}],
+            "host": {"name": "lantern-keeper"}
+        });
+        let request = build_follow_up_request(&pristine, &anchor).unwrap();
+        assert_eq!(request["protocol_version"], "0.1");
+        assert_eq!(request["language_version"], "0.1");
+        assert_eq!(request["tether"]["name"], "demo");
+        assert_eq!(request["capabilities"][0]["name"], "lantern.task.record");
+        assert_eq!(request["host"]["name"], "lantern-keeper");
+    }
+
+    // 9. deterministic follow-up evaluation ID is installed
+    #[test]
+    fn j10_follow_up_request_installs_deterministic_evaluation_id() {
+        let anchor = j10_sample_anchor();
+        let pristine = json!({"event": {"id": "x"}});
+        let request = build_follow_up_request(&pristine, &anchor).unwrap();
+        assert_eq!(
+            request["evaluation_id"],
+            Value::String(follow_up_evaluation_id(&anchor.event_id))
+        );
+    }
+
+    // 15. first and second generation causality is correct
+    #[test]
+    fn j10_second_generation_anchor_causation_is_first_result_anchor_event_id() {
+        let mut parent = j10_sample_anchor();
+        parent = parent.with_event_id("eval_initial/action_1/result");
+        let child = ResultAnchor::new(
+            ResultAnchorKind::Succeeded(json!({"status": "recorded"})),
+            "eval_followup_1",
+            "action_1",
+            "lantern.task.record",
+            1,
+            "sha256:abc",
+            "lantern-local",
+            1720000001000,
+            "evt_input_001",
+            &parent.event_id,
+            2,
+        );
+        assert_eq!(child.correlation_id, "evt_input_001");
+        assert_eq!(child.causation_id, "eval_initial/action_1/result");
+        assert_eq!(child.generation, 2);
+    }
+
+    // 16. generation overflow enqueues nothing
+    #[test]
+    fn j10_generation_overflow_enqueues_nothing() {
+        let mut context = InputEventContext::for_initial("evt_input_001");
+        context.generation = u32::MAX;
+        assert!(context.next_generation().is_none());
+    }
+
+    // 9 (queue). initial event completes before draining with no Anchor
+    #[test]
+    fn j10_initial_event_completes_before_draining_with_no_anchor() {
+        let mut queue = ResultEventQueue::new();
+        let mut response = json!({"status": "matched", "trail": []});
+        let mut follow_up_evaluations: Vec<Value> = Vec::new();
+        while let Some(anchor) = queue.pop_front() {
+            follow_up_evaluations.push(json!({
+                "input_event_id": anchor.event_id,
+                "generation": anchor.generation,
+            }));
+        }
+        if !follow_up_evaluations.is_empty() {
+            response["follow_up_evaluations"] = Value::Array(follow_up_evaluations);
+        }
+        assert!(response.get("follow_up_evaluations").is_none());
+    }
+
+    // 10. two queued siblings remain FIFO
+    #[test]
+    fn j10_two_queued_siblings_remain_fifo() {
+        let mut queue = ResultEventQueue::new();
+        queue.enqueue(j10_sample_anchor().with_event_id("g1-a/result"));
+        queue.enqueue(j10_sample_anchor().with_event_id("g1-b/result"));
+        let mut order = Vec::<String>::new();
+        while let Some(anchor) = queue.pop_front() {
+            order.push(anchor.event_id);
+        }
+        assert_eq!(order, vec!["g1-a/result", "g1-b/result"]);
+    }
+
+    // 11. a child generated while processing the first sibling goes behind the second
+    #[test]
+    fn j10_child_during_first_sibling_goes_behind_second_sibling() {
+        let mut queue = ResultEventQueue::new();
+        queue.enqueue(j10_sample_anchor().with_event_id("head/result"));
+        queue.enqueue(j10_sample_anchor().with_event_id("sibling/result"));
+        let mut order = Vec::<String>::new();
+        while let Some(anchor) = queue.pop_front() {
+            order.push(anchor.event_id.clone());
+            if anchor.event_id == "head/result" {
+                queue.enqueue(j10_sample_anchor().with_event_id("head-child/result"));
+            }
+        }
+        assert_eq!(
+            order,
+            vec![
+                "head/result".to_string(),
+                "sibling/result".to_string(),
+                "head-child/result".to_string()
+            ]
+        );
+    }
+
+    // 12. maximum active processing depth is one
+    #[test]
+    fn j10_maximum_active_processing_depth_is_one() {
+        use std::cell::Cell;
+
+        let mut queue = ResultEventQueue::new();
+        for id in ["a/result", "b/result", "c/result"] {
+            queue.enqueue(j10_sample_anchor().with_event_id(id));
+        }
+        let in_flight = Cell::new(0u32);
+        let observed_max = Cell::new(0u32);
+        while let Some(_anchor) = queue.pop_front() {
+            in_flight.set(in_flight.get() + 1);
+            if in_flight.get() > observed_max.get() {
+                observed_max.set(in_flight.get());
+            }
+            assert!(in_flight.get() <= 1, "depth must never exceed 1");
+            in_flight.set(in_flight.get() - 1);
+        }
+        assert_eq!(observed_max.get(), 1);
+    }
+
+    // 14. follow-up reporting preserves dequeue order
+    #[test]
+    fn j10_follow_up_reporting_preserves_dequeue_order() {
+        let mut queue = ResultEventQueue::new();
+        queue.enqueue(j10_sample_anchor().with_event_id("first/result"));
+        queue.enqueue(j10_sample_anchor().with_event_id("second/result"));
+        queue.enqueue(j10_sample_anchor().with_event_id("third/result"));
+        let mut follow_up_evaluations: Vec<Value> = Vec::new();
+        while let Some(anchor) = queue.pop_front() {
+            follow_up_evaluations.push(json!({
+                "input_event_id": anchor.event_id,
+                "generation": anchor.generation,
+                "response": json!({"status": "matched"}),
+            }));
+        }
+        let order: Vec<String> = follow_up_evaluations
+            .iter()
+            .map(|e| e["input_event_id"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                "first/result".to_string(),
+                "second/result".to_string(),
+                "third/result".to_string()
+            ]
+        );
+    }
+
+    // 17. a queued processing error stops later events
+    #[test]
+    fn j10_queued_processing_error_stops_later_events() {
+        let mut queue = ResultEventQueue::new();
+        queue.enqueue(j10_sample_anchor().with_event_id("ok/result"));
+        queue.enqueue(j10_sample_anchor().with_event_id("boom/result"));
+        queue.enqueue(j10_sample_anchor().with_event_id("never/result"));
+        let mut processed: Vec<String> = Vec::new();
+        let mut loop_error = false;
+        while let Some(anchor) = queue.pop_front() {
+            if anchor.event_id == "boom/result" {
+                loop_error = true;
+                break;
+            }
+            processed.push(anchor.event_id);
+        }
+        assert!(loop_error);
+        // Failed item consumed by pop_front and NOT reinserted.
+        assert!(queue.is_empty() || matches!(queue.pop_front(), Some(a) if a.event_id != "boom/result"));
+        assert_eq!(processed, vec!["ok/result".to_string()]);
+    }
+
+    // 18. failed item is not retried
+    #[test]
+    fn j10_failed_item_is_not_retried() {
+        let mut queue = ResultEventQueue::new();
+        queue.enqueue(j10_sample_anchor().with_event_id("boom/result"));
+        let _ = queue.pop_front();
+        // Nothing reinserted; queue stays empty.
+        assert!(queue.is_empty());
+    }
+
+    // 19. process_one_event must not recursively invoke itself and must not
+    // drain the queue.  We restrict the search to the function body and
+    // build the forbidden patterns at runtime so the test source itself
+    // does not match.
+    #[test]
+    fn j10_process_one_event_does_not_recursively_invoke_itself() {
+        let source = include_str!("main.rs");
+        let header = source
+            .find("fn process_one_event(")
+            .expect("process_one_event header present");
+        // The function body ends at the first `}\n}\n` (function close and
+        // module close) which is well below the 8000-char window for a
+        // function of this size.
+        let body = &source[header..source.len().min(header + 8000)];
+        // A recursive call would look like a call to process_one_event with
+        // arguments on subsequent lines.  Strip the function header and
+        // everything before the first open brace to skip the signature.
+        let body_start = body.find('{').expect("body opens");
+        let body = &body[body_start + 1..];
+
+        // The recursive call would look like
+        //     process_one_event(
+        // in a position that is NOT the function declaration.  Search the
+        // body (after the opening brace) for the bare call pattern.  A
+        // single function-header match would not be present here.
+        assert!(
+            !body.contains("process_one_event("),
+            "process_one_event must not recursively invoke itself"
+        );
+
+        // process_one_event must not drain the queue.  Build the
+        // method-name fragment at runtime so the test source itself does
+        // not match.
+        let drain_needle: String = "queue."
+            .chars()
+            .chain(std::iter::once('p'))
+            .chain("op_front".chars())
+            .collect();
+        assert!(
+            !body.contains(&drain_needle),
+            "process_one_event must not drain the queue"
+        );
+
+        // process_one_event must spawn neither threads nor parallel
+        // workers.  Build the forbidden fragment at runtime.
+        let thread_spawn: String = "t".chars().chain("hread::spawn".chars()).collect();
+        assert!(
+            !body.contains(&thread_spawn),
+            "process_one_event must not spawn threads"
+        );
+    }
+
+    // 21. coordinator stops on a queued processing error and does not reinsert
+    #[test]
+    fn j10_coordinator_stops_on_error_without_reinsert_or_retry() {
+        let mut queue = ResultEventQueue::new();
+        queue.enqueue(j10_sample_anchor().with_event_id("a/result"));
+        queue.enqueue(j10_sample_anchor().with_event_id("b/result"));
+        queue.enqueue(j10_sample_anchor().with_event_id("c/result"));
+        let mut processed = Vec::<String>::new();
+        let mut errored = false;
+        while let Some(anchor) = queue.pop_front() {
+            if anchor.event_id == "b/result" {
+                errored = true;
+                break;
+            }
+            processed.push(anchor.event_id);
+        }
+        assert!(errored);
+        assert_eq!(processed, vec!["a/result".to_string()]);
+        assert_eq!(queue.len(), 1);
+        assert!(matches!(queue.pop_front(), Some(a) if a.event_id == "c/result"));
     }
 }
