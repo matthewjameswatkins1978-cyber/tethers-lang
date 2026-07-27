@@ -1,5 +1,6 @@
 pub mod approval;
 pub mod dispatch;
+mod event_queue;
 mod manifest;
 mod outcome;
 pub mod policy;
@@ -820,6 +821,79 @@ impl ResultAnchorWriter for ResponseResultAnchorWriter {
     }
 }
 
+// ---------------------------------------------------------------------------
+// J10 input event context and queueing writer
+// ---------------------------------------------------------------------------
+
+/// Host-owned causal context for the event currently being evaluated.
+///
+/// The initial external event produces an `InputEventContext` whose
+/// `correlation_id` equals the external event ID and whose `generation`
+/// is `0`.  A queued Result Anchor produces an `InputEventContext` taken
+/// directly from the Anchor's causal fields.
+///
+/// `next_generation` returns the Anchor's `generation + 1` using
+/// `checked_add`.  Overflow fails closed and the caller must not construct,
+/// write, or enqueue an Anchor.
+#[derive(Debug, Clone)]
+struct InputEventContext {
+    event_id: String,
+    correlation_id: String,
+    generation: u32,
+}
+
+impl InputEventContext {
+    fn for_initial(event_id: &str) -> Self {
+        Self {
+            event_id: event_id.to_owned(),
+            correlation_id: event_id.to_owned(),
+            generation: 0,
+        }
+    }
+
+    fn from_result_anchor(anchor: &ResultAnchor) -> Self {
+        Self {
+            event_id: anchor.event_id.clone(),
+            correlation_id: anchor.correlation_id.clone(),
+            generation: anchor.generation,
+        }
+    }
+
+    fn next_generation(&self) -> Option<u32> {
+        self.generation.checked_add(1)
+    }
+}
+
+/// Production Result Anchor writer that also enqueues the same exact typed
+/// Anchor into the host-owned queue.  The inner writer runs first; on
+/// success the typed anchor is appended to the queue.  A failed inner
+/// write returns `Err(())` and nothing is enqueued, preserving the J09
+/// `result_anchor` removal behaviour.
+struct QueueingResultAnchorWriter<'a> {
+    inner: ResponseResultAnchorWriter,
+    queue: &'a mut event_queue::ResultEventQueue,
+}
+
+impl<'a> ResultAnchorWriter for QueueingResultAnchorWriter<'a> {
+    fn write(&mut self, response: &mut Value, anchor: &ResultAnchor) -> Result<(), ()> {
+        self.inner.write(response, anchor)?;
+        self.queue.enqueue(anchor.clone());
+        Ok(())
+    }
+}
+
+/// Test-only Result Anchor writer that always returns `Err(())`.  Used to
+/// prove that a failed Anchor write enqueues nothing.
+#[cfg(test)]
+struct FailingResultAnchorWriter;
+
+#[cfg(test)]
+impl ResultAnchorWriter for FailingResultAnchorWriter {
+    fn write(&mut self, _response: &mut Value, _anchor: &ResultAnchor) -> Result<(), ()> {
+        Err(())
+    }
+}
+
 #[allow(dead_code)]
 struct ExactApprovalConsumption<'a> {
     approval_id: &'a str,
@@ -928,13 +1002,14 @@ fn resume_and_execute_exact_approval_with_authority(
     };
     let clock = outcome::ProductionMonotonicClock::new();
     let mut anchor_writer = ResponseResultAnchorWriter;
+    let context = InputEventContext::for_initial(original_event_id);
     authorise_and_execute_inner(
         response,
         decision,
         &resolved,
         trail,
         executor,
-        original_event_id,
+        &context,
         true,
         &clock,
         replay_authority,
@@ -999,13 +1074,14 @@ fn authorise_and_execute(
     let clock = outcome::ProductionMonotonicClock::new();
     let mut replay_authority = replay_runtime::FileReplayAuthority::new(host_data_root);
     let mut anchor_writer = ResponseResultAnchorWriter;
+    let context = InputEventContext::for_initial(original_event_id);
     authorise_and_execute_inner(
         response,
         decision,
         resolved,
         trail,
         executor,
-        original_event_id,
+        &context,
         true,
         &clock,
         &mut replay_authority,
@@ -1026,13 +1102,14 @@ fn authorise_and_execute_with_test_replay(
     let clock = outcome::ProductionMonotonicClock::new();
     let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
     let mut anchor_writer = ResponseResultAnchorWriter;
+    let context = InputEventContext::for_initial(original_event_id);
     authorise_and_execute_inner(
         response,
         decision,
         resolved,
         trail,
         executor,
-        original_event_id,
+        &context,
         true,
         &clock,
         &mut replay_authority,
@@ -1074,13 +1151,14 @@ fn authorise_and_execute_without_bridge_pins_with_clock(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
     let mut anchor_writer = ResponseResultAnchorWriter;
+    let context = InputEventContext::for_initial(original_event_id);
     authorise_and_execute_inner(
         response,
         decision,
         resolved,
         trail,
         executor,
-        original_event_id,
+        &context,
         false,
         clock,
         &mut replay_authority,
@@ -1125,13 +1203,14 @@ fn authorise_and_execute_inner(
     resolved: &ResolvedCapability,
     trail: &mut dyn dispatch::Trail,
     executor: &mut dyn CapabilityExecutor,
-    original_event_id: &str,
+    input_context: &InputEventContext,
     bridge_pins_required: bool,
     clock: &dyn outcome::MonotonicClock,
     replay_authority: &mut dyn replay_runtime::ReplayAuthority,
     approval_consumption: Option<&mut dyn ApprovalConsumption>,
     anchor_writer: &mut dyn ResultAnchorWriter,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let original_event_id = input_context.event_id.as_str();
     let plan = response.get("plan").ok_or("matched response had no plan")?;
     let actions = plan
         .get("actions")
@@ -1497,6 +1576,18 @@ fn authorise_and_execute_inner(
         .into(),
     );
     if let Some(anchor_kind) = anchor_kind {
+        // J10: derive the new Anchor's correlation, causation, and generation
+        // from the current input context.  Overflow fails closed before any
+        // construction, write, or queue enqueue.
+        let next_generation = match input_context.next_generation() {
+            Some(generation) => generation,
+            None => {
+                if let Some(object) = response.as_object_mut() {
+                    object.remove("result_anchor");
+                }
+                return Ok(());
+            }
+        };
         let anchor = ResultAnchor::new(
             anchor_kind,
             &evaluation_id,
@@ -1506,7 +1597,9 @@ fn authorise_and_execute_inner(
             ready.manifest_digest(),
             ready.provider_identity(),
             timestamp_ms,
-            original_event_id,
+            &input_context.correlation_id,
+            &input_context.event_id,
+            next_generation,
         );
         if anchor_writer.write(response, &anchor).is_err() {
             if let Some(object) = response.as_object_mut() {
@@ -4513,13 +4606,14 @@ mod tests {
         ) -> Value {
             let (_, resolved) = resolved_lantern();
             let mut response = runtime_response(&resolved);
+            let context = InputEventContext::for_initial("evt-j09-001");
             authorise_and_execute_inner(
                 &mut response,
                 decision,
                 &resolved,
                 trail,
                 executor,
-                "evt-j09-001",
+                &context,
                 false,
                 clock,
                 authority,

@@ -12,11 +12,13 @@
 // Every Result Anchor contains:
 //
 //   event_id       — stable: "<evaluation_id>/<action_id>/result"
-//   event_name     — "capability.succeeded" or "capability.failed"
+//   event_name     — "capability.succeeded", "capability.failed", or
+//                    "capability.uncertain"
 //   producer       — "tethers-reference-host"
-//   correlation_id — the original input event ID
-//   causation_id   — the original input event ID
-//   generation     — 1
+//   correlation_id — root correlation ID (the original external event ID)
+//   causation_id   — immediate causation event ID (parent event or anchor)
+//   generation     — 1 for an initial action result, incremented for
+//                    results produced while evaluating a queued Result Anchor
 //   occurred_at    — host-supplied Unix-millisecond timestamp
 //   facts          — evaluation_id, action_id, capability (name/version),
 //                    manifest digest, provider identity, and either a
@@ -51,7 +53,7 @@ pub enum ResultAnchorKind {
 // Result Anchor envelope
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ResultAnchor {
     pub event_id: String,
     pub event_name: String,
@@ -67,7 +69,7 @@ pub struct ResultAnchor {
 ///
 /// Uses the canonical `capability.name` / `capability.version` path
 /// so a follow-up Tether can inspect `capability.name` directly.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ResultAnchorCapability {
     /// Resolved capability name, taken from DispatchReadyAction.
     pub name: String,
@@ -75,7 +77,7 @@ pub struct ResultAnchorCapability {
     pub version: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ResultAnchorFacts {
     pub evaluation_id: String,
     pub action_id: String,
@@ -97,7 +99,7 @@ pub struct ResultAnchorFacts {
     pub error: Option<ResultAnchorError>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ResultAnchorError {
     pub code: String,
     pub message: String,
@@ -110,8 +112,12 @@ pub struct ResultAnchorError {
 impl ResultAnchor {
     /// Build a Result Anchor from a known outcome.
     ///
-    /// `original_event_id` is the original input request event ID,
-    /// used as both `correlation_id` and `causation_id`.
+    /// `correlation_id` is the root correlation ID (the original external
+    /// event ID).  `causation_id` is the immediate causation event ID (the
+    /// parent event or anchor).  `generation` is the causal generation: 1 for
+    /// an initial action result, incremented for results produced while
+    /// evaluating a queued Result Anchor.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         kind: ResultAnchorKind,
         evaluation_id: &str,
@@ -121,7 +127,9 @@ impl ResultAnchor {
         manifest_digest: &str,
         provider_identity: &str,
         occurred_at: u64,
-        original_event_id: &str,
+        correlation_id: &str,
+        causation_id: &str,
+        generation: u32,
     ) -> Self {
         let (event_name, result, error) = match kind {
             ResultAnchorKind::Succeeded(value) => {
@@ -159,9 +167,9 @@ impl ResultAnchor {
             event_id: format!("{evaluation_id}/{action_id}/result"),
             event_name,
             producer: "tethers-reference-host".to_string(),
-            correlation_id: original_event_id.to_string(),
-            causation_id: original_event_id.to_string(),
-            generation: 1,
+            correlation_id: correlation_id.to_string(),
+            causation_id: causation_id.to_string(),
+            generation,
             occurred_at,
             facts: ResultAnchorFacts {
                 evaluation_id: evaluation_id.to_string(),
@@ -176,6 +184,14 @@ impl ResultAnchor {
                 error,
             },
         }
+    }
+
+    /// Override the auto-generated `event_id`.  Used only in focused tests
+    /// that need distinct event IDs for FIFO ordering assertions.
+    #[cfg(test)]
+    pub fn with_event_id(mut self, event_id: &str) -> Self {
+        self.event_id = event_id.to_string();
+        self
     }
 }
 
@@ -200,6 +216,8 @@ mod tests {
             "lantern-local",
             1720000000000,
             "evt_input_001",
+            "evt_input_001",
+            1,
         );
 
         assert_eq!(anchor.event_id, "eval_001/action_1/result");
@@ -234,6 +252,8 @@ mod tests {
             "lantern-local",
             1720000000000,
             "evt_input_001",
+            "evt_input_001",
+            1,
         );
 
         let value = serde_json::to_value(&anchor).unwrap();
@@ -283,6 +303,8 @@ mod tests {
             "lantern-local",
             1720000000000,
             "evt_input_001",
+            "evt_input_001",
+            1,
         );
 
         assert_eq!(anchor.event_name, "capability.failed");
@@ -309,6 +331,8 @@ mod tests {
             "lantern-local",
             1720000000000,
             "evt_input_001",
+            "evt_input_001",
+            1,
         );
 
         assert_eq!(anchor.event_name, "capability.failed");
@@ -335,6 +359,8 @@ mod tests {
             "lantern-local",
             1720000000000,
             "evt_input_001",
+            "evt_input_001",
+            1,
         );
 
         let value = serde_json::to_value(&anchor).unwrap();
