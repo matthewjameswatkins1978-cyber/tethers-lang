@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J10 queue generated Result Anchors serially`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
