@@ -40,6 +40,12 @@ fn canonical_digest<T: Serialize>(value: &T) -> Result<String, ReplayError> {
     Ok(digest_bytes(&canonical_bytes(value)?))
 }
 
+/// Digest one successfully durable, redacted J06 outcome entry using the same
+/// canonical JSON and SHA-256 vocabulary as replay records.
+pub fn durable_outcome_digest<T: Serialize>(value: &T) -> Result<String, ReplayError> {
+    canonical_digest(value)
+}
+
 fn digest_bytes(bytes: &[u8]) -> String {
     format!("{SHA256_PREFIX}{:x}", Sha256::digest(bytes))
 }

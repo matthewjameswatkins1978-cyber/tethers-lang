@@ -4,26 +4,55 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `055f52186ec2bf6adbd015b5684a57cd2152b8c0`
 
 Starting checkpoint: `0543e253d1e9574aee40435a7d4000ae51ad473a`
 
+Implementation checkpoint: `WORKTREE`
+
 ## Requested outcome
 
-Continue J09 from the proven native publication and provisioning checkpoint.
-Add only the below-dispatch durable-ledger subsystem: cross-process logical-key
-locking, immutable canonical redacted claims, immutable generation chains,
-strict restart reconstruction and orphan detection, and deterministic
-persistence fault seams. Do not begin dispatch integration.
+Complete J09 from the accepted durable-ledger checkpoint by wiring the
+host-owned admission guard into the existing J05/J06 runtime. Preserve the
+proven Windows substrate, add only the explicit `--host-data-root` normal-run
+authority, and prove the frozen claim, consume, intent, armed, provider,
+outcome, terminal-generation, Result Anchor, and replay-block ordering.
 
 ## Changes made
 
-Current durable-ledger checkpoint work is `IN_PROGRESS`. The existing
-publication/provisioning evidence below is preserved as the starting
-foundation; new implementation and numbered-case evidence will be added
-progressively.
+J09 implementation is complete in the independently reviewed worktree. The
+existing publication/provisioning evidence below remains the accepted
+foundation.
+
+- Added strict normal-run parsing for one optional
+  `--host-data-root <ABSOLUTE_PATH>` while preserving the separate
+  `provision-replay` shape. Duplicate, missing-value, relative, and unknown
+  options fail closed; no default or inferred replay root exists.
+- Added a narrow lazy `replay_runtime` authority. It opens the already
+  provisioned ledger only after fresh dispatch gates, owns the real admission
+  guard through Result Anchor success or failure, and exposes only the four
+  frozen redacted replay results through the existing `execution_status`
+  field.
+- Replaced planner-evaluation-derived execution identity at the dispatch seam
+  with the host UUID recovered from the held replay admission. Planner
+  evaluation ID and Action ID remain unchanged in the logical tuple, binding,
+  request/response, provider, and Result Anchor seams.
+- Split approved-Ask fresh precheck from one-shot consumption. A fresh claim
+  now precedes consumption; recovered or unavailable replay state consumes
+  nothing; consumption failure leaves claim-only manual resolution and never
+  restores approval.
+- Wired the exact runtime order: admission, optional J05 consume, g0, Trail
+  intent, monotonic deadline start/check, g1, one provider call, J06
+  classification, durable outcome, g2 bound to the canonical durable-outcome
+  digest, one existing Result Anchor, then admission release.
+- Preserved known J06 classifications when outcome, g2, or Result Anchor
+  persistence fails. Outcome failure leaves g1; g2 failure leaves the durable
+  outcome; Result Anchor failure leaves g2; none retries.
+- Added 42 named counting-fake integration cases plus eight real native-ledger
+  runtime cases for claim-only, g0, g1, success, failure, uncertain, binding
+  mismatch, and fresh-success restart replay blocking.
 
 - Created local checkpoint `4a467256ba191522e7e350455112041f790e60d9` for
   the completed replay identity and Windows root-admission foundation.
@@ -194,6 +223,33 @@ and validated.
   creation. The final proof used the previously accepted ACL-valid native root
   family at the explicit short path above. No path validation or publication
   rule was weakened.
+- Runtime integration proof used new ACL-valid base
+  `C:\Users\Matmus\Documents\j09ri-72269328`; every native test created a new
+  provisioned child and no retained evidence root was reused as a host-data
+  root. `cargo test replay -- --nocapture` passed 109, including all 42
+  counting-fake runtime cases and all eight real file-backed runtime paths.
+- Full native-enabled `cargo test` passed 442. `cargo fmt`,
+  `cargo fmt --check`, and `cargo check` passed; `cargo check` retained only
+  the six current non-test dead-code warnings.
+- After the bounded Red correction, the first new root under redirected
+  OneDrive Documents failed before replay logic with Win32 error 2 and was left
+  untouched. A second fresh ACL-valid local root,
+  `C:\Users\Matmus\Documents\j09ri-red2-37449f72`, passed the replay-focused
+  native suite 109/109. `cargo test j05` passed 4/4; `cargo fmt`,
+  `cargo fmt --check`, and `cargo check` passed with the same six warnings.
+- `check-fixtures.ps1`, `test-engine.ps1`, `test-mcp-transcripts.ps1`,
+  `test-host-denial.ps1`, `test-host-execution-failure.ps1`, and `demo.ps1`
+  all passed. `opam exec -- dune build` passed in `engine-ocaml`.
+- Final independent Red verification used three separate fresh ACL-valid roots:
+  `C:\Users\Matmus\Documents\j09-red-focused-c0d51b35` passed the replay suite
+  109/109; `C:\Users\Matmus\Documents\j09-red-full-c0d51b35` passed the full
+  Rust suite 442/442; and
+  `C:\Users\Matmus\Documents\j09-red-process-c0d51b35` passed the explicitly
+  rerun second-process exclusion, termination-release, different-key
+  independence, and eight native runtime/restart cases. The same review reran
+  all six PowerShell scripts and the OCaml build successfully.
+- The packet checker passed as `control-v1/COMPLETE`; final whitespace, status,
+  stat, and complete-diff checks passed in the reviewed worktree.
 
 ## Discoveries
 
@@ -214,93 +270,86 @@ the focused substitution test proves that an ancestor cannot be renamed while
 that authority exists; `ReplaceIfExists` remains false; and success still
 requires the second flush, close, reopen, and exact-byte comparison.
 
-## Progressive J09 verification matrix
+## J09 verification matrix
 
-Status is scoped to this checkpoint. `Done` means direct current or preserved
-checkpoint evidence; `Partial` means the below-dispatch invariant is proved but
-dispatch ordering remains; `Deferred` identifies the next dispatch batch.
-
-| Case | Status | Evidence |
-| --- | --- | --- |
-| 1 | Done | `native_provisioning_is_exact_idempotent_and_non_repairing`; normal lookup is `ReplayLedger::open` only. |
-| 2 | Done | `claim_round_trip_is_exact_canonical_and_redacted`; digest-only path constructors; no raw-data field exists. |
-| 3 | Done | `ledger_05_fresh_claim_creates_one_host_execution_identity`; `substituted_execution_identity_is_rejected`. |
-| 4 | Done | `ledger_06_restart_recovers_same_execution_identity`. |
-| 5 | Deferred | Terminal reconstruction is proved; zero provider calls and duplicate-Anchor suppression require dispatch integration. |
-| 6 | Done | `ledger_30_restart_never_generates_new_uuid_for_existing_tuple`. |
-| 7 | Done | `ledger_07_sibling_actions_have_distinct_keys_claims_and_identities`. |
-| 8 | Done | `ledger_06_restart_recovers_same_execution_identity` for the selected Action. |
-| 9 | Done | `ledger_07_sibling_actions_have_distinct_keys_claims_and_identities`. |
-| 10 | Done | `different_evaluations_are_distinct`. |
-| 11 | Partial | `ledger_09_binding_mismatch_fails_closed`; approval/intent/provider zero-count ordering is deferred. |
-| 12 | Partial | `ledger_05_fresh_claim_creates_one_host_execution_identity` and `ledger_21_claim_only_reconstructs_blocked_incomplete`; J05 ordering is deferred. |
-| 13 | Partial | `ledger_12_valid_generation_zero_publication`; Trail/provider ordering is deferred. |
-| 14 | Partial | `ledger_13_valid_generation_zero_to_one_transition`; provider-boundary ordering is deferred. |
-| 15 | Partial | `ledger_14_each_valid_generation_two_terminal_state`; outcome/Anchor ordering is deferred. |
-| 16 | Done | Cases 12-20 and pure `validate_chain` prove only 0 -> 1 -> 2 and the terminal vocabulary. |
-| 17 | Done | Cases 21-26 reopen and validate the complete contiguous chain. |
-| 18 | Done | Cases 10 and 15-20 plus 28-29 cover gaps, state, predecessor, checksum, malformed data, versions, and extensions. |
-| 19 | Partial | g0 restart block is proved by case 22; Trail/provider zero counts are deferred. |
-| 20 | Partial | g0 restart block is proved by case 22; provider zero counts are deferred. |
-| 21 | Partial | g1 restart block is proved by case 23; provider zero-count integration is deferred. |
-| 22 | Deferred | Durable J06 outcome ordering is dispatch integration. |
-| 23 | Partial | Terminal restart block is proved by cases 24-26; duplicate-Anchor suppression is deferred. |
-| 24 | Done | `ledger_29_unexpected_ledger_entry_fails_closed` uses an exact keyed claim temporary; no cleanup occurs. |
-| 25 | Done | `ledger_27_orphan_chain_fails_whole_ledger_closed`. |
-| 26 | Partial | `ledger_all_bounded_persistence_seams_fail_closed` plus preserved native publication/ACL failures; before-dispatch integration is deferred. |
-| 27 | Partial | Real process exclusion is case 1 and sequential recovery is cases 6/8; a competing-admission provider proof is deferred. |
-| 28 | Partial | Exclusion/recovery is proved; provider zero-count integration is deferred. |
-| 29 | Done | `ledger_19_generation_collision_never_replaces_bytes` accepts exact fully reconstructed bytes and preserves different bytes. |
-| 30 | Partial | Cases 1-4 prove native lock exclusion/failure; J05/provider ordering is deferred. |
-| 31 | Deferred | J05 approval-consumption counts require dispatch integration. |
-| 32 | Deferred | Fresh approved-Ask ordering requires dispatch integration. |
-| 33 | Deferred | J05 consumption failure handling requires dispatch integration. |
-| 34 | Deferred | Trail-intent, armed, deadline, and provider ordering require dispatch integration. |
-| 35 | Deferred | J06 outcome/final/Anchor ordering requires dispatch integration. |
-| 36 | Deferred | Outcome/final-generation failure and Anchor suppression require dispatch integration. |
-| 37 | Partial | Cases 24-25 plus `recovered_terminal_admission_cannot_publish_or_mutate` prove terminal immutability; provider zero-count integration is deferred. |
-| 38 | Partial | Cases 21-26 plus both recovered-admission non-mutation tests prove incomplete/uncertain manual-only state; no retry/compensation code exists; host result wiring is deferred. |
-| 39 | Deferred | J12/J13 host-admission integration is the next batch. |
-| 40 | Done for current scope | Focused native replay 59/59, full Rust 392/392, packet, formatting, compiler, whitespace, and complete-diff checks passed. OCaml/protocol code was unchanged. |
-| 41 | Done | Preserved `native_local_fixed_ntfs_volume_is_accepted` and handle-bound volume validation. |
-| 42 | Done | Preserved component-by-component reparse-safe handle admission and path rejection. |
-| 43 | Done | `ledger_01_real_second_process_exclusion_and_release`. |
-| 44 | Done | Preserved `native_publication_survives_reopen_and_never_replaces` and competing-publisher proof. |
-| 45 | Done | Preserved native write/flush/rename/reopen/verification proof and test diagnostic seam. |
-| 46 | Done | All J09 Win32 calls remain contained and safety-commented in `replay_windows.rs`. |
-| 47 | Done | Cargo dependency diff is empty; publication still uses only the accepted handle rename. |
-| 48 | Deferred | Missing host-data-root dispatch branch is not wired in this checkpoint. |
-| 49 | Deferred | Approved-Ask host-data-root ordering is not wired in this checkpoint. |
-| 50 | Done below dispatch | Replay APIs accept only the explicit root path and never inspect `TRAIL_PATH`. |
-| 51 | Done | Preserved relative/missing-root rejection and no root creation. |
-| 52 | Done below dispatch | `ReplayLedger::open` never provisions; dispatch call placement is deferred. |
-| 53 | Done | Preserved exact provisioning test. |
-| 54 | Done | Preserved non-mutating `AlreadyProvisioned`; populated valid ledger proof added. |
-| 55 | Done | Preserved partial/unknown/version non-repair tests; keyed temporary now also fails closed. |
-| 56 | Done | Preserved handle-bound owner equality validation. |
-| 57 | Done | Preserved present/non-null DACL fail-closed branch. |
-| 58 | Done | Preserved ACE walker and unrelated-write rejection. |
-| 59 | Done | `unrelated_read_only_authority_is_safe`. |
-| 60 | Done | Preserved current-user/System/Administrators trusted-writer set and live native root. |
-| 61 | Done | Preserved independent retained handle-chain substitution test. |
-| 62 | Done | `ledger_populated_valid_subtrees_reopen_without_reprovisioning`. |
-| 63 | Partial | Existing unmatched/denied/pending-Ask regressions pass in the full Rust suite; explicit replay-open counts await dispatch integration. |
+| Case | Mapping |
+| --- | --- |
+| 1 | Done: `native_provisioning_is_exact_idempotent_and_non_repairing`; normal lookup remains `ReplayLedger::open`. |
+| 2 | Done: `claim_round_trip_is_exact_canonical_and_redacted` and digest-only durable paths. |
+| 3 | Done: `ledger_05_fresh_claim_creates_one_host_execution_identity` and `substituted_execution_identity_is_rejected`. |
+| 4 | Done: `ledger_06_restart_recovers_same_execution_identity`. |
+| 5 | Done: `j09_replay_runtime_native_fresh_success_restart_makes_zero_second_call`. |
+| 6 | Done: `ledger_30_restart_never_generates_new_uuid_for_existing_tuple`. |
+| 7 | Done: `ledger_07_sibling_actions_have_distinct_keys_claims_and_identities`. |
+| 8 | Done: `ledger_06_restart_recovers_same_execution_identity`. |
+| 9 | Done: `ledger_07_sibling_actions_have_distinct_keys_claims_and_identities`. |
+| 10 | Done: `different_evaluations_are_distinct`. |
+| 11 | Done: native binding-mismatch proof plus runtime case 16 prove zero approval consumption, Trail intent, and provider work. |
+| 12 | Done: `j09_runtime_20_approved_ask_consumes_between_claim_and_g0` and native claim-only recovery. |
+| 13 | Done: `j09_runtime_17_success_has_the_exact_observable_order` proves g0 before Trail intent. |
+| 14 | Done: `j09_runtime_17_success_has_the_exact_observable_order` proves g1 before provider. |
+| 15 | Done: runtime cases 17-19 prove durable outcome, matching g2 digest, then Anchor. |
+| 16 | Done: ledger cases 12-20 and `validate_chain` accept only 0 -> 1 -> 2. |
+| 17 | Done: ledger cases 21-26 select state only after full contiguous validation. |
+| 18 | Done: ledger cases 10, 15-20, and 28-29 cover every malformed-chain class. |
+| 19 | Done: `j09_runtime_23_trail_intent_failure_leaves_g0_and_zero_calls`. |
+| 20 | Done: `j09_replay_runtime_native_g0_is_manual_without_provider`. |
+| 21 | Done: `j09_replay_runtime_native_g1_is_manual_without_provider`. |
+| 22 | Done: runtime cases 26-29 prove outcome-before-g2 and durable-outcome-without-g2 closure. |
+| 23 | Done: `j09_runtime_30_anchor_failure_leaves_g2_without_retry` proves an Anchor failure after g2 creates no substitute or retry; `j09_replay_runtime_native_success_is_blocked_without_provider`, `j09_replay_runtime_native_failure_is_blocked_without_provider`, and `j09_replay_runtime_native_uncertain_is_manual_without_provider` prove recovered terminal states expose zero Anchors. |
+| 24 | Done: `ledger_29_unexpected_ledger_entry_fails_closed` preserves keyed temporary evidence. |
+| 25 | Done: `ledger_27_orphan_chain_fails_whole_ledger_closed`. |
+| 26 | Done: `ledger_all_bounded_persistence_seams_fail_closed` plus runtime cases 16, 22, 25, and 29. |
+| 27 | Done: `ledger_01_real_second_process_exclusion_and_release` and native fresh-success restart proof. |
+| 28 | Done: `ledger_01_real_second_process_exclusion_and_release` proves cross-process same-key exclusion/release, composed with `j09_replay_runtime_native_fresh_success_restart_makes_zero_second_call` proving fresh success then restart makes zero second provider calls. |
+| 29 | Done: `ledger_19_generation_collision_never_replaces_bytes`. |
+| 30 | Done: ledger lock cases 1-4 plus runtime admission-failure case 16. |
+| 31 | Done: recovered-state cases 10-15 table-drive all six states with a counting approval and consume zero; cases 20 and 39 prove fresh and unavailable gates. |
+| 32 | Done: `j09_runtime_20_approved_ask_consumes_between_claim_and_g0`. |
+| 33 | Done: `j09_runtime_21_approval_consumption_failure_leaves_claim_only` and J05 audit-failure regression. |
+| 34 | Done: runtime cases 17, 23, 24, and 25 prove intent/deadline/armed/provider ordering. |
+| 35 | Done: runtime cases 17-19 prove success/failure/uncertain outcome -> g2 -> one Anchor. |
+| 36 | Done: runtime cases 26-30 prove outcome/g2/Anchor failure closure without retry. |
+| 37 | Done: native success/failure recovered cases and `recovered_terminal_admission_cannot_publish_or_mutate`. |
+| 38 | Done: native claim/g0/g1/uncertain cases are manual-only; no retry, compensation, restoration, or executor exists. |
+| 39 | Done: `j09_runtime_33_binding_uses_exact_planner_ids_and_host_uuid_stays_local`. |
+| 40 | Done: native replay 109/109, full Rust 442/442, all PowerShell regressions, OCaml build, packet, format, compiler, and diff checks. |
+| 41 | Done: `native_local_fixed_ntfs_volume_is_accepted`. |
+| 42 | Done: preserved component-by-component handle admission and reparse rejection tests. |
+| 43 | Done: `ledger_01_real_second_process_exclusion_and_release`. |
+| 44 | Done: `native_publication_survives_reopen_and_never_replaces` and competing publishers. |
+| 45 | Done: preserved write/flush/rename/reopen/final-verification fault evidence. |
+| 46 | Done: every unsafe Win32 call remains contained and documented in `replay_windows.rs`. |
+| 47 | Done: dependency diff is empty from the accepted checkpoint; only authorised Windows dependencies remain. |
+| 48 | Done: `j09_runtime_09_allow_without_root_is_persistence_unavailable`. |
+| 49 | Done: `j09_runtime_39_approved_ask_missing_root_consumes_zero_approvals`. |
+| 50 | Done: `j09_runtime_38_trail_and_replay_roots_remain_explicitly_distinct`. |
+| 51 | Done: parser case 4 and native `relative_root_is_rejected_before_win32`; normal open never creates a missing root. |
+| 52 | Done: runtime cases 6-8 and 36-37 prove non-dispatch paths never admit; `ReplayLedger::open` never provisions. |
+| 53 | Done: `native_provisioning_is_exact_idempotent_and_non_repairing` proves the exact hierarchy. |
+| 54 | Done: the same native provisioning test proves non-mutating `AlreadyProvisioned`. |
+| 55 | Done: native partial, unknown-file, unknown-version, and keyed-temporary cases never repair. |
+| 56 | Done: preserved handle-bound owner equality validation. |
+| 57 | Done: preserved present, non-null DACL validation. |
+| 58 | Done: `generic_write_is_rejected` and `unrelated_write_authority_is_rejected`. |
+| 59 | Done: `unrelated_read_only_authority_is_safe`. |
+| 60 | Done: `trusted_writer_is_accepted` and live current-token ACL proof. |
+| 61 | Done: `validated_child_retains_complete_independent_handle_chain`. |
+| 62 | Done: `ledger_populated_valid_subtrees_reopen_without_reprovisioning` and native runtime admission. |
+| 63 | Done: runtime cases 6-8, 36, and 37 prove denied, Ask, unavailable, unmatched, and fresh-pending paths open no replay authority. |
 
 ## Remaining risks
 
-The publication, provisioning, cross-process lock, immutable claim/generation,
-restart reconstruction, orphan scan, and bounded persistence-fault substrate
-are now proven below dispatch. J09 as a whole remains `IN_PROGRESS`: J05/J06
-ordering, Trail intent/outcome ordering, provider-boundary retention, duplicate
-Result Anchor suppression, deadline seams, and reference-host dispatch
-integration remain deliberately absent. This checkpoint must not be described
-as J09 completion.
+No known J09 implementation risk remains inside the frozen scope. The
+independent Red review and the complete verification suite passed. J10 queueing,
+J11 deduplication, retry, compensation, and recovery execution remain
+explicitly outside J09.
 
 ## Smallest next action
 
-After independent review accepts this checkpoint, compile the next bounded J09
-packet for dispatch ordering and integration. Do not begin that work from this
-checkpoint.
+No further implementation action is authorised. This note accompanies the
+task-authorised commit and branch push; stop afterward without beginning
+J10/J11.
 
 ## References
 

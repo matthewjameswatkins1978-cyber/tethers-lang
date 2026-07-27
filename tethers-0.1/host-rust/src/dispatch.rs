@@ -37,9 +37,15 @@ use std::path::{Path, PathBuf};
 // Identifiers
 // ---------------------------------------------------------------------------
 
-/// Caller-supplied stable execution identifier.
+/// Host-issued stable execution identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExecutionId(pub String);
+pub struct ExecutionId(pub(crate) String);
+
+impl ExecutionId {
+    pub(crate) fn from_replay(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
 
 /// Caller-supplied stable action identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,6 +367,7 @@ pub struct RecordingTrail {
     pub injected_intent_error: Option<TrailError>,
     pub injected_authorisation_error: Option<TrailError>,
     pub injected_outcome_error: Option<TrailError>,
+    pub event_log: Option<std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>>,
 }
 
 #[cfg(test)]
@@ -373,6 +380,7 @@ impl RecordingTrail {
             injected_intent_error: None,
             injected_authorisation_error: None,
             injected_outcome_error: None,
+            event_log: None,
         }
     }
 }
@@ -383,6 +391,9 @@ impl sealed::Sealed for RecordingTrail {}
 #[cfg(test)]
 impl Trail for RecordingTrail {
     fn append_and_flush_intent(&mut self, entry: &IntentEntry) -> Result<(), TrailError> {
+        if let Some(events) = &self.event_log {
+            events.borrow_mut().push("trail_intent");
+        }
         if let Some(err) = self.injected_intent_error.take() {
             return Err(err);
         }
@@ -391,6 +402,9 @@ impl Trail for RecordingTrail {
     }
 
     fn append_authorisation(&mut self, entry: &AuthorisationEntry) -> Result<(), TrailError> {
+        if let Some(events) = &self.event_log {
+            events.borrow_mut().push("trail_authorisation");
+        }
         if let Some(err) = self.injected_authorisation_error.take() {
             return Err(err);
         }
@@ -399,6 +413,9 @@ impl Trail for RecordingTrail {
     }
 
     fn append_outcome(&mut self, entry: &OutcomeEntry) -> Result<(), TrailError> {
+        if let Some(events) = &self.event_log {
+            events.borrow_mut().push("trail_outcome");
+        }
         if let Some(err) = self.injected_outcome_error.take() {
             return Err(err);
         }

@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J09 durable replay protection`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 

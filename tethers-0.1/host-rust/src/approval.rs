@@ -125,7 +125,7 @@ impl ApprovalProof {
     }
 }
 
-fn digest(value: &serde_json::Value) -> String {
+pub(crate) fn digest(value: &serde_json::Value) -> String {
     let bytes = serde_json_canonicalizer::to_vec(value).expect("canonical JSON value");
     format!("sha256:{:x}", Sha256::digest(bytes))
 }

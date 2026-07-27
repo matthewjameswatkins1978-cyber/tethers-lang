@@ -5,6 +5,7 @@ mod outcome;
 pub mod policy;
 pub mod provider;
 pub mod replay;
+mod replay_runtime;
 #[cfg(windows)]
 pub mod replay_windows;
 pub mod resolver;
@@ -23,42 +24,98 @@ use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args = env::args().skip(1);
-    if matches!(args.next().as_deref(), Some("provision-replay")) {
-        let root = args
-            .next()
-            .ok_or("usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>")?;
-        if args.next().is_some() {
-            return Err(
-                "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>".into(),
-            );
+const NORMAL_USAGE: &str = "usage: tethers-reference-host ENGINE REQUEST_JSON [POLICY] \
+[TRAIL_PATH] [EXECUTOR_MODE] [--host-data-root <ABSOLUTE_PATH>]";
+const PROVISION_USAGE: &str =
+    "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>";
+
+#[derive(Debug)]
+struct NormalArgs {
+    engine_path: String,
+    request_path: String,
+    policy_posture: String,
+    trail_path: Option<String>,
+    executor_mode: String,
+    host_data_root: Option<PathBuf>,
+}
+
+fn parse_normal_args(args: &[String]) -> Result<NormalArgs, String> {
+    let mut positional = Vec::new();
+    let mut host_data_root = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        if argument == "--host-data-root" {
+            if host_data_root.is_some() {
+                return Err("duplicate --host-data-root".to_owned());
+            }
+            index += 1;
+            let value = args
+                .get(index)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| "missing value for --host-data-root".to_owned())?;
+            let path = PathBuf::from(value);
+            if !path.is_absolute() {
+                return Err("--host-data-root must be absolute".to_owned());
+            }
+            host_data_root = Some(path);
+        } else if argument.starts_with('-') {
+            return Err(format!("unknown option: {argument}"));
+        } else {
+            positional.push(argument.clone());
         }
+        index += 1;
+    }
+    if !(2..=5).contains(&positional.len()) {
+        return Err(NORMAL_USAGE.to_owned());
+    }
+    Ok(NormalArgs {
+        engine_path: positional[0].clone(),
+        request_path: positional[1].clone(),
+        policy_posture: positional
+            .get(2)
+            .cloned()
+            .unwrap_or_else(|| "allow".to_owned()),
+        trail_path: positional.get(3).cloned(),
+        executor_mode: positional
+            .get(4)
+            .cloned()
+            .unwrap_or_else(|| "success".to_owned()),
+        host_data_root,
+    })
+}
+
+fn parse_provision_args(args: &[String]) -> Result<PathBuf, String> {
+    if args.len() != 2 || args.first().map(String::as_str) != Some("provision-replay") {
+        return Err(PROVISION_USAGE.to_owned());
+    }
+    let root = PathBuf::from(&args[1]);
+    if !root.is_absolute() {
+        return Err(PROVISION_USAGE.to_owned());
+    }
+    Ok(root)
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    if matches!(args.first().map(String::as_str), Some("provision-replay")) {
+        let root = parse_provision_args(&args)?;
         #[cfg(windows)]
         {
-            let result = replay_windows::provision_replay(PathBuf::from(root).as_path())?;
+            let result = replay_windows::provision_replay(&root)?;
             println!("{}", result.as_str());
             return Ok(());
         }
         #[cfg(not(windows))]
         return Err("replay persistence is available only on native Windows".into());
     }
-    let mut args = env::args().skip(1);
-    let engine_path = args.next().ok_or(
-        "usage: tethers-reference-host ENGINE REQUEST_JSON [POLICY] [TRAIL_PATH] [EXECUTOR_MODE]",
-    )?;
-    let request_path = args.next().ok_or(
-        "usage: tethers-reference-host ENGINE REQUEST_JSON [POLICY] [TRAIL_PATH] [EXECUTOR_MODE]",
-    )?;
-    let policy_posture = args.next().unwrap_or_else(|| "allow".to_string());
-    let trail_path = args.next();
-    let executor_mode = args.next().unwrap_or_else(|| "success".to_string());
+    let normal = parse_normal_args(&args)?;
 
-    let mut request: Value = serde_json::from_str(&fs::read_to_string(request_path)?)?;
+    let mut request: Value = serde_json::from_str(&fs::read_to_string(&normal.request_path)?)?;
 
     // --- Build the approved capability view before planner evaluation ---
 
@@ -144,9 +201,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Project before evaluation and inject bridge pins into request capabilities.
     inject_bridge_projection_into_request(&mut request, &store, &availability)?;
 
-    let mut response = call_engine(&engine_path, &request)?;
+    let mut response = call_engine(&normal.engine_path, &request)?;
 
-    if response.get("status") == Some(&Value::String("matched".into())) {
+    if response_is_matched(&response) {
         // 4. Resolve the capability.
         let resolved = resolver::resolve_capability(
             &store,
@@ -161,7 +218,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         //    proposed Action, the Tether Set declaration, and host-local
         //    policy — posture from CLI, defaults to Allow.
         let requirements = vec![policy::CapabilityRequirement::new("lantern.task.record", 1)];
-        let rule = match policy_posture.as_str() {
+        let rule = match normal.policy_posture.as_str() {
             "allow" => policy::PolicyRule::Allow,
             "deny" => policy::PolicyRule::Deny,
             "ask" => policy::PolicyRule::Ask,
@@ -186,7 +243,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 6. Open file-backed durable Trail for intent recording.
         //    When no explicit path is supplied, use a temporary directory
         //    so repeated runs do not dirty the repository.
-        let trail_path = trail_path.unwrap_or_else(|| {
+        let trail_path = normal.trail_path.unwrap_or_else(|| {
             let tmp = std::env::temp_dir()
                 .join("tethers-demo-trail")
                 .join("trail.jsonl");
@@ -203,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("request event had no id")?;
 
         // 7. Select executor by mode, then dispatch through the proof boundary.
-        match executor_mode.as_str() {
+        match normal.executor_mode.as_str() {
             "success" => {
                 let mut executor = MockExecutor::new();
                 authorise_and_execute(
@@ -213,6 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut file_trail,
                     &mut executor,
                     original_event_id,
+                    normal.host_data_root.as_deref(),
                 )?;
             }
             "fail" => {
@@ -224,6 +282,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut file_trail,
                     &mut executor,
                     original_event_id,
+                    normal.host_data_root.as_deref(),
                 )?;
             }
             other => return Err(format!("unknown executor mode: {other}").into()),
@@ -232,6 +291,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
+}
+
+fn response_is_matched(response: &Value) -> bool {
+    response.get("status").and_then(Value::as_str) == Some("matched")
 }
 
 fn call_engine(engine_path: &str, request: &Value) -> Result<Value, Box<dyn std::error::Error>> {
@@ -679,7 +742,12 @@ fn record_human_approval_decision(
 /// approval record is evidence only for an otherwise-current Ask: it cannot
 /// turn Deny, Unavailable, schema failure, scope failure, or stale pins into
 /// an Allow.
-fn resume_exact_approval(
+enum ExactApprovalPrecheck {
+    Ready(approval::ApprovalProof),
+    NotDispatchable(PermissionDecision),
+}
+
+fn precheck_exact_approval(
     action: &policy::ProposedAction,
     approval_id: &str,
     requirements: &[policy::CapabilityRequirement],
@@ -689,7 +757,7 @@ fn resume_exact_approval(
     scope: policy::ScopeAssessment,
     approvals: &mut approval::ApprovalStore,
     trail: &mut dyn dispatch::Trail,
-) -> Result<PermissionDecision, Box<dyn std::error::Error>> {
+) -> Result<ExactApprovalPrecheck, Box<dyn std::error::Error>> {
     let evaluation = policy::evaluate_effective_policy(
         action,
         requirements,
@@ -708,7 +776,7 @@ fn resume_exact_approval(
                 "fresh_policy_or_proof_failed",
             ))?;
         }
-        return Ok(evaluation.decision);
+        return Ok(ExactApprovalPrecheck::NotDispatchable(evaluation.decision));
     }
     let fresh_proof = fresh_proof?;
     let matching = approvals
@@ -723,46 +791,60 @@ fn resume_exact_approval(
                 "approval_proof_mismatch",
             ))?;
         }
-        return Ok(PermissionDecision::Ask);
+        return Ok(ExactApprovalPrecheck::NotDispatchable(
+            PermissionDecision::Ask,
+        ));
     }
-    let consumed = match approvals.consume(approval_id, &fresh_proof) {
-        Ok(record) => record,
-        Err(
-            approval::ApprovalError::Denied
-            | approval::ApprovalError::Cancelled
-            | approval::ApprovalError::Invalidated
-            | approval::ApprovalError::Consumed
-            | approval::ApprovalError::Missing
-            | approval::ApprovalError::Pending,
-        ) => {
-            return Ok(PermissionDecision::Ask);
-        }
-        Err(error) => return Err(format!("approval consumption failed: {error:?}").into()),
-    };
-    trail.append_authorisation(&approval_trail_entry(
-        &consumed.proof,
-        "approval_consumed",
-        "exact_approved_ask",
-    ))?;
-
-    // Re-resolve the exact current identity only after the complete fresh
-    // evaluation and atomic consume have succeeded.  The resulting proof is
-    // created only by policy, never by approval storage or the caller.
-    let resolved = resolver::resolve_capability(
-        store,
-        availability,
-        &action.capability_name,
-        action
-            .bridge_capability_version
-            .expect("fresh proof required version"),
-        action.bridge_provider_identity.as_deref(),
-    )?;
-    Ok(policy::allow_after_exact_approval(&resolved))
+    if approvals.record(approval_id)?.state != approval::ApprovalState::Approved {
+        return Ok(ExactApprovalPrecheck::NotDispatchable(
+            PermissionDecision::Ask,
+        ));
+    }
+    Ok(ExactApprovalPrecheck::Ready(fresh_proof))
 }
 
-/// Production orchestration: this calls the same intent-first dispatch path as
-/// ordinary Allows, but only after `resume_exact_approval` has freshly checked
-/// policy and atomically consumed the exact host-issued approval.
+trait ApprovalConsumption {
+    fn consume(&mut self, trail: &mut dyn dispatch::Trail) -> Result<(), ()>;
+}
+
+trait ResultAnchorWriter {
+    fn write(&mut self, response: &mut Value, anchor: &ResultAnchor) -> Result<(), ()>;
+}
+
+struct ResponseResultAnchorWriter;
+
+impl ResultAnchorWriter for ResponseResultAnchorWriter {
+    fn write(&mut self, response: &mut Value, anchor: &ResultAnchor) -> Result<(), ()> {
+        response["result_anchor"] = serde_json::to_value(anchor).map_err(|_| ())?;
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+struct ExactApprovalConsumption<'a> {
+    approval_id: &'a str,
+    proof: approval::ApprovalProof,
+    approvals: &'a mut approval::ApprovalStore,
+}
+
+impl ApprovalConsumption for ExactApprovalConsumption<'_> {
+    fn consume(&mut self, trail: &mut dyn dispatch::Trail) -> Result<(), ()> {
+        let consumed = self
+            .approvals
+            .consume(self.approval_id, &self.proof)
+            .map_err(|_| ())?;
+        trail
+            .append_authorisation(&approval_trail_entry(
+                &consumed.proof,
+                "approval_consumed",
+                "exact_approved_ask",
+            ))
+            .map_err(|_| ())
+    }
+}
+
+/// Approved-Ask orchestration performs complete fresh checks first, but defers
+/// the one-shot consume until a new replay claim is durably admitted.
 #[allow(clippy::too_many_arguments)]
 fn resume_and_execute_exact_approval(
     response: &mut Value,
@@ -776,9 +858,43 @@ fn resume_and_execute_exact_approval(
     trail: &mut dyn dispatch::Trail,
     executor: &mut dyn CapabilityExecutor,
     original_event_id: &str,
+    host_data_root: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut replay_authority = replay_runtime::FileReplayAuthority::new(host_data_root);
+    resume_and_execute_exact_approval_with_authority(
+        response,
+        approval_id,
+        requirements,
+        store,
+        availability,
+        host_policy,
+        scope,
+        approvals,
+        trail,
+        executor,
+        original_event_id,
+        &mut replay_authority,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
+fn resume_and_execute_exact_approval_with_authority(
+    response: &mut Value,
+    approval_id: &str,
+    requirements: &[policy::CapabilityRequirement],
+    store: &trusted_store::TrustedManifestStore,
+    availability: &resolver::ProviderAvailability,
+    host_policy: &policy::HostLocalPolicy,
+    scope: policy::ScopeAssessment,
+    approvals: &mut approval::ApprovalStore,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    original_event_id: &str,
+    replay_authority: &mut dyn replay_runtime::ReplayAuthority,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let action = extract_proposed_action(response)?;
-    let decision = resume_exact_approval(
+    let fresh_proof = match precheck_exact_approval(
         &action,
         approval_id,
         requirements,
@@ -788,7 +904,13 @@ fn resume_and_execute_exact_approval(
         scope,
         approvals,
         trail,
-    )?;
+    )? {
+        ExactApprovalPrecheck::Ready(proof) => proof,
+        ExactApprovalPrecheck::NotDispatchable(decision) => {
+            present_non_dispatchable_response(response, &decision, &action.action_id)?;
+            return Ok(());
+        }
+    };
     let resolved = resolver::resolve_capability(
         store,
         availability,
@@ -798,13 +920,58 @@ fn resume_and_execute_exact_approval(
             .ok_or("missing bridge capability version")?,
         action.bridge_provider_identity.as_deref(),
     )?;
-    authorise_and_execute(
+    let decision = policy::allow_after_exact_approval(&resolved);
+    let mut consumption = ExactApprovalConsumption {
+        approval_id,
+        proof: fresh_proof,
+        approvals,
+    };
+    let clock = outcome::ProductionMonotonicClock::new();
+    let mut anchor_writer = ResponseResultAnchorWriter;
+    authorise_and_execute_inner(
         response,
         decision,
         &resolved,
         trail,
         executor,
         original_event_id,
+        true,
+        &clock,
+        replay_authority,
+        Some(&mut consumption),
+        &mut anchor_writer,
+    )
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn resume_and_execute_exact_approval_with_test_replay(
+    response: &mut Value,
+    approval_id: &str,
+    requirements: &[policy::CapabilityRequirement],
+    store: &trusted_store::TrustedManifestStore,
+    availability: &resolver::ProviderAvailability,
+    host_policy: &policy::HostLocalPolicy,
+    scope: policy::ScopeAssessment,
+    approvals: &mut approval::ApprovalStore,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    original_event_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+    resume_and_execute_exact_approval_with_authority(
+        response,
+        approval_id,
+        requirements,
+        store,
+        availability,
+        host_policy,
+        scope,
+        approvals,
+        trail,
+        executor,
+        original_event_id,
+        &mut replay_authority,
     )
 }
 
@@ -827,8 +994,11 @@ fn authorise_and_execute(
     trail: &mut dyn dispatch::Trail,
     executor: &mut dyn CapabilityExecutor,
     original_event_id: &str,
+    host_data_root: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let clock = outcome::ProductionMonotonicClock::new();
+    let mut replay_authority = replay_runtime::FileReplayAuthority::new(host_data_root);
+    let mut anchor_writer = ResponseResultAnchorWriter;
     authorise_and_execute_inner(
         response,
         decision,
@@ -838,6 +1008,36 @@ fn authorise_and_execute(
         original_event_id,
         true,
         &clock,
+        &mut replay_authority,
+        None,
+        &mut anchor_writer,
+    )
+}
+
+#[cfg(test)]
+fn authorise_and_execute_with_test_replay(
+    response: &mut Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    original_event_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let clock = outcome::ProductionMonotonicClock::new();
+    let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+    let mut anchor_writer = ResponseResultAnchorWriter;
+    authorise_and_execute_inner(
+        response,
+        decision,
+        resolved,
+        trail,
+        executor,
+        original_event_id,
+        true,
+        &clock,
+        &mut replay_authority,
+        None,
+        &mut anchor_writer,
     )
 }
 
@@ -872,6 +1072,8 @@ fn authorise_and_execute_without_bridge_pins_with_clock(
     original_event_id: &str,
     clock: &dyn outcome::MonotonicClock,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+    let mut anchor_writer = ResponseResultAnchorWriter;
     authorise_and_execute_inner(
         response,
         decision,
@@ -881,7 +1083,40 @@ fn authorise_and_execute_without_bridge_pins_with_clock(
         original_event_id,
         false,
         clock,
+        &mut replay_authority,
+        None,
+        &mut anchor_writer,
     )
+}
+
+fn present_non_dispatchable_response(
+    response: &mut Value,
+    decision: &PermissionDecision,
+    action_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let rejection = match decision {
+        PermissionDecision::Ask => "Ask",
+        PermissionDecision::Deny => "Deny",
+        PermissionDecision::Unavailable => "Unavailable",
+        // An approval resume may continue only when the fresh ordinary result
+        // is exactly Ask. A changed Allow is therefore still non-dispatchable
+        // through this seam.
+        PermissionDecision::Allow(_) => "Allow",
+    };
+    let json_trail = response
+        .get_mut("trail")
+        .and_then(Value::as_array_mut)
+        .ok_or("response had no Trail")?;
+    json_trail.push(trail_entry(
+        json_trail.len() as u64 + 1,
+        "authorisation",
+        "intent_failed",
+        "failed",
+        rejection.to_owned(),
+        Some(action_id),
+    ));
+    response["execution_status"] = Value::String("denied".into());
+    Ok(())
 }
 
 fn authorise_and_execute_inner(
@@ -893,6 +1128,9 @@ fn authorise_and_execute_inner(
     original_event_id: &str,
     bridge_pins_required: bool,
     clock: &dyn outcome::MonotonicClock,
+    replay_authority: &mut dyn replay_runtime::ReplayAuthority,
+    approval_consumption: Option<&mut dyn ApprovalConsumption>,
+    anchor_writer: &mut dyn ResultAnchorWriter,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plan = response.get("plan").ok_or("matched response had no plan")?;
     let actions = plan
@@ -939,9 +1177,72 @@ fn authorise_and_execute_inner(
         .ok_or("response had no evaluation_id")?
         .to_owned();
 
-    let execution_id = dispatch::ExecutionId(evaluation_id.to_owned());
     let action_id = dispatch::ActionId(action_id_str.to_owned());
     let arguments = action.get("arguments").cloned().unwrap_or(Value::Null);
+
+    // Non-dispatchable policy branches never open replay storage. Fresh Ask
+    // approval creation is handled by `request_exact_approval`; this boundary
+    // must not claim an execution identity for it.
+    if !matches!(&decision, PermissionDecision::Allow(_)) {
+        present_non_dispatchable_response(response, &decision, &action_id.0)?;
+        return Ok(());
+    }
+
+    let logical_key =
+        match replay::LogicalExecutionKey::derive(original_event_id, &evaluation_id, action_id_str)
+        {
+            Ok(key) => key,
+            Err(_) => {
+                set_replay_result(
+                    response,
+                    replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+                );
+                return Ok(());
+            }
+        };
+    let binding = replay::ExecutionBinding {
+        evaluation_id: evaluation_id.clone(),
+        action_id: action_id_str.to_owned(),
+        capability_name: resolved.capability_name().to_owned(),
+        capability_version: resolved.capability_version(),
+        manifest_digest: resolved.manifest_digest().to_owned(),
+        provider_identity: resolved.provider_identity().to_owned(),
+        argument_digest: approval::digest(&arguments),
+    };
+
+    // Replay persistence is opened lazily here, after all ordinary fresh gates
+    // above and only for a branch that may dispatch.
+    let mut replay_admission = match replay_authority.admit(&logical_key, &binding) {
+        Ok(admission) => admission,
+        Err(_) => {
+            set_replay_result(
+                response,
+                replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+            );
+            return Ok(());
+        }
+    };
+    if !replay_admission.is_fresh() {
+        set_replay_result(
+            response,
+            replay_runtime::ReplayDispatchResult::from_recovered_state(replay_admission.state()),
+        );
+        return Ok(());
+    }
+    let execution_id = dispatch::ExecutionId::from_replay(replay_admission.execution_id());
+
+    // Approved Ask is consumed exactly once only after the fresh claim is
+    // durable and while the identity guard is held. Any failure leaves the
+    // claim manual-only and never restores the approval.
+    if let Some(consumption) = approval_consumption {
+        if consumption.consume(trail).is_err() {
+            set_replay_result(
+                response,
+                replay_runtime::ReplayDispatchResult::RequiresManualResolution,
+            );
+            return Ok(());
+        }
+    }
 
     let json_trail = response
         .get_mut("trail")
@@ -949,7 +1250,16 @@ fn authorise_and_execute_inner(
         .ok_or("response had no Trail")?;
     let mut sequence = json_trail.len() as u64 + 1;
 
-    // Attempt durable intent recording.
+    // The immutable replay intent boundary precedes the existing Trail intent.
+    if replay_admission.publish_intent().is_err() {
+        set_replay_result(
+            response,
+            replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+        );
+        return Ok(());
+    }
+
+    // Attempt durable Trail intent recording.
     let ready = match dispatch::prepare_and_record(
         decision,
         resolved,
@@ -997,6 +1307,17 @@ fn authorise_and_execute_inner(
             return Ok(());
         }
     };
+
+    // This durable boundary is immediately before provider invocation. The
+    // held admission guard retains cross-process exclusion through the call
+    // and final publication.
+    if replay_admission.publish_armed().is_err() {
+        set_replay_result(
+            response,
+            replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+        );
+        return Ok(());
+    }
 
     // This volatile state transition is the invocation boundary: immediately
     // after it the provider may have caused an effect, so ambiguity is never
@@ -1117,6 +1438,40 @@ fn authorise_and_execute_inner(
         return Ok(());
     }
 
+    let terminal_state = match &execution_outcome {
+        outcome::ExecutionOutcome::Succeeded(_) => replay::ReplayState::Succeeded,
+        outcome::ExecutionOutcome::Failed { .. } => replay::ReplayState::Failed,
+        outcome::ExecutionOutcome::Uncertain { .. } => replay::ReplayState::Uncertain,
+    };
+    let outcome_digest = match replay::durable_outcome_digest(&outcome_entry) {
+        Ok(digest) => digest,
+        Err(_) => {
+            response["execution_status"] = Value::String(
+                if status == "succeeded" {
+                    "completed"
+                } else {
+                    status
+                }
+                .into(),
+            );
+            return Ok(());
+        }
+    };
+    if replay_admission
+        .publish_terminal(terminal_state, outcome_digest)
+        .is_err()
+    {
+        response["execution_status"] = Value::String(
+            if status == "succeeded" {
+                "completed"
+            } else {
+                status
+            }
+            .into(),
+        );
+        return Ok(());
+    }
+
     let presentation_status = if status == "succeeded" {
         "succeeded"
     } else {
@@ -1153,10 +1508,26 @@ fn authorise_and_execute_inner(
             timestamp_ms,
             original_event_id,
         );
-        response["result_anchor"] = serde_json::to_value(&anchor)?;
+        if anchor_writer.write(response, &anchor).is_err() {
+            if let Some(object) = response.as_object_mut() {
+                object.remove("result_anchor");
+            }
+            return Ok(());
+        }
     }
 
+    // Keep cross-process exclusion through the Result Anchor boundary,
+    // including a failing Anchor write. Drop is intentionally last.
+    drop(replay_admission);
     Ok(())
+}
+
+fn set_replay_result(response: &mut Value, result: replay_runtime::ReplayDispatchResult) {
+    if let Some(object) = response.as_object_mut() {
+        object.remove("result_anchor");
+        object.remove("replay_result");
+    }
+    response["execution_status"] = Value::String(result.as_str().to_owned());
 }
 
 fn required_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, Box<dyn std::error::Error>> {
@@ -2198,7 +2569,10 @@ mod tests {
         assert_eq!(trail.outcome_entries.len(), 1);
 
         let outcome = &trail.outcome_entries[0];
-        assert_eq!(outcome.execution_id, "eval-001");
+        assert_eq!(
+            outcome.execution_id,
+            replay_runtime::test_support::TEST_EXECUTION_ID
+        );
         assert_eq!(outcome.action_id, "action_1");
         assert_eq!(outcome.status, "succeeded");
         assert_eq!(
@@ -2248,7 +2622,10 @@ mod tests {
         assert_eq!(trail.outcome_entries.len(), 1);
 
         let outcome = &trail.outcome_entries[0];
-        assert_eq!(outcome.execution_id, "eval-001");
+        assert_eq!(
+            outcome.execution_id,
+            replay_runtime::test_support::TEST_EXECUTION_ID
+        );
         assert_eq!(outcome.action_id, "action_1");
         assert_eq!(outcome.status, "failed");
         assert_eq!(outcome.result, None);
@@ -3265,7 +3642,7 @@ mod tests {
 
         let mut trail = RecordingTrail::new();
         let mut executor = CallCountingExecutor { calls: 0 };
-        let err = authorise_and_execute(
+        let err = authorise_and_execute_with_test_replay(
             &mut response,
             decision,
             &resolved_t2,
@@ -3294,7 +3671,7 @@ mod tests {
         success_response["plan"]["actions"][0]["capability_version"] =
             Value::String("1.0.0".to_owned());
 
-        authorise_and_execute(
+        authorise_and_execute_with_test_replay(
             &mut success_response,
             allow_decision_for(&resolved_t2),
             &resolved_t2,
@@ -3378,7 +3755,7 @@ mod tests {
 
         for (label, mut response) in cases {
             let mut executor = CallCountingExecutor { calls: 0 };
-            let err = authorise_and_execute(
+            let err = authorise_and_execute_with_test_replay(
                 &mut response,
                 allow_decision_for(&resolved),
                 &resolved,
@@ -3449,7 +3826,7 @@ mod tests {
         )
         .unwrap();
         let mut executor = FixtureExecutor { calls: 0 };
-        resume_and_execute_exact_approval(
+        resume_and_execute_exact_approval_with_test_replay(
             &mut response,
             &request.approval_id,
             &requirements,
@@ -3514,7 +3891,8 @@ mod tests {
         )
         .unwrap();
         let mut executor = MockExecutor::new();
-        resume_and_execute_exact_approval(
+        let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+        resume_and_execute_exact_approval_with_authority(
             &mut response,
             &request.approval_id,
             &requirements,
@@ -3526,12 +3904,22 @@ mod tests {
             &mut trail,
             &mut executor,
             "evt-j05",
+            &mut replay_authority,
         )
         .unwrap();
+        assert_eq!(replay_authority.admissions, 0);
         assert!(executor.completed.is_empty());
         assert!(trail.entries.is_empty());
         assert!(trail.outcome_entries.is_empty());
         assert!(response.get("result_anchor").is_none());
+        assert_eq!(response["execution_status"], "denied");
+        let response_trail = response["trail"].as_array().unwrap();
+        assert_eq!(response_trail.last().unwrap()["kind"], "intent_failed");
+        assert_eq!(response_trail.last().unwrap()["message"], "Deny");
+        assert!(!trail
+            .authorisation_entries
+            .iter()
+            .any(|entry| entry.kind == "approval_consumed"));
         assert_eq!(
             approvals.record(&request.approval_id).unwrap().state,
             approval::ApprovalState::Invalidated
@@ -3664,7 +4052,7 @@ mod tests {
         trail.injected_authorisation_error = Some(dispatch::TrailError::WriteFailed("full".into()));
         let mut response = make_bridge_matched_response(&resolved);
         let mut executor = MockExecutor::new();
-        assert!(resume_and_execute_exact_approval(
+        resume_and_execute_exact_approval_with_test_replay(
             &mut response,
             &request.approval_id,
             &requirements,
@@ -3675,9 +4063,9 @@ mod tests {
             &mut approvals,
             &mut trail,
             &mut executor,
-            "evt-j05"
+            "evt-j05",
         )
-        .is_err());
+        .unwrap();
         assert_eq!(
             approvals.record(&request.approval_id).unwrap().state,
             approval::ApprovalState::Consumed
@@ -3686,6 +4074,11 @@ mod tests {
         assert!(trail.outcome_entries.is_empty());
         assert!(executor.completed.is_empty());
         assert!(response.get("result_anchor").is_none());
+        assert_eq!(
+            response["execution_status"],
+            "replay_requires_manual_resolution"
+        );
+        assert!(response.get("replay_result").is_none());
     }
 
     // J06 focused execution truth table.  The executor advances the injected
@@ -3954,5 +4347,1302 @@ mod tests {
             "outcome audit write failed"
         );
         assert!(!response.to_string().contains("token=secret"));
+    }
+
+    // -------------------------------------------------------------------
+    // J09 runtime integration: counting fakes and observable order
+    // -------------------------------------------------------------------
+
+    mod replay_runtime_integration {
+        use super::*;
+        use std::cell::{Cell, RefCell};
+        use std::rc::Rc;
+
+        struct RuntimeExecutor {
+            events: Rc<RefCell<Vec<&'static str>>>,
+            guard_held: Rc<Cell<bool>>,
+            result: Result<Value, outcome::ProviderDiagnostic>,
+            calls: usize,
+            saw_guard: bool,
+        }
+
+        impl RuntimeExecutor {
+            fn success(events: Rc<RefCell<Vec<&'static str>>>, guard_held: Rc<Cell<bool>>) -> Self {
+                Self {
+                    events,
+                    guard_held,
+                    result: Ok(json!({"status":"recorded","project":"p","task":"t"})),
+                    calls: 0,
+                    saw_guard: false,
+                }
+            }
+        }
+
+        impl CapabilityExecutor for RuntimeExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+
+            fn execute(&mut self, ready: &DispatchReadyAction) -> Result<Value, String> {
+                self.execute_classified(ready, Duration::from_secs(1))
+                    .map_err(|diagnostic| format!("{diagnostic:?}"))
+            }
+
+            fn execute_classified(
+                &mut self,
+                _ready: &DispatchReadyAction,
+                _remaining: Duration,
+            ) -> Result<Value, outcome::ProviderDiagnostic> {
+                self.events.borrow_mut().push("provider");
+                self.calls += 1;
+                self.saw_guard = self.guard_held.get();
+                self.result.clone()
+            }
+        }
+
+        struct RuntimeClock {
+            events: Rc<RefCell<Vec<&'static str>>>,
+            readings: RefCell<Vec<Duration>>,
+            calls: Cell<usize>,
+        }
+
+        impl RuntimeClock {
+            fn within_deadline(events: Rc<RefCell<Vec<&'static str>>>) -> Self {
+                Self {
+                    events,
+                    readings: RefCell::new(vec![Duration::ZERO, Duration::ZERO, Duration::ZERO]),
+                    calls: Cell::new(0),
+                }
+            }
+
+            fn expired_before_invocation(events: Rc<RefCell<Vec<&'static str>>>) -> Self {
+                Self {
+                    events,
+                    readings: RefCell::new(vec![Duration::ZERO, Duration::from_secs(11)]),
+                    calls: Cell::new(0),
+                }
+            }
+        }
+
+        impl outcome::MonotonicClock for RuntimeClock {
+            fn now(&self) -> Duration {
+                let call = self.calls.get();
+                self.calls.set(call + 1);
+                self.events.borrow_mut().push(match call {
+                    0 => "deadline_start",
+                    1 => "deadline_check",
+                    _ => "response_observed",
+                });
+                self.readings
+                    .borrow()
+                    .get(call)
+                    .copied()
+                    .unwrap_or(Duration::ZERO)
+            }
+        }
+
+        struct RuntimeAnchorWriter {
+            events: Rc<RefCell<Vec<&'static str>>>,
+            guard_held: Rc<Cell<bool>>,
+            fail: bool,
+            writes: usize,
+            saw_guard: bool,
+        }
+
+        impl RuntimeAnchorWriter {
+            fn new(events: Rc<RefCell<Vec<&'static str>>>, guard_held: Rc<Cell<bool>>) -> Self {
+                Self {
+                    events,
+                    guard_held,
+                    fail: false,
+                    writes: 0,
+                    saw_guard: false,
+                }
+            }
+        }
+
+        impl ResultAnchorWriter for RuntimeAnchorWriter {
+            fn write(&mut self, response: &mut Value, anchor: &ResultAnchor) -> Result<(), ()> {
+                self.events.borrow_mut().push("anchor");
+                self.writes += 1;
+                self.saw_guard = self.guard_held.get();
+                if self.fail {
+                    return Err(());
+                }
+                response["result_anchor"] = serde_json::to_value(anchor).map_err(|_| ())?;
+                Ok(())
+            }
+        }
+
+        struct RuntimeApproval {
+            events: Rc<RefCell<Vec<&'static str>>>,
+            fail: bool,
+            consumes: usize,
+        }
+
+        impl ApprovalConsumption for RuntimeApproval {
+            fn consume(&mut self, _trail: &mut dyn dispatch::Trail) -> Result<(), ()> {
+                self.events.borrow_mut().push("consume_approval");
+                self.consumes += 1;
+                if self.fail {
+                    Err(())
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        fn runtime_response(resolved: &resolver::ResolvedCapability) -> Value {
+            make_matched_response(
+                "eval-j09-001",
+                "action-j09-001",
+                resolved.capability_name(),
+                json!({"project":"p","task":"t"}),
+            )
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn run_runtime(
+            decision: PermissionDecision,
+            authority: &mut dyn replay_runtime::ReplayAuthority,
+            trail: &mut RecordingTrail,
+            executor: &mut RuntimeExecutor,
+            clock: &dyn outcome::MonotonicClock,
+            approval: Option<&mut dyn ApprovalConsumption>,
+            anchor_writer: &mut dyn ResultAnchorWriter,
+        ) -> Value {
+            let (_, resolved) = resolved_lantern();
+            let mut response = runtime_response(&resolved);
+            authorise_and_execute_inner(
+                &mut response,
+                decision,
+                &resolved,
+                trail,
+                executor,
+                "evt-j09-001",
+                false,
+                clock,
+                authority,
+                approval,
+                anchor_writer,
+            )
+            .unwrap();
+            response
+        }
+
+        fn runtime_parts() -> (
+            Rc<RefCell<Vec<&'static str>>>,
+            replay_runtime::test_support::TestReplayAuthority,
+            RecordingTrail,
+            RuntimeExecutor,
+            RuntimeClock,
+            RuntimeAnchorWriter,
+        ) {
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let mut authority = replay_runtime::test_support::TestReplayAuthority::default();
+            authority.events = Rc::clone(&events);
+            let guard_held = Rc::clone(&authority.guard_held);
+            let mut trail = RecordingTrail::new();
+            trail.event_log = Some(Rc::clone(&events));
+            let executor = RuntimeExecutor::success(Rc::clone(&events), Rc::clone(&guard_held));
+            let clock = RuntimeClock::within_deadline(Rc::clone(&events));
+            let anchor = RuntimeAnchorWriter::new(Rc::clone(&events), guard_held);
+            (events, authority, trail, executor, clock, anchor)
+        }
+
+        fn assert_only_existing_replay_result_field(response: &Value, expected: &str) {
+            assert_eq!(response["execution_status"], expected);
+            assert!(response.get("replay_result").is_none());
+            assert!(response.get("result_anchor").is_none());
+        }
+
+        #[cfg(windows)]
+        fn fresh_native_runtime_root(label: &str) -> Option<PathBuf> {
+            let base = std::env::var_os("TETHERS_J09_NATIVE_PROVISION_ROOT")?;
+            let root = PathBuf::from(base)
+                .join(format!("runtime-{label}-{}", uuid::Uuid::new_v4().simple()));
+            fs::create_dir(&root).unwrap();
+            assert_eq!(
+                replay_windows::provision_replay(&root).unwrap(),
+                replay_windows::ProvisionReplayOutcome::Provisioned
+            );
+            Some(root)
+        }
+
+        #[cfg(windows)]
+        fn native_runtime_binding() -> replay::ExecutionBinding {
+            let (_, resolved) = resolved_lantern();
+            replay::ExecutionBinding {
+                evaluation_id: "eval-j09-001".to_owned(),
+                action_id: "action-j09-001".to_owned(),
+                capability_name: resolved.capability_name().to_owned(),
+                capability_version: resolved.capability_version(),
+                manifest_digest: resolved.manifest_digest().to_owned(),
+                provider_identity: resolved.provider_identity().to_owned(),
+                argument_digest: approval::digest(&json!({"project":"p","task":"t"})),
+            }
+        }
+
+        #[cfg(windows)]
+        fn seed_native_runtime_state(root: &Path, state: replay::ReplayState) {
+            let ledger = replay_windows::ReplayLedger::open(root).unwrap();
+            let key = replay::LogicalExecutionKey::derive(
+                "evt-j09-001",
+                "eval-j09-001",
+                "action-j09-001",
+            )
+            .unwrap();
+            let mut admission = ledger
+                .admit_or_recover(key, native_runtime_binding())
+                .unwrap();
+            match state {
+                replay::ReplayState::ClaimedNoState => {}
+                replay::ReplayState::IntentRecorded => admission.publish_intent().unwrap(),
+                replay::ReplayState::InvocationArmed => {
+                    admission.publish_intent().unwrap();
+                    admission.publish_armed().unwrap();
+                }
+                replay::ReplayState::Succeeded
+                | replay::ReplayState::Failed
+                | replay::ReplayState::Uncertain => {
+                    admission.publish_intent().unwrap();
+                    admission.publish_armed().unwrap();
+                    admission
+                        .publish_terminal(
+                            state,
+                            replay::durable_outcome_digest(&json!({"seed":format!("{state:?}")}))
+                                .unwrap(),
+                        )
+                        .unwrap();
+                }
+            }
+        }
+
+        #[cfg(windows)]
+        fn run_native_recovered_state(state: replay::ReplayState, expected: &str) {
+            let Some(root) = fresh_native_runtime_root(&format!("{state:?}")) else {
+                return;
+            };
+            seed_native_runtime_state(&root, state);
+            let (_, resolved) = resolved_lantern();
+            let mut authority = replay_runtime::FileReplayAuthority::new(Some(&root));
+            let mut trail = RecordingTrail::new();
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let guard = Rc::new(Cell::new(false));
+            let mut executor = RuntimeExecutor::success(Rc::clone(&events), Rc::clone(&guard));
+            let clock = RuntimeClock::within_deadline(Rc::clone(&events));
+            let mut anchor = RuntimeAnchorWriter::new(events, guard);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_only_existing_replay_result_field(&response, expected);
+            assert_eq!(executor.calls, 0);
+            assert!(trail.entries.is_empty());
+            assert!(trail.outcome_entries.is_empty());
+        }
+
+        #[test]
+        fn j09_runtime_01_cli_accepts_one_absolute_host_data_root() {
+            let args = vec![
+                "engine.exe".to_owned(),
+                "request.json".to_owned(),
+                "--host-data-root".to_owned(),
+                r"C:\host-data".to_owned(),
+            ];
+            let parsed = parse_normal_args(&args).unwrap();
+            assert_eq!(
+                parsed.host_data_root.unwrap(),
+                PathBuf::from(r"C:\host-data")
+            );
+        }
+
+        #[test]
+        fn j09_runtime_02_cli_rejects_duplicate_host_data_root() {
+            let args = vec![
+                "engine.exe".to_owned(),
+                "request.json".to_owned(),
+                "--host-data-root".to_owned(),
+                r"C:\one".to_owned(),
+                "--host-data-root".to_owned(),
+                r"C:\two".to_owned(),
+            ];
+            assert_eq!(
+                parse_normal_args(&args).unwrap_err(),
+                "duplicate --host-data-root"
+            );
+        }
+
+        #[test]
+        fn j09_runtime_03_cli_rejects_missing_host_data_root_value() {
+            let args = vec![
+                "engine.exe".to_owned(),
+                "request.json".to_owned(),
+                "--host-data-root".to_owned(),
+            ];
+            assert_eq!(
+                parse_normal_args(&args).unwrap_err(),
+                "missing value for --host-data-root"
+            );
+        }
+
+        #[test]
+        fn j09_runtime_04_cli_rejects_relative_host_data_root() {
+            let args = vec![
+                "engine.exe".to_owned(),
+                "request.json".to_owned(),
+                "--host-data-root".to_owned(),
+                "relative".to_owned(),
+            ];
+            assert_eq!(
+                parse_normal_args(&args).unwrap_err(),
+                "--host-data-root must be absolute"
+            );
+        }
+
+        #[test]
+        fn j09_runtime_05_cli_rejects_unknown_options() {
+            let args = vec![
+                "engine.exe".to_owned(),
+                "request.json".to_owned(),
+                "--replay-root".to_owned(),
+            ];
+            assert_eq!(
+                parse_normal_args(&args).unwrap_err(),
+                "unknown option: --replay-root"
+            );
+        }
+
+        #[test]
+        fn j09_runtime_06_ask_never_opens_replay_authority() {
+            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let response = run_runtime(
+                PermissionDecision::Ask,
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(authority.admissions, 0);
+            assert_eq!(executor.calls, 0);
+            assert_eq!(response["execution_status"], "denied");
+        }
+
+        #[test]
+        fn j09_runtime_07_deny_never_opens_replay_authority() {
+            let (_, resolved) = resolved_lantern();
+            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let response = run_runtime(
+                PermissionDecision::Deny,
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(authority.admissions, 0);
+            assert_eq!(executor.calls, 0);
+            assert_eq!(response["execution_status"], "denied");
+            drop(resolved);
+        }
+
+        #[test]
+        fn j09_runtime_08_unavailable_never_opens_replay_authority() {
+            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let response = run_runtime(
+                PermissionDecision::Unavailable,
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(authority.admissions, 0);
+            assert_eq!(executor.calls, 0);
+            assert_eq!(response["execution_status"], "denied");
+        }
+
+        #[test]
+        fn j09_runtime_09_allow_without_root_is_persistence_unavailable() {
+            let (_, resolved) = resolved_lantern();
+            let mut authority = replay_runtime::FileReplayAuthority::new(None);
+            let mut trail = RecordingTrail::new();
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let guard = Rc::new(Cell::new(false));
+            let mut executor = RuntimeExecutor::success(Rc::clone(&events), Rc::clone(&guard));
+            let clock = RuntimeClock::within_deadline(Rc::clone(&events));
+            let mut anchor = RuntimeAnchorWriter::new(events, guard);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_only_existing_replay_result_field(&response, "replay_persistence_unavailable");
+            assert_eq!(executor.calls, 0);
+        }
+
+        macro_rules! recovered_runtime_test {
+            ($name:ident, $state:expr, $expected:literal) => {
+                #[test]
+                fn $name() {
+                    let (_, resolved) = resolved_lantern();
+                    let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                        runtime_parts();
+                    authority.fresh = false;
+                    authority.recovered_state = $state;
+                    let mut approval = RuntimeApproval {
+                        events,
+                        fail: false,
+                        consumes: 0,
+                    };
+                    let response = run_runtime(
+                        allow_decision_for(&resolved),
+                        &mut authority,
+                        &mut trail,
+                        &mut executor,
+                        &clock,
+                        Some(&mut approval),
+                        &mut anchor,
+                    );
+                    assert_only_existing_replay_result_field(&response, $expected);
+                    assert_eq!(approval.consumes, 0);
+                    assert_eq!(executor.calls, 0);
+                    assert!(trail.entries.is_empty());
+                    assert!(trail.outcome_entries.is_empty());
+                }
+            };
+        }
+
+        recovered_runtime_test!(
+            j09_runtime_10_recovered_success_maps_exactly,
+            replay::ReplayState::Succeeded,
+            "replay_blocked_completed_success"
+        );
+        recovered_runtime_test!(
+            j09_runtime_11_recovered_failure_maps_exactly,
+            replay::ReplayState::Failed,
+            "replay_blocked_completed_failure"
+        );
+        recovered_runtime_test!(
+            j09_runtime_12_recovered_claim_is_manual_only,
+            replay::ReplayState::ClaimedNoState,
+            "replay_requires_manual_resolution"
+        );
+        recovered_runtime_test!(
+            j09_runtime_13_recovered_g0_is_manual_only,
+            replay::ReplayState::IntentRecorded,
+            "replay_requires_manual_resolution"
+        );
+        recovered_runtime_test!(
+            j09_runtime_14_recovered_g1_is_manual_only,
+            replay::ReplayState::InvocationArmed,
+            "replay_requires_manual_resolution"
+        );
+        recovered_runtime_test!(
+            j09_runtime_15_recovered_uncertain_is_manual_only,
+            replay::ReplayState::Uncertain,
+            "replay_requires_manual_resolution"
+        );
+
+        #[test]
+        fn j09_runtime_16_admission_failure_maps_only_to_persistence_unavailable() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            authority.fail_at = Some(replay_runtime::test_support::FailPoint::Admit);
+            let mut approval = RuntimeApproval {
+                events,
+                fail: false,
+                consumes: 0,
+            };
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                Some(&mut approval),
+                &mut anchor,
+            );
+            assert_only_existing_replay_result_field(&response, "replay_persistence_unavailable");
+            assert_eq!(approval.consumes, 0);
+            assert!(trail.entries.is_empty());
+            assert_eq!(executor.calls, 0);
+        }
+
+        #[test]
+        fn j09_runtime_17_success_has_the_exact_observable_order() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(
+                *events.borrow(),
+                vec![
+                    "admit",
+                    "publish_g0",
+                    "trail_intent",
+                    "deadline_start",
+                    "deadline_check",
+                    "publish_g1",
+                    "provider",
+                    "response_observed",
+                    "trail_outcome",
+                    "publish_g2",
+                    "anchor",
+                    "release_admission"
+                ]
+            );
+            assert_eq!(response["execution_status"], "completed");
+        }
+
+        #[test]
+        fn j09_runtime_18_known_failure_has_outcome_g2_anchor_order() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            executor.result = Err(outcome::ProviderDiagnostic::ExplicitProviderError);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            let events = events.borrow();
+            assert!(
+                events.iter().position(|event| *event == "trail_outcome")
+                    < events.iter().position(|event| *event == "publish_g2")
+            );
+            assert!(
+                events.iter().position(|event| *event == "publish_g2")
+                    < events.iter().position(|event| *event == "anchor")
+            );
+            assert_eq!(response["execution_status"], "failed");
+        }
+
+        #[test]
+        fn j09_runtime_19_uncertain_has_outcome_g2_anchor_order() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            executor.result = Err(outcome::ProviderDiagnostic::ProcessLost);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(
+                &events.borrow()[8..11],
+                &["trail_outcome", "publish_g2", "anchor"]
+            );
+            assert_eq!(response["execution_status"], "uncertain");
+        }
+
+        #[test]
+        fn j09_runtime_20_approved_ask_consumes_between_claim_and_g0() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            let mut approval = RuntimeApproval {
+                events: Rc::clone(&events),
+                fail: false,
+                consumes: 0,
+            };
+            run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                Some(&mut approval),
+                &mut anchor,
+            );
+            assert_eq!(approval.consumes, 1);
+            assert_eq!(
+                &events.borrow()[..3],
+                &["admit", "consume_approval", "publish_g0"]
+            );
+        }
+
+        #[test]
+        fn j09_runtime_21_approval_consumption_failure_leaves_claim_only() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            let mut approval = RuntimeApproval {
+                events: Rc::clone(&events),
+                fail: true,
+                consumes: 0,
+            };
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                Some(&mut approval),
+                &mut anchor,
+            );
+            assert_eq!(
+                *events.borrow(),
+                vec!["admit", "consume_approval", "release_admission"]
+            );
+            assert_only_existing_replay_result_field(
+                &response,
+                "replay_requires_manual_resolution",
+            );
+            assert_eq!(executor.calls, 0);
+        }
+
+        #[test]
+        fn j09_runtime_22_g0_failure_prevents_intent_and_provider() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            authority.fail_at = Some(replay_runtime::test_support::FailPoint::Intent);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(
+                *events.borrow(),
+                vec!["admit", "publish_g0", "release_admission"]
+            );
+            assert_eq!(executor.calls, 0);
+            assert_only_existing_replay_result_field(&response, "replay_persistence_unavailable");
+        }
+
+        #[test]
+        fn j09_runtime_23_trail_intent_failure_leaves_g0_and_zero_calls() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            trail.injected_intent_error =
+                Some(dispatch::TrailError::WriteFailed("intent".to_owned()));
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(
+                *events.borrow(),
+                vec!["admit", "publish_g0", "trail_intent", "release_admission"]
+            );
+            assert_eq!(executor.calls, 0);
+            assert_eq!(response["execution_status"], "denied");
+        }
+
+        #[test]
+        fn j09_runtime_24_deadline_expiry_leaves_g0_and_zero_calls() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, _, mut anchor) = runtime_parts();
+            let clock = RuntimeClock::expired_before_invocation(Rc::clone(&events));
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert!(!events.borrow().contains(&"publish_g1"));
+            assert_eq!(executor.calls, 0);
+            assert_eq!(response["execution_status"], "unattempted");
+        }
+
+        #[test]
+        fn j09_runtime_25_g1_failure_prevents_provider() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            authority.fail_at = Some(replay_runtime::test_support::FailPoint::Armed);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert!(events.borrow().contains(&"publish_g1"));
+            assert!(!events.borrow().contains(&"provider"));
+            assert_eq!(executor.calls, 0);
+            assert_only_existing_replay_result_field(&response, "replay_persistence_unavailable");
+        }
+
+        macro_rules! outcome_failure_runtime_test {
+            ($name:ident, $diagnostic:expr, $expected_status:literal) => {
+                #[test]
+                fn $name() {
+                    let (_, resolved) = resolved_lantern();
+                    let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                        runtime_parts();
+                    executor.result = $diagnostic;
+                    trail.injected_outcome_error =
+                        Some(dispatch::TrailError::WriteFailed("outcome".to_owned()));
+                    let response = run_runtime(
+                        allow_decision_for(&resolved),
+                        &mut authority,
+                        &mut trail,
+                        &mut executor,
+                        &clock,
+                        None,
+                        &mut anchor,
+                    );
+                    assert_eq!(response["execution_status"], $expected_status);
+                    assert!(events.borrow().contains(&"trail_outcome"));
+                    assert!(!events.borrow().contains(&"publish_g2"));
+                    assert_eq!(anchor.writes, 0);
+                    assert_eq!(executor.calls, 1);
+                }
+            };
+        }
+
+        outcome_failure_runtime_test!(
+            j09_runtime_26_success_outcome_write_failure_leaves_g1,
+            Ok(json!({"status":"recorded","project":"p","task":"t"})),
+            "completed"
+        );
+        outcome_failure_runtime_test!(
+            j09_runtime_27_failure_outcome_write_failure_leaves_g1,
+            Err(outcome::ProviderDiagnostic::ExplicitProviderError),
+            "failed"
+        );
+        outcome_failure_runtime_test!(
+            j09_runtime_28_uncertain_outcome_write_failure_leaves_g1,
+            Err(outcome::ProviderDiagnostic::ProcessLost),
+            "uncertain"
+        );
+
+        #[test]
+        fn j09_runtime_29_g2_failure_withholds_anchor_without_retry() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            authority.fail_at = Some(replay_runtime::test_support::FailPoint::Terminal);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert!(events.borrow().contains(&"trail_outcome"));
+            assert!(events.borrow().contains(&"publish_g2"));
+            assert!(!events.borrow().contains(&"anchor"));
+            assert_eq!(executor.calls, 1);
+            assert_eq!(response["execution_status"], "completed");
+            assert!(response.get("replay_result").is_none());
+            assert!(response.get("result_anchor").is_none());
+            assert_eq!(trail.outcome_entries.len(), 1);
+            assert!(!response["trail"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["kind"] == "audit_failure"));
+            assert!(!response.to_string().contains("outcome audit write failed"));
+        }
+
+        #[test]
+        fn j09_runtime_30_anchor_failure_leaves_g2_without_retry() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            anchor.fail = true;
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(
+                &events.borrow()[8..],
+                &["trail_outcome", "publish_g2", "anchor", "release_admission"]
+            );
+            assert!(response.get("result_anchor").is_none());
+            assert_eq!(executor.calls, 1);
+        }
+
+        #[test]
+        fn j09_runtime_31_guard_is_held_at_provider_boundary() {
+            let (_, resolved) = resolved_lantern();
+            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert!(executor.saw_guard);
+            assert!(!authority.guard_held.get());
+        }
+
+        #[test]
+        fn j09_runtime_32_guard_is_held_during_successful_and_failed_anchor_write() {
+            for fail in [false, true] {
+                let (_, resolved) = resolved_lantern();
+                let (_, mut authority, mut trail, mut executor, clock, mut anchor) =
+                    runtime_parts();
+                anchor.fail = fail;
+                run_runtime(
+                    allow_decision_for(&resolved),
+                    &mut authority,
+                    &mut trail,
+                    &mut executor,
+                    &clock,
+                    None,
+                    &mut anchor,
+                );
+                assert!(anchor.saw_guard, "fail={fail}");
+                assert!(!authority.guard_held.get(), "fail={fail}");
+            }
+        }
+
+        #[test]
+        fn j09_runtime_33_binding_uses_exact_planner_ids_and_host_uuid_stays_local() {
+            let (_, resolved) = resolved_lantern();
+            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            let binding = &authority.bindings[0];
+            assert_eq!(binding.evaluation_id, "eval-j09-001");
+            assert_eq!(binding.action_id, "action-j09-001");
+            assert_eq!(
+                trail.entries[0].execution_id,
+                replay_runtime::test_support::TEST_EXECUTION_ID
+            );
+            assert_eq!(
+                response["result_anchor"]["facts"]["evaluation_id"],
+                "eval-j09-001"
+            );
+            assert!(!response
+                .to_string()
+                .contains(replay_runtime::test_support::TEST_EXECUTION_ID));
+        }
+
+        #[test]
+        fn j09_runtime_34_argument_digest_binds_complete_resolved_arguments() {
+            let (_, resolved) = resolved_lantern();
+            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_eq!(
+                authority.bindings[0].argument_digest,
+                approval::digest(&json!({"project":"p","task":"t"}))
+            );
+        }
+
+        #[test]
+        fn j09_runtime_35_ordinary_allow_consumes_no_approval() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert!(!events.borrow().contains(&"consume_approval"));
+            assert_eq!(executor.calls, 1);
+        }
+
+        #[test]
+        fn j09_runtime_36_unmatched_response_never_enters_replay_routing() {
+            let response = json!({"status":"unmatched","trail":[]});
+            let authority = replay_runtime::test_support::TestReplayAuthority::default();
+            assert!(!response_is_matched(&response));
+            assert_eq!(authority.admissions, 0);
+        }
+
+        #[test]
+        fn j09_runtime_37_fresh_ask_creates_pending_approval_and_zero_claims() {
+            let (store, resolved) = resolved_approval_fixture();
+            let availability = ProviderAvailability::from_identities(["lantern-local"]);
+            let requirements = vec![CapabilityRequirement::new("fixture.ask", 1)];
+            let host_policy = HostLocalPolicy::new(PolicyRule::Allow);
+            let response = make_bridge_matched_response(&resolved);
+            let action = extract_proposed_action(&response).unwrap();
+            let mut approvals = approval::ApprovalStore::default();
+            let mut trail = RecordingTrail::new();
+            let authority = replay_runtime::test_support::TestReplayAuthority::default();
+            let request = request_exact_approval(
+                &action,
+                &requirements,
+                &store,
+                &availability,
+                &host_policy,
+                policy::ScopeAssessment::ScopeNotEstablished,
+                &mut approvals,
+                &mut trail,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                approvals.record(&request.approval_id).unwrap().state,
+                approval::ApprovalState::Pending
+            );
+            assert_eq!(trail.authorisation_entries.len(), 1);
+            assert_eq!(authority.admissions, 0);
+        }
+
+        #[test]
+        fn j09_runtime_38_trail_and_replay_roots_remain_explicitly_distinct() {
+            let args = vec![
+                "engine.exe".to_owned(),
+                "request.json".to_owned(),
+                "allow".to_owned(),
+                r"D:\independent-audit\trail.jsonl".to_owned(),
+                "success".to_owned(),
+                "--host-data-root".to_owned(),
+                r"C:\independent-host-data".to_owned(),
+            ];
+            let parsed = parse_normal_args(&args).unwrap();
+            assert_eq!(
+                parsed.trail_path.as_deref(),
+                Some(r"D:\independent-audit\trail.jsonl")
+            );
+            assert_eq!(
+                parsed.host_data_root.as_deref(),
+                Some(Path::new(r"C:\independent-host-data"))
+            );
+        }
+
+        #[test]
+        fn j09_runtime_39_approved_ask_missing_root_consumes_zero_approvals() {
+            struct FixtureExecutor {
+                calls: usize,
+            }
+            impl CapabilityExecutor for FixtureExecutor {
+                fn provider_identity(&self) -> &str {
+                    "lantern-local"
+                }
+                fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                    self.calls += 1;
+                    Ok(json!({"status":"recorded","project":"p","task":"t"}))
+                }
+            }
+
+            let (store, resolved) = resolved_approval_fixture();
+            let availability = ProviderAvailability::from_identities(["lantern-local"]);
+            let requirements = vec![CapabilityRequirement::new("fixture.ask", 1)];
+            let host_policy = HostLocalPolicy::new(PolicyRule::Allow);
+            let mut response = make_bridge_matched_response(&resolved);
+            let action = extract_proposed_action(&response).unwrap();
+            let mut approvals = approval::ApprovalStore::default();
+            let mut trail = RecordingTrail::new();
+            let request = request_exact_approval(
+                &action,
+                &requirements,
+                &store,
+                &availability,
+                &host_policy,
+                policy::ScopeAssessment::ScopeNotEstablished,
+                &mut approvals,
+                &mut trail,
+            )
+            .unwrap()
+            .unwrap();
+            record_human_approval_decision(
+                &request.approval_id,
+                HumanApprovalDecision::Approve,
+                &mut approvals,
+                &mut trail,
+            )
+            .unwrap();
+            let mut executor = FixtureExecutor { calls: 0 };
+            resume_and_execute_exact_approval(
+                &mut response,
+                &request.approval_id,
+                &requirements,
+                &store,
+                &availability,
+                &host_policy,
+                policy::ScopeAssessment::ScopeNotEstablished,
+                &mut approvals,
+                &mut trail,
+                &mut executor,
+                "evt-j09-approved-missing-root",
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                approvals.record(&request.approval_id).unwrap().state,
+                approval::ApprovalState::Approved
+            );
+            assert_eq!(executor.calls, 0);
+            assert_only_existing_replay_result_field(&response, "replay_persistence_unavailable");
+        }
+
+        #[test]
+        fn j09_runtime_40_recovered_approved_ask_consumes_zero_additional_approvals() {
+            let (_, resolved) = resolved_lantern();
+            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                runtime_parts();
+            authority.fresh = false;
+            authority.recovered_state = replay::ReplayState::Succeeded;
+            let mut approval = RuntimeApproval {
+                events,
+                fail: false,
+                consumes: 0,
+            };
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                Some(&mut approval),
+                &mut anchor,
+            );
+            assert_eq!(approval.consumes, 0);
+            assert_eq!(executor.calls, 0);
+            assert_only_existing_replay_result_field(&response, "replay_blocked_completed_success");
+        }
+
+        #[test]
+        fn j09_runtime_41_storage_path_and_diagnostics_never_reach_public_response() {
+            let (_, resolved) = resolved_lantern();
+            let raw_root = PathBuf::from(r"C:\secret-replay-root-token-does-not-exist");
+            let mut authority = replay_runtime::FileReplayAuthority::new(Some(&raw_root));
+            let mut trail = RecordingTrail::new();
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let guard = Rc::new(Cell::new(false));
+            let mut executor = RuntimeExecutor::success(Rc::clone(&events), Rc::clone(&guard));
+            let clock = RuntimeClock::within_deadline(Rc::clone(&events));
+            let mut anchor = RuntimeAnchorWriter::new(events, guard);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_only_existing_replay_result_field(&response, "replay_persistence_unavailable");
+            let public = response.to_string();
+            assert!(!public.contains("secret-replay-root-token"));
+            assert!(!public.contains("PersistenceUnavailable"));
+            assert!(!public.contains("win32"));
+        }
+
+        #[test]
+        fn j09_runtime_42_provisioning_wrong_shapes_are_rejected_without_mutation() {
+            let cases = [
+                vec!["provision-replay".to_owned()],
+                vec![
+                    "provision-replay".to_owned(),
+                    "--host-data-root".to_owned(),
+                    r"C:\host-data".to_owned(),
+                ],
+                vec![
+                    "provision-replay".to_owned(),
+                    r"C:\host-data".to_owned(),
+                    "extra".to_owned(),
+                ],
+            ];
+            for args in cases {
+                assert_eq!(parse_provision_args(&args).unwrap_err(), PROVISION_USAGE);
+            }
+        }
+
+        macro_rules! native_recovered_runtime_test {
+            ($name:ident, $state:expr, $expected:literal) => {
+                #[cfg(windows)]
+                #[test]
+                fn $name() {
+                    run_native_recovered_state($state, $expected);
+                }
+            };
+        }
+
+        native_recovered_runtime_test!(
+            j09_replay_runtime_native_claim_only_is_manual_without_provider,
+            replay::ReplayState::ClaimedNoState,
+            "replay_requires_manual_resolution"
+        );
+        native_recovered_runtime_test!(
+            j09_replay_runtime_native_g0_is_manual_without_provider,
+            replay::ReplayState::IntentRecorded,
+            "replay_requires_manual_resolution"
+        );
+        native_recovered_runtime_test!(
+            j09_replay_runtime_native_g1_is_manual_without_provider,
+            replay::ReplayState::InvocationArmed,
+            "replay_requires_manual_resolution"
+        );
+        native_recovered_runtime_test!(
+            j09_replay_runtime_native_success_is_blocked_without_provider,
+            replay::ReplayState::Succeeded,
+            "replay_blocked_completed_success"
+        );
+        native_recovered_runtime_test!(
+            j09_replay_runtime_native_failure_is_blocked_without_provider,
+            replay::ReplayState::Failed,
+            "replay_blocked_completed_failure"
+        );
+        native_recovered_runtime_test!(
+            j09_replay_runtime_native_uncertain_is_manual_without_provider,
+            replay::ReplayState::Uncertain,
+            "replay_requires_manual_resolution"
+        );
+
+        #[cfg(windows)]
+        #[test]
+        fn j09_replay_runtime_native_binding_mismatch_fails_before_provider() {
+            let Some(root) = fresh_native_runtime_root("binding-mismatch") else {
+                return;
+            };
+            let ledger = replay_windows::ReplayLedger::open(&root).unwrap();
+            let key = replay::LogicalExecutionKey::derive(
+                "evt-j09-001",
+                "eval-j09-001",
+                "action-j09-001",
+            )
+            .unwrap();
+            let mut changed = native_runtime_binding();
+            changed.argument_digest = approval::digest(&json!({"project":"changed","task":"t"}));
+            drop(ledger.admit_or_recover(key, changed).unwrap());
+
+            let (_, resolved) = resolved_lantern();
+            let mut authority = replay_runtime::FileReplayAuthority::new(Some(&root));
+            let mut trail = RecordingTrail::new();
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let guard = Rc::new(Cell::new(false));
+            let mut executor = RuntimeExecutor::success(Rc::clone(&events), Rc::clone(&guard));
+            let clock = RuntimeClock::within_deadline(Rc::clone(&events));
+            let mut anchor = RuntimeAnchorWriter::new(events, guard);
+            let response = run_runtime(
+                allow_decision_for(&resolved),
+                &mut authority,
+                &mut trail,
+                &mut executor,
+                &clock,
+                None,
+                &mut anchor,
+            );
+            assert_only_existing_replay_result_field(&response, "replay_persistence_unavailable");
+            assert_eq!(executor.calls, 0);
+            assert!(trail.entries.is_empty());
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn j09_replay_runtime_native_fresh_success_restart_makes_zero_second_call() {
+            let Some(root) = fresh_native_runtime_root("fresh-success-restart") else {
+                return;
+            };
+            let (_, resolved) = resolved_lantern();
+
+            let mut first_authority = replay_runtime::FileReplayAuthority::new(Some(&root));
+            let mut first_trail = RecordingTrail::new();
+            let first_events = Rc::new(RefCell::new(Vec::new()));
+            let first_guard = Rc::new(Cell::new(false));
+            let mut first_executor =
+                RuntimeExecutor::success(Rc::clone(&first_events), Rc::clone(&first_guard));
+            let first_clock = RuntimeClock::within_deadline(Rc::clone(&first_events));
+            let mut first_anchor = RuntimeAnchorWriter::new(first_events, first_guard);
+            let first = run_runtime(
+                allow_decision_for(&resolved),
+                &mut first_authority,
+                &mut first_trail,
+                &mut first_executor,
+                &first_clock,
+                None,
+                &mut first_anchor,
+            );
+            assert_eq!(first["execution_status"], "completed");
+            assert_eq!(first_executor.calls, 1);
+            assert_eq!(first_anchor.writes, 1);
+            drop(first_authority);
+
+            let mut second_authority = replay_runtime::FileReplayAuthority::new(Some(&root));
+            let mut second_trail = RecordingTrail::new();
+            let second_events = Rc::new(RefCell::new(Vec::new()));
+            let second_guard = Rc::new(Cell::new(false));
+            let mut second_executor =
+                RuntimeExecutor::success(Rc::clone(&second_events), Rc::clone(&second_guard));
+            let second_clock = RuntimeClock::within_deadline(Rc::clone(&second_events));
+            let mut second_anchor = RuntimeAnchorWriter::new(second_events, second_guard);
+            let second = run_runtime(
+                allow_decision_for(&resolved),
+                &mut second_authority,
+                &mut second_trail,
+                &mut second_executor,
+                &second_clock,
+                None,
+                &mut second_anchor,
+            );
+            assert_only_existing_replay_result_field(&second, "replay_blocked_completed_success");
+            assert_eq!(second_executor.calls, 0);
+            assert_eq!(second_anchor.writes, 0);
+            assert!(second_trail.entries.is_empty());
+            assert!(second_trail.outcome_entries.is_empty());
+        }
     }
 }
