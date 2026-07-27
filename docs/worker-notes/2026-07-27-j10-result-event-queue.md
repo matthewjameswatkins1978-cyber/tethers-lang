@@ -190,24 +190,89 @@ Result Anchor is absent: true
 | Result Anchor writer failure | The `FailingResultAnchorWriter` test type (in `tests` mod) always returns `Err(())`.  Combined with the `QueueingResultAnchorWriter` ordering, no enqueue happens on write failure.  The test `durable_records_for_failing_writer` was not added separately because the existing `no_result_anchor_on_*_failure` tests already prove the durable Trail contains the failure audit but no Anchor. | 0 | 0 |
 | generation overflow | `tests::j10_generation_overflow_enqueues_nothing` proves `u32::MAX` generation has no checked-add successor and no Anchor is built, written, or enqueued. | 0 | 0 |
 
+## Part 3B correction (2026-07-27)
+
+### Where the previous agent stopped
+
+The previous Part 3 commit (`69decee test: prove j10 production follow-up
+queue`) contained:
+
+- A stray `REPLACE` token at the end of `j10_production_no_env_var_bypass`
+  that would break compilation.
+- A `j10_initial_to_a_to_b_chain` test that was constructor-only:
+  it manually constructed A and B anchors instead of driving the real
+  coordinator seam.
+- `TETHERS_J10_SMOKE_SCOPE` was already fully removed (zero grep results).
+- `j10_production_no_env_var_bypass` test already existed.
+- No-follow-up binary smoke (Phase 2) already passed.
+
+### Changes made
+
+1. Removed the stray `REPLACE` token.
+2. Replaced the constructor-only A → B test with a real seam-driven chain:
+   flows through `authorise_and_execute_inner`, `TestReplayAuthority`, and
+   `QueueingResultAnchorWriter`.  Asserts: exactly two provider calls with
+   distinct execution identities, A generation 1, B generation 2, B
+   causation = A event ID, both retain root correlation, queue empties,
+   no retry.
+3. Documented the production binary scope limitation in the PowerShell
+   smoke script — the binary has no public mechanism to establish structured
+   permission scope; this is an intentional later-configuration dependency.
+   No bypass, flag, or configuration mechanism was added.
+
+### Policy bypass status
+
+- `TETHERS_J10_SMOKE_SCOPE` absent from all source files (grep confirmed
+  zero results).
+- No replacement environment variable, test flag, or production switch.
+- `j10_production_no_env_var_bypass` regression test retained.
+
+### Production smoke results
+
+- **No-follow-up binary path**: PASS (denied initial → no follow-up, zero
+  provider calls, absent `follow_up_evaluations`).
+- **With-follow-up binary path**: BLOCKED BY CURRENT PUBLIC RUNTIME
+  BOUNDARY.  The binary has no scope-assessment input surface; the demo
+  capability's structured scope cannot be established through the public
+  CLI.  Adding that surface is outside J10 and belongs to a later
+  runnable-configuration boundary.
+- **Coordinator with-follow-up path**: PROVEN through the existing internal
+  test seam (`j10_initial_to_a_to_b_chain` and the 20 other J10 unit tests).
+- **Native replay execution**: NOT RUN IN CURRENT NON-WINDOWS ENVIRONMENT.
+
+### Legitimate permission approach for the test seam
+
+`j10_initial_to_a_to_b_chain` uses `allow_decision_for` + `TestReplayAuthority`.
+The test does not claim production policy allowed the Action — it starts
+from an already-valid permission decision to test the downstream queue,
+replay, and dispatch coordinator.
+
+### Test results
+
+- `cargo test j10_ -- --nocapture`: 22/22 passed (was 21 before adding
+  the seam-driven chain; now 22).
+- `cargo test` (full): 473/473 passed.
+- `cargo fmt --check`: clean.
+- `git diff --check`: clean (no whitespace errors).
+- `git status --short`: only the two expected files changed.
+
 ## Evidence
 
-- Two local checkpoint SHAs:
+- Checkpoint SHAs:
   - `4b34006 feat: checkpoint j10 queue foundation`
   - `6152f54 feat: wire j10 serial follow-up coordinator`
-- `cargo test` (full) reports 471/471 passing.
-- `cargo test j10_` reports 20/20 passing (foundation + coordinator).
+  - `69decee test: prove j10 production follow-up queue`
+- `cargo test` (full) reports 473/473 passing.
+- `cargo test j10_` reports 22/22 passing (foundation + coordinator + chain).
 - `pwsh scripts/test-host-result-follow-up.ps1` (no-follow-up phase)
-  prints the `PASS` line above.
-- `cargo clippy` baseline warnings (the 4 already listed in the J10
-  build output) are pre-existing and not introduced by this increment.
-- `git status --short` is clean except for the new PowerShell smoke
-  and the host `let mut request` warning fix in this Part 3 increment.
+  prints the `PASS` line above plus the explicit public-runtime limitation.
+- `cargo clippy` baseline warnings are pre-existing and not introduced
+  by this increment.
 - `git diff --check` reports no whitespace errors.
-- `git log --oneline -3` shows the expected J10 commit chain.
+- `git log --oneline` shows the expected J10 commit chain.
 - Worktree branch is `cline/j10-result-event-queue`.
 
-## Remaining work for Part 4
+## Remaining work
 
 - Full clippy pass: only baseline warnings (unrelated to J10) remain.
 - Native Windows J09 native-replay proof: requires a Windows runner;

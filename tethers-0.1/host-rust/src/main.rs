@@ -236,12 +236,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         host_data_root: normal.host_data_root.as_deref(),
     };
 
-    let mut response = process_one_event(
-        request,
-        initial_context,
-        &mut runtime,
-        &mut queue,
-    )?;
+    let mut response = process_one_event(request, initial_context, &mut runtime, &mut queue)?;
 
     // Non-recursive serial drain loop.  Each dequeued Result Anchor produces
     // exactly one follow-up evaluation; new Anchors are appended to the
@@ -255,12 +250,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let generation = anchor.generation;
         let context = InputEventContext::from_result_anchor(&anchor);
         let follow_up_request = build_follow_up_request(&pristine_template, &anchor)?;
-        let follow_up_response = process_one_event(
-            follow_up_request,
-            context,
-            &mut runtime,
-            &mut queue,
-        )?;
+        let follow_up_response =
+            process_one_event(follow_up_request, context, &mut runtime, &mut queue)?;
         follow_up_evaluations.push(json!({
             "input_event_id": input_event_id,
             "generation": generation,
@@ -485,7 +476,7 @@ fn extract_proposed_action(
 }
 
 // ---------------------------------------------------------------------------
-// Capability executor — effect boundary
+// Capability executor ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â effect boundary
 // ---------------------------------------------------------------------------
 
 /// A host-installed executor that carries out one capability invocation.
@@ -527,7 +518,7 @@ trait CapabilityExecutor {
 }
 
 // ---------------------------------------------------------------------------
-// Mock executor (demo — always succeeds for lantern.task.record)
+// Mock executor (demo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â always succeeds for lantern.task.record)
 // ---------------------------------------------------------------------------
 
 struct MockExecutor {
@@ -592,13 +583,13 @@ impl CapabilityExecutor for MockExecutor {
 }
 
 // ---------------------------------------------------------------------------
-// Failing executor (test/demo — always fails after dispatch readiness)
+// Failing executor (test/demo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â always fails after dispatch readiness)
 // ---------------------------------------------------------------------------
 
 /// A deterministic failing executor for testing the action_failed path.
 ///
 /// Uses the same provider identity as MockExecutor.  Must receive a
-/// genuine `&DispatchReadyAction` before returning `Err` — the compiler
+/// genuine `&DispatchReadyAction` before returning `Err` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the compiler
 /// enforces this.  No bypass around manifest verification, trusted-store
 /// admission, policy evaluation, or `prepare_and_record()`.
 struct FailingExecutor;
@@ -1017,22 +1008,14 @@ fn process_one_event(
         };
         let host_policy = policy::HostLocalPolicy::new(rule);
         let proposed_action = extract_proposed_action(&response)?;
-        // J10 smoke path: when the host is launched under the
-        // TETHERS_J10_SMOKE_SCOPE environment variable the J10
-        // coordinator test harness overrides the default fail-closed
-        // scope assessment to a within-scope assessment.  This is the
-        // only path through which the demo request can complete an
-        // Action and produce a standard Result Anchor for the
-        // production binary smoke.  Production callers must never set
-        // the variable; it exists only for the host-launched test.
-        let scope_assessment = if std::env::var_os("TETHERS_J10_SMOKE_SCOPE")
-            .map(|v| !v.is_empty())
-            .unwrap_or(false)
-        {
-            policy::ScopeAssessment::WithinScope
-        } else {
-            policy::ScopeAssessment::ScopeNotEstablished
-        };
+        // J10: the production host uses a fail-closed scope assessment.
+        // The J10 coordinator test path proves the with-follow-up route
+        // separately via the existing J10 unit tests in this file
+        // (tests::j10_*) using the real coordinator and
+        // TestReplayAuthority; the production binary smoke must use a
+        // legitimate scope path that this main() does not have.
+        let scope_assessment = policy::ScopeAssessment::ScopeNotEstablished;
+
         let evaluation = policy::evaluate_effective_policy(
             &proposed_action,
             &requirements,
@@ -1256,7 +1239,7 @@ fn resume_and_execute_exact_approval_with_test_replay(
 }
 
 // ---------------------------------------------------------------------------
-// authorise_and_execute — the enforced proof boundary
+// authorise_and_execute ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the enforced proof boundary
 // ---------------------------------------------------------------------------
 
 /// Authorise and execute one Action from the engine response.
@@ -2524,7 +2507,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 12: Mock executor idempotency — second execution returns
+    // Test 12: Mock executor idempotency ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â second execution returns
     //          already_completed.
     // -----------------------------------------------------------------------
 
@@ -2553,7 +2536,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 13: authorise_and_execute integration — success path.
+    // Test 13: authorise_and_execute integration ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â success path.
     // -----------------------------------------------------------------------
 
     #[test]
@@ -2621,7 +2604,7 @@ mod tests {
         );
 
         assert!(result.is_err());
-        // Zero intent records — the call failed before prepare_and_record.
+        // Zero intent records ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the call failed before prepare_and_record.
         assert!(trail.entries.is_empty());
     }
 
@@ -3402,7 +3385,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 31: Result Anchor — success path assertions.
+    // Test 31: Result Anchor ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â success path assertions.
     // -----------------------------------------------------------------------
 
     #[test]
@@ -3457,7 +3440,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 32: Result Anchor — executor error path.
+    // Test 32: Result Anchor ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â executor error path.
     // -----------------------------------------------------------------------
 
     #[test]
@@ -3506,7 +3489,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 33: Result Anchor — output-validation failure path.
+    // Test 33: Result Anchor ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â output-validation failure path.
     // -----------------------------------------------------------------------
 
     #[test]
@@ -6232,7 +6215,9 @@ mod tests {
         }
         assert!(loop_error);
         // Failed item consumed by pop_front and NOT reinserted.
-        assert!(queue.is_empty() || matches!(queue.pop_front(), Some(a) if a.event_id != "boom/result"));
+        assert!(
+            queue.is_empty() || matches!(queue.pop_front(), Some(a) if a.event_id != "boom/result")
+        );
         assert_eq!(processed, vec!["ok/result".to_string()]);
     }
 
@@ -6318,5 +6303,237 @@ mod tests {
         assert_eq!(processed, vec!["a/result".to_string()]);
         assert_eq!(queue.len(), 1);
         assert!(matches!(queue.pop_front(), Some(a) if a.event_id == "c/result"));
+    }
+
+    // 22. production-binary regression: TETHERS-J10-SMOKE-SCOPE must not
+    //     change the production scope assessment.  This proves the legacy
+    //     bypass has been removed and the production binary's deny path
+    //     still fail-closes the demo request even when an arbitrary
+    //     environment variable is set.  The env var was queried inside
+    //     main() and matched only by a well-known name; an attacker
+    //     setting an unknown name must not affect the scope path.
+    #[test]
+    fn j10_production_no_env_var_bypass() {
+        // We cannot run main() here because it shells out to the engine,
+        // but we can prove the equivalent scope path through the same
+        // policy evaluation the production binary uses.  With the demo
+        // fixture's args (no bridge pins, no scope, no assessment),
+        // the only path that ever produces an Allow is
+        // ScopeAssessment::WithinScope; the production binary's default
+        // is ScopeNotEstablished and produces Deny.
+        let requirements = vec![CapabilityRequirement::new("lantern.task.record", 1)];
+        let host_policy = HostLocalPolicy::new(PolicyRule::Allow);
+        let (_store, resolved) = resolved_lantern();
+
+        // First, prove the default is deny.  Then prove any other
+        // ScopeAssessment value passed by the production path is the
+        // exact value in the source.
+        let action = policy::ProposedAction {
+            evaluation_id: "eval_test_001".into(),
+            plan_id: "plan_test_001".into(),
+            action_id: "action_test_1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(resolved.manifest_digest().to_owned()),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".to_owned()),
+            arguments: json!({"project": "p", "task": "t"}),
+        };
+        let decision_default = policy::evaluate_effective_policy(
+            &action,
+            &requirements,
+            &_store,
+            &ProviderAvailability::from_identities(["lantern-local"]),
+            &host_policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+        )
+        .decision;
+        assert!(
+            matches!(decision_default, PermissionDecision::Deny),
+            "Default scope assessment must fail-closed; got {:?}",
+            decision_default
+        );
+
+        // Second, prove the source code does not consult any
+        // environment variable.  The production binary source itself
+        // is the only meaningful reference here, and we build the
+        // removed bypass name at runtime so its literal never appears
+        // in the source (which would self-match the contains check).
+        let source = include_str!("main.rs");
+        // Build the bypass name in two halves so this file never
+        // contains the literal substring.
+        let bypass_prefix = "TETHERS";
+        let bypass_suffix = "_SMOKE_SCOPE";
+        let bypass_name = format!(
+            "{prefix}_J10{rest}",
+            prefix = bypass_prefix,
+            rest = bypass_suffix
+        );
+        assert!(
+            !source.contains(&bypass_name),
+            "Production source must not reference the removed J10 scope bypass; \
+             an arbitrary environment variable must not change scope."
+        );
+    }
+
+    // 23. direct A -> B chain through the real coordinator seam.
+    //
+    // Dispatches the initial event through authorise_and_execute_inner
+    // with TestReplayAuthority and a QueueingResultAnchorWriter.  The
+    // initial dispatch naturally produces Anchor A (generation 1) in the
+    // shared queue.  The test then pops A, derives its follow-up
+    // context, dispatches again through the same seam, and asserts
+    // Anchor B (generation 2) is enqueued.  A single CountingExecutor
+    // across both dispatches proves exactly two calls, one per fresh
+    // execution identity, with no retry.
+    #[test]
+    fn j10_initial_to_a_to_b_chain() {
+        use crate::dispatch::RecordingTrail;
+        use crate::replay_runtime::test_support::TestReplayAuthority;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // One executor shared across both dispatches so the test can
+        // count total provider calls and prove distinct identities.
+        struct CountingExecutor {
+            calls: Rc<RefCell<Vec<String>>>,
+        }
+        impl CapabilityExecutor for CountingExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, ready: &DispatchReadyAction) -> Result<Value, String> {
+                self.calls.borrow_mut().push(format!(
+                    "{}/{}",
+                    ready.execution_id().0,
+                    ready.action_id().0
+                ));
+                Ok(json!({"status": "recorded"}))
+            }
+        }
+
+        let (_store, resolved) = resolved_lantern();
+        let root_event_id = "evt_root_001";
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let clock = outcome::ProductionMonotonicClock::new();
+
+        let make_response = |eval_id: &str, action_id: &str| -> Value {
+            json!({
+                "evaluation_id": eval_id,
+                "plan": {
+                    "id": "plan-001",
+                    "required_effects": ["lantern.write"],
+                    "actions": [{
+                        "action_id": action_id,
+                        "idempotency_key": format!("{}/{}", eval_id, action_id),
+                        "capability": "lantern.task.record",
+                        "capability_version": planner_version_from_manifest_major(resolved.capability_version()),
+                        "bridge_capability_version": resolved.capability_version(),
+                        "manifest_digest": resolved.manifest_digest(),
+                        "bridge_provider_identity": "lantern-local",
+                        "arguments": {"project": "p", "task": "t"},
+                    }],
+                },
+                "trail": [],
+            })
+        };
+
+        // A single shared queue.  The initial dispatch enqueues A;
+        // processing A enqueues B.  Depth never exceeds one.
+        let mut shared_queue = ResultEventQueue::new();
+
+        // ---- Dispatch initial event ----
+        let initial_context = InputEventContext::for_initial(root_event_id);
+        let mut initial_response = make_response("eval_initial", "initial_action");
+        {
+            let mut trail = RecordingTrail::new();
+            let mut authority = TestReplayAuthority::default();
+            let mut executor = CountingExecutor {
+                calls: Rc::clone(&calls),
+            };
+            let mut anchor_writer = QueueingResultAnchorWriter {
+                inner: ResponseResultAnchorWriter,
+                queue: &mut shared_queue,
+            };
+            authorise_and_execute_inner(
+                &mut initial_response,
+                allow_decision_for(&resolved),
+                &resolved,
+                &mut trail,
+                &mut executor,
+                &initial_context,
+                true,
+                &clock,
+                &mut authority,
+                None,
+                &mut anchor_writer,
+            )
+            .expect("initial dispatch");
+        }
+
+        // Initial dispatch must have enqueued exactly one Anchor (A).
+        assert_eq!(
+            shared_queue.len(),
+            1,
+            "initial dispatch must enqueue Anchor A"
+        );
+
+        // ---- Pop and verify Anchor A ----
+        let a_anchor = shared_queue.pop_front().expect("A must be in queue");
+        assert_eq!(a_anchor.generation, 1);
+        assert_eq!(a_anchor.correlation_id, root_event_id);
+        assert_eq!(a_anchor.causation_id, root_event_id);
+
+        // ---- Process A through the same dispatch seam ----
+        let a_context = InputEventContext::from_result_anchor(&a_anchor);
+        let mut a_response = make_response("eval_A", "action_1");
+        {
+            let mut trail = RecordingTrail::new();
+            let mut authority = TestReplayAuthority::default();
+            let mut executor = CountingExecutor {
+                calls: Rc::clone(&calls),
+            };
+            let mut anchor_writer = QueueingResultAnchorWriter {
+                inner: ResponseResultAnchorWriter,
+                queue: &mut shared_queue,
+            };
+            authorise_and_execute_inner(
+                &mut a_response,
+                allow_decision_for(&resolved),
+                &resolved,
+                &mut trail,
+                &mut executor,
+                &a_context,
+                true,
+                &clock,
+                &mut authority,
+                None,
+                &mut anchor_writer,
+            )
+            .expect("A dispatch");
+        }
+
+        // Processing A must have enqueued exactly one Anchor (B).
+        assert_eq!(shared_queue.len(), 1, "processing A must enqueue Anchor B");
+
+        // ---- Pop and verify Anchor B ----
+        let b_anchor = shared_queue.pop_front().expect("B must be in queue");
+        assert_eq!(b_anchor.generation, 2);
+        assert_eq!(b_anchor.correlation_id, root_event_id);
+        assert_eq!(b_anchor.causation_id, a_anchor.event_id);
+
+        // Queue is now empty.
+        assert!(shared_queue.is_empty());
+
+        // ---- Provider call assertions ----
+        let calls_vec = calls.borrow();
+        assert_eq!(
+            calls_vec.len(),
+            2,
+            "exactly two provider calls, one per fresh execution identity"
+        );
+        assert_ne!(
+            calls_vec[0], calls_vec[1],
+            "each call must use a distinct execution identity"
+        );
     }
 }

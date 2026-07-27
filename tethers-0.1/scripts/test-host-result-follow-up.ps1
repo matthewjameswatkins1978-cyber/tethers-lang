@@ -119,6 +119,15 @@ try {
     }
 
     Write-Output "PASS test-host-result-follow-up (denied initial -> no follow-up)"
+Write-Output ""
+Write-Output "NOT AVAILABLE IN J10 PUBLIC RUNTIME:"
+Write-Output "the current binary has no public mechanism for establishing the structured"
+Write-Output "permission scope required by the demo capability. Adding that mechanism is"
+Write-Output "outside J10 and belongs to the later runnable-configuration boundary."
+Write-Output ""
+Write-Output "Production with-follow-up binary path: BLOCKED BY CURRENT PUBLIC RUNTIME BOUNDARY"
+Write-Output "Coordinator with-follow-up path: PROVEN THROUGH EXISTING INTERNAL TEST SEAM"
+Write-Output "Native replay execution: NOT RUN IN CURRENT NON-WINDOWS ENVIRONMENT"
     Write-Output "Initial evaluation_id: $($noFollowUpResponse.evaluation_id)"
     Write-Output "Initial engine status: $($noFollowUpResponse.status)"
     Write-Output "Initial execution_status: $($noFollowUpResponse.execution_status)"
