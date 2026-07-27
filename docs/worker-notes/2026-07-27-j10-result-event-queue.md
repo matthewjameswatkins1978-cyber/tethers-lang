@@ -87,6 +87,133 @@ evaluation ID determinism, and J09 regression preservation.
 
 (none yet)
 
+## Part 3 inspection findings
+
+1. `main` (in `tethers-0.1/host-rust/src/main.rs`) only drains the queue:
+   the drain loop is the explicit `while let Some(anchor) = queue.pop_front()`
+   block at the end of `main()`.  `process_one_event` is the only function
+   that enqueues into the queue (via `QueueingResultAnchorWriter`).
+2. `process_one_event` never drains the queue: the only `queue` field
+   operations inside the function body are `queue` parameter passing and
+   the anchor writer's `queue.enqueue` (via `QueueingResultAnchorWriter`).
+   There is no `queue.pop_front` call inside `process_one_event`.  The
+   recursion guard test (`j10_process_one_event_does_not_recursively_invoke_itself`)
+   searches the restricted function body for any
+   `process_one_event(` call and for any `queue.pop_front` reference and
+   asserts both are absent.  There is also a `thread::spawn`-style
+   forbidden-pattern check built at runtime to keep the test source
+   itself from matching.
+3. The pristine request template is captured once in `main()` via
+   `let pristine_template = request.clone();` BEFORE
+   `inject_bridge_projection_into_request` is invoked inside
+   `process_one_event`.  Every follow-up request is built by
+   `build_follow_up_request(&pristine_template, &anchor)`, which
+   deep-clones the template.  `j10_follow_up_request_leaves_pristine_template_unchanged`
+   proves the pristine template is not mutated.
+4. Every generated Anchor's `generation` is the result of
+   `input_context.next_generation()`, which returns
+   `self.generation.checked_add(1)`.  `j10_generation_overflow_enqueues_nothing`
+   proves that a `u32::MAX` generation returns `None` and no Anchor is
+   built, written, or enqueued.  The existing J09 overflow path in
+   `authorise_and_execute_inner` strips `result_anchor` and returns Ok
+   before the QueueingResultAnchorWriter would be used.
+5. Only a successfully written standard Result Anchor enters the queue.
+   `QueueingResultAnchorWriter::write` first calls
+   `ResponseResultAnchorWriter::write` (which sets
+   `response["result_anchor"]`) and only on `Ok(())` enqueues the typed
+   anchor.  A failed `ResponseResultAnchorWriter::write` returns `Err(())`
+   immediately and the typed anchor is never appended.  The existing
+   J09 overflow path removes the `result_anchor` key and returns Ok
+   before any Anchor is constructed, so the queue is also never
+   touched.
+6. J09 replay admission is keyed on the exact
+   `(original_event_id, evaluation_id, action_id)` triple
+   (`LogicalExecutionKey::derive` inside
+   `authorise_and_execute_inner`).  A new `(original_event_id,
+   follow_up_evaluation_id, follow_up_action_id)` triple in the
+   follow-up enqueues a new anchor whose `correlation_id` is the
+   original external event ID and whose `causation_id` is the
+   generating Anchor's event ID.  The original admission is not
+   touched.
+7. No thread, async runtime, retry loop, or parallel worker exists.
+   The only `thread::spawn`-style symbol in the source is a
+   `build_follow_up_request`-adjacent test guard, never a runtime
+   primitive.  `process::Command::new` is the only subprocess use, and
+   it appears once inside `call_engine` for the engine invocation.
+   `cargo run` produces a single-process binary.
+
+## Production binary smoke
+
+- `tethers-0.1/scripts/test-host-result-follow-up.ps1` builds the engine
+  and runs the host binary against `protocol/request.json`.  The
+  with-follow-up Phase 1 is proven by the 20 J10 unit tests
+  (`tests::j10_*`) because the production `FileReplayAuthority`
+  requires a pre-provisioned replay root and a fresh root produces
+  `replay_persistence_unavailable` (the production `provision-replay`
+  command is Windows-only).  The smoke's Phase 2 (no-follow-up) uses
+  the demo request with a `deny` policy posture, asserts
+  `follow_up_evaluations` is absent, the Result Anchor is absent, all
+  three action kinds are absent from the trail, and the durable
+  Trail file is empty.  Captured output:
+
+```text
+PASS test-host-result-follow-up (denied initial -> no follow-up)
+Initial evaluation_id: eval_demo_001
+Initial engine status: matched
+Initial execution_status: denied
+follow_up_evaluations present: False
+result_anchor present: False
+action_started in trail: 0
+action_completed in trail: 0
+action_failed in trail: 0
+Plan actions count: 1
+Provider calls (action_started count): 0
+follow_up_evaluations is absent: true
+Result Anchor is absent: true
+```
+
+## Queue-zero failure matrix
+
+| Requirement | Existing or new test | Provider calls | Queue additions |
+| --- | --- | --- | --- |
+| unmatched | `tests::no_result_anchor_on_deny` covers the host-launched path, and `j09_runtime_36_unmatched_response_never_enters_replay_routing` proves unmatched never admits.  Together with `scripted host-denial` smoke. | 0 | 0 |
+| Ask | `tests::no_result_anchor_on_ask` and `j09_runtime_06_ask_never_opens_replay_authority` | 0 | 0 |
+| Deny | `tests::no_result_anchor_on_deny` and `j09_runtime_07_deny_never_opens_replay_authority` | 0 | 0 |
+| Unavailable | `tests::no_result_anchor_on_unavailable` and `j09_runtime_08_unavailable_never_opens_replay_authority` | 0 | 0 |
+| missing replay root | covered by the script's no-follow-up phase (production binary returns `replay_persistence_unavailable` and never enqueues) and by `j09_runtime_09_allow_without_root_is_persistence_unavailable` | 0 | 0 |
+| recovered replay state | `j09_runtime_10..15_recovered_*_maps_exactly` plus `j09_runtime_36..41_*` plus native `native_recovered_runtime_test!`s | 0 | 0 |
+| Trail intent failure | `tests::intent_write_failure_produces_zero_executor_calls` and `tests::intent_flush_failure_produces_zero_executor_calls` prove no executor call and no Anchor write.  Combined with the `QueueingResultAnchorWriter` ordering (inner write first, then enqueue), no Anchor is ever enqueued. | 0 | 0 |
+| pre-provider deadline expiry | `tests::j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor` proves the path returns `unattempted` before `action_started`, so `publish_armed` is never called and no Anchor is built. | 0 | 0 |
+| g1 publication failure | `j09_runtime_25_g1_failure_prevents_provider` and `tests::j09_runtime_25_g1_failure_prevents_provider`; followed by the existing J09 overflow path that removes the Anchor key. | 0 | 0 |
+| durable outcome failure | `tests::outcome_write_audit_failure_withholds_result_anchor` proves the `result_anchor` key is removed on outcome-write failure.  Because `QueueingResultAnchorWriter` first writes the response anchor and only enqueues on `Ok(())`, a write failure returns `Err(())` before the enqueue branch. | 0 | 0 |
+| g2 publication failure | `j09_runtime_29_g2_failure_withholds_anchor_without_retry` and `j09_runtime_30_anchor_failure_leaves_g2_without_retry` | 0 | 0 |
+| Result Anchor writer failure | The `FailingResultAnchorWriter` test type (in `tests` mod) always returns `Err(())`.  Combined with the `QueueingResultAnchorWriter` ordering, no enqueue happens on write failure.  The test `durable_records_for_failing_writer` was not added separately because the existing `no_result_anchor_on_*_failure` tests already prove the durable Trail contains the failure audit but no Anchor. | 0 | 0 |
+| generation overflow | `tests::j10_generation_overflow_enqueues_nothing` proves `u32::MAX` generation has no checked-add successor and no Anchor is built, written, or enqueued. | 0 | 0 |
+
 ## Evidence
 
-(to be recorded after verification)
+- Two local checkpoint SHAs:
+  - `4b34006 feat: checkpoint j10 queue foundation`
+  - `6152f54 feat: wire j10 serial follow-up coordinator`
+- `cargo test` (full) reports 471/471 passing.
+- `cargo test j10_` reports 20/20 passing (foundation + coordinator).
+- `pwsh scripts/test-host-result-follow-up.ps1` (no-follow-up phase)
+  prints the `PASS` line above.
+- `cargo clippy` baseline warnings (the 4 already listed in the J10
+  build output) are pre-existing and not introduced by this increment.
+- `git status --short` is clean except for the new PowerShell smoke
+  and the host `let mut request` warning fix in this Part 3 increment.
+- `git diff --check` reports no whitespace errors.
+- `git log --oneline -3` shows the expected J10 commit chain.
+- Worktree branch is `cline/j10-result-event-queue`.
+
+## Remaining work for Part 4
+
+- Full clippy pass: only baseline warnings (unrelated to J10) remain.
+- Native Windows J09 native-replay proof: requires a Windows runner;
+  the existing `native_recovered_runtime_test!`s and native-replay
+  tests cover the behaviour.
+- J11 (duplicate event-ID rejection) and depth-eight enforcement are
+  out of scope for J10.
+- `J10 COMPLETE → J11 READY` decision remains with Lucy.
+

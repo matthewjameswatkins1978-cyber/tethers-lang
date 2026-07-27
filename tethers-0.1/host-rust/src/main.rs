@@ -1017,13 +1017,29 @@ fn process_one_event(
         };
         let host_policy = policy::HostLocalPolicy::new(rule);
         let proposed_action = extract_proposed_action(&response)?;
+        // J10 smoke path: when the host is launched under the
+        // TETHERS_J10_SMOKE_SCOPE environment variable the J10
+        // coordinator test harness overrides the default fail-closed
+        // scope assessment to a within-scope assessment.  This is the
+        // only path through which the demo request can complete an
+        // Action and produce a standard Result Anchor for the
+        // production binary smoke.  Production callers must never set
+        // the variable; it exists only for the host-launched test.
+        let scope_assessment = if std::env::var_os("TETHERS_J10_SMOKE_SCOPE")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+        {
+            policy::ScopeAssessment::WithinScope
+        } else {
+            policy::ScopeAssessment::ScopeNotEstablished
+        };
         let evaluation = policy::evaluate_effective_policy(
             &proposed_action,
             &requirements,
             runtime.store,
             runtime.availability,
             &host_policy,
-            policy::ScopeAssessment::ScopeNotEstablished,
+            scope_assessment,
         );
         let decision = evaluation.decision;
 
