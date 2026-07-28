@@ -8,15 +8,18 @@ Status: `COMPLETE`
 
 Task colour: `Green`
 
-Owner: `Goose`
+Owner: `Codex`
 
-Route: `Goose - J13A final probe-compatibility repair (narrow correction)`
+Route: `Codex - J13A partial-evidence closure and public acceptance`
 
 Correction summary:
-  - Restored absolute-path invariant in run_event_admission_trail_probe_clap.
-  - Updated both event-admission probe scripts to accept JSON error envelopes.
-  - Probes remain explicit hidden Clap commands (event-admission-probe,
-    event-admission-trail-probe), not legacy positional commands.
+  - Replaced provider-side envelope construction with one typed internal
+    failure description.
+  - Canonical check data now retains completed Tether and provider evidence on
+    every post-preparation failure.
+  - Completed an independent 25-case public-boundary acceptance against the
+    real J12 config schema, OCaml MCP engine, reviewed fixture manifest, and
+    PowerShell stdio provider.
 
 Worker note: `docs/worker-notes/2026-07-28-j13a-process-check.md`
 
@@ -28,8 +31,10 @@ Branch: `goose/j13a-process-check`
 
 ## Expected pre-existing changes
 
-Starting from prior J13A implementation at `2c1ed6f99c180283456c1dfa4273500b4962e499`.
-Previous commits on this branch: implementation at `cb3690d7`, documentation at `2c1ed6f9`.
+Starting from accepted J13A candidate
+`2717c584c219bfebb33e776605fea4ef16c4fd5f`.
+Partial-evidence implementation checkpoint:
+`9de4a99444dab20e7b016cd339ced5cc0873197c`.
 
 ## Relevant background and existing behaviour
 
@@ -42,27 +47,28 @@ supervision, MCP engine session management, and the check command coordinator.
 
 ## Objective
 
-Correct the prior J13A implementation with nine bounded corrections:
-1. Real MCP protocol via tools/call with tethers.validate
-2. Bounded protocol reads with timeout and interrupt checking
-3. Correct Windows Job Object ownership (unnamed, fatal assignment failure)
-4. Correct provider shutdown (Option-based, close takes child)
-5. Envelope consistency with matching status/exit_code
-6. No skip-as-pass tests (real engine execution required)
-7. Comprehensive PowerShell acceptance script
-8. All required gates (scripts, dune build)
-9. Control-v1 documentation restoration
+Close the confirmed partial-evidence blocker without altering accepted engine,
+provider trust, process supervision, or successful-check semantics, then prove
+the full J13A public boundary with real Windows processes.
 
 ## Required behaviour
 
-1. Engine uses tools/call with name "tethers.validate", arguments {"source": "..."}
-2. Persistent BufReader with mpsc channel for timeout-aware reads
-3. Unnamed Job Object (CreateJobObjectW(NULL, NULL)), assignment failure is fatal
-4. ManagedProvider owns child in Option, close() takes it and calls shutdown
-5. Every envelope's status and exit_code match process exit code
-6. At least 40 genuinely executed j13a_ tests
-7. Acceptance script tests real engine and provider fixture
-8. All gates pass: dune build, all PowerShell scripts, clippy, fmt
+1. Canonical data contains config identity/counts, ordered Tethers, and ordered
+   providers.
+2. Invalid Tether evidence includes the failing Tether and launches no provider.
+3. Provider launch, initialize, tools/list, and capability failures retain all
+   completed evidence.
+4. Provider-check interruption retains completed evidence and returns
+   interrupted/10.
+5. Stable machine codes and field pointers remain unchanged.
+6. Envelope and process exit codes derive from the same OutcomeStatus.
+7. Acceptance uses a generated real J12-schema config named
+   `valid primary config.json` under a temporary path containing spaces and
+   Unicode.
+8. Acceptance uses the real OCaml MCP engine, the reviewed
+   `protocol/capability-manifests/fixture-ping.json` manifest
+   (`sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b`),
+   and `pwsh.exe -NoProfile -File scripts/tethers-stdio-fixture.ps1`.
 
 ## Relevant components
 
@@ -93,11 +99,11 @@ Correct the prior J13A implementation with nine bounded corrections:
 1. cargo fmt --check passes
 2. cargo check and cargo check --tests pass
 3. cargo test j12_ -- --nocapture: 99 pass
-4. cargo test j13a_ -- --nocapture: 63+ pass, 0 fail
-5. cargo test: all pass
+4. cargo test j13a_ -- --nocapture: 74 pass, 0 fail
+5. cargo test: 695 pass, 0 fail
 6. cargo clippy --all-targets --all-features: zero errors
 7. cargo build and cargo build --release succeed
-8. All PowerShell scripts pass
+8. J13A public acceptance: 25 pass, 0 fail; every required PowerShell script passes
 9. opam exec -- dune build succeeds
 10. Task packet checker passes
 
@@ -127,8 +133,23 @@ opam exec -- dune build
 
 ## Forbidden changes
 
-Only 12 authorised files may change. No J13B, J13C, or J14 behaviour.
+Only the four authorised Rust, acceptance-script, task, and worker-note files
+may change. No J13B, J13C, or J14 behaviour.
 No provider tools/call. No tethers.evaluate. No Trail or replay creation.
+
+## Completion evidence
+
+- Real engine:
+  `tethers-0.1/engine-ocaml/_build/default/bin/tethers_mcp_main.exe`
+- Engine marker: `initialize,tools/call:tethers.validate`
+- Provider marker: `initialize,tools/list`
+- Timeout evidence: engine initialize 12037 ms; provider initialize 12237 ms;
+  provider tools/list 12562 ms
+- Ctrl+C: interrupted/10 in 106 ms; direct PID 18536 gone; descendant PID
+  25840 gone
+- Trail/replay changes: 0
+- Skipped required checks: 0
+- Unrun required checks: 0
 
 ## Stop conditions
 
