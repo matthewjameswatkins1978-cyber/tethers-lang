@@ -12,7 +12,7 @@ Base commit: `0e89bc79b314b67a4486504747bbbad17da94099`
 
 Implementation checkpoint: `41b6848a006215077228a5aa7a571dcbecc98d6e`
 
-Final evidence correction: `(pending commit)`
+Final evidence correction: `e57dc75f1e2caef706915bf10db08262bb4d2885`
 
 ## Review-correction (2026-07-28) - COMPLETE
 
