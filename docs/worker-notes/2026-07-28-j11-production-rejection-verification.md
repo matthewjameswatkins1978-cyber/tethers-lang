@@ -2,7 +2,7 @@
 
 Task: `J11 packet 3 compiled host rejection verification`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Owner: `Goose`
 
@@ -14,7 +14,7 @@ Branch: `goose/j11-production-rejection-verification`
 
 Implementation SHA: `307d4f926231651a1d8d5bc69c18fc2e56a55e90`
 
-Documentation SHA: `PENDING_DOCUMENTATION`
+Documentation SHA: `35a67f445c1c64d7a5d8c657d4c74786d82fbf36`
 
 ## Requested outcome
 
