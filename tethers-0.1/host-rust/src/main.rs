@@ -723,6 +723,9 @@ fn run_event_admission_trail_probe_clap(
     mode: &str,
     trail_path: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if !trail_path.is_absolute() {
+        return Err(EVENT_ADMISSION_TRAIL_PROBE_USAGE.into());
+    }
     if let Some(parent) = trail_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -8285,5 +8288,42 @@ mod tests {
             "trail write failure must propagate for rejected events too"
         );
         assert!(!evaluated, "evaluation must not happen after trail failure");
+    }
+
+    // -----------------------------------------------------------------------
+    // J13A: probe compatibility guard tests
+    // -----------------------------------------------------------------------
+
+    /// Relative trail path must be rejected before any filesystem effect.
+    #[test]
+    fn j13a_relative_trail_path_rejected() {
+        let relative = std::path::Path::new("relative/j13a_test.jsonl");
+        let result = run_event_admission_trail_probe_clap("clean", relative);
+        assert!(result.is_err(), "relative path must be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("event-admission-trail-probe"),
+            "error must contain command name, got: {err_msg}"
+        );
+        assert!(
+            !relative.exists(),
+            "relative path must not create directory or file"
+        );
+    }
+
+    /// Absolute trail path must still be accepted.
+    #[test]
+    fn j13a_absolute_trail_path_accepted() {
+        let tmp = std::env::temp_dir().join("tethers-j13a-probe-test");
+        let trail = tmp.join("trail.jsonl");
+        // Clean up from prior runs.
+        let _ = std::fs::remove_dir_all(&tmp);
+        let result = run_event_admission_trail_probe_clap("clean", &trail);
+        assert!(
+            result.is_ok(),
+            "absolute path must be accepted, got: {result:?}"
+        );
+        // Clean up.
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

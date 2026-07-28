@@ -253,7 +253,13 @@ finally {
 # -------------------------------------------------------------------
 $negOut = & $DebugExe "event-admission-trail-probe" 2>&1
 if ($LASTEXITCODE -eq 0) { throw "missing scenario must fail" }
-if (($negOut -join "`n") -notmatch "event-admission-trail-probe") { throw "missing scenario must print usage" }
+$negText = ($negOut -join "`n").Trim()
+if ($negText -eq "") { throw "missing scenario produced no output" }
+try { $negJson = $negText | ConvertFrom-Json } catch { throw "missing scenario: not valid JSON: $negText" }
+if ($negJson.schema -ne "tethers.cli/1") { throw "missing scenario: wrong schema $($negJson.schema)" }
+if ($negJson.status -ne "invalid_cli_usage") { throw "missing scenario: wrong status $($negJson.status)" }
+if (-not $negJson.error) { throw "missing scenario: error must be non-null" }
+if ($negJson.error -notmatch "event-admission-trail-probe") { throw "missing scenario: error must mention event-admission-trail-probe" }
 Write-Host "PASS missing scenario"
 
 # -------------------------------------------------------------------
@@ -261,7 +267,13 @@ Write-Host "PASS missing scenario"
 # -------------------------------------------------------------------
 $negOut2 = & $DebugExe "event-admission-trail-probe" "nonexistent" "/tmp/trail.jsonl" 2>&1
 if ($LASTEXITCODE -eq 0) { throw "unknown scenario must fail" }
-if (($negOut2 -join "`n") -notmatch "event-admission-trail-probe") { throw "unknown scenario must print usage" }
+$negText2 = ($negOut2 -join "`n").Trim()
+if ($negText2 -eq "") { throw "unknown scenario produced no output" }
+try { $negJson2 = $negText2 | ConvertFrom-Json } catch { throw "unknown scenario: not valid JSON: $negText2" }
+if ($negJson2.schema -ne "tethers.cli/1") { throw "unknown scenario: wrong schema $($negJson2.schema)" }
+if ($negJson2.status -ne "failed") { throw "unknown scenario: wrong status $($negJson2.status)" }
+if (-not $negJson2.error) { throw "unknown scenario: error must be non-null" }
+if ($negJson2.error -notmatch "event-admission-trail-probe") { throw "unknown scenario: error must mention event-admission-trail-probe" }
 Write-Host "PASS unknown scenario"
 
 # -------------------------------------------------------------------
@@ -269,7 +281,13 @@ Write-Host "PASS unknown scenario"
 # -------------------------------------------------------------------
 $negOut3 = & $DebugExe "event-admission-trail-probe" "clean" 2>&1
 if ($LASTEXITCODE -eq 0) { throw "missing path must fail" }
-if (($negOut3 -join "`n") -notmatch "event-admission-trail-probe") { throw "missing path must print usage" }
+$negText3 = ($negOut3 -join "`n").Trim()
+if ($negText3 -eq "") { throw "missing path produced no output" }
+try { $negJson3 = $negText3 | ConvertFrom-Json } catch { throw "missing path: not valid JSON: $negText3" }
+if ($negJson3.schema -ne "tethers.cli/1") { throw "missing path: wrong schema $($negJson3.schema)" }
+if ($negJson3.status -ne "invalid_cli_usage") { throw "missing path: wrong status $($negJson3.status)" }
+if (-not $negJson3.error) { throw "missing path: error must be non-null" }
+if ($negJson3.error -notmatch "event-admission-trail-probe") { throw "missing path: error must mention event-admission-trail-probe" }
 Write-Host "PASS missing path"
 
 # -------------------------------------------------------------------
@@ -277,15 +295,30 @@ Write-Host "PASS missing path"
 # -------------------------------------------------------------------
 $negOut4 = & $DebugExe "event-admission-trail-probe" "clean" "/tmp/trail.jsonl" "extra" 2>&1
 if ($LASTEXITCODE -eq 0) { throw "extra argument must fail" }
-if (($negOut4 -join "`n") -notmatch "event-admission-trail-probe") { throw "extra argument must print usage" }
+$negText4 = ($negOut4 -join "`n").Trim()
+if ($negText4 -eq "") { throw "extra argument produced no output" }
+try { $negJson4 = $negText4 | ConvertFrom-Json } catch { throw "extra argument: not valid JSON: $negText4" }
+if ($negJson4.schema -ne "tethers.cli/1") { throw "extra argument: wrong schema $($negJson4.schema)" }
+if ($negJson4.status -ne "invalid_cli_usage") { throw "extra argument: wrong status $($negJson4.status)" }
+if (-not $negJson4.error) { throw "extra argument: error must be non-null" }
+if ($negJson4.error -notmatch "event-admission-trail-probe") { throw "extra argument: error must mention event-admission-trail-probe" }
 Write-Host "PASS extra argument"
 
 # -------------------------------------------------------------------
 # Negative: relative path
 # -------------------------------------------------------------------
-$negOut5 = & $DebugExe "event-admission-trail-probe" "clean" "relative/path.jsonl" 2>&1
+$negOut5 = & $DebugExe "event-admission-trail-probe" "clean" "relative/j13a_path.jsonl" 2>&1
 if ($LASTEXITCODE -eq 0) { throw "relative path must fail" }
-if (($negOut5 -join "`n") -notmatch "event-admission-trail-probe") { throw "relative path must print usage" }
+$negText5 = ($negOut5 -join "`n").Trim()
+if ($negText5 -eq "") { throw "relative path produced no output" }
+try { $negJson5 = $negText5 | ConvertFrom-Json } catch { throw "relative path: not valid JSON: $negText5" }
+if ($negJson5.schema -ne "tethers.cli/1") { throw "relative path: wrong schema $($negJson5.schema)" }
+if ($negJson5.status -ne "failed") { throw "relative path: wrong status $($negJson5.status)" }
+if (-not $negJson5.error) { throw "relative path: error must be non-null" }
+if ($negJson5.error -notmatch "event-admission-trail-probe") { throw "relative path: error must mention event-admission-trail-probe" }
+# J13A: prove no filesystem effect
+if (Test-Path -LiteralPath "relative/j13a_path.jsonl") { throw "relative path: must not create file" }
+if (Test-Path -LiteralPath "relative") { throw "relative path: must not create directory" }
 Write-Host "PASS relative path"
 
 # -------------------------------------------------------------------
@@ -293,8 +326,19 @@ Write-Host "PASS relative path"
 # -------------------------------------------------------------------
 $relOut1 = & $ReleaseExe "event-admission-probe" "clean" 2>&1
 if ($LASTEXITCODE -eq 0) { throw "release must not have event-admission-probe" }
+$relText1 = ($relOut1 -join "`n").Trim()
+try { $relJson1 = $relText1 | ConvertFrom-Json } catch { throw "release event-admission-probe: not valid JSON: $relText1" }
+if ($relJson1.schema -ne "tethers.cli/1") { throw "release probe: wrong schema $($relJson1.schema)" }
+if ($relJson1.status -ne "unavailable") { throw "release probe: wrong status $($relJson1.status)" }
+if (-not $relJson1.error) { throw "release probe: error must be non-null" }
+
 $relOut2 = & $ReleaseExe "event-admission-trail-probe" "clean" "/tmp/trail.jsonl" 2>&1
 if ($LASTEXITCODE -eq 0) { throw "release must not have event-admission-trail-probe" }
+$relText2 = ($relOut2 -join "`n").Trim()
+try { $relJson2 = $relText2 | ConvertFrom-Json } catch { throw "release event-admission-trail-probe: not valid JSON: $relText2" }
+if ($relJson2.schema -ne "tethers.cli/1") { throw "release trail probe: wrong schema $($relJson2.schema)" }
+if ($relJson2.status -ne "unavailable") { throw "release trail probe: wrong status $($relJson2.status)" }
+if (-not $relJson2.error) { throw "release trail probe: error must be non-null" }
 Write-Host "PASS release diagnostic absence"
 
 # -------------------------------------------------------------------

@@ -248,14 +248,34 @@ function Test-AdmissionProbeFailure {
         throw "$Label : expected non-zero exit code, got 0"
     }
 
-    $combined = ($output -join "`n")
-    if ($combined -notmatch "event-admission-probe") {
-        throw "$Label : output did not contain usage text"
+    # J13A: the CLI now emits exactly one JSON error envelope.
+    $combined = ($output -join "`n").Trim()
+    if ($combined -eq "") {
+        throw "$Label : produced no output"
     }
 
-    # No JSON success response accepted.
-    if ($combined -match '^\s*\{') {
-        throw "$Label : output contained JSON when it should have been an error"
+    try {
+        $json = $combined | ConvertFrom-Json
+    }
+    catch {
+        throw "$Label : output is not valid JSON: $combined"
+    }
+
+    if ($json.schema -ne "tethers.cli/1") {
+        throw "$Label : expected schema=tethers.cli/1, got $($json.schema)"
+    }
+
+    $validStatuses = @("invalid_cli_usage", "failed")
+    if ($validStatuses -notcontains $json.status) {
+        throw "$Label : expected status invalid_cli_usage or failed, got $($json.status)"
+    }
+
+    if (-not $json.error) {
+        throw "$Label : error field must be non-null"
+    }
+
+    if ($json.error -notmatch "event-admission-probe") {
+        throw "$Label : error message did not mention event-admission-probe"
     }
 
     Write-Host "PASS $Label"
