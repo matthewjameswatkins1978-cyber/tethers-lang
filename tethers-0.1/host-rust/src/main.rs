@@ -17,6 +17,7 @@ pub mod trusted_store;
 mod validation;
 
 use dispatch::DispatchReadyAction;
+use event_admission::{EventAdmissionGate, EventAdmissionRejection};
 use policy::PermissionDecision;
 use resolver::ResolvedCapability;
 use result_anchor::{ResultAnchor, ResultAnchorKind};
@@ -101,6 +102,32 @@ fn parse_provision_args(args: &[String]) -> Result<PathBuf, String> {
         return Err(PROVISION_USAGE.to_owned());
     }
     Ok(root)
+}
+
+fn event_admission_rejection_value(rejection: &EventAdmissionRejection, generation: u32) -> Value {
+    match rejection {
+        EventAdmissionRejection::DuplicateEventId { event_id } => {
+            json!({
+                "kind": "duplicate_event_id",
+                "event_id": event_id,
+                "generation": generation,
+                "processing": "stopped"
+            })
+        }
+        EventAdmissionRejection::CausalDepthExceeded {
+            event_id,
+            generation,
+            maximum_generation,
+        } => {
+            json!({
+                "kind": "causal_depth_exceeded",
+                "event_id": event_id,
+                "generation": generation,
+                "maximum_generation": maximum_generation,
+                "processing": "stopped"
+            })
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -224,6 +251,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // initial external event completely, then drain any generated Result
     // Anchors one at a time in FIFO order.
     let mut queue = event_queue::ResultEventQueue::new();
+    let mut admission_gate = EventAdmissionGate::new();
+
+    // J11: admit the initial external event before any evaluation.
+    admission_gate
+        .admit(&initial_event_id, 0)
+        .map_err(|e| format!("initial event admission rejected unexpectedly: {:?}", e))?;
 
     let initial_context = InputEventContext::for_initial(&initial_event_id);
 
@@ -246,9 +279,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // failed item is not retried, and later queued items are not
     // processed.
     let mut follow_up_evaluations: Vec<Value> = Vec::new();
+    let mut event_admission_rejection: Option<Value> = None;
     while let Some(anchor) = queue.pop_front() {
         let input_event_id = anchor.event_id.clone();
         let generation = anchor.generation;
+
+        // J11: admit the queued event before any evaluation.
+        if let Err(rejection) = admission_gate.admit(&input_event_id, generation) {
+            event_admission_rejection =
+                Some(event_admission_rejection_value(&rejection, generation));
+            break;
+        }
         let context = InputEventContext::from_result_anchor(&anchor);
         let follow_up_request = build_follow_up_request(&pristine_template, &anchor)?;
         let follow_up_response =
@@ -258,6 +299,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "generation": generation,
             "response": follow_up_response,
         }));
+    }
+
+    if let Some(rejection_value) = event_admission_rejection {
+        response["event_admission_rejection"] = rejection_value;
     }
 
     if !follow_up_evaluations.is_empty() {
@@ -6535,6 +6580,525 @@ mod tests {
         assert_ne!(
             calls_vec[0], calls_vec[1],
             "each call must use a distinct execution identity"
+        );
+    }
+    // -------------------------------------------------------------------
+    // J11: event admission wiring tests
+    // -------------------------------------------------------------------
+
+    /// Test helper: simulate the coordinator drain loop with admission.
+    /// Returns (processed_event_ids, optional_rejection).
+    #[cfg(test)]
+    fn drain_queue_with_admission(
+        gate: &mut EventAdmissionGate,
+        queue: &mut event_queue::ResultEventQueue,
+    ) -> (Vec<String>, Option<EventAdmissionRejection>) {
+        let mut processed: Vec<String> = Vec::new();
+        let mut rejection: Option<EventAdmissionRejection> = None;
+        while let Some(anchor) = queue.pop_front() {
+            let event_id = anchor.event_id.clone();
+            let generation = anchor.generation;
+            match gate.admit(&event_id, generation) {
+                Ok(()) => {
+                    processed.push(event_id);
+                }
+                Err(rej) => {
+                    rejection = Some(rej);
+                    break;
+                }
+            }
+        }
+        (processed, rejection)
+    }
+
+    fn j11_sample_anchor(event_id: &str, generation: u32) -> ResultAnchor {
+        use crate::result_anchor::ResultAnchorKind;
+        ResultAnchor::new(
+            ResultAnchorKind::Succeeded(serde_json::json!({"status": "ok"})),
+            "eval_001",
+            "action_1",
+            "lantern.task.record",
+            1,
+            "sha256:abc123",
+            "lantern-local",
+            1720000000000,
+            "evt_root_001",
+            "evt_root_001",
+            generation,
+        )
+        .with_event_id(event_id)
+    }
+
+    // 1. Initial external event admitted before processing.
+    #[test]
+    fn j11_initial_event_admitted_before_processing() {
+        let mut gate = EventAdmissionGate::new();
+        assert!(gate.admit("evt_initial", 0).is_ok());
+        assert_eq!(gate.admitted_count(), 1);
+        assert_eq!(
+            gate.admit("evt_initial", 0),
+            Err(EventAdmissionRejection::DuplicateEventId {
+                event_id: "evt_initial".to_string(),
+            })
+        );
+    }
+
+    // 2. Clean unique follow-up evaluated normally.
+    #[test]
+    fn j11_clean_unique_follow_up_evaluated_normally() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/follow-up-a", 1));
+        queue.enqueue(j11_sample_anchor("evt/follow-up-b", 2));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert!(rejection.is_none(), "no rejection on clean run");
+        assert_eq!(
+            processed,
+            vec!["evt/follow-up-a".to_string(), "evt/follow-up-b".to_string()]
+        );
+    }
+
+    // 3. Queued event reusing the initial external ID is rejected.
+    #[test]
+    fn j11_queued_event_reusing_initial_id_rejected() {
+        let mut gate = EventAdmissionGate::new();
+        gate.admit("evt_initial", 0).unwrap();
+
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt_initial", 1));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert!(processed.is_empty(), "duplicate must not be processed");
+        assert_eq!(
+            rejection,
+            Some(EventAdmissionRejection::DuplicateEventId {
+                event_id: "evt_initial".to_string(),
+            })
+        );
+    }
+
+    // 4. Duplicate queued sibling not evaluated twice.
+    #[test]
+    fn j11_duplicate_sibling_not_evaluated_twice() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/alpha", 1));
+        queue.enqueue(j11_sample_anchor("evt/alpha", 1));
+        queue.enqueue(j11_sample_anchor("evt/beta", 1));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert_eq!(processed, vec!["evt/alpha".to_string()]);
+        assert_eq!(
+            rejection,
+            Some(EventAdmissionRejection::DuplicateEventId {
+                event_id: "evt/alpha".to_string(),
+            })
+        );
+        assert_eq!(queue.len(), 1);
+    }
+
+    // 5. Generation-8 queued event evaluated.
+    #[test]
+    fn j11_generation_eight_evaluated() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/deep", 8));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert!(rejection.is_none());
+        assert_eq!(processed, vec!["evt/deep".to_string()]);
+    }
+
+    // 6. Generation-9 queued event not evaluated.
+    #[test]
+    fn j11_generation_nine_not_evaluated() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/too-deep", 9));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert!(processed.is_empty());
+        assert_eq!(
+            rejection,
+            Some(EventAdmissionRejection::CausalDepthExceeded {
+                event_id: "evt/too-deep".to_string(),
+                generation: 9,
+                maximum_generation: 8,
+            })
+        );
+    }
+
+    // 7. Generation above 9 not evaluated.
+    #[test]
+    fn j11_generation_above_nine_not_evaluated() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/very-deep", 42));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert!(processed.is_empty());
+        assert_eq!(
+            rejection,
+            Some(EventAdmissionRejection::CausalDepthExceeded {
+                event_id: "evt/very-deep".to_string(),
+                generation: 42,
+                maximum_generation: 8,
+            })
+        );
+    }
+
+    // 8. Rejected event causes zero processing.
+    #[test]
+    fn j11_rejected_event_causes_zero_processing() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/rejected", 9));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert!(rejection.is_some());
+        assert!(
+            processed.is_empty(),
+            "rejected event must not reach processing"
+        );
+    }
+
+    // 9. Rejection prevents provider dispatch via the full dispatch seam.
+    #[test]
+    fn j11_rejection_prevents_dispatch_entry() {
+        use crate::dispatch::RecordingTrail;
+        use crate::replay_runtime::test_support::TestReplayAuthority;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let (_store, resolved) = resolved_lantern();
+        let calls = Rc::new(RefCell::new(0u32));
+        struct Counter(Rc<RefCell<u32>>);
+        impl CapabilityExecutor for Counter {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                *self.0.borrow_mut() += 1;
+                Ok(json!({"status": "ok"}))
+            }
+        }
+
+        let mut gate = EventAdmissionGate::new();
+        gate.admit("evt_ok", 0).unwrap();
+
+        let clock = outcome::ProductionMonotonicClock::new();
+        let mut trail = RecordingTrail::new();
+        let mut authority = TestReplayAuthority::default();
+        let mut executor = Counter(Rc::clone(&calls));
+        let mut shared_queue = event_queue::ResultEventQueue::new();
+        let mut anchor_writer = QueueingResultAnchorWriter {
+            inner: ResponseResultAnchorWriter,
+            queue: &mut shared_queue,
+        };
+        let context = InputEventContext::for_initial("evt_ok");
+        let mut response = json!({
+            "evaluation_id": "eval_test",
+            "plan": {
+                "id": "plan-001",
+                "required_effects": ["lantern.write"],
+                "actions": [{
+                    "action_id": "action_1",
+                    "idempotency_key": "eval_test/action_1",
+                    "capability": "lantern.task.record",
+                    "capability_version": planner_version_from_manifest_major(resolved.capability_version()),
+                    "bridge_capability_version": resolved.capability_version(),
+                    "manifest_digest": resolved.manifest_digest(),
+                    "bridge_provider_identity": "lantern-local",
+                    "arguments": {"project": "p", "task": "t"},
+                }],
+            },
+            "trail": [],
+        });
+
+        authorise_and_execute_inner(
+            &mut response,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context,
+            true,
+            &clock,
+            &mut authority,
+            None,
+            &mut anchor_writer,
+        )
+        .expect("first dispatch");
+
+        assert_eq!(*calls.borrow(), 1, "one provider call for first dispatch");
+
+        let result = gate.admit("evt_ok", 0);
+        assert!(result.is_err());
+        assert_eq!(
+            *calls.borrow(),
+            1,
+            "no second provider call after rejection"
+        );
+    }
+
+    // 10. Rejection stops later queued siblings.
+    #[test]
+    fn j11_rejection_stops_later_siblings() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/a", 1));
+        queue.enqueue(j11_sample_anchor("evt/b", 9));
+        queue.enqueue(j11_sample_anchor("evt/c", 1));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert_eq!(processed, vec!["evt/a".to_string()]);
+        assert!(matches!(
+            rejection,
+            Some(EventAdmissionRejection::CausalDepthExceeded { .. })
+        ));
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.pop_front().unwrap().event_id, "evt/c");
+    }
+
+    // 11. Completed follow-ups preserved before rejection.
+    #[test]
+    fn j11_completed_follow_ups_preserved_before_rejection() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/first", 1));
+        queue.enqueue(j11_sample_anchor("evt/first", 1));
+        queue.enqueue(j11_sample_anchor("evt/third", 1));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert_eq!(processed, vec!["evt/first".to_string()]);
+        assert_eq!(
+            rejection,
+            Some(EventAdmissionRejection::DuplicateEventId {
+                event_id: "evt/first".to_string(),
+            })
+        );
+        assert_eq!(queue.pop_front().unwrap().event_id, "evt/third");
+    }
+
+    // 12. Duplicate rejection JSON exactly matches frozen shape.
+    #[test]
+    fn j11_duplicate_rejection_json_exact_shape() {
+        let rejection = EventAdmissionRejection::DuplicateEventId {
+            event_id: "evt/dup".to_string(),
+        };
+        let value = event_admission_rejection_value(&rejection, 3);
+        assert_eq!(value["kind"], "duplicate_event_id");
+        assert_eq!(value["event_id"], "evt/dup");
+        assert_eq!(value["generation"], 3);
+        assert_eq!(value["processing"], "stopped");
+        let obj = value.as_object().unwrap();
+        assert_eq!(obj.len(), 4);
+    }
+
+    // 13. Depth rejection JSON exactly matches frozen shape.
+    #[test]
+    fn j11_depth_rejection_json_exact_shape() {
+        let rejection = EventAdmissionRejection::CausalDepthExceeded {
+            event_id: "evt/deep".to_string(),
+            generation: 9,
+            maximum_generation: 8,
+        };
+        let value = event_admission_rejection_value(&rejection, 9);
+        assert_eq!(value["kind"], "causal_depth_exceeded");
+        assert_eq!(value["event_id"], "evt/deep");
+        assert_eq!(value["generation"], 9);
+        assert_eq!(value["maximum_generation"], 8);
+        assert_eq!(value["processing"], "stopped");
+        let obj = value.as_object().unwrap();
+        assert_eq!(obj.len(), 5);
+    }
+
+    // 14. Clean run omits event_admission_rejection.
+    #[test]
+    fn j11_clean_run_omits_rejection_field() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/x", 1));
+        queue.enqueue(j11_sample_anchor("evt/y", 2));
+        queue.enqueue(j11_sample_anchor("evt/z", 3));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert!(rejection.is_none());
+        assert_eq!(processed.len(), 3);
+        assert!(queue.is_empty());
+    }
+
+    // 15. Rejection does not modify J09 replay state.
+    #[test]
+    fn j11_rejection_does_not_modify_replay() {
+        use crate::dispatch::RecordingTrail;
+        use crate::replay_runtime::test_support::TestReplayAuthority;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let calls = Rc::new(RefCell::new(0u32));
+        struct Counter(Rc<RefCell<u32>>);
+        impl CapabilityExecutor for Counter {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                *self.0.borrow_mut() += 1;
+                Ok(json!({"status": "ok"}))
+            }
+        }
+
+        let mut gate = EventAdmissionGate::new();
+        assert!(gate.admit("evt_blocked", 9).is_err());
+
+        let (_store, resolved) = resolved_lantern();
+        let clock = outcome::ProductionMonotonicClock::new();
+        let mut trail = RecordingTrail::new();
+        let mut authority = TestReplayAuthority::default();
+        let mut executor = Counter(Rc::clone(&calls));
+        let context = InputEventContext::for_initial("evt_blocked");
+        let mut shared_queue = event_queue::ResultEventQueue::new();
+        let mut anchor_writer = QueueingResultAnchorWriter {
+            inner: ResponseResultAnchorWriter,
+            queue: &mut shared_queue,
+        };
+        let mut response = json!({
+            "evaluation_id": "eval_test",
+            "plan": {
+                "id": "plan-001",
+                "required_effects": ["lantern.write"],
+                "actions": [{
+                    "action_id": "action_1",
+                    "idempotency_key": "eval_test/action_1",
+                    "capability": "lantern.task.record",
+                    "capability_version": planner_version_from_manifest_major(resolved.capability_version()),
+                    "bridge_capability_version": resolved.capability_version(),
+                    "manifest_digest": resolved.manifest_digest(),
+                    "bridge_provider_identity": "lantern-local",
+                    "arguments": {"project": "p", "task": "t"},
+                }],
+            },
+            "trail": [],
+        });
+
+        assert!(!gate.admit("evt_blocked", 9).is_ok());
+
+        gate.admit("evt_clean", 0).unwrap();
+        let context2 = InputEventContext::for_initial("evt_clean");
+        authorise_and_execute_inner(
+            &mut response,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context2,
+            true,
+            &clock,
+            &mut authority,
+            None,
+            &mut anchor_writer,
+        )
+        .expect("clean dispatch");
+        assert_eq!(*calls.borrow(), 1);
+    }
+
+    // 16. Rejection does not produce or enqueue a Result Anchor.
+    #[test]
+    fn j11_rejection_produces_no_anchor() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/rejected", 9));
+        queue.enqueue(j11_sample_anchor("evt/legit", 1));
+
+        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
+        assert!(rejection.is_some());
+        assert!(processed.is_empty());
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.pop_front().unwrap().event_id, "evt/legit");
+    }
+
+    // 17. Admission persists when later evaluation fails.
+    #[test]
+    fn j11_admission_persists_when_evaluation_fails() {
+        use crate::dispatch::RecordingTrail;
+        use crate::replay_runtime::test_support::TestReplayAuthority;
+
+        struct FailingExecutor;
+        impl CapabilityExecutor for FailingExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                Err("simulated executor failure".to_string())
+            }
+        }
+
+        let mut gate = EventAdmissionGate::new();
+        gate.admit("evt_fail", 0).unwrap();
+        assert_eq!(gate.admitted_count(), 1);
+
+        let (_store, resolved) = resolved_lantern();
+        let clock = outcome::ProductionMonotonicClock::new();
+        let mut trail = RecordingTrail::new();
+        let mut authority = TestReplayAuthority::default();
+        let mut executor = FailingExecutor;
+        let context = InputEventContext::for_initial("evt_fail");
+        let mut shared_queue = event_queue::ResultEventQueue::new();
+        let mut anchor_writer = QueueingResultAnchorWriter {
+            inner: ResponseResultAnchorWriter,
+            queue: &mut shared_queue,
+        };
+        let mut response = json!({"trail": []});
+
+        let result = authorise_and_execute_inner(
+            &mut response,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context,
+            true,
+            &clock,
+            &mut authority,
+            None,
+            &mut anchor_writer,
+        );
+        assert!(result.is_err());
+
+        assert_eq!(gate.admitted_count(), 1);
+        assert_eq!(
+            gate.admit("evt_fail", 0),
+            Err(EventAdmissionRejection::DuplicateEventId {
+                event_id: "evt_fail".to_string(),
+            })
+        );
+    }
+
+    // 18. Maximum evaluation generation observed is 8, never 9.
+    #[test]
+    fn j11_max_evaluation_generation_is_eight() {
+        let mut gate = EventAdmissionGate::new();
+
+        for gen in 0..=8u32 {
+            let id = format!("evt/gen-{}", gen);
+            assert!(
+                gate.admit(&id, gen).is_ok(),
+                "generation {} must be accepted",
+                gen
+            );
+        }
+
+        assert!(gate.admit("evt/gen-9", 9).is_err());
+
+        assert_eq!(gate.admitted_count(), 9);
+        assert_eq!(
+            gate.admit("evt/gen-9", 9).unwrap_err(),
+            EventAdmissionRejection::CausalDepthExceeded {
+                event_id: "evt/gen-9".to_string(),
+                generation: 9,
+                maximum_generation: 8,
+            }
         );
     }
 }
