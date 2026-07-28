@@ -192,8 +192,9 @@ where
 }
 
 #[cfg(debug_assertions)]
-fn run_event_admission_probe(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let scenario = args.get(1).ok_or(EVENT_ADMISSION_PROBE_USAGE)?;
+fn build_event_admission_probe_response(
+    scenario: &str,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let mut gate = event_admission::EventAdmissionGate::new();
 
     // 1. Admit the synthetic initial event.
@@ -221,7 +222,7 @@ fn run_event_admission_probe(args: &[String]) -> Result<(), Box<dyn std::error::
         anchor
     };
 
-    match scenario.as_str() {
+    match scenario {
         "duplicate-initial" => {
             queue.enqueue(sample_anchor("evt/root", 1));
             queue.enqueue(sample_anchor("evt/later", 1));
@@ -272,7 +273,16 @@ fn run_event_admission_probe(args: &[String]) -> Result<(), Box<dyn std::error::
             .map(serde_json::Value::String)
             .collect(),
     );
+    Ok(response)
+}
 
+#[cfg(debug_assertions)]
+fn run_event_admission_probe(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.len() != 2 || args.first().map(String::as_str) != Some("event-admission-probe") {
+        return Err(EVENT_ADMISSION_PROBE_USAGE.into());
+    }
+
+    let response = build_event_admission_probe_response(&args[1])?;
     println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
 }
@@ -7335,87 +7345,17 @@ mod tests {
     // -------------------------------------------------------------------
     // J11 Packet 3: compiled host rejection verification
     // -------------------------------------------------------------------
-
-    fn run_event_admission_probe_for_test(scenario: &str) -> serde_json::Value {
-        let mut gate = event_admission::EventAdmissionGate::new();
-        let initial_event_id = "evt/root".to_string();
-        gate.admit(&initial_event_id, 0).unwrap();
-
-        let mut queue = event_queue::ResultEventQueue::new();
-        let sample_anchor = |event_id: &str, generation: u32| -> result_anchor::ResultAnchor {
-            let mut anchor = result_anchor::ResultAnchor::new(
-                result_anchor::ResultAnchorKind::Succeeded(serde_json::json!({"status": "ok"})),
-                "eval_probe",
-                "action_probe",
-                "lantern.task.record",
-                1,
-                "sha256:abc123",
-                "lantern-local",
-                1720000000000,
-                &initial_event_id,
-                &initial_event_id,
-                generation,
-            );
-            anchor.event_id = event_id.to_string();
-            anchor
-        };
-
-        match scenario {
-            "duplicate-initial" => {
-                queue.enqueue(sample_anchor("evt/root", 1));
-                queue.enqueue(sample_anchor("evt/later", 1));
-            }
-            "duplicate-sibling" => {
-                queue.enqueue(sample_anchor("evt/first", 1));
-                queue.enqueue(sample_anchor("evt/first", 1));
-                queue.enqueue(sample_anchor("evt/later", 1));
-            }
-            "causal-depth" => {
-                queue.enqueue(sample_anchor("evt/deep", 9));
-                queue.enqueue(sample_anchor("evt/later", 1));
-            }
-            "clean" => {
-                queue.enqueue(sample_anchor("evt/a", 1));
-                queue.enqueue(sample_anchor("evt/b", 8));
-            }
-            _ => panic!("unknown scenario"),
-        }
-
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            Ok::<_, Box<dyn std::error::Error>>(serde_json::json!({
-                "status": "evaluated",
-                "event_id": anchor.event_id,
-                "generation": anchor.generation
-            }))
-        })
-        .unwrap();
-
-        let mut remaining: Vec<String> = Vec::new();
-        while let Some(anchor) = queue.pop_front() {
-            remaining.push(anchor.event_id.clone());
-        }
-
-        let mut response = serde_json::json!({
-            "kind": "event_admission_probe",
-            "scenario": scenario,
-            "initial_event_id": &initial_event_id,
-            "remaining_queue_event_ids": []
-        });
-
-        outcome.apply_to_response(&mut response);
-        response["remaining_queue_event_ids"] = serde_json::Value::Array(
-            remaining
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect(),
-        );
-        response
-    }
+    //
+    // The four behavioural tests call the same
+    // build_event_admission_probe_response function used by the compiled
+    // event-admission-probe subcommand.  No duplicate scenario
+    // construction, queue drain, or response assembly exists in the
+    // test module.
 
     // 20. duplicate-initial: initial ID reused produces exact rejection; later sibling not evaluated.
     #[test]
     fn j11_packet3_duplicate_initial_exact_output() {
-        let response = run_event_admission_probe_for_test("duplicate-initial");
+        let response = build_event_admission_probe_response("duplicate-initial").unwrap();
 
         assert_eq!(response["kind"], "event_admission_probe");
         assert_eq!(response["scenario"], "duplicate-initial");
@@ -7437,7 +7377,7 @@ mod tests {
     // 21. duplicate-sibling: first completion preserved; later sibling not evaluated.
     #[test]
     fn j11_packet3_duplicate_sibling_preserves_first_completion() {
-        let response = run_event_admission_probe_for_test("duplicate-sibling");
+        let response = build_event_admission_probe_response("duplicate-sibling").unwrap();
 
         let follow_ups = response["follow_up_evaluations"].as_array().unwrap();
         assert_eq!(follow_ups.len(), 1);
@@ -7460,7 +7400,7 @@ mod tests {
     // 22. causal-depth: generation 9 exact output; no evaluation.
     #[test]
     fn j11_packet3_causal_depth_exact_output() {
-        let response = run_event_admission_probe_for_test("causal-depth");
+        let response = build_event_admission_probe_response("causal-depth").unwrap();
 
         assert!(response.get("follow_up_evaluations").is_none());
 
@@ -7479,7 +7419,7 @@ mod tests {
     // 23. clean: gen-1 then gen-8 both evaluated; no rejection field.
     #[test]
     fn j11_packet3_clean_gen1_then_gen8() {
-        let response = run_event_admission_probe_for_test("clean");
+        let response = build_event_admission_probe_response("clean").unwrap();
 
         let follow_ups = response["follow_up_evaluations"].as_array().unwrap();
         assert_eq!(follow_ups.len(), 2);
@@ -7495,15 +7435,35 @@ mod tests {
         assert_eq!(remaining.len(), 0);
     }
 
-    // 24. invalid scenario or argument count fails closed.
+    // 24. invalid scenario and argument counts fail closed.
     #[test]
-    fn j11_packet3_invalid_scenario_fails_closed() {
-        let args = ["host".to_string(), "nonexistent".to_string()];
-        let result = run_event_admission_probe(&args[1..]);
-        assert!(result.is_err(), "invalid scenario must fail");
+    fn j11_packet3_invalid_scenario_and_argument_counts_fail_closed() {
+        // 1. Unknown scenario rejected by build_event_admission_probe_response.
+        assert!(build_event_admission_probe_response("nonexistent").is_err());
 
-        let args_short: [String; 1] = ["host".to_string()];
-        let result = run_event_admission_probe(&args_short[1..]);
-        assert!(result.is_err(), "missing scenario must fail");
+        // 2. Missing scenario rejected by run_event_admission_probe.
+        let args_missing = vec!["event-admission-probe".to_string()];
+        assert!(
+            run_event_admission_probe(&args_missing).is_err(),
+            "missing scenario must fail"
+        );
+
+        // 3. Extra argument rejected by run_event_admission_probe.
+        let args_extra = vec![
+            "event-admission-probe".to_string(),
+            "clean".to_string(),
+            "extra".to_string(),
+        ];
+        assert!(
+            run_event_admission_probe(&args_extra).is_err(),
+            "extra argument must fail"
+        );
+
+        // 4. Incorrect command token rejected by run_event_admission_probe.
+        let args_wrong = vec!["wrong-command".to_string(), "clean".to_string()];
+        assert!(
+            run_event_admission_probe(&args_wrong).is_err(),
+            "wrong command token must fail"
+        );
     }
 }

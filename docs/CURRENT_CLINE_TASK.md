@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J11 packet 3 compiled host rejection verification`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -43,40 +43,53 @@ gate rejects duplicate event IDs and generation 9+ causally. The drain stops
 immediately on first rejection; completed follow-ups before rejection are
 preserved.
 
+## Authorised files
+
+Only these four files may be modified:
+
+- `tethers-0.1/host-rust/src/main.rs`
+- `tethers-0.1/scripts/test-host-event-admission.ps1`
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/worker-notes/2026-07-28-j11-production-rejection-verification.md`
+
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/main.rs` – diagnostic subcommand, `run_event_admission_probe`, tests
+- `tethers-0.1/host-rust/src/main.rs` – diagnostic subcommand, shared `build_event_admission_probe_response`, `run_event_admission_probe` CLI wrapper, tests
 - `tethers-0.1/host-rust/src/event_admission.rs` – EventAdmissionGate (not modified)
 - `tethers-0.1/host-rust/src/event_queue.rs` – ResultEventQueue (not modified)
 - `tethers-0.1/host-rust/src/result_anchor.rs` – ResultAnchor type (not modified)
-- `tethers-0.1/scripts/test-host-event-admission.ps1` – new compiled-boundary test
+- `tethers-0.1/scripts/test-host-event-admission.ps1` – compiled-boundary test with positive and negative CLI checks
 
 ## Frozen decisions and invariants
 
 - Diagnostic route compiled under `#[cfg(debug_assertions)]` only.
 - Release builds do not contain the diagnostic route.
+- One shared `build_event_admission_probe_response` function used by both the compiled subcommand and all four behavioural Rust tests.
+- No duplicated drain loop, admission logic, scenario construction, or response assembly.
 - The diagnostic uses the real production `EventAdmissionGate`, `ResultEventQueue`, `drain_result_event_queue`, and `EventDrainOutcome::apply_to_response`.
-- No duplication of the drain loop or admission logic.
 - No environment-variable activation, hidden request fields, network access, engine invocation, policy evaluation, replay, provider dispatch, Trail activity, filesystem state, or sleep/timing behaviour.
 - The evaluation callback is deterministic and never enqueues new anchors.
 - Initial event `evt/root` generation 0 is always admitted before scenario queue construction.
+- CLI argument count is exactly 2; first argument is exactly `event-admission-probe`; unknown scenarios return usage error.
 - This proves the compiled diagnostic route through the production admission helper. It does not prove normal engine-driven Result Anchor generation through the public runtime.
 - Packet 4 owns Trail admission and rejection records. J12 owns runnable configuration and legitimate scope establishment.
 
 ## Required behaviour
 
-1. Add a debug-build-only diagnostic subcommand `event-admission-probe <SCENARIO>`.
-2. The route and all helper code used only by it must compile under `#[cfg(debug_assertions)]`.
-3. A release build must not contain the diagnostic route.
-4. Use the existing production `EventAdmissionGate`, `ResultEventQueue`, `drain_result_event_queue`, and `EventDrainOutcome::apply_to_response`.
-5. Do not duplicate the drain loop or admission logic.
-6. For the `duplicate-initial` scenario: reject `evt/root` generation 1 as duplicate; keep `evt/later` in remaining queue; no `follow_up_evaluations`.
-7. For the `duplicate-sibling` scenario: evaluate `evt/first` generation 1; reject duplicate `evt/first`; keep `evt/later` in remaining queue.
-8. For the `causal-depth` scenario: reject `evt/deep` generation 9 for causal depth; keep `evt/later` in remaining queue; no `follow_up_evaluations`.
-9. For the `clean` scenario: evaluate `evt/a` generation 1 and `evt/b` generation 8 in FIFO order; no rejection; empty remaining queue.
-10. Add five focused Rust tests beginning with `j11_packet3_` that exercise the diagnostic function.
-11. Create a PowerShell compiled-boundary script `test-host-event-admission.ps1` that builds once and invokes the compiled executable for all four scenarios.
-12. Fix the pre-existing ESC byte defect in the `drain_result_event_queue` doc comment.
+1. Add a debug-build-only shared `build_event_admission_probe_response` function returning `Result<Value, Box<dyn std::error::Error>>`.
+2. Add a thin `run_event_admission_probe` CLI wrapper that validates `args.len() == 2` and `args[0] == "event-admission-probe"`, then calls the shared function and prints.
+3. The route and all helper code used only by it must compile under `#[cfg(debug_assertions)]`.
+4. A release build must not contain the diagnostic route.
+5. Use the existing production `EventAdmissionGate`, `ResultEventQueue`, `drain_result_event_queue`, and `EventDrainOutcome::apply_to_response`.
+6. Do not duplicate the drain loop or admission logic.
+7. Four behavioural tests call `build_event_admission_probe_response("scenario")` directly — no separate test helper.
+8. For `duplicate-initial`: reject `evt/root` gen 1 as duplicate with `kind: "duplicate_event_id"`, `processing: "stopped"`; keep `evt/later` in remaining queue; no `follow_up_evaluations`.
+9. For `duplicate-sibling`: evaluate `evt/first` gen 1; reject duplicate `evt/first`; keep `evt/later`.
+10. For `causal-depth`: reject `evt/deep` gen 9 with `kind: "causal_depth_exceeded"`, `maximum_generation: 8`, `processing: "stopped"`; keep `evt/later`.
+11. For `clean`: evaluate `evt/a` gen 1 and `evt/b` gen 8 in FIFO order; no `event_admission_rejection` field; empty remaining queue.
+12. Fifth test proves unknown scenario, missing scenario, extra argument, and wrong command token all fail closed.
+13. PowerShell script adds compiled-process negative CLI checks for missing scenario, unknown scenario, and extra argument.
+14. Fix the pre-existing ESC byte defect in the `drain_result_event_queue` doc comment.
 
 ## Acceptance criteria
 
@@ -89,8 +102,8 @@ preserved.
 7. `cargo test` full suite passes 512/512.
 8. `cargo clippy --all-targets --all-features` passes with baseline warnings only, 0 new.
 9. `cargo build` and `cargo build --release` pass.
-10. All existing PowerShell scripts pass: `check-fixtures.ps1`, `test-engine.ps1`, `test-mcp-transcripts.ps1`, `test-host-denial.ps1`, `test-host-execution-failure.ps1`, `test-host-result-follow-up.ps1`, `demo.ps1`.
-11. `test-host-event-admission.ps1` passes all four scenarios.
+10. All existing PowerShell scripts pass.
+11. `test-host-event-admission.ps1` passes all four positive scenarios and three negative CLI checks.
 12. `check-tethers-task-packet.ps1` passes.
 13. `opam exec -- dune build` in engine-ocaml passes.
 14. Control-character scan of all four authorised files shows no unexpected characters.

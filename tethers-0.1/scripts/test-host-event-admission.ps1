@@ -233,4 +233,39 @@ if ($rem.Count -ne 0) {
 Write-Host "PASS clean"
 
 # -------------------------------------------------------------------
+# Negative CLI checks
+# -------------------------------------------------------------------
+function Test-AdmissionProbeFailure {
+    param(
+        [string]$Label,
+        [string[]]$ArgList
+    )
+
+    $output = & $HostExe @ArgList 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -eq 0) {
+        throw "$Label : expected non-zero exit code, got 0"
+    }
+
+    $combined = ($output -join "`n")
+    if ($combined -notmatch "event-admission-probe") {
+        throw "$Label : output did not contain usage text"
+    }
+
+    # No JSON success response accepted.
+    if ($combined -match '^\s*\{') {
+        throw "$Label : output contained JSON when it should have been an error"
+    }
+
+    Write-Host "PASS $Label"
+}
+
+Test-AdmissionProbeFailure -Label "missing scenario" -ArgList @("event-admission-probe")
+Test-AdmissionProbeFailure -Label "unknown scenario" -ArgList @("event-admission-probe", "nonexistent")
+Test-AdmissionProbeFailure -Label "extra argument" -ArgList @("event-admission-probe", "clean", "extra")
+
+Write-Host "PASS invalid scenario and argument counts"
+
+# -------------------------------------------------------------------
 Write-Host "PASS test-host-event-admission"
