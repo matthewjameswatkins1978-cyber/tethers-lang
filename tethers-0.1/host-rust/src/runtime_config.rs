@@ -636,6 +636,59 @@ fn validate_digest(raw: &str, pointer: &str) -> Result<(), RuntimeConfigError> {
     Ok(())
 }
 
+/// Strict RFC 6901 token decoder shared by configuration validation
+/// and runtime pointer extraction.
+///
+/// Decoding rules:
+/// - `~0` decodes to `~`
+/// - `~1` decodes to `/`
+/// - any `~` not followed by `0` or `1` is malformed
+/// - array-index tokens must be `0` or a non-zero decimal digit followed
+///   by decimal digits (no leading zeros, no sign, no whitespace)
+pub(crate) fn decode_strict_pointer_token(token: &str) -> Result<String, String> {
+    let mut decoded = String::with_capacity(token.len());
+    let mut chars = token.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '~' {
+            match chars.next() {
+                Some('0') => decoded.push('~'),
+                Some('1') => decoded.push('/'),
+                Some(other) => {
+                    return Err(format!(
+                        "invalid escape sequence '~{}' in JSON Pointer token",
+                        other
+                    ));
+                }
+                None => {
+                    return Err("trailing '~' in JSON Pointer token".to_string());
+                }
+            }
+        } else {
+            decoded.push(ch);
+        }
+    }
+
+    Ok(decoded)
+}
+
+/// Check whether a decoded pointer token is a valid RFC 6901 array index.
+pub(crate) fn is_valid_array_index(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    if token == "0" {
+        return true;
+    }
+    // Non-zero digit followed by zero or more decimal digits.
+    let mut chars = token.chars();
+    match chars.next() {
+        Some('1'..='9') => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_digit())
+}
+
 fn validate_json_pointer(pointer: &str, field: &str) -> Result<(), RuntimeConfigError> {
     if pointer.is_empty() {
         return Err(RuntimeConfigError::with_field(
@@ -651,6 +704,21 @@ fn validate_json_pointer(pointer: &str, field: &str) -> Result<(), RuntimeConfig
             field,
         ));
     }
+
+    // Validate every token strictly.
+    if pointer.len() > 1 {
+        for (i, token) in pointer[1..].split('/').enumerate() {
+            // Decode the token to check for malformed escape sequences.
+            let _decoded = decode_strict_pointer_token(token).map_err(|msg| {
+                RuntimeConfigError::with_field(
+                    RuntimeConfigErrorCode::InvalidValue,
+                    format!("JSON Pointer token {} is malformed: {}", i, msg),
+                    field,
+                )
+            })?;
+        }
+    }
+
     Ok(())
 }
 

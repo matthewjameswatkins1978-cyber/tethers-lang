@@ -180,35 +180,62 @@ impl PreparedRuntime {
 /// Resolve a relative path against the canonical config directory, then
 /// canonicalise the result.  Reject escapes outside the config root,
 /// directories, and missing files.
+/// Preflight: check a relative path for ParentDir escapes before joining
+/// against the config root.  Returns the number of ordinary segments (depth)
+/// or an error when a `..` would move above the root.
+fn check_relative_path_safe(relative_path: &str) -> Result<usize, RuntimePreparationError> {
+    // Reject absolute paths (drive letter or root).
+    let p = std::path::Path::new(relative_path);
+    if p.is_absolute() || p.has_root() {
+        return Err(RuntimePreparationError::new(
+            RuntimePreparationErrorCode::AssetOutsideConfigRoot,
+            format!("asset path \"{}\" must be relative", relative_path),
+        ));
+    }
+
+    // Count ParentDir vs ordinary components.
+    let mut depth: isize = 0;
+    for component in p.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                depth -= 1;
+                if depth < 0 {
+                    return Err(RuntimePreparationError::new(
+                        RuntimePreparationErrorCode::AssetOutsideConfigRoot,
+                        format!(
+                            "asset \"{}\" escapes config root: too many \"..\" components",
+                            relative_path
+                        ),
+                    ));
+                }
+            }
+            std::path::Component::Normal(_) => {
+                depth += 1;
+            }
+            // CurDir, Prefix, RootDir are rejected above.
+            _ => {}
+        }
+    }
+
+    Ok(depth as usize)
+}
+
 fn confine_asset(
     config_dir: &Path,
     relative_path: &str,
 ) -> Result<PathBuf, RuntimePreparationError> {
+    // Preflight: reject absolute paths and ../ escapes using pure
+    // component counting before any filesystem join or canonicalise.
+    check_relative_path_safe(relative_path)?;
+
     let joined = config_dir.join(relative_path);
 
     // Try to canonicalise.  On Windows, canonicalize requires the file
-    // to exist, so we handle the error case specially for path-escape
-    // detection.
+    // to exist.  When it fails, we report AssetNotFound (the preflight
+    // already ruled out ParentDir escapes).
     let canonical = match joined.canonicalize() {
         Ok(p) => p,
         Err(_) => {
-            // If canonicalize failed, check whether the unresolved path
-            // already shows an escape attempt (e.g. starts with `..`).
-            // If the joined path clearly points outside config_dir,
-            // report AssetOutsideConfigRoot.
-            if !joined.starts_with(config_dir) {
-                return Err(RuntimePreparationError::new(
-                    RuntimePreparationErrorCode::AssetOutsideConfigRoot,
-                    format!(
-                        "asset \"{}\" escapes config root: \"{}\" is not \
-                         beneath \"{}\"",
-                        relative_path,
-                        joined.display(),
-                        config_dir.display()
-                    ),
-                ));
-            }
-            // Otherwise, the file genuinely doesn't exist.
             return Err(RuntimePreparationError::new(
                 RuntimePreparationErrorCode::AssetNotFound,
                 format!(
@@ -220,6 +247,8 @@ fn confine_asset(
         }
     };
 
+    // Existing-file containment check (catches symlink escapes and
+    // absolute escapes that the preflight can't see).
     if !canonical.starts_with(config_dir) {
         return Err(RuntimePreparationError::new(
             RuntimePreparationErrorCode::AssetOutsideConfigRoot,
@@ -340,9 +369,73 @@ fn validate_allowed_prefixes(prefixes: &[String]) -> Result<(), RuntimePreparati
                 "allowed_prefix must not be empty",
             ));
         }
-        let trimmed = prefix.trim_end_matches('/');
-        if !trimmed.is_empty() {
-            validate_resource_path(trimmed)?;
+
+        // Reject "/" (root)
+        if prefix == "/" {
+            return Err(RuntimePreparationError::new(
+                RuntimePreparationErrorCode::InvalidResourcePath,
+                "allowed_prefix must not be \"/\" (root)",
+            ));
+        }
+
+        // Reject leading slash
+        if prefix.starts_with('/') {
+            return Err(RuntimePreparationError::new(
+                RuntimePreparationErrorCode::InvalidResourcePath,
+                "allowed_prefix must not start with '/'",
+            ));
+        }
+
+        // Reject backslash
+        if prefix.contains('\\') {
+            return Err(RuntimePreparationError::new(
+                RuntimePreparationErrorCode::InvalidResourcePath,
+                "allowed_prefix must not contain backslash",
+            ));
+        }
+
+        // Reject NUL
+        if prefix.contains('\0') {
+            return Err(RuntimePreparationError::new(
+                RuntimePreparationErrorCode::InvalidResourcePath,
+                "allowed_prefix must not contain NUL",
+            ));
+        }
+
+        // Validate segments (after optionally stripping a single trailing slash)
+        let body = prefix.strip_suffix('/').unwrap_or(prefix);
+
+        if body.is_empty() {
+            // Only possible if prefix was exactly "/" — handled above.
+            continue;
+        }
+
+        let segments: Vec<&str> = body.split('/').collect();
+
+        // Reject double-slash (empty interior segments)
+        for seg in &segments {
+            if seg.is_empty() {
+                return Err(RuntimePreparationError::new(
+                    RuntimePreparationErrorCode::InvalidResourcePath,
+                    "allowed_prefix must not contain empty segments",
+                ));
+            }
+
+            // Reject `.` and `..` segments
+            if *seg == "." || *seg == ".." {
+                return Err(RuntimePreparationError::new(
+                    RuntimePreparationErrorCode::InvalidResourcePath,
+                    format!("allowed_prefix must not contain \"{}\" segment", seg),
+                ));
+            }
+
+            // Reject colon (drive-like)
+            if seg.contains(':') {
+                return Err(RuntimePreparationError::new(
+                    RuntimePreparationErrorCode::InvalidResourcePath,
+                    "allowed_prefix segment must not contain ':'",
+                ));
+            }
         }
     }
     Ok(())
@@ -420,34 +513,43 @@ impl PreparedRuntime {
     }
 }
 
+/// Strict RFC 6901 JSON Pointer extraction.  All tokens must decode
+/// successfully; malformed `~` sequences and invalid array indices
+/// return `ScopeNotEstablished` defensively.
 fn extract_json_pointer(value: &serde_json::Value, pointer: &str) -> Option<serde_json::Value> {
     if pointer.is_empty() {
         return Some(value.clone());
     }
-
-    let mut current = value;
-
-    for token in pointer_tokens(pointer) {
-        match current {
-            serde_json::Value::Object(map) => {
-                current = map.get(&token)?;
-            }
-            serde_json::Value::Array(arr) => {
-                let index: usize = token.parse().ok()?;
-                current = arr.get(index)?;
-            }
-            _ => return None,
+    if pointer.len() == 1 {
+        // Just "/" — refers to a key that is the empty string.
+        // RFC 6901: "" references the whole document; "/" references a
+        // member whose name is the empty string.
+        match value {
+            serde_json::Value::Object(map) => map.get("").cloned(),
+            _ => None,
         }
+    } else {
+        let mut current = value;
+        for token_str in pointer[1..].split('/') {
+            let decoded = crate::runtime_config::decode_strict_pointer_token(token_str).ok()?;
+            match current {
+                serde_json::Value::Object(map) => {
+                    current = map.get(&decoded)?;
+                }
+                serde_json::Value::Array(arr) => {
+                    // Validate array-index syntax (only valid decimal
+                    // non-negative integers with no leading zeros except "0").
+                    if !crate::runtime_config::is_valid_array_index(&decoded) {
+                        return None;
+                    }
+                    let index: usize = decoded.parse().ok()?;
+                    current = arr.get(index)?;
+                }
+                _ => return None,
+            }
+        }
+        Some(current.clone())
     }
-
-    Some(current.clone())
-}
-
-fn pointer_tokens(pointer: &str) -> impl Iterator<Item = String> + '_ {
-    pointer
-        .split('/')
-        .skip(1)
-        .map(|token| token.replace("~1", "/").replace("~0", "~"))
 }
 
 fn path_starts_with_segment(path: &str, prefix: &str) -> bool {
@@ -2399,6 +2501,597 @@ mod tests {
             .map(|s| s.as_str())
             .collect();
         assert_eq!(keys, vec!["a_field", "m_field", "z_field"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ------------------------------------------------------------------
+    // J12 Packet 2 correction tests — filesystem escape classification
+    // ------------------------------------------------------------------
+
+    // 46: nonexistent ../ escape returns AssetOutsideConfigRoot
+    #[test]
+    fn j12_packet2_nonexistent_dotdot_escape_returns_outside_root() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-ddesc-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let mut json = minimal_config_json();
+        // Path that would escape even though the file doesn't exist
+        json["tether_set"]["tethers"][0]["source_path"] = json!("../nonexistent/outside.tether");
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let err = prepare_runtime(&loaded).unwrap_err();
+        assert_eq!(
+            err.code,
+            RuntimePreparationErrorCode::AssetOutsideConfigRoot
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 47: genuinely missing in-root asset returns AssetNotFound
+    #[test]
+    fn j12_packet2_missing_inroot_asset_returns_not_found() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-inroot-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let mut json = minimal_config_json();
+        // Deeply nested but still within root — just doesn't exist
+        json["tether_set"]["tethers"][0]["source_path"] = json!("tethers/sub/deep/missing.tether");
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let err = prepare_runtime(&loaded).unwrap_err();
+        assert_eq!(err.code, RuntimePreparationErrorCode::AssetNotFound);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 48: normal nested relative asset succeeds
+    #[test]
+    fn j12_packet2_nested_relative_asset_succeeds() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-nested-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        std::fs::create_dir_all(dir.join("tethers/sub/deep")).unwrap();
+        let source = "when event.task.completed if task.status == \"done\" do lantern.task.record";
+        std::fs::write(dir.join("tethers/sub/deep/nested.tether"), source).unwrap();
+
+        let mut json = minimal_config_json();
+        json["tether_set"]["tethers"][0]["source_path"] = json!("tethers/sub/deep/nested.tether");
+
+        let (manifest_json, digest) =
+            make_manifest("lantern.task.record", 1, "lantern-local", json!(null));
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        assert_eq!(prepared.tethers().len(), 1);
+        assert!(prepared.tethers()[0]
+            .source
+            .contains("when event.task.completed"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ------------------------------------------------------------------
+    // J12 Packet 2 correction tests — strict RFC 6901 JSON Pointer
+    // ------------------------------------------------------------------
+
+    // 49: /a~1b accesses key "a/b"
+    #[test]
+    fn j12_packet2_pointer_slash_escape_accesses_key_with_slash() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-pslash-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects/"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/resource~1path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+
+        let action = ProposedAction {
+            evaluation_id: "eval-1".into(),
+            plan_id: "plan-1".into(),
+            action_id: "act-1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".into()),
+            arguments: json!({"resource/path": "projects/file.md"}),
+        };
+        assert_eq!(
+            prepared.assess_action_scope(&action),
+            ScopeAssessment::WithinScope
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 50: /a~0b accesses key "a~b"
+    #[test]
+    fn j12_packet2_pointer_tilde_escape_accesses_key_with_tilde() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-ptilde-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects/"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/key~0with~0tilde"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+
+        let action = ProposedAction {
+            evaluation_id: "eval-1".into(),
+            plan_id: "plan-1".into(),
+            action_id: "act-1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".into()),
+            arguments: json!({"key~with~tilde": "projects/file.md"}),
+        };
+        assert_eq!(
+            prepared.assess_action_scope(&action),
+            ScopeAssessment::WithinScope
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 51: ~2 is rejected during config validation
+    #[test]
+    fn j12_packet2_pointer_tilde_2_rejected() {
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/a~2b"
+        });
+        let err = crate::runtime_config::parse_runtime_config(&json.to_string()).unwrap_err();
+        assert_eq!(
+            err.code,
+            crate::runtime_config::RuntimeConfigErrorCode::InvalidValue
+        );
+    }
+
+    // 52: trailing ~ is rejected during config validation
+    #[test]
+    fn j12_packet2_pointer_trailing_tilde_rejected() {
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/a~"
+        });
+        let err = crate::runtime_config::parse_runtime_config(&json.to_string()).unwrap_err();
+        assert_eq!(
+            err.code,
+            crate::runtime_config::RuntimeConfigErrorCode::InvalidValue
+        );
+    }
+
+    // 53: array index "0" works
+    #[test]
+    fn j12_packet2_pointer_array_index_0_works() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-arr0-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects/"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/items/0/path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+
+        let action = ProposedAction {
+            evaluation_id: "eval-1".into(),
+            plan_id: "plan-1".into(),
+            action_id: "act-1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".into()),
+            arguments: json!({"items": [{"path": "projects/file.md"}]}),
+        };
+        assert_eq!(
+            prepared.assess_action_scope(&action),
+            ScopeAssessment::WithinScope
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 54: array index "01" is rejected
+    #[test]
+    fn j12_packet2_pointer_array_index_01_rejected() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-arr01-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects/"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/items/01/path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+
+        let action = ProposedAction {
+            evaluation_id: "eval-1".into(),
+            plan_id: "plan-1".into(),
+            action_id: "act-1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".into()),
+            arguments: json!({"items": [{"path": "projects/file.md"}, {"path": "other.md"}]}),
+        };
+        assert_eq!(
+            prepared.assess_action_scope(&action),
+            ScopeAssessment::ScopeNotEstablished
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 55: array index "+1" is rejected
+    #[test]
+    fn j12_packet2_pointer_array_index_plus_1_rejected() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-arrplus-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects/"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/items/+1/path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+
+        let action = ProposedAction {
+            evaluation_id: "eval-1".into(),
+            plan_id: "plan-1".into(),
+            action_id: "act-1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".into()),
+            arguments: json!({"items": [{"path": "projects/file.md"}, {"path": "other.md"}]}),
+        };
+        assert_eq!(
+            prepared.assess_action_scope(&action),
+            ScopeAssessment::ScopeNotEstablished
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 56: out-of-range valid array index returns ScopeNotEstablished
+    #[test]
+    fn j12_packet2_pointer_array_oob_returns_not_established() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-arroob-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects/"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/items/5/path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+
+        let action = ProposedAction {
+            evaluation_id: "eval-1".into(),
+            plan_id: "plan-1".into(),
+            action_id: "act-1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".into()),
+            arguments: json!({"items": [{"path": "projects/file.md"}]}),
+        };
+        assert_eq!(
+            prepared.assess_action_scope(&action),
+            ScopeAssessment::ScopeNotEstablished
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ------------------------------------------------------------------
+    // J12 Packet 2 correction tests — allowed-prefix validation
+    // ------------------------------------------------------------------
+
+    // 57: "/" is rejected
+    #[test]
+    fn j12_packet2_allowed_prefix_root_slash_rejected() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-aproot-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["/"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let err = prepare_runtime(&loaded).unwrap_err();
+        assert_eq!(err.code, RuntimePreparationErrorCode::InvalidResourcePath);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 58: "projects//" (double trailing slash) is rejected
+    #[test]
+    fn j12_packet2_allowed_prefix_double_slash_rejected() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-apds-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects//"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let err = prepare_runtime(&loaded).unwrap_err();
+        assert_eq!(err.code, RuntimePreparationErrorCode::InvalidResourcePath);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 59: "projects/" is valid
+    #[test]
+    fn j12_packet2_allowed_prefix_trailing_slash_valid() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-apts-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects/"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        let action = ProposedAction {
+            evaluation_id: "eval-1".into(),
+            plan_id: "plan-1".into(),
+            action_id: "act-1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".into()),
+            arguments: json!({"path": "projects/file.md"}),
+        };
+        assert_eq!(
+            prepared.assess_action_scope(&action),
+            ScopeAssessment::WithinScope
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 60: "projects" (no trailing slash) is valid
+    #[test]
+    fn j12_packet2_allowed_prefix_bare_valid() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-apbare-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) = make_manifest(
+            "lantern.task.record",
+            1,
+            "lantern-local",
+            json!({"kind": "path_prefix", "allowed_prefixes": ["projects"]}),
+        );
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        json["providers"][0]["capabilities"][0]["scope_binding"] = json!({
+            "kind": "path_prefix",
+            "argument_json_pointer": "/path"
+        });
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        let action = ProposedAction {
+            evaluation_id: "eval-1".into(),
+            plan_id: "plan-1".into(),
+            action_id: "act-1".into(),
+            capability_name: "lantern.task.record".into(),
+            manifest_digest: Some(digest),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".into()),
+            arguments: json!({"path": "projects/file.md"}),
+        };
+        assert_eq!(
+            prepared.assess_action_scope(&action),
+            ScopeAssessment::WithinScope
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
