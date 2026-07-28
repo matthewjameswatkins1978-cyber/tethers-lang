@@ -9,7 +9,7 @@ use crate::runtime_config::load_runtime_config;
 use crate::stdio_provider::{compare_discovery_evidence, ManagedProvider};
 use tethers_reference_host::child_process::is_interrupted;
 use tethers_reference_host::cli::{CliEnvelope, OutcomeStatus};
-use tethers_reference_host::engine_stdio::EngineSession;
+use tethers_reference_host::engine_stdio::{EngineError, EngineSession};
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -17,6 +17,48 @@ use std::path::PathBuf;
 pub struct CheckResult {
     pub envelope: CliEnvelope,
     pub exit_code: i32,
+}
+
+#[derive(Debug)]
+struct CheckFailure {
+    status: OutcomeStatus,
+    code: &'static str,
+    message: String,
+    field: Option<String>,
+}
+
+impl CheckFailure {
+    fn new(
+        status: OutcomeStatus,
+        code: &'static str,
+        message: impl Into<String>,
+        field: Option<String>,
+    ) -> Self {
+        Self {
+            status,
+            code,
+            message: message.into(),
+            field,
+        }
+    }
+
+    fn provider(index: usize, identity: &str, code: &'static str, message: &str) -> Self {
+        Self::new(
+            OutcomeStatus::Unavailable,
+            code,
+            format!("provider {index} ({identity}): {message}"),
+            Some(format!("/providers/{index}")),
+        )
+    }
+
+    fn interrupted() -> Self {
+        Self::new(
+            OutcomeStatus::Interrupted,
+            "INTERRUPTED",
+            "interrupted",
+            None,
+        )
+    }
 }
 
 pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -> CheckResult {
@@ -75,32 +117,51 @@ pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -
     };
 
     if is_interrupted() {
-        return interrupted_result("check", "before engine launch");
+        let data = build_check_data(
+            &tether_set_id,
+            &tether_set_version,
+            tether_count,
+            provider_count,
+            &[],
+            &[],
+        );
+        return fail_with_data("check", CheckFailure::interrupted(), data);
     }
 
     // 4. Launch engine.
     let mut engine_session = match EngineSession::launch(&canonical_engine, &config_dir) {
         Ok(s) => s,
         Err(e) => {
-            let code = match &e {
-                tethers_reference_host::engine_stdio::EngineError::Child(_) => {
-                    "ENGINE_LAUNCH_FAILED"
-                }
-                tethers_reference_host::engine_stdio::EngineError::InitializeFailed(_) => {
-                    "ENGINE_INITIALIZE_FAILED"
-                }
-                tethers_reference_host::engine_stdio::EngineError::Interrupted => {
-                    return interrupted_result("check", "during engine startup");
-                }
-                _ => "ENGINE_ERROR",
+            let failure = match &e {
+                EngineError::Interrupted => CheckFailure::interrupted(),
+                EngineError::Child(_) => CheckFailure::new(
+                    OutcomeStatus::Unavailable,
+                    "ENGINE_LAUNCH_FAILED",
+                    e.to_string(),
+                    Some("/engine".to_owned()),
+                ),
+                EngineError::InitializeFailed(_) => CheckFailure::new(
+                    OutcomeStatus::Unavailable,
+                    "ENGINE_INITIALIZE_FAILED",
+                    e.to_string(),
+                    Some("/engine".to_owned()),
+                ),
+                _ => CheckFailure::new(
+                    OutcomeStatus::Unavailable,
+                    "ENGINE_ERROR",
+                    e.to_string(),
+                    Some("/engine".to_owned()),
+                ),
             };
-            return fail(
-                "check",
-                OutcomeStatus::Unavailable,
-                code,
-                format!("{e}"),
-                Some("/engine".to_owned()),
+            let data = build_check_data(
+                &tether_set_id,
+                &tether_set_version,
+                tether_count,
+                provider_count,
+                &[],
+                &[],
             );
+            return fail_with_data("check", failure, data);
         }
     };
 
@@ -109,19 +170,15 @@ pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -
     for (index, tether) in prepared.tethers().iter().enumerate() {
         if is_interrupted() {
             engine_session.shutdown();
-            return CheckResult {
-                envelope: build_partial(
-                    "check",
-                    OutcomeStatus::Interrupted,
-                    &tether_set_id,
-                    &tether_set_version,
-                    tether_count,
-                    provider_count,
-                    &tether_results,
-                    &[],
-                ),
-                exit_code: OutcomeStatus::Interrupted.exit_code(),
-            };
+            let data = build_check_data(
+                &tether_set_id,
+                &tether_set_version,
+                tether_count,
+                provider_count,
+                &tether_results,
+                &[],
+            );
+            return fail_with_data("check", CheckFailure::interrupted(), data);
         }
 
         match engine_session.validate_tether(index, &tether.id, &tether.version, &tether.source) {
@@ -133,6 +190,18 @@ pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -
                     "status": "valid"
                 }));
             }
+            Err(EngineError::Interrupted) => {
+                engine_session.shutdown();
+                let data = build_check_data(
+                    &tether_set_id,
+                    &tether_set_version,
+                    tether_count,
+                    provider_count,
+                    &tether_results,
+                    &[],
+                );
+                return fail_with_data("check", CheckFailure::interrupted(), data);
+            }
             Err(e) => {
                 tether_results.push(json!({
                     "index": index,
@@ -142,39 +211,46 @@ pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -
                     "error": e.to_string()
                 }));
                 engine_session.shutdown();
-                return fail(
+                let data = build_check_data(
+                    &tether_set_id,
+                    &tether_set_version,
+                    tether_count,
+                    provider_count,
+                    &tether_results,
+                    &[],
+                );
+                return fail_with_data(
                     "check",
-                    OutcomeStatus::InvalidData,
-                    "TETHER_INVALID",
-                    format!("validation failed at tether {index}: {e}"),
-                    Some(format!("/tethers/{}", index)),
+                    CheckFailure::new(
+                        OutcomeStatus::InvalidData,
+                        "TETHER_INVALID",
+                        format!("validation failed at tether {index}: {e}"),
+                        Some(format!("/tethers/{index}")),
+                    ),
+                    data,
                 );
             }
         }
     }
 
     // 6-9. Check providers.
-    let (provider_results, err) = check_providers(&prepared, &config_dir);
+    let (provider_results, failure) = check_providers(&prepared);
     engine_session.shutdown();
 
-    match err {
-        Some(result) => result,
-        None => {
-            let data = json!({
-                "config": {
-                    "tether_set_id": tether_set_id,
-                    "tether_set_version": tether_set_version,
-                    "tether_count": tether_count,
-                    "provider_count": provider_count
-                },
-                "tethers": tether_results,
-                "providers": provider_results
-            });
-            CheckResult {
-                envelope: CliEnvelope::ok("check", data),
-                exit_code: 0,
-            }
-        }
+    let data = build_check_data(
+        &tether_set_id,
+        &tether_set_version,
+        tether_count,
+        provider_count,
+        &tether_results,
+        &provider_results,
+    );
+    match failure {
+        Some(failure) => fail_with_data("check", failure, data),
+        None => CheckResult {
+            envelope: CliEnvelope::ok("check", data),
+            exit_code: 0,
+        },
     }
 }
 
@@ -239,18 +315,12 @@ fn resolve_check_paths(
     Ok((canonical_config, canonical_engine))
 }
 
-fn check_providers(
-    prepared: &PreparedRuntime,
-    config_dir: &std::path::Path,
-) -> (Vec<Value>, Option<CheckResult>) {
+fn check_providers(prepared: &PreparedRuntime) -> (Vec<Value>, Option<CheckFailure>) {
     let mut results: Vec<Value> = Vec::new();
 
     for (pi, provider) in prepared.providers().iter().enumerate() {
         if is_interrupted() {
-            return (
-                results,
-                Some(interrupted_check("check", "during provider check")),
-            );
+            return (results, Some(CheckFailure::interrupted()));
         }
 
         let identity = provider.identity.clone();
@@ -265,6 +335,9 @@ fn check_providers(
         ) {
             Ok(p) => p,
             Err(e) => {
+                if is_interrupted() {
+                    return (results, Some(CheckFailure::interrupted()));
+                }
                 results.push(json!({
                     "index": pi, "identity": identity,
                     "status": "launch_failed", "error": e.to_string(),
@@ -272,7 +345,7 @@ fn check_providers(
                 }));
                 return (
                     results,
-                    Some(fail_provider(
+                    Some(CheckFailure::provider(
                         pi,
                         &identity,
                         "PROVIDER_LAUNCH_FAILED",
@@ -283,6 +356,10 @@ fn check_providers(
         };
 
         if let Err(e) = mcp.initialize(&stdio.protocol_version, &stdio.provider_config.identity) {
+            if is_interrupted() {
+                mcp.close();
+                return (results, Some(CheckFailure::interrupted()));
+            }
             results.push(json!({
                 "index": pi, "identity": identity,
                 "status": "initialize_failed", "error": e.to_string(),
@@ -291,7 +368,7 @@ fn check_providers(
             mcp.close();
             return (
                 results,
-                Some(fail_provider(
+                Some(CheckFailure::provider(
                     pi,
                     &identity,
                     "PROVIDER_INITIALIZE_FAILED",
@@ -303,6 +380,10 @@ fn check_providers(
         let tools = match mcp.list_tools() {
             Ok(t) => t,
             Err(e) => {
+                if is_interrupted() {
+                    mcp.close();
+                    return (results, Some(CheckFailure::interrupted()));
+                }
                 results.push(json!({
                     "index": pi, "identity": identity,
                     "status": "tools_list_failed", "error": e.to_string(),
@@ -311,7 +392,7 @@ fn check_providers(
                 mcp.close();
                 return (
                     results,
-                    Some(fail_provider(
+                    Some(CheckFailure::provider(
                         pi,
                         &identity,
                         "PROVIDER_TOOLS_LIST_FAILED",
@@ -348,7 +429,7 @@ fn check_providers(
         if !all_ok {
             return (
                 results,
-                Some(fail_provider(
+                Some(CheckFailure::provider(
                     pi,
                     &identity,
                     "PROVIDER_CAPABILITY_UNAVAILABLE",
@@ -377,46 +458,15 @@ fn fail(
     }
 }
 
-fn fail_provider(index: usize, identity: &str, code: &str, msg: &str) -> CheckResult {
-    fail(
-        "check",
-        OutcomeStatus::Unavailable,
-        code,
-        format!("provider {index} ({identity}): {msg}"),
-        Some(format!("/providers/{}", index)),
-    )
-}
-
-fn interrupted_result(cmd: &str, _where: &str) -> CheckResult {
-    CheckResult {
-        envelope: CliEnvelope::error(
-            cmd,
-            OutcomeStatus::Interrupted,
-            "INTERRUPTED",
-            "interrupted".to_owned(),
-            None,
-        ),
-        exit_code: 10,
-    }
-}
-
-fn interrupted_check(cmd: &str, _where: &str) -> CheckResult {
-    interrupted_result(cmd, _where)
-}
-
-fn build_partial(
-    cmd: &str,
-    _status: OutcomeStatus,
+fn build_check_data(
     tether_set_id: &str,
     tether_set_version: &str,
     tether_count: usize,
     provider_count: usize,
     tethers: &[Value],
     providers: &[Value],
-) -> CliEnvelope {
-    // For partial interrupted evidence, use the error constructor
-    // with status=interrupted so status/exit match.
-    let data = json!({
+) -> Value {
+    json!({
         "config": {
             "tether_set_id": tether_set_id,
             "tether_set_version": tether_set_version,
@@ -425,20 +475,48 @@ fn build_partial(
         },
         "tethers": tethers,
         "providers": providers
-    });
-    // Use error constructor for interruption to ensure status=interrupted, exit=10.
-    CliEnvelope::error(
-        cmd,
-        OutcomeStatus::Interrupted,
-        "INTERRUPTED",
-        "interrupted".to_owned(),
-        None,
-    )
+    })
+}
+
+fn fail_with_data(cmd: &str, failure: CheckFailure, data: Value) -> CheckResult {
+    let exit_code = failure.status.exit_code();
+    CheckResult {
+        envelope: CliEnvelope::error_with_data(
+            cmd,
+            failure.status,
+            failure.code,
+            failure.message,
+            failure.field,
+            data,
+        ),
+        exit_code,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn envelope_value(result: &CheckResult) -> Value {
+        serde_json::to_value(&result.envelope).unwrap()
+    }
+
+    fn test_data(tethers: &[Value], providers: &[Value]) -> Value {
+        build_check_data("test.set", "1", 2, 2, tethers, providers)
+    }
+
+    fn test_failure(
+        status: OutcomeStatus,
+        code: &'static str,
+        field: Option<&str>,
+        data: Value,
+    ) -> CheckResult {
+        fail_with_data(
+            "check",
+            CheckFailure::new(status, code, "test failure", field.map(str::to_owned)),
+            data,
+        )
+    }
 
     #[test]
     fn j13a_interrupt_flag_works() {
@@ -468,12 +546,216 @@ mod tests {
     }
 
     #[test]
-    fn j13a_interrupted_returns_exit_10() {
-        let r = interrupted_result("check", "test");
-        assert_eq!(r.exit_code, 10);
-        let json = serde_json::to_string(&r.envelope).unwrap();
-        let v: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["exit_code"].as_i64().unwrap(), 10);
-        assert_eq!(v["status"], "interrupted");
+    fn j13a_canonical_success_data_contains_config_tethers_and_providers() {
+        let tethers = vec![json!({"index": 0, "status": "valid"})];
+        let providers = vec![json!({"index": 0, "status": "available"})];
+        let data = build_check_data("test.set", "7", 1, 1, &tethers, &providers);
+        let result = CheckResult {
+            envelope: CliEnvelope::ok("check", data),
+            exit_code: 0,
+        };
+        let value = envelope_value(&result);
+
+        assert_eq!(value["data"]["config"]["tether_set_id"], "test.set");
+        assert_eq!(value["data"]["config"]["tether_set_version"], "7");
+        assert_eq!(value["data"]["config"]["tether_count"], 1);
+        assert_eq!(value["data"]["config"]["provider_count"], 1);
+        assert_eq!(value["data"]["tethers"], json!(tethers));
+        assert_eq!(value["data"]["providers"], json!(providers));
+    }
+
+    #[test]
+    fn j13a_invalid_first_tether_preserves_failed_tether_and_no_providers() {
+        let tethers = vec![json!({
+            "index": 0, "id": "bad", "version": "1",
+            "status": "invalid", "error": "parse failed"
+        })];
+        let result = test_failure(
+            OutcomeStatus::InvalidData,
+            "TETHER_INVALID",
+            Some("/tethers/0"),
+            test_data(&tethers, &[]),
+        );
+        let value = envelope_value(&result);
+
+        assert_eq!(value["status"], "invalid_data");
+        assert_eq!(value["data"]["tethers"], json!(tethers));
+        assert_eq!(value["data"]["providers"], json!([]));
+        assert_eq!(value["error"]["field"], "/tethers/0");
+    }
+
+    #[test]
+    fn j13a_invalid_later_tether_preserves_earlier_valid_tethers() {
+        let tethers = vec![
+            json!({"index": 0, "id": "good", "version": "1", "status": "valid"}),
+            json!({
+                "index": 1, "id": "bad", "version": "1",
+                "status": "invalid", "error": "parse failed"
+            }),
+        ];
+        let result = test_failure(
+            OutcomeStatus::InvalidData,
+            "TETHER_INVALID",
+            Some("/tethers/1"),
+            test_data(&tethers, &[]),
+        );
+        let value = envelope_value(&result);
+
+        assert_eq!(value["data"]["tethers"][0]["status"], "valid");
+        assert_eq!(value["data"]["tethers"][1]["status"], "invalid");
+        assert_eq!(value["data"]["providers"], json!([]));
+    }
+
+    #[test]
+    fn j13a_provider_launch_failure_preserves_all_tether_evidence() {
+        let tethers = vec![
+            json!({"index": 0, "status": "valid"}),
+            json!({"index": 1, "status": "valid"}),
+        ];
+        let providers = vec![json!({
+            "index": 0, "identity": "failed", "status": "launch_failed",
+            "error": "launch failed", "capabilities": []
+        })];
+        let result = test_failure(
+            OutcomeStatus::Unavailable,
+            "PROVIDER_LAUNCH_FAILED",
+            Some("/providers/0"),
+            test_data(&tethers, &providers),
+        );
+        let value = envelope_value(&result);
+
+        assert_eq!(value["data"]["tethers"], json!(tethers));
+        assert_eq!(value["data"]["providers"], json!(providers));
+    }
+
+    #[test]
+    fn j13a_provider_initialize_failure_preserves_failed_provider_evidence() {
+        let providers = vec![json!({
+            "index": 0, "identity": "failed", "status": "initialize_failed",
+            "error": "initialize failed", "capabilities": []
+        })];
+        let result = test_failure(
+            OutcomeStatus::Unavailable,
+            "PROVIDER_INITIALIZE_FAILED",
+            Some("/providers/0"),
+            test_data(&[json!({"index": 0, "status": "valid"})], &providers),
+        );
+        let value = envelope_value(&result);
+
+        assert_eq!(value["data"]["providers"][0]["status"], "initialize_failed");
+        assert_eq!(value["error"]["code"], "PROVIDER_INITIALIZE_FAILED");
+    }
+
+    #[test]
+    fn j13a_tools_list_failure_preserves_failed_provider_evidence() {
+        let providers = vec![json!({
+            "index": 0, "identity": "failed", "status": "tools_list_failed",
+            "error": "tools/list failed", "capabilities": []
+        })];
+        let result = test_failure(
+            OutcomeStatus::Unavailable,
+            "PROVIDER_TOOLS_LIST_FAILED",
+            Some("/providers/0"),
+            test_data(&[json!({"index": 0, "status": "valid"})], &providers),
+        );
+        let value = envelope_value(&result);
+
+        assert_eq!(value["data"]["providers"][0]["status"], "tools_list_failed");
+        assert_eq!(value["error"]["code"], "PROVIDER_TOOLS_LIST_FAILED");
+    }
+
+    #[test]
+    fn j13a_capability_mismatch_preserves_available_and_unavailable_entries() {
+        let providers = vec![json!({
+            "index": 0,
+            "identity": "mixed",
+            "status": "unavailable",
+            "capabilities": [
+                {"name": "fixture.first", "version": 1, "status": "available"},
+                {
+                    "name": "fixture.missing", "version": 1,
+                    "status": "unavailable", "error": "missing"
+                }
+            ]
+        })];
+        let result = test_failure(
+            OutcomeStatus::Unavailable,
+            "PROVIDER_CAPABILITY_UNAVAILABLE",
+            Some("/providers/0"),
+            test_data(&[json!({"index": 0, "status": "valid"})], &providers),
+        );
+        let value = envelope_value(&result);
+        let capabilities = value["data"]["providers"][0]["capabilities"]
+            .as_array()
+            .unwrap();
+
+        assert_eq!(capabilities[0]["status"], "available");
+        assert_eq!(capabilities[1]["status"], "unavailable");
+    }
+
+    #[test]
+    fn j13a_later_provider_failure_preserves_earlier_successful_provider() {
+        let providers = vec![
+            json!({
+                "index": 0, "identity": "good", "status": "available",
+                "capabilities": [{"name": "fixture.first", "version": 1, "status": "available"}]
+            }),
+            json!({
+                "index": 1, "identity": "failed", "status": "initialize_failed",
+                "error": "initialize failed", "capabilities": []
+            }),
+        ];
+        let result = test_failure(
+            OutcomeStatus::Unavailable,
+            "PROVIDER_INITIALIZE_FAILED",
+            Some("/providers/1"),
+            test_data(&[json!({"index": 0, "status": "valid"})], &providers),
+        );
+        let value = envelope_value(&result);
+
+        assert_eq!(value["data"]["providers"][0]["status"], "available");
+        assert_eq!(value["data"]["providers"][1]["status"], "initialize_failed");
+        assert_eq!(value["error"]["field"], "/providers/1");
+    }
+
+    #[test]
+    fn j13a_interruption_preserves_completed_evidence_and_uses_interrupted_10() {
+        let tethers = vec![json!({"index": 0, "status": "valid"})];
+        let providers = vec![json!({"index": 0, "status": "available"})];
+        let result = fail_with_data(
+            "check",
+            CheckFailure::interrupted(),
+            test_data(&tethers, &providers),
+        );
+        let value = envelope_value(&result);
+
+        assert_eq!(result.exit_code, 10);
+        assert_eq!(value["status"], "interrupted");
+        assert_eq!(value["exit_code"], 10);
+        assert_eq!(value["data"]["tethers"], json!(tethers));
+        assert_eq!(value["data"]["providers"], json!(providers));
+    }
+
+    #[test]
+    fn j13a_every_partial_failure_envelope_exit_matches_check_result() {
+        let classes = [
+            (OutcomeStatus::InvalidData, "TETHER_INVALID"),
+            (OutcomeStatus::Unavailable, "PROVIDER_LAUNCH_FAILED"),
+            (OutcomeStatus::Unavailable, "PROVIDER_INITIALIZE_FAILED"),
+            (OutcomeStatus::Unavailable, "PROVIDER_TOOLS_LIST_FAILED"),
+            (
+                OutcomeStatus::Unavailable,
+                "PROVIDER_CAPABILITY_UNAVAILABLE",
+            ),
+            (OutcomeStatus::Interrupted, "INTERRUPTED"),
+        ];
+
+        for (status, code) in classes {
+            let result = test_failure(status, code, None, test_data(&[], &[]));
+            let value = envelope_value(&result);
+            assert_eq!(result.exit_code, status.exit_code(), "{code}");
+            assert_eq!(value["exit_code"], status.exit_code(), "{code}");
+            assert_eq!(value["error"]["code"], code);
+        }
     }
 }
