@@ -20,7 +20,7 @@ use std::fmt;
 /// Uses `serde_json`'s own tokenizer and number parser - this is not a
 /// homemade JSON parser.  Only the map-key collection is intercepted via a
 /// `DeserializeSeed` that detects duplicates recursively.
-fn parse_value_no_dupes(json: &str) -> Result<serde_json::Value, serde_json::Error> {
+pub(crate) fn parse_value_no_dupes(json: &str) -> Result<serde_json::Value, serde_json::Error> {
     let mut de = serde_json::Deserializer::from_str(json);
     let value = DedupValueSeed.deserialize(&mut de)?;
     de.end()?;

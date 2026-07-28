@@ -501,3 +501,96 @@ The caller supplies a host-owned assessment object; J04 defines and tests the
 policy boundary, while a later binding/adapter task implements concrete
 path/repository/calendar extraction. This is fail closed without inventing a
 generic argument-name convention or changing the manifest format.
+
+## 2026-07-28: J12 Runtime Configuration Foundation
+
+Decision: The frozen J12 local runtime configuration is a single strict JSON
+file that selects one Tether Set, its ordered source files, exact capability
+requirements, explicitly configured stdio provider bindings, reviewed manifest
+paths with mandatory pinned digests, scope bindings, and exact local policy
+rules. Packet 1 implements parsing, validation, and materialisation only;
+Packet 2 owns runtime wiring and live scope assessment.
+
+### Frozen JSON shape
+
+```json
+{
+  "format_version": "0.1",
+  "tether_set": {
+    "id": "example.local",
+    "version": "1",
+    "tethers": [
+      {
+        "id": "record-completed-task",
+        "version": "demo-v1",
+        "source_path": "tethers/record-completed-task.tether"
+      }
+    ],
+    "capability_requirements": [
+      {
+        "name": "lantern.task.record",
+        "version": 1,
+        "reason": "Record a completed task"
+      }
+    ]
+  },
+  "providers": [
+    {
+      "id": "lantern-local",
+      "display_name": "Lantern Local",
+      "transport": {
+        "kind": "stdio",
+        "command": "pwsh.exe",
+        "args": ["-NoProfile", "-File", "providers/lantern.ps1"],
+        "protocol_version": "2025-11-25"
+      },
+      "capabilities": [
+        {
+          "name": "lantern.task.record",
+          "version": 1,
+          "manifest_path": "manifests/lantern-task-record.json",
+          "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "scope_binding": {
+            "kind": "path_prefix",
+            "argument_json_pointer": "/path"
+          }
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "default": "deny",
+    "rules": [
+      {
+        "name": "lantern.task.record",
+        "version": 1,
+        "decision": "allow"
+      }
+    ]
+  }
+}
+```
+
+### Design invariants
+
+1. **One configuration file, one selected Tether Set.**
+2. **Explicit configuration, not discovery.** No provider discovery.
+3. **Only stdio transport.**
+4. **Every provider capability must pin a reviewed manifest digest.**
+5. **Scope binding: binding-owned extraction, manifest-owned authority.**
+6. **Default deny with exact per-capability rules.** No wildcards.
+7. **Relative path resolution** against the config file's parent directory.
+8. **No secrets, interpolation, or package management.**
+9. **No J13 commands.** Packet 2 wires runtime behaviour.
+10. **Structured scope kinds fail closed.** Only `path_prefix` in Packet 1.
+11. **Duplicate-key rejection is shared** via `manifest::parse_value_no_dupes`.
+
+### Packet 2 boundaries
+
+- Launching a provider process.
+- Admitting a manifest into the trusted store.
+- Invoking the Tethers engine.
+- Assessing a live Action against scope bindings and manifests.
+- Dispatching an Action to a provider.
+- Writing dispatch, execution, or result Trail entries.
+- Creating a J13 command, CLI, daemon, or GUI.

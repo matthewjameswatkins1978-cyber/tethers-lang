@@ -12,6 +12,7 @@ mod replay_runtime;
 pub mod replay_windows;
 pub mod resolver;
 mod result_anchor;
+pub mod runtime_config;
 pub mod stdio_provider;
 pub mod trusted_store;
 mod validation;
