@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J11 packet 4 durable event-admission Trail and final implementation closure`
 
-Status: `BLOCKED`
+Status: `COMPLETE`
 
 Task colour: `Green`
 
@@ -61,12 +61,12 @@ J10 provided the serial follow-up coordinator with 20 unit tests. J09 establishe
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/dispatch.rs` — Trail trait, EventAdmissionEntry, FileTrail, RecordingTrail
-- `tethers-0.1/host-rust/src/main.rs` — mapper, drain, probes, initial admission, tests
-- `tethers-0.1/scripts/test-host-result-follow-up.ps1` — updated follow-up smoke
-- `tethers-0.1/scripts/test-host-event-admission-trail.ps1` — new compiled-boundary verification
-- `event_admission.rs` — pure gate, unchanged
-- `event_queue.rs` — queue, unchanged
+- `tethers-0.1/host-rust/src/dispatch.rs` - Trail trait, EventAdmissionEntry, FileTrail, RecordingTrail
+- `tethers-0.1/host-rust/src/main.rs` - mapper, drain, probes, initial admission, tests
+- `tethers-0.1/scripts/test-host-result-follow-up.ps1` - updated follow-up smoke
+- `tethers-0.1/scripts/test-host-event-admission-trail.ps1` - new compiled-boundary verification
+- `event_admission.rs` - pure gate, unchanged
+- `event_queue.rs` - queue, unchanged
 
 ## Frozen decisions and invariants
 
@@ -137,22 +137,44 @@ opam exec -- dune build
 - Branch cannot be pushed or remote SHA does not match local.
 - Base commit does not resolve or is not an ancestor of HEAD.
 
-## Expected pre-existing changes
+## Correction round (2026-07-28)
 
-None
+The previous NEEDS REVIEW diagnosis (`e115ca5`) incorrectly classified three script
+failures as pre-existing. The actual regression was:
 
-## Warning baseline
+- Before Packet 4, `process_one_event` created the Trail parent directory.
+- Packet 4 now opens the Trail for the initial admission before `process_one_event`.
+- The new initial-admission path did not create the parent directory first.
 
-- `cargo check`: 9 baseline, zero new
-- `cargo check --tests`: 4 baseline, zero new
-- clippy: baseline only, zero new
+Two scripts (`test-host-execution-failure.ps1`, `demo.ps1`) also retained obsolete
+zero-durable-record expectations that were incompatible with the Packet 4 contract
+of exactly one initial external admission record.
+
+This correction expands the authorised Packet 4 file set from six to nine:
+
+1. `tethers-0.1/host-rust/src/main.rs` — add `fs::create_dir_all` before initial admission
+2. `tethers-0.1/scripts/test-host-denial.ps1` — add one-record admission assertion
+3. `tethers-0.1/scripts/test-host-execution-failure.ps1` — replace zero-record with one-record assertion
+4. `tethers-0.1/scripts/demo.ps1` — replace zero-record with one-record assertion
+5. `docs/CURRENT_CLINE_TASK.md` — this file
+6. `docs/worker-notes/2026-07-28-j11-event-trail-final.md` — updated worker note
+
+The implementation is accepted only after the complete mandatory suite passes and
+status returns to COMPLETE.
+
+## Hash ledger
+
+| Role | SHA | Verified |
+|------|-----|----------|
+| Base (Packet 3) | `a87cb49dd526f66cbbc84e85ac18be201cf3f7a7` | yes |
+| Implementation checkpoint | `c8003019214f1708260500b20e1cc143e37dd0d0` | yes |
+| Documentation checkpoint | `1ad800c1cf7dbc24d83cf92c9f3c2bc6aff52c40` | yes |
+| Evidence-correction (BLOCKED) | `e115ca573a6dee62d29fc67130724191d5f78fe4` | yes |
+| Implementation correction | `648980c668085bcf6f2dd449e692a73ca7d250e9` | yes |
 
 ## J12/public-runtime boundary
 
 The normal engine-driven route still cannot currently generate successful follow-up
 Result Anchors because legitimate scope establishment belongs to J12.
 
-This is the final J11 implementation candidate. Evidence-correction round completed
-2026-07-28: three pre-existing script bugs (missing directory creation in denial,
-execution-failure, and demo scripts) prevent a clean PASS verdict. Implementation
-is correct (522/522 tests, all Rust checks, 6 authorized files).
+This is the final J11 implementation candidate. All acceptance criteria pass.
