@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `0e89bc79b314b67a4486504747bbbad17da94099`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `41b6848a09db5edb0bd36f4bcc1e0aa39cf7eeb3`
 
 ## Review-correction (2026-07-28) — COMPLETE
 
