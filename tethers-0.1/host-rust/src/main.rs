@@ -1,5 +1,6 @@
 pub mod approval;
 pub mod dispatch;
+pub mod event_admission;
 mod event_queue;
 mod manifest;
 mod outcome;
