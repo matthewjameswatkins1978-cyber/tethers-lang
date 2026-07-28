@@ -6,9 +6,9 @@
 - **Status**: `COMPLETE`
 - **Base commit**: `d3dc4c112bf141ce4f96b0188f0ce65776026617`
 - **Implementation checkpoint**: `129817bae363d23f0c69fa282ea934dbe0c74ca5`
-- **Implementation correction**: `PLACEHOLDER`
+- **Implementation correction**: `70dda0d41f721f87d3699e84f3ce28b8424645f1`
 - **Documentation checkpoint**: `06a8f7c64e91126c2ffcf34583b11b6e59140633`
-- **Documentation correction**: recorded externally by final report
+- **Documentation correction**: `c8e340711bf67be38828cb1cc4f1666244af1b51`
 
 ## Requested outcome
 
@@ -54,7 +54,7 @@ Functions:
 
 45 focused tests.
 
-### Correction (`PLACEHOLDER`)
+### Correction (`70dda0d`)
 
 #### `tethers-0.1/host-rust/src/configured_runtime.rs`
 
@@ -148,9 +148,9 @@ PASS (all four authorised correction files)
 ### Git
 
 - Implementation checkpoint: `129817bae363d23f0c69fa282ea934dbe0c74ca5`
-- Implementation correction: `PLACEHOLDER`
+- Implementation correction: `70dda0d41f721f87d3699e84f3ce28b8424645f1`
 - Documentation checkpoint: `06a8f7c64e91126c2ffcf34583b11b6e59140633`
-- Documentation correction: recorded externally by final report
+- Documentation correction: `c8e340711bf67be38828cb1cc4f1666244af1b51`
 
 ## Discoveries
 
