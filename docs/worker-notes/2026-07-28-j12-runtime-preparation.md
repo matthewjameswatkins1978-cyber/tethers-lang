@@ -1,15 +1,15 @@
 # Worker Note: J12 Packet 2 - Prepared Runtime And Scope Closure
 
-- **Task**: `J12 packet 2 prepared runtime and scope closure`
-- **Task packet**: `docs/CURRENT_CLINE_TASK.md`
-- **Owner**: `Goose`
-- **Status**: `COMPLETE`
-- **Base commit**: `d3dc4c112bf141ce4f96b0188f0ce65776026617`
-- **Implementation checkpoint**: `129817bae363d23f0c69fa282ea934dbe0c74ca5`
-- **Implementation correction 1**: `70dda0d41f721f87d3699e84f3ce28b8424645f1`
-- **Implementation correction 2**: `80212c27b668e9b07713c83fc9f7db28f228cd13`
-- **Documentation checkpoint**: `06a8f7c64e91126c2ffcf34583b11b6e59140633`
-- **Documentation correction 1**: `c8e340711bf67be38828cb1cc4f1666244af1b51`
+Task: `J12 packet 2 prepared runtime and scope closure`
+Task packet: `docs/CURRENT_CLINE_TASK.md`
+Owner: `Goose`
+Status: `COMPLETE`
+Base commit: `d3dc4c112bf141ce4f96b0188f0ce65776026617`
+Implementation checkpoint: `129817bae363d23f0c69fa282ea934dbe0c74ca5`
+Implementation correction 1: `70dda0d41f721f87d3699e84f3ce28b8424645f1`
+Implementation correction 2: `80212c27b668e9b07713c83fc9f7db28f228cd13`
+Documentation checkpoint: `06a8f7c64e91126c2ffcf34583b11b6e59140633`
+Documentation correction 1: `c8e340711bf67be38828cb1cc4f1666244af1b51`
 
 ## Requested outcome
 
