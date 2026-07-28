@@ -5,7 +5,7 @@
 - **Owner**: `Goose`
 - **Status**: `COMPLETE`
 - **Base commit**: `d3dc4c112bf141ce4f96b0188f0ce65776026617`
-- **Implementation checkpoint**: `PLACEHOLDER`
+- **Implementation checkpoint**: `129817bae363d23f0c69fa282ea934dbe0c74ca5`
 - **Documentation checkpoint**: `PLACEHOLDER`
 
 ## Requested outcome
@@ -114,25 +114,27 @@ Tests: 45 focused tests (`j12_packet2_` prefix) covering:
 
 | Script | Result |
 |---|---|
-| `check-fixtures.ps1` | PENDING |
-| `test-engine.ps1` | PENDING |
-| `test-mcp-transcripts.ps1` | PENDING |
-| `test-host-denial.ps1` | PENDING |
-| `test-host-execution-failure.ps1` | PENDING |
-| `test-host-result-follow-up.ps1` | PENDING |
-| `test-host-event-admission.ps1` | PENDING |
-| `test-host-event-admission-trail.ps1` | PENDING |
-| `demo.ps1` | PENDING |
-| `check-tethers-task-packet.ps1` | PENDING |
-| `opam exec -- dune build` | PENDING |
+| `check-fixtures.ps1` | PASS (46 JSON, 30 JSONL) |
+| `test-engine.ps1` | PASS (24/24) |
+| `test-mcp-transcripts.ps1` | PASS (15/15) |
+| `test-host-denial.ps1` | PASS |
+| `test-host-execution-failure.ps1` | PASS |
+| `test-host-result-follow-up.ps1` | PASS |
+| `test-host-event-admission.ps1` | PASS |
+| `test-host-event-admission-trail.ps1` | PASS |
+| `demo.ps1` | PASS |
+| `check-tethers-task-packet.ps1` | PASS |
+| `opam exec -- dune build` | PASS |
 
 ### Control-character scan
 
-PENDING
+PASS (all six authorised files)
 
 ### Git
 
-PENDING
+- Implementation commit: `129817bae363d23f0c69fa282ea934dbe0c74ca5`
+- Documentation commit: `PLACEHOLDER`
+- Exactly six authorised files
 
 ## Discoveries
 
