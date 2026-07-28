@@ -91,8 +91,11 @@ siblings while preserving completed follow-ups.
     passing a closure that builds `InputEventContext` and calls
     `process_one_event`.
   - Applied the drain outcome to the response via `apply_to_response`.
-- Added 19 focused `j11_` unit tests covering all required behaviours, all
-  exercising the production `drain_result_event_queue` boundary.
+- Added 19 focused `j11_` unit tests covering the required admission behaviours.
+  Tests 2-8, 10-16 and 19 exercise the production
+  `drain_result_event_queue` boundary. Test 1 exercises initial admission
+  directly, tests 9 and 17 exercise dispatch seams, and test 18 exercises
+  the gate's maximum-generation boundary directly.
 - Updated `docs/CURRENT_CLINE_TASK.md` with the J11 packet 2 control-v1 packet.
 - Created and updated this worker note.
 
