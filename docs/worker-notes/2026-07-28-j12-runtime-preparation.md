@@ -6,7 +6,7 @@
 - **Status**: `COMPLETE`
 - **Base commit**: `d3dc4c112bf141ce4f96b0188f0ce65776026617`
 - **Implementation checkpoint**: `129817bae363d23f0c69fa282ea934dbe0c74ca5`
-- **Documentation checkpoint**: `PLACEHOLDER`
+- **Documentation checkpoint**: `06a8f7c64e91126c2ffcf34583b11b6e59140633`
 
 ## Requested outcome
 
@@ -133,7 +133,7 @@ PASS (all six authorised files)
 ### Git
 
 - Implementation commit: `129817bae363d23f0c69fa282ea934dbe0c74ca5`
-- Documentation commit: `PLACEHOLDER`
+- Documentation commit: `06a8f7c64e91126c2ffcf34583b11b6e59140633`
 - Exactly six authorised files
 
 ## Discoveries
