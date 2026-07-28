@@ -2,133 +2,78 @@
 
 Control contract: `1`
 
-Task: `J11 packet 3 compiled host rejection verification`
+Task: `J11 packet 4 durable event-admission Trail and final implementation closure`
 
 Status: `COMPLETE`
 
-Task colour: `Red`
+Task colour: `Green`
 
 Owner: `Goose`
 
-Route: `Goose - J11 packet 3 in fenced local worktree`
+Route: `Goose - J11 packet 4 in local worktree`
 
-Worker note: `docs/worker-notes/2026-07-28-j11-production-rejection-verification.md`
+Worker note: `docs/worker-notes/2026-07-28-j11-event-trail-final.md`
 
-Base branch: `goose/tethers-final-evidence-skill`
+Base branch: `goose/j11-production-rejection-verification`
 
-Base commit: `85d8bfa3c9e4816f10c8df5afe00bf150574ec58`
+Base commit: `a87cb49dd526f66cbbc84e85ac18be201cf3f7a7`
 
-Branch: `goose/j11-production-rejection-verification`
+Branch: `goose/j11-event-trail-final`
 
 ## Objective
 
-Add a debug-build-only compiled host diagnostic route that proves J11 rejection
-behaviour through the real production admission components:
-`EventAdmissionGate`, `ResultEventQueue`, `drain_result_event_queue`, and
-`EventDrainOutcome::apply_to_response`.
-
-This is a controlled diagnostic boundary. It does not prove that the normal
-public engine route can currently generate Result Anchors. The normal engine
-route remains unchanged and continues to use its existing permission-scope and
-replay boundaries.
-
-## Relevant background and existing behaviour
-
-Packet 1 delivered `EventAdmissionGate` in `event_admission.rs`. Packet 2 wired
-the gate into the host coordinator, creating `EventDrainOutcome` with
-`apply_to_response` and the `drain_result_event_queue` helper. The production
-drain uses a closure-based evaluation callback, the real admission gate, and
-the real `EventDrainOutcome::apply_to_response` to mutate response JSON. The
-gate rejects duplicate event IDs and generation 9+ causally. The drain stops
-immediately on first rejection; completed follow-ups before rejection are
-preserved.
+Record every J11 event-admission decision in the existing durable append-only Trail
+before evaluation continues or stops.
 
 ## Authorised files
 
-Only these four files may be modified:
+- `tethers-0.1/host-rust/src/dispatch.rs` — EventAdmissionEntry, Trail extension, FileTrail + RecordingTrail impls
+- `tethers-0.1/host-rust/src/main.rs` — admission-entry mapper, drain update, trail probe, initial admission, tests
+- `tethers-0.1/scripts/test-host-result-follow-up.ps1` — updated to expect one admission record
+- `tethers-0.1/scripts/test-host-event-admission-trail.ps1` — new compiled-boundary trail verification
+- `docs/CURRENT_CLINE_TASK.md` — this file
+- `docs/worker-notes/2026-07-28-j11-event-trail-final.md` — implementation evidence
 
-- `tethers-0.1/host-rust/src/main.rs`
-- `tethers-0.1/scripts/test-host-event-admission.ps1`
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-07-28-j11-production-rejection-verification.md`
+## Forbidden changes
 
-## Relevant components
+- `event_admission.rs`, `event_queue.rs`, `result_anchor.rs` — not modified
+- `Cargo.toml`, `Cargo.lock` — not modified
+- OCaml, protocol fixtures, existing Trail entry semantics — not modified
+- `docs/ROAD_TO_0_2.md` — not modified
+- No new dependencies
 
-- `tethers-0.1/host-rust/src/main.rs` – diagnostic subcommand, shared `build_event_admission_probe_response`, `run_event_admission_probe` CLI wrapper, tests
-- `tethers-0.1/host-rust/src/event_admission.rs` – EventAdmissionGate (not modified)
-- `tethers-0.1/host-rust/src/event_queue.rs` – ResultEventQueue (not modified)
-- `tethers-0.1/host-rust/src/result_anchor.rs` – ResultAnchor type (not modified)
-- `tethers-0.1/scripts/test-host-event-admission.ps1` – compiled-boundary test with positive and negative CLI checks
+## Key invariants
 
-## Frozen decisions and invariants
+- EventAdmissionEntry schema frozen: kind, event_id, event_name, source, correlation_id,
+  causation_id?, generation, processing, reason_code?, maximum_generation?, timestamp_unix_ms
+- Accepted: kind=event_admitted, processing=continued, reason_code/maximum_generation omitted
+- Duplicate rejection: kind=event_rejected, reason_code=duplicate_event_id, processing=stopped
+- Depth rejection: kind=event_rejected, reason_code=causal_depth_exceeded, maximum_generation=8
+- Gate admission before durable append; evaluation never before successful durable append
+- Four durable scenarios: duplicate-initial (2 records), duplicate-sibling (3), causal-depth (2), clean (3)
+- Ten focused tests: j11_packet4_ prefix, 10/10
+- Packet 3: all 5 tests preserved, event_admission.rs untouched
+- Release builds: neither diagnostic route present
 
-- Diagnostic route compiled under `#[cfg(debug_assertions)]` only.
-- Release builds do not contain the diagnostic route.
-- One shared `build_event_admission_probe_response` function used by both the compiled subcommand and all four behavioural Rust tests.
-- No duplicated drain loop, admission logic, scenario construction, or response assembly.
-- The diagnostic uses the real production `EventAdmissionGate`, `ResultEventQueue`, `drain_result_event_queue`, and `EventDrainOutcome::apply_to_response`.
-- No environment-variable activation, hidden request fields, network access, engine invocation, policy evaluation, replay, provider dispatch, Trail activity, filesystem state, or sleep/timing behaviour.
-- The evaluation callback is deterministic and never enqueues new anchors.
-- Initial event `evt/root` generation 0 is always admitted before scenario queue construction.
-- CLI argument count is exactly 2; first argument is exactly `event-admission-probe`; unknown scenarios return usage error.
-- This proves the compiled diagnostic route through the production admission helper. It does not prove normal engine-driven Result Anchor generation through the public runtime.
-- Packet 4 owns Trail admission and rejection records. J12 owns runnable configuration and legitimate scope establishment.
+## Warning baseline
 
-## Required behaviour
+- `cargo check`: 9 baseline, zero new
+- `cargo check --tests`: 4 baseline, zero new
+- clippy: baseline only, zero new
 
-1. Add a debug-build-only shared `build_event_admission_probe_response` function returning `Result<Value, Box<dyn std::error::Error>>`.
-2. Add a thin `run_event_admission_probe` CLI wrapper that validates `args.len() == 2` and `args[0] == "event-admission-probe"`, then calls the shared function and prints.
-3. The route and all helper code used only by it must compile under `#[cfg(debug_assertions)]`.
-4. A release build must not contain the diagnostic route.
-5. Use the existing production `EventAdmissionGate`, `ResultEventQueue`, `drain_result_event_queue`, and `EventDrainOutcome::apply_to_response`.
-6. Do not duplicate the drain loop or admission logic.
-7. Four behavioural tests call `build_event_admission_probe_response("scenario")` directly — no separate test helper.
-8. For `duplicate-initial`: reject `evt/root` gen 1 as duplicate with `kind: "duplicate_event_id"`, `processing: "stopped"`; keep `evt/later` in remaining queue; no `follow_up_evaluations`.
-9. For `duplicate-sibling`: evaluate `evt/first` gen 1; reject duplicate `evt/first`; keep `evt/later`.
-10. For `causal-depth`: reject `evt/deep` gen 9 with `kind: "causal_depth_exceeded"`, `maximum_generation: 8`, `processing: "stopped"`; keep `evt/later`.
-11. For `clean`: evaluate `evt/a` gen 1 and `evt/b` gen 8 in FIFO order; no `event_admission_rejection` field; empty remaining queue.
-12. Fifth test proves unknown scenario, missing scenario, extra argument, and wrong command token all fail closed.
-13. PowerShell script adds compiled-process negative CLI checks for missing scenario, unknown scenario, and extra argument.
-14. Fix the pre-existing ESC byte defect in the `drain_result_event_queue` doc comment.
+## J12/public-runtime boundary
 
-## Acceptance criteria
-
-1. `cargo fmt --check` passes.
-2. `cargo check` shows 9 baseline warnings and 0 new.
-3. `cargo check --tests` shows 4 baseline warnings and 0 new.
-4. `cargo test j11_packet3_ -- --nocapture` passes 5/5.
-5. `cargo test j11_ -- --nocapture` passes 24/24 (19 existing + 5 new).
-6. `cargo test event_admission -- --nocapture` passes 15/15.
-7. `cargo test` full suite passes 512/512.
-8. `cargo clippy --all-targets --all-features` passes with baseline warnings only, 0 new.
-9. `cargo build` and `cargo build --release` pass.
-10. All existing PowerShell scripts pass.
-11. `test-host-event-admission.ps1` passes all four positive scenarios and three negative CLI checks.
-12. `check-tethers-task-packet.ps1` passes.
-13. `opam exec -- dune build` in engine-ocaml passes.
-14. Control-character scan of all four authorised files shows no unexpected characters.
-15. `git diff --check` produces no output.
+The normal engine-driven route still cannot currently generate successful follow-up
+Result Anchors because legitimate scope establishment belongs to J12.
 
 ## Required verification
 
-From `tethers-0.1/host-rust`:
-
 ```powershell
 cargo fmt --check
-cargo check
-cargo check --tests
-cargo test j11_packet3_ -- --nocapture
-cargo test j11_ -- --nocapture
-cargo test event_admission -- --nocapture
-cargo test
+cargo check && cargo check --tests
+cargo test j11_packet3_ && cargo test j11_packet4_ && cargo test j11_ && cargo test event_admission && cargo test
 cargo clippy --all-targets --all-features
-cargo build
-cargo build --release
-```
-
-From repository root:
-
-```powershell
+cargo build && cargo build --release
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 pwsh -NoProfile -File tethers-0.1/scripts/check-fixtures.ps1
 pwsh -NoProfile -File tethers-0.1/scripts/test-engine.ps1
@@ -137,43 +82,9 @@ pwsh -NoProfile -File tethers-0.1/scripts/test-host-denial.ps1
 pwsh -NoProfile -File tethers-0.1/scripts/test-host-execution-failure.ps1
 pwsh -NoProfile -File tethers-0.1/scripts/test-host-result-follow-up.ps1
 pwsh -NoProfile -File tethers-0.1/scripts/test-host-event-admission.ps1
+pwsh -NoProfile -File tethers-0.1/scripts/test-host-event-admission-trail.ps1
 pwsh -NoProfile -File tethers-0.1/scripts/demo.ps1
-```
-
-From `tethers-0.1/engine-ocaml`:
-
-```powershell
 opam exec -- dune build
 ```
 
-Also run:
-
-```powershell
-git diff --check
-git diff --name-status
-git status --porcelain=v1 --untracked-files=all
-```
-
-## Forbidden changes
-
-- No modification of `event_admission.rs`, `event_queue.rs`, or `result_anchor.rs`.
-- No modification of `Cargo.toml`, `Cargo.lock`, OCaml code, protocol files, or existing fixtures.
-- No modification of existing PowerShell scripts (except the new one).
-- No modification of `.agents/skills/tethers-final-evidence/SKILL.md`.
-- No Trail schemas or records.
-- No environment-variable activation, hidden request fields, network access, engine invocation, policy evaluation, replay, provider dispatch, or filesystem state.
-- No duplication of the drain loop or admission logic.
-- No new dependencies.
-
-## Stop conditions
-
-- Any existing J10, J11, or `event_admission` test regresses.
-- The diagnostic code compiles into a release build.
-- The drain loop or admission logic is duplicated.
-- A dependency is added.
-- The ESC byte defect re-emerges.
-- The diagnostic subcommand uses environment variables, network, or policy.
-
-## Expected pre-existing changes
-
-None. The worktree is clean at base commit `85d8bfa3c9e4816f10c8df5afe00bf150574ec58`.
+This is the final J11 implementation candidate, pending Lucy's acceptance.

@@ -39,6 +39,9 @@ const PROVISION_USAGE: &str =
 #[cfg(debug_assertions)]
 const EVENT_ADMISSION_PROBE_USAGE: &str =
     "usage: tethers-reference-host event-admission-probe <duplicate-initial|duplicate-sibling|causal-depth|clean>";
+#[cfg(debug_assertions)]
+const EVENT_ADMISSION_TRAIL_PROBE_USAGE: &str =
+    "usage: tethers-reference-host event-admission-trail-probe <duplicate-initial|duplicate-sibling|causal-depth|clean> <ABSOLUTE_TRAIL_PATH>";
 
 #[derive(Debug)]
 struct NormalArgs {
@@ -132,6 +135,83 @@ fn event_admission_rejection_value(rejection: &EventAdmissionRejection, generati
         }
     }
 }
+/// Pure mapper: convert event metadata, admission result, and timestamp into
+/// the exact EventAdmissionEntry for durable recording.
+///
+/// Both initial external admission and queued Result Anchor admission use
+/// this single mapper.  No duplicate or depth mapping exists in separate
+/// branches or test helpers.
+fn build_event_admission_entry(
+    event_id: &str,
+    event_name: &str,
+    source: &str,
+    correlation_id: &str,
+    causation_id: Option<&str>,
+    generation: u32,
+    admission_result: &Result<(), EventAdmissionRejection>,
+    timestamp_unix_ms: u64,
+) -> dispatch::EventAdmissionEntry {
+    match admission_result {
+        Ok(()) => dispatch::EventAdmissionEntry {
+            kind: "event_admitted".to_owned(),
+            event_id: event_id.to_owned(),
+            event_name: event_name.to_owned(),
+            source: source.to_owned(),
+            correlation_id: correlation_id.to_owned(),
+            causation_id: causation_id.map(str::to_owned),
+            generation,
+            processing: "continued".to_owned(),
+            reason_code: None,
+            maximum_generation: None,
+            timestamp_unix_ms,
+        },
+        Err(rejection) => match rejection {
+            EventAdmissionRejection::DuplicateEventId { event_id: _ } => {
+                dispatch::EventAdmissionEntry {
+                    kind: "event_rejected".to_owned(),
+                    event_id: event_id.to_owned(),
+                    event_name: event_name.to_owned(),
+                    source: source.to_owned(),
+                    correlation_id: correlation_id.to_owned(),
+                    causation_id: causation_id.map(str::to_owned),
+                    generation,
+                    processing: "stopped".to_owned(),
+                    reason_code: Some("duplicate_event_id".to_owned()),
+                    maximum_generation: None,
+                    timestamp_unix_ms,
+                }
+            }
+            EventAdmissionRejection::CausalDepthExceeded {
+                event_id: _,
+                generation: _,
+                maximum_generation,
+            } => dispatch::EventAdmissionEntry {
+                kind: "event_rejected".to_owned(),
+                event_id: event_id.to_owned(),
+                event_name: event_name.to_owned(),
+                source: source.to_owned(),
+                correlation_id: correlation_id.to_owned(),
+                causation_id: causation_id.map(str::to_owned),
+                generation,
+                processing: "stopped".to_owned(),
+                reason_code: Some("causal_depth_exceeded".to_owned()),
+                maximum_generation: Some(*maximum_generation),
+                timestamp_unix_ms,
+            },
+        },
+    }
+}
+
+/// Production wall-clock helper: Unix milliseconds since epoch.
+///
+/// Tests may provide a fixed timestamp through a closure; the production
+/// route uses this real clock.
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default()
+}
 
 /// Outcome of draining the follow-up event queue with admission.
 struct EventDrainOutcome {
@@ -156,12 +236,16 @@ impl EventDrainOutcome {
 /// On rejection the drain stops immediately and records the frozen rejection
 /// value.  The callback receives the anchor and queue so newly generated
 /// child anchors are appended normally.
-fn drain_result_event_queue<E, F>(
+fn drain_result_event_queue<E, N, R, F>(
     queue: &mut event_queue::ResultEventQueue,
     admission_gate: &mut EventAdmissionGate,
+    now_unix_ms: N,
+    mut record_admission: R,
     mut evaluate: F,
 ) -> Result<EventDrainOutcome, E>
 where
+    N: Fn() -> u64,
+    R: FnMut(&dispatch::EventAdmissionEntry) -> Result<(), E>,
     F: FnMut(&ResultAnchor, &mut event_queue::ResultEventQueue) -> Result<Value, E>,
 {
     let mut follow_up_evaluations: Vec<Value> = Vec::new();
@@ -169,9 +253,29 @@ where
 
     while let Some(anchor) = queue.pop_front() {
         let input_event_id = anchor.event_id.clone();
+        let event_name = anchor.event_name.clone();
+        let correlation_id = anchor.correlation_id.clone();
+        let causation_id = Some(anchor.causation_id.as_str());
         let generation = anchor.generation;
 
-        if let Err(rejection) = admission_gate.admit(&input_event_id, generation) {
+        let admission_result = admission_gate.admit(&input_event_id, generation);
+
+        // Build and record the admission entry.
+        let timestamp = now_unix_ms();
+        let entry = build_event_admission_entry(
+            &input_event_id,
+            &event_name,
+            "result_anchor",
+            &correlation_id,
+            causation_id,
+            generation,
+            &admission_result,
+            timestamp,
+        );
+
+        record_admission(&entry)?;
+
+        if let Err(rejection) = admission_result {
             event_admission_rejection =
                 Some(event_admission_rejection_value(&rejection, generation));
             break;
@@ -244,13 +348,19 @@ fn build_event_admission_probe_response(
     }
 
     // 3. Drain through the real production drain function.
-    let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-        Ok::<_, Box<dyn std::error::Error>>(serde_json::json!({
-            "status": "evaluated",
-            "event_id": anchor.event_id,
-            "generation": anchor.generation
-        }))
-    })?;
+    let outcome = drain_result_event_queue(
+        &mut queue,
+        &mut gate,
+        || 0,
+        |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+        |anchor, _queue| {
+            Ok::<_, Box<dyn std::error::Error>>(serde_json::json!({
+                "status": "evaluated",
+                "event_id": anchor.event_id,
+                "generation": anchor.generation
+            }))
+        },
+    )?;
 
     // 4. Collect remaining queue IDs.
     let mut remaining: Vec<String> = Vec::new();
@@ -286,6 +396,150 @@ fn run_event_admission_probe(args: &[String]) -> Result<(), Box<dyn std::error::
     println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
 }
+#[cfg(debug_assertions)]
+fn build_event_admission_trail_probe_response(
+    scenario: &str,
+    trail_path: &Path,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let mut gate = event_admission::EventAdmissionGate::new();
+
+    // 1. Admit and record the initial external event.
+    let initial_event_id = "evt/root".to_string();
+    let admission_result = gate.admit(&initial_event_id, 0);
+    let timestamp = now_unix_ms();
+    let initial_entry = build_event_admission_entry(
+        &initial_event_id,
+        &initial_event_id,
+        "external",
+        &initial_event_id,
+        None,
+        0,
+        &admission_result,
+        timestamp,
+    );
+
+    // Record initial admission durably.
+    {
+        let mut trail = dispatch::FileTrail::open(trail_path.to_path_buf())
+            .map_err(|e| format!("failed to open trail: {e}"))?;
+        let trail_ref: &mut dyn dispatch::Trail = &mut trail;
+        trail_ref
+            .append_event_admission(&initial_entry)
+            .map_err(|e| format!("failed to record initial admission: {e}"))?;
+    }
+
+    // Verify initial admission succeeded.
+    admission_result
+        .map_err(|e| format!("initial event admission rejected unexpectedly: {:?}", e))?;
+
+    // 2. Build a queue of typed ResultAnchor values for the scenario.
+    let mut queue = event_queue::ResultEventQueue::new();
+    let sample_anchor = |event_id: &str, generation: u32| -> result_anchor::ResultAnchor {
+        let mut anchor = result_anchor::ResultAnchor::new(
+            result_anchor::ResultAnchorKind::Succeeded(serde_json::json!({"status": "ok"})),
+            "eval_probe",
+            "action_probe",
+            "lantern.task.record",
+            1,
+            "sha256:abc123",
+            "lantern-local",
+            1720000000000,
+            &initial_event_id,
+            &initial_event_id,
+            generation,
+        );
+        anchor.event_id = event_id.to_string();
+        anchor
+    };
+
+    match scenario {
+        "duplicate-initial" => {
+            queue.enqueue(sample_anchor("evt/root", 1));
+            queue.enqueue(sample_anchor("evt/later", 1));
+        }
+        "duplicate-sibling" => {
+            queue.enqueue(sample_anchor("evt/first", 1));
+            queue.enqueue(sample_anchor("evt/first", 1));
+            queue.enqueue(sample_anchor("evt/later", 1));
+        }
+        "causal-depth" => {
+            queue.enqueue(sample_anchor("evt/deep", 9));
+            queue.enqueue(sample_anchor("evt/later", 1));
+        }
+        "clean" => {
+            queue.enqueue(sample_anchor("evt/a", 1));
+            queue.enqueue(sample_anchor("evt/b", 8));
+        }
+        _ => return Err(EVENT_ADMISSION_TRAIL_PROBE_USAGE.into()),
+    }
+
+    // 3. Drain with durable admission recording via FileTrail.
+    let trail_path_buf = trail_path.to_path_buf();
+    let outcome = drain_result_event_queue(
+        &mut queue,
+        &mut gate,
+        now_unix_ms,
+        |entry| -> Result<(), Box<dyn std::error::Error>> {
+            let mut trail = dispatch::FileTrail::open(trail_path_buf.clone())
+                .map_err(|e| format!("failed to open trail: {e}"))?;
+            let trail_ref: &mut dyn dispatch::Trail = &mut trail;
+            trail_ref
+                .append_event_admission(entry)
+                .map_err(|e| format!("failed to record admission: {e}").into())
+        },
+        |anchor, _queue| {
+            Ok::<_, Box<dyn std::error::Error>>(serde_json::json!({
+                "status": "evaluated",
+                "event_id": anchor.event_id,
+                "generation": anchor.generation
+            }))
+        },
+    )?;
+
+    // 4. Collect remaining queue IDs.
+    let mut remaining: Vec<String> = Vec::new();
+    while let Some(anchor) = queue.pop_front() {
+        remaining.push(anchor.event_id.clone());
+    }
+
+    // 5. Build and apply response.
+    let mut response = serde_json::json!({
+        "kind": "event_admission_probe",
+        "scenario": scenario,
+        "initial_event_id": &initial_event_id,
+        "remaining_queue_event_ids": [],
+    });
+
+    outcome.apply_to_response(&mut response);
+    response["remaining_queue_event_ids"] = serde_json::Value::Array(
+        remaining
+            .into_iter()
+            .map(serde_json::Value::String)
+            .collect(),
+    );
+    Ok(response)
+}
+
+#[cfg(debug_assertions)]
+fn run_event_admission_trail_probe(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.len() != 3 || args.first().map(String::as_str) != Some("event-admission-trail-probe") {
+        return Err(EVENT_ADMISSION_TRAIL_PROBE_USAGE.into());
+    }
+
+    let trail_path = PathBuf::from(&args[2]);
+    if !trail_path.is_absolute() {
+        return Err(EVENT_ADMISSION_TRAIL_PROBE_USAGE.into());
+    }
+
+    // Create parent directories.
+    if let Some(parent) = trail_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let response = build_event_admission_trail_probe_response(&args[1], &trail_path)?;
+    println!("{}", serde_json::to_string_pretty(&response)?);
+    Ok(())
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -299,6 +553,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(not(windows))]
         return Err("replay persistence is available only on native Windows".into());
+    }
+    #[cfg(debug_assertions)]
+    if matches!(
+        args.first().map(String::as_str),
+        Some("event-admission-trail-probe")
+    ) {
+        return run_event_admission_trail_probe(&args);
     }
     #[cfg(debug_assertions)]
     if matches!(
@@ -422,6 +683,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .admit(&initial_event_id, 0)
         .map_err(|e| format!("initial event admission rejected unexpectedly: {:?}", e))?;
 
+    // J11 Packet 4: durably record the initial external admission.
+    {
+        let entry = build_event_admission_entry(
+            &initial_event_id,
+            &initial_event_id,
+            "external",
+            &initial_event_id,
+            None,
+            0,
+            &Ok(()),
+            now_unix_ms(),
+        );
+        let mut trail =
+            dispatch::FileTrail::open(&trail_path).map_err(|e| format!("trail open: {e}"))?;
+        let trail_ref: &mut dyn dispatch::Trail = &mut trail;
+        trail_ref
+            .append_event_admission(&entry)
+            .map_err(|e| format!("initial admission trail write failed: {e}"))?;
+    }
+
     let initial_context = InputEventContext::for_initial(&initial_event_id);
 
     let mut runtime = RuntimeResources {
@@ -445,6 +726,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let drain_outcome = drain_result_event_queue(
         &mut queue,
         &mut admission_gate,
+        now_unix_ms,
+        |entry| -> Result<(), Box<dyn std::error::Error>> {
+            let mut trail =
+                dispatch::FileTrail::open(&trail_path).map_err(|e| format!("trail open: {e}"))?;
+            let trail_ref: &mut dyn dispatch::Trail = &mut trail;
+            trail_ref
+                .append_event_admission(entry)
+                .map_err(|e| e.to_string().into())
+        },
         |anchor, queue| -> Result<Value, Box<dyn std::error::Error>> {
             let context = InputEventContext::from_result_anchor(anchor);
             let follow_up_request = build_follow_up_request(&pristine_template, anchor)?;
@@ -6774,10 +7064,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/follow-up-b", 2));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(
@@ -6801,10 +7097,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt_initial", 1));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(evaluated.is_empty(), "duplicate must not be processed");
@@ -6829,10 +7131,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/beta", 1));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert_eq!(evaluated, vec!["evt/alpha".to_string()]);
@@ -6856,10 +7164,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/deep", 8));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(outcome.event_admission_rejection.is_none());
@@ -6874,10 +7188,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/too-deep", 9));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(evaluated.is_empty());
@@ -6902,10 +7222,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/very-deep", 42));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(evaluated.is_empty());
@@ -6930,10 +7256,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/rejected", 9));
 
         let mut callback_called = false;
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |_anchor, _queue| {
-            callback_called = true;
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |_anchor, _queue| {
+                callback_called = true;
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(
@@ -7032,10 +7364,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/c", 1));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert_eq!(evaluated, vec!["evt/a".to_string()]);
@@ -7058,10 +7396,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/third", 1));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert_eq!(evaluated, vec!["evt/first".to_string()]);
@@ -7153,10 +7497,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/z", 3));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(outcome.event_admission_rejection.is_none());
@@ -7177,10 +7527,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt_blocked", 9));
 
         let mut callback_called = false;
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |_anchor, _queue| {
-            callback_called = true;
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |_anchor, _queue| {
+                callback_called = true;
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(
@@ -7203,10 +7559,16 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/legit", 1));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
-            evaluated.push(anchor.event_id.clone());
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(outcome.event_admission_rejection.is_some());
@@ -7308,14 +7670,20 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/sibling-b", 1));
 
         let mut evaluated: Vec<String> = Vec::new();
-        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, queue| {
-            evaluated.push(anchor.event_id.clone());
-            // While evaluating sibling A, enqueue child A1.
-            if anchor.event_id == "evt/sibling-a" {
-                queue.enqueue(j11_sample_anchor("evt/child-a1", 2));
-            }
-            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
-        })
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 0,
+            |_entry| Ok::<_, Box<dyn std::error::Error>>(()),
+            |anchor, queue| {
+                evaluated.push(anchor.event_id.clone());
+                // While evaluating sibling A, enqueue child A1.
+                if anchor.event_id == "evt/sibling-a" {
+                    queue.enqueue(j11_sample_anchor("evt/child-a1", 2));
+                }
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
         .unwrap();
 
         assert!(outcome.event_admission_rejection.is_none());
@@ -7465,5 +7833,286 @@ mod tests {
             run_event_admission_probe(&args_wrong).is_err(),
             "wrong command token must fail"
         );
+    }
+    // -------------------------------------------------------------------
+    // J11 Packet 4: durable event-admission Trail visibility
+    // -------------------------------------------------------------------
+
+    // 1. Accepted entry exact fields and rejection fields omitted.
+    #[test]
+    fn j11_packet4_accepted_entry_exact_fields() {
+        let result: Result<(), EventAdmissionRejection> = Ok(());
+        let entry = build_event_admission_entry(
+            "evt/test", "evt/test", "external", "evt/test", None, 0, &result, 1000,
+        );
+        assert_eq!(entry.kind, "event_admitted");
+        assert_eq!(entry.event_id, "evt/test");
+        assert_eq!(entry.source, "external");
+        assert_eq!(entry.causation_id, None);
+        assert_eq!(entry.generation, 0);
+        assert_eq!(entry.processing, "continued");
+        assert_eq!(entry.reason_code, None);
+        assert_eq!(entry.maximum_generation, None);
+        assert_eq!(entry.timestamp_unix_ms, 1000);
+    }
+
+    // 2. Duplicate rejection exact fields.
+    #[test]
+    fn j11_packet4_duplicate_rejection_exact_fields() {
+        let rejection = EventAdmissionRejection::DuplicateEventId {
+            event_id: "evt/dup".to_string(),
+        };
+        let result: Result<(), EventAdmissionRejection> = Err(rejection);
+        let entry = build_event_admission_entry(
+            "evt/dup",
+            "evt/dup",
+            "result_anchor",
+            "evt_corr",
+            Some("evt_cause"),
+            3,
+            &result,
+            2000,
+        );
+        assert_eq!(entry.kind, "event_rejected");
+        assert_eq!(entry.source, "result_anchor");
+        assert_eq!(entry.causation_id, Some("evt_cause".to_string()));
+        assert_eq!(entry.processing, "stopped");
+        assert_eq!(entry.reason_code, Some("duplicate_event_id".to_string()));
+        assert_eq!(entry.maximum_generation, None);
+    }
+
+    // 3. Causal-depth rejection exact fields and maximum generation.
+    #[test]
+    fn j11_packet4_depth_rejection_exact_fields() {
+        let rejection = EventAdmissionRejection::CausalDepthExceeded {
+            event_id: "evt/deep".to_string(),
+            generation: 9,
+            maximum_generation: 8,
+        };
+        let result: Result<(), EventAdmissionRejection> = Err(rejection);
+        let entry = build_event_admission_entry(
+            "evt/deep",
+            "evt/deep",
+            "result_anchor",
+            "evt_corr",
+            None,
+            9,
+            &result,
+            3000,
+        );
+        assert_eq!(entry.kind, "event_rejected");
+        assert_eq!(entry.processing, "stopped");
+        assert_eq!(entry.reason_code, Some("causal_depth_exceeded".to_string()));
+        assert_eq!(entry.maximum_generation, Some(8));
+        assert_eq!(entry.generation, 9);
+    }
+
+    // 4. RecordingTrail captures event entries in order.
+    #[test]
+    fn j11_packet4_recording_trail_captures_event_entries() {
+        use dispatch::RecordingTrail;
+        let mut trail = RecordingTrail::new();
+        let entry1 = dispatch::EventAdmissionEntry {
+            kind: "event_admitted".to_string(),
+            event_id: "evt/a".to_string(),
+            event_name: "evt/a".to_string(),
+            source: "external".to_string(),
+            correlation_id: "evt/a".to_string(),
+            causation_id: None,
+            generation: 0,
+            processing: "continued".to_string(),
+            reason_code: None,
+            maximum_generation: None,
+            timestamp_unix_ms: 1,
+        };
+        let entry2 = dispatch::EventAdmissionEntry {
+            kind: "event_rejected".to_string(),
+            event_id: "evt/b".to_string(),
+            event_name: "evt/b".to_string(),
+            source: "result_anchor".to_string(),
+            correlation_id: "evt_corr".to_string(),
+            causation_id: Some("evt/a".to_string()),
+            generation: 1,
+            processing: "stopped".to_string(),
+            reason_code: Some("duplicate_event_id".to_string()),
+            maximum_generation: None,
+            timestamp_unix_ms: 2,
+        };
+        {
+            let trail_ref: &mut dyn dispatch::Trail = &mut trail;
+            trail_ref.append_event_admission(&entry1).unwrap();
+            trail_ref.append_event_admission(&entry2).unwrap();
+        }
+        assert_eq!(trail.event_admission_entries.len(), 2);
+        assert_eq!(trail.event_admission_entries[0].event_id, "evt/a");
+        assert_eq!(trail.event_admission_entries[1].event_id, "evt/b");
+    }
+
+    // 5. Initial admitted entry is recorded before evaluation begins.
+    #[test]
+    fn j11_packet4_initial_admitted_before_evaluation() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/test", 1));
+
+        let mut recording_order: Vec<String> = Vec::new();
+        let mut eval_order: Vec<String> = Vec::new();
+        let _outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 5000,
+            |entry| {
+                recording_order.push(format!("record:{}", entry.event_id));
+                Ok::<_, Box<dyn std::error::Error>>(())
+            },
+            |anchor, _queue| {
+                eval_order.push(format!("eval:{}", anchor.event_id));
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
+        .unwrap();
+        assert_eq!(recording_order, vec!["record:evt/test"]);
+        assert_eq!(eval_order, vec!["eval:evt/test"]);
+    }
+
+    // 6. Queued admitted entry is recorded before evaluation callback.
+    #[test]
+    fn j11_packet4_queued_admitted_before_evaluation() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/q", 1));
+
+        let mut recording_order: Vec<String> = Vec::new();
+        let mut eval_order: Vec<String> = Vec::new();
+        let _outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 1000,
+            |entry| {
+                recording_order.push(format!("record:{}", entry.event_id));
+                Ok::<_, Box<dyn std::error::Error>>(())
+            },
+            |anchor, _queue| {
+                eval_order.push(format!("eval:{}", anchor.event_id));
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
+        .unwrap();
+        assert_eq!(recording_order, vec!["record:evt/q"]);
+        assert_eq!(eval_order, vec!["eval:evt/q"]);
+    }
+
+    // 7. Duplicate rejection is recorded and later sibling remains untouched.
+    #[test]
+    fn j11_packet4_duplicate_rejection_recorded_and_later_untouched() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/dup", 1));
+        queue.enqueue(j11_sample_anchor("evt/dup", 1));
+        queue.enqueue(j11_sample_anchor("evt/later", 1));
+
+        let mut recorded: Vec<String> = Vec::new();
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 1000,
+            |entry| {
+                recorded.push(format!("{}:{}", entry.kind, entry.event_id));
+                Ok::<_, Box<dyn std::error::Error>>(())
+            },
+            |anchor, _queue| {
+                evaluated.push(anchor.event_id.clone());
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            recorded,
+            vec!["event_admitted:evt/dup", "event_rejected:evt/dup"]
+        );
+        assert_eq!(evaluated, vec!["evt/dup"]);
+        assert!(outcome.event_admission_rejection.is_some());
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.pop_front().unwrap().event_id, "evt/later");
+    }
+
+    // 8. Depth rejection is recorded and generation 9 is never evaluated.
+    #[test]
+    fn j11_packet4_depth_rejection_recorded_and_gen9_not_evaluated() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/deep", 9));
+
+        let mut recorded: Vec<String> = Vec::new();
+        let mut evaluated = false;
+        let outcome = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 1000,
+            |entry| {
+                recorded.push(format!("{}:{}", entry.kind, entry.event_id));
+                Ok::<_, Box<dyn std::error::Error>>(())
+            },
+            |_anchor, _queue| {
+                evaluated = true;
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        )
+        .unwrap();
+        assert_eq!(recorded, vec!["event_rejected:evt/deep"]);
+        assert!(!evaluated, "gen 9 must never be evaluated");
+        assert!(outcome.event_admission_rejection.is_some());
+    }
+
+    // 9. Accepted-event Trail write failure stops before evaluation.
+    #[test]
+    fn j11_packet4_accepted_trail_write_failure_stops_before_eval() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/ok", 1));
+
+        let mut evaluated = false;
+        let result = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 1000,
+            |_entry| -> Result<(), Box<dyn std::error::Error>> {
+                Err("simulated trail error".into())
+            },
+            |_anchor, _queue| {
+                evaluated = true;
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        );
+        assert!(result.is_err(), "trail write failure must propagate");
+        assert!(!evaluated, "evaluation must not happen after trail failure");
+    }
+
+    // 10. Rejected-event Trail write failure stops before evaluation.
+    #[test]
+    fn j11_packet4_rejected_trail_write_failure_stops_before_eval() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/deep", 9));
+
+        let mut evaluated = false;
+        let result = drain_result_event_queue(
+            &mut queue,
+            &mut gate,
+            || 1000,
+            |_entry| -> Result<(), Box<dyn std::error::Error>> {
+                Err("simulated trail error".into())
+            },
+            |_anchor, _queue| {
+                evaluated = true;
+                Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+            },
+        );
+        assert!(
+            result.is_err(),
+            "trail write failure must propagate for rejected events too"
+        );
+        assert!(!evaluated, "evaluation must not happen after trail failure");
     }
 }

@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 #   Phase 2 (no-follow-up) uses the demo request with a `deny`
 #   policy posture so no Result Anchor is ever enqueued.  The
 #   output must omit `follow_up_evaluations`, carry no Result
-#   Anchor, and write zero durable Trail records.
+#   Anchor, and write exactly one durable event-admission record (the initial external admission, followed by denied execution).
 
 $Root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $EngineDir = Join-Path $Root "engine-ocaml"
@@ -112,11 +112,36 @@ try {
         }
     }
 
-    # Durable Trail must be empty: denied never reached prepare_and_record.
     $durableLines = @((Get-Content -Raw -LiteralPath $trailPathNoFollowUp -ErrorAction SilentlyContinue) -split "\r?\n" | Where-Object { $_.Trim() -ne "" })
-    if ($durableLines.Count -ne 0) {
-        throw "Denied branch must write zero durable Trail records, found $($durableLines.Count)."
+    if ($durableLines.Count -ne 1) {
+        throw "Denied branch must write exactly one durable Trail record (initial admission), found $($durableLines.Count)."
     }
+    $admissionEntry = $durableLines[0] | ConvertFrom-Json
+    if ($admissionEntry.kind -ne "event_admitted") {
+        throw "Initial admission must be event_admitted, got $($admissionEntry.kind)"
+    }
+    if ($admissionEntry.source -ne "external") {
+        throw "Initial admission source must be external, got $($admissionEntry.source)"
+    }
+    if ($admissionEntry.generation -ne 0) {
+        throw "Initial admission generation must be 0, got $($admissionEntry.generation)"
+    }
+    if ($admissionEntry.processing -ne "continued") {
+        throw "Initial admission processing must be continued, got $($admissionEntry.processing)"
+    }
+    if ($null -ne $admissionEntry.PSObject.Properties["reason_code"]) {
+        throw "Initial admission must omit reason_code, got $($admissionEntry.reason_code)"
+    }
+    if ($null -ne $admissionEntry.PSObject.Properties["maximum_generation"]) {
+        throw "Initial admission must omit maximum_generation"
+    }
+    if ($admissionEntry.correlation_id -ne $admissionEntry.event_id) {
+        throw "Initial admission correlation_id must equal event_id"
+    }
+    if ($null -ne $admissionEntry.PSObject.Properties["causation_id"]) {
+        throw "Initial admission must omit causation_id"
+    }
+
 
     Write-Output "PASS test-host-result-follow-up (denied initial -> no follow-up)"
 Write-Output ""

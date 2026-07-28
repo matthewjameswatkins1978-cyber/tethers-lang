@@ -219,6 +219,38 @@ pub enum PrepareError {
 }
 
 // ---------------------------------------------------------------------------
+// EventAdmissionEntry
+// ---------------------------------------------------------------------------
+
+/// A durable record of every J11 event-admission decision.
+///
+/// Written before evaluation continues or stops.  Records accepted and
+/// rejected events alike.  Explicitly excludes Facts, capability output,
+/// error messages, conversation content, and secrets.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EventAdmissionEntry {
+    pub kind: String,
+    pub event_id: String,
+    pub event_name: String,
+    pub source: String,
+    pub correlation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<String>,
+
+    pub generation: u32,
+    pub processing: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maximum_generation: Option<u32>,
+
+    pub timestamp_unix_ms: u64,
+}
+
+// ---------------------------------------------------------------------------
 // Trail abstraction
 // ---------------------------------------------------------------------------
 
@@ -247,6 +279,12 @@ pub trait Trail: sealed::Sealed {
     /// already occurred; callers must preserve the known execution status
     /// and record an audit-failure entry in the response Trail.
     fn append_outcome(&mut self, entry: &OutcomeEntry) -> Result<(), TrailError>;
+    /// Serialize, append, flush, and sync an event-admission decision to
+    /// durable storage.  Returns Ok(()) only when the record is durable.
+    ///
+    /// Called before evaluation continues or stops.  On failure, the
+    /// caller must return an error and neither evaluate nor dispatch.
+    fn append_event_admission(&mut self, entry: &EventAdmissionEntry) -> Result<(), TrailError>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -347,6 +385,23 @@ impl Trail for FileTrail {
 
         Ok(())
     }
+    fn append_event_admission(&mut self, entry: &EventAdmissionEntry) -> Result<(), TrailError> {
+        let line = serde_json::to_string(entry)
+            .map_err(|e| TrailError::WriteFailed(format!("serialization failed: {e}")))?;
+
+        writeln!(self.file, "{line}")
+            .map_err(|e| TrailError::WriteFailed(format!("write failed: {e}")))?;
+
+        self.file
+            .flush()
+            .map_err(|e| TrailError::FlushFailed(format!("flush failed: {e}")))?;
+
+        self.file
+            .sync_data()
+            .map_err(|e| TrailError::FlushFailed(format!("sync_data failed: {e}")))?;
+
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -368,6 +423,8 @@ pub struct RecordingTrail {
     pub injected_authorisation_error: Option<TrailError>,
     pub injected_outcome_error: Option<TrailError>,
     pub event_log: Option<std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>>,
+    pub event_admission_entries: Vec<EventAdmissionEntry>,
+    pub injected_event_admission_error: Option<TrailError>,
 }
 
 #[cfg(test)]
@@ -381,6 +438,8 @@ impl RecordingTrail {
             injected_authorisation_error: None,
             injected_outcome_error: None,
             event_log: None,
+            event_admission_entries: Vec::new(),
+            injected_event_admission_error: None,
         }
     }
 }
@@ -420,6 +479,16 @@ impl Trail for RecordingTrail {
             return Err(err);
         }
         self.outcome_entries.push(entry.clone());
+        Ok(())
+    }
+    fn append_event_admission(&mut self, entry: &EventAdmissionEntry) -> Result<(), TrailError> {
+        if let Some(events) = &self.event_log {
+            events.borrow_mut().push("event_admission");
+        }
+        if let Some(err) = self.injected_event_admission_error.take() {
+            return Err(err);
+        }
+        self.event_admission_entries.push(entry.clone());
         Ok(())
     }
 }
