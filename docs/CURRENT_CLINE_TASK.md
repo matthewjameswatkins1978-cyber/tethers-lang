@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J12 packet 2 prepared runtime and scope closure`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Green`
 
