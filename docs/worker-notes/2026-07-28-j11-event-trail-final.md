@@ -126,7 +126,7 @@ Verified in test-host-event-admission-trail.ps1: both `event-admission-probe` an
 
 ## Checkpoints
 
-- Implementation checkpoint: _[pending]_
+- Implementation checkpoint: c8003019214f1708260500b20e1cc143e37dd0d0
 - Documentation checkpoint: _[pending]_
 
 ## Smallest next action
