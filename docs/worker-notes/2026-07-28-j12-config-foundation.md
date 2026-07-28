@@ -16,7 +16,7 @@ Owner: Goose
 
 ## Implementation checkpoint
 
-`INSERT_IMPLEMENTATION_SHA`
+`20896dcbd2c06aee65604bfe3bd7c91597eabc20`
 
 ## Documentation checkpoint
 
