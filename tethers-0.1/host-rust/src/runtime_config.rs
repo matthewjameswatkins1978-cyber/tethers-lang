@@ -561,6 +561,27 @@ fn validate_providers(providers: &[ProviderBindingConfig]) -> Result<(), Runtime
             // Validate pinned digest: exactly "sha256:" followed by 64 lowercase hex chars
             validate_digest(&cap.pinned_digest, &format!("{}/pinned_digest", cptr))?;
 
+            // Global exact identity uniqueness check (J12 Packet 2):
+            // Every exact capability identity (name, version) must appear under
+            // exactly one configured provider.  Duplicate exact identities are
+            // rejected whether or not scope_binding is present.
+            let count = identity_counts
+                .get(&(cap.name.clone(), cap.version))
+                .copied()
+                .unwrap_or(1);
+            if count > 1 {
+                return Err(RuntimeConfigError::with_field(
+                    RuntimeConfigErrorCode::DuplicateEntry,
+                    format!(
+                        "capability \"{}\" version {} appears {} times across \
+                         providers; every exact (name, version) identity must \
+                         be globally unique",
+                        cap.name, cap.version, count
+                    ),
+                    format!("{}/name", cptr),
+                ));
+            }
+
             // Validate scope binding
             if let Some(ref scope) = cap.scope_binding {
                 match scope.kind {
@@ -569,29 +590,6 @@ fn validate_providers(providers: &[ProviderBindingConfig]) -> Result<(), Runtime
                             &scope.argument_json_pointer,
                             &format!("{}/scope_binding/argument_json_pointer", cptr),
                         )?;
-
-                        // Global scope-binding identity check:
-                        // A provider capability with scope_binding must be
-                        // rejected when the same exact (name, version) identity
-                        // appears more than once anywhere across all configured
-                        // providers.  It does not matter whether the other
-                        // occurrence also has scope_binding.
-                        let count = identity_counts
-                            .get(&(cap.name.clone(), cap.version))
-                            .copied()
-                            .unwrap_or(1);
-                        if count > 1 {
-                            return Err(RuntimeConfigError::with_field(
-                                RuntimeConfigErrorCode::DuplicateEntry,
-                                format!(
-                                    "scope-bound capability \"{}\" version {} appears \
-                                     {} times across providers; scoped capabilities \
-                                     must have a globally unique identity",
-                                    cap.name, cap.version, count
-                                ),
-                                format!("{}/scope_binding", cptr),
-                            ));
-                        }
                     }
                 }
             }
@@ -1529,12 +1527,12 @@ mod tests {
     // Global scoped-identity validation
     // ------------------------------------------------------------------
 
-    // 23. scope-bound capability duplicated in another provider is rejected
+    // 23. capability identity duplicated across providers is rejected (one scoped, one unscoped)
     #[test]
     fn j12_packet1_scoped_identity_duplicated_in_another_provider_rejected() {
         // Two providers each carry the same (name, version).  One has
-        // scope_binding set; the other does not.  The scoped entry must be
-        // rejected because its identity is not globally unique.
+        // scope_binding set; the other does not.  J12 Packet 2 rejects all
+        // cross-provider duplicates regardless of scope_binding.
         let json = serde_json::json!({
             "format_version": "0.1",
             "tether_set": {
@@ -1599,17 +1597,17 @@ mod tests {
         let err = parse_err(&json);
         assert_eq!(err.code, RuntimeConfigErrorCode::DuplicateEntry);
         assert!(
-            err.message.contains("scoped"),
-            "expected scoped error, got: {}",
+            err.message.contains("globally unique"),
+            "expected global-uniqueness error, got: {}",
             err.message
         );
     }
 
-    // 24. scope-bound duplicate rejected regardless of which provider is scoped
+    // 24. duplicate across providers rejected regardless of which provider is scoped
     #[test]
     fn j12_packet1_scoped_identity_duplicate_order_independent() {
         // Swap the scope binding to the second provider.  Rejection must
-        // still fire because the global count is still > 1.
+        // still fire because the exact identity count is still > 1.
         let json = serde_json::json!({
             "format_version": "0.1",
             "tether_set": {
@@ -1674,13 +1672,13 @@ mod tests {
         let err = parse_err(&json);
         assert_eq!(err.code, RuntimeConfigErrorCode::DuplicateEntry);
         assert!(
-            err.message.contains("scoped"),
-            "expected scoped error, got: {}",
+            err.message.contains("globally unique"),
+            "expected global-uniqueness error, got: {}",
             err.message
         );
     }
 
-    // 25. same name at different versions with scope bindings is NOT rejected
+    // 25. same name at different versions is NOT rejected (distinct identities)
     #[test]
     fn j12_packet1_same_name_different_version_scoped_not_rejected() {
         // Both entries have scope_binding but differ in version, so their
@@ -1742,5 +1740,80 @@ mod tests {
         });
         let cfg = parse_ok(&json);
         assert_eq!(cfg.providers[0].capabilities.len(), 2);
+    }
+
+    // ------------------------------------------------------------------
+    // J12 Packet 2 global exact-identity uniqueness
+    // ------------------------------------------------------------------
+
+    // 26. duplicate unscoped exact identity across providers is rejected
+    #[test]
+    fn j12_packet2_duplicate_unscoped_across_providers_rejected() {
+        // Two providers carry the same (name, version) with no scope_binding.
+        // J12 Packet 2 rejects all cross-provider duplicates.
+        let json = serde_json::json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "example.local",
+                "version": "1",
+                "tethers": [
+                    {"id": "t", "version": "v1", "source_path": "t.tether"}
+                ],
+                "capability_requirements": [
+                    {"name": "lantern.task.record", "version": 1}
+                ]
+            },
+            "providers": [
+                {
+                    "id": "lantern-a",
+                    "display_name": "Lantern A",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "lantern.task.record",
+                            "version": 1,
+                            "manifest_path": "manifests/a.json",
+                            "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                    ]
+                },
+                {
+                    "id": "lantern-b",
+                    "display_name": "Lantern B",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "lantern.task.record",
+                            "version": 1,
+                            "manifest_path": "manifests/b.json",
+                            "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                    ]
+                }
+            ],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    {"name": "lantern.task.record", "version": 1, "decision": "allow"}
+                ]
+            }
+        });
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::DuplicateEntry);
+        assert!(
+            err.message.contains("globally unique"),
+            "expected global-uniqueness error, got: {}",
+            err.message
+        );
     }
 }

@@ -1,4 +1,5 @@
 pub mod approval;
+pub mod configured_runtime;
 pub mod dispatch;
 pub mod event_admission;
 mod event_queue;
@@ -571,7 +572,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let normal = parse_normal_args(&args)?;
 
-    let mut request: Value = serde_json::from_str(&fs::read_to_string(&normal.request_path)?)?;
+    let request: Value = serde_json::from_str(&fs::read_to_string(&normal.request_path)?)?;
 
     // --- Build the approved capability view before planner evaluation ---
 

@@ -585,12 +585,94 @@ Packet 2 owns runtime wiring and live scope assessment.
 10. **Structured scope kinds fail closed.** Only `path_prefix` in Packet 1.
 11. **Duplicate-key rejection is shared** via `manifest::parse_value_no_dupes`.
 
-### Packet 2 boundaries
+### Packet 2 boundaries (superseded by Packet 2 implementation)
 
-- Launching a provider process.
-- Admitting a manifest into the trusted store.
-- Invoking the Tethers engine.
-- Assessing a live Action against scope bindings and manifests.
-- Dispatching an Action to a provider.
-- Writing dispatch, execution, or result Trail entries.
-- Creating a J13 command, CLI, daemon, or GUI.
+The boundaries listed in Packet 1 were corrected by Packet 2. See below.
+
+## 2026-07-28: J12 Runtime Preparation And Scope Closure
+
+Decision: J12 Packet 2 completes the local runtime foundation by turning a
+LoadedRuntimeConfig into a complete, immutable PreparedRuntime. Packet 2 owns
+filesystem loading, manifest verification, admission, scope assessment, and
+launch-plan construction. It performs no provider launch, engine invocation,
+dispatch, or Trail writing.
+
+### Global exact-identity uniqueness
+
+Every exact capability identity `(name, version)` must appear under exactly one
+configured provider. Duplicate exact identities across providers are rejected
+whether or not `scope_binding` is present.
+
+Reasons:
+- requirements identify capabilities by exact name and version;
+- the TrustedManifestStore indexes by exact name and version;
+- the configuration has no provider-selector field on requirements;
+- silently choosing between providers would be non-deterministic authority.
+
+### Asset confinement
+
+Tether and manifest paths originate relative to the configuration directory.
+Every source and manifest path is resolved against the canonical config
+directory, canonicalised, and required to remain beneath it. `../` escapes,
+directories, missing files, and unreadable or invalid text (including NUL)
+are rejected.
+
+### Manifest verification and admission
+
+For each configured provider capability, the reviewed manifest file is read,
+verified via `manifest::verify_manifest`, cross-checked against configuration
+(name, version, provider identity, pinned digest), scope-binding compatibility
+is validated, and the VerifiedManifest is admitted through the existing
+`provider::admit_provider_manifest` boundary. No direct TrustedManifestStore
+insertion bypass exists.
+
+### Scope-binding compatibility
+
+- PathPrefix manifest: scope_binding is required, kind must be PathPrefix,
+  allowed_prefixes come only from the verified manifest.
+- Unrestricted manifest: scope_binding must be absent.
+- Repository or Calendar manifest: UnsupportedPermissionScope (fail closed).
+- Unexpected binding on Unrestricted manifest: UnexpectedScopeBinding.
+- Missing binding on PathPrefix manifest: MissingScopeBinding.
+
+### Binding-owned scope assessor
+
+`assess_action_scope` is a pure method that locates the exact PreparedCapability
+using all four identity pins (capability name, bridge version, provider
+identity, manifest digest), then applies PathPrefix assessment with configured
+JSON Pointer extraction and segment-precise prefix matching. It returns
+WithinScope, ScopeViolation, or ScopeNotEstablished. No I/O occurs.
+
+### Planner capability descriptors
+
+Deterministic descriptors are derived only from verified manifests, sorted by
+(name, version). Input schemas are converted to scalar types only (string,
+boolean, number). Live bridge pins are omitted; J13 adds them after provider
+admission and availability.
+
+### Provider launch plans
+
+PreparedProvider carries literal command, arguments, protocol version,
+ProviderConfig, canonical config directory as working directory, and verified
+capability manifests. No provider is launched in J12.
+
+### PreparedRuntime immutability
+
+PreparedRuntime exposes read-only access to all fields. No mutation can alter
+admitted identities, manifests, policy, or Tether order after construction.
+
+### J12/J13/J14 boundaries (corrected)
+
+- J12 Packet 2: filesystem loading, manifest verification/admission, scope
+  assessment, launch-plan construction, PreparedRuntime assembly.
+- J13: public check/run/trail commands, provider launch and live availability
+  snapshots, OCaml engine invocation, Anchor+Facts assembly with
+  PreparedRuntime, Trail location and printing.
+- J14: actual configured provider capability call, intent, dispatch, validated
+  output and Result Anchor through the public route, complete positive and
+  negative integration matrix.
+
+### Open Decisions
+
+- Whether future documentation should live at the workspace root, inside
+  `tethers-0.1/`, or both.
