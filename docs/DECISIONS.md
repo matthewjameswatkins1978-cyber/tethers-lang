@@ -676,3 +676,119 @@ admitted identities, manifests, policy, or Tether order after construction.
 
 - Whether future documentation should live at the workspace root, inside
   `tethers-0.1/`, or both.
+
+## 2026-07-28: J13A Process Supervision And Check Command
+
+### Final Candidate 2.1 Corrections
+
+1. Ctrl+C while reading stdin belongs to exit 10 (interrupted), not exit 3
+   (invalid_data). Malformed, over-limit or multi-document stdin belongs to
+   exit 3. J13A does not implement run/stdin yet, but the shared outcome model
+   encodes this distinction.
+
+2. Check ordering is:
+   CLI/path validation -> J12 runtime preparation -> retained engine startup
+   -> ordered validation of every Tether -> retained provider startup and
+   availability verification -> result envelope -> child cleanup.
+
+3. Future trail input uses `--execution-id <exec_UUID>` parsed with the
+   existing `ExecutionId::parse` format. Not implemented in J13A.
+
+4. After an Action invocation boundary, interruption classifies the outcome as
+   uncertain (exit 7) and attempts required durable recording.
+   - recording succeeds -> exit 7
+   - required outcome, replay or result-event recording fails -> exit 8
+   Exit 8 means a succeeded, failed or uncertain classification exists but
+   required durable recording failed. J13A encodes this vocabulary; J13B
+   implements Action execution.
+
+5. There is no automatic fallback to the legacy positional parser. The legacy
+   route is available only through the explicit hidden subcommand `__legacy`.
+   Unknown commands, including "runn", return exit 2 and never enter legacy
+   execution.
+
+### Explicit --engine Ownership
+
+The `--engine` option on the `check` command points to the OCaml MCP engine
+executable (`tethers_mcp_main.exe`). The host owns the engine lifecycle:
+launch, initialize, per-Tether validation, and shutdown. The engine is a
+retained session (one launch per check command), not a per-request ephemeral
+process.
+
+### Engine-Before-Validation Ordering
+
+The engine is started before any Tether validation. All Tethers are validated
+in declared order through a single retained engine session. Providers are not
+started until all Tethers validate successfully.
+
+### One Request Per Tether
+
+Each Tether receives exactly one `tethers.validate` MCP request through the
+engine session. No `tethers.evaluate` request is permitted during check.
+
+### Fixed Process Timeouts
+
+Production constants:
+- startup / initialize / request timeout: 10 sec
+- normal graceful close wait: 2 sec
+- maximum protocol line: 8 MiB
+- retained stderr tail: 64 KiB
+
+Tests may inject shorter timeout values through test-only constructors.
+
+### Windows Job Object Ownership
+
+Every child process is assigned to a Windows Job Object configured with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. On host exit or panic, closing the Job
+Object terminates descendant processes as well as the direct child. Job
+assignment is best-effort: when the parent is in a restrictive job (common in
+test harnesses), assignment may silently fail and the child still runs.
+
+### One JSON Envelope
+
+Every invocation emits exactly one compact JSON document to stdout. There is
+no timestamp in the envelope. Diagnostics go only to stderr.
+
+### No Timestamp
+
+The base envelope shape is:
+```json
+{
+  "schema": "tethers.cli/1",
+  "command": "check",
+  "status": "ok",
+  "exit_code": 0,
+  "data": {},
+  "error": null
+}
+```
+
+No `timestamp` or `timestamp_unix_ms` field exists in the CLI envelope.
+
+### Hidden __legacy Gate With No Fallback
+
+The legacy positional parser is reachable only through the explicit hidden
+subcommand `__legacy`. Unknown commands, unknown subcommands, misspelled
+commands (e.g., "runn"), and absent commands all return exit 2 and emit a
+JSON envelope. There is no automatic fallback or fuzzy matching.
+
+### Execution Identity Remains exec_<UUID>
+
+The `ExecutionId` type continues to use `exec_<UUID>` format. Future J13B/J13C
+will use `--execution-id` for trail input.
+
+### Audit Failure Precedence
+
+When an Action has been invoked and the outcome is uncertain, the host attempts
+durable recording. If recording succeeds, exit 7 (uncertain). If recording
+fails, exit 8 (audit_failed) takes precedence over the uncertain classification.
+
+### J13A/J13B/J13C/J14 Boundary
+
+- J13A: check command with engine and provider availability verification.
+- J13B: typed host execution service extraction, run command.
+- J13C: trail command with `--execution-id`.
+- J14: actual provider capability call proof, complete integration matrix.
+
+J13A implements no provider capability call, event evaluation, policy decision,
+dispatch, Trail write, or replay write.
