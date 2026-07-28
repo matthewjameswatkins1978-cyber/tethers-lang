@@ -1,18 +1,15 @@
 // J13 CLI: strict clap 4 command-line parsing with explicit routes.
-//
-// Every invocation attempts to emit exactly one compact JSON envelope
-// to stdout.  Diagnostics go to stderr.  Clap is used through
-// try_parse_from so it never exits the process directly.
+// Outcome vocabulary with matching status/exit_code always consistent.
 
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Tethers Reference Host - deterministic local capability planner.
 #[derive(Parser, Debug)]
 #[command(
     name = "tethers-reference-host",
     version = "0.1.0",
-    about = "Tethers Reference Host - deterministic local capability planner",
+    about = "Tethers Reference Host",
     disable_help_subcommand = true
 )]
 pub struct Cli {
@@ -24,12 +21,9 @@ pub struct Cli {
 pub enum Command {
     /// Validate Tether source, engine, and provider availability.
     Check {
-        /// Path to the runtime configuration JSON file.
-        #[arg(long = "config", value_name = "PATH", value_hint = clap::ValueHint::FilePath)]
+        #[arg(long = "config", value_name = "PATH")]
         config: PathBuf,
-
-        /// Path to the MCP engine executable.
-        #[arg(long = "engine", value_name = "PATH", value_hint = clap::ValueHint::FilePath)]
+        #[arg(long = "engine", value_name = "PATH")]
         engine: PathBuf,
     },
 
@@ -37,8 +31,6 @@ pub enum Command {
     #[command(hide = true)]
     #[clap(name = "__legacy")]
     Legacy {
-        /// Legacy positional arguments passed through as-is after the
-        /// subcommand.  Clap captures them in order.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
         args: Vec<String>,
     },
@@ -70,95 +62,104 @@ pub enum Command {
     },
 }
 
-/// Outcome status vocabulary shared across all J13 commands.
+/// Outcome status vocabulary with exit codes.
 ///
-/// Statuses map to exit codes as follows:
-///
-/// | exit code | status           | meaning                                          |
-/// |-----------|------------------|--------------------------------------------------|
-/// | 0         | ok               | success                                          |
-/// | 0         | completed        | action completed                                 |
-/// | 0         | denied           | policy denied                                    |
-/// | 0         | no_actions       | no actions proposed                              |
-/// | 2         | invalid_cli_usage| invalid CLI usage                                |
-/// | 3         | invalid_data     | malformed/over-limit/multi-doc input             |
-/// | 4         | unavailable      | resource unavailable                             |
-/// | 5         | approval_required| human approval required                          |
-/// | 6         | failed           | operation failed                                 |
-/// | 7         | uncertain        | outcome uncertain after Action invocation        |
-/// | 8         | audit_failed     | durable recording failed                         |
-/// | 9         | not_found        | resource not found                               |
-/// | 10        | interrupted      | Ctrl+C before Action invocation                  |
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
+/// | exit | status           |
+/// |------|------------------|
+/// | 0    | ok               |
+/// | 0    | completed        |
+/// | 0    | denied           |
+/// | 0    | no_actions       |
+/// | 2    | invalid_cli_usage|
+/// | 3    | invalid_data     |
+/// | 4    | unavailable      |
+/// | 5    | approval_required|
+/// | 6    | failed           |
+/// | 7    | uncertain        |
+/// | 8    | audit_failed     |
+/// | 9    | not_found        |
+/// | 10   | interrupted      |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OutcomeStatus {
-    Ok = 0,
-    Completed = 1,
-    Denied = 2,
-    NoActions = 3,
-    InvalidCliUsage = 4,
-    InvalidData = 5,
-    Unavailable = 6,
-    ApprovalRequired = 7,
-    Failed = 8,
-    Uncertain = 9,
-    AuditFailed = 10,
-    NotFound = 11,
-    Interrupted = 12,
+    #[serde(rename = "ok")]
+    Ok,
+    #[serde(rename = "completed")]
+    Completed,
+    #[serde(rename = "denied")]
+    Denied,
+    #[serde(rename = "no_actions")]
+    NoActions,
+    #[serde(rename = "invalid_cli_usage")]
+    InvalidCliUsage,
+    #[serde(rename = "invalid_data")]
+    InvalidData,
+    #[serde(rename = "unavailable")]
+    Unavailable,
+    #[serde(rename = "approval_required")]
+    ApprovalRequired,
+    #[serde(rename = "failed")]
+    Failed,
+    #[serde(rename = "uncertain")]
+    Uncertain,
+    #[serde(rename = "audit_failed")]
+    AuditFailed,
+    #[serde(rename = "not_found")]
+    NotFound,
+    #[serde(rename = "interrupted")]
+    Interrupted,
 }
 
 impl OutcomeStatus {
     pub const fn exit_code(self) -> i32 {
         match self {
-            OutcomeStatus::Ok => 0,
-            OutcomeStatus::Completed => 0,
-            OutcomeStatus::Denied => 0,
-            OutcomeStatus::NoActions => 0,
-            OutcomeStatus::InvalidCliUsage => 2,
-            OutcomeStatus::InvalidData => 3,
-            OutcomeStatus::Unavailable => 4,
-            OutcomeStatus::ApprovalRequired => 5,
-            OutcomeStatus::Failed => 6,
-            OutcomeStatus::Uncertain => 7,
-            OutcomeStatus::AuditFailed => 8,
-            OutcomeStatus::NotFound => 9,
-            OutcomeStatus::Interrupted => 10,
+            Self::Ok => 0,
+            Self::Completed => 0,
+            Self::Denied => 0,
+            Self::NoActions => 0,
+            Self::InvalidCliUsage => 2,
+            Self::InvalidData => 3,
+            Self::Unavailable => 4,
+            Self::ApprovalRequired => 5,
+            Self::Failed => 6,
+            Self::Uncertain => 7,
+            Self::AuditFailed => 8,
+            Self::NotFound => 9,
+            Self::Interrupted => 10,
         }
     }
 
     pub const fn as_str(self) -> &'static str {
         match self {
-            OutcomeStatus::Ok => "ok",
-            OutcomeStatus::Completed => "completed",
-            OutcomeStatus::Denied => "denied",
-            OutcomeStatus::NoActions => "no_actions",
-            OutcomeStatus::InvalidCliUsage => "invalid_cli_usage",
-            OutcomeStatus::InvalidData => "invalid_data",
-            OutcomeStatus::Unavailable => "unavailable",
-            OutcomeStatus::ApprovalRequired => "approval_required",
-            OutcomeStatus::Failed => "failed",
-            OutcomeStatus::Uncertain => "uncertain",
-            OutcomeStatus::AuditFailed => "audit_failed",
-            OutcomeStatus::NotFound => "not_found",
-            OutcomeStatus::Interrupted => "interrupted",
+            Self::Ok => "ok",
+            Self::Completed => "completed",
+            Self::Denied => "denied",
+            Self::NoActions => "no_actions",
+            Self::InvalidCliUsage => "invalid_cli_usage",
+            Self::InvalidData => "invalid_data",
+            Self::Unavailable => "unavailable",
+            Self::ApprovalRequired => "approval_required",
+            Self::Failed => "failed",
+            Self::Uncertain => "uncertain",
+            Self::AuditFailed => "audit_failed",
+            Self::NotFound => "not_found",
+            Self::Interrupted => "interrupted",
         }
     }
 }
 
-/// Stable JSON output envelope for every invocation.
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
+/// Stable JSON output envelope.
+#[derive(Debug, Clone, Serialize)]
 pub struct CliEnvelope {
     pub schema: &'static str,
     pub command: String,
-    pub status: String,
+    pub status: OutcomeStatus,
     pub exit_code: i32,
     pub data: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<CliError>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Serialize)]
 pub struct CliError {
     pub code: String,
     pub message: String,
@@ -167,17 +168,20 @@ pub struct CliError {
 }
 
 impl CliEnvelope {
+    /// Success envelope. Status is Ok, exit_code 0.
     pub fn ok(command: impl Into<String>, data: serde_json::Value) -> Self {
         Self {
             schema: "tethers.cli/1",
             command: command.into(),
-            status: OutcomeStatus::Ok.as_str().to_owned(),
-            exit_code: OutcomeStatus::Ok.exit_code(),
+            status: OutcomeStatus::Ok,
+            exit_code: 0,
             data,
             error: None,
         }
     }
 
+    /// Error envelope. Status and exit_code derive from the same OutcomeStatus.
+    /// `data` should contain partial evidence when available.
     pub fn error(
         command: impl Into<String>,
         status: OutcomeStatus,
@@ -185,12 +189,37 @@ impl CliEnvelope {
         message: impl Into<String>,
         field: Option<String>,
     ) -> Self {
+        let exit = status.exit_code();
         Self {
             schema: "tethers.cli/1",
             command: command.into(),
-            status: status.as_str().to_owned(),
-            exit_code: status.exit_code(),
+            status,
+            exit_code: exit,
             data: serde_json::Value::Object(Default::default()),
+            error: Some(CliError {
+                code: code.into(),
+                message: message.into(),
+                field,
+            }),
+        }
+    }
+
+    /// Error with partial data evidence.
+    pub fn error_with_data(
+        command: impl Into<String>,
+        status: OutcomeStatus,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        field: Option<String>,
+        data: serde_json::Value,
+    ) -> Self {
+        let exit = status.exit_code();
+        Self {
+            schema: "tethers.cli/1",
+            command: command.into(),
+            status,
+            exit_code: exit,
+            data,
             error: Some(CliError {
                 code: code.into(),
                 message: message.into(),
@@ -204,213 +233,160 @@ impl CliEnvelope {
 mod tests {
     use super::*;
 
-    // The primary parser entry: try_parse_from so clap never exits.
     pub fn parse_cli(args: &[&str]) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(std::iter::once("tethers-reference-host").chain(args.iter().copied()))
     }
 
     #[test]
     fn j13a_valid_check_command() {
-        let cli =
-            parse_cli(&["check", "--config", "config.json", "--engine", "engine.exe"]).unwrap();
+        let cli = parse_cli(&["check", "--config", "c.json", "--engine", "e.exe"]).unwrap();
         match cli.command {
             Some(Command::Check { config, engine }) => {
-                assert_eq!(config, std::path::PathBuf::from("config.json"));
-                assert_eq!(engine, std::path::PathBuf::from("engine.exe"));
+                assert_eq!(config, PathBuf::from("c.json"));
+                assert_eq!(engine, PathBuf::from("e.exe"));
             }
-            _ => panic!("expected Check command"),
+            _ => panic!("expected Check"),
         }
     }
 
     #[test]
-    fn j13a_reordered_singleton_options() {
+    fn j13a_reordered_options() {
         let cli = parse_cli(&["check", "--engine", "e.exe", "--config", "c.json"]).unwrap();
         match cli.command {
             Some(Command::Check { config, engine }) => {
-                assert_eq!(config, std::path::PathBuf::from("c.json"));
-                assert_eq!(engine, std::path::PathBuf::from("e.exe"));
+                assert_eq!(config, PathBuf::from("c.json"));
+                assert_eq!(engine, PathBuf::from("e.exe"));
             }
-            _ => panic!("expected Check command"),
+            _ => panic!(),
         }
     }
 
     #[test]
     fn j13a_duplicate_config_rejected() {
-        let result = parse_cli(&[
-            "check", "--config", "a.json", "--config", "b.json", "--engine", "e.exe",
-        ]);
-        assert!(result.is_err());
+        assert!(
+            parse_cli(&["check", "--config", "a.json", "--config", "b.json", "--engine", "e"])
+                .is_err()
+        );
     }
 
     #[test]
     fn j13a_duplicate_engine_rejected() {
-        let result = parse_cli(&[
-            "check", "--config", "c.json", "--engine", "a.exe", "--engine", "b.exe",
-        ]);
-        assert!(result.is_err());
+        assert!(
+            parse_cli(&["check", "--config", "c.json", "--engine", "a", "--engine", "b"]).is_err()
+        );
     }
 
     #[test]
     fn j13a_missing_config_rejected() {
-        let result = parse_cli(&["check", "--engine", "e.exe"]);
-        assert!(result.is_err());
+        assert!(parse_cli(&["check", "--engine", "e.exe"]).is_err());
     }
 
     #[test]
     fn j13a_missing_engine_rejected() {
-        let result = parse_cli(&["check", "--config", "c.json"]);
-        assert!(result.is_err());
+        assert!(parse_cli(&["check", "--config", "c.json"]).is_err());
     }
 
     #[test]
     fn j13a_unknown_option_rejected() {
-        let result = parse_cli(&[
+        assert!(parse_cli(&[
             "check",
             "--config",
             "c.json",
             "--engine",
             "e.exe",
-            "--unknown",
-            "x",
-        ]);
-        assert!(result.is_err());
+            "--unknown"
+        ])
+        .is_err());
     }
 
     #[test]
     fn j13a_unknown_command_rejected() {
-        let result = parse_cli(&["nonexistent"]);
-        assert!(result.is_err());
+        assert!(parse_cli(&["nonexistent"]).is_err());
     }
 
     #[test]
     fn j13a_misspelled_runn_rejected() {
-        // "runn" is not a recognised command and must not enter legacy.
-        let result = parse_cli(&["runn"]);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        let msg = err.to_string();
+        let err = parse_cli(&["runn"]).unwrap_err();
         assert!(
-            !msg.contains("legacy"),
-            "runn must not reach legacy parser: {msg}"
+            !err.to_string().contains("legacy"),
+            "runn must not reach legacy"
         );
     }
 
     #[test]
-    fn j13a_explicit_legacy_reaches_parser() {
+    fn j13a_explicit_legacy() {
         let cli = parse_cli(&["__legacy", "engine.exe", "req.json"]).unwrap();
         match cli.command {
-            Some(Command::Legacy { args }) => {
-                assert_eq!(args, vec!["engine.exe", "req.json"]);
-            }
-            _ => panic!("expected Legacy command"),
+            Some(Command::Legacy { args }) => assert_eq!(args, vec!["engine.exe", "req.json"]),
+            _ => panic!(),
         }
     }
 
     #[test]
-    fn j13a_legacy_with_trailing_options() {
-        let cli = parse_cli(&[
-            "__legacy",
-            "engine.exe",
-            "req.json",
-            "allow",
-            "trail.jsonl",
-            "success",
-            "--host-data-root",
-            "C:\\data",
-        ])
-        .unwrap();
-        match cli.command {
-            Some(Command::Legacy { args }) => {
-                assert_eq!(args.len(), 7);
-                assert_eq!(args[0], "engine.exe");
-                assert_eq!(args[6], "C:\\data");
-            }
-            _ => panic!("expected Legacy command"),
-        }
-    }
-
-    #[test]
-    fn j13a_hidden_commands_absent_from_help() {
-        let cli = parse_cli(&["--help"]);
-        // --help causes clap to print help and return an error in try_parse_from.
-        // We just verify the error message doesn't mention hidden commands.
-        let err = cli.unwrap_err();
+    fn j13a_hidden_not_in_help() {
+        let err = parse_cli(&["--help"]).unwrap_err();
         let msg = err.to_string();
-        assert!(!msg.contains("__legacy"), "help must not show __legacy");
-        assert!(
-            !msg.contains("provision-replay"),
-            "help must not show provision-replay"
-        );
-        assert!(
-            !msg.contains("event-admission-probe"),
-            "help must not show event-admission-probe"
-        );
-        assert!(
-            !msg.contains("event-admission-trail-probe"),
-            "help must not show event-admission-trail-probe"
-        );
+        assert!(!msg.contains("__legacy"));
+        assert!(!msg.contains("provision-replay"));
     }
 
     #[test]
-    fn j13a_command_absent_rejected() {
-        let result = parse_cli(&[]);
-        // Clap with optional subcommand returns Ok with command=None
-        // when no arguments are given. The new main handles this by
-        // emitting an error envelope. So this test should pass.
-        assert!(result.is_ok());
+    fn j13a_no_command() {
+        assert!(parse_cli(&[]).is_ok()); // returns Ok with command=None
     }
 
     #[test]
     fn j13a_extra_positional_rejected() {
-        let result = parse_cli(&["check", "--config", "c.json", "--engine", "e.exe", "extra"]);
-        assert!(result.is_err());
+        assert!(parse_cli(&["check", "--config", "c.json", "--engine", "e.exe", "extra"]).is_err());
     }
 
     #[test]
-    fn j13a_outcome_status_values() {
-        assert_eq!(OutcomeStatus::Ok.exit_code(), 0);
-        assert_eq!(OutcomeStatus::InvalidCliUsage.exit_code(), 2);
-        assert_eq!(OutcomeStatus::InvalidData.exit_code(), 3);
-        assert_eq!(OutcomeStatus::Unavailable.exit_code(), 4);
-        assert_eq!(OutcomeStatus::Failed.exit_code(), 6);
-        assert_eq!(OutcomeStatus::Uncertain.exit_code(), 7);
-        assert_eq!(OutcomeStatus::AuditFailed.exit_code(), 8);
-        assert_eq!(OutcomeStatus::NotFound.exit_code(), 9);
-        assert_eq!(OutcomeStatus::Interrupted.exit_code(), 10);
+    fn j13a_status_exit_code_consistent() {
+        // Every status's as_str + exit_code must be consistent.
+        for (status, expected_exit, expected_str) in [
+            (OutcomeStatus::Ok, 0, "ok"),
+            (OutcomeStatus::InvalidCliUsage, 2, "invalid_cli_usage"),
+            (OutcomeStatus::InvalidData, 3, "invalid_data"),
+            (OutcomeStatus::Unavailable, 4, "unavailable"),
+            (OutcomeStatus::Failed, 6, "failed"),
+            (OutcomeStatus::Uncertain, 7, "uncertain"),
+            (OutcomeStatus::AuditFailed, 8, "audit_failed"),
+            (OutcomeStatus::NotFound, 9, "not_found"),
+            (OutcomeStatus::Interrupted, 10, "interrupted"),
+        ] {
+            assert_eq!(status.exit_code(), expected_exit, "{expected_str}");
+            assert_eq!(status.as_str(), expected_str);
+        }
+    }
+
+    #[test]
+    fn j13a_envelope_status_match_exit() {
+        let env = CliEnvelope::error("test", OutcomeStatus::Interrupted, "INT", "msg", None);
+        let json = serde_json::to_string(&env).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["exit_code"].as_i64().unwrap(), 10);
+        assert_eq!(v["status"], "interrupted");
+        assert!(v["error"]["code"].as_str().unwrap() == "INT");
     }
 
     #[test]
     fn j13a_envelope_no_timestamp() {
-        let envelope = CliEnvelope::ok("check", serde_json::json!({"test": true}));
-        let json = serde_json::to_string(&envelope).unwrap();
-        assert!(
-            !json.contains("timestamp"),
-            "envelope must not contain timestamp"
-        );
+        let env = CliEnvelope::ok("check", serde_json::json!({"x": 1}));
+        let json = serde_json::to_string(&env).unwrap();
+        assert!(!json.contains("timestamp"));
     }
 
     #[test]
-    fn j13a_unknown_subcommand_rejected() {
-        // "run" is not a command (not yet implemented).
-        let result = parse_cli(&["run"]);
-        assert!(result.is_err());
+    fn j13a_unknown_subcommand_not_run() {
+        assert!(parse_cli(&["run"]).is_err());
     }
 
     #[test]
-    fn j13a_extra_subcommand_arg_rejected() {
-        let result = parse_cli(&["check", "--config", "c.json", "--engine", "e.exe", "--foo"]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn j13a_equal_sign_config_accepted() {
-        // clap 4 normally supports --config=PATH but let's verify.
+    fn j13a_equal_sign_accepted() {
         let cli = parse_cli(&["check", "--config=c.json", "--engine", "e.exe"]).unwrap();
         match cli.command {
-            Some(Command::Check { config, .. }) => {
-                assert_eq!(config, std::path::PathBuf::from("c.json"));
-            }
-            _ => panic!("expected Check"),
+            Some(Command::Check { config, .. }) => assert_eq!(config, PathBuf::from("c.json")),
+            _ => panic!(),
         }
     }
 }

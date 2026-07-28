@@ -1,14 +1,14 @@
 // MCP engine session manager for the OCaml Tethers MCP engine.
 //
-// Provides one retained engine session that is initialized once and
-// used for per-Tether validation.  No evaluation is permitted during
-// the check command.
+// Uses tools/call with name "tethers.validate" per the real MCP protocol.
+// One retained engine session performs one tools/call per Tether.
+// No tethers.evaluate call is permitted.
 
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use serde_json::Value;
 use std::fmt;
-use std::io::BufRead;
 use std::path::PathBuf;
+use std::time::Duration;
 
 const ENGINE_INITIALIZE_ID: u64 = 1;
 const VALIDATION_REQUEST_BASE_ID: u64 = 100;
@@ -27,6 +27,7 @@ pub enum EngineError {
         message: String,
     },
     SerializeFailed(String),
+    Interrupted,
 }
 
 impl fmt::Display for EngineError {
@@ -41,13 +42,12 @@ impl fmt::Display for EngineError {
                 tether_version,
                 error_code,
                 message,
-            } => {
-                write!(
-                    f,
-                    "validation failed for tether {tether_index} ({tether_id} v{tether_version}): [{error_code}] {message}"
-                )
-            }
+            } => write!(
+                f,
+                "validation failed for tether {tether_index} ({tether_id} v{tether_version}): [{error_code}] {message}"
+            ),
             Self::SerializeFailed(msg) => write!(f, "serialization failed: {msg}"),
+            Self::Interrupted => write!(f, "engine session interrupted"),
         }
     }
 }
@@ -56,14 +56,18 @@ impl std::error::Error for EngineError {}
 
 impl From<ChildError> for EngineError {
     fn from(e: ChildError) -> Self {
-        EngineError::Child(e)
+        match e {
+            ChildError::Interrupted => EngineError::Interrupted,
+            other => EngineError::Child(other),
+        }
     }
 }
 
-/// A retained MCP engine session.
+/// Retained MCP engine session using tools/call for Tether validation.
 pub struct EngineSession {
     child: SupervisedChild,
     next_request_id: u64,
+    read_timeout: Duration,
 }
 
 impl EngineSession {
@@ -78,7 +82,7 @@ impl EngineSession {
 
         let mut child = SupervisedChild::launch(config)?;
 
-        // Perform initialize.
+        // MCP initialize.
         let init_request = serde_json::json!({
             "jsonrpc": "2.0",
             "id": ENGINE_INITIALIZE_ID,
@@ -94,10 +98,8 @@ impl EngineSession {
         });
 
         Self::write_json(&mut child, &init_request)?;
-        let init_response =
-            Self::read_json_response(&mut child, ENGINE_INITIALIZE_ID, "initialize")?;
+        let init_response = Self::read_json(&mut child, ENGINE_INITIALIZE_ID, "initialize")?;
 
-        // Verify protocol version.
         let version = init_response
             .get("protocolVersion")
             .and_then(Value::as_str)
@@ -112,11 +114,13 @@ impl EngineSession {
             )));
         }
 
-        // Verify engine advertises tethers capability.
-        let tethers_caps = init_response.pointer("/capabilities/tethers");
-        if tethers_caps.is_none() || !tethers_caps.unwrap().is_object() {
+        // Verify engine advertises tools capability (needed for tools/call).
+        if !init_response
+            .pointer("/capabilities/tools")
+            .is_some_and(|v| v.is_object())
+        {
             return Err(EngineError::InitializeFailed(
-                "engine did not advertise tethers capability".to_owned(),
+                "engine did not advertise tools capability".to_owned(),
             ));
         }
 
@@ -131,10 +135,11 @@ impl EngineSession {
         Ok(Self {
             child,
             next_request_id: VALIDATION_REQUEST_BASE_ID,
+            read_timeout: Duration::from_secs(10),
         })
     }
 
-    /// Validate one Tether source. Returns Ok(()) on successful validation.
+    /// Validate one Tether source via tools/call.
     pub fn validate_tether(
         &mut self,
         index: usize,
@@ -145,73 +150,79 @@ impl EngineSession {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
 
+        // Use tools/call with name "tethers.validate".
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "id": request_id,
-            "method": "tethers.validate",
+            "method": "tools/call",
             "params": {
-                "tether": {
-                    "id": id,
-                    "version": version,
+                "name": "tethers.validate",
+                "arguments": {
                     "source": source
                 }
             }
         });
 
         Self::write_json(&mut self.child, &request)?;
-        let response = Self::read_json_response(&mut self.child, request_id, "tethers.validate")?;
+        let result = Self::read_json(&mut self.child, request_id, "tools/call")?;
 
-        // Check for validation status.
-        let status = response.get("status").and_then(Value::as_str);
-        match status {
-            Some("valid") => Ok(()),
-            Some("invalid") | Some("error") => {
-                let error_code = response
-                    .get("error_code")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown");
-                let message = response
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("validation failed");
-                Err(EngineError::ValidationFailed {
-                    tether_index: index,
-                    tether_id: id.to_owned(),
-                    tether_version: version.to_owned(),
-                    error_code: error_code.to_owned(),
-                    message: message.to_owned(),
-                })
-            }
-            _ => Err(EngineError::ProtocolError(format!(
-                "unexpected validation status for tether {index}: {status:?}"
-            ))),
+        // Parse result.structuredContent.valid.
+        let structured = result.get("structuredContent").ok_or_else(|| {
+            EngineError::ProtocolError("tools/call result missing structuredContent".to_owned())
+        })?;
+
+        let valid = structured
+            .get("valid")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                EngineError::ProtocolError("structuredContent missing valid field".to_owned())
+            })?;
+
+        if valid {
+            Ok(())
+        } else {
+            let error_code = structured
+                .pointer("/error/code")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_owned();
+            let message = structured
+                .pointer("/error/message")
+                .and_then(Value::as_str)
+                .unwrap_or("validation failed")
+                .to_owned();
+            Err(EngineError::ValidationFailed {
+                tether_index: index,
+                tether_id: id.to_owned(),
+                tether_version: version.to_owned(),
+                error_code,
+                message,
+            })
         }
     }
 
-    /// Get the retained stderr diagnostic tail.
     pub fn stderr_tail(&self) -> String {
         self.child.stderr_tail()
     }
 
-    /// Shut down the engine gracefully.
     pub fn shutdown(self) {
         self.child.shutdown();
     }
 
-    // Private helpers.
+    // --- Private helpers ---
 
-    fn write_json(child: &mut SupervisedChild, message: &Value) -> Result<(), EngineError> {
-        let line = serde_json::to_string(message)
-            .map_err(|e| EngineError::SerializeFailed(e.to_string()))?;
+    fn write_json(child: &mut SupervisedChild, msg: &Value) -> Result<(), EngineError> {
+        let line =
+            serde_json::to_string(msg).map_err(|e| EngineError::SerializeFailed(e.to_string()))?;
         child.write_line(&line).map_err(EngineError::from)
     }
 
-    fn read_json_response(
+    fn read_json(
         child: &mut SupervisedChild,
         expected_id: u64,
         method: &str,
     ) -> Result<Value, EngineError> {
-        let line = child.read_protocol_line()?;
+        let line = child.read_protocol_line(Duration::from_secs(10))?;
         let line = line.trim();
         if line.is_empty() {
             return Err(EngineError::ProtocolError(
@@ -226,14 +237,12 @@ impl EngineSession {
             EngineError::ProtocolError("engine response not a JSON object".to_owned())
         })?;
 
-        // Check jsonrpc.
         if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
             return Err(EngineError::ProtocolError(
                 "engine response missing jsonrpc 2.0".to_owned(),
             ));
         }
 
-        // Check for error.
         if let Some(error) = obj.get("error") {
             let msg = error
                 .get("message")
@@ -244,7 +253,6 @@ impl EngineSession {
             )));
         }
 
-        // Check id matches.
         match obj.get("id") {
             Some(Value::Number(n)) if n.as_u64() == Some(expected_id) => {}
             Some(other) => {
@@ -270,9 +278,7 @@ impl EngineSession {
 mod tests {
     use super::*;
 
-    // Engine tests require the OCaml engine binary built.
-    // These are focused on protocol-level unit testing.
-    // Integration tests live in test-j13a-check.ps1.
+    const VALID_TETHER: &str = "tether \"Test tether\"\n\nanchor\n    coding.task_completed\n\nwhen\n    project.type is \"software\"\n\ndo\n    lantern.task.record\n        project: anchor.project\n";
 
     fn engine_binary_path() -> Option<PathBuf> {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -289,95 +295,59 @@ mod tests {
         }
     }
 
+    fn require_engine() -> (PathBuf, PathBuf) {
+        let ep = engine_binary_path()
+            .expect("engine binary not found; build with opam exec -- dune build");
+        let wd = ep.parent().unwrap().to_path_buf();
+        (ep, wd)
+    }
+
     #[test]
-    fn j13a_engine_launch_and_validate_valid_tether() {
-        let engine_path = match engine_binary_path() {
-            Some(p) => p,
-            None => {
-                eprintln!("SKIP: engine binary not found");
-                return;
-            }
-        };
-
-        let working_dir = engine_path.parent().unwrap().to_path_buf();
-
-        let mut session = match EngineSession::launch(&engine_path, &working_dir) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("SKIP: engine launch failed (env restriction): {e}");
-                return;
-            }
-        };
-
-        // Validate a simple valid tether.
-        let result =
-            session.validate_tether(0, "test.tether", "1.0.0", "on event hello do log \"ok\"\n");
+    fn j13a_real_engine_valid_tether_via_tools_call() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let result = session.validate_tether(0, "test.tether", "1.0.0", VALID_TETHER);
         assert!(
             result.is_ok(),
             "valid tether should pass: {:?}",
             result.err()
         );
-
         session.shutdown();
     }
 
     #[test]
-    fn j13a_engine_validate_invalid_tether() {
-        let engine_path = match engine_binary_path() {
-            Some(p) => p,
-            None => {
-                eprintln!("SKIP: engine binary not found");
-                return;
-            }
-        };
-
-        let working_dir = engine_path.parent().unwrap().to_path_buf();
-
-        let mut session = match EngineSession::launch(&engine_path, &working_dir) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("SKIP: engine launch failed (env restriction): {e}");
-                return;
-            }
-        };
-
-        // Validate an invalid tether.
+    fn j13a_real_engine_invalid_tether_via_tools_call() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let result = session.validate_tether(0, "bad.tether", "1.0.0", "garbage syntax {{{");
         match result {
-            Err(EngineError::ValidationFailed { .. }) => {} // expected
-            Ok(()) => panic!("invalid tether should fail validation"),
+            Err(EngineError::ValidationFailed { .. }) => {}
+            Ok(()) => panic!("invalid tether should fail"),
             Err(e) => panic!("expected ValidationFailed, got {e:?}"),
         }
-
         session.shutdown();
     }
 
     #[test]
-    fn j13a_engine_one_retained_session() {
-        let engine_path = match engine_binary_path() {
-            Some(p) => p,
-            None => {
-                eprintln!("SKIP: engine binary not found");
-                return;
-            }
-        };
+    fn j13a_engine_one_retained_session_multiple_tethers() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        assert!(session
+            .validate_tether(0, "t1", "1.0.0", VALID_TETHER)
+            .is_ok());
+        assert!(session
+            .validate_tether(1, "t2", "1.0.0", VALID_TETHER)
+            .is_ok());
+        session.shutdown();
+    }
 
-        let working_dir = engine_path.parent().unwrap().to_path_buf();
-
-        let mut session = match EngineSession::launch(&engine_path, &working_dir) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("SKIP: engine launch failed (env restriction): {e}");
-                return;
-            }
-        };
-
-        // Validate multiple tethers through the same session.
-        let t1 = session.validate_tether(0, "t1", "1.0.0", "on event hello do log \"ok\"\n");
-        let t2 = session.validate_tether(1, "t2", "1.0.0", "on event world do log \"ok\"\n");
-        assert!(t1.is_ok(), "t1 should be valid: {:?}", t1.err());
-        assert!(t2.is_ok(), "t2 should be valid: {:?}", t2.err());
-
+    #[test]
+    fn j13a_engine_no_tethers_evaluate_sent() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        assert!(session
+            .validate_tether(0, "t", "1.0.0", VALID_TETHER)
+            .is_ok());
         session.shutdown();
     }
 }

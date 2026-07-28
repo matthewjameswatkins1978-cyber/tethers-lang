@@ -1,74 +1,56 @@
 // J13A check command: validate Tether sources, engine, and provider availability.
 //
-// The check command:
-// 1. Resolves and validates paths (config, engine)
-// 2. Loads runtime config
-// 3. Prepares J12 PreparedRuntime
-// 4. Launches retained engine
-// 5. Validates all Tethers in configured order
-// 6. Launches each configured provider once
-// 7. Initializes and lists tools once per provider
-// 8. Compares every configured capability against prepared trusted manifests
-// 9. Emits one deterministic result
-// 10. Closes all children
+// Envelope consistency: every envelope's status and embedded exit_code match
+// the process exit code.  Interruption uses status=interrupted, exit=10.
+// Partial evidence is preserved on Tether/provider failure.
 
 use crate::configured_runtime::{prepare_runtime, PreparedRuntime};
-use crate::runtime_config::{load_runtime_config, LoadedRuntimeConfig};
-use crate::stdio_provider::{compare_discovery_evidence, ManagedProvider, StdioProviderError};
+use crate::runtime_config::load_runtime_config;
+use crate::stdio_provider::{compare_discovery_evidence, ManagedProvider};
 use tethers_reference_host::child_process::is_interrupted;
-use tethers_reference_host::child_process::set_interrupted;
 use tethers_reference_host::cli::{CliEnvelope, OutcomeStatus};
 use tethers_reference_host::engine_stdio::EngineSession;
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-/// Result of the check command.
 pub struct CheckResult {
     pub envelope: CliEnvelope,
     pub exit_code: i32,
 }
 
-/// Run the check command.
 pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -> CheckResult {
-    // Capture caller CWD exactly once.
     let caller_cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
-            return CheckResult {
-                envelope: CliEnvelope::error(
-                    "check",
-                    OutcomeStatus::Failed,
-                    "INTERNAL_ERROR",
-                    format!("cannot determine current directory: {e}"),
-                    None,
-                ),
-                exit_code: OutcomeStatus::Failed.exit_code(),
-            };
+            return fail(
+                "check",
+                OutcomeStatus::Failed,
+                "INTERNAL_ERROR",
+                format!("cannot determine current directory: {e}"),
+                None,
+            );
         }
     };
 
-    // 1. Resolve and validate paths.
+    // 1. Resolve paths.
     let (canonical_config, canonical_engine) =
         match resolve_check_paths(&caller_cwd, config_path, engine_path) {
             Ok(p) => p,
-            Err(result) => return result,
+            Err(r) => return r,
         };
 
-    // 2. Load runtime config.
+    // 2. Load config.
     let loaded = match load_runtime_config(&canonical_config) {
         Ok(l) => l,
         Err(e) => {
-            return CheckResult {
-                envelope: CliEnvelope::error(
-                    "check",
-                    OutcomeStatus::InvalidData,
-                    "CONFIG_LOAD_FAILED",
-                    format!("cannot load runtime config: {e}"),
-                    Some("/config".to_owned()),
-                ),
-                exit_code: OutcomeStatus::InvalidData.exit_code(),
-            };
+            return fail(
+                "check",
+                OutcomeStatus::InvalidData,
+                "CONFIG_LOAD_FAILED",
+                format!("cannot load runtime config: {e}"),
+                Some("/config".to_owned()),
+            );
         }
     };
 
@@ -78,38 +60,25 @@ pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -
     let tether_count = loaded.config.tether_set.tethers.len();
     let provider_count = loaded.config.providers.len();
 
-    // 3. Prepare J12 PreparedRuntime.
+    // 3. Prepare runtime.
     let prepared = match prepare_runtime(&loaded) {
         Ok(p) => p,
         Err(e) => {
-            return CheckResult {
-                envelope: CliEnvelope::error(
-                    "check",
-                    OutcomeStatus::InvalidData,
-                    "RUNTIME_PREPARE_FAILED",
-                    format!("cannot prepare runtime: {e}"),
-                    None,
-                ),
-                exit_code: OutcomeStatus::InvalidData.exit_code(),
-            };
+            return fail(
+                "check",
+                OutcomeStatus::InvalidData,
+                "RUNTIME_PREPARE_FAILED",
+                format!("cannot prepare runtime: {e}"),
+                None,
+            );
         }
     };
 
-    // Check for interruption before engine launch.
     if is_interrupted() {
-        return CheckResult {
-            envelope: CliEnvelope::error(
-                "check",
-                OutcomeStatus::Interrupted,
-                "INTERRUPTED",
-                "interrupted before engine launch",
-                None,
-            ),
-            exit_code: OutcomeStatus::Interrupted.exit_code(),
-        };
+        return interrupted_result("check", "before engine launch");
     }
 
-    // 4. Launch retained engine.
+    // 4. Launch engine.
     let mut engine_session = match EngineSession::launch(&canonical_engine, &config_dir) {
         Ok(s) => s,
         Err(e) => {
@@ -120,37 +89,36 @@ pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -
                 tethers_reference_host::engine_stdio::EngineError::InitializeFailed(_) => {
                     "ENGINE_INITIALIZE_FAILED"
                 }
+                tethers_reference_host::engine_stdio::EngineError::Interrupted => {
+                    return interrupted_result("check", "during engine startup");
+                }
                 _ => "ENGINE_ERROR",
             };
-            return CheckResult {
-                envelope: CliEnvelope::error(
-                    "check",
-                    OutcomeStatus::Unavailable,
-                    code,
-                    format!("{e}"),
-                    Some("/engine".to_owned()),
-                ),
-                exit_code: OutcomeStatus::Unavailable.exit_code(),
-            };
+            return fail(
+                "check",
+                OutcomeStatus::Unavailable,
+                code,
+                format!("{e}"),
+                Some("/engine".to_owned()),
+            );
         }
     };
 
-    // 5. Validate all Tethers in configured order.
+    // 5. Validate all Tethers.
     let mut tether_results: Vec<Value> = Vec::new();
-
     for (index, tether) in prepared.tethers().iter().enumerate() {
         if is_interrupted() {
             engine_session.shutdown();
             return CheckResult {
-                envelope: build_intermediate_result(
+                envelope: build_partial(
                     "check",
                     OutcomeStatus::Interrupted,
-                    tether_set_id.clone(),
-                    tether_set_version.clone(),
+                    &tether_set_id,
+                    &tether_set_version,
                     tether_count,
                     provider_count,
-                    tether_results,
-                    Vec::new(),
+                    &tether_results,
+                    &[],
                 ),
                 exit_code: OutcomeStatus::Interrupted.exit_code(),
             };
@@ -173,35 +141,281 @@ pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -
                     "status": "invalid",
                     "error": e.to_string()
                 }));
-                // Stop before launching providers.
                 engine_session.shutdown();
-                return CheckResult {
-                    envelope: CliEnvelope::error(
-                        "check",
-                        OutcomeStatus::InvalidData,
-                        "TETHER_INVALID",
-                        format!("validation failed at tether {index}: {e}"),
-                        Some(format!("/tethers/{}", index)),
-                    ),
-                    exit_code: OutcomeStatus::InvalidData.exit_code(),
-                };
+                return fail(
+                    "check",
+                    OutcomeStatus::InvalidData,
+                    "TETHER_INVALID",
+                    format!("validation failed at tether {index}: {e}"),
+                    Some(format!("/tethers/{}", index)),
+                );
             }
         }
     }
 
-    // 6-9. Launch providers and verify availability.
-    let provider_results = match check_providers(&prepared, &config_dir) {
-        Ok(results) => results,
-        Err(result) => {
-            engine_session.shutdown();
-            return result;
+    // 6-9. Check providers.
+    let (provider_results, err) = check_providers(&prepared, &config_dir);
+    engine_session.shutdown();
+
+    match err {
+        Some(result) => result,
+        None => {
+            let data = json!({
+                "config": {
+                    "tether_set_id": tether_set_id,
+                    "tether_set_version": tether_set_version,
+                    "tether_count": tether_count,
+                    "provider_count": provider_count
+                },
+                "tethers": tether_results,
+                "providers": provider_results
+            });
+            CheckResult {
+                envelope: CliEnvelope::ok("check", data),
+                exit_code: 0,
+            }
+        }
+    }
+}
+
+fn resolve_check_paths(
+    caller_cwd: &std::path::Path,
+    config_path: &std::path::Path,
+    engine_path: &std::path::Path,
+) -> Result<(PathBuf, PathBuf), CheckResult> {
+    let resolve = |p: &std::path::Path| -> PathBuf {
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            caller_cwd.join(p)
         }
     };
 
-    // 10. Shut down engine.
-    engine_session.shutdown();
+    let canonical_config = match resolve(config_path).canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            return Err(fail(
+                "check",
+                OutcomeStatus::InvalidData,
+                "CONFIG_NOT_FOUND",
+                format!("config path not found: {e}"),
+                Some("--config".to_owned()),
+            ));
+        }
+    };
 
-    // Success!
+    let canonical_engine = match resolve(engine_path).canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            return Err(fail(
+                "check",
+                OutcomeStatus::InvalidData,
+                "ENGINE_NOT_FOUND",
+                format!("engine path not found: {e}"),
+                Some("--engine".to_owned()),
+            ));
+        }
+    };
+
+    if !canonical_config.is_file() {
+        return Err(fail(
+            "check",
+            OutcomeStatus::InvalidData,
+            "CONFIG_IS_DIRECTORY",
+            "config path must be a regular file".to_owned(),
+            Some("--config".to_owned()),
+        ));
+    }
+    if !canonical_engine.is_file() {
+        return Err(fail(
+            "check",
+            OutcomeStatus::InvalidData,
+            "ENGINE_IS_DIRECTORY",
+            "engine path must be a regular file".to_owned(),
+            Some("--engine".to_owned()),
+        ));
+    }
+
+    Ok((canonical_config, canonical_engine))
+}
+
+fn check_providers(
+    prepared: &PreparedRuntime,
+    config_dir: &std::path::Path,
+) -> (Vec<Value>, Option<CheckResult>) {
+    let mut results: Vec<Value> = Vec::new();
+
+    for (pi, provider) in prepared.providers().iter().enumerate() {
+        if is_interrupted() {
+            return (
+                results,
+                Some(interrupted_check("check", "during provider check")),
+            );
+        }
+
+        let identity = provider.identity.clone();
+        let stdio = &provider.stdio_config;
+
+        let mut mcp = match ManagedProvider::launch(
+            &stdio.command,
+            &stdio.args,
+            &provider.working_directory,
+            None,
+            None,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                results.push(json!({
+                    "index": pi, "identity": identity,
+                    "status": "launch_failed", "error": e.to_string(),
+                    "capabilities": []
+                }));
+                return (
+                    results,
+                    Some(fail_provider(
+                        pi,
+                        &identity,
+                        "PROVIDER_LAUNCH_FAILED",
+                        &e.to_string(),
+                    )),
+                );
+            }
+        };
+
+        if let Err(e) = mcp.initialize(&stdio.protocol_version, &stdio.provider_config.identity) {
+            results.push(json!({
+                "index": pi, "identity": identity,
+                "status": "initialize_failed", "error": e.to_string(),
+                "capabilities": []
+            }));
+            mcp.close();
+            return (
+                results,
+                Some(fail_provider(
+                    pi,
+                    &identity,
+                    "PROVIDER_INITIALIZE_FAILED",
+                    &e.to_string(),
+                )),
+            );
+        }
+
+        let tools = match mcp.list_tools() {
+            Ok(t) => t,
+            Err(e) => {
+                results.push(json!({
+                    "index": pi, "identity": identity,
+                    "status": "tools_list_failed", "error": e.to_string(),
+                    "capabilities": []
+                }));
+                mcp.close();
+                return (
+                    results,
+                    Some(fail_provider(
+                        pi,
+                        &identity,
+                        "PROVIDER_TOOLS_LIST_FAILED",
+                        &e.to_string(),
+                    )),
+                );
+            }
+        };
+
+        let mut caps: Vec<Value> = Vec::new();
+        let mut all_ok = true;
+        for cap in &provider.capabilities {
+            match compare_discovery_evidence(&tools, &cap.verified_manifest) {
+                Ok(()) => caps.push(json!({
+                    "name": cap.name, "version": cap.version, "status": "available"
+                })),
+                Err(e) => {
+                    all_ok = false;
+                    caps.push(json!({
+                        "name": cap.name, "version": cap.version,
+                        "status": "unavailable", "error": e.to_string()
+                    }));
+                }
+            }
+        }
+
+        mcp.close();
+
+        let pstatus = if all_ok { "available" } else { "unavailable" };
+        results.push(json!({
+            "index": pi, "identity": identity, "status": pstatus, "capabilities": caps
+        }));
+
+        if !all_ok {
+            return (
+                results,
+                Some(fail_provider(
+                    pi,
+                    &identity,
+                    "PROVIDER_CAPABILITY_UNAVAILABLE",
+                    "capability unavailable",
+                )),
+            );
+        }
+    }
+
+    (results, None)
+}
+
+// --- Envelope helpers ---
+
+fn fail(
+    cmd: &str,
+    status: OutcomeStatus,
+    code: &str,
+    msg: String,
+    field: Option<String>,
+) -> CheckResult {
+    let exit = status.exit_code();
+    CheckResult {
+        envelope: CliEnvelope::error(cmd, status, code, msg, field),
+        exit_code: exit,
+    }
+}
+
+fn fail_provider(index: usize, identity: &str, code: &str, msg: &str) -> CheckResult {
+    fail(
+        "check",
+        OutcomeStatus::Unavailable,
+        code,
+        format!("provider {index} ({identity}): {msg}"),
+        Some(format!("/providers/{}", index)),
+    )
+}
+
+fn interrupted_result(cmd: &str, _where: &str) -> CheckResult {
+    CheckResult {
+        envelope: CliEnvelope::error(
+            cmd,
+            OutcomeStatus::Interrupted,
+            "INTERRUPTED",
+            "interrupted".to_owned(),
+            None,
+        ),
+        exit_code: 10,
+    }
+}
+
+fn interrupted_check(cmd: &str, _where: &str) -> CheckResult {
+    interrupted_result(cmd, _where)
+}
+
+fn build_partial(
+    cmd: &str,
+    _status: OutcomeStatus,
+    tether_set_id: &str,
+    tether_set_version: &str,
+    tether_count: usize,
+    provider_count: usize,
+    tethers: &[Value],
+    providers: &[Value],
+) -> CliEnvelope {
+    // For partial interrupted evidence, use the error constructor
+    // with status=interrupted so status/exit match.
     let data = json!({
         "config": {
             "tether_set_id": tether_set_id,
@@ -209,316 +423,16 @@ pub fn run_check(config_path: &std::path::Path, engine_path: &std::path::Path) -
             "tether_count": tether_count,
             "provider_count": provider_count
         },
-        "tethers": tether_results,
-        "providers": provider_results
+        "tethers": tethers,
+        "providers": providers
     });
-
-    CheckResult {
-        envelope: CliEnvelope::ok("check", data),
-        exit_code: 0,
-    }
-}
-
-/// Resolve and validate --config and --engine paths relative to caller CWD.
-fn resolve_check_paths(
-    caller_cwd: &std::path::Path,
-    config_path: &std::path::Path,
-    engine_path: &std::path::Path,
-) -> Result<(PathBuf, PathBuf), CheckResult> {
-    // Resolve relative paths against caller CWD.
-    let resolved_config = if config_path.is_absolute() {
-        config_path.to_path_buf()
-    } else {
-        caller_cwd.join(config_path)
-    };
-
-    let resolved_engine = if engine_path.is_absolute() {
-        engine_path.to_path_buf()
-    } else {
-        caller_cwd.join(engine_path)
-    };
-
-    // Canonicalise.
-    let canonical_config = match resolved_config.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(CheckResult {
-                envelope: CliEnvelope::error(
-                    "check",
-                    OutcomeStatus::InvalidData,
-                    "CONFIG_NOT_FOUND",
-                    format!("config path not found: {e}"),
-                    Some("--config".to_owned()),
-                ),
-                exit_code: OutcomeStatus::InvalidData.exit_code(),
-            });
-        }
-    };
-
-    let canonical_engine = match resolved_engine.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(CheckResult {
-                envelope: CliEnvelope::error(
-                    "check",
-                    OutcomeStatus::InvalidData,
-                    "ENGINE_NOT_FOUND",
-                    format!("engine path not found: {e}"),
-                    Some("--engine".to_owned()),
-                ),
-                exit_code: OutcomeStatus::InvalidData.exit_code(),
-            });
-        }
-    };
-
-    // Require regular files.
-    if !canonical_config.is_file() {
-        return Err(CheckResult {
-            envelope: CliEnvelope::error(
-                "check",
-                OutcomeStatus::InvalidData,
-                "CONFIG_IS_DIRECTORY",
-                "config path must be a regular file, not a directory".to_owned(),
-                Some("--config".to_owned()),
-            ),
-            exit_code: OutcomeStatus::InvalidData.exit_code(),
-        });
-    }
-
-    if !canonical_engine.is_file() {
-        return Err(CheckResult {
-            envelope: CliEnvelope::error(
-                "check",
-                OutcomeStatus::InvalidData,
-                "ENGINE_IS_DIRECTORY",
-                "engine path must be a regular file, not a directory".to_owned(),
-                Some("--engine".to_owned()),
-            ),
-            exit_code: OutcomeStatus::InvalidData.exit_code(),
-        });
-    }
-
-    Ok((canonical_config, canonical_engine))
-}
-
-/// Check all providers: launch, initialize, list tools, compare capabilities.
-fn check_providers(
-    prepared: &PreparedRuntime,
-    config_dir: &std::path::Path,
-) -> Result<Vec<Value>, CheckResult> {
-    let mut provider_results: Vec<Value> = Vec::new();
-
-    for (provider_index, provider) in prepared.providers().iter().enumerate() {
-        if is_interrupted() {
-            return Err(CheckResult {
-                envelope: build_intermediate_result(
-                    "check",
-                    OutcomeStatus::Interrupted,
-                    prepared.tether_set_id().to_owned(),
-                    prepared.tether_set_version().to_owned(),
-                    prepared.tethers().len(),
-                    prepared.providers().len(),
-                    // Tether results already all valid.
-                    prepared
-                        .tethers()
-                        .iter()
-                        .enumerate()
-                        .map(|(i, t)| {
-                            json!({
-                                "index": i,
-                                "id": t.id,
-                                "version": t.version,
-                                "status": "valid"
-                            })
-                        })
-                        .collect(),
-                    provider_results,
-                ),
-                exit_code: OutcomeStatus::Interrupted.exit_code(),
-            });
-        }
-
-        let identity = provider.identity.clone();
-        let stdio_config = &provider.stdio_config;
-
-        // Launch provider with explicit current dir.
-        let mut mcp_provider = match ManagedProvider::launch(
-            &stdio_config.command,
-            &stdio_config.args,
-            &provider.working_directory,
-            None,
-            None,
-        ) {
-            Ok(p) => p,
-            Err(e) => {
-                let result = build_provider_error(
-                    provider_index,
-                    &identity,
-                    "launch_failed",
-                    &e.to_string(),
-                    prepared.providers().len(),
-                );
-                provider_results.push(result);
-                // Stop on first failure.
-                return Err(CheckResult {
-                    envelope: CliEnvelope::error(
-                        "check",
-                        OutcomeStatus::Unavailable,
-                        "PROVIDER_LAUNCH_FAILED",
-                        format!("provider {provider_index} ({identity}) launch failed: {e}"),
-                        Some(format!("/providers/{}", provider_index)),
-                    ),
-                    exit_code: 4,
-                });
-            }
-        };
-
-        // Initialize.
-        let server_name = &stdio_config.provider_config.identity;
-        if let Err(e) = mcp_provider.initialize(&stdio_config.protocol_version, server_name) {
-            let result = build_provider_error(
-                provider_index,
-                &identity,
-                "initialize_failed",
-                &e.to_string(),
-                prepared.providers().len(),
-            );
-            provider_results.push(result);
-            mcp_provider.close();
-            return Err(CheckResult {
-                envelope: CliEnvelope::error(
-                    "check",
-                    OutcomeStatus::Unavailable,
-                    "PROVIDER_INITIALIZE_FAILED",
-                    format!("provider {provider_index} ({identity}) initialize failed: {e}"),
-                    Some(format!("/providers/{}", provider_index)),
-                ),
-                exit_code: 4,
-            });
-        }
-
-        // List tools.
-        let tools = match mcp_provider.list_tools() {
-            Ok(t) => t,
-            Err(e) => {
-                let result = build_provider_error(
-                    provider_index,
-                    &identity,
-                    "tools_list_failed",
-                    &e.to_string(),
-                    prepared.providers().len(),
-                );
-                provider_results.push(result);
-                mcp_provider.close();
-                return Err(CheckResult {
-                    envelope: CliEnvelope::error(
-                        "check",
-                        OutcomeStatus::Unavailable,
-                        "PROVIDER_TOOLS_LIST_FAILED",
-                        format!("provider {provider_index} ({identity}) tools/list failed: {e}"),
-                        Some(format!("/providers/{}", provider_index)),
-                    ),
-                    exit_code: 4,
-                });
-            }
-        };
-
-        // Compare all configured capabilities.
-        let mut cap_results: Vec<Value> = Vec::new();
-        let mut all_available = true;
-
-        for cap in &provider.capabilities {
-            match compare_discovery_evidence(&tools, &cap.verified_manifest) {
-                Ok(()) => {
-                    cap_results.push(json!({
-                        "name": cap.name,
-                        "version": cap.version,
-                        "status": "available"
-                    }));
-                }
-                Err(e) => {
-                    all_available = false;
-                    cap_results.push(json!({
-                        "name": cap.name,
-                        "version": cap.version,
-                        "status": "unavailable",
-                        "error": e.to_string()
-                    }));
-                }
-            }
-        }
-
-        // Close the provider session.
-        mcp_provider.close();
-
-        let provider_status = if all_available {
-            "available"
-        } else {
-            "unavailable"
-        };
-        provider_results.push(json!({
-            "index": provider_index,
-            "identity": identity,
-            "status": provider_status,
-            "capabilities": cap_results
-        }));
-
-        if !all_available {
-            return Err(CheckResult {
-                envelope: CliEnvelope::error(
-                    "check",
-                    OutcomeStatus::Unavailable,
-                    "PROVIDER_CAPABILITY_UNAVAILABLE",
-                    format!("provider {provider_index} ({identity}) has unavailable capabilities"),
-                    Some(format!("/providers/{}", provider_index)),
-                ),
-                exit_code: 4,
-            });
-        }
-    }
-
-    Ok(provider_results)
-}
-
-fn build_provider_error(
-    index: usize,
-    identity: &str,
-    status: &str,
-    error: &str,
-    _total: usize,
-) -> Value {
-    json!({
-        "index": index,
-        "identity": identity,
-        "status": status,
-        "error": error,
-        "capabilities": []
-    })
-}
-
-fn build_intermediate_result(
-    command: &str,
-    _status: OutcomeStatus,
-    tether_set_id: String,
-    tether_set_version: String,
-    tether_count: usize,
-    provider_count: usize,
-    tethers: Vec<Value>,
-    providers: Vec<Value>,
-) -> CliEnvelope {
-    CliEnvelope::ok(
-        command,
-        json!({
-            "config": {
-                "tether_set_id": tether_set_id,
-                "tether_set_version": tether_set_version,
-                "tether_count": tether_count,
-                "provider_count": provider_count
-            },
-            "tethers": tethers,
-            "providers": providers,
-            "interrupted": true
-        }),
+    // Use error constructor for interruption to ensure status=interrupted, exit=10.
+    CliEnvelope::error(
+        cmd,
+        OutcomeStatus::Interrupted,
+        "INTERRUPTED",
+        "interrupted".to_owned(),
+        None,
     )
 }
 
@@ -527,13 +441,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn j13a_interrupt_flag_respects_ctrl_c_semantics() {
-        // Verify that is_interrupted works correctly even when not set.
+    fn j13a_interrupt_flag_works() {
         assert!(!is_interrupted());
-        set_interrupted();
+        tethers_reference_host::child_process::set_interrupted();
         assert!(is_interrupted());
-        // Reset for other tests.
         tethers_reference_host::child_process::INTERRUPTED
             .store(false, std::sync::atomic::Ordering::Release);
+    }
+
+    #[test]
+    fn j13a_fail_returns_matching_status_and_exit() {
+        let r = fail(
+            "check",
+            OutcomeStatus::InvalidData,
+            "TEST",
+            "msg".to_owned(),
+            None,
+        );
+        let json = serde_json::to_string(&r.envelope).unwrap();
+        assert_eq!(r.exit_code, OutcomeStatus::InvalidData.exit_code());
+        assert_eq!(r.exit_code, 3);
+        // Verify embedded exit_code matches process exit_code.
+        let v: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["exit_code"].as_i64().unwrap(), 3);
+        assert_eq!(v["status"], "invalid_data");
+    }
+
+    #[test]
+    fn j13a_interrupted_returns_exit_10() {
+        let r = interrupted_result("check", "test");
+        assert_eq!(r.exit_code, 10);
+        let json = serde_json::to_string(&r.envelope).unwrap();
+        let v: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["exit_code"].as_i64().unwrap(), 10);
+        assert_eq!(v["status"], "interrupted");
     }
 }

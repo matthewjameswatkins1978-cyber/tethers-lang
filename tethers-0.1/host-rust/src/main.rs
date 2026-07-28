@@ -653,6 +653,32 @@ fn main() {
                 emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
             }
         },
+        #[cfg(not(debug_assertions))]
+        Ok(Cli {
+            command: Some(CliCommand::EventAdmissionProbe { .. }),
+        }) => {
+            let envelope = CliEnvelope::error(
+                "event-admission-probe",
+                OutcomeStatus::Unavailable,
+                "DEBUG_ONLY",
+                "only available in debug builds",
+                None,
+            );
+            emit_envelope_and_exit(envelope, OutcomeStatus::Unavailable.exit_code());
+        }
+        #[cfg(not(debug_assertions))]
+        Ok(Cli {
+            command: Some(CliCommand::EventAdmissionTrailProbe { .. }),
+        }) => {
+            let envelope = CliEnvelope::error(
+                "event-admission-trail-probe",
+                OutcomeStatus::Unavailable,
+                "DEBUG_ONLY",
+                "only available in debug builds",
+                None,
+            );
+            emit_envelope_and_exit(envelope, OutcomeStatus::Unavailable.exit_code());
+        }
         Ok(Cli { command: None }) => {
             let envelope = CliEnvelope::error(
                 "tethers-reference-host",

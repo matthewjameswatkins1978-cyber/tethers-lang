@@ -1,9 +1,9 @@
 // J13A focused tests: CLI parsing, path resolution, engine session,
 // provider availability, process supervision, and output envelope.
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
-use std::io::Write;
 
 // ===========================================================================
 // CLI parsing tests
@@ -29,7 +29,11 @@ fn run_host(args: &[&str]) -> (i32, String, String) {
     (code, stdout, stderr)
 }
 
-fn assert_envelope(stdout: &str, expected_status: &str, expected_exit_code: i32) -> serde_json::Value {
+fn assert_envelope(
+    stdout: &str,
+    expected_status: &str,
+    expected_exit_code: i32,
+) -> serde_json::Value {
     let envelope: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("stdout must be valid JSON envelope");
     assert_eq!(envelope["schema"], "tethers.cli/1");
@@ -47,7 +51,10 @@ fn j13a_valid_check_command_help() {
     // parse() instead of try_parse_from. With try_parse_from, we get an
     // error that includes help text.
     // Let's just verify we get an exit code indicating CLI usage error.
-    assert!(code != 0 || stdout.contains("Usage:"), "help should show usage");
+    assert!(
+        code != 0 || stdout.contains("Usage:"),
+        "help should show usage"
+    );
 }
 
 #[test]
@@ -77,25 +84,32 @@ fn j13a_check_missing_config_emits_error() {
     let (code, stdout, _) = run_host(&["check", "--engine", "nonexistent.exe"]);
     let env = assert_envelope(&stdout, "invalid_cli_usage", 2);
     // The error should mention missing config
-    assert!(env["error"]["message"].as_str().unwrap_or("").contains("config")
-        || stdout.contains("required"));
+    assert!(
+        env["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("config")
+            || stdout.contains("required")
+    );
 }
 
 #[test]
 fn j13a_check_missing_engine_emits_error() {
     let (code, stdout, _) = run_host(&["check", "--config", "nonexistent.json"]);
     let env = assert_envelope(&stdout, "invalid_cli_usage", 2);
-    assert!(env["error"]["message"].as_str().unwrap_or("").contains("engine")
-        || stdout.contains("required"));
+    assert!(
+        env["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("engine")
+            || stdout.contains("required")
+    );
 }
 
 #[test]
 fn j13a_check_duplicate_config_rejected() {
     let (code, stdout, _) = run_host(&[
-        "check",
-        "--config", "a.json",
-        "--config", "b.json",
-        "--engine", "e.exe",
+        "check", "--config", "a.json", "--config", "b.json", "--engine", "e.exe",
     ]);
     assert_envelope(&stdout, "invalid_cli_usage", 2);
     assert_eq!(code, 2);
@@ -104,10 +118,7 @@ fn j13a_check_duplicate_config_rejected() {
 #[test]
 fn j13a_check_duplicate_engine_rejected() {
     let (code, stdout, _) = run_host(&[
-        "check",
-        "--config", "c.json",
-        "--engine", "a.exe",
-        "--engine", "b.exe",
+        "check", "--config", "c.json", "--engine", "a.exe", "--engine", "b.exe",
     ]);
     assert_envelope(&stdout, "invalid_cli_usage", 2);
     assert_eq!(code, 2);
@@ -117,8 +128,10 @@ fn j13a_check_duplicate_engine_rejected() {
 fn j13a_check_unknown_option_rejected() {
     let (code, stdout, _) = run_host(&[
         "check",
-        "--config", "c.json",
-        "--engine", "e.exe",
+        "--config",
+        "c.json",
+        "--engine",
+        "e.exe",
         "--unknown",
     ]);
     assert_envelope(&stdout, "invalid_cli_usage", 2);
@@ -129,8 +142,10 @@ fn j13a_check_unknown_option_rejected() {
 fn j13a_check_extra_positional_rejected() {
     let (code, stdout, _) = run_host(&[
         "check",
-        "--config", "c.json",
-        "--engine", "e.exe",
+        "--config",
+        "c.json",
+        "--engine",
+        "e.exe",
         "extra_arg",
     ]);
     assert_envelope(&stdout, "invalid_cli_usage", 2);
@@ -141,8 +156,10 @@ fn j13a_check_extra_positional_rejected() {
 fn j13a_check_nonexistent_config_returns_invalid_data() {
     let (code, stdout, _) = run_host(&[
         "check",
-        "--config", "nonexistent-file-xyzzy.json",
-        "--engine", "nonexistent-engine.exe",
+        "--config",
+        "nonexistent-file-xyzzy.json",
+        "--engine",
+        "nonexistent-engine.exe",
     ]);
     // Path resolution happens before checking if files exist.
     // If the path doesn't exist, we get invalid_data.
@@ -178,7 +195,10 @@ fn j13a_hidden_commands_not_in_help() {
 #[test]
 fn j13a_envelope_has_no_timestamp() {
     let (_, stdout, _) = run_host(&[]);
-    assert!(!stdout.contains("timestamp"), "envelope must not contain timestamp");
+    assert!(
+        !stdout.contains("timestamp"),
+        "envelope must not contain timestamp"
+    );
 }
 
 #[test]
@@ -224,11 +244,7 @@ fn j13a_data_field_is_object() {
 fn j13a_reordered_options_accepted() {
     // This tests that option order doesn't matter.
     // We don't need valid paths; just that clap parses them.
-    let (code, stdout, _) = run_host(&[
-        "check",
-        "--engine", "e.exe",
-        "--config", "c.json",
-    ]);
+    let (code, stdout, _) = run_host(&["check", "--engine", "e.exe", "--config", "c.json"]);
     // Will fail because paths don't exist, but the command is parsed.
     let envelope: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     // Should be invalid_data (path not found), not invalid_cli_usage
@@ -243,8 +259,10 @@ fn j13a_directory_config_rejected() {
     std::fs::create_dir_all(&tmp).unwrap();
     let (code, stdout, _) = run_host(&[
         "check",
-        "--config", &tmp.to_string_lossy(),
-        "--engine", "nonexistent.exe",
+        "--config",
+        &tmp.to_string_lossy(),
+        "--engine",
+        "nonexistent.exe",
     ]);
     let envelope: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(envelope["status"], "invalid_data");
@@ -258,8 +276,10 @@ fn j13a_directory_engine_rejected() {
     std::fs::create_dir_all(&tmp).unwrap();
     let (code, stdout, _) = run_host(&[
         "check",
-        "--config", "nonexistent.json",
-        "--engine", &tmp.to_string_lossy(),
+        "--config",
+        "nonexistent.json",
+        "--engine",
+        &tmp.to_string_lossy(),
     ]);
     let envelope: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     // Config not found comes first (invalid_data)
@@ -276,8 +296,10 @@ fn j13a_no_trail_files_created() {
     // Verify no trail.jsonl or replay dirs exist after check fails
     let (code, _, _) = run_host(&[
         "check",
-        "--config", "nonexistent.json",
-        "--engine", "nonexistent.exe",
+        "--config",
+        "nonexistent.json",
+        "--engine",
+        "nonexistent.exe",
     ]);
     assert_eq!(code, 3);
 
@@ -302,8 +324,13 @@ fn j13a_multiple_args_to_legacy() {
     // Test that __legacy passes all trailing args through
     let (code, _stdout, _) = run_host(&[
         "__legacy",
-        "engine.exe", "req.json", "allow", "trail.jsonl", "success",
-        "--host-data-root", "C:\\data",
+        "engine.exe",
+        "req.json",
+        "allow",
+        "trail.jsonl",
+        "success",
+        "--host-data-root",
+        "C:\\data",
     ]);
     // Will fail because engine/req don't exist, but parse succeeds.
     assert_eq!(code, 6); // failed
@@ -326,8 +353,10 @@ fn j13a_stderr_not_contaminated_by_envelope() {
     let (_code, _stdout, stderr) = run_host(&["nonexistent"]);
     if !stderr.is_empty() {
         // If there's stderr content, it should not be valid JSON
-        assert!(serde_json::from_str::<serde_json::Value>(stderr.trim()).is_err(),
-            "stderr must not contain JSON envelope");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(stderr.trim()).is_err(),
+            "stderr must not contain JSON envelope"
+        );
     }
 }
 

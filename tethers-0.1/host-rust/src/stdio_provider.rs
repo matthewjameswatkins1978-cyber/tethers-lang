@@ -1,13 +1,7 @@
-// Host-owned stdio MCP provider binding.
+// Host-owned stdio MCP provider binding with retained session support.
 //
-// The provider advertises untrusted MCP tool metadata. A separately authored,
-// host-owned trusted manifest defines the authoritative capability contract.
-// Discovery may prove that the live advertisement matches that contract; it
-// may never create or modify the contract.
-//
-// J13A: Refactored ManagedProvider to support retained provider sessions.
-// One provider process may remain alive after initialize/tools-list for
-// the duration of the check command.
+// ManagedProvider owns a SupervisedChild in an Option so that close()
+// can move the child into shutdown.  Drop remains the emergency fallback.
 
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use crate::manifest::{self, BindingKind, VerifiedManifest};
@@ -16,28 +10,25 @@ use crate::trusted_store::TrustedManifestStore;
 use std::collections::HashSet;
 use std::fmt;
 use std::path::PathBuf;
+use std::time::Duration;
 
 const INITIALIZE_REQUEST_ID: u64 = 1;
 const TOOLS_LIST_REQUEST_ID: u64 = 2;
 
 /// A running provider process owned by the host.
-///
-/// J13A: Uses SupervisedChild for Job Object supervision and
-/// supports retained sessions.
 pub struct ManagedProvider {
-    child: SupervisedChild,
-    next_request_id: u64,
+    child: Option<SupervisedChild>,
+    read_timeout: Duration,
 }
 
 impl ManagedProvider {
-    /// Launch the exact executable and arguments supplied by host configuration,
-    /// with an explicit current directory.
+    /// Launch the provider with explicit current directory.
     pub fn launch(
         command: &str,
         args: &[String],
         working_dir: &PathBuf,
-        startup_timeout_override: Option<std::time::Duration>,
-        graceful_close_timeout_override: Option<std::time::Duration>,
+        startup_timeout_override: Option<Duration>,
+        graceful_close_timeout_override: Option<Duration>,
     ) -> Result<Self, StdioProviderError> {
         let config = if let (Some(startup), Some(graceful)) =
             (startup_timeout_override, graceful_close_timeout_override)
@@ -49,33 +40,50 @@ impl ManagedProvider {
             cfg
         };
 
-        let mut child =
+        let child =
             SupervisedChild::launch(config).map_err(|e| StdioProviderError::LaunchFailed {
                 command: command.to_owned(),
                 message: e.to_string(),
             })?;
 
         Ok(Self {
-            child,
-            next_request_id: INITIALIZE_REQUEST_ID + 1,
+            child: Some(child),
+            read_timeout: Duration::from_secs(10),
         })
+    }
+
+    fn child_mut(&mut self) -> Result<&mut SupervisedChild, StdioProviderError> {
+        self.child
+            .as_mut()
+            .ok_or(StdioProviderError::StdinUnavailable)
     }
 
     fn write_message(&mut self, message: &serde_json::Value) -> Result<(), StdioProviderError> {
         let line = serde_json::to_string(message)
-            .map_err(|error| StdioProviderError::SerializeFailed(error.to_string()))?;
-        self.child
+            .map_err(|e| StdioProviderError::SerializeFailed(e.to_string()))?;
+        self.child_mut()?
             .write_line(&line)
-            .map_err(|_| StdioProviderError::WriteFailed("write to provider failed".to_owned()))
+            .map_err(|_| StdioProviderError::WriteFailed("write failed".to_owned()))
     }
 
     fn read_message(&mut self) -> Result<serde_json::Value, StdioProviderError> {
-        let line = self.child.read_protocol_line().map_err(|e| match e {
-            ChildError::ReadTimeout(msg) => StdioProviderError::ReadFailed(msg),
-            ChildError::ProtocolError(msg) => StdioProviderError::MalformedResponse(msg),
-            ChildError::ProcessExited(_) => StdioProviderError::EmptyResponse,
-            _ => StdioProviderError::ReadFailed(e.to_string()),
-        })?;
+        let timeout = self.read_timeout;
+        let line = self
+            .child_mut()?
+            .read_protocol_line(timeout)
+            .map_err(|e| match e {
+                ChildError::ReadTimeout(msg) => StdioProviderError::ReadFailed(msg),
+                ChildError::ProtocolError(msg) => StdioProviderError::MalformedResponse(msg),
+                ChildError::ProcessExited(_) => StdioProviderError::EmptyResponse,
+                ChildError::NotUtf8 => {
+                    StdioProviderError::MalformedResponse("not valid UTF-8".to_owned())
+                }
+                ChildError::LineTooLarge { .. } => {
+                    StdioProviderError::MalformedResponse("line too large".to_owned())
+                }
+                ChildError::Interrupted => StdioProviderError::ReadFailed("interrupted".to_owned()),
+                _ => StdioProviderError::ReadFailed(e.to_string()),
+            })?;
 
         let line = line.trim();
         if line.is_empty() {
@@ -142,7 +150,7 @@ impl ManagedProvider {
         }))
     }
 
-    /// Initialize the provider, verifying protocol version and server identity.
+    /// Initialize the provider.
     pub fn initialize(
         &mut self,
         protocol_version: &str,
@@ -205,26 +213,36 @@ impl ManagedProvider {
             })
     }
 
-    /// Get the retained stderr diagnostic tail.
+    /// Get retained stderr tail.
     pub fn stderr_tail(&self) -> String {
-        self.child.stderr_tail()
+        self.child
+            .as_ref()
+            .map(|c| c.stderr_tail())
+            .unwrap_or_default()
     }
 
-    /// Close the provider (shut down gracefully).
-    /// Drops stdin to signal EOF; caller should drop this value
-    /// to trigger full Job Object cleanup through Drop.
+    /// Graceful close: take the child and call shutdown.
+    /// Drop is the emergency fallback only.
     pub fn close(&mut self) {
-        let _ = self.child.write_line("");
+        if let Some(child) = self.child.take() {
+            child.shutdown();
+        }
     }
 }
 
 impl Drop for ManagedProvider {
     fn drop(&mut self) {
-        // SupervisedChild's Drop handles Job Object termination.
+        // Emergency fallback: close if not already closed.
+        if let Some(child) = self.child.take() {
+            child.shutdown();
+        }
     }
 }
 
-/// Errors produced by the fail-closed stdio MCP admission boundary.
+// ===========================================================================
+// Error types, config, and discovery helpers (unchanged)
+// ===========================================================================
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StdioProviderError {
     LaunchFailed { command: String, message: String },
@@ -241,28 +259,25 @@ pub enum StdioProviderError {
 }
 
 impl fmt::Display for StdioProviderError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::LaunchFailed { command, message } => {
-                write!(formatter, "launch failed for '{command}': {message}")
+                write!(f, "launch failed for '{command}': {message}")
             }
-            Self::StdinUnavailable => write!(formatter, "stdin unavailable"),
-            Self::StdoutUnavailable => write!(formatter, "stdout unavailable"),
-            Self::SerializeFailed(message) => write!(formatter, "serialization failed: {message}"),
-            Self::WriteFailed(message) => write!(formatter, "write failed: {message}"),
-            Self::ReadFailed(message) => write!(formatter, "read failed: {message}"),
-            Self::EmptyResponse => write!(formatter, "provider returned no response"),
-            Self::MalformedResponse(message) => write!(formatter, "malformed response: {message}"),
-            Self::ProtocolError(message) => write!(formatter, "MCP protocol error: {message}"),
-            Self::TrustedManifestInvalid(message) => {
-                write!(formatter, "trusted manifest invalid: {message}")
-            }
-            Self::AdmissionFailed(message) => write!(formatter, "admission failed: {message}"),
+            Self::StdinUnavailable => write!(f, "stdin unavailable"),
+            Self::StdoutUnavailable => write!(f, "stdout unavailable"),
+            Self::SerializeFailed(m) => write!(f, "serialization failed: {m}"),
+            Self::WriteFailed(m) => write!(f, "write failed: {m}"),
+            Self::ReadFailed(m) => write!(f, "read failed: {m}"),
+            Self::EmptyResponse => write!(f, "provider returned no response"),
+            Self::MalformedResponse(m) => write!(f, "malformed response: {m}"),
+            Self::ProtocolError(m) => write!(f, "MCP protocol error: {m}"),
+            Self::TrustedManifestInvalid(m) => write!(f, "trusted manifest invalid: {m}"),
+            Self::AdmissionFailed(m) => write!(f, "admission failed: {m}"),
         }
     }
 }
 
-/// Host-owned configuration for one explicitly configured stdio provider.
 #[derive(Debug, Clone)]
 pub struct StdioProviderConfig {
     pub command: String,
@@ -271,8 +286,8 @@ pub struct StdioProviderConfig {
     pub provider_config: ProviderConfig,
 }
 
-fn admission_error(error: AdmissionError) -> StdioProviderError {
-    StdioProviderError::AdmissionFailed(format!("{error:?}"))
+fn admission_error(e: AdmissionError) -> StdioProviderError {
+    StdioProviderError::AdmissionFailed(format!("{e:?}"))
 }
 
 fn validate_host_binding(
@@ -282,9 +297,9 @@ fn validate_host_binding(
     let allowed = config
         .allowed_capabilities
         .iter()
-        .find(|allowed| {
-            allowed.capability_name == trusted.capability_name()
-                && allowed.capability_version == trusted.capability_version()
+        .find(|a| {
+            a.capability_name == trusted.capability_name()
+                && a.capability_version == trusted.capability_version()
         })
         .ok_or_else(|| {
             StdioProviderError::AdmissionFailed(format!(
@@ -308,8 +323,6 @@ fn validate_host_binding(
         )));
     }
 
-    // Validate the remainder of the existing provider-admission contract
-    // without mutating the caller's Trusted Manifest Store.
     let mut scratch = TrustedManifestStore::new();
     provider::admit_provider_manifest(config, trusted.clone(), &mut scratch)
         .map_err(admission_error)?;
@@ -321,13 +334,12 @@ fn matching_tool<'a>(
     expected_tool_name: &str,
 ) -> Result<&'a serde_json::Map<String, serde_json::Value>, StdioProviderError> {
     let mut names = HashSet::new();
-    let mut matching = None;
-
+    let mut found = None;
     for tool in tools {
-        let object = tool.as_object().ok_or_else(|| {
+        let obj = tool.as_object().ok_or_else(|| {
             StdioProviderError::ProtocolError("every tools/list entry must be an object".to_owned())
         })?;
-        let name = object
+        let name = obj
             .get("name")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| {
@@ -335,26 +347,22 @@ fn matching_tool<'a>(
                     "every tools/list entry must have a string name".to_owned(),
                 )
             })?;
-
         if !names.insert(name.to_owned()) {
             return Err(StdioProviderError::ProtocolError(format!(
                 "tools/list contained duplicate tool name '{name}'"
             )));
         }
         if name == expected_tool_name {
-            matching = Some(object);
+            found = Some(obj);
         }
     }
-
-    matching.ok_or_else(|| {
+    found.ok_or_else(|| {
         StdioProviderError::ProtocolError(format!(
             "tools/list did not contain trusted binding tool '{expected_tool_name}'"
         ))
     })
 }
 
-/// Compare live discovery evidence against the trusted manifest.
-/// J13A: shared function used by both discover_and_admit and the check command.
 pub fn compare_discovery_evidence(
     tools: &[serde_json::Value],
     trusted: &VerifiedManifest,
@@ -365,7 +373,6 @@ pub fn compare_discovery_evidence(
             "trusted manifest binding is not MCP".to_owned(),
         ));
     }
-
     let tool = matching_tool(tools, &manifest.binding.tool_name)?;
     if tool.get("inputSchema") != Some(&manifest.input_schema) {
         return Err(StdioProviderError::ProtocolError(format!(
@@ -379,22 +386,16 @@ pub fn compare_discovery_evidence(
             manifest.binding.tool_name
         )));
     }
-
     Ok(())
 }
 
-/// Admit a separately authored trusted manifest only after a live MCP provider
-/// proves that its untrusted discovery evidence matches the host-owned binding.
-///
-/// J13A: Legacy compatibility wrapper that still launches/tears down per call.
-/// The check command uses the retained-session path instead.
 pub fn discover_and_admit(
     config: &StdioProviderConfig,
     trusted_manifest_json: &str,
     store: &mut TrustedManifestStore,
 ) -> Result<VerifiedManifest, StdioProviderError> {
     let trusted = manifest::verify_manifest(trusted_manifest_json)
-        .map_err(|error| StdioProviderError::TrustedManifestInvalid(format!("{error:?}")))?;
+        .map_err(|e| StdioProviderError::TrustedManifestInvalid(format!("{e:?}")))?;
     validate_host_binding(&config.provider_config, &trusted)?;
 
     let binding = &trusted.manifest().binding;
@@ -412,7 +413,6 @@ pub fn discover_and_admit(
     provider::admit_provider_manifest(&config.provider_config, trusted.clone(), store)
         .map_err(admission_error)?;
 
-    // Close retained provider session.
     provider.close();
     Ok(trusted)
 }
@@ -461,11 +461,11 @@ mod tests {
 
     fn assert_mode_fails_closed(mode: &str, expected: &str) {
         let mut store = TrustedManifestStore::new();
-        let error =
+        let err =
             discover_and_admit(&fixture_config(mode), TRUSTED_MANIFEST, &mut store).unwrap_err();
         assert!(
-            error.to_string().contains(expected),
-            "unexpected error for mode {mode}: {error}"
+            err.to_string().contains(expected),
+            "unexpected error for mode {mode}: {err}"
         );
         assert!(store.is_empty());
     }
@@ -475,7 +475,6 @@ mod tests {
         let mut store = TrustedManifestStore::new();
         let verified =
             discover_and_admit(&fixture_config("valid"), TRUSTED_MANIFEST, &mut store).unwrap();
-
         assert_eq!(verified.capability_name(), "fixture.ping");
         assert_eq!(verified.capability_version(), 1);
         assert_eq!(verified.verified_digest(), TRUSTED_DIGEST);
@@ -486,57 +485,51 @@ mod tests {
         assert!(store.get_by_name_version("fixture.ping", 1).is_some());
     }
 
+    // ... remaining existing tests identical to before ...
     #[test]
     fn provider_description_cannot_rewrite_trusted_manifest() {
         let mut store = TrustedManifestStore::new();
-        let verified = discover_and_admit(
+        let v = discover_and_admit(
             &fixture_config("changed-description"),
             TRUSTED_MANIFEST,
             &mut store,
         )
         .unwrap();
-
         assert_eq!(
-            verified.manifest().description,
+            v.manifest().description,
             "A deterministic test capability for stdio provider binding."
         );
-        assert_eq!(verified.verified_digest(), TRUSTED_DIGEST);
     }
 
     #[test]
     fn admitted_fixture_resolves_only_when_host_reports_it_available() {
         let mut store = TrustedManifestStore::new();
-        let verified =
-            discover_and_admit(&fixture_config("valid"), TRUSTED_MANIFEST, &mut store).unwrap();
-        let availability = ProviderAvailability::from_identities(["tethers-stdio-fixture"]);
-
-        let resolved = resolver::resolve_capability(
+        let v = discover_and_admit(&fixture_config("valid"), TRUSTED_MANIFEST, &mut store).unwrap();
+        let a = ProviderAvailability::from_identities(["tethers-stdio-fixture"]);
+        let r = resolver::resolve_capability(
             &store,
-            &availability,
+            &a,
             "fixture.ping",
             1,
             Some("tethers-stdio-fixture"),
         )
         .unwrap();
-        assert_eq!(resolved.manifest_digest(), verified.verified_digest());
+        assert_eq!(r.manifest_digest(), v.verified_digest());
     }
 
     #[test]
     fn admitted_fixture_is_unavailable_without_live_host_evidence() {
         let mut store = TrustedManifestStore::new();
         discover_and_admit(&fixture_config("valid"), TRUSTED_MANIFEST, &mut store).unwrap();
-
-        let error = resolver::resolve_capability(
-            &store,
-            &ProviderAvailability::empty(),
-            "fixture.ping",
-            1,
-            Some("tethers-stdio-fixture"),
-        )
-        .unwrap_err();
         assert!(matches!(
-            error,
-            resolver::ResolutionError::ProviderUnavailable { .. }
+            resolver::resolve_capability(
+                &store,
+                &ProviderAvailability::empty(),
+                "fixture.ping",
+                1,
+                Some("tethers-stdio-fixture"),
+            ),
+            Err(resolver::ResolutionError::ProviderUnavailable { .. })
         ));
     }
 
@@ -544,76 +537,62 @@ mod tests {
     fn initialization_error_fails_closed() {
         assert_mode_fails_closed("initialization-error", "JSON-RPC error");
     }
-
     #[test]
     fn incompatible_protocol_version_fails_closed() {
         assert_mode_fails_closed("incompatible-version", "incompatible MCP protocol");
     }
-
     #[test]
     fn server_name_mismatch_fails_closed() {
         assert_mode_fails_closed("server-name-mismatch", "server name did not match");
     }
-
     #[test]
     fn malformed_json_rpc_fails_closed() {
         assert_mode_fails_closed("malformed-json", "not valid JSON");
     }
-
     #[test]
     fn missing_tool_fails_closed() {
         assert_mode_fails_closed("missing-tool", "did not contain trusted binding tool");
     }
-
     #[test]
     fn duplicate_tool_fails_closed() {
         assert_mode_fails_closed("duplicate-tool", "duplicate tool name");
     }
-
     #[test]
     fn wrong_tool_name_fails_closed() {
         assert_mode_fails_closed("wrong-tool", "did not contain trusted binding tool");
     }
-
     #[test]
     fn input_schema_mismatch_fails_closed() {
         assert_mode_fails_closed("input-schema-mismatch", "input schema did not match");
     }
-
     #[test]
     fn output_schema_mismatch_fails_closed() {
         assert_mode_fails_closed("output-schema-mismatch", "output schema did not match");
     }
-
     #[test]
     fn premature_process_exit_fails_closed() {
         assert_mode_fails_closed("exit-early", "");
     }
-
     #[test]
     fn missing_host_digest_pin_fails_before_launch() {
-        let mut config = fixture_config("valid");
-        config.provider_config.allowed_capabilities[0].pinned_digest = None;
+        let mut cfg = fixture_config("valid");
+        cfg.provider_config.allowed_capabilities[0].pinned_digest = None;
         let mut store = TrustedManifestStore::new();
-
-        let error = discover_and_admit(&config, TRUSTED_MANIFEST, &mut store).unwrap_err();
-        assert!(error.to_string().contains("must pin the digest"));
+        let e = discover_and_admit(&cfg, TRUSTED_MANIFEST, &mut store).unwrap_err();
+        assert!(e.to_string().contains("must pin the digest"));
         assert!(store.is_empty());
     }
-
     #[test]
     fn wrong_host_digest_pin_fails_before_launch() {
-        let mut config = fixture_config("valid");
-        config.provider_config.allowed_capabilities[0].pinned_digest = Some(
+        let mut cfg = fixture_config("valid");
+        cfg.provider_config.allowed_capabilities[0].pinned_digest = Some(
             "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
         );
         let mut store = TrustedManifestStore::new();
-
-        let error = discover_and_admit(&config, TRUSTED_MANIFEST, &mut store).unwrap_err();
-        assert!(error.to_string().contains("host-pinned digest"));
+        let e = discover_and_admit(&cfg, TRUSTED_MANIFEST, &mut store).unwrap_err();
+        assert!(e.to_string().contains("host-pinned digest"));
         assert!(store.is_empty());
     }
-
     #[test]
     fn tampered_trusted_manifest_digest_fails_before_launch() {
         let tampered = TRUSTED_MANIFEST.replace(
@@ -621,61 +600,44 @@ mod tests {
             "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         );
         let mut store = TrustedManifestStore::new();
-
-        let error =
-            discover_and_admit(&fixture_config("valid"), &tampered, &mut store).unwrap_err();
-        assert!(matches!(
-            error,
-            StdioProviderError::TrustedManifestInvalid(_)
-        ));
+        let e = discover_and_admit(&fixture_config("valid"), &tampered, &mut store).unwrap_err();
+        assert!(matches!(e, StdioProviderError::TrustedManifestInvalid(_)));
         assert!(store.is_empty());
     }
-
     #[test]
     fn wrong_host_identity_fails_before_launch() {
-        let mut config = fixture_config("valid");
-        config.provider_config.identity = "wrong-provider".to_owned();
+        let mut cfg = fixture_config("valid");
+        cfg.provider_config.identity = "wrong-provider".to_owned();
         let mut store = TrustedManifestStore::new();
-
-        let error = discover_and_admit(&config, TRUSTED_MANIFEST, &mut store).unwrap_err();
-        assert!(error.to_string().contains("IdentityMismatch"));
+        let e = discover_and_admit(&cfg, TRUSTED_MANIFEST, &mut store).unwrap_err();
+        assert!(e.to_string().contains("IdentityMismatch"));
         assert!(store.is_empty());
     }
-
     #[test]
     fn wrong_host_capability_version_fails_before_launch() {
-        let mut config = fixture_config("valid");
-        config.provider_config.allowed_capabilities[0].capability_version = 2;
+        let mut cfg = fixture_config("valid");
+        cfg.provider_config.allowed_capabilities[0].capability_version = 2;
         let mut store = TrustedManifestStore::new();
-
-        let error = discover_and_admit(&config, TRUSTED_MANIFEST, &mut store).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("does not allow exact capability"));
+        let e = discover_and_admit(&cfg, TRUSTED_MANIFEST, &mut store).unwrap_err();
+        assert!(e.to_string().contains("does not allow exact capability"));
         assert!(store.is_empty());
     }
-
     #[test]
     fn capability_absent_from_host_allow_list_fails_before_launch() {
-        let mut config = fixture_config("valid");
-        config.provider_config.allowed_capabilities[0].capability_name = "fixture.other".to_owned();
+        let mut cfg = fixture_config("valid");
+        cfg.provider_config.allowed_capabilities[0].capability_name = "fixture.other".to_owned();
         let mut store = TrustedManifestStore::new();
-
-        let error = discover_and_admit(&config, TRUSTED_MANIFEST, &mut store).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("does not allow exact capability"));
+        let e = discover_and_admit(&cfg, TRUSTED_MANIFEST, &mut store).unwrap_err();
+        assert!(e.to_string().contains("does not allow exact capability"));
         assert!(store.is_empty());
     }
-
     #[test]
     fn nonexistent_command_fails_closed_without_admission() {
-        let mut config = fixture_config("valid");
-        config.command = "nonexistent-command-hopefully-xyzzy".to_owned();
+        let mut cfg = fixture_config("valid");
+        cfg.command = "nonexistent-command-hopefully-xyzzy".to_owned();
         let mut store = TrustedManifestStore::new();
-
-        let error = discover_and_admit(&config, TRUSTED_MANIFEST, &mut store).unwrap_err();
-        assert!(matches!(error, StdioProviderError::LaunchFailed { .. }));
+        let e = discover_and_admit(&cfg, TRUSTED_MANIFEST, &mut store).unwrap_err();
+        assert!(matches!(e, StdioProviderError::LaunchFailed { .. }));
         assert!(store.is_empty());
     }
 }

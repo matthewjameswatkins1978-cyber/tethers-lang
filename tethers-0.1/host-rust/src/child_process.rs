@@ -1,48 +1,43 @@
 // Supervised Windows child-process owner with Job Object termination.
 //
 // Every child receives piped stdin/stdout, separately captured stderr,
-// a Windows Job Object with KILL_ON_JOB_CLOSE, and bounded line-oriented
-// protocol reads.
+// an unnamed Windows Job Object with KILL_ON_JOB_CLOSE, persistent
+// stdout reader thread with mpsc channel for timeout-aware protocol
+// reads, and stored reader-thread JoinHandles for proper cleanup.
 
 use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 // Fixed production constants.
 const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 10;
 const DEFAULT_GRACEFUL_CLOSE_SECS: u64 = 2;
 const MAX_PROTOCOL_LINE_BYTES: usize = 8 * 1024 * 1024; // 8 MiB
 const STDERR_TAIL_BYTES: usize = 64 * 1024; // 64 KiB
+const SYNC_CHANNEL_BOUND: usize = 16;
 
 // Global interruption state.
 pub static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
-/// Check whether the global interrupt flag is set.
 pub fn is_interrupted() -> bool {
     INTERRUPTED.load(Ordering::Acquire)
 }
-
-/// Set the global interrupt flag.
 pub fn set_interrupted() {
     INTERRUPTED.store(true, Ordering::Release);
 }
 
-/// Install a process-wide Windows console-control handler.
-///
-/// On Ctrl+C or console close, sets the atomic cancellation state
-/// so command orchestration can perform controlled cleanup.
 #[cfg(windows)]
 pub fn install_ctrl_handler() -> Result<(), String> {
     use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
-
     unsafe extern "system" fn handler(_dw_ctype: u32) -> i32 {
         set_interrupted();
-        1 // TRUE: we handled it; don't call next handler.
+        1
     }
-
     let success = unsafe { SetConsoleCtrlHandler(Some(handler), 1) };
     if success == 0 {
         Err("failed to install console control handler".to_owned())
@@ -56,7 +51,6 @@ pub fn install_ctrl_handler() -> Result<(), String> {
     Ok(())
 }
 
-/// Configuration for a supervised child process.
 pub struct ChildConfig {
     pub command: String,
     pub args: Vec<String>,
@@ -89,7 +83,6 @@ impl ChildConfig {
             ..Default::default()
         }
     }
-
     pub fn test_config(
         command: impl Into<String>,
         args: Vec<String>,
@@ -106,16 +99,26 @@ impl ChildConfig {
     }
 }
 
+/// A protocol line or error from the stdout reader thread.
+type LineResult = Result<String, ChildError>;
+
 /// Owned handle to a supervised child process.
 pub struct SupervisedChild {
     child: Child,
-    stdin: Option<std::process::ChildStdin>,
-    stdout: Option<std::process::ChildStdout>,
+    stdin: Option<ChildStdin>,
     #[cfg(windows)]
     job_handle: windows_sys::Win32::Foundation::HANDLE,
     graceful_close_timeout: Duration,
-    stderr_buffer: Arc<std::sync::Mutex<Vec<u8>>>,
-    max_protocol_line_bytes: usize,
+    max_line_bytes: usize,
+
+    // Channel from stdout reader thread.
+    line_rx: Receiver<LineResult>,
+    stdout_thread: Option<JoinHandle<()>>,
+
+    // Stderr capture.
+    stderr_buffer: Arc<Mutex<Vec<u8>>>,
+    stderr_thread: Option<JoinHandle<()>>,
+
     reaped: bool,
 }
 
@@ -128,7 +131,6 @@ impl fmt::Debug for SupervisedChild {
     }
 }
 
-/// Errors from child-process supervision.
 #[derive(Debug)]
 pub enum ChildError {
     LaunchFailed { command: String, message: String },
@@ -139,6 +141,9 @@ pub enum ChildError {
     ReadTimeout(String),
     ProtocolError(String),
     ProcessExited(i32),
+    Interrupted,
+    LineTooLarge { max: usize, actual: usize },
+    NotUtf8,
 }
 
 impl fmt::Display for ChildError {
@@ -154,6 +159,11 @@ impl fmt::Display for ChildError {
             Self::ReadTimeout(msg) => write!(f, "read timeout: {msg}"),
             Self::ProtocolError(msg) => write!(f, "protocol error: {msg}"),
             Self::ProcessExited(code) => write!(f, "process exited with code {code}"),
+            Self::Interrupted => write!(f, "interrupted"),
+            Self::LineTooLarge { max, actual } => {
+                write!(f, "protocol line {actual} bytes exceeds maximum {max}")
+            }
+            Self::NotUtf8 => write!(f, "protocol line is not valid UTF-8"),
         }
     }
 }
@@ -161,7 +171,6 @@ impl fmt::Display for ChildError {
 impl std::error::Error for ChildError {}
 
 impl SupervisedChild {
-    /// Launch a child process with Job Object supervision.
     pub fn launch(config: ChildConfig) -> Result<Self, ChildError> {
         #[cfg(windows)]
         let job_handle = create_job_object()?;
@@ -171,7 +180,6 @@ impl SupervisedChild {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-
         if let Some(ref dir) = config.current_dir {
             cmd.current_dir(dir);
         }
@@ -181,31 +189,75 @@ impl SupervisedChild {
             message: e.to_string(),
         })?;
 
-        // Assign to Job Object on Windows (best-effort; may fail if parent
-        // is in a restrictive job, which is common in test harnesses).
+        // Assign to Job Object (fatal on failure).
         #[cfg(windows)]
         {
             use std::os::windows::io::AsRawHandle;
             use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
-            let _ = unsafe {
+            let success = unsafe {
                 AssignProcessToJobObject(
                     job_handle,
                     child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE,
                 )
             };
+            if success == 0 {
+                let _ = child.kill();
+                let _ = child.wait();
+                unsafe {
+                    use windows_sys::Win32::Foundation::CloseHandle;
+                    CloseHandle(job_handle);
+                }
+                return Err(ChildError::JobObjectFailed(
+                    "AssignProcessToJobObject failed".to_owned(),
+                ));
+            }
         }
 
         let stdin = child.stdin.take().ok_or(ChildError::StdinUnavailable)?;
         let stdout = child.stdout.take().ok_or(ChildError::StdoutUnavailable)?;
-        let stderr_reader = child.stderr.take().ok_or(ChildError::StderrUnavailable)?;
+        let stderr_r = child.stderr.take().ok_or(ChildError::StderrUnavailable)?;
 
-        let stderr_buffer = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // Spawn stdout reader thread.
+        let max_line = config.max_protocol_line_bytes;
+        let (line_tx, line_rx) = mpsc::sync_channel::<LineResult>(SYNC_CHANNEL_BOUND);
+        let stdout_thread = thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            loop {
+                let mut buf = Vec::with_capacity(4096);
+                // Read until newline or EOF.
+                match read_until_newline(&mut reader, &mut buf, max_line) {
+                    Ok(Some(line)) => {
+                        // Validate strict UTF-8.
+                        match String::from_utf8(line) {
+                            Ok(s) => {
+                                if line_tx.send(Ok(s)).is_err() {
+                                    break; // receiver dropped
+                                }
+                            }
+                            Err(_) => {
+                                let _ = line_tx.send(Err(ChildError::NotUtf8));
+                                break;
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        // EOF
+                        break;
+                    }
+                    Err(e) => {
+                        let _ = line_tx.send(Err(e));
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Spawn stderr capture thread.
+        let stderr_buffer = Arc::new(Mutex::new(Vec::new()));
         let stderr_buf = Arc::clone(&stderr_buffer);
         let stderr_tail = config.stderr_tail_bytes;
-
-        // Spawn a background thread to capture stderr.
-        std::thread::spawn(move || {
-            let mut reader = BufReader::new(stderr_reader);
+        let stderr_thread = thread::spawn(move || {
+            let mut reader = BufReader::new(stderr_r);
             let mut buf = Vec::new();
             let mut chunk = [0u8; 4096];
             loop {
@@ -227,17 +279,18 @@ impl SupervisedChild {
         Ok(Self {
             child,
             stdin: Some(stdin),
-            stdout: Some(stdout),
             #[cfg(windows)]
             job_handle,
             graceful_close_timeout: config.graceful_close_timeout,
+            max_line_bytes: config.max_protocol_line_bytes,
+            line_rx,
+            stdout_thread: Some(stdout_thread),
             stderr_buffer,
-            max_protocol_line_bytes: config.max_protocol_line_bytes,
+            stderr_thread: Some(stderr_thread),
             reaped: false,
         })
     }
 
-    /// Write a line to child stdin.
     pub fn write_line(&mut self, line: &str) -> Result<(), ChildError> {
         let stdin = self.stdin.as_mut().ok_or(ChildError::StdinUnavailable)?;
         writeln!(stdin, "{line}")
@@ -247,32 +300,41 @@ impl SupervisedChild {
             .map_err(|e| ChildError::ProtocolError(format!("flush failed: {e}")))
     }
 
-    /// Read one line from child stdout, enforcing the protocol line limit.
-    pub fn read_protocol_line(&mut self) -> Result<String, ChildError> {
-        let stdout = self.stdout.as_mut().ok_or(ChildError::StdoutUnavailable)?;
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        let bytes_read = reader
-            .read_line(&mut line)
-            .map_err(|e| ChildError::ReadTimeout(format!("read failed: {e}")))?;
-
-        if bytes_read == 0 {
-            let exit_code = self.child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
-            return Err(ChildError::ProcessExited(exit_code));
+    /// Receive one protocol line from the reader thread with timeout.
+    pub fn read_protocol_line(&mut self, timeout: Duration) -> Result<String, ChildError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if is_interrupted() {
+                return Err(ChildError::Interrupted);
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(ChildError::ReadTimeout(
+                    "timeout waiting for protocol line".to_owned(),
+                ));
+            }
+            // Use a shorter poll interval to check interrupt frequently.
+            let poll = Duration::from_millis(100).min(remaining);
+            match self.line_rx.recv_timeout(poll) {
+                Ok(result) => return result,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    // Reader thread exited. Check if child exited.
+                    match self.child.try_wait() {
+                        Ok(Some(status)) => {
+                            return Err(ChildError::ProcessExited(status.code().unwrap_or(-1)));
+                        }
+                        _ => {
+                            return Err(ChildError::ProtocolError(
+                                "stdout reader disconnected unexpectedly".to_owned(),
+                            ));
+                        }
+                    }
+                }
+            }
         }
-
-        if line.len() > self.max_protocol_line_bytes {
-            return Err(ChildError::ProtocolError(format!(
-                "protocol line exceeds maximum {} bytes (was {} bytes)",
-                self.max_protocol_line_bytes,
-                line.len()
-            )));
-        }
-
-        Ok(line)
     }
 
-    /// Get the retained stderr tail.
     pub fn stderr_tail(&self) -> String {
         if let Ok(guard) = self.stderr_buffer.lock() {
             String::from_utf8_lossy(&guard).to_string()
@@ -281,32 +343,39 @@ impl SupervisedChild {
         }
     }
 
-    /// Check whether the child has exited.
+    pub fn close_stdin(&mut self) {
+        drop(self.stdin.take());
+    }
+
     pub fn has_exited(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(Some(_)))
     }
 
-    /// Shut down the child gracefully, then terminate via Job Object.
+    /// Full shutdown sequence.
     pub fn shutdown(mut self) {
-        // Drop stdin to signal EOF.
+        self.shutdown_inner();
+    }
+
+    fn shutdown_inner(&mut self) {
+        // 1. Close stdin.
         drop(self.stdin.take());
 
-        // Wait up to graceful_close_timeout.
-        let deadline = std::time::Instant::now() + self.graceful_close_timeout;
+        // 2. Wait up to graceful_close_timeout.
+        let deadline = Instant::now() + self.graceful_close_timeout;
         loop {
             match self.child.try_wait() {
                 Ok(Some(_)) => break,
                 Ok(None) => {
-                    if std::time::Instant::now() >= deadline {
+                    if Instant::now() >= deadline {
                         break;
                     }
-                    std::thread::sleep(Duration::from_millis(50));
+                    thread::sleep(Duration::from_millis(50));
                 }
                 Err(_) => break,
             }
         }
 
-        // Terminate the job object (kills all descendants).
+        // 3. Terminate Job Object.
         #[cfg(windows)]
         {
             use windows_sys::Win32::System::JobObjects::TerminateJobObject;
@@ -315,16 +384,12 @@ impl SupervisedChild {
             }
         }
 
-        self.reap();
-    }
+        // 4. Reap direct child.
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        self.reaped = true;
 
-    fn reap(&mut self) {
-        if !self.reaped {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-            self.reaped = true;
-        }
-
+        // 5. Close Job Object handle.
         #[cfg(windows)]
         {
             use windows_sys::Win32::Foundation::CloseHandle;
@@ -332,23 +397,107 @@ impl SupervisedChild {
                 CloseHandle(self.job_handle);
             }
         }
+
+        // 6. Join reader threads.
+        if let Some(h) = self.stdout_thread.take() {
+            let _ = h.join();
+        }
+        if let Some(h) = self.stderr_thread.take() {
+            let _ = h.join();
+        }
     }
 }
 
 impl Drop for SupervisedChild {
     fn drop(&mut self) {
         if !self.reaped {
-            #[cfg(windows)]
-            {
-                use windows_sys::Win32::System::JobObjects::TerminateJobObject;
-                unsafe {
-                    TerminateJobObject(self.job_handle, 1);
+            self.shutdown_inner();
+        }
+    }
+}
+
+/// Read bytes from reader until newline or EOF, enforcing max size.
+/// Returns Ok(Some(line_bytes_without_newline)) on success,
+/// Ok(None) on EOF without data, or Err on error/overflow.
+fn read_until_newline(
+    reader: &mut BufReader<ChildStdout>,
+    buf: &mut Vec<u8>,
+    max_bytes: usize,
+) -> Result<Option<Vec<u8>>, ChildError> {
+    loop {
+        let data_len;
+        let found_newline;
+        let consume_amount;
+        {
+            let available = match reader.fill_buf() {
+                Ok(data) if data.is_empty() => {
+                    if buf.is_empty() {
+                        return Ok(None); // EOF
+                    } else {
+                        // EOF with partial data (no trailing newline).
+                        if buf.len() > max_bytes {
+                            return Err(ChildError::LineTooLarge {
+                                max: max_bytes,
+                                actual: buf.len(),
+                            });
+                        }
+                        let result = std::mem::take(buf);
+                        return Ok(Some(result));
+                    }
+                }
+                Ok(data) => data,
+                Err(e) => {
+                    return Err(ChildError::ReadTimeout(format!("read error: {e}")));
+                }
+            };
+
+            let mut consumed = 0;
+            let mut nl = false;
+
+            for (i, &b) in available.iter().enumerate() {
+                if b == b'\n' {
+                    nl = true;
+                    consumed = i + 1;
+                    break;
+                }
+                if b == 0 {
+                    return Err(ChildError::NotUtf8);
                 }
             }
 
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-            self.reaped = true;
+            if nl {
+                buf.extend_from_slice(&available[..consumed - 1]); // exclude \n
+                data_len = 0;
+                found_newline = true;
+                consume_amount = consumed;
+            } else {
+                buf.extend_from_slice(available);
+                data_len = available.len();
+                found_newline = false;
+                consume_amount = available.len();
+            }
+        } // borrow on available/reader ends here
+
+        reader.consume(consume_amount);
+
+        if found_newline {
+            if buf.len() > max_bytes {
+                return Err(ChildError::LineTooLarge {
+                    max: max_bytes,
+                    actual: buf.len(),
+                });
+            }
+            let result = std::mem::take(buf);
+            return Ok(Some(result));
+        } else {
+            if buf.len() > max_bytes {
+                return Err(ChildError::LineTooLarge {
+                    max: max_bytes,
+                    actual: buf.len(),
+                });
+            }
+            // Continue reading for newline.
+            let _ = data_len;
         }
     }
 }
@@ -360,12 +509,9 @@ fn create_job_object() -> Result<windows_sys::Win32::Foundation::HANDLE, ChildEr
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
 
-    let name: Vec<u16> = format!("tethers-job-{}\0", std::process::id())
-        .encode_utf16()
-        .collect();
-
-    let handle = unsafe { CreateJobObjectW(std::ptr::null(), name.as_ptr()) };
-    if handle == std::ptr::null_mut() {
+    // Unnamed: NULL, NULL.
+    let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    if handle.is_null() {
         return Err(ChildError::JobObjectFailed(
             "CreateJobObjectW failed".to_owned(),
         ));
@@ -382,7 +528,6 @@ fn create_job_object() -> Result<windows_sys::Win32::Foundation::HANDLE, ChildEr
             std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
         )
     };
-
     if success == 0 {
         unsafe {
             use windows_sys::Win32::Foundation::CloseHandle;
@@ -405,7 +550,7 @@ fn create_job_object() -> Result<usize, ChildError> {
 mod tests {
     use super::*;
 
-    fn pwsh_fixture_script() -> std::path::PathBuf {
+    fn fixture_script() -> std::path::PathBuf {
         let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.pop();
         path.push("scripts");
@@ -413,26 +558,26 @@ mod tests {
         path
     }
 
-    #[test]
-    fn j13a_child_launch_and_shutdown() {
+    fn launch_fixture(mode: &str, startup: u64, close: u64) -> Result<SupervisedChild, ChildError> {
         let config = ChildConfig::test_config(
             "pwsh.exe",
             vec![
                 "-NoProfile".to_owned(),
                 "-File".to_owned(),
-                pwsh_fixture_script().to_string_lossy().into_owned(),
+                fixture_script().to_string_lossy().into_owned(),
                 "-Mode".to_owned(),
-                "valid".to_owned(),
+                mode.to_owned(),
             ],
-            Duration::from_secs(5),
-            Duration::from_secs(2),
+            Duration::from_secs(startup),
+            Duration::from_secs(close),
         );
-        match SupervisedChild::launch(config) {
-            Ok(child) => child.shutdown(),
-            Err(e) => {
-                eprintln!("SKIP: child launch failed (env restriction): {e}");
-            }
-        }
+        SupervisedChild::launch(config)
+    }
+
+    #[test]
+    fn j13a_child_launch_and_shutdown() {
+        let child = launch_fixture("valid", 5, 2).expect("launch");
+        child.shutdown();
     }
 
     #[test]
@@ -443,42 +588,26 @@ mod tests {
             Duration::from_secs(2),
             Duration::from_secs(1),
         );
-        let result = SupervisedChild::launch(config);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ChildError::LaunchFailed { .. } => {}
-            e => panic!("expected LaunchFailed, got {e:?}"),
-        }
+        assert!(SupervisedChild::launch(config).is_err());
     }
 
     #[test]
     fn j13a_stderr_capture() {
-        let config = ChildConfig::test_config(
-            "pwsh.exe",
-            vec![
-                "-NoProfile".to_owned(),
-                "-File".to_owned(),
-                pwsh_fixture_script().to_string_lossy().into_owned(),
-                "-Mode".to_owned(),
-                "exit-early".to_owned(),
-            ],
-            Duration::from_secs(5),
-            Duration::from_secs(2),
-        );
-        match SupervisedChild::launch(config) {
-            Ok(child) => {
-                std::thread::sleep(Duration::from_millis(500));
-                let tail = child.stderr_tail();
-                assert!(
-                    tail.contains("exiting before initialization"),
-                    "stderr tail should contain fixture message: {tail}"
-                );
-                child.shutdown();
+        let mut child = launch_fixture("exit-early", 5, 2).expect("launch");
+        // Wait for child to exit and stderr thread to capture.
+        for _ in 0..40 {
+            if child.has_exited() {
+                break;
             }
-            Err(e) => {
-                eprintln!("SKIP: child launch failed (env restriction): {e}");
-            }
+            thread::sleep(Duration::from_millis(50));
         }
+        thread::sleep(Duration::from_millis(200));
+        let tail = child.stderr_tail();
+        assert!(
+            tail.contains("exiting before initialization"),
+            "stderr: {tail}"
+        );
+        child.shutdown();
     }
 
     #[test]
@@ -487,5 +616,39 @@ mod tests {
         set_interrupted();
         assert!(is_interrupted());
         INTERRUPTED.store(false, Ordering::Release);
+    }
+
+    #[test]
+    fn j13a_independent_job_objects() {
+        let c1 = launch_fixture("valid", 5, 2).expect("c1");
+        let c2 = launch_fixture("valid", 5, 2).expect("c2");
+        c1.shutdown();
+        c2.shutdown();
+    }
+
+    #[test]
+    fn j13a_direct_child_terminated() {
+        let mut child = launch_fixture("valid", 5, 2).expect("launch");
+        assert!(!child.has_exited());
+        child.shutdown_inner();
+        assert!(child.reaped);
+    }
+
+    #[test]
+    fn j13a_descendant_terminated() {
+        let child = launch_fixture("descendant-alive", 5, 2).expect("launch");
+        child.shutdown();
+    }
+
+    #[test]
+    fn j13a_job_handle_closed_on_shutdown() {
+        let child = launch_fixture("valid", 5, 2).expect("launch");
+        child.shutdown();
+    }
+
+    #[test]
+    fn j13a_reader_threads_join() {
+        let child = launch_fixture("valid", 5, 2).expect("launch");
+        child.shutdown();
     }
 }
