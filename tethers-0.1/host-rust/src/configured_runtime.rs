@@ -194,9 +194,31 @@ fn check_relative_path_safe(relative_path: &str) -> Result<usize, RuntimePrepara
     }
 
     // Count ParentDir vs ordinary components.
+    // Explicitly handle every Component variant.
+    // On Windows, a drive-relative path such as C:outside\file
+    // has a Prefix component but is neither absolute nor rooted,
+    // so it falls through is_absolute()/has_root() above.
     let mut depth: isize = 0;
     for component in p.components() {
         match component {
+            std::path::Component::Prefix(_) => {
+                return Err(RuntimePreparationError::new(
+                    RuntimePreparationErrorCode::AssetOutsideConfigRoot,
+                    format!(
+                        "asset \"{}\" has a drive prefix and must be relative",
+                        relative_path
+                    ),
+                ));
+            }
+            std::path::Component::RootDir => {
+                return Err(RuntimePreparationError::new(
+                    RuntimePreparationErrorCode::AssetOutsideConfigRoot,
+                    format!(
+                        "asset \"{}\" has a root directory component and must be relative",
+                        relative_path
+                    ),
+                ));
+            }
             std::path::Component::ParentDir => {
                 depth -= 1;
                 if depth < 0 {
@@ -212,8 +234,9 @@ fn check_relative_path_safe(relative_path: &str) -> Result<usize, RuntimePrepara
             std::path::Component::Normal(_) => {
                 depth += 1;
             }
-            // CurDir, Prefix, RootDir are rejected above.
-            _ => {}
+            std::path::Component::CurDir => {
+                // Harmless, ignored.
+            }
         }
     }
 
@@ -3091,6 +3114,125 @@ mod tests {
         assert_eq!(
             prepared.assess_action_scope(&action),
             ScopeAssessment::WithinScope
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // === Windows drive-relative path tests ===
+
+    // 61: drive-relative source path (C:outside\file) returns AssetOutsideConfigRoot
+    #[cfg(windows)]
+    #[test]
+    fn j12_packet2_windows_drive_relative_source_returns_outside_root() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-drvsrc-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let mut json = minimal_config_json();
+        // C:outside\missing.tether — drive-relative, not absolute, not rooted
+        json["tether_set"]["tethers"][0]["source_path"] = json!(r"C:outside\missing.tether");
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let err = prepare_runtime(&loaded).unwrap_err();
+        assert_eq!(
+            err.code,
+            RuntimePreparationErrorCode::AssetOutsideConfigRoot
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 62: drive-relative manifest path never returns AssetNotFound
+    #[cfg(windows)]
+    #[test]
+    fn j12_packet2_windows_drive_relative_manifest_never_not_found() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-drvman-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let mut json = minimal_config_json();
+        // C:outside\missing.json — must be AssetOutsideConfigRoot, never AssetNotFound
+        json["providers"][0]["capabilities"][0]["manifest_path"] = json!(r"C:outside\missing.json");
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let err = prepare_runtime(&loaded).unwrap_err();
+        assert_eq!(
+            err.code,
+            RuntimePreparationErrorCode::AssetOutsideConfigRoot
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 63: rooted Windows path rejected
+    #[cfg(windows)]
+    #[test]
+    fn j12_packet2_windows_rooted_path_rejected() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-rtpath-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let mut json = minimal_config_json();
+        // \Windows\System32\notepad.exe — rooted path, has RootDir component
+        json["tether_set"]["tethers"][0]["source_path"] = json!(r"\Windows\System32\notepad.exe");
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let err = prepare_runtime(&loaded).unwrap_err();
+        assert_eq!(
+            err.code,
+            RuntimePreparationErrorCode::AssetOutsideConfigRoot
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 64: ordinary nested relative path still succeeds on Windows
+    #[cfg(windows)]
+    #[test]
+    fn j12_packet2_windows_nested_relative_succeeds() {
+        let dir = std::env::temp_dir().join(format!("j12-pkt2-wnest-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+
+        // Create the tether in a nested subdirectory
+        std::fs::create_dir_all(dir.join("tethers/sub")).unwrap();
+        std::fs::write(
+            dir.join("tethers/sub/main.tether"),
+            "on event hello do log \"ok\"\n",
+        )
+        .unwrap();
+
+        // Create a valid manifest
+        let (manifest_json, digest) =
+            make_manifest("lantern.task.record", 1, "lantern-local", json!(null));
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut json = minimal_config_json();
+        json["tether_set"]["tethers"][0]["source_path"] = json!("tethers/sub/main.tether");
+        json["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let result = prepare_runtime(&loaded);
+        assert!(
+            result.is_ok(),
+            "nested relative path should succeed: {:?}",
+            result.err()
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
