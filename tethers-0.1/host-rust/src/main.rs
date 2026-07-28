@@ -6959,6 +6959,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(evaluated, vec!["evt/first".to_string()]);
+        assert_eq!(outcome.follow_up_evaluations.len(), 1);
+        assert_eq!(
+            outcome.follow_up_evaluations[0],
+            json!({
+                "input_event_id": "evt/first",
+                "generation": 1,
+                "response": {
+                    "status": "ok"
+                }
+            })
+        );
+        let mut response = json!({"status": "existing"});
+        outcome.apply_to_response(&mut response);
+        assert_eq!(
+            outcome.follow_up_evaluations[0],
+            json!({
+                "input_event_id": "evt/first",
+                "generation": 1,
+                "response": {
+                    "status": "ok"
+                }
+            })
+        );
         assert_eq!(
             outcome.event_admission_rejection,
             Some(event_admission_rejection_value(
@@ -6968,6 +6991,7 @@ mod tests {
                 1,
             ))
         );
+        assert_eq!(response["status"], "existing");
         assert_eq!(queue.pop_front().unwrap().event_id, "evt/third");
     }
 
@@ -7158,5 +7182,49 @@ mod tests {
                 maximum_generation: 8,
             }
         );
+    }
+
+    // 19. Child enqueued during callback preserves J10 FIFO tail-appending.
+    #[test]
+    fn j11_fifo_child_appended_during_drain() {
+        let mut gate = EventAdmissionGate::new();
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt/sibling-a", 1));
+        queue.enqueue(j11_sample_anchor("evt/sibling-b", 1));
+
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, queue| {
+            evaluated.push(anchor.event_id.clone());
+            // While evaluating sibling A, enqueue child A1.
+            if anchor.event_id == "evt/sibling-a" {
+                queue.enqueue(j11_sample_anchor("evt/child-a1", 2));
+            }
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert!(outcome.event_admission_rejection.is_none());
+        assert_eq!(
+            evaluated,
+            vec![
+                "evt/sibling-a".to_string(),
+                "evt/sibling-b".to_string(),
+                "evt/child-a1".to_string(),
+            ]
+        );
+        assert_eq!(outcome.follow_up_evaluations.len(), 3);
+        assert_eq!(
+            outcome.follow_up_evaluations[0]["input_event_id"],
+            "evt/sibling-a"
+        );
+        assert_eq!(
+            outcome.follow_up_evaluations[1]["input_event_id"],
+            "evt/sibling-b"
+        );
+        assert_eq!(
+            outcome.follow_up_evaluations[2]["input_event_id"],
+            "evt/child-a1"
+        );
+        assert!(queue.is_empty());
     }
 }
