@@ -46,7 +46,7 @@ $trailPath = Join-Path $trailDir "trail.jsonl"
 try {
     Push-Location $HostDir
     try {
-        $output = & cargo run -- $EnginePath $RequestPath "deny" $trailPath "success"
+        $output = & cargo run -- __legacy $EnginePath $RequestPath "deny" $trailPath "success"
         if ($LASTEXITCODE -ne 0) {
             throw "Rust reference host exited with code $LASTEXITCODE."
         }

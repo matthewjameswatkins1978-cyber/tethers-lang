@@ -128,7 +128,13 @@ try {
             continue
         }
 
-        switch ($request.method) {
+        @"
+switch ($request.method) {
+            "initialize" {
+                if ($Mode -eq "record-methods" -and $MarkerFile) {
+                    Add-Content -Path $MarkerFile -Value "initialize"
+                }
+"@
             "initialize" {
                 if ($Mode -eq "malformed-json") {
                     [System.Console]::Out.WriteLine("{not-json")
@@ -175,7 +181,15 @@ try {
                 }
                 $clientInitialized = $true
             }
-            "tools/list" {
+            @"
+"tools/list" {
+                if ($Mode -eq "hang-tools-list") {
+                    Start-Sleep -Seconds 3600
+                }
+                if ($Mode -eq "record-methods" -and $MarkerFile) {
+                    Add-Content -Path $MarkerFile -Value "tools/list"
+                }
+"@
                 if (-not $clientInitialized) {
                     Write-ErrorResponse $request.id -32002 "Server not initialized"
                     continue

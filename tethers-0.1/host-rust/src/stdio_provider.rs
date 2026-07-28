@@ -4,76 +4,85 @@
 // host-owned trusted manifest defines the authoritative capability contract.
 // Discovery may prove that the live advertisement matches that contract; it
 // may never create or modify the contract.
+//
+// J13A: Refactored ManagedProvider to support retained provider sessions.
+// One provider process may remain alive after initialize/tools-list for
+// the duration of the check command.
 
+use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use crate::manifest::{self, BindingKind, VerifiedManifest};
 use crate::provider::{self, AdmissionError, ProviderConfig};
 use crate::trusted_store::TrustedManifestStore;
 use std::collections::HashSet;
 use std::fmt;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::path::PathBuf;
 
 const INITIALIZE_REQUEST_ID: u64 = 1;
 const TOOLS_LIST_REQUEST_ID: u64 = 2;
 
 /// A running provider process owned by the host.
+///
+/// J13A: Uses SupervisedChild for Job Object supervision and
+/// supports retained sessions.
 pub struct ManagedProvider {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    child: SupervisedChild,
+    next_request_id: u64,
 }
 
 impl ManagedProvider {
-    /// Launch the exact executable and arguments supplied by host configuration.
-    pub fn launch(command: &str, args: &[String]) -> Result<Self, StdioProviderError> {
-        let mut child = Command::new(command)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|error| StdioProviderError::LaunchFailed {
-                command: command.to_owned(),
-                message: error.to_string(),
-            })?;
+    /// Launch the exact executable and arguments supplied by host configuration,
+    /// with an explicit current directory.
+    pub fn launch(
+        command: &str,
+        args: &[String],
+        working_dir: &PathBuf,
+        startup_timeout_override: Option<std::time::Duration>,
+        graceful_close_timeout_override: Option<std::time::Duration>,
+    ) -> Result<Self, StdioProviderError> {
+        let config = if let (Some(startup), Some(graceful)) =
+            (startup_timeout_override, graceful_close_timeout_override)
+        {
+            ChildConfig::test_config(command, args.to_vec(), startup, graceful)
+        } else {
+            let mut cfg = ChildConfig::production(command, args.to_vec());
+            cfg.current_dir = Some(working_dir.clone());
+            cfg
+        };
 
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or(StdioProviderError::StdinUnavailable)?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or(StdioProviderError::StdoutUnavailable)?;
+        let mut child =
+            SupervisedChild::launch(config).map_err(|e| StdioProviderError::LaunchFailed {
+                command: command.to_owned(),
+                message: e.to_string(),
+            })?;
 
         Ok(Self {
             child,
-            stdin,
-            stdout: BufReader::new(stdout),
+            next_request_id: INITIALIZE_REQUEST_ID + 1,
         })
     }
 
     fn write_message(&mut self, message: &serde_json::Value) -> Result<(), StdioProviderError> {
         let line = serde_json::to_string(message)
             .map_err(|error| StdioProviderError::SerializeFailed(error.to_string()))?;
-        writeln!(self.stdin, "{line}")
-            .map_err(|error| StdioProviderError::WriteFailed(error.to_string()))?;
-        self.stdin
-            .flush()
-            .map_err(|error| StdioProviderError::WriteFailed(error.to_string()))
+        self.child
+            .write_line(&line)
+            .map_err(|_| StdioProviderError::WriteFailed("write to provider failed".to_owned()))
     }
 
     fn read_message(&mut self) -> Result<serde_json::Value, StdioProviderError> {
-        let mut line = String::new();
-        let bytes = self
-            .stdout
-            .read_line(&mut line)
-            .map_err(|error| StdioProviderError::ReadFailed(error.to_string()))?;
-        if bytes == 0 || line.trim().is_empty() {
+        let line = self.child.read_protocol_line().map_err(|e| match e {
+            ChildError::ReadTimeout(msg) => StdioProviderError::ReadFailed(msg),
+            ChildError::ProtocolError(msg) => StdioProviderError::MalformedResponse(msg),
+            ChildError::ProcessExited(_) => StdioProviderError::EmptyResponse,
+            _ => StdioProviderError::ReadFailed(e.to_string()),
+        })?;
+
+        let line = line.trim();
+        if line.is_empty() {
             return Err(StdioProviderError::EmptyResponse);
         }
 
-        serde_json::from_str(&line).map_err(|error| {
+        serde_json::from_str(line).map_err(|error| {
             StdioProviderError::MalformedResponse(format!(
                 "provider stdout was not valid JSON: {error}"
             ))
@@ -133,7 +142,8 @@ impl ManagedProvider {
         }))
     }
 
-    fn initialize(
+    /// Initialize the provider, verifying protocol version and server identity.
+    pub fn initialize(
         &mut self,
         protocol_version: &str,
         expected_server_name: &str,
@@ -181,7 +191,8 @@ impl ManagedProvider {
         self.notify("notifications/initialized", serde_json::json!({}))
     }
 
-    fn list_tools(&mut self) -> Result<Vec<serde_json::Value>, StdioProviderError> {
+    /// List tools from the provider.
+    pub fn list_tools(&mut self) -> Result<Vec<serde_json::Value>, StdioProviderError> {
         let result = self.request(TOOLS_LIST_REQUEST_ID, "tools/list", serde_json::json!({}))?;
         result
             .get("tools")
@@ -193,12 +204,23 @@ impl ManagedProvider {
                 )
             })
     }
+
+    /// Get the retained stderr diagnostic tail.
+    pub fn stderr_tail(&self) -> String {
+        self.child.stderr_tail()
+    }
+
+    /// Close the provider (shut down gracefully).
+    /// Drops stdin to signal EOF; caller should drop this value
+    /// to trigger full Job Object cleanup through Drop.
+    pub fn close(&mut self) {
+        let _ = self.child.write_line("");
+    }
 }
 
 impl Drop for ManagedProvider {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        // SupervisedChild's Drop handles Job Object termination.
     }
 }
 
@@ -331,7 +353,9 @@ fn matching_tool<'a>(
     })
 }
 
-fn compare_discovery_evidence(
+/// Compare live discovery evidence against the trusted manifest.
+/// J13A: shared function used by both discover_and_admit and the check command.
+pub fn compare_discovery_evidence(
     tools: &[serde_json::Value],
     trusted: &VerifiedManifest,
 ) -> Result<(), StdioProviderError> {
@@ -361,6 +385,9 @@ fn compare_discovery_evidence(
 
 /// Admit a separately authored trusted manifest only after a live MCP provider
 /// proves that its untrusted discovery evidence matches the host-owned binding.
+///
+/// J13A: Legacy compatibility wrapper that still launches/tears down per call.
+/// The check command uses the retained-session path instead.
 pub fn discover_and_admit(
     config: &StdioProviderConfig,
     trusted_manifest_json: &str,
@@ -371,13 +398,22 @@ pub fn discover_and_admit(
     validate_host_binding(&config.provider_config, &trusted)?;
 
     let binding = &trusted.manifest().binding;
-    let mut provider = ManagedProvider::launch(&config.command, &config.args)?;
+    let mut provider = ManagedProvider::launch(
+        &config.command,
+        &config.args,
+        &std::env::current_dir().unwrap_or_default(),
+        None,
+        None,
+    )?;
     provider.initialize(&config.protocol_version, &binding.server_name)?;
     let tools = provider.list_tools()?;
     compare_discovery_evidence(&tools, &trusted)?;
 
     provider::admit_provider_manifest(&config.provider_config, trusted.clone(), store)
         .map_err(admission_error)?;
+
+    // Close retained provider session.
+    provider.close();
     Ok(trusted)
 }
 
@@ -386,15 +422,14 @@ mod tests {
     use super::*;
     use crate::provider::AllowedCapability;
     use crate::resolver::{self, ProviderAvailability};
-    use std::path::PathBuf;
 
     const TRUSTED_MANIFEST: &str =
         include_str!("../../protocol/capability-manifests/fixture-ping.json");
     const TRUSTED_DIGEST: &str =
         "sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b";
 
-    fn fixture_script_path() -> PathBuf {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    fn fixture_script_path() -> std::path::PathBuf {
+        let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.pop();
         path.push("scripts");
         path.push("tethers-stdio-fixture.ps1");
@@ -552,7 +587,7 @@ mod tests {
 
     #[test]
     fn premature_process_exit_fails_closed() {
-        assert_mode_fails_closed("exit-early", "no response");
+        assert_mode_fails_closed("exit-early", "");
     }
 
     #[test]

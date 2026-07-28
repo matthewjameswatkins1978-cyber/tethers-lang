@@ -75,7 +75,7 @@ $noFollowUpResponse = $null
 try {
     Push-Location $HostDir
     try {
-        $noFollowUpOutput = & cargo run --quiet -- $EnginePath $RequestPath "deny" $trailPathNoFollowUp "success"
+        $noFollowUpOutput = & cargo run --quiet -- __legacy $EnginePath $RequestPath "deny" $trailPathNoFollowUp "success"
         if ($LASTEXITCODE -ne 0) {
             throw "Rust reference host exited with code $LASTEXITCODE during no-follow-up smoke."
         }

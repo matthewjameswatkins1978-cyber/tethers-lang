@@ -27,7 +27,7 @@ try {
     try {
         # The failing executor must never be reached: structured scope is not
         # established for this demo binding.
-        $output = & cargo run -- $EnginePath $RequestPath "allow" $trailPath "fail"
+        $output = & cargo run -- __legacy $EnginePath $RequestPath "allow" $trailPath "fail"
         if ($LASTEXITCODE -ne 0) { throw "Rust reference host exited with code $LASTEXITCODE." }
     }
     finally { Pop-Location }

@@ -1,4 +1,5 @@
 pub mod approval;
+pub mod check_command;
 pub mod configured_runtime;
 pub mod dispatch;
 pub mod event_admission;
@@ -18,6 +19,7 @@ pub mod stdio_provider;
 pub mod trusted_store;
 mod validation;
 
+use clap::Parser;
 use dispatch::DispatchReadyAction;
 use event_admission::{EventAdmissionGate, EventAdmissionRejection};
 use policy::PermissionDecision;
@@ -33,7 +35,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
+use tethers_reference_host::child_process;
+#[allow(unused_imports)]
+use tethers_reference_host::cli::{Cli, CliEnvelope, Command as CliCommand, OutcomeStatus};
 const NORMAL_USAGE: &str = "usage: tethers-reference-host ENGINE REQUEST_JSON [POLICY] \
 [TRAIL_PATH] [EXECUTOR_MODE] [--host-data-root <ABSOLUTE_PATH>]";
 const PROVISION_USAGE: &str =
@@ -543,34 +547,168 @@ fn run_event_admission_trail_probe(args: &[String]) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = env::args().skip(1).collect::<Vec<_>>();
-    if matches!(args.first().map(String::as_str), Some("provision-replay")) {
-        let root = parse_provision_args(&args)?;
-        #[cfg(windows)]
-        {
-            let result = replay_windows::provision_replay(&root)?;
-            println!("{}", result.as_str());
-            return Ok(());
+fn main() {
+    // Install Ctrl+C handler before anything else.
+    let _ = child_process::install_ctrl_handler();
+
+    // Capture caller CWD exactly once at program entry.
+    let args: Vec<String> = env::args().collect();
+    let program_name = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or("tethers-reference-host");
+
+    // Try clap parse.  Use try_parse_from so clap never exits.
+    let cli_args: Vec<&str> = args.iter().skip(1).map(String::as_str).collect();
+    let cli = Cli::try_parse_from(std::iter::once(program_name).chain(cli_args.iter().copied()));
+
+    match cli {
+        Ok(Cli {
+            command: Some(CliCommand::Check { config, engine }),
+        }) => {
+            let result = check_command::run_check(&config, &engine);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
         }
-        #[cfg(not(windows))]
-        return Err("replay persistence is available only on native Windows".into());
+        Ok(Cli {
+            command: Some(CliCommand::Legacy { args }),
+        }) => {
+            // Route to legacy host with explicit __legacy subcommand.
+            match run_legacy_host(&args) {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    let envelope = CliEnvelope::error(
+                        "__legacy",
+                        OutcomeStatus::Failed,
+                        "LEGACY_ERROR",
+                        e.to_string(),
+                        None,
+                    );
+                    emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
+                }
+            }
+        }
+        Ok(Cli {
+            command: Some(CliCommand::ProvisionReplay { root }),
+        }) => {
+            #[cfg(windows)]
+            {
+                match crate::replay_windows::provision_replay(&root) {
+                    Ok(result) => {
+                        println!("{}", result.as_str());
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        let envelope = CliEnvelope::error(
+                            "provision-replay",
+                            OutcomeStatus::Failed,
+                            "PROVISION_FAILED",
+                            e.to_string(),
+                            None,
+                        );
+                        emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                let envelope = CliEnvelope::error(
+                    "provision-replay",
+                    OutcomeStatus::Unavailable,
+                    "WINDOWS_ONLY",
+                    "replay persistence is available only on native Windows",
+                    None,
+                );
+                emit_envelope_and_exit(envelope, OutcomeStatus::Unavailable.exit_code());
+            }
+        }
+        #[cfg(debug_assertions)]
+        Ok(Cli {
+            command: Some(CliCommand::EventAdmissionProbe { mode }),
+        }) => match run_event_admission_probe_clap(&mode) {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                let envelope = CliEnvelope::error(
+                    "event-admission-probe",
+                    OutcomeStatus::Failed,
+                    "PROBE_FAILED",
+                    e.to_string(),
+                    None,
+                );
+                emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
+            }
+        },
+        #[cfg(debug_assertions)]
+        Ok(Cli {
+            command: Some(CliCommand::EventAdmissionTrailProbe { mode, trail_path }),
+        }) => match run_event_admission_trail_probe_clap(&mode, &trail_path) {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                let envelope = CliEnvelope::error(
+                    "event-admission-trail-probe",
+                    OutcomeStatus::Failed,
+                    "PROBE_FAILED",
+                    e.to_string(),
+                    None,
+                );
+                emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
+            }
+        },
+        Ok(Cli { command: None }) => {
+            let envelope = CliEnvelope::error(
+                "tethers-reference-host",
+                OutcomeStatus::InvalidCliUsage,
+                "MISSING_COMMAND",
+                "no command provided",
+                None,
+            );
+            emit_envelope_and_exit(envelope, OutcomeStatus::InvalidCliUsage.exit_code());
+        }
+        Err(e) => {
+            let envelope = CliEnvelope::error(
+                "tethers-reference-host",
+                OutcomeStatus::InvalidCliUsage,
+                "INVALID_CLI_USAGE",
+                e.to_string(),
+                None,
+            );
+            emit_envelope_and_exit(envelope, OutcomeStatus::InvalidCliUsage.exit_code());
+        }
     }
-    #[cfg(debug_assertions)]
-    if matches!(
-        args.first().map(String::as_str),
-        Some("event-admission-trail-probe")
-    ) {
-        return run_event_admission_trail_probe(&args);
+}
+
+fn emit_envelope_and_exit(envelope: CliEnvelope, exit_code: i32) -> ! {
+    if let Ok(json) = serde_json::to_string(&envelope) {
+        println!("{json}");
     }
-    #[cfg(debug_assertions)]
-    if matches!(
-        args.first().map(String::as_str),
-        Some("event-admission-probe")
-    ) {
-        return run_event_admission_probe(&args);
+    std::process::exit(exit_code);
+}
+
+/// Clap-based wrapper for event-admission-probe debug command.
+#[cfg(debug_assertions)]
+fn run_event_admission_probe_clap(mode: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let response = build_event_admission_probe_response(mode)?;
+    println!("{}", serde_json::to_string_pretty(&response)?);
+    Ok(())
+}
+
+/// Clap-based wrapper for event-admission-trail-probe debug command.
+#[cfg(debug_assertions)]
+fn run_event_admission_trail_probe_clap(
+    mode: &str,
+    trail_path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(parent) = trail_path.parent() {
+        fs::create_dir_all(parent)?;
     }
-    let normal = parse_normal_args(&args)?;
+    let response = build_event_admission_trail_probe_response(mode, trail_path)?;
+    println!("{}", serde_json::to_string_pretty(&response)?);
+    Ok(())
+}
+
+/// Legacy host entry point, reachable only through explicit __legacy subcommand.
+fn run_legacy_host(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    // Legacy route: args come directly from clap __legacy parsing.
+    let normal = parse_normal_args(args)?;
 
     let request: Value = serde_json::from_str(&fs::read_to_string(&normal.request_path)?)?;
 
