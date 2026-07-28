@@ -10,18 +10,18 @@ Status: `COMPLETE`
 
 Base commit: `0e89bc79b314b67a4486504747bbbad17da94099`
 
-Implementation checkpoint: `41b6848a09db5edb0bd36f4bcc1e0aa39cf7eeb3`
+Implementation checkpoint: `41b6848a006215077228a5aa7a571dcbecc98d6e`
 
-Final acceptance cleanup: `148225399d51d325681c61b847c36510e9867ff2`
+Final evidence correction: `(pending commit)`
 
 ## Review-correction (2026-07-28) - COMPLETE
 
 Independent review accepted the runtime wiring logic. Two evidence-quality issues
 held final acceptance:
 
-1. `cargo check --tests` reported an unused `context` variable in test 15
-   (`j11_rejection_does_not_modify_replay`), violating the no-new-warnings
-   contract.
+1. `cargo check --tests` reported an unused `context` variable in test
+   `j11_rejection_never_enters_evaluation_callback` (formerly test 15),
+   violating the no-new-warnings contract.
 
 2. Most J11 coordinator tests exercised `drain_queue_with_admission()`, a
    test-only helper that duplicated the production drain loop. Final acceptance
@@ -36,41 +36,31 @@ held final acceptance:
 - Rewrote focused J11 tests (2-8, 10-11, 14-16) to prove behaviour
   through the actual production helper using callback-invocation
   counters.
-- Rewrote test 15 (`j11_rejection_does_not_modify_replay`) through the
+- Rewrote `j11_rejection_never_enters_evaluation_callback` through the
   production helper: proves a rejected gen-9 event never invokes the
   evaluation callback, removing the unused `context` variable.
 - Restored the clean `cargo check` warning baseline.
 
-## Final acceptance cleanup (2026-07-28) - COMPLETE
+## Final evidence correction (2026-07-28) - COMPLETE
 
-- Removed an embedded ESC (0x1B) control character in the doc comment for
-  `drain_result_event_queue`, repairing "evaluate" to ordinary UTF-8.
-- Scanned both authorised files for unexpected control characters (excluding
-  TAB, CR, LF); none found.
-- Removed untracked `tools/` directory generated during Goose task work.
+- Corrected base commit SHA typo in References: `b334` → `b314`.
+- Validated all recorded SHAs against the repository.
 - Strengthened `j11_completed_follow_ups_preserved_before_rejection`:
-  added exact `follow_up_evaluations[0]` content assertion, verified
-  `apply_to_response` preserves a pre-existing `status` field on the
-  response object, and re-verified rejection JSON after mutation.
-- Added `j11_fifo_child_appended_during_drain`: proves that enqueueing a
-  child anchor inside the evaluate callback preserves J10 FIFO
-  tail-appending through the production `drain_result_event_queue`
-  boundary. Evaluated order: sibling-A, sibling-B, child-A1.
+  added assertions against the mutated `response` after `apply_to_response`,
+  proving that `follow_up_evaluations` and `event_admission_rejection` are
+  injected with exact JSON shapes and a pre-existing `status` key is
+  preserved.
+- Renamed `j11_rejection_does_not_modify_replay` →
+  `j11_rejection_never_enters_evaluation_callback`: the test proves callback
+  non-entry for rejected events and that the gate remains usable afterward;
+  it does not directly inspect replay state.
+- Renamed `j11_rejection_prevents_dispatch_entry` →
+  `j11_provider_call_count_unchanged_after_gate_rejection`: the test performs
+  one successful dispatch, exercises gate rejection directly, and verifies no
+  second provider call occurred; it is a dispatch-seam sanity check, not proof
+  that the production drain helper reached the dispatch boundary.
+- Updated all documentation references to match corrected test names.
 - Updated this worker note to a single internally consistent record.
-
-### Final acceptance evidence
-
-- `cargo check`: 9 baseline warnings, 0 new
-- `cargo check --tests`: 4 baseline test warnings, 0 new
-- `cargo test j11_`: 19/19 passed
-- `cargo test event_admission`: 15/15 passed
-- `cargo test` full suite: 507/507 passed
-- `cargo fmt --check`: PASS
-- `cargo clippy --all-targets --all-features`: no new warnings
-- Task packet checker: PASS
-- `git diff --check`: no whitespace errors
-- Only `docs/worker-notes/2026-07-28-j11-runtime-admission-wiring.md`
-  and `tethers-0.1/host-rust/src/main.rs` modified.
 
 ## Requested outcome
 
@@ -149,13 +139,13 @@ No changes to `event_admission.rs`, `event_queue.rs`, `result_anchor.rs`,
 6. `j11_generation_nine_not_evaluated`
 7. `j11_generation_above_nine_not_evaluated`
 8. `j11_rejected_event_causes_zero_processing`
-9. `j11_rejection_prevents_dispatch_entry`
+9. `j11_provider_call_count_unchanged_after_gate_rejection`
 10. `j11_rejection_stops_later_siblings`
 11. `j11_completed_follow_ups_preserved_before_rejection`
 12. `j11_duplicate_rejection_json_exact_shape`
 13. `j11_depth_rejection_json_exact_shape`
 14. `j11_clean_run_omits_rejection_field`
-15. `j11_rejection_does_not_modify_replay`
+15. `j11_rejection_never_enters_evaluation_callback`
 16. `j11_rejection_produces_no_anchor`
 17. `j11_admission_persists_when_evaluation_fails`
 18. `j11_max_evaluation_generation_is_eight`
@@ -166,15 +156,18 @@ No changes to `event_admission.rs`, `event_queue.rs`, `result_anchor.rs`,
 - **Generation 8 evaluates, generation 9 does not**: Tests 5 and 6/7.
 - **Later siblings stop**: Test 10 - `evt/c` remains in queue after `evt/b`
   rejection.
-- **No engine/provider activity on rejection**: Tests 8 (callback never
-  invoked for rejected events) and 9 (dispatch seam proves zero provider
-  calls after gate rejection).
-- **Completed follow-ups preserved**: Test 11 - `evt/first` is evaluated
-  and its completed response entry is present in `follow_up_evaluations[0]`
-  with exact `input_event_id`, `generation`, and `response` content;
-  `apply_to_response` does not disturb a pre-existing `status` key.
-- **Callback non-entry**: Tests 8 and 15 prove rejected events never invoke
-  the evaluate callback.
+- **Callback non-entry proves downstream stages unreachable**: Tests 8 and 15
+  prove rejected events never invoke the evaluate callback; without the
+  callback, no `process_one_event`, no dispatch, no replay, and no provider
+  call can occur.
+- **Completed follow-ups preserved in response**: Test 11 - `evt/first` is
+  evaluated; after `apply_to_response`, `response["follow_up_evaluations"]`
+  contains the exact completed entry, `response["event_admission_rejection"]`
+  contains the exact duplicate rejection JSON, and `response["status"]` is
+  still `"existing"` (the pre-existing key is undisturbed).
+- **Provider call count unchanged**: Test 9 performs one successful dispatch
+  through the full dispatch seam, then gate-rejects a duplicate; verifies the
+  provider call count remains 1.
 - **JSON shapes**: Tests 12 (duplicate) and 13 (depth) verify exact field
   names, values, and counts.
 - **Clean run omits field**: Test 14 - three anchors all pass, rejection is
@@ -209,5 +202,5 @@ J11 Packet 3: production end-to-end rejection verification.
 - Production drain: `drain_result_event_queue()` in `main.rs`
 - Drain outcome: `EventDrainOutcome` struct with `apply_to_response()`
 - Rejection JSON helper: `event_admission_rejection_value()`
-- Base commit: `0e89bc79b334b67a4486504747bbbad17da94099`
+- Base commit: `0e89bc79b314b67a4486504747bbbad17da94099`
 - Branch: `goose/j11-runtime-admission-wiring`

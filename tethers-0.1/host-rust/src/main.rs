@@ -6837,9 +6837,9 @@ mod tests {
         assert!(outcome.event_admission_rejection.is_some());
     }
 
-    // 9. Rejection prevents provider dispatch via the full dispatch seam.
+    // 9. Provider call count unchanged after gate rejection (dispatch-seam sanity).
     #[test]
-    fn j11_rejection_prevents_dispatch_entry() {
+    fn j11_provider_call_count_unchanged_after_gate_rejection() {
         use crate::dispatch::RecordingTrail;
         use crate::replay_runtime::test_support::TestReplayAuthority;
         use std::cell::RefCell;
@@ -6973,13 +6973,22 @@ mod tests {
         let mut response = json!({"status": "existing"});
         outcome.apply_to_response(&mut response);
         assert_eq!(
-            outcome.follow_up_evaluations[0],
-            json!({
+            response["follow_up_evaluations"],
+            json!([{
                 "input_event_id": "evt/first",
                 "generation": 1,
                 "response": {
                     "status": "ok"
                 }
+            }])
+        );
+        assert_eq!(
+            response["event_admission_rejection"],
+            json!({
+                "kind": "duplicate_event_id",
+                "event_id": "evt/first",
+                "generation": 1,
+                "processing": "stopped"
             })
         );
         assert_eq!(
@@ -7049,12 +7058,12 @@ mod tests {
         assert!(queue.is_empty());
     }
 
-    // 15. Rejection never invokes the evaluation callback.
+    // 15. Rejection never enters the evaluation callback.
     //     Because the production drain helper gates admission before the
     //     callback, a rejected event never reaches replay, policy, dispatch,
     //     providers, or Trail.
     #[test]
-    fn j11_rejection_does_not_modify_replay() {
+    fn j11_rejection_never_enters_evaluation_callback() {
         let mut gate = EventAdmissionGate::new();
         assert!(gate.admit("evt_blocked", 9).is_err());
 
