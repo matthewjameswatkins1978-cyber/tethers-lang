@@ -130,6 +130,64 @@ fn event_admission_rejection_value(rejection: &EventAdmissionRejection, generati
     }
 }
 
+/// Outcome of draining the follow-up event queue with admission.
+struct EventDrainOutcome {
+    follow_up_evaluations: Vec<Value>,
+    event_admission_rejection: Option<Value>,
+}
+
+impl EventDrainOutcome {
+    fn apply_to_response(&self, response: &mut Value) {
+        if let Some(ref rejection_value) = self.event_admission_rejection {
+            response["event_admission_rejection"] = rejection_value.clone();
+        }
+        if !self.follow_up_evaluations.is_empty() {
+            response["follow_up_evaluations"] = Value::Array(self.follow_up_evaluations.clone());
+        }
+    }
+}
+
+/// Drain the follow-up event queue with admission gating.
+///
+/// Each queued anchor is admitted before the valuate callback is invoked.
+/// On rejection the drain stops immediately and records the frozen rejection
+/// value.  The callback receives the anchor and queue so newly generated
+/// child anchors are appended normally.
+fn drain_result_event_queue<E, F>(
+    queue: &mut event_queue::ResultEventQueue,
+    admission_gate: &mut EventAdmissionGate,
+    mut evaluate: F,
+) -> Result<EventDrainOutcome, E>
+where
+    F: FnMut(&ResultAnchor, &mut event_queue::ResultEventQueue) -> Result<Value, E>,
+{
+    let mut follow_up_evaluations: Vec<Value> = Vec::new();
+    let mut event_admission_rejection: Option<Value> = None;
+
+    while let Some(anchor) = queue.pop_front() {
+        let input_event_id = anchor.event_id.clone();
+        let generation = anchor.generation;
+
+        if let Err(rejection) = admission_gate.admit(&input_event_id, generation) {
+            event_admission_rejection =
+                Some(event_admission_rejection_value(&rejection, generation));
+            break;
+        }
+
+        let follow_up_response = evaluate(&anchor, queue)?;
+        follow_up_evaluations.push(json!({
+            "input_event_id": input_event_id,
+            "generation": generation,
+            "response": follow_up_response,
+        }));
+    }
+
+    Ok(EventDrainOutcome {
+        follow_up_evaluations,
+        event_admission_rejection,
+    })
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if matches!(args.first().map(String::as_str), Some("provision-replay")) {
@@ -278,36 +336,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // single `process_one_event` call stops the loop immediately: the
     // failed item is not retried, and later queued items are not
     // processed.
-    let mut follow_up_evaluations: Vec<Value> = Vec::new();
-    let mut event_admission_rejection: Option<Value> = None;
-    while let Some(anchor) = queue.pop_front() {
-        let input_event_id = anchor.event_id.clone();
-        let generation = anchor.generation;
+    let drain_outcome = drain_result_event_queue(
+        &mut queue,
+        &mut admission_gate,
+        |anchor, queue| -> Result<Value, Box<dyn std::error::Error>> {
+            let context = InputEventContext::from_result_anchor(anchor);
+            let follow_up_request = build_follow_up_request(&pristine_template, anchor)?;
+            let follow_up_response =
+                process_one_event(follow_up_request, context, &mut runtime, queue)?;
+            Ok(follow_up_response)
+        },
+    )?;
 
-        // J11: admit the queued event before any evaluation.
-        if let Err(rejection) = admission_gate.admit(&input_event_id, generation) {
-            event_admission_rejection =
-                Some(event_admission_rejection_value(&rejection, generation));
-            break;
-        }
-        let context = InputEventContext::from_result_anchor(&anchor);
-        let follow_up_request = build_follow_up_request(&pristine_template, &anchor)?;
-        let follow_up_response =
-            process_one_event(follow_up_request, context, &mut runtime, &mut queue)?;
-        follow_up_evaluations.push(json!({
-            "input_event_id": input_event_id,
-            "generation": generation,
-            "response": follow_up_response,
-        }));
-    }
-
-    if let Some(rejection_value) = event_admission_rejection {
-        response["event_admission_rejection"] = rejection_value;
-    }
-
-    if !follow_up_evaluations.is_empty() {
-        response["follow_up_evaluations"] = Value::Array(follow_up_evaluations);
-    }
+    drain_outcome.apply_to_response(&mut response);
 
     println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
@@ -6586,31 +6627,6 @@ mod tests {
     // J11: event admission wiring tests
     // -------------------------------------------------------------------
 
-    /// Test helper: simulate the coordinator drain loop with admission.
-    /// Returns (processed_event_ids, optional_rejection).
-    #[cfg(test)]
-    fn drain_queue_with_admission(
-        gate: &mut EventAdmissionGate,
-        queue: &mut event_queue::ResultEventQueue,
-    ) -> (Vec<String>, Option<EventAdmissionRejection>) {
-        let mut processed: Vec<String> = Vec::new();
-        let mut rejection: Option<EventAdmissionRejection> = None;
-        while let Some(anchor) = queue.pop_front() {
-            let event_id = anchor.event_id.clone();
-            let generation = anchor.generation;
-            match gate.admit(&event_id, generation) {
-                Ok(()) => {
-                    processed.push(event_id);
-                }
-                Err(rej) => {
-                    rejection = Some(rej);
-                    break;
-                }
-            }
-        }
-        (processed, rejection)
-    }
-
     fn j11_sample_anchor(event_id: &str, generation: u32) -> ResultAnchor {
         use crate::result_anchor::ResultAnchorKind;
         ResultAnchor::new(
@@ -6651,12 +6667,22 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/follow-up-a", 1));
         queue.enqueue(j11_sample_anchor("evt/follow-up-b", 2));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert!(rejection.is_none(), "no rejection on clean run");
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert!(
+            outcome.event_admission_rejection.is_none(),
+            "no rejection on clean run"
+        );
         assert_eq!(
-            processed,
+            evaluated,
             vec!["evt/follow-up-a".to_string(), "evt/follow-up-b".to_string()]
         );
+        assert_eq!(outcome.follow_up_evaluations.len(), 2);
     }
 
     // 3. Queued event reusing the initial external ID is rejected.
@@ -6668,13 +6694,22 @@ mod tests {
         let mut queue = event_queue::ResultEventQueue::new();
         queue.enqueue(j11_sample_anchor("evt_initial", 1));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert!(processed.is_empty(), "duplicate must not be processed");
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert!(evaluated.is_empty(), "duplicate must not be processed");
         assert_eq!(
-            rejection,
-            Some(EventAdmissionRejection::DuplicateEventId {
-                event_id: "evt_initial".to_string(),
-            })
+            outcome.event_admission_rejection,
+            Some(event_admission_rejection_value(
+                &EventAdmissionRejection::DuplicateEventId {
+                    event_id: "evt_initial".to_string(),
+                },
+                1,
+            ))
         );
     }
 
@@ -6687,13 +6722,22 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/alpha", 1));
         queue.enqueue(j11_sample_anchor("evt/beta", 1));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert_eq!(processed, vec!["evt/alpha".to_string()]);
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert_eq!(evaluated, vec!["evt/alpha".to_string()]);
         assert_eq!(
-            rejection,
-            Some(EventAdmissionRejection::DuplicateEventId {
-                event_id: "evt/alpha".to_string(),
-            })
+            outcome.event_admission_rejection,
+            Some(event_admission_rejection_value(
+                &EventAdmissionRejection::DuplicateEventId {
+                    event_id: "evt/alpha".to_string(),
+                },
+                1,
+            ))
         );
         assert_eq!(queue.len(), 1);
     }
@@ -6705,9 +6749,15 @@ mod tests {
         let mut queue = event_queue::ResultEventQueue::new();
         queue.enqueue(j11_sample_anchor("evt/deep", 8));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert!(rejection.is_none());
-        assert_eq!(processed, vec!["evt/deep".to_string()]);
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert!(outcome.event_admission_rejection.is_none());
+        assert_eq!(evaluated, vec!["evt/deep".to_string()]);
     }
 
     // 6. Generation-9 queued event not evaluated.
@@ -6717,15 +6767,24 @@ mod tests {
         let mut queue = event_queue::ResultEventQueue::new();
         queue.enqueue(j11_sample_anchor("evt/too-deep", 9));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert!(processed.is_empty());
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert!(evaluated.is_empty());
         assert_eq!(
-            rejection,
-            Some(EventAdmissionRejection::CausalDepthExceeded {
-                event_id: "evt/too-deep".to_string(),
-                generation: 9,
-                maximum_generation: 8,
-            })
+            outcome.event_admission_rejection,
+            Some(event_admission_rejection_value(
+                &EventAdmissionRejection::CausalDepthExceeded {
+                    event_id: "evt/too-deep".to_string(),
+                    generation: 9,
+                    maximum_generation: 8,
+                },
+                9,
+            ))
         );
     }
 
@@ -6736,15 +6795,24 @@ mod tests {
         let mut queue = event_queue::ResultEventQueue::new();
         queue.enqueue(j11_sample_anchor("evt/very-deep", 42));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert!(processed.is_empty());
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert!(evaluated.is_empty());
         assert_eq!(
-            rejection,
-            Some(EventAdmissionRejection::CausalDepthExceeded {
-                event_id: "evt/very-deep".to_string(),
-                generation: 42,
-                maximum_generation: 8,
-            })
+            outcome.event_admission_rejection,
+            Some(event_admission_rejection_value(
+                &EventAdmissionRejection::CausalDepthExceeded {
+                    event_id: "evt/very-deep".to_string(),
+                    generation: 42,
+                    maximum_generation: 8,
+                },
+                42,
+            ))
         );
     }
 
@@ -6755,12 +6823,18 @@ mod tests {
         let mut queue = event_queue::ResultEventQueue::new();
         queue.enqueue(j11_sample_anchor("evt/rejected", 9));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert!(rejection.is_some());
+        let mut callback_called = false;
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |_anchor, _queue| {
+            callback_called = true;
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
         assert!(
-            processed.is_empty(),
-            "rejected event must not reach processing"
+            !callback_called,
+            "rejected event must never invoke the evaluation callback"
         );
+        assert!(outcome.event_admission_rejection.is_some());
     }
 
     // 9. Rejection prevents provider dispatch via the full dispatch seam.
@@ -6851,11 +6925,18 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/b", 9));
         queue.enqueue(j11_sample_anchor("evt/c", 1));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert_eq!(processed, vec!["evt/a".to_string()]);
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert_eq!(evaluated, vec!["evt/a".to_string()]);
+        assert!(outcome.event_admission_rejection.is_some());
         assert!(matches!(
-            rejection,
-            Some(EventAdmissionRejection::CausalDepthExceeded { .. })
+            outcome.event_admission_rejection.as_ref().unwrap()["kind"],
+            Value::String(ref s) if s == "causal_depth_exceeded"
         ));
         assert_eq!(queue.len(), 1);
         assert_eq!(queue.pop_front().unwrap().event_id, "evt/c");
@@ -6870,13 +6951,22 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/first", 1));
         queue.enqueue(j11_sample_anchor("evt/third", 1));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert_eq!(processed, vec!["evt/first".to_string()]);
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert_eq!(evaluated, vec!["evt/first".to_string()]);
         assert_eq!(
-            rejection,
-            Some(EventAdmissionRejection::DuplicateEventId {
-                event_id: "evt/first".to_string(),
-            })
+            outcome.event_admission_rejection,
+            Some(event_admission_rejection_value(
+                &EventAdmissionRejection::DuplicateEventId {
+                    event_id: "evt/first".to_string(),
+                },
+                1,
+            ))
         );
         assert_eq!(queue.pop_front().unwrap().event_id, "evt/third");
     }
@@ -6923,87 +7013,49 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/y", 2));
         queue.enqueue(j11_sample_anchor("evt/z", 3));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert!(rejection.is_none());
-        assert_eq!(processed.len(), 3);
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert!(outcome.event_admission_rejection.is_none());
+        assert_eq!(evaluated.len(), 3);
         assert!(queue.is_empty());
     }
 
-    // 15. Rejection does not modify J09 replay state.
+    // 15. Rejection never invokes the evaluation callback.
+    //     Because the production drain helper gates admission before the
+    //     callback, a rejected event never reaches replay, policy, dispatch,
+    //     providers, or Trail.
     #[test]
     fn j11_rejection_does_not_modify_replay() {
-        use crate::dispatch::RecordingTrail;
-        use crate::replay_runtime::test_support::TestReplayAuthority;
-        use std::cell::RefCell;
-        use std::rc::Rc;
-
-        let calls = Rc::new(RefCell::new(0u32));
-        struct Counter(Rc<RefCell<u32>>);
-        impl CapabilityExecutor for Counter {
-            fn provider_identity(&self) -> &str {
-                "lantern-local"
-            }
-            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
-                *self.0.borrow_mut() += 1;
-                Ok(json!({"status": "ok"}))
-            }
-        }
-
         let mut gate = EventAdmissionGate::new();
         assert!(gate.admit("evt_blocked", 9).is_err());
 
-        let (_store, resolved) = resolved_lantern();
-        let clock = outcome::ProductionMonotonicClock::new();
-        let mut trail = RecordingTrail::new();
-        let mut authority = TestReplayAuthority::default();
-        let mut executor = Counter(Rc::clone(&calls));
-        let context = InputEventContext::for_initial("evt_blocked");
-        let mut shared_queue = event_queue::ResultEventQueue::new();
-        let mut anchor_writer = QueueingResultAnchorWriter {
-            inner: ResponseResultAnchorWriter,
-            queue: &mut shared_queue,
-        };
-        let mut response = json!({
-            "evaluation_id": "eval_test",
-            "plan": {
-                "id": "plan-001",
-                "required_effects": ["lantern.write"],
-                "actions": [{
-                    "action_id": "action_1",
-                    "idempotency_key": "eval_test/action_1",
-                    "capability": "lantern.task.record",
-                    "capability_version": planner_version_from_manifest_major(resolved.capability_version()),
-                    "bridge_capability_version": resolved.capability_version(),
-                    "manifest_digest": resolved.manifest_digest(),
-                    "bridge_provider_identity": "lantern-local",
-                    "arguments": {"project": "p", "task": "t"},
-                }],
-            },
-            "trail": [],
-        });
+        let mut queue = event_queue::ResultEventQueue::new();
+        queue.enqueue(j11_sample_anchor("evt_blocked", 9));
 
-        assert!(!gate.admit("evt_blocked", 9).is_ok());
+        let mut callback_called = false;
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |_anchor, _queue| {
+            callback_called = true;
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
 
+        assert!(
+            !callback_called,
+            "rejected event must never invoke the evaluation callback"
+        );
+        assert!(outcome.event_admission_rejection.is_some());
+
+        // Gate still admits clean events normally afterward.
         gate.admit("evt_clean", 0).unwrap();
-        let context2 = InputEventContext::for_initial("evt_clean");
-        authorise_and_execute_inner(
-            &mut response,
-            allow_decision_for(&resolved),
-            &resolved,
-            &mut trail,
-            &mut executor,
-            &context2,
-            true,
-            &clock,
-            &mut authority,
-            None,
-            &mut anchor_writer,
-        )
-        .expect("clean dispatch");
-        assert_eq!(*calls.borrow(), 1);
+        assert_eq!(gate.admitted_count(), 1);
     }
 
-    // 16. Rejection does not produce or enqueue a Result Anchor.
+    // 16. Rejection produces no follow-up evaluation entry.
     #[test]
     fn j11_rejection_produces_no_anchor() {
         let mut gate = EventAdmissionGate::new();
@@ -7011,9 +7063,15 @@ mod tests {
         queue.enqueue(j11_sample_anchor("evt/rejected", 9));
         queue.enqueue(j11_sample_anchor("evt/legit", 1));
 
-        let (processed, rejection) = drain_queue_with_admission(&mut gate, &mut queue);
-        assert!(rejection.is_some());
-        assert!(processed.is_empty());
+        let mut evaluated: Vec<String> = Vec::new();
+        let outcome = drain_result_event_queue(&mut queue, &mut gate, |anchor, _queue| {
+            evaluated.push(anchor.event_id.clone());
+            Ok::<_, Box<dyn std::error::Error>>(json!({"status": "ok"}))
+        })
+        .unwrap();
+
+        assert!(outcome.event_admission_rejection.is_some());
+        assert!(evaluated.is_empty());
         assert_eq!(queue.len(), 1);
         assert_eq!(queue.pop_front().unwrap().event_id, "evt/legit");
     }

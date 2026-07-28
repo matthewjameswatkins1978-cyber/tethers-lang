@@ -10,7 +10,48 @@ Status: `COMPLETE`
 
 Base commit: `0e89bc79b314b67a4486504747bbbad17da94099`
 
-Implementation checkpoint: `1ad2cee1907f40631caa2c48f68bfee09d0827c4`
+Implementation checkpoint: `WORKTREE`
+
+## Review-correction (2026-07-28) — COMPLETE
+
+Independent review accepted the runtime wiring logic. Two evidence-quality issues
+held final acceptance:
+
+1. `cargo check --tests` reported an unused `context` variable in test 15
+   (`j11_rejection_does_not_modify_replay`), violating the no-new-warnings
+   contract.
+
+2. Most J11 coordinator tests exercised `drain_queue_with_admission()`, a
+   test-only helper that duplicated the production drain loop. Final acceptance
+   requires testing the actual production drain boundary.
+
+### Correction changes
+
+- Extracted one shared `drain_result_event_queue` production function
+  with `EventDrainOutcome` and `apply_to_response()`.
+- Wired `main()` through the production helper.
+- Removed the duplicate test-only `drain_queue_with_admission`.
+- Rewrote focused J11 tests (2–8, 10–11, 14–16) to prove behaviour
+  through the actual production helper using callback-invocation
+  counters.
+- Rewrote test 15 (`j11_rejection_does_not_modify_replay`) through the
+  production helper: proves a rejected gen-9 event never invokes the
+  evaluation callback, removing the unused `context` variable.
+- Restored the clean `cargo check` warning baseline: 9 baseline
+  warnings, 0 J11 Packet 2 warnings.
+
+### Correction evidence
+
+- `cargo check`: 9 baseline warnings, 0 new
+- `cargo check --tests`: 4 baseline test warnings, 0 new
+- `cargo test j11_`: 18/18 passed
+- `cargo test event_admission`: 15/15 passed
+- `cargo test` full suite: 506/506 passed
+- `cargo clippy --all-targets --all-features`: no new warnings
+- All integration scripts: PASS
+- `opam exec --switch=... -- dune build`: PASS
+- `git diff --check`: no whitespace errors
+- Task packet checker: PASS
 
 ## Requested outcome
 
