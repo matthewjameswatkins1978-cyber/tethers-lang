@@ -20,7 +20,15 @@ Owner: Goose
 
 ## Documentation checkpoint
 
-`INSERT_DOCUMENTATION_SHA`
+`e13c8d516d6c75128d6da8f7904ebef37e9f1731`
+
+## Implementation correction (scope-binding identity fix)
+
+`0da8b75701fb17ff71f5cb9e2667c8e761835c01`
+
+## Documentation correction (evidence completion)
+
+Recorded by the external final report because a commit cannot contain its own SHA.
 
 ## Authorised files
 
@@ -71,6 +79,22 @@ The frozen J12 JSON configuration schema is:
 }
 ```
 
+## Global scoped-identity rule (corrected)
+
+A provider capability with `scope_binding` is rejected when the same exact
+`(name, version)` identity appears more than once anywhere across all
+configured providers.  It does not matter whether the other occurrence also
+has `scope_binding`.  Same name at different versions is not a duplicate
+identity.
+
+Implementation: a first pass over all provider capabilities builds a
+`HashMap<(String, u32), usize>` identity counter.  The per-capability
+validation checks when `scope_binding` is present: if the identity count
+exceeds 1, the configuration is rejected with `DuplicateEntry`.
+
+The previous per-provider `scope_bound_names: HashSet<String>` logic
+(name-only, same-provider-scoped) has been removed.
+
 ## Validation matrix
 
 | Rule | Enforced by |
@@ -84,7 +108,7 @@ The frozen J12 JSON configuration schema is:
 | Duplicate Tether id/version pairs | Semantic validation |
 | Duplicate requirement name/version pairs | Semantic validation |
 | Duplicate provider IDs | Semantic validation |
-| Duplicate provider capability name/version pairs | Semantic validation |
+| Duplicate provider capability name/version pairs (per provider) | Semantic validation |
 | Duplicate policy name/version pairs | Semantic validation |
 | Requirement without matching provider capability | Cross-reference validation |
 | Provider capability not required by Tether Set | Cross-reference validation |
@@ -98,11 +122,11 @@ The frozen J12 JSON configuration schema is:
 | Scope kind other than "path_prefix" | Serde enum deserialization |
 | Empty JSON Pointer | Semantic validation |
 | JSON Pointer not beginning with "/" | Semantic validation |
-| Scope binding on duplicate capability identity | Semantic validation |
+| Scope binding on capability with non-unique global identity | Semantic validation (global identity count) |
 
 ## Focused test names and count
 
-32 tests with `j12_packet1_` prefix:
+35 tests with `j12_packet1_` prefix (22 mandatory behavioural + 10 additional boundary/materialisation + 3 scope-identity correction):
 
 1. j12_packet1_valid_minimal_configuration_parses
 2. j12_packet1_tether_order_preserved
@@ -136,10 +160,13 @@ The frozen J12 JSON configuration schema is:
 30. j12_packet1_materialization_produces_correct_policy
 31. j12_packet1_provider_materialization_preserves_scope
 32. j12_packet1_provider_config_from_materialization
+33. j12_packet1_scoped_identity_duplicated_in_another_provider_rejected
+34. j12_packet1_scoped_identity_duplicate_order_independent
+35. j12_packet1_same_name_different_version_scoped_not_rejected
 
-Result: 32/32 PASS (all with j12_packet1_ prefix)
+Result: 35/35 PASS (all with j12_packet1_ prefix)
 
-Full Rust total: 554/554 PASS
+Full Rust total: 557/557 PASS
 
 ## Warning totals and deltas
 
@@ -156,34 +183,38 @@ Zero new warnings introduced.
 - `cargo fmt --check`: PASS (no diffs)
 - `cargo check`: PASS (9 pre-existing warnings)
 - `cargo check --tests`: PASS (4 pre-existing warnings)
-- `cargo test j12_packet1_ -- --nocapture`: PASS (32/32)
-- `cargo test`: PASS (554/554)
+- `cargo test j12_packet1_ -- --nocapture`: PASS (35/35)
+- `cargo test`: PASS (557/557)
 - `cargo clippy --all-targets --all-features`: PASS (0 new warnings)
 - `cargo build`: PASS (9 pre-existing warnings)
 - `cargo build --release`: PASS (9 pre-existing warnings)
 - `check-tethers-task-packet.ps1`: PASS
 - `check-fixtures.ps1`: PASS (46 JSON, 30 JSONL)
-- `test-engine.ps1`: NOT RUN (pre-existing opam switch)
+- `test-engine.ps1`: PASS (24/24)
 - `test-mcp-transcripts.ps1`: PASS (15/15)
-- `test-host-denial.ps1`: NOT RUN (pre-existing opam switch)
-- `test-host-execution-failure.ps1`: NOT RUN (pre-existing opam switch)
-- `test-host-result-follow-up.ps1`: NOT RUN (pre-existing opam switch)
+- `test-host-denial.ps1`: PASS
+- `test-host-execution-failure.ps1`: PASS
+- `test-host-result-follow-up.ps1`: PASS
 - `test-host-event-admission.ps1`: PASS (9/9)
 - `test-host-event-admission-trail.ps1`: PASS (10/10)
-- `demo.ps1`: NOT RUN (pre-existing opam switch)
-- `opam exec -- dune build`: NOT RUN (pre-existing opam switch)
+- `demo.ps1`: PASS
+- `opam exec -- dune build`: PASS
 - `git diff --check`: PASS (LF/CRLF warnings only)
-- `control-character scan`: PASS (all 5 authorized text files)
-- `git status --porcelain`: 5 changed files (6th is this worker note)
+- `control-character scan`: PASS (all 6 authorized text files)
+- `git status --porcelain`: clean after commits
+
+All previously omitted opam-backed checks now pass using the existing opam
+switch at `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`.
 
 ## Direct evidence
 
 - manifest.rs: `parse_value_no_dupes` changed from `fn` to `pub(crate) fn` (1 line)
 - main.rs: added `pub mod runtime_config;` (1 line)
-- runtime_config.rs: 1518 lines, 554 total tests pass including all 32 new
+- runtime_config.rs: parsing, validation, materialisation, and 35 focused tests
 - DECISIONS.md: appended J12 decision freezing exact schema
 - CURRENT_CLINE_TASK.md: replaced with J12 Packet 1 task packet
 - Manifest behaviour unchanged: all existing tests pass; test j12_packet1_manifest_duplicate_key_unchanged verifies both valid parse and duplicate-key rejection
+- Global scoped-identity validation: first pass builds identity counter; second pass rejects any scope-bound capability whose exact (name, version) identity count exceeds 1
 
 ## Unimplemented Packet 2 seams
 
@@ -196,11 +227,6 @@ The following are explicitly deferred to Packet 2:
 5. Dispatching an Action to a provider.
 6. Writing dispatch, execution, or result Trail entries.
 7. Creating a J13 command, CLI, daemon, or GUI.
-
-## Remaining risks
-
-- The opam switch used by `test-engine.ps1`, `test-host-denial.ps1`, `test-host-execution-failure.ps1`, `test-host-result-follow-up.ps1`, and `demo.ps1` is configured for the original repository path and not this worktree. This is a pre-existing environment configuration issue unrelated to J12 changes.
-- The `ProviderMaterialization` intermediate type carries scope bindings alongside `ProviderConfig`-compatible data. Packet 2 must wire scope bindings into the host-owned scope assessor.
 
 ## Smallest next action
 

@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J12 packet 1 strict minimal local runtime configuration foundation`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Green`
 
@@ -70,8 +70,10 @@ fields. `policy.rs` defines `CapabilityRequirement`, `HostLocalPolicy`, and
 6. Where direct materialisation would require modifying an unauthorised
    module, return a clearly typed intermediate and document the Packet 2
    wiring seam.
-7. Add exactly 22+ focused tests with `j12_packet1_` prefix covering the
-   complete validation matrix.
+7. Add at least 22 focused behavioural tests with `j12_packet1_` prefix
+   covering the complete validation matrix.  Ten additional boundary and
+   materialisation tests were added, and three global scoped-identity
+   correction tests were added, for a final focused total of 35.
 8. Add a J12 decision to `docs/DECISIONS.md` freezing the exact schema.
 
 ## Relevant components
@@ -104,7 +106,7 @@ fields. `policy.rs` defines `CapabilityRequirement`, `HostLocalPolicy`, and
 
 ## Acceptance criteria
 
-1. All 554 Rust tests pass (522 existing + 32 new).
+1. All 557 Rust tests pass (522 existing + 35 new).
 2. `cargo fmt --check` reports no diffs.
 3. `cargo clippy --all-targets --all-features` produces zero new warnings.
 4. `cargo build` and `cargo build --release` succeed.
