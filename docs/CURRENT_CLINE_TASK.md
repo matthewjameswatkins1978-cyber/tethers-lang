@@ -4,7 +4,7 @@ Control contract: `1`
 
 Task: `J11 packet 4 durable event-admission Trail and final implementation closure`
 
-Status: `COMPLETE`
+Status: `BLOCKED`
 
 Task colour: `Green`
 
@@ -25,24 +25,50 @@ Branch: `goose/j11-event-trail-final`
 Record every J11 event-admission decision in the existing durable append-only Trail
 before evaluation continues or stops.
 
-## Authorised files
+## Relevant background and existing behaviour
 
-- `tethers-0.1/host-rust/src/dispatch.rs` — EventAdmissionEntry, Trail extension, FileTrail + RecordingTrail impls
-- `tethers-0.1/host-rust/src/main.rs` — admission-entry mapper, drain update, trail probe, initial admission, tests
-- `tethers-0.1/scripts/test-host-result-follow-up.ps1` — updated to expect one admission record
-- `tethers-0.1/scripts/test-host-event-admission-trail.ps1` — new compiled-boundary trail verification
-- `docs/CURRENT_CLINE_TASK.md` — this file
-- `docs/worker-notes/2026-07-28-j11-event-trail-final.md` — implementation evidence
+J11 Packet 3 introduced `EventAdmissionGate` (in-memory deduplication + causal-depth guard,
+max generation 8) and `ResultEventQueue` for follow-up anchors. Admission decisions were
+made in memory but not durably recorded. The `Trail` trait (`dispatch.rs`) supported
+`append_action` entries but had no event-admission variant. The existing `FileTrail` uses
+`flush` + `sync_data` for durability; `RecordingTrail` captures entries for tests.
 
-## Forbidden changes
+J10 provided the serial follow-up coordinator with 20 unit tests. J09 established the
+`FileReplayAuthority` ledger model. Packet 4 is the final J11 implementation closure.
 
-- `event_admission.rs`, `event_queue.rs`, `result_anchor.rs` — not modified
-- `Cargo.toml`, `Cargo.lock` — not modified
-- OCaml, protocol fixtures, existing Trail entry semantics — not modified
-- `docs/ROAD_TO_0_2.md` — not modified
-- No new dependencies
+## Required behaviour
 
-## Key invariants
+1. Define `EventAdmissionEntry` in `dispatch.rs` with the frozen schema: kind, event_id,
+   event_name, source, correlation_id, causation_id?, generation, processing, reason_code?,
+   maximum_generation?, timestamp_unix_ms.
+2. Extend the sealed `Trail` trait with `append_event_admission` and implement for
+   `FileTrail` (flush + sync_data) and `RecordingTrail` (capture).
+3. In `main.rs`, create `build_event_admission_entry` (pure admission-decision mapper)
+   and `now_unix_ms` (wall-clock helper).
+4. Update `drain_result_event_queue` to accept `now_unix_ms` and `record_admission`
+   callbacks; record admission durably before evaluating each queued anchor.
+5. In the normal host route, record the initial external admission durably before
+   `process_one_event`.
+6. Add a debug-only `event-admission-trail-probe` command that writes actual durable
+   Trail files for four scenarios (duplicate-initial, duplicate-sibling, causal-depth,
+   clean) and prints the same JSON response format as Packet 3.
+7. Preserve Packet 3 command and tests unchanged.
+8. Update `test-host-result-follow-up.ps1` to expect exactly one admission record.
+9. Create `test-host-event-admission-trail.ps1` that builds debug + release, runs all
+   scenarios, checks trail records, negative CLI checks, and release diagnostic absence.
+10. Add exactly ten `j11_packet4_` Rust tests covering accepted/rejected fields,
+    RecordingTrail ordering, and write-failure behaviour.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/dispatch.rs` — Trail trait, EventAdmissionEntry, FileTrail, RecordingTrail
+- `tethers-0.1/host-rust/src/main.rs` — mapper, drain, probes, initial admission, tests
+- `tethers-0.1/scripts/test-host-result-follow-up.ps1` — updated follow-up smoke
+- `tethers-0.1/scripts/test-host-event-admission-trail.ps1` — new compiled-boundary verification
+- `event_admission.rs` — pure gate, unchanged
+- `event_queue.rs` — queue, unchanged
+
+## Frozen decisions and invariants
 
 - EventAdmissionEntry schema frozen: kind, event_id, event_name, source, correlation_id,
   causation_id?, generation, processing, reason_code?, maximum_generation?, timestamp_unix_ms
@@ -54,17 +80,25 @@ before evaluation continues or stops.
 - Ten focused tests: j11_packet4_ prefix, 10/10
 - Packet 3: all 5 tests preserved, event_admission.rs untouched
 - Release builds: neither diagnostic route present
+- Warning baseline: cargo check 9, cargo check --tests 4, clippy baseline only
 
-## Warning baseline
+## Acceptance criteria
 
-- `cargo check`: 9 baseline, zero new
-- `cargo check --tests`: 4 baseline, zero new
-- clippy: baseline only, zero new
-
-## J12/public-runtime boundary
-
-The normal engine-driven route still cannot currently generate successful follow-up
-Result Anchors because legitimate scope establishment belongs to J12.
+1. All 522 Rust tests pass (including 5 j11_packet3_, 10 j11_packet4_, 15 event_admission).
+2. `cargo fmt --check` reports no diffs.
+3. `cargo clippy --all-targets --all-features` produces zero new warnings.
+4. `cargo build` and `cargo build --release` succeed.
+5. `check-fixtures.ps1` passes.
+6. `test-engine.ps1` passes (24/24).
+7. `test-mcp-transcripts.ps1` passes (15/15).
+8. `test-host-result-follow-up.ps1` passes with exactly one admission record.
+9. `test-host-event-admission-trail.ps1` passes (debug + release scenarios).
+10. `test-host-denial.ps1` passes.
+11. `test-host-execution-failure.ps1` passes.
+12. `demo.ps1` passes.
+13. `check-tethers-task-packet.ps1` passes.
+14. `opam exec -- dune build` succeeds.
+15. Branch pushed to origin with matching local/remote SHA.
 
 ## Required verification
 
@@ -87,4 +121,38 @@ pwsh -NoProfile -File tethers-0.1/scripts/demo.ps1
 opam exec -- dune build
 ```
 
-This is the final J11 implementation candidate, pending Lucy's acceptance.
+## Forbidden changes
+
+- `event_admission.rs`, `event_queue.rs`, `result_anchor.rs` - not modified
+- `Cargo.toml`, `Cargo.lock` - not modified
+- OCaml, protocol fixtures, existing Trail entry semantics - not modified
+- `docs/ROAD_TO_0_2.md` - not modified
+- No new dependencies
+
+## Stop conditions
+
+- Task packet checker fails due to missing sections.
+- Any mandatory script produces unexpected results beyond documented pre-existing issues.
+- Git status is not clean after expected changes.
+- Branch cannot be pushed or remote SHA does not match local.
+- Base commit does not resolve or is not an ancestor of HEAD.
+
+## Expected pre-existing changes
+
+None
+
+## Warning baseline
+
+- `cargo check`: 9 baseline, zero new
+- `cargo check --tests`: 4 baseline, zero new
+- clippy: baseline only, zero new
+
+## J12/public-runtime boundary
+
+The normal engine-driven route still cannot currently generate successful follow-up
+Result Anchors because legitimate scope establishment belongs to J12.
+
+This is the final J11 implementation candidate. Evidence-correction round completed
+2026-07-28: three pre-existing script bugs (missing directory creation in denial,
+execution-failure, and demo scripts) prevent a clean PASS verdict. Implementation
+is correct (522/522 tests, all Rust checks, 6 authorized files).
