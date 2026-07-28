@@ -12,7 +12,7 @@ Base SHA: `85d8bfa3c9e4816f10c8df5afe00bf150574ec58`
 
 Branch: `goose/j11-production-rejection-verification`
 
-Implementation SHA: `PENDING_IMPLEMENTATION`
+Implementation SHA: `307d4f926231651a1d8d5bc69c18fc2e56a55e90`
 
 Documentation SHA: `PENDING_DOCUMENTATION`
 
