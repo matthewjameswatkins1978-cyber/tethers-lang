@@ -10,7 +10,13 @@ Task colour: `Green`
 
 Owner: `Goose`
 
-Route: `Goose - J13A correction in rehearsal worktree`
+Route: `Goose - J13A final probe-compatibility repair (narrow correction)`
+
+Correction summary:
+  - Restored absolute-path invariant in run_event_admission_trail_probe_clap.
+  - Updated both event-admission probe scripts to accept JSON error envelopes.
+  - Probes remain explicit hidden Clap commands (event-admission-probe,
+    event-admission-trail-probe), not legacy positional commands.
 
 Worker note: `docs/worker-notes/2026-07-28-j13a-process-check.md`
 
