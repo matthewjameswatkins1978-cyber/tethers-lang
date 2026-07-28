@@ -678,6 +678,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut queue = event_queue::ResultEventQueue::new();
     let mut admission_gate = EventAdmissionGate::new();
 
+    // J11 Packet 4: create Trail parent directory when it does not exist.
+    if let Some(parent) = Path::new(&trail_path).parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("trail path create: {e}"))?;
+    }
+
     // J11: admit the initial external event before any evaluation.
     admission_gate
         .admit(&initial_event_id, 0)
