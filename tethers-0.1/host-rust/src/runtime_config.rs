@@ -440,6 +440,19 @@ fn validate_providers(providers: &[ProviderBindingConfig]) -> Result<(), Runtime
         ));
     }
 
+    // First pass: count exact capability identities across ALL providers.
+    // Used below to reject scope-bound capabilities whose identity appears
+    // more than once anywhere in the configuration.
+    let mut identity_counts: std::collections::HashMap<(String, u32), usize> =
+        std::collections::HashMap::new();
+    for provider in providers {
+        for cap in &provider.capabilities {
+            *identity_counts
+                .entry((cap.name.clone(), cap.version))
+                .or_insert(0) += 1;
+        }
+    }
+
     let mut seen_provider_ids: HashSet<String> = HashSet::new();
 
     for (pi, provider) in providers.iter().enumerate() {
@@ -493,7 +506,6 @@ fn validate_providers(providers: &[ProviderBindingConfig]) -> Result<(), Runtime
 
         // Validate each provider capability
         let mut seen_cap_ids: HashSet<(String, u32)> = HashSet::new();
-        let mut scope_bound_names: HashSet<String> = HashSet::new();
 
         for (ci, cap) in provider.capabilities.iter().enumerate() {
             let cptr = format!("{}/capabilities/{}", pptr, ci);
@@ -558,20 +570,24 @@ fn validate_providers(providers: &[ProviderBindingConfig]) -> Result<(), Runtime
                             &format!("{}/scope_binding/argument_json_pointer", cptr),
                         )?;
 
-                        // A scope binding on a provider capability whose identity is
-                        // duplicated elsewhere: the same name appears in another
-                        // provider or the same capability name/version pair appears
-                        // in another scope binding.  Actually the task says:
-                        // "a scope binding on a provider capability whose identity
-                        // is duplicated elsewhere" - meaning the same capability
-                        // identity with a scope binding appears somewhere else.
-                        if !scope_bound_names.insert(cap.name.clone()) {
+                        // Global scope-binding identity check:
+                        // A provider capability with scope_binding must be
+                        // rejected when the same exact (name, version) identity
+                        // appears more than once anywhere across all configured
+                        // providers.  It does not matter whether the other
+                        // occurrence also has scope_binding.
+                        let count = identity_counts
+                            .get(&(cap.name.clone(), cap.version))
+                            .copied()
+                            .unwrap_or(1);
+                        if count > 1 {
                             return Err(RuntimeConfigError::with_field(
                                 RuntimeConfigErrorCode::DuplicateEntry,
                                 format!(
-                                    "scope binding on capability \"{}\" whose identity \
-                                     appears with a scope binding elsewhere in the same provider",
-                                    cap.name
+                                    "scope-bound capability \"{}\" version {} appears \
+                                     {} times across providers; scoped capabilities \
+                                     must have a globally unique identity",
+                                    cap.name, cap.version, count
                                 ),
                                 format!("{}/scope_binding", cptr),
                             ));
@@ -1507,5 +1523,224 @@ mod tests {
             pc.allowed_capabilities[0].pinned_digest.as_deref(),
             Some("sha256:0000000000000000000000000000000000000000000000000000000000000000")
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Global scoped-identity validation
+    // ------------------------------------------------------------------
+
+    // 23. scope-bound capability duplicated in another provider is rejected
+    #[test]
+    fn j12_packet1_scoped_identity_duplicated_in_another_provider_rejected() {
+        // Two providers each carry the same (name, version).  One has
+        // scope_binding set; the other does not.  The scoped entry must be
+        // rejected because its identity is not globally unique.
+        let json = serde_json::json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "example.local",
+                "version": "1",
+                "tethers": [
+                    {"id": "t", "version": "v1", "source_path": "t.tether"}
+                ],
+                "capability_requirements": [
+                    {"name": "lantern.task.record", "version": 1}
+                ]
+            },
+            "providers": [
+                {
+                    "id": "lantern-a",
+                    "display_name": "Lantern A",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "lantern.task.record",
+                            "version": 1,
+                            "manifest_path": "manifests/a.json",
+                            "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                            "scope_binding": {
+                                "kind": "path_prefix",
+                                "argument_json_pointer": "/path"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "id": "lantern-b",
+                    "display_name": "Lantern B",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "lantern.task.record",
+                            "version": 1,
+                            "manifest_path": "manifests/b.json",
+                            "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                    ]
+                }
+            ],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    {"name": "lantern.task.record", "version": 1, "decision": "allow"}
+                ]
+            }
+        });
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::DuplicateEntry);
+        assert!(
+            err.message.contains("scoped"),
+            "expected scoped error, got: {}",
+            err.message
+        );
+    }
+
+    // 24. scope-bound duplicate rejected regardless of which provider is scoped
+    #[test]
+    fn j12_packet1_scoped_identity_duplicate_order_independent() {
+        // Swap the scope binding to the second provider.  Rejection must
+        // still fire because the global count is still > 1.
+        let json = serde_json::json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "example.local",
+                "version": "1",
+                "tethers": [
+                    {"id": "t", "version": "v1", "source_path": "t.tether"}
+                ],
+                "capability_requirements": [
+                    {"name": "lantern.task.record", "version": 1}
+                ]
+            },
+            "providers": [
+                {
+                    "id": "lantern-a",
+                    "display_name": "Lantern A",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "lantern.task.record",
+                            "version": 1,
+                            "manifest_path": "manifests/a.json",
+                            "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                    ]
+                },
+                {
+                    "id": "lantern-b",
+                    "display_name": "Lantern B",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "lantern.task.record",
+                            "version": 1,
+                            "manifest_path": "manifests/b.json",
+                            "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                            "scope_binding": {
+                                "kind": "path_prefix",
+                                "argument_json_pointer": "/path"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    {"name": "lantern.task.record", "version": 1, "decision": "allow"}
+                ]
+            }
+        });
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::DuplicateEntry);
+        assert!(
+            err.message.contains("scoped"),
+            "expected scoped error, got: {}",
+            err.message
+        );
+    }
+
+    // 25. same name at different versions with scope bindings is NOT rejected
+    #[test]
+    fn j12_packet1_same_name_different_version_scoped_not_rejected() {
+        // Both entries have scope_binding but differ in version, so their
+        // identity is not duplicated.  The config must parse successfully.
+        let json = serde_json::json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "example.local",
+                "version": "1",
+                "tethers": [
+                    {"id": "t", "version": "v1", "source_path": "t.tether"}
+                ],
+                "capability_requirements": [
+                    {"name": "lantern.task.record", "version": 1},
+                    {"name": "lantern.task.record", "version": 2}
+                ]
+            },
+            "providers": [
+                {
+                    "id": "lantern-local",
+                    "display_name": "Lantern Local",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "lantern.task.record",
+                            "version": 1,
+                            "manifest_path": "manifests/a.json",
+                            "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                            "scope_binding": {
+                                "kind": "path_prefix",
+                                "argument_json_pointer": "/path"
+                            }
+                        },
+                        {
+                            "name": "lantern.task.record",
+                            "version": 2,
+                            "manifest_path": "manifests/b.json",
+                            "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                            "scope_binding": {
+                                "kind": "path_prefix",
+                                "argument_json_pointer": "/other"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    {"name": "lantern.task.record", "version": 1, "decision": "allow"},
+                    {"name": "lantern.task.record", "version": 2, "decision": "allow"}
+                ]
+            }
+        });
+        let cfg = parse_ok(&json);
+        assert_eq!(cfg.providers[0].capabilities.len(), 2);
     }
 }
