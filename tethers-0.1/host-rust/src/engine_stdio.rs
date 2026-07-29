@@ -1,8 +1,7 @@
 // MCP engine session manager for the OCaml Tethers MCP engine.
 //
-// Uses tools/call with name "tethers.validate" per the real MCP protocol.
-// One retained engine session performs one tools/call per Tether.
-// No tethers.evaluate call is permitted.
+// Uses tools/call with name "tethers.validate" for Tether validation and
+// "tethers.evaluate" for Tethers request evaluation via a retained session.
 
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use serde_json::Value;
@@ -26,6 +25,10 @@ pub enum EngineError {
         error_code: String,
         message: String,
     },
+    EvaluationFailed {
+        evaluation_id: String,
+        message: String,
+    },
     SerializeFailed(String),
     Interrupted,
 }
@@ -46,6 +49,10 @@ impl fmt::Display for EngineError {
                 f,
                 "validation failed for tether {tether_index} ({tether_id} v{tether_version}): [{error_code}] {message}"
             ),
+            Self::EvaluationFailed {
+                evaluation_id,
+                message,
+            } => write!(f, "evaluation failed for {evaluation_id}: {message}"),
             Self::SerializeFailed(msg) => write!(f, "serialization failed: {msg}"),
             Self::Interrupted => write!(f, "engine session interrupted"),
         }
@@ -63,7 +70,8 @@ impl From<ChildError> for EngineError {
     }
 }
 
-/// Retained MCP engine session using tools/call for Tether validation.
+/// Retained MCP engine session using tools/call for Tether validation and
+/// evaluation.
 pub struct EngineSession {
     child: SupervisedChild,
     next_request_id: u64,
@@ -198,6 +206,51 @@ impl EngineSession {
                 error_code,
                 message,
             })
+        }
+    }
+
+    /// Evaluate a fully-formed Tethers 0.1 request through the retained engine.
+    ///
+    /// Sends `tools/call` with `tethers.evaluate` and the complete request
+    /// envelope.  Returns the Tethers planner response from
+    /// `result.structuredContent`.  A Tethers response with `status: "error"`
+    /// is valid planner data and is returned normally; only MCP transport
+    /// errors are treated as failures.
+    pub fn evaluate_tether(
+        &mut self,
+        evaluation_id: &str,
+        request_envelope: &Value,
+    ) -> Result<Value, EngineError> {
+        let request_id = self.next_request_id;
+        self.next_request_id += 1;
+
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {
+                "name": "tethers.evaluate",
+                "arguments": request_envelope
+            }
+        });
+
+        Self::write_json(&mut self.child, &request)?;
+        let result = Self::read_json(&mut self.child, request_id, "tools/call")?;
+
+        // Extract structuredContent.  The Tethers planner response lives here.
+        // A `status: "error"` inside structuredContent is planner data, not an
+        // MCP transport failure.
+        let structured = result.get("structuredContent").cloned().ok_or_else(|| {
+            EngineError::ProtocolError("tools/call result missing structuredContent".to_owned())
+        })?;
+
+        // Validate that we got a recognizable Tethers response with a status field.
+        match structured.get("status").and_then(Value::as_str) {
+            Some(_) => Ok(structured),
+            None => Err(EngineError::EvaluationFailed {
+                evaluation_id: evaluation_id.to_owned(),
+                message: "Tethers response missing status field".to_owned(),
+            }),
         }
     }
 

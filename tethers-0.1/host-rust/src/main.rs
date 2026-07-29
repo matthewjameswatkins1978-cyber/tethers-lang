@@ -4,6 +4,8 @@ pub mod configured_runtime;
 pub mod dispatch;
 pub mod event_admission;
 mod event_queue;
+pub mod executor;
+pub mod host_execution;
 mod manifest;
 mod outcome;
 pub mod policy;
@@ -19,6 +21,7 @@ pub mod stdio_provider;
 pub mod trusted_store;
 mod validation;
 
+use crate::executor::CapabilityExecutor;
 use clap::Parser;
 use dispatch::DispatchReadyAction;
 use event_admission::{EventAdmissionGate, EventAdmissionRejection};
@@ -1130,48 +1133,6 @@ fn extract_proposed_action(
         bridge_provider_identity,
         arguments,
     })
-}
-
-// ---------------------------------------------------------------------------
-// Capability executor ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â effect boundary
-// ---------------------------------------------------------------------------
-
-/// A host-installed executor that carries out one capability invocation.
-///
-/// The `execute` method requires `&DispatchReadyAction`, which is only
-/// constructable via `dispatch::prepare_and_record()` after successful
-/// durable intent recording.  There is no production path to `execute()`
-/// without a genuine readiness token.
-trait CapabilityExecutor {
-    /// Honest provider identity.  Callers must verify this matches the
-    /// resolved capability's `provider_identity()` before invoking
-    /// `execute()`.
-    fn provider_identity(&self) -> &str;
-
-    /// Execute the capability Action described by `ready`.
-    ///
-    /// The executor receives the exact capability name, version,
-    /// provider identity, manifest digest, arguments, and stable
-    /// execution/action identifiers from the readiness token.  It must
-    /// not use independently supplied identity fields.
-    fn execute(&mut self, ready: &DispatchReadyAction) -> Result<Value, String>;
-
-    /// Execute with the host-computed remaining monotonic deadline.  Adapters
-    /// must bound their wait by `remaining` and report a typed ambiguity when
-    /// no trustworthy final response is available in time.
-    ///
-    /// The compatibility implementation never treats an untyped string error
-    /// as provider-declared failure: it is post-invocation uncertainty.
-    /// Adapters with a trusted explicit provider error must override this
-    /// method and return `ExplicitProviderError` themselves.
-    fn execute_classified(
-        &mut self,
-        ready: &DispatchReadyAction,
-        _remaining: Duration,
-    ) -> Result<Value, outcome::ProviderDiagnostic> {
-        self.execute(ready)
-            .map_err(|_| outcome::ProviderDiagnostic::NoFinalResponse)
-    }
 }
 
 // ---------------------------------------------------------------------------

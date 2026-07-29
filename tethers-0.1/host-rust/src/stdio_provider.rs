@@ -213,6 +213,27 @@ impl ManagedProvider {
             })
     }
 
+    /// MCP tools/call invocation for retained-session dispatch.
+    ///
+    /// Sends a `tools/call` request with the given `id`, `tool_name`, and
+    /// `arguments`.  Validates JSON-RPC version, matching response ID, and
+    /// maps JSON-RPC errors to `ProtocolError`.
+    pub fn tools_call(
+        &mut self,
+        id: u64,
+        tool_name: &str,
+        arguments: &serde_json::Value,
+    ) -> Result<serde_json::Value, StdioProviderError> {
+        self.request(
+            id,
+            "tools/call",
+            serde_json::json!({
+                "name": tool_name,
+                "arguments": arguments
+            }),
+        )
+    }
+
     /// Get retained stderr tail.
     pub fn stderr_tail(&self) -> String {
         self.child

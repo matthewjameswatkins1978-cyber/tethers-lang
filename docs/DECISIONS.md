@@ -1,5 +1,25 @@
 # Decisions
 
+## 2026-07-29: J13B Host Execution Service Architecture
+
+Decision: Extract host execution machinery from main.rs into a dedicated
+host_execution.rs application-service module.  Move the CapabilityExecutor
+trait to xecutor.rs for reuse.  Extend EngineSession with valuate_tether
+using 	ools/call with 	ethers.evaluate.
+
+The service accepts an immutable PreparedRuntime, retained engine session,
+and typed PreparedEvaluationInput values with explicitly supplied
+valuation_id.  It applies all existing capability resolution, scope, policy,
+replay, durable-intent and dispatch boundaries.
+
+No public un command.  No evaluation-ID derivation rule.  The future CLI
+layer will map the typed ExecutionServiceResult to the frozen status and
+exit-code vocabulary.
+
+Reason: The extraction keeps the CLI boundary thin.  The retained sessions
+prevent repeated process launches.  All safety gates (replay admission, durable
+intent, provider invocation) remain inside the service, enforced by the
+compiler.
 ## 2026-07-20: Preserve The Prototype Archive
 
 Decision: Keep `Tethers-0.1-Prototype.tar.gz` in the workspace.
