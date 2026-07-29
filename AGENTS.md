@@ -18,6 +18,13 @@ by the current task packet. Do not load the complete project archive by default.
 For OCaml work, read the task-relevant section of
 `docs/OCAML_GUIDE_FOR_AGENTS.md`.
 
+For every Rust task, read `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` before the
+first edit. Treat its fast safety scan, trust-boundary rules, subprocess
+supervision rules, verification commands, stop conditions, and worker-note
+schema as required operating guidance. Record the guide under the task's
+required reading or worker-note evidence; do not merely rely on remembered
+chat context.
+
 ## Current Operating Mode
 
 **Gorilla Coding 🦄**
