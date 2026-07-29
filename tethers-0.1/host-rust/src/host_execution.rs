@@ -80,7 +80,14 @@ pub enum ExecutionServiceResult {
     /// Policy is Ask - human approval required before dispatch.
     ApprovalRequired {
         evaluation_id: String,
-        approval_id: String,
+        action_id: String,
+        reason: String,
+    },
+    /// The planner returned a valid error response rather than a Plan.
+    PlannerError {
+        evaluation_id: Option<String>,
+        code: String,
+        message: String,
     },
     /// Capability is not currently available.
     Unavailable {
@@ -135,6 +142,12 @@ pub enum ExecutionServiceResult {
     Interrupted,
     /// Invalid input data.
     InvalidData { message: String },
+}
+
+#[derive(Debug)]
+enum PlannerResponseRoute {
+    Matched(Value),
+    Terminal(ExecutionServiceResult),
 }
 
 // ===========================================================================
@@ -513,21 +526,10 @@ impl<'a> HostExecutionService<'a> {
             }
         };
 
-        // Check if the Tethers response is matched.
-        if !Self::response_is_matched(&tethers_response) {
-            return ExecutionServiceResult::NoActions {
-                evaluation_id: input.evaluation_id.clone(),
-                response: tethers_response,
-            };
-        }
-
-        // Resolve capability and dispatch.
-        self.dispatch_matched_response(
-            input,
-            tethers_response,
-            provider_sessions,
-            provider_availability,
-        )
+        let route = Self::classify_planner_response(input, tethers_response);
+        Self::route_planner_response(route, |matched| {
+            self.dispatch_matched_response(input, matched, provider_sessions, provider_availability)
+        })
     }
 
     /// Find a configured Tether by identity.
@@ -569,9 +571,129 @@ impl<'a> HostExecutionService<'a> {
         Ok(request)
     }
 
-    /// Check if a Tethers response has matched status.
-    fn response_is_matched(response: &Value) -> bool {
-        response.get("status").and_then(Value::as_str) == Some("matched")
+    fn route_planner_response<F>(route: PlannerResponseRoute, dispatch: F) -> ExecutionServiceResult
+    where
+        F: FnOnce(Value) -> ExecutionServiceResult,
+    {
+        match route {
+            PlannerResponseRoute::Matched(response) => dispatch(response),
+            PlannerResponseRoute::Terminal(result) => result,
+        }
+    }
+
+    fn classify_planner_response(
+        input: &PreparedEvaluationInput,
+        response: Value,
+    ) -> PlannerResponseRoute {
+        let Some(status) = response.get("status").and_then(Value::as_str) else {
+            return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
+                message: "planner response requires string status".to_owned(),
+            });
+        };
+        match status {
+            "matched" => match Self::validate_planner_correlation(input, &response) {
+                Ok(()) => PlannerResponseRoute::Matched(response),
+                Err(message) => {
+                    PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData { message })
+                }
+            },
+            "not_matched" => match Self::validate_planner_correlation(input, &response) {
+                Ok(()) => PlannerResponseRoute::Terminal(ExecutionServiceResult::NoActions {
+                    evaluation_id: input.evaluation_id.clone(),
+                    response,
+                }),
+                Err(message) => {
+                    PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData { message })
+                }
+            },
+            "error" => {
+                if let Err(message) = Self::validate_planner_error_correlation(input, &response) {
+                    return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
+                        message,
+                    });
+                }
+                let Some(error) = response.get("error").and_then(Value::as_object) else {
+                    return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
+                        message: "planner error response requires error object".to_owned(),
+                    });
+                };
+                let Some(code) = error.get("code").and_then(Value::as_str) else {
+                    return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
+                        message: "planner error response requires string error.code".to_owned(),
+                    });
+                };
+                let Some(message) = error.get("message").and_then(Value::as_str) else {
+                    return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
+                        message: "planner error response requires string error.message".to_owned(),
+                    });
+                };
+                PlannerResponseRoute::Terminal(ExecutionServiceResult::PlannerError {
+                    evaluation_id: response
+                        .get("evaluation_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    code: code.to_owned(),
+                    message: message.to_owned(),
+                })
+            }
+            other => PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
+                message: format!("planner response has unknown status '{other}'"),
+            }),
+        }
+    }
+
+    fn validate_planner_error_correlation(
+        input: &PreparedEvaluationInput,
+        response: &Value,
+    ) -> Result<(), String> {
+        Self::require_planner_field(response, "protocol_version", "0.1")?;
+        let correlation_fields = ["evaluation_id", "event_id", "tether_id", "tether_version"];
+        if correlation_fields
+            .iter()
+            .any(|field| response.get(*field).is_some())
+        {
+            Self::validate_planner_correlation(input, response)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn validate_planner_correlation(
+        input: &PreparedEvaluationInput,
+        response: &Value,
+    ) -> Result<(), String> {
+        let event_id = input
+            .anchor_event
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "submitted Anchor event requires non-empty string id".to_owned())?;
+        for (field, expected) in [
+            ("protocol_version", "0.1"),
+            ("evaluation_id", input.evaluation_id.as_str()),
+            ("event_id", event_id),
+            ("tether_id", input.tether_id.as_str()),
+            ("tether_version", input.tether_version.as_str()),
+        ] {
+            Self::require_planner_field(response, field, expected)?;
+        }
+        Ok(())
+    }
+
+    fn require_planner_field(
+        response: &Value,
+        field: &'static str,
+        expected: &str,
+    ) -> Result<(), String> {
+        match response.get(field).and_then(Value::as_str) {
+            Some(actual) if actual == expected => Ok(()),
+            Some(actual) => Err(format!(
+                "planner response correlation mismatch for {field}: expected '{expected}', got '{actual}'"
+            )),
+            None => Err(format!(
+                "planner response correlation requires string {field}"
+            )),
+        }
     }
 
     /// Dispatch a matched response through the one accepted J05-J11 boundary.
@@ -611,10 +733,11 @@ impl<'a> HostExecutionService<'a> {
                 };
             }
             PermissionDecision::Ask => {
-                return ExecutionServiceResult::ApprovalRequired {
+                return approval_required_result(
                     evaluation_id,
-                    approval_id: format!("approval-{action_id}"),
-                };
+                    action_id,
+                    &policy_evaluation.reason,
+                );
             }
             PermissionDecision::Unavailable => {
                 return ExecutionServiceResult::Unavailable {
@@ -835,6 +958,26 @@ fn assemble_request_envelope(
     })
 }
 
+fn redacted_policy_reason(reason: &policy::PolicyReason) -> &'static str {
+    match reason {
+        policy::PolicyReason::ManifestRequiresConfirmation => "manifest_requires_confirmation",
+        policy::PolicyReason::HostPolicyAsk => "host_policy_ask",
+        _ => "approval_required",
+    }
+}
+
+fn approval_required_result(
+    evaluation_id: String,
+    action_id: String,
+    reason: &policy::PolicyReason,
+) -> ExecutionServiceResult {
+    ExecutionServiceResult::ApprovalRequired {
+        evaluation_id,
+        action_id,
+        reason: redacted_policy_reason(reason).to_owned(),
+    }
+}
+
 fn validate_prepared_discovery(
     prepared: &crate::configured_runtime::PreparedProvider,
     tools: &[Value],
@@ -952,6 +1095,221 @@ mod tests {
         )
         .unwrap();
         (store, resolved)
+    }
+
+    fn planner_input() -> PreparedEvaluationInput {
+        PreparedEvaluationInput {
+            tether_id: "fixture.selected".to_owned(),
+            tether_version: "1.2.3".to_owned(),
+            evaluation_id: "eval-correlation-1".to_owned(),
+            anchor_event: serde_json::json!({
+                "id": "event-correlation-1",
+                "name": "fixture.start"
+            }),
+            facts: serde_json::json!({}),
+        }
+    }
+
+    fn correlated_planner_response(status: &str) -> Value {
+        serde_json::json!({
+            "protocol_version": "0.1",
+            "evaluation_id": "eval-correlation-1",
+            "event_id": "event-correlation-1",
+            "tether_id": "fixture.selected",
+            "tether_version": "1.2.3",
+            "status": status,
+            "plan": null,
+            "trail": []
+        })
+    }
+
+    #[test]
+    fn j13b_matched_response_validates_every_correlation_before_dispatch() {
+        let input = planner_input();
+        let route = HostExecutionService::classify_planner_response(
+            &input,
+            correlated_planner_response("matched"),
+        );
+        let mut dispatch_calls = 0;
+        let result = HostExecutionService::route_planner_response(route, |response| {
+            dispatch_calls += 1;
+            assert_eq!(response["status"], "matched");
+            ExecutionServiceResult::InvalidData {
+                message: "focused dispatch marker".to_owned(),
+            }
+        });
+        assert_eq!(dispatch_calls, 1);
+        assert!(matches!(result, ExecutionServiceResult::InvalidData { .. }));
+    }
+
+    #[test]
+    fn j13b_not_matched_is_no_actions_without_dispatch() {
+        let input = planner_input();
+        let route = HostExecutionService::classify_planner_response(
+            &input,
+            correlated_planner_response("not_matched"),
+        );
+        let mut dispatch_calls = 0;
+        let result = HostExecutionService::route_planner_response(route, |_| {
+            dispatch_calls += 1;
+            ExecutionServiceResult::Interrupted
+        });
+        assert_eq!(dispatch_calls, 0);
+        assert!(matches!(
+            result,
+            ExecutionServiceResult::NoActions { evaluation_id, .. }
+                if evaluation_id == "eval-correlation-1"
+        ));
+    }
+
+    #[test]
+    fn j13b_correlated_and_minimal_planner_errors_are_distinct() {
+        let input = planner_input();
+        let mut correlated = correlated_planner_response("error");
+        correlated["error"] =
+            serde_json::json!({"code": "type_error", "message": "invalid condition"});
+        let minimal = serde_json::json!({
+            "protocol_version": "0.1",
+            "status": "error",
+            "error": {"code": "parse_error", "message": "invalid Tether source"}
+        });
+
+        let correlated_result = HostExecutionService::route_planner_response(
+            HostExecutionService::classify_planner_response(&input, correlated),
+            |_| ExecutionServiceResult::Interrupted,
+        );
+        assert!(matches!(
+            correlated_result,
+            ExecutionServiceResult::PlannerError {
+                evaluation_id: Some(evaluation_id),
+                code,
+                ..
+            } if evaluation_id == "eval-correlation-1" && code == "type_error"
+        ));
+
+        let minimal_result = HostExecutionService::route_planner_response(
+            HostExecutionService::classify_planner_response(&input, minimal),
+            |_| ExecutionServiceResult::Interrupted,
+        );
+        assert!(matches!(
+            minimal_result,
+            ExecutionServiceResult::PlannerError {
+                evaluation_id: None,
+                code,
+                ..
+            } if code == "parse_error"
+        ));
+    }
+
+    #[test]
+    fn j13b_every_planner_correlation_mismatch_is_invalid_data() {
+        let input = planner_input();
+        for status in ["matched", "not_matched", "error"] {
+            for field in [
+                "protocol_version",
+                "evaluation_id",
+                "event_id",
+                "tether_id",
+                "tether_version",
+            ] {
+                let mut wrong = correlated_planner_response(status);
+                wrong["error"] =
+                    serde_json::json!({"code": "type_error", "message": "invalid condition"});
+                wrong[field] = Value::String("wrong".to_owned());
+                let wrong_result = HostExecutionService::route_planner_response(
+                    HostExecutionService::classify_planner_response(&input, wrong),
+                    |_| ExecutionServiceResult::Interrupted,
+                );
+                assert!(
+                    matches!(wrong_result, ExecutionServiceResult::InvalidData { .. }),
+                    "{status}: wrong {field}"
+                );
+
+                let mut missing = correlated_planner_response(status);
+                missing["error"] =
+                    serde_json::json!({"code": "type_error", "message": "invalid condition"});
+                missing.as_object_mut().unwrap().remove(field);
+                let missing_result = HostExecutionService::route_planner_response(
+                    HostExecutionService::classify_planner_response(&input, missing),
+                    |_| ExecutionServiceResult::Interrupted,
+                );
+                assert!(
+                    matches!(missing_result, ExecutionServiceResult::InvalidData { .. }),
+                    "{status}: missing {field}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn j13b_missing_or_unknown_planner_status_is_invalid_data() {
+        let input = planner_input();
+        let mut missing = correlated_planner_response("matched");
+        missing.as_object_mut().unwrap().remove("status");
+        let unknown = correlated_planner_response("completed");
+        for response in [missing, unknown] {
+            let result = HostExecutionService::route_planner_response(
+                HostExecutionService::classify_planner_response(&input, response),
+                |_| ExecutionServiceResult::Interrupted,
+            );
+            assert!(matches!(result, ExecutionServiceResult::InvalidData { .. }));
+        }
+    }
+
+    #[test]
+    fn j13b_ask_result_contains_no_invented_approval_id() {
+        let result = approval_required_result(
+            "eval-ask-1".to_owned(),
+            "action-ask-1".to_owned(),
+            &policy::PolicyReason::HostPolicyAsk,
+        );
+        assert!(matches!(
+            result,
+            ExecutionServiceResult::ApprovalRequired {
+                evaluation_id,
+                action_id,
+                reason,
+            } if evaluation_id == "eval-ask-1"
+                && action_id == "action-ask-1"
+                && reason == "host_policy_ask"
+        ));
+    }
+
+    #[test]
+    fn j13b_rejected_error_and_invalid_routes_make_zero_replay_or_provider_calls() {
+        let input = planner_input();
+        let mut correlated_error = correlated_planner_response("error");
+        correlated_error["error"] =
+            serde_json::json!({"code": "type_error", "message": "invalid condition"});
+        let minimal_error = serde_json::json!({
+            "protocol_version": "0.1",
+            "status": "error",
+            "error": {"code": "parse_error", "message": "invalid source"}
+        });
+        let mut mismatch = correlated_planner_response("matched");
+        mismatch["event_id"] = Value::String("wrong-event".to_owned());
+        let mut missing_status = correlated_planner_response("matched");
+        missing_status.as_object_mut().unwrap().remove("status");
+
+        for response in [
+            correlated_planner_response("not_matched"),
+            correlated_error,
+            minimal_error,
+            mismatch,
+            missing_status,
+            correlated_planner_response("unknown"),
+        ] {
+            let route = HostExecutionService::classify_planner_response(&input, response);
+            let mut dispatch_calls = 0;
+            let _ = HostExecutionService::route_planner_response(route, |_| {
+                dispatch_calls += 1;
+                ExecutionServiceResult::Interrupted
+            });
+            assert_eq!(
+                dispatch_calls, 0,
+                "planner terminal route must stop before replay/provider dispatch"
+            );
+        }
     }
 
     /// Structured scope without binding-owned WithinScope evidence cannot

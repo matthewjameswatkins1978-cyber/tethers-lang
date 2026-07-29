@@ -5720,7 +5720,7 @@ mod tests {
         }
 
         #[test]
-        fn j09_runtime_06_ask_never_opens_replay_authority() {
+        fn j09_j13b_ask_makes_zero_replay_admissions_and_provider_calls() {
             let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let response = run_runtime(
                 PermissionDecision::Ask,

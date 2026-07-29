@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `982039fd3673bb2a65fe8ed63180c3082af658b8`
 
-Implementation checkpoint: `efa13be92ae0bcc105984fe4e47eaf19cb4afe1e`
+Implementation checkpoint: `eb9e5e56ee6306e9dadc3f5bd3c4385380bc8559`
 
 ## Independent Red review correction
 
@@ -63,6 +63,23 @@ command. No evaluation-ID derivation rule.
    before provider availability is admitted.
 7. No public run command or evaluation-ID derivation rule was added.
 
+## Final planner-response correction
+
+The execution service now classifies planner responses before entering the
+shared dispatch boundary:
+
+- `matched` requires exact protocol, evaluation, event, Tether ID, and Tether
+  version correlation with the submitted input;
+- `not_matched` returns `NoActions`;
+- correlated and minimal `error` responses return the distinct
+  `PlannerError` result;
+- missing or unknown status and every missing or mismatched correlation field
+  return `InvalidData`.
+
+Only a validated `matched` response can reach replay admission or a provider.
+`ApprovalRequired` now carries only the existing evaluation ID, Action ID, and
+a redacted policy reason; it does not fabricate an approval identifier.
+
 ## Evidence
 
 - cargo fmt --check: PASS
@@ -70,8 +87,8 @@ command. No evaluation-ID derivation rule.
 - cargo check --tests: PASS
 - cargo test j12_ -- --nocapture: 99 passed, 0 failed
 - cargo test j13a_ -- --nocapture: 74 passed, 0 failed
-- cargo test j13b_ -- --nocapture: 26 passed, 0 failed
-- cargo test: 708 passed, 0 failed (32 library + 647 binary + 29 CLI)
+- cargo test j13b_ -- --nocapture: 34 host passed plus 1 library passed, 0 failed
+- cargo test: 715 passed, 0 failed (32 library + 654 binary + 29 CLI)
 - cargo clippy --all-targets --all-features: PASS (no errors)
 - cargo build: PASS
 - cargo build --release: PASS
@@ -102,6 +119,14 @@ command. No evaluation-ID derivation rule.
 - live tools/list mismatch is not admitted as available
 - retained provider calls use IDs 3 then 4
 - CLI rejects `run`; evaluation ID remains caller-supplied
+- matched response validates all five correlation fields before dispatch
+- not-matched response returns NoActions without dispatch
+- correlated and minimal planner errors return PlannerError without dispatch
+- every missing or mismatched correlation field returns InvalidData
+- missing and unknown planner status return InvalidData
+- Ask returns no invented approval ID
+- rejected, error, invalid, and Ask paths make zero replay-admission and
+  provider calls
 
 ## Discoveries
 
@@ -121,4 +146,4 @@ Independent Red review of this corrected Packet 1 commit.
 ## References
 
 - Branch: goose/j13b-execution-service
-- Reviewed candidate: efa13be92ae0bcc105984fe4e47eaf19cb4afe1e
+- Reviewed candidate: eb9e5e56ee6306e9dadc3f5bd3c4385380bc8559
