@@ -3,7 +3,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `Codex`
 Status: `COMPLETE`
 Base commit: `f100689a35c9b7032193abd4f737c3203815fa4c`
-Implementation checkpoint: `9de4a99444dab20e7b016cd339ced5cc0873197c`
+Implementation checkpoint: `5fa429f9bcc205eae2b65363859f41f61226093a`
 
 ## Requested outcome
 
@@ -215,6 +215,40 @@ Real-boundary proof:
 J13B: extract typed host execution service and implement the `run` command with
 event evaluation, policy decision, and Action dispatch through the retained
 provider sessions established by J13A.
+
+## CRLF parser correction and main push (2026-07-29)
+
+### Confirmed defect
+
+`non_blank_lines` split source on LF and used `String.trim` only to decide
+whether a line was blank. It returned the original line unchanged, so CRLF
+structural lines reached `parse_tether` as `anchor\r`, `when\r`, and `do\r`.
+The parser's exact structural matches then returned:
+
+`[parse_error] Expected tether, anchor, when, and do sections`
+
+The same source using LF-only line endings validated successfully.
+
+### Correction
+
+`tether_parser.ml` now removes exactly one terminal `\r` from every line after
+splitting on `\n`, before applying the existing blank-line predicate. It does
+not globally trim returned lines. Leading spaces and action/argument
+indentation therefore remain unchanged. The Rust host does not normalize
+source.
+
+### Evidence
+
+- Implementation checkpoint: `5fa429f9bcc205eae2b65363859f41f61226093a`
+- `opam exec -- dune build`: PASS
+- `test-engine.ps1`: PASS, including direct `tools/call` validation of the
+  same no-final-newline Tether in LF, CRLF, and mixed forms
+  (`validate-lf`, `validate-crlf`, `validate-mixed`, and equivalence all PASS)
+- `test-mcp-transcripts.ps1`: PASS, including retained invalid syntax coverage
+- First explicit-engine `test-j13a-check.ps1`: 25 passed, 0 failed
+- Cleared all `TETHERS_J13A_*` variables
+- Second explicit-engine `test-j13a-check.ps1`: 25 passed, 0 failed
+- Rust, host-script, fixture, and release-build matrix: PASS
 
 ## References
 

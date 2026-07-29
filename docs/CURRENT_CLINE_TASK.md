@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Task: `J13A local process supervision and check command - bounded correction`
+Task: `J13A CRLF parser correction and main push`
 
 Status: `COMPLETE`
 
@@ -10,16 +10,13 @@ Task colour: `Green`
 
 Owner: `Codex`
 
-Route: `Codex - J13A partial-evidence closure and public acceptance`
+Route: `Codex - J13A CRLF parser correction and main push`
 
 Correction summary:
-  - Replaced provider-side envelope construction with one typed internal
-    failure description.
-  - Canonical check data now retains completed Tether and provider evidence on
-    every post-preparation failure.
-  - Completed an independent 25-case public-boundary acceptance against the
-    real J12 config schema, OCaml MCP engine, reviewed fixture manifest, and
-    PowerShell stdio provider.
+  - Corrected terminal CR handling at the OCaml Tether-parser boundary.
+  - Added direct MCP LF, CRLF, and mixed-line-ending validation regressions.
+  - Completed two consecutive 25/25 public acceptances with the explicit
+    OCaml engine, clearing `TETHERS_J13A_*` variables between runs.
 
 Worker note: `docs/worker-notes/2026-07-28-j13a-process-check.md`
 
@@ -27,14 +24,14 @@ Base branch: `main`
 
 Base commit: `f100689a35c9b7032193abd4f737c3203815fa4c`
 
-Branch: `goose/j13a-process-check`
+Branch: `codex/j13a-crlf-parser-fix`
 
 ## Expected pre-existing changes
 
-Starting from accepted J13A candidate
-`2717c584c219bfebb33e776605fea4ef16c4fd5f`.
-Partial-evidence implementation checkpoint:
-`9de4a99444dab20e7b016cd339ced5cc0873197c`.
+Starting from local main
+`64f5922025ea29eca62d1e4c5e9e4aa5be5814a5`.
+CRLF parser implementation checkpoint:
+`5fa429f9bcc205eae2b65363859f41f61226093a`.
 
 ## Relevant background and existing behaviour
 
@@ -47,9 +44,9 @@ supervision, MCP engine session management, and the check command coordinator.
 
 ## Objective
 
-Close the confirmed partial-evidence blocker without altering accepted engine,
-provider trust, process supervision, or successful-check semantics, then prove
-the full J13A public boundary with real Windows processes.
+Correct CRLF Tether parsing at the OCaml language boundary without changing
+Rust runtime behaviour, then prove LF, CRLF, and mixed sources through the MCP
+engine and two consecutive public check acceptances.
 
 ## Required behaviour
 
@@ -69,6 +66,8 @@ the full J13A public boundary with real Windows processes.
    `protocol/capability-manifests/fixture-ping.json` manifest
    (`sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b`),
    and `pwsh.exe -NoProfile -File scripts/tethers-stdio-fixture.ps1`.
+9. The parser removes only one terminal CR from each LF-split source line;
+   indentation and all other leading/trailing characters remain significant.
 
 ## Relevant components
 
@@ -79,7 +78,9 @@ the full J13A public boundary with real Windows processes.
 - `tethers-0.1/host-rust/src/cli.rs` - OutcomeStatus with matching exit codes
 - `tethers-0.1/host-rust/src/main.rs` - thin entry boundary
 - `tethers-0.1/host-rust/tests/j13a_cli.rs` - CLI integration tests
+- `tethers-0.1/engine-ocaml/bin/tether_parser.ml` - language-parser line handling
 - `tethers-0.1/scripts/tethers-stdio-fixture.ps1` - extended test modes
+- `tethers-0.1/scripts/test-engine.ps1` - direct MCP parser regressions
 - `tethers-0.1/scripts/test-j13a-check.ps1` - acceptance script
 
 ## Frozen decisions and invariants
@@ -133,8 +134,8 @@ opam exec -- dune build
 
 ## Forbidden changes
 
-Only the four authorised Rust, acceptance-script, task, and worker-note files
-may change. No J13B, J13C, or J14 behaviour.
+Only the six authorised parser, regression-script, task, decision, and
+worker-note files may change. No J13B, J13C, or J14 behaviour.
 No provider tools/call. No tethers.evaluate. No Trail or replay creation.
 
 ## Completion evidence
@@ -150,6 +151,9 @@ No provider tools/call. No tethers.evaluate. No Trail or replay creation.
 - Trail/replay changes: 0
 - Skipped required checks: 0
 - Unrun required checks: 0
+- LF, CRLF, and mixed direct MCP validation: PASS and equivalent
+- First explicit-engine public acceptance: 25/25 PASS
+- Second explicit-engine public acceptance after environment clear: 25/25 PASS
 
 ## Stop conditions
 

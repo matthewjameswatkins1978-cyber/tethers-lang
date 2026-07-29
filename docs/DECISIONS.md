@@ -792,3 +792,15 @@ fails, exit 8 (audit_failed) takes precedence over the uncertain classification.
 
 J13A implements no provider capability call, event evaluation, policy decision,
 dispatch, Trail write, or replay write.
+
+## 2026-07-29: Tether Source Line Endings Belong To The OCaml Parser
+
+Decision: Tether source accepts LF, CRLF, and mixed LF/CRLF line endings at
+the OCaml parser boundary. After splitting on LF, the parser removes only one
+terminal CR that belongs to CRLF, then applies the existing blank-line test.
+
+Reason: Structural parser lines must be compared without a CRLF artefact while
+preserving the source language's indentation. The parser never globally trims
+returned lines: leading spaces, action indentation, argument indentation, and
+all other source characters remain significant. Rust hosts pass source through
+unchanged and do not perform line-ending normalization.
