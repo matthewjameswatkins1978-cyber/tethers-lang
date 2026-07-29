@@ -50,9 +50,15 @@ let require_indent expected kind line =
     fail "parse_error"
       ("Expected " ^ string_of_int expected ^ "-space indentation for " ^ kind ^ ": " ^ trim line)
 
+let remove_terminal_cr line =
+  let length = String.length line in
+  if length > 0 && line.[length - 1] = '\r' then String.sub line 0 (length - 1)
+  else line
+
 let non_blank_lines source =
   source
   |> String.split_on_char '\n'
+  |> List.map remove_terminal_cr
   |> List.filter (fun line -> trim line <> "")
 
 let unquote value =

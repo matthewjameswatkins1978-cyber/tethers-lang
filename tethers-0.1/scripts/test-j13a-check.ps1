@@ -309,7 +309,8 @@ function New-TetherReference {
         [Parameter(Mandatory = $true)][string] $Source
     )
     $path = Join-Path $script:TetherDirectory $FileName
-    $Source | Set-Content -LiteralPath $path -Encoding utf8NoBOM
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($path, $Source, $utf8NoBom)
     [ordered]@{
         id = $Id
         version = "1"
@@ -562,19 +563,19 @@ try {
     }
     Assert-True (Test-Path -LiteralPath $EngineProxyPath -PathType Leaf) "Engine proxy executable was not created."
 
-    $validSource = @'
-tether "Fixture public check"
-
-anchor
-    coding.task_completed
-
-when
-    project.type is "software"
-
-do
-    lantern.task.record
-        project: anchor.project
-'@
+    $validSource = @(
+        'tether "Fixture public check"',
+        '',
+        'anchor',
+        '    coding.task_completed',
+        '',
+        'when',
+        '    project.type is "software"',
+        '',
+        'do',
+        '    lantern.task.record',
+        '        project: anchor.project'
+    ) -join "`r`n"
     $invalidSource = "garbage syntax {{{"
     $validTether = New-TetherReference -Id "fixture-valid" -FileName "fixture valid.tether" -Source $validSource
     $invalidTether = New-TetherReference -Id "fixture-invalid" -FileName "fixture invalid.tether" -Source $invalidSource
