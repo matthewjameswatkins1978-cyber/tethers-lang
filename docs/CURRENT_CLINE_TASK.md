@@ -6,11 +6,11 @@ Task: `J13B Packet 1 — typed host execution service and retained execution ses
 
 Status: `COMPLETE`
 
-Task colour: `Green`
+Task colour: `Red`
 
-Owner: `Cline`
+Owner: `Codex`
 
-Route: `Cline - J13B Packet 1 — typed host execution service`
+Route: `Codex - J13B Packet 1 independent Red review correction`
 
 Worker note: `docs/worker-notes/2026-07-29-j13b-execution-service.md`
 
@@ -75,8 +75,8 @@ session management, and the check command coordinator.
 2. cargo check and cargo check --tests pass
 3. cargo test j12_ -- --nocapture: 99 pass
 4. cargo test j13a_ -- --nocapture: 74 pass, 0 fail
-5. cargo test j13b_ -- --nocapture: 14 pass, 0 fail
-6. cargo test: 709 pass, 0 fail
+5. cargo test j13b_ -- --nocapture: 26 pass, 0 fail
+6. cargo test: 708 pass, 0 fail
 7. cargo clippy --all-targets --all-features: zero errors
 8. cargo build and cargo build --release succeed
 9. J13A public acceptance: 25 pass, 0 fail

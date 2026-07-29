@@ -4,13 +4,22 @@ Task: `J13B Packet 1 — typed host execution service and retained execution ses
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
-Owner: `Cline`
+Owner: `Codex`
 
 Status: `COMPLETE`
 
 Base commit: `982039fd3673bb2a65fe8ed63180c3082af658b8`
 
-Implementation checkpoint: `c19c729e06cc5ae63a018c287aa5f0f7eb917866`
+Implementation checkpoint: `efa13be92ae0bcc105984fe4e47eaf19cb4afe1e`
+
+## Independent Red review correction
+
+Independent review rejected the original completion claim because the service
+had a second handwritten execution boundary, malformed retained-engine framing,
+an incorrect request envelope, hard-coded untrusted scope, incorrect replay
+identity and recovered-state mapping, fixed provider wait time, string-based
+provider-error classification, ignored terminal replay publication failure,
+discarded live discovery evidence, and documentation-only tests.
 
 ## Requested outcome
 
@@ -23,25 +32,36 @@ command. No evaluation-ID derivation rule.
 ### New files
 - `tethers-0.1/host-rust/src/executor.rs` — CapabilityExecutor trait
 - `tethers-0.1/host-rust/src/host_execution.rs` — host execution service with
-  PreparedEvaluationInput, ExecutionServiceResult (10 variants),
-  RetainedProviderSession, ProviderSessionExecutor, HostExecutionService,
-  and 14 focused j13b_ tests
+  explicit prepared input, typed terminal/replay results, retained provider
+  sessions, trusted prepared-runtime scope assessment, exact request assembly,
+  and focused behavioural tests
 
 ### Modified files
-- `tethers-0.1/host-rust/src/main.rs` — added executor and host_execution
-  modules, moved CapabilityExecutor trait
-- `tethers-0.1/host-rust/src/engine_stdio.rs` — added evaluate_tether method
-- `tethers-0.1/host-rust/src/stdio_provider.rs` — added public tools_call method
+- `tethers-0.1/host-rust/src/main.rs` — exposes one typed shared execution seam
+  around the accepted J05-J11 ordering; both existing and service paths call it
+- `tethers-0.1/host-rust/src/engine_stdio.rs` — retained evaluate calls use
+  `arguments.request`; real-engine regression covers two evaluations
+- `tethers-0.1/host-rust/src/stdio_provider.rs` — deadline-aware tools/call and
+  typed JSON-RPC provider errors
 - `docs/CURRENT_CLINE_TASK.md` — updated for J13B
 - `docs/DECISIONS.md` — added J13B architecture decision
 
 ## Decisions and assumptions
 
-1. CapabilityExecutor trait moved to executor.rs, not duplicated.
-2. EngineSession extended with evaluate_tether using retained session.
-3. RetainedProviderSession wraps ManagedProvider with request IDs starting at 3.
-4. All existing gates preserved: capability resolution, policy, replay, intent.
-5. No public run command or evaluation-ID rule in this packet.
+1. `execute_shared_boundary` is the sole typed seam over the accepted J05-J11
+   implementation; `HostExecutionService` does not maintain a second copy.
+2. The engine request contains one selected Tether with exact source, unchanged
+   event/Facts, and one direct accepted planner-capability array with the
+   existing bridge projection.
+3. Trusted scope comes only from `PreparedRuntime::assess_action_scope`.
+4. Replay uses Anchor event ID, planner evaluation ID, Action ID, and the
+   accepted canonical argument digest.
+5. Retained provider calls receive the host's exact remaining monotonic
+   duration; JSON-RPC error is known failure and transport/framing loss is
+   uncertainty.
+6. Live tools/list evidence is compared against every prepared capability
+   before provider availability is admitted.
+7. No public run command or evaluation-ID derivation rule was added.
 
 ## Evidence
 
@@ -50,38 +70,55 @@ command. No evaluation-ID derivation rule.
 - cargo check --tests: PASS
 - cargo test j12_ -- --nocapture: 99 passed, 0 failed
 - cargo test j13a_ -- --nocapture: 74 passed, 0 failed
-- cargo test j13b_ -- --nocapture: 14 passed, 0 failed
-- cargo test: 709 passed, 0 failed
+- cargo test j13b_ -- --nocapture: 26 passed, 0 failed
+- cargo test: 708 passed, 0 failed (32 library + 647 binary + 29 CLI)
 - cargo clippy --all-targets --all-features: PASS (no errors)
 - cargo build: PASS
 - cargo build --release: PASS
 - git diff --check: PASS
-- check-tethers-task-packet.ps1: PASS (after format fix)
-- check-fixtures.ps1: PASS
+- check-tethers-task-packet.ps1: PASS at IN_PROGRESS checkpoint
+- check-fixtures.ps1: PASS (46 JSON, 30 JSONL)
+- test-engine.ps1: PASS (28 fixture/determinism/line-ending checks)
 - test-mcp-transcripts.ps1: PASS (15 cases)
 - test-j13a-check.ps1: PASS (25/25)
-- test-engine.ps1: NOT RUN (opam switch not set)
-- opam exec -- dune build: NOT RUN (opam switch not set)
+- read-only switch:
+  `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
+- OCaml 5.5.0; Dune 3.24.0; explicit-switch `dune build`: PASS
+- The first direct `test-engine.ps1` attempt correctly found no Goose-local
+  switch. It passed on rerun with process-local `OPAMSWITCH` pointing to the
+  authorised read-only original-worktree switch; no switch was selected or
+  modified.
+
+## Focused correction regressions
+
+- retained engine `arguments.request` and two evaluations
+- exact selected-Tether/source/direct-capability request shape
+- structured scope requires trusted WithinScope evidence
+- Anchor event ID in replay identity and canonical argument binding
+- all recovered replay states: exact typed result and zero provider calls
+- expired-before-call Unattempted and remaining duration propagation
+- provider-declared failure versus malformed/EOF/timeout uncertainty
+- terminal replay publication failure cannot report Completed or emit an Anchor
+- live tools/list mismatch is not admitted as available
+- retained provider calls use IDs 3 then 4
+- CLI rejects `run`; evaluation ID remains caller-supplied
 
 ## Discoveries
 
-The evaluate_effective_policy function requires bridge pins (manifest_digest,
-bridge_capability_version, bridge_provider_identity) in the ProposedAction.
-Tests without these produce Deny via MissingBridgePin rather than the expected
-policy decision.
+The Goose worktree intentionally has no local opam switch. The documented
+engine script can use the authorised original-worktree toolchain without
+selecting it by setting `OPAMSWITCH` only for that child process.
 
 ## Remaining risks
 
-- No real-provider integration test in this worktree.
-- test-engine.ps1 and dune build not run due to environment.
-- Service not yet wired to a CLI command (that is J13B Packet 2).
+Packet 1 intentionally does not expose a public execution command or define an
+evaluation-ID generation rule. Packet 2 was not begun.
 
 ## Smallest next action
 
-J13B Packet 2: add public run command with event-and-facts input and
-evaluation-ID assignment, wiring the HostExecutionService to the CLI.
+Independent Red review of this corrected Packet 1 commit.
 
 ## References
 
 - Branch: goose/j13b-execution-service
-- Commit: c19c729e06cc5ae63a018c287aa5f0f7eb917866
+- Reviewed candidate: efa13be92ae0bcc105984fe4e47eaf19cb4afe1e

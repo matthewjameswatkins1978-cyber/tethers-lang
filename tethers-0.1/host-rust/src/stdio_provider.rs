@@ -66,8 +66,7 @@ impl ManagedProvider {
             .map_err(|_| StdioProviderError::WriteFailed("write failed".to_owned()))
     }
 
-    fn read_message(&mut self) -> Result<serde_json::Value, StdioProviderError> {
-        let timeout = self.read_timeout;
+    fn read_message(&mut self, timeout: Duration) -> Result<serde_json::Value, StdioProviderError> {
         let line = self
             .child_mut()?
             .read_protocol_line(timeout)
@@ -81,7 +80,7 @@ impl ManagedProvider {
                 ChildError::LineTooLarge { .. } => {
                     StdioProviderError::MalformedResponse("line too large".to_owned())
                 }
-                ChildError::Interrupted => StdioProviderError::ReadFailed("interrupted".to_owned()),
+                ChildError::Interrupted => StdioProviderError::Interrupted,
                 _ => StdioProviderError::ReadFailed(e.to_string()),
             })?;
 
@@ -103,6 +102,16 @@ impl ManagedProvider {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, StdioProviderError> {
+        self.request_with_timeout(id, method, params, self.read_timeout)
+    }
+
+    fn request_with_timeout(
+        &mut self,
+        id: u64,
+        method: &str,
+        params: serde_json::Value,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, StdioProviderError> {
         self.write_message(&serde_json::json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -110,7 +119,7 @@ impl ManagedProvider {
             "params": params
         }))?;
 
-        let response = self.read_message()?;
+        let response = self.read_message(timeout)?;
         let object = response.as_object().ok_or_else(|| {
             StdioProviderError::ProtocolError("JSON-RPC response must be an object".to_owned())
         })?;
@@ -126,7 +135,7 @@ impl ManagedProvider {
             )));
         }
         if let Some(error) = object.get("error") {
-            return Err(StdioProviderError::ProtocolError(format!(
+            return Err(StdioProviderError::ExplicitProviderError(format!(
                 "provider returned JSON-RPC error for {method}: {error}"
             )));
         }
@@ -234,6 +243,26 @@ impl ManagedProvider {
         )
     }
 
+    /// Invoke one provider tool while bounding the response wait by the host's
+    /// exact remaining monotonic deadline.
+    pub fn tools_call_with_timeout(
+        &mut self,
+        id: u64,
+        tool_name: &str,
+        arguments: &serde_json::Value,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, StdioProviderError> {
+        self.request_with_timeout(
+            id,
+            "tools/call",
+            serde_json::json!({
+                "name": tool_name,
+                "arguments": arguments
+            }),
+            timeout,
+        )
+    }
+
     /// Get retained stderr tail.
     pub fn stderr_tail(&self) -> String {
         self.child
@@ -275,6 +304,8 @@ pub enum StdioProviderError {
     EmptyResponse,
     MalformedResponse(String),
     ProtocolError(String),
+    ExplicitProviderError(String),
+    Interrupted,
     TrustedManifestInvalid(String),
     AdmissionFailed(String),
 }
@@ -293,6 +324,8 @@ impl fmt::Display for StdioProviderError {
             Self::EmptyResponse => write!(f, "provider returned no response"),
             Self::MalformedResponse(m) => write!(f, "malformed response: {m}"),
             Self::ProtocolError(m) => write!(f, "MCP protocol error: {m}"),
+            Self::ExplicitProviderError(m) => write!(f, "MCP JSON-RPC error: {m}"),
+            Self::Interrupted => write!(f, "provider call interrupted"),
             Self::TrustedManifestInvalid(m) => write!(f, "trusted manifest invalid: {m}"),
             Self::AdmissionFailed(m) => write!(f, "admission failed: {m}"),
         }
@@ -539,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn admitted_fixture_is_unavailable_without_live_host_evidence() {
+    fn j13b_provider_is_unavailable_without_matching_live_discovery_evidence() {
         let mut store = TrustedManifestStore::new();
         discover_and_admit(&fixture_config("valid"), TRUSTED_MANIFEST, &mut store).unwrap();
         assert!(matches!(
@@ -583,7 +616,7 @@ mod tests {
         assert_mode_fails_closed("wrong-tool", "did not contain trusted binding tool");
     }
     #[test]
-    fn input_schema_mismatch_fails_closed() {
+    fn j13b_live_tools_list_schema_mismatch_is_not_admitted_available() {
         assert_mode_fails_closed("input-schema-mismatch", "input schema did not match");
     }
     #[test]

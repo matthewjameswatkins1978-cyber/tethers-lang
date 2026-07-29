@@ -2003,7 +2003,116 @@ fn present_non_dispatchable_response(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SharedExecutionResult {
+    Completed,
+    Failed,
+    Uncertain,
+    Unattempted,
+    Denied,
+    AuditFailed,
+    Replay(replay_runtime::ReplayDispatchResult),
+}
+
+impl SharedExecutionResult {
+    fn from_response(response: &Value) -> Result<Self, Box<dyn std::error::Error>> {
+        let status = response
+            .get("execution_status")
+            .and_then(Value::as_str)
+            .ok_or("shared execution boundary returned no execution_status")?;
+        match status {
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "uncertain" => Ok(Self::Uncertain),
+            "unattempted" => Ok(Self::Unattempted),
+            "denied" => Ok(Self::Denied),
+            "audit_failed" => Ok(Self::AuditFailed),
+            "replay_persistence_unavailable" => Ok(Self::Replay(
+                replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+            )),
+            "replay_blocked_completed_success" => Ok(Self::Replay(
+                replay_runtime::ReplayDispatchResult::BlockedCompletedSuccess,
+            )),
+            "replay_blocked_completed_failure" => Ok(Self::Replay(
+                replay_runtime::ReplayDispatchResult::BlockedCompletedFailure,
+            )),
+            "replay_requires_manual_resolution" => Ok(Self::Replay(
+                replay_runtime::ReplayDispatchResult::RequiresManualResolution,
+            )),
+            other => Err(format!("unknown shared execution status '{other}'").into()),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_shared_boundary(
+    response: &mut Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    input_context: &InputEventContext,
+    bridge_pins_required: bool,
+    clock: &dyn outcome::MonotonicClock,
+    replay_authority: &mut dyn replay_runtime::ReplayAuthority,
+    approval_consumption: Option<&mut dyn ApprovalConsumption>,
+    anchor_writer: &mut dyn ResultAnchorWriter,
+) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
+    execute_boundary_impl(
+        response,
+        decision,
+        resolved,
+        trail,
+        executor,
+        input_context,
+        bridge_pins_required,
+        clock,
+        replay_authority,
+        approval_consumption,
+        anchor_writer,
+    )?;
+    if response
+        .get("trail")
+        .and_then(Value::as_array)
+        .is_some_and(|entries| entries.iter().any(|entry| entry["kind"] == "audit_failure"))
+    {
+        return Ok(SharedExecutionResult::AuditFailed);
+    }
+    SharedExecutionResult::from_response(response)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn authorise_and_execute_inner(
+    response: &mut Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    input_context: &InputEventContext,
+    bridge_pins_required: bool,
+    clock: &dyn outcome::MonotonicClock,
+    replay_authority: &mut dyn replay_runtime::ReplayAuthority,
+    approval_consumption: Option<&mut dyn ApprovalConsumption>,
+    anchor_writer: &mut dyn ResultAnchorWriter,
+) -> Result<(), Box<dyn std::error::Error>> {
+    execute_shared_boundary(
+        response,
+        decision,
+        resolved,
+        trail,
+        executor,
+        input_context,
+        bridge_pins_required,
+        clock,
+        replay_authority,
+        approval_consumption,
+        anchor_writer,
+    )
+    .map(|_| ())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_boundary_impl(
     response: &mut Value,
     decision: PermissionDecision,
     resolved: &ResolvedCapability,
@@ -2318,7 +2427,7 @@ fn authorise_and_execute_inner(
             } else {
                 status
             }
-            .into(),
+            .to_owned(),
         );
         return Ok(());
     }
@@ -2331,13 +2440,9 @@ fn authorise_and_execute_inner(
     let outcome_digest = match replay::durable_outcome_digest(&outcome_entry) {
         Ok(digest) => digest,
         Err(_) => {
-            response["execution_status"] = Value::String(
-                if status == "succeeded" {
-                    "completed"
-                } else {
-                    status
-                }
-                .into(),
+            set_replay_result(
+                response,
+                replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
             );
             return Ok(());
         }
@@ -2346,13 +2451,9 @@ fn authorise_and_execute_inner(
         .publish_terminal(terminal_state, outcome_digest)
         .is_err()
     {
-        response["execution_status"] = Value::String(
-            if status == "succeeded" {
-                "completed"
-            } else {
-                status
-            }
-            .into(),
+        set_replay_result(
+            response,
+            replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
         );
         return Ok(());
     }
@@ -5035,7 +5136,7 @@ mod tests {
     }
 
     #[test]
-    fn j06_elapsed_before_authorisation_does_not_consume_execution_deadline() {
+    fn j06_j13b_remaining_deadline_reaches_provider_adapter_exactly() {
         let clock = outcome::TestMonotonicClock::new();
         // This represents planning and approval waiting before durable intent.
         clock.advance(Duration::from_secs(600));
@@ -5055,7 +5156,7 @@ mod tests {
     }
 
     #[test]
-    fn j06_deadline_before_invocation_is_unattempted_without_provider_outcome_or_anchor() {
+    fn j06_j13b_deadline_before_invocation_is_unattempted_without_provider_call() {
         let mut manifest = lantern_manifest_json();
         manifest["timeout_ms"] = json!(0);
         let (_store, resolved) = resolved_lantern_with_manifest(manifest);
@@ -5172,7 +5273,7 @@ mod tests {
     }
 
     #[test]
-    fn j06_post_invocation_transport_ambiguities_are_uncertain_and_redacted() {
+    fn j06_j13b_malformed_eof_and_timeout_diagnostics_are_uncertain() {
         let cases = [
             (
                 outcome::ProviderDiagnostic::ProcessLost,
@@ -5727,32 +5828,32 @@ mod tests {
         }
 
         recovered_runtime_test!(
-            j09_runtime_10_recovered_success_maps_exactly,
+            j09_j13b_recovered_success_maps_exactly_with_zero_calls,
             replay::ReplayState::Succeeded,
             "replay_blocked_completed_success"
         );
         recovered_runtime_test!(
-            j09_runtime_11_recovered_failure_maps_exactly,
+            j09_j13b_recovered_failure_maps_exactly_with_zero_calls,
             replay::ReplayState::Failed,
             "replay_blocked_completed_failure"
         );
         recovered_runtime_test!(
-            j09_runtime_12_recovered_claim_is_manual_only,
+            j09_j13b_recovered_claim_is_manual_only_with_zero_calls,
             replay::ReplayState::ClaimedNoState,
             "replay_requires_manual_resolution"
         );
         recovered_runtime_test!(
-            j09_runtime_13_recovered_g0_is_manual_only,
+            j09_j13b_recovered_g0_is_manual_only_with_zero_calls,
             replay::ReplayState::IntentRecorded,
             "replay_requires_manual_resolution"
         );
         recovered_runtime_test!(
-            j09_runtime_14_recovered_g1_is_manual_only,
+            j09_j13b_recovered_g1_is_manual_only_with_zero_calls,
             replay::ReplayState::InvocationArmed,
             "replay_requires_manual_resolution"
         );
         recovered_runtime_test!(
-            j09_runtime_15_recovered_uncertain_is_manual_only,
+            j09_j13b_recovered_uncertain_is_manual_only_with_zero_calls,
             replay::ReplayState::Uncertain,
             "replay_requires_manual_resolution"
         );
@@ -5818,7 +5919,7 @@ mod tests {
         }
 
         #[test]
-        fn j09_runtime_18_known_failure_has_outcome_g2_anchor_order() {
+        fn j09_j13b_explicit_provider_failure_is_failed_with_exact_order() {
             let (_, resolved) = resolved_lantern();
             let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
                 runtime_parts();
@@ -6054,7 +6155,7 @@ mod tests {
         );
 
         #[test]
-        fn j09_runtime_29_g2_failure_withholds_anchor_without_retry() {
+        fn j09_j13b_terminal_replay_publication_failure_is_not_completed() {
             let (_, resolved) = resolved_lantern();
             let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
                 runtime_parts();
@@ -6072,7 +6173,10 @@ mod tests {
             assert!(events.borrow().contains(&"publish_g2"));
             assert!(!events.borrow().contains(&"anchor"));
             assert_eq!(executor.calls, 1);
-            assert_eq!(response["execution_status"], "completed");
+            assert_eq!(
+                response["execution_status"],
+                "replay_persistence_unavailable"
+            );
             assert!(response.get("replay_result").is_none());
             assert!(response.get("result_anchor").is_none());
             assert_eq!(trail.outcome_entries.len(), 1);
@@ -6146,7 +6250,7 @@ mod tests {
         }
 
         #[test]
-        fn j09_runtime_33_binding_uses_exact_planner_ids_and_host_uuid_stays_local() {
+        fn j09_j13b_binding_uses_anchor_event_and_exact_planner_ids() {
             let (_, resolved) = resolved_lantern();
             let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let response = run_runtime(
@@ -6159,6 +6263,16 @@ mod tests {
                 &mut anchor,
             );
             let binding = &authority.bindings[0];
+            assert_eq!(
+                authority.logical_keys[0].as_digest(),
+                replay::LogicalExecutionKey::derive(
+                    "evt-j09-001",
+                    "eval-j09-001",
+                    "action-j09-001"
+                )
+                .unwrap()
+                .as_digest()
+            );
             assert_eq!(binding.evaluation_id, "eval-j09-001");
             assert_eq!(binding.action_id, "action-j09-001");
             assert_eq!(

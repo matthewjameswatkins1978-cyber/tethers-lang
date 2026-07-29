@@ -230,7 +230,9 @@ impl EngineSession {
             "method": "tools/call",
             "params": {
                 "name": "tethers.evaluate",
-                "arguments": request_envelope
+                "arguments": {
+                    "request": request_envelope
+                }
             }
         });
 
@@ -401,6 +403,52 @@ mod tests {
         assert!(session
             .validate_tether(0, "t", "1.0.0", VALID_TETHER)
             .is_ok());
+        session.shutdown();
+    }
+
+    #[test]
+    fn j13b_retained_engine_uses_arguments_request_for_multiple_evaluations() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = serde_json::json!({
+            "protocol_version": "0.1",
+            "language_version": "0.1",
+            "evaluation_id": "eval_j13b_real_001",
+            "tether": {
+                "id": "test.tether",
+                "version": "1.0.0",
+                "source": VALID_TETHER
+            },
+            "event": {
+                "id": "evt_j13b_real_001",
+                "name": "coding.task_completed",
+                "data": {"project": "tethers"}
+            },
+            "facts": {"project.type": "software"},
+            "capabilities": [{
+                "name": "lantern.task.record",
+                "version": "1.0.0",
+                "inputs": {"project": "string"},
+                "effects": ["lantern.write"],
+                "reversibility": "compensatable"
+            }]
+        });
+        let response = session
+            .evaluate_tether("eval_j13b_real_001", &request)
+            .expect("real retained tethers.evaluate call");
+        assert_eq!(response["evaluation_id"], "eval_j13b_real_001");
+        assert_eq!(response["event_id"], "evt_j13b_real_001");
+        assert_eq!(response["status"], "matched");
+
+        let mut second_request = request;
+        second_request["evaluation_id"] = Value::String("eval_j13b_real_002".to_owned());
+        second_request["event"]["id"] = Value::String("evt_j13b_real_002".to_owned());
+        let second = session
+            .evaluate_tether("eval_j13b_real_002", &second_request)
+            .expect("second real retained tethers.evaluate call");
+        assert_eq!(second["evaluation_id"], "eval_j13b_real_002");
+        assert_eq!(second["event_id"], "evt_j13b_real_002");
+        assert_eq!(second["status"], "matched");
         session.shutdown();
     }
 }

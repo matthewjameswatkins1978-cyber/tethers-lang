@@ -6,31 +6,22 @@
 //
 // No public `run` command.  No evaluation-ID derivation rule.
 
-use crate::approval;
 use crate::configured_runtime::{PreparedRuntime, PreparedTether};
-use crate::dispatch::{self, ActionId, DispatchReadyAction, ExecutionId, Trail};
+use crate::dispatch::{self, DispatchReadyAction};
 use crate::executor::CapabilityExecutor;
 
 use crate::manifest::BindingKind;
-use crate::outcome::{self, MonotonicClock, ProductionMonotonicClock};
-use crate::policy::{
-    self, CapabilityRequirement, HostLocalPolicy, PermissionDecision, ProposedAction,
-    ScopeAssessment,
-};
-use crate::replay::{self, LogicalExecutionKey};
-use crate::replay_runtime::{FileReplayAuthority, ReplayAuthority};
+use crate::outcome::{self, ProductionMonotonicClock};
+use crate::policy::{self, PermissionDecision, ProposedAction};
+use crate::replay_runtime::FileReplayAuthority;
 use crate::resolver::{self, ProviderAvailability, ResolvedCapability};
-use crate::result_anchor::{ResultAnchor, ResultAnchorKind};
 use crate::stdio_provider::{ManagedProvider, StdioProviderError};
-use crate::trusted_store::TrustedManifestStore;
-use crate::validation;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tethers_reference_host::child_process;
 use tethers_reference_host::engine_stdio::{EngineError, EngineSession};
 
@@ -114,6 +105,32 @@ pub enum ExecutionServiceResult {
         action_id: String,
         reason: String,
     },
+    /// Deadline expired before the provider invocation boundary.
+    Unattempted {
+        evaluation_id: String,
+        action_id: String,
+        reason: String,
+    },
+    /// A prior execution completed successfully; replay is blocked.
+    ReplayBlockedCompletedSuccess {
+        evaluation_id: String,
+        action_id: String,
+    },
+    /// A prior execution completed with known failure; replay is blocked.
+    ReplayBlockedCompletedFailure {
+        evaluation_id: String,
+        action_id: String,
+    },
+    /// Recovered claim, intent, armed, or uncertain state requires a human.
+    ReplayRequiresManualResolution {
+        evaluation_id: String,
+        action_id: String,
+    },
+    /// Replay storage or terminal publication could not be trusted.
+    ReplayPersistenceUnavailable {
+        evaluation_id: String,
+        action_id: String,
+    },
     /// Interrupted before provider invocation.
     Interrupted,
     /// Invalid input data.
@@ -168,8 +185,25 @@ impl From<EngineError> for ExecutionServiceError {
 /// typed provider errors.
 pub struct RetainedProviderSession {
     provider: ManagedProvider,
-    next_request_id: u64,
+    request_ids: RequestIdSequence,
     identity: String,
+}
+
+#[derive(Debug)]
+struct RequestIdSequence {
+    next: u64,
+}
+
+impl RequestIdSequence {
+    fn after_initialization() -> Self {
+        Self { next: 3 }
+    }
+
+    fn take(&mut self) -> u64 {
+        let current = self.next;
+        self.next += 1;
+        current
+    }
 }
 
 impl RetainedProviderSession {
@@ -178,7 +212,7 @@ impl RetainedProviderSession {
         // Request IDs start at 3 after initialize (1) and tools/list (2).
         Self {
             provider,
-            next_request_id: 3,
+            request_ids: RequestIdSequence::after_initialization(),
             identity,
         }
     }
@@ -197,10 +231,11 @@ impl RetainedProviderSession {
         &mut self,
         tool_name: &str,
         arguments: &Value,
+        remaining: Duration,
     ) -> Result<Value, StdioProviderError> {
-        let id = self.next_request_id;
-        self.next_request_id += 1;
-        self.provider.tools_call(id, tool_name, arguments)
+        let id = self.request_ids.take();
+        self.provider
+            .tools_call_with_timeout(id, tool_name, arguments, remaining)
     }
 
     /// Retained stderr tail from the provider process.
@@ -224,6 +259,26 @@ struct ProviderSessionExecutor<'a> {
     tool_name: String,
 }
 
+fn classify_provider_error(error: &StdioProviderError) -> outcome::ProviderDiagnostic {
+    match error {
+        StdioProviderError::ExplicitProviderError(_) => {
+            outcome::ProviderDiagnostic::ExplicitProviderError
+        }
+        StdioProviderError::Interrupted => outcome::ProviderDiagnostic::ProtocolInterrupted,
+        StdioProviderError::EmptyResponse
+        | StdioProviderError::MalformedResponse(_)
+        | StdioProviderError::ProtocolError(_)
+        | StdioProviderError::ReadFailed(_)
+        | StdioProviderError::WriteFailed(_)
+        | StdioProviderError::LaunchFailed { .. }
+        | StdioProviderError::StdinUnavailable
+        | StdioProviderError::StdoutUnavailable
+        | StdioProviderError::SerializeFailed(_)
+        | StdioProviderError::TrustedManifestInvalid(_)
+        | StdioProviderError::AdmissionFailed(_) => outcome::ProviderDiagnostic::NoFinalResponse,
+    }
+}
+
 impl CapabilityExecutor for ProviderSessionExecutor<'_> {
     fn provider_identity(&self) -> &str {
         self.session.identity()
@@ -232,32 +287,18 @@ impl CapabilityExecutor for ProviderSessionExecutor<'_> {
     fn execute(&mut self, ready: &DispatchReadyAction) -> Result<Value, String> {
         let arguments = ready.arguments();
         self.session
-            .tools_call(&self.tool_name, arguments)
+            .tools_call(&self.tool_name, arguments, Duration::from_secs(10))
             .map_err(|e| format!("provider tools/call failed: {e}"))
     }
 
     fn execute_classified(
         &mut self,
         ready: &DispatchReadyAction,
-        _remaining: Duration,
+        remaining: Duration,
     ) -> Result<Value, outcome::ProviderDiagnostic> {
-        // Use a timeout for the provider call based on remaining deadline.
-        // The ManagedProvider already has bounded reads, so the call will
-        // time out or be interrupted by the Job Object.
-        let result = self.session.tools_call(&self.tool_name, ready.arguments());
-
-        // After the call, check if we're past the deadline.
-        // If we are, the result is uncertain regardless of what came back.
-        match result {
-            Ok(value) => Ok(value),
-            Err(e) => {
-                if e.to_string().contains("interrupted") {
-                    Err(outcome::ProviderDiagnostic::ProtocolInterrupted)
-                } else {
-                    Err(outcome::ProviderDiagnostic::NoFinalResponse)
-                }
-            }
-        }
+        self.session
+            .tools_call(&self.tool_name, ready.arguments(), remaining)
+            .map_err(|error| classify_provider_error(&error))
     }
 }
 
@@ -348,7 +389,12 @@ impl<'a> HostExecutionService<'a> {
                 return Err(ExecutionServiceError::Interrupted);
             }
 
-            let session = self.launch_and_initialize_provider(prepared_provider)?;
+            let Some(session) = self.launch_and_initialize_provider(prepared_provider)? else {
+                // A live provider whose discovery evidence does not match the
+                // trusted prepared capability is not available for policy or
+                // bridge projection.
+                continue;
+            };
             let identity = session.identity().to_owned();
             provider_sessions.insert(identity.clone(), session);
 
@@ -389,7 +435,7 @@ impl<'a> HostExecutionService<'a> {
     fn launch_and_initialize_provider(
         &self,
         prepared: &crate::configured_runtime::PreparedProvider,
-    ) -> Result<RetainedProviderSession, ExecutionServiceError> {
+    ) -> Result<Option<RetainedProviderSession>, ExecutionServiceError> {
         let config = &prepared.stdio_config;
 
         let mut provider = ManagedProvider::launch(
@@ -417,17 +463,21 @@ impl<'a> HostExecutionService<'a> {
             })?;
 
         // MCP tools/list.
-        let _tools = provider.list_tools().map_err(|e| {
+        let tools = provider.list_tools().map_err(|e| {
             ExecutionServiceError::Provider(format!(
                 "tools/list failed for {}: {e}",
                 prepared.identity
             ))
         })?;
+        if validate_prepared_discovery(prepared, &tools).is_err() {
+            provider.close();
+            return Ok(None);
+        }
 
-        Ok(RetainedProviderSession::new(
+        Ok(Some(RetainedProviderSession::new(
             provider,
             prepared.identity.clone(),
-        ))
+        )))
     }
 
     /// Evaluate one prepared input through the engine and dispatch pipeline.
@@ -445,7 +495,10 @@ impl<'a> HostExecutionService<'a> {
         };
 
         // Build the Tethers 0.1 request envelope.
-        let envelope = self.build_request_envelope(input, tether);
+        let envelope = match self.build_request_envelope(input, tether, provider_availability) {
+            Ok(envelope) => envelope,
+            Err(result) => return result,
+        };
 
         // Call tethers.evaluate.
         let tethers_response = match engine.evaluate_tether(&input.evaluation_id, &envelope) {
@@ -470,7 +523,7 @@ impl<'a> HostExecutionService<'a> {
 
         // Resolve capability and dispatch.
         self.dispatch_matched_response(
-            &input.evaluation_id,
+            input,
             tethers_response,
             provider_sessions,
             provider_availability,
@@ -496,66 +549,24 @@ impl<'a> HostExecutionService<'a> {
     fn build_request_envelope(
         &self,
         input: &PreparedEvaluationInput,
-        _tether: &PreparedTether,
-    ) -> Value {
-        // Build the standard Tethers 0.1 request envelope.
-        // The precise shape matches what the engine expects.
-        serde_json::json!({
-            "protocol_version": "0.1",
-            "evaluation_id": input.evaluation_id,
-            "tether": {
-                "id": input.tether_id,
-                "version": input.tether_version
-            },
-            "event": input.anchor_event,
-            "facts": input.facts,
-            "capabilities": self.build_capability_projection(),
-        })
-    }
-
-    /// Build the capability bridge projection from the trusted store.
-    fn build_capability_projection(&self) -> Value {
-        let caps: Vec<Value> = self
-            .runtime
-            .tethers()
-            .iter()
-            .flat_map(|_t| {
-                // Include all capabilities from the trusted store.
-                // This is a simplification - the real projection includes
-                // only capabilities relevant to the Tethers being evaluated.
-                self.runtime
-                    .requirements()
-                    .iter()
-                    .map(|req| {
-                        // Find matching capabilities from prepared providers.
-                        let mut cap_info = serde_json::json!({
-                            "capability_name": req.capability_name,
-                            "capability_version": req.capability_version,
-                        });
-
-                        // Try to resolve from the runtime store.
-                        if let Ok(resolved) = resolver::resolve_capability(
-                            self.runtime.trusted_store(),
-                            &ProviderAvailability::from_identities(
-                                self.runtime.providers().iter().map(|p| p.identity.as_str()),
-                            ),
-                            &req.capability_name,
-                            req.capability_version,
-                            None,
-                        ) {
-                            cap_info["manifest_digest"] =
-                                Value::String(resolved.manifest_digest().to_owned());
-                            cap_info["provider_identity"] =
-                                Value::String(resolved.provider_identity().to_owned());
-                        }
-
-                        cap_info
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-
-        serde_json::json!({ "capabilities": caps })
+        tether: &PreparedTether,
+        provider_availability: &ProviderAvailability,
+    ) -> Result<Value, ExecutionServiceResult> {
+        let capabilities = self.runtime.planner_capabilities().map_err(|error| {
+            ExecutionServiceResult::InvalidData {
+                message: format!("planner capability projection failed: {error}"),
+            }
+        })?;
+        let mut request = assemble_request_envelope(input, tether, capabilities);
+        crate::inject_bridge_projection_into_request(
+            &mut request,
+            self.runtime.trusted_store(),
+            provider_availability,
+        )
+        .map_err(|error| ExecutionServiceResult::InvalidData {
+            message: format!("bridge capability projection failed: {error}"),
+        })?;
+        Ok(request)
     }
 
     /// Check if a Tethers response has matched status.
@@ -563,474 +574,281 @@ impl<'a> HostExecutionService<'a> {
         response.get("status").and_then(Value::as_str) == Some("matched")
     }
 
-    /// Extract the proposed action from a matched response.
-    fn extract_proposed_action(response: &Value) -> Result<ProposedAction, ExecutionServiceResult> {
-        let evaluation_id = response
-            .get("evaluation_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ExecutionServiceResult::InvalidData {
-                message: "response missing evaluation_id".to_owned(),
-            })?
-            .to_owned();
-        let plan = response
-            .get("plan")
-            .ok_or_else(|| ExecutionServiceResult::InvalidData {
-                message: "matched response had no plan".to_owned(),
-            })?;
-        let plan_id = plan
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ExecutionServiceResult::InvalidData {
-                message: "plan had no id".to_owned(),
-            })?
-            .to_owned();
-        let actions = plan
-            .get("actions")
-            .and_then(Value::as_array)
-            .ok_or_else(|| ExecutionServiceResult::InvalidData {
-                message: "plan had no actions".to_owned(),
-            })?;
-
-        if actions.is_empty() {
-            return Err(ExecutionServiceResult::NoActions {
-                evaluation_id,
-                response: response.clone(),
-            });
-        }
-
-        // For 0.1, exactly one Action.
-        let action = &actions[0];
-        let action_id = action
-            .get("action_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ExecutionServiceResult::InvalidData {
-                message: "action missing action_id".to_owned(),
-            })?
-            .to_owned();
-        let capability_name = action
-            .get("capability")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ExecutionServiceResult::InvalidData {
-                message: "action missing capability".to_owned(),
-            })?
-            .to_owned();
-        let manifest_digest = action
-            .get("manifest_digest")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let bridge_capability_version = action
-            .get("bridge_capability_version")
-            .and_then(Value::as_u64)
-            .and_then(|v| u32::try_from(v).ok());
-        let bridge_provider_identity = action
-            .get("bridge_provider_identity")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let arguments = action.get("arguments").cloned().unwrap_or(Value::Null);
-
-        Ok(ProposedAction {
-            evaluation_id,
-            plan_id,
-            action_id,
-            capability_name,
-            manifest_digest,
-            bridge_capability_version,
-            bridge_provider_identity,
-            arguments,
-        })
-    }
-
-    /// Dispatch a matched Tethers response through all existing gates.
-    #[allow(clippy::too_many_arguments)]
+    /// Dispatch a matched response through the one accepted J05-J11 boundary.
     fn dispatch_matched_response(
         &self,
-        evaluation_id: &str,
+        input: &PreparedEvaluationInput,
         mut response: Value,
         provider_sessions: &mut HashMap<String, RetainedProviderSession>,
         provider_availability: &ProviderAvailability,
     ) -> ExecutionServiceResult {
-        // 1. Extract proposed action.
-        let proposed = match Self::extract_proposed_action(&response) {
-            Ok(p) => p,
-            Err(result) => return result,
+        let proposed = match crate::extract_proposed_action(&response) {
+            Ok(action) => action,
+            Err(error) => {
+                return ExecutionServiceResult::InvalidData {
+                    message: format!("invalid planned Action: {error}"),
+                };
+            }
         };
-
-        // 2. Resolve the capability.
-        //    Look through all prepared providers to find matching capability.
-        let resolved = match self
-            .resolve_capability_for_action(&proposed.capability_name, provider_availability)
-        {
-            Ok(r) => r,
-            Err(result) => return result,
-        };
-
-        // 3. Evaluate effective policy.
-        let host_policy = self.runtime.policy();
-        let scope_assessment = ScopeAssessment::ScopeNotEstablished;
-
-        let policy_eval = policy::evaluate_effective_policy(
+        let evaluation_id = proposed.evaluation_id.clone();
+        let action_id = proposed.action_id.clone();
+        let scope_assessment = self.runtime.assess_action_scope(&proposed);
+        let policy_evaluation = policy::evaluate_effective_policy(
             &proposed,
             self.runtime.requirements(),
             self.runtime.trusted_store(),
             provider_availability,
-            host_policy,
+            self.runtime.policy(),
             scope_assessment,
         );
 
-        // 4. Non-dispatchable policy branches.
-        match &policy_eval.decision {
+        match &policy_evaluation.decision {
             PermissionDecision::Deny => {
                 return ExecutionServiceResult::Denied {
-                    evaluation_id: evaluation_id.to_owned(),
-                    action_id: proposed.action_id,
-                    reason: "policy denied".to_owned(),
+                    evaluation_id,
+                    action_id,
+                    reason: format!("{:?}", policy_evaluation.reason),
                 };
             }
             PermissionDecision::Ask => {
                 return ExecutionServiceResult::ApprovalRequired {
-                    evaluation_id: evaluation_id.to_owned(),
-                    approval_id: format!("approval-{}", proposed.action_id),
+                    evaluation_id,
+                    approval_id: format!("approval-{action_id}"),
                 };
             }
             PermissionDecision::Unavailable => {
                 return ExecutionServiceResult::Unavailable {
-                    evaluation_id: evaluation_id.to_owned(),
-                    reason: "capability not currently available".to_owned(),
+                    evaluation_id,
+                    reason: format!("{:?}", policy_evaluation.reason),
                 };
             }
-            PermissionDecision::Allow(_) => {
-                // Continue to dispatch.
-            }
+            PermissionDecision::Allow(_) => {}
         }
 
-        // 5. Open trail.
+        let resolved = match self.resolve_exact_capability(&proposed, provider_availability) {
+            Ok(resolved) => resolved,
+            Err(result) => return result,
+        };
+        let binding = &resolved.manifest().manifest().binding;
+        if binding.kind != BindingKind::Mcp {
+            return ExecutionServiceResult::Denied {
+                evaluation_id,
+                action_id,
+                reason: "capability binding is not MCP".to_owned(),
+            };
+        }
+        let session = match provider_sessions.get_mut(resolved.provider_identity()) {
+            Some(session) => session,
+            None => {
+                return ExecutionServiceResult::Unavailable {
+                    evaluation_id,
+                    reason: format!(
+                        "provider '{}' has no retained session",
+                        resolved.provider_identity()
+                    ),
+                };
+            }
+        };
+        let mut executor = ProviderSessionExecutor {
+            session,
+            tool_name: binding.tool_name.clone(),
+        };
+        let event_id = match input
+            .anchor_event
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            Some(event_id) => event_id,
+            None => {
+                return ExecutionServiceResult::InvalidData {
+                    message: "Anchor event requires a non-empty string id".to_owned(),
+                };
+            }
+        };
+        let input_context = crate::InputEventContext::for_initial(event_id);
+
         if let Some(parent) = self.trail_path.parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
+            if let Err(error) = fs::create_dir_all(parent) {
                 return ExecutionServiceResult::AuditFailed {
-                    evaluation_id: evaluation_id.to_owned(),
-                    action_id: proposed.action_id.clone(),
-                    reason: format!("trail directory create failed: {e}"),
+                    evaluation_id,
+                    action_id,
+                    reason: format!("trail directory create failed: {error}"),
                 };
             }
         }
         let mut trail = match dispatch::FileTrail::open(self.trail_path) {
-            Ok(t) => t,
-            Err(e) => {
+            Ok(trail) => trail,
+            Err(error) => {
                 return ExecutionServiceResult::AuditFailed {
-                    evaluation_id: evaluation_id.to_owned(),
-                    action_id: proposed.action_id.clone(),
-                    reason: format!("trail open failed: {e}"),
+                    evaluation_id,
+                    action_id,
+                    reason: format!("trail open failed: {error}"),
                 };
             }
         };
-
-        // 6. Verify action capability matches resolved capability.
-        let plan = match response.get("plan").and_then(|p| p.get("actions")) {
-            Some(actions) => actions,
-            None => {
-                return ExecutionServiceResult::InvalidData {
-                    message: "plan missing actions".to_owned(),
-                };
-            }
-        };
-        let action = &plan[0];
-        let action_cap = action
-            .get("capability")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        if action_cap != resolved.capability_name() {
-            return ExecutionServiceResult::Denied {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id.clone(),
-                reason: format!(
-                    "action capability '{}' does not match resolved '{}'",
-                    action_cap,
-                    resolved.capability_name()
-                ),
-            };
-        }
-
-        // 7. Verify executor identity.
-        let provider_identity = resolved.provider_identity().to_owned();
-        let session = match provider_sessions.get_mut(&provider_identity) {
-            Some(s) => s,
-            None => {
-                return ExecutionServiceResult::Unavailable {
-                    evaluation_id: evaluation_id.to_owned(),
-                    reason: format!("provider '{}' not available", provider_identity),
-                };
-            }
-        };
-
-        // 8. Get tool name from binding.
-        let binding = &resolved.manifest().manifest().binding;
-        if binding.kind != BindingKind::Mcp {
-            return ExecutionServiceResult::Denied {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id.clone(),
-                reason: "capability binding is not MCP".to_owned(),
-            };
-        }
-        let tool_name = binding.tool_name.clone();
-
-        // 9. Replay admission.
-        let action_id_str = &proposed.action_id;
-        let arguments = action.get("arguments").cloned().unwrap_or(Value::Null);
-
-        let logical_key =
-            match LogicalExecutionKey::derive(evaluation_id, evaluation_id, action_id_str) {
-                Ok(key) => key,
-                Err(_) => {
-                    return ExecutionServiceResult::Unavailable {
-                        evaluation_id: evaluation_id.to_owned(),
-                        reason: "replay key derivation failed".to_owned(),
-                    };
-                }
-            };
-
-        let binding_record = replay::ExecutionBinding {
-            evaluation_id: evaluation_id.to_owned(),
-            action_id: action_id_str.to_owned(),
-            capability_name: resolved.capability_name().to_owned(),
-            capability_version: resolved.capability_version(),
-            manifest_digest: resolved.manifest_digest().to_owned(),
-            provider_identity: resolved.provider_identity().to_owned(),
-            argument_digest: Self::argument_digest(&arguments),
-        };
-
-        let mut replay_authority = FileReplayAuthority::new(self.host_data_root);
-        let mut replay_admission = match replay_authority.admit(&logical_key, &binding_record) {
-            Ok(admission) => admission,
-            Err(_) => {
-                return ExecutionServiceResult::Unavailable {
-                    evaluation_id: evaluation_id.to_owned(),
-                    reason: "replay admission failed".to_owned(),
-                };
-            }
-        };
-
-        if !replay_admission.is_fresh() {
-            return ExecutionServiceResult::Completed {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id.clone(),
-                response,
-            };
-        }
-
-        let execution_id = ExecutionId::from_replay(replay_admission.execution_id());
-
-        // 10. Publish replay intent.
-        if replay_admission.publish_intent().is_err() {
-            return ExecutionServiceResult::AuditFailed {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id.clone(),
-                reason: "replay intent publish failed".to_owned(),
-            };
-        }
-
-        // 11. Durable intent recording.
-        let ready = match dispatch::prepare_and_record(
-            policy_eval.decision,
-            &resolved,
-            execution_id,
-            ActionId(action_id_str.to_owned()),
-            arguments,
-            &mut trail,
-        ) {
-            Ok(ready) => ready,
-            Err(err) => {
-                return match err {
-                    dispatch::PrepareError::Deny => ExecutionServiceResult::Denied {
-                        evaluation_id: evaluation_id.to_owned(),
-                        action_id: proposed.action_id.clone(),
-                        reason: format!("{err:?}"),
-                    },
-                    dispatch::PrepareError::Ask => ExecutionServiceResult::ApprovalRequired {
-                        evaluation_id: evaluation_id.to_owned(),
-                        approval_id: format!("approval-{}", proposed.action_id),
-                    },
-                    dispatch::PrepareError::Unavailable => ExecutionServiceResult::Unavailable {
-                        evaluation_id: evaluation_id.to_owned(),
-                        reason: format!("{err:?}"),
-                    },
-                    _ => ExecutionServiceResult::AuditFailed {
-                        evaluation_id: evaluation_id.to_owned(),
-                        action_id: proposed.action_id.clone(),
-                        reason: format!("intent recording failed: {err:?}"),
-                    },
-                };
-            }
-        };
-
-        // 12. Pre-invocation interruption check.
-        if child_process::is_interrupted() {
-            return ExecutionServiceResult::Interrupted;
-        }
-
-        // 13. Deadline check.
         let clock = ProductionMonotonicClock::new();
-        let deadline_start = clock.now();
-        let deadline = Duration::from_millis(ready.verified_manifest().manifest().timeout_ms);
-        let remaining = match outcome::remaining_until_deadline(&clock, deadline_start, deadline) {
-            Some(r) => r,
-            None => {
-                return ExecutionServiceResult::Failed {
-                    evaluation_id: evaluation_id.to_owned(),
-                    action_id: proposed.action_id.clone(),
-                    reason: "deadline exceeded before invocation".to_owned(),
+        let mut replay_authority = FileReplayAuthority::new(self.host_data_root);
+        let mut anchor_writer = crate::ResponseResultAnchorWriter;
+        let shared = match crate::execute_shared_boundary(
+            &mut response,
+            policy_evaluation.decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &input_context,
+            true,
+            &clock,
+            &mut replay_authority,
+            None,
+            &mut anchor_writer,
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                return ExecutionServiceResult::AuditFailed {
+                    evaluation_id,
+                    action_id,
+                    reason: format!("shared execution boundary failed: {error}"),
                 };
             }
         };
+        Self::map_shared_result(shared, evaluation_id, action_id, response)
+    }
 
-        // 14. Publish armed state.
-        if replay_admission.publish_armed().is_err() {
-            return ExecutionServiceResult::AuditFailed {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id.clone(),
-                reason: "replay armed publish failed".to_owned(),
-            };
-        }
-
-        // 15. Provider invocation.
-        let mut executor = ProviderSessionExecutor { session, tool_name };
-
-        // This is the invocation boundary.
-        let provider_result = executor.execute_classified(&ready, remaining);
-        let observed_after_deadline = outcome::deadline_expired(&clock, deadline_start, deadline);
-        let timestamp_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or_default();
-
-        // 16. Classify outcome.
-        let execution_outcome = if observed_after_deadline {
-            outcome::ExecutionOutcome::Uncertain {
-                reason: outcome::deadline_reason(),
-            }
-        } else {
-            match provider_result {
-                Ok(result) => {
-                    let output_schema = &ready.verified_manifest().manifest().output_schema;
-                    if validation::validate_output(output_schema, &result).is_ok() {
-                        outcome::ExecutionOutcome::Succeeded(result)
-                    } else {
-                        outcome::ExecutionOutcome::Failed {
-                            reason: outcome::validation_reason(),
-                        }
-                    }
-                }
-                Err(outcome::ProviderDiagnostic::ExplicitProviderError) => {
-                    outcome::ExecutionOutcome::Failed {
-                        reason: outcome::redact(outcome::ProviderDiagnostic::ExplicitProviderError),
-                    }
-                }
-                Err(diagnostic) => outcome::ExecutionOutcome::Uncertain {
-                    reason: outcome::redact(diagnostic),
-                },
-            }
-        };
-
-        let (status, result, reason) = match &execution_outcome {
-            outcome::ExecutionOutcome::Succeeded(result) => {
-                ("succeeded", Some(result.clone()), None)
-            }
-            outcome::ExecutionOutcome::Failed { reason } => ("failed", None, Some(reason.clone())),
-            outcome::ExecutionOutcome::Uncertain { reason } => {
-                ("uncertain", None, Some(reason.clone()))
-            }
-        };
-
-        // 17. Record durable outcome.
-        let outcome_entry = dispatch::OutcomeEntry {
-            execution_id: ready.execution_id().0.clone(),
-            action_id: ready.action_id().0.clone(),
-            status: status.to_owned(),
-            result: result.clone(),
-            error_message: reason.as_ref().map(|r| r.message.to_string()),
-            reason_code: reason.as_ref().map(|r| r.code.to_string()),
-            timestamp_unix_ms: timestamp_ms,
-        };
-
-        if trail.append_outcome(&outcome_entry).is_err() {
-            return ExecutionServiceResult::AuditFailed {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id,
-                reason: "outcome recording failed".to_owned(),
-            };
-        }
-
-        // 18. Publish terminal state.
-        let terminal_state = match &execution_outcome {
-            outcome::ExecutionOutcome::Succeeded(_) => replay::ReplayState::Succeeded,
-            outcome::ExecutionOutcome::Failed { .. } => replay::ReplayState::Failed,
-            outcome::ExecutionOutcome::Uncertain { .. } => replay::ReplayState::Uncertain,
-        };
-
-        if let Ok(digest) = replay::durable_outcome_digest(&outcome_entry) {
-            let _ = replay_admission.publish_terminal(terminal_state, digest);
-        }
-
-        // 19. Return typed result.
-        match &execution_outcome {
-            outcome::ExecutionOutcome::Succeeded(val) => ExecutionServiceResult::Completed {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id,
-                response: val.clone(),
+    fn map_shared_result(
+        result: crate::SharedExecutionResult,
+        evaluation_id: String,
+        action_id: String,
+        response: Value,
+    ) -> ExecutionServiceResult {
+        match result {
+            crate::SharedExecutionResult::Completed => ExecutionServiceResult::Completed {
+                evaluation_id,
+                action_id,
+                response,
             },
-            outcome::ExecutionOutcome::Failed { reason } => ExecutionServiceResult::Failed {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id,
-                reason: reason.message.to_string(),
+            crate::SharedExecutionResult::Failed => ExecutionServiceResult::Failed {
+                evaluation_id,
+                action_id,
+                reason: "provider returned a known failure".to_owned(),
             },
-            outcome::ExecutionOutcome::Uncertain { reason } => ExecutionServiceResult::Uncertain {
-                evaluation_id: evaluation_id.to_owned(),
-                action_id: proposed.action_id,
-                reason: reason.message.to_string(),
+            crate::SharedExecutionResult::Uncertain => ExecutionServiceResult::Uncertain {
+                evaluation_id,
+                action_id,
+                reason: "provider outcome is uncertain".to_owned(),
+            },
+            crate::SharedExecutionResult::Unattempted => ExecutionServiceResult::Unattempted {
+                evaluation_id,
+                action_id,
+                reason: "deadline expired before provider invocation".to_owned(),
+            },
+            crate::SharedExecutionResult::Denied => ExecutionServiceResult::Denied {
+                evaluation_id,
+                action_id,
+                reason: "shared execution boundary denied dispatch".to_owned(),
+            },
+            crate::SharedExecutionResult::AuditFailed => ExecutionServiceResult::AuditFailed {
+                evaluation_id,
+                action_id,
+                reason: "durable execution audit failed".to_owned(),
+            },
+            crate::SharedExecutionResult::Replay(
+                crate::replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+            ) => ExecutionServiceResult::ReplayPersistenceUnavailable {
+                evaluation_id,
+                action_id,
+            },
+            crate::SharedExecutionResult::Replay(
+                crate::replay_runtime::ReplayDispatchResult::BlockedCompletedSuccess,
+            ) => ExecutionServiceResult::ReplayBlockedCompletedSuccess {
+                evaluation_id,
+                action_id,
+            },
+            crate::SharedExecutionResult::Replay(
+                crate::replay_runtime::ReplayDispatchResult::BlockedCompletedFailure,
+            ) => ExecutionServiceResult::ReplayBlockedCompletedFailure {
+                evaluation_id,
+                action_id,
+            },
+            crate::SharedExecutionResult::Replay(
+                crate::replay_runtime::ReplayDispatchResult::RequiresManualResolution,
+            ) => ExecutionServiceResult::ReplayRequiresManualResolution {
+                evaluation_id,
+                action_id,
             },
         }
     }
 
-    /// Resolve a capability for an action using the runtime state.
-    fn resolve_capability_for_action(
+    /// Resolve the exact planner-pinned capability after policy returned Allow.
+    fn resolve_exact_capability(
         &self,
-        capability_name: &str,
+        proposed: &ProposedAction,
         provider_availability: &ProviderAvailability,
     ) -> Result<ResolvedCapability, ExecutionServiceResult> {
-        // Look through all prepared providers for a matching capability.
-        for provider in self.runtime.providers() {
-            for cap in &provider.capabilities {
-                if cap.name == capability_name {
-                    // Try to resolve from the trusted store.
-                    match resolver::resolve_capability(
-                        self.runtime.trusted_store(),
-                        provider_availability,
-                        capability_name,
-                        cap.version,
-                        Some(&provider.identity),
-                    ) {
-                        Ok(resolved) => return Ok(resolved),
-                        Err(_) => continue,
-                    }
-                }
-            }
-        }
-
-        Err(ExecutionServiceResult::Unavailable {
-            evaluation_id: String::new(),
-            reason: format!("capability '{}' not resolved", capability_name),
+        let version =
+            proposed
+                .bridge_capability_version
+                .ok_or_else(|| ExecutionServiceResult::Denied {
+                    evaluation_id: proposed.evaluation_id.clone(),
+                    action_id: proposed.action_id.clone(),
+                    reason: "missing bridge capability version".to_owned(),
+                })?;
+        let provider = proposed
+            .bridge_provider_identity
+            .as_deref()
+            .ok_or_else(|| ExecutionServiceResult::Denied {
+                evaluation_id: proposed.evaluation_id.clone(),
+                action_id: proposed.action_id.clone(),
+                reason: "missing bridge provider identity".to_owned(),
+            })?;
+        resolver::resolve_capability(
+            self.runtime.trusted_store(),
+            provider_availability,
+            &proposed.capability_name,
+            version,
+            Some(provider),
+        )
+        .map_err(|error| ExecutionServiceResult::Unavailable {
+            evaluation_id: proposed.evaluation_id.clone(),
+            reason: format!("exact capability resolution failed: {error:?}"),
         })
     }
+}
 
-    /// Deterministic argument digest for replay binding.
-    fn argument_digest(arguments: &Value) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(
-            serde_json::to_string(arguments)
-                .unwrap_or_default()
-                .as_bytes(),
-        );
-        format!("sha256:{:x}", hasher.finalize())
+fn assemble_request_envelope(
+    input: &PreparedEvaluationInput,
+    tether: &PreparedTether,
+    capabilities: Vec<Value>,
+) -> Value {
+    serde_json::json!({
+        "protocol_version": "0.1",
+        "language_version": "0.1",
+        "evaluation_id": input.evaluation_id,
+        "tether": {
+            "id": input.tether_id,
+            "version": input.tether_version,
+            "source": tether.source
+        },
+        "event": input.anchor_event,
+        "facts": input.facts,
+        "capabilities": capabilities,
+    })
+}
+
+fn validate_prepared_discovery(
+    prepared: &crate::configured_runtime::PreparedProvider,
+    tools: &[Value],
+) -> Result<(), String> {
+    for capability in &prepared.capabilities {
+        crate::stdio_provider::compare_discovery_evidence(tools, &capability.verified_manifest)
+            .map_err(|error| {
+                format!(
+                    "tools/list mismatch for {} capability {} v{}: {error}",
+                    prepared.identity, capability.name, capability.version
+                )
+            })?;
     }
+    Ok(())
 }
 
 // ===========================================================================
@@ -1040,7 +858,10 @@ impl<'a> HostExecutionService<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dispatch::{self, RecordingTrail};
+    use crate::dispatch::{self, ActionId, ExecutionId, RecordingTrail};
+    use crate::policy::{CapabilityRequirement, HostLocalPolicy, ScopeAssessment};
+    use crate::replay::LogicalExecutionKey;
+    use crate::trusted_store::TrustedManifestStore;
 
     // -----------------------------------------------------------------------
     // Helpers
@@ -1114,24 +935,44 @@ mod tests {
     // j13b_ tests
     // -----------------------------------------------------------------------
 
-    /// Prove PolicyRule::Deny produces zero provider calls.
+    fn resolved_test_capability() -> (TrustedManifestStore, ResolvedCapability) {
+        let mut manifest = test_manifest_json();
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&manifest.to_string()).unwrap();
+        manifest["digest"] = serde_json::json!(digest);
+        let verified = crate::manifest::verify_manifest(&manifest.to_string()).unwrap();
+        let mut store = TrustedManifestStore::new();
+        store.insert(verified).unwrap();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let resolved = resolver::resolve_capability(
+            &store,
+            &availability,
+            "lantern.task.record",
+            1,
+            Some("lantern-local"),
+        )
+        .unwrap();
+        (store, resolved)
+    }
+
+    /// Structured scope without binding-owned WithinScope evidence cannot
+    /// produce a dispatch-ready token.
     #[test]
-    fn j13b_deny_produces_zero_provider_calls() {
+    fn j13b_structured_scope_requires_trusted_within_scope_before_dispatch() {
         let mut trail = RecordingTrail::new();
-        let policy = HostLocalPolicy::new(policy::PolicyRule::Deny);
-        let requirements = vec![CapabilityRequirement::new("test.cap", 1)];
+        let requirements = vec![CapabilityRequirement::new("lantern.task.record", 1)];
+        let (store, resolved) = resolved_test_capability();
         let proposed = ProposedAction {
             evaluation_id: "eval-1".to_owned(),
             plan_id: "plan-1".to_owned(),
             action_id: "act-1".to_owned(),
-            capability_name: "test.cap".to_owned(),
-            manifest_digest: None,
-            bridge_capability_version: None,
-            bridge_provider_identity: None,
-            arguments: Value::Null,
+            capability_name: "lantern.task.record".to_owned(),
+            manifest_digest: Some(resolved.manifest_digest().to_owned()),
+            bridge_capability_version: Some(1),
+            bridge_provider_identity: Some("lantern-local".to_owned()),
+            arguments: serde_json::json!({"project": "projects/a", "task": "t"}),
         };
-        let store = TrustedManifestStore::new();
-        let availability = ProviderAvailability::empty();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let policy = HostLocalPolicy::new(policy::PolicyRule::Allow);
         let eval = policy::evaluate_effective_policy(
             &proposed,
             &requirements,
@@ -1141,48 +982,64 @@ mod tests {
             ScopeAssessment::ScopeNotEstablished,
         );
         assert!(matches!(eval.decision, PermissionDecision::Deny));
+        let ready = dispatch::prepare_and_record(
+            eval.decision,
+            &resolved,
+            ExecutionId("exec-1".to_owned()),
+            ActionId("act-1".to_owned()),
+            proposed.arguments,
+            &mut trail,
+        );
+        assert_eq!(ready.unwrap_err(), dispatch::PrepareError::Deny);
+        assert!(trail.entries.is_empty());
     }
 
-    /// Prove PolicyRule::Ask produces Ask decision when capability is available.
+    /// The request passed to the engine has the accepted direct 0.1 shape:
+    /// one selected Tether including source and one direct capabilities array.
     #[test]
-    fn j13b_ask_produces_zero_provider_calls() {
-        // Ask requires the capability to be declared and available.
-        // When unavailable, evaluate_effective_policy returns Unavailable first.
-        // This test documents the Ask path: even with Allow policy, if the
-        // capability is Ask-confirmed in its manifest, it requires approval.
-        let policy = HostLocalPolicy::new(policy::PolicyRule::Ask);
-        let requirements = vec![CapabilityRequirement::new("test.cap", 1)];
-        let proposed = ProposedAction {
-            evaluation_id: "eval-1".to_owned(),
-            plan_id: "plan-1".to_owned(),
-            action_id: "act-1".to_owned(),
-            capability_name: "test.cap".to_owned(),
-            manifest_digest: None,
-            bridge_capability_version: None,
-            bridge_provider_identity: None,
-            arguments: Value::Null,
+    fn j13b_request_envelope_is_exact_direct_and_contains_selected_source() {
+        let input = PreparedEvaluationInput {
+            tether_id: "fixture.selected".to_owned(),
+            tether_version: "1.2.3".to_owned(),
+            evaluation_id: "eval-explicit-7".to_owned(),
+            anchor_event: serde_json::json!({"id": "event-7", "name": "fixture.start"}),
+            facts: serde_json::json!({"immutable": true}),
         };
-        let store = TrustedManifestStore::new();
-        let availability = ProviderAvailability::empty();
+        let tether = PreparedTether {
+            id: input.tether_id.clone(),
+            version: input.tether_version.clone(),
+            source_path: PathBuf::from("selected.tether"),
+            source: "tether fixture.selected version 1.2.3\non fixture.start\ndo fixture.ping()"
+                .to_owned(),
+        };
+        let capabilities = vec![serde_json::json!({
+            "name": "fixture.ping",
+            "version": "1.0.0",
+            "inputs": {"type": "object"},
+            "effects": ["fixture.read"],
+            "reversibility": "reversible"
+        })];
+        let request = assemble_request_envelope(&input, &tether, capabilities.clone());
 
-        // With empty store, the capability is not available, so the decision
-        // reflects that.  Ask is only reached when the capability is available
-        // AND the policy says Ask.
-        // Here we verify that Deny policy work is separate from this.
-        let deny_policy = HostLocalPolicy::new(policy::PolicyRule::Deny);
-        let deny_eval = policy::evaluate_effective_policy(
-            &proposed,
-            &requirements,
-            &store,
-            &availability,
-            &deny_policy,
-            ScopeAssessment::ScopeNotEstablished,
+        assert_eq!(
+            request,
+            serde_json::json!({
+                "protocol_version": "0.1",
+                "language_version": "0.1",
+                "evaluation_id": "eval-explicit-7",
+                "tether": {
+                    "id": "fixture.selected",
+                    "version": "1.2.3",
+                    "source": tether.source
+                },
+                "event": input.anchor_event,
+                "facts": input.facts,
+                "capabilities": capabilities
+            })
         );
-        // Deny always produces Deny.
-        assert!(matches!(deny_eval.decision, PermissionDecision::Deny));
-
-        // Ask policy with unavailable capability is not Ask - it's Unavailable.
-        // This is correct behavior: Ask requires availability first.
+        assert!(request["capabilities"].is_array());
+        assert!(request.pointer("/capabilities/capabilities").is_none());
+        assert_eq!(request["capabilities"].as_array().unwrap().len(), 1);
     }
 
     /// Prove Unavailable produces zero provider calls.
@@ -1218,92 +1075,38 @@ mod tests {
         assert!(matches!(eval.decision, PermissionDecision::Unavailable));
     }
 
-    /// Prove ExecutionServiceResult enum variants exist and are constructable.
+    /// Shared replay classifications remain distinct at the service boundary.
     #[test]
-    fn j13b_result_variants_constructable() {
-        let completed = ExecutionServiceResult::Completed {
-            evaluation_id: "eval-1".into(),
-            action_id: "act-1".into(),
-            response: serde_json::json!({"status": "recorded"}),
-        };
-        let denied = ExecutionServiceResult::Denied {
-            evaluation_id: "eval-2".into(),
-            action_id: "act-2".into(),
-            reason: "policy denied".into(),
-        };
-        let no_actions = ExecutionServiceResult::NoActions {
-            evaluation_id: "eval-3".into(),
-            response: serde_json::json!({"status": "unmatched"}),
-        };
-        let approval = ExecutionServiceResult::ApprovalRequired {
-            evaluation_id: "eval-4".into(),
-            approval_id: "approval-1".into(),
-        };
-        let unavailable = ExecutionServiceResult::Unavailable {
-            evaluation_id: "eval-5".into(),
-            reason: "not available".into(),
-        };
-        let failed = ExecutionServiceResult::Failed {
-            evaluation_id: "eval-6".into(),
-            action_id: "act-6".into(),
-            reason: "provider error".into(),
-        };
-        let uncertain = ExecutionServiceResult::Uncertain {
-            evaluation_id: "eval-7".into(),
-            action_id: "act-7".into(),
-            reason: "uncertain outcome".into(),
-        };
-        let audit_failed = ExecutionServiceResult::AuditFailed {
-            evaluation_id: "eval-8".into(),
-            action_id: "act-8".into(),
-            reason: "write failed".into(),
-        };
-        let interrupted = ExecutionServiceResult::Interrupted;
-        let invalid = ExecutionServiceResult::InvalidData {
-            message: "bad input".into(),
-        };
-
-        // Just verify Debug formatting works.
-        assert!(
-            format!("{completed:?}").contains("Completed"),
-            "Completed should format"
-        );
-        assert!(
-            format!("{denied:?}").contains("Denied"),
-            "Denied should format"
-        );
-        assert!(
-            format!("{no_actions:?}").contains("NoActions"),
-            "NoActions should format"
-        );
-        assert!(
-            format!("{approval:?}").contains("ApprovalRequired"),
-            "ApprovalRequired should format"
-        );
-        assert!(
-            format!("{unavailable:?}").contains("Unavailable"),
-            "Unavailable should format"
-        );
-        assert!(
-            format!("{failed:?}").contains("Failed"),
-            "Failed should format"
-        );
-        assert!(
-            format!("{uncertain:?}").contains("Uncertain"),
-            "Uncertain should format"
-        );
-        assert!(
-            format!("{audit_failed:?}").contains("AuditFailed"),
-            "AuditFailed should format"
-        );
-        assert!(
-            format!("{interrupted:?}").contains("Interrupted"),
-            "Interrupted should format"
-        );
-        assert!(
-            format!("{invalid:?}").contains("InvalidData"),
-            "InvalidData should format"
-        );
+    fn j13b_shared_replay_results_map_without_becoming_completed() {
+        let cases = [
+            (
+                crate::replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+                "ReplayPersistenceUnavailable",
+            ),
+            (
+                crate::replay_runtime::ReplayDispatchResult::BlockedCompletedSuccess,
+                "ReplayBlockedCompletedSuccess",
+            ),
+            (
+                crate::replay_runtime::ReplayDispatchResult::BlockedCompletedFailure,
+                "ReplayBlockedCompletedFailure",
+            ),
+            (
+                crate::replay_runtime::ReplayDispatchResult::RequiresManualResolution,
+                "ReplayRequiresManualResolution",
+            ),
+        ];
+        for (replay, expected) in cases {
+            let result = HostExecutionService::map_shared_result(
+                crate::SharedExecutionResult::Replay(replay),
+                "eval-1".to_owned(),
+                "action-1".to_owned(),
+                serde_json::json!({}),
+            );
+            let actual = format!("{result:?}");
+            assert!(actual.starts_with(expected), "{replay:?}: {actual}");
+            assert!(!actual.starts_with("Completed"), "{replay:?}: {actual}");
+        }
     }
 
     /// Prove PreparedEvaluationInput fields are explicit.
@@ -1355,54 +1158,34 @@ mod tests {
         assert!(matches!(eval.decision, PermissionDecision::Deny));
     }
 
-    /// Prove that the CapabilityExecutor trait works with our executor.
+    /// Only a well-formed JSON-RPC error is trusted as provider-declared
+    /// failure. Transport and framing failures remain uncertain.
     #[test]
-    fn j13b_capability_executor_trait_works() {
-        // A simple mock executor for testing.
-        struct MockExec {
-            identity: String,
-            called: bool,
+    fn j13b_provider_error_classification_preserves_failure_vs_uncertainty() {
+        assert_eq!(
+            classify_provider_error(&StdioProviderError::ExplicitProviderError(
+                "declared".to_owned()
+            )),
+            outcome::ProviderDiagnostic::ExplicitProviderError
+        );
+        for error in [
+            StdioProviderError::EmptyResponse,
+            StdioProviderError::MalformedResponse("bad JSON".to_owned()),
+            StdioProviderError::ProtocolError("wrong response id".to_owned()),
+            StdioProviderError::ReadFailed("EOF or timeout".to_owned()),
+        ] {
+            assert_eq!(
+                classify_provider_error(&error),
+                outcome::ProviderDiagnostic::NoFinalResponse,
+                "{error:?}"
+            );
         }
-
-        impl CapabilityExecutor for MockExec {
-            fn provider_identity(&self) -> &str {
-                &self.identity
-            }
-
-            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
-                self.called = true;
-                Ok(serde_json::json!({"status": "ok"}))
-            }
-        }
-
-        let mut exec = MockExec {
-            identity: "test-provider".into(),
-            called: false,
-        };
-        assert_eq!(exec.provider_identity(), "test-provider");
-        assert!(!exec.called);
-
-        // We can't easily construct a DispatchReadyAction here, but the
-        // trait compiles and the provider_identity check works.
     }
 
-    /// Prove that ReplayState variants exist for replay admission.
+    /// Replay identity includes the Anchor event ID as well as the explicit
+    /// planner evaluation and Action IDs.
     #[test]
-    fn j13b_replay_state_variants_exist() {
-        // Verify replay module types compile.
-        let succeeded = replay::ReplayState::Succeeded;
-        let failed = replay::ReplayState::Failed;
-        let uncertain = replay::ReplayState::Uncertain;
-
-        // Just verify Debug formatting.
-        assert!(format!("{succeeded:?}").contains("Succeeded"));
-        assert!(format!("{failed:?}").contains("Failed"));
-        assert!(format!("{uncertain:?}").contains("Uncertain"));
-    }
-
-    /// Prove LogicalExecutionKey derivation is deterministic.
-    #[test]
-    fn j13b_logical_execution_key_deterministic() {
+    fn j13b_anchor_event_id_participates_in_replay_logical_key() {
         let key1 = LogicalExecutionKey::derive("evt-1", "eval-1", "act-1").unwrap();
         let key2 = LogicalExecutionKey::derive("evt-1", "eval-1", "act-1").unwrap();
         assert_eq!(key1, key2);
@@ -1411,64 +1194,94 @@ mod tests {
         assert_ne!(key1, key3);
     }
 
-    /// Prove that PrepareError::Deny is distinct from PrepareError::Ask.
+    /// Pre-invocation deadline expiry has its own typed service result.
     #[test]
-    fn j13b_prepare_error_deny_vs_ask() {
-        assert_ne!(dispatch::PrepareError::Deny, dispatch::PrepareError::Ask);
-    }
-
-    /// Prove that PrepareError variants exist and are distinct.
-    #[test]
-    fn j13b_prepare_error_variants_distinct() {
-        // Deny and Ask are different PrepareError variants.
-        assert_ne!(dispatch::PrepareError::Deny, dispatch::PrepareError::Ask);
-        // PrepareError::Unavailable is different too.
-        assert_ne!(
-            dispatch::PrepareError::Deny,
-            dispatch::PrepareError::Unavailable
+    fn j13b_unattempted_cannot_be_confused_with_failed() {
+        let result = HostExecutionService::map_shared_result(
+            crate::SharedExecutionResult::Unattempted,
+            "eval-1".to_owned(),
+            "action-1".to_owned(),
+            serde_json::json!({}),
         );
+        assert!(matches!(result, ExecutionServiceResult::Unattempted { .. }));
     }
 
-    /// Prove that RetainedProviderSession tracks monotonically increasing IDs.
+    /// The retained provider continues after initialize/list with strictly
+    /// increasing request IDs across evaluations.
     #[test]
     fn j13b_retained_session_monotonic_ids() {
-        // The RetainedProviderSession wraps ManagedProvider which requires
-        // real child processes.  We test the ID counter logic here.
-        // Starting request_id is 3 (after initialize=1, tools/list=2).
-        // Each tools_call increments by 1.
-        // This test verifies the design is sound.
-        assert!(true, "RetainedProviderSession starts at request ID 3");
+        let mut ids = RequestIdSequence::after_initialization();
+        assert_eq!(ids.take(), 3);
+        assert_eq!(ids.take(), 4);
+        assert_eq!(ids.take(), 5);
     }
 
-    /// Prove that the service does not construct CliEnvelope values.
     #[test]
-    fn j13b_service_does_not_use_cli_envelope() {
-        // ExecutionServiceResult is a plain enum - no CliEnvelope inside.
-        // The compiler enforces this through the type system.
-        // This test is a documentation assertion.
-
-        // If someone tries to add CliEnvelope, this would fail to compile:
-        // let _ = CliEnvelope::error(...); // not imported here
-
-        // Verify types are independent.
-        let result = ExecutionServiceResult::Completed {
-            evaluation_id: "eval-1".into(),
-            action_id: "act-1".into(),
-            response: serde_json::json!({"status": "ok"}),
-        };
-        // This would not compile if CliEnvelope were inside:
-        // let envelope: CliEnvelope = result; // type mismatch
-        drop(result);
+    fn j13b_one_retained_provider_serves_multiple_calls_with_monotonic_ids() {
+        let marker = std::env::temp_dir().join(format!(
+            "tethers-j13b-provider-{}.txt",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts")
+            .join("tethers-stdio-fixture.ps1");
+        let working_dir = script.parent().unwrap().to_path_buf();
+        let args = vec![
+            "-NoProfile".to_owned(),
+            "-ExecutionPolicy".to_owned(),
+            "Bypass".to_owned(),
+            "-File".to_owned(),
+            script.to_string_lossy().into_owned(),
+            "-Mode".to_owned(),
+            "record-methods".to_owned(),
+            "-MarkerFile".to_owned(),
+            marker.to_string_lossy().into_owned(),
+        ];
+        let mut provider =
+            ManagedProvider::launch("pwsh", &args, &working_dir, None, None).unwrap();
+        provider
+            .initialize("2025-11-25", "tethers-stdio-fixture")
+            .unwrap();
+        provider.list_tools().unwrap();
+        let mut session =
+            RetainedProviderSession::new(provider, "tethers-stdio-fixture".to_owned());
+        assert!(matches!(
+            session
+                .tools_call(
+                    "fixture_ping",
+                    &serde_json::json!({"message": "first"}),
+                    Duration::from_secs(1)
+                )
+                .unwrap_err(),
+            StdioProviderError::ExplicitProviderError(_)
+        ));
+        assert!(matches!(
+            session
+                .tools_call(
+                    "fixture_ping",
+                    &serde_json::json!({"message": "second"}),
+                    Duration::from_secs(1)
+                )
+                .unwrap_err(),
+            StdioProviderError::ExplicitProviderError(_)
+        ));
+        assert_eq!(session.request_ids.next, 5);
+        session.close();
+        let methods = fs::read_to_string(&marker).unwrap();
+        assert!(methods.contains("initialize"));
+        assert!(methods.contains("tools/list"));
+        assert_eq!(
+            methods.lines().filter(|line| *line == "tools/call").count(),
+            2
+        );
+        fs::remove_file(marker).unwrap();
     }
 
-    /// Prove that no evaluation ID is derived inside the service.
+    /// The service exposes prepared-input execution only: it neither defines a
+    /// CLI `run` command nor an evaluation-ID derivation helper.
     #[test]
-    fn j13b_no_evaluation_id_derivation() {
-        // The PreparedEvaluationInput requires an explicit evaluation_id.
-        // There is no method on HostExecutionService that derives one.
-        // This test documents the invariant.
-
-        // The only way to get an evaluation_id is to supply it.
+    fn j13b_no_public_cli_run_command_or_evaluation_id_derivation() {
         let input = PreparedEvaluationInput {
             tether_id: "t".into(),
             tether_version: "1.0.0".into(),
@@ -1477,5 +1290,11 @@ mod tests {
             facts: serde_json::json!({}),
         };
         assert_eq!(input.evaluation_id, "explicit-only-001");
+        use clap::Parser;
+        assert!(tethers_reference_host::cli::Cli::try_parse_from([
+            "tethers-reference-host",
+            "run"
+        ])
+        .is_err());
     }
 }
