@@ -6,7 +6,7 @@ param(
         "malformed-json", "exit-early",
         "hang-initialize", "hang-tools-list", "stdout-log-text",
         "oversized-line", "retained-stderr", "descendant-alive",
-        "record-methods", "record-cwd"
+        "record-methods", "record-cwd", "run-success", "run-hang-initialize"
     )]
     [string]$Mode = "valid",
     [string]$MarkerFile = "",
@@ -43,6 +43,10 @@ function New-Tool {
         required = @("message")
         additionalProperties = $false
     }
+    if ($Mode -eq "run-success") {
+        $inputSchema.properties.path = @{ type = "string" }
+        $inputSchema.required = @("message", "path")
+    }
     if ($Mode -eq "input-schema-mismatch") { $inputSchema.required = @("different") }
     $outputSchema = @{
         type = "object"
@@ -61,6 +65,11 @@ function New-Tool {
 
 if ($Mode -eq "hang-initialize") {
     $stderr.WriteLine("fixture: hanging during initialize")
+    while ($true) { Start-Sleep -Seconds 60 }
+}
+if ($Mode -eq "run-hang-initialize") {
+    if ($MarkerFile) { Add-Content -Path $MarkerFile -Value "provider_started" }
+    $stderr.WriteLine("fixture: hanging during run initialization")
     while ($true) { Start-Sleep -Seconds 60 }
 }
 if ($Mode -eq "stdout-log-text") {
@@ -114,7 +123,7 @@ try {
 
         switch ($request.method) {
             "initialize" {
-                if ($Mode -eq "record-methods" -and $MarkerFile) {
+                if ($Mode -in @("record-methods", "run-success") -and $MarkerFile) {
                     Add-Content -Path $MarkerFile -Value "initialize"
                 }
                 if ($Mode -eq "malformed-json") {
@@ -145,7 +154,7 @@ try {
                 $clientInitialized = $true
             }
             "tools/list" {
-                if ($Mode -eq "record-methods" -and $MarkerFile) {
+                if ($Mode -in @("record-methods", "run-success") -and $MarkerFile) {
                     Add-Content -Path $MarkerFile -Value "tools/list"
                 }
                 if ($Mode -eq "hang-tools-list") {
@@ -162,6 +171,25 @@ try {
                     jsonrpc = "2.0"; id = $request.id
                     result = @{ tools = $tools }
                 }
+            }
+            "tools/call" {
+                if ($Mode -eq "run-success") {
+                    if ($MarkerFile) { Add-Content -Path $MarkerFile -Value "tools/call" }
+                    $message = $request.params.arguments.message
+                    if ($message -isnot [string]) {
+                        Write-ErrorResponse $request.id -32602 "fixture_ping requires string message"
+                        continue
+                    }
+                    Write-JsonLine @{
+                        jsonrpc = "2.0"; id = $request.id
+                        result = @{ echo = $message }
+                    }
+                    continue
+                }
+                if ($Mode -eq "record-methods" -and $MarkerFile) {
+                    Add-Content -Path $MarkerFile -Value "tools/call"
+                }
+                Write-ErrorResponse $request.id -32601 "Method not found"
             }
             default {
                 if ($Mode -eq "record-methods" -and $MarkerFile) {

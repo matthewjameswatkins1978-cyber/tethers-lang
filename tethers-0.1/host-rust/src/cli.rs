@@ -27,6 +27,20 @@ pub enum Command {
         engine: PathBuf,
     },
 
+    /// Evaluate one explicit external event against one configured Tether.
+    Run {
+        #[arg(long = "config", value_name = "PATH")]
+        config: PathBuf,
+        #[arg(long = "engine", value_name = "PATH")]
+        engine: PathBuf,
+        #[arg(long = "input", value_name = "PATH")]
+        input: PathBuf,
+        #[arg(long = "trail", value_name = "ABSOLUTE_PATH")]
+        trail: PathBuf,
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+    },
+
     /// Hidden legacy positional compatibility route.
     #[command(hide = true)]
     #[clap(name = "__legacy")]
@@ -377,8 +391,31 @@ mod tests {
     }
 
     #[test]
-    fn j13a_unknown_subcommand_not_run() {
-        assert!(parse_cli(&["run"]).is_err());
+    fn j13a_unknown_subcommand_remains_rejected() {
+        assert!(parse_cli(&["runn"]).is_err());
+    }
+
+    #[test]
+    fn j13b_run_public_command_requires_its_five_options() {
+        assert!(matches!(
+            parse_cli(&[
+                "run",
+                "--config",
+                "c.json",
+                "--engine",
+                "engine.exe",
+                "--input",
+                "input.json",
+                "--trail",
+                "C:\\trail.jsonl",
+                "--host-data-root",
+                "C:\\host-data"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Run { .. })
+        ));
+        assert!(parse_cli(&["run", "--config", "c.json"]).is_err());
     }
 
     #[test]

@@ -4,7 +4,8 @@
 // application service.  Uses retained OCaml engine and MCP provider
 // sessions for validation, evaluation, and dispatch.
 //
-// No public `run` command.  No evaluation-ID derivation rule.
+// Public CLI ownership remains outside this service.  Evaluation IDs remain
+// explicit host input and are never derived here.
 
 use crate::configured_runtime::{PreparedRuntime, PreparedTether};
 use crate::dispatch::{self, DispatchReadyAction};
@@ -162,6 +163,27 @@ pub enum ExecutionServiceError {
     TetherValidation(String),
     InvalidInput(String),
     Interrupted,
+}
+
+fn selected_tether_indexes(
+    tethers: &[PreparedTether],
+    inputs: &[PreparedEvaluationInput],
+) -> Result<Vec<usize>, ExecutionServiceError> {
+    let mut indexes = Vec::new();
+    for input in inputs {
+        let Some((index, _)) = tethers.iter().enumerate().find(|(_, tether)| {
+            tether.id == input.tether_id && tether.version == input.tether_version
+        }) else {
+            return Err(ExecutionServiceError::InvalidInput(format!(
+                "selected tether is not configured: {} v{}",
+                input.tether_id, input.tether_version
+            )));
+        };
+        if !indexes.contains(&index) {
+            indexes.push(index);
+        }
+    }
+    Ok(indexes)
 }
 
 impl std::fmt::Display for ExecutionServiceError {
@@ -361,6 +383,29 @@ impl<'a> HostExecutionService<'a> {
         &self,
         inputs: &[PreparedEvaluationInput],
     ) -> Result<Vec<ExecutionServiceResult>, ExecutionServiceError> {
+        let tether_indexes = (0..self.runtime.tethers().len()).collect::<Vec<_>>();
+        self.run_with_tether_indexes(inputs, &tether_indexes)
+    }
+
+    /// Run a caller-selected subset of configured Tethers.
+    ///
+    /// This is the public-command seam: it resolves every requested Tether
+    /// before any child process is launched, then validates only that exact
+    /// subset.  The historical [`Self::run`] method deliberately retains its
+    /// whole-runtime validation behaviour for existing callers.
+    pub fn run_selected(
+        &self,
+        inputs: &[PreparedEvaluationInput],
+    ) -> Result<Vec<ExecutionServiceResult>, ExecutionServiceError> {
+        let tether_indexes = selected_tether_indexes(self.runtime.tethers(), inputs)?;
+        self.run_with_tether_indexes(inputs, &tether_indexes)
+    }
+
+    fn run_with_tether_indexes(
+        &self,
+        inputs: &[PreparedEvaluationInput],
+        tether_indexes: &[usize],
+    ) -> Result<Vec<ExecutionServiceResult>, ExecutionServiceError> {
         // --- Interruption guard ---
         if child_process::is_interrupted() {
             return Err(ExecutionServiceError::Interrupted);
@@ -375,12 +420,13 @@ impl<'a> HostExecutionService<'a> {
         let mut engine =
             EngineSession::launch(&self.engine_path.to_path_buf(), &engine_working_dir)?;
 
-        // --- 2. Validate every configured Tether ---
-        for (i, tether) in self.runtime.tethers().iter().enumerate() {
+        // --- 2. Validate the requested configured Tethers ---
+        for &i in tether_indexes {
             if child_process::is_interrupted() {
                 engine.shutdown();
                 return Err(ExecutionServiceError::Interrupted);
             }
+            let tether = &self.runtime.tethers()[i];
             engine.validate_tether(i, &tether.id, &tether.version, &tether.source)?;
         }
 
@@ -417,6 +463,9 @@ impl<'a> HostExecutionService<'a> {
         }
 
         // --- 4. Evaluate each input ---
+        // The store is process-local to this service invocation.  An Ask
+        // result deliberately never exposes its internal approval identity.
+        let mut approvals = crate::approval::ApprovalStore::default();
         let mut results = Vec::with_capacity(inputs.len());
 
         for input in inputs {
@@ -431,6 +480,7 @@ impl<'a> HostExecutionService<'a> {
                 &mut engine,
                 &mut provider_sessions,
                 &provider_availability,
+                &mut approvals,
             );
             results.push(result);
         }
@@ -458,7 +508,7 @@ impl<'a> HostExecutionService<'a> {
             None,
             None,
         )
-        .map_err(|e| ExecutionServiceError::Provider(format!("launch failed: {e}")))?;
+        .map_err(|e| provider_service_error("launch", &prepared.identity, e))?;
 
         // MCP initialize.
         let expected_server_name = prepared
@@ -468,20 +518,12 @@ impl<'a> HostExecutionService<'a> {
             .unwrap_or("");
         provider
             .initialize(&config.protocol_version, expected_server_name)
-            .map_err(|e| {
-                ExecutionServiceError::Provider(format!(
-                    "initialize failed for {}: {e}",
-                    prepared.identity
-                ))
-            })?;
+            .map_err(|e| provider_service_error("initialize", &prepared.identity, e))?;
 
         // MCP tools/list.
-        let tools = provider.list_tools().map_err(|e| {
-            ExecutionServiceError::Provider(format!(
-                "tools/list failed for {}: {e}",
-                prepared.identity
-            ))
-        })?;
+        let tools = provider
+            .list_tools()
+            .map_err(|e| provider_service_error("tools/list", &prepared.identity, e))?;
         if validate_prepared_discovery(prepared, &tools).is_err() {
             provider.close();
             return Ok(None);
@@ -500,6 +542,7 @@ impl<'a> HostExecutionService<'a> {
         engine: &mut EngineSession,
         provider_sessions: &mut HashMap<String, RetainedProviderSession>,
         provider_availability: &ProviderAvailability,
+        approvals: &mut crate::approval::ApprovalStore,
     ) -> ExecutionServiceResult {
         // Find the matching Tether in the runtime.
         let tether = match self.find_tether(&input.tether_id, &input.tether_version) {
@@ -528,7 +571,13 @@ impl<'a> HostExecutionService<'a> {
 
         let route = Self::classify_planner_response(input, tethers_response);
         Self::route_planner_response(route, |matched| {
-            self.dispatch_matched_response(input, matched, provider_sessions, provider_availability)
+            self.dispatch_matched_response(
+                input,
+                matched,
+                provider_sessions,
+                provider_availability,
+                approvals,
+            )
         })
     }
 
@@ -703,6 +752,7 @@ impl<'a> HostExecutionService<'a> {
         mut response: Value,
         provider_sessions: &mut HashMap<String, RetainedProviderSession>,
         provider_availability: &ProviderAvailability,
+        approvals: &mut crate::approval::ApprovalStore,
     ) -> ExecutionServiceResult {
         let proposed = match crate::extract_proposed_action(&response) {
             Ok(action) => action,
@@ -733,11 +783,48 @@ impl<'a> HostExecutionService<'a> {
                 };
             }
             PermissionDecision::Ask => {
-                return approval_required_result(
-                    evaluation_id,
-                    action_id,
-                    &policy_evaluation.reason,
-                );
+                let mut trail = match dispatch::FileTrail::open(self.trail_path) {
+                    Ok(trail) => trail,
+                    Err(_) => {
+                        return ExecutionServiceResult::AuditFailed {
+                            evaluation_id,
+                            action_id,
+                            reason: "approval request Trail is unavailable".to_owned(),
+                        };
+                    }
+                };
+                match crate::request_exact_approval(
+                    &proposed,
+                    self.runtime.requirements(),
+                    self.runtime.trusted_store(),
+                    provider_availability,
+                    self.runtime.policy(),
+                    scope_assessment,
+                    approvals,
+                    &mut trail,
+                ) {
+                    Ok(Some(_)) => {
+                        return approval_required_result(
+                            evaluation_id,
+                            action_id,
+                            &policy_evaluation.reason,
+                        );
+                    }
+                    Ok(None) => {
+                        return ExecutionServiceResult::AuditFailed {
+                            evaluation_id,
+                            action_id,
+                            reason: "approval request could not be established".to_owned(),
+                        };
+                    }
+                    Err(_) => {
+                        return ExecutionServiceResult::AuditFailed {
+                            evaluation_id,
+                            action_id,
+                            reason: "approval request Trail recording failed".to_owned(),
+                        };
+                    }
+                }
             }
             PermissionDecision::Unavailable => {
                 return ExecutionServiceResult::Unavailable {
@@ -935,6 +1022,20 @@ impl<'a> HostExecutionService<'a> {
             evaluation_id: proposed.evaluation_id.clone(),
             reason: format!("exact capability resolution failed: {error:?}"),
         })
+    }
+}
+
+fn provider_service_error(
+    operation: &str,
+    provider_identity: &str,
+    error: StdioProviderError,
+) -> ExecutionServiceError {
+    if matches!(error, StdioProviderError::Interrupted) {
+        ExecutionServiceError::Interrupted
+    } else {
+        ExecutionServiceError::Provider(format!(
+            "{operation} failed for {provider_identity}: {error}"
+        ))
     }
 }
 
@@ -1636,10 +1737,10 @@ mod tests {
         fs::remove_file(marker).unwrap();
     }
 
-    /// The service exposes prepared-input execution only: it neither defines a
-    /// CLI `run` command nor an evaluation-ID derivation helper.
+    /// The service exposes prepared-input execution only: CLI parsing remains
+    /// outside it and evaluation IDs stay host-supplied.
     #[test]
-    fn j13b_no_public_cli_run_command_or_evaluation_id_derivation() {
+    fn j13b_service_keeps_evaluation_ids_explicit() {
         let input = PreparedEvaluationInput {
             tether_id: "t".into(),
             tether_version: "1.0.0".into(),
@@ -1648,11 +1749,45 @@ mod tests {
             facts: serde_json::json!({}),
         };
         assert_eq!(input.evaluation_id, "explicit-only-001");
-        use clap::Parser;
-        assert!(tethers_reference_host::cli::Cli::try_parse_from([
-            "tethers-reference-host",
-            "run"
-        ])
-        .is_err());
+    }
+
+    #[test]
+    fn j13b_run_selected_tether_indexes_are_exact_and_deduplicated() {
+        let tethers = vec![
+            PreparedTether {
+                id: "selected".to_owned(),
+                version: "1".to_owned(),
+                source_path: PathBuf::from("selected.tether"),
+                source: "selected".to_owned(),
+            },
+            PreparedTether {
+                id: "unselected".to_owned(),
+                version: "1".to_owned(),
+                source_path: PathBuf::from("unselected.tether"),
+                source: "unselected".to_owned(),
+            },
+        ];
+        let selected = PreparedEvaluationInput {
+            tether_id: "selected".to_owned(),
+            tether_version: "1".to_owned(),
+            evaluation_id: "eval".to_owned(),
+            anchor_event: serde_json::json!({}),
+            facts: serde_json::json!({}),
+        };
+        assert_eq!(
+            selected_tether_indexes(&tethers, &[selected.clone(), selected]).unwrap(),
+            vec![0]
+        );
+        let missing = PreparedEvaluationInput {
+            tether_id: "missing".to_owned(),
+            tether_version: "1".to_owned(),
+            evaluation_id: "eval".to_owned(),
+            anchor_event: serde_json::json!({}),
+            facts: serde_json::json!({}),
+        };
+        assert!(matches!(
+            selected_tether_indexes(&tethers, &[missing]),
+            Err(ExecutionServiceError::InvalidInput(_))
+        ));
     }
 }

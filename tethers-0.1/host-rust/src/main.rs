@@ -16,6 +16,8 @@ mod replay_runtime;
 pub mod replay_windows;
 pub mod resolver;
 mod result_anchor;
+pub mod run_command;
+pub mod run_input;
 pub mod runtime_config;
 pub mod stdio_provider;
 pub mod trusted_store;
@@ -150,7 +152,7 @@ fn event_admission_rejection_value(rejection: &EventAdmissionRejection, generati
 /// Both initial external admission and queued Result Anchor admission use
 /// this single mapper.  No duplicate or depth mapping exists in separate
 /// branches or test helpers.
-fn build_event_admission_entry(
+pub(crate) fn build_event_admission_entry(
     event_id: &str,
     event_name: &str,
     source: &str,
@@ -215,7 +217,7 @@ fn build_event_admission_entry(
 ///
 /// Tests may provide a fixed timestamp through a closure; the production
 /// route uses this real clock.
-fn now_unix_ms() -> u64 {
+pub(crate) fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -570,6 +572,25 @@ fn main() {
             command: Some(CliCommand::Check { config, engine }),
         }) => {
             let result = check_command::run_check(&config, &engine);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
+                Some(CliCommand::Run {
+                    config,
+                    engine,
+                    input,
+                    trail,
+                    host_data_root,
+                }),
+        }) => {
+            let result = run_command::run(run_command::RunCommandArgs {
+                config,
+                engine,
+                input,
+                trail,
+                host_data_root,
+            });
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {
@@ -1265,7 +1286,7 @@ fn approval_trail_entry(
 /// Request an approval only after current ordinary policy independently says
 /// Ask.  Duplicate requests for a live proof reuse the pending record and do
 /// not create a second Trail claim.
-fn request_exact_approval(
+pub(crate) fn request_exact_approval(
     action: &policy::ProposedAction,
     requirements: &[policy::CapabilityRequirement],
     store: &trusted_store::TrustedManifestStore,

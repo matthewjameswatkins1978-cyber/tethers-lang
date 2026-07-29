@@ -825,3 +825,26 @@ preserving the source language's indentation. The parser never globally trims
 returned lines: leading spaces, action indentation, argument indentation, and
 all other source characters remain significant. Rust hosts pass source through
 unchanged and do not perform line-ending normalization.
+
+## 2026-07-29: J13B Packet 2 Public Run Boundary
+
+Decision: `tethers-reference-host run` has exactly five public options:
+`--config`, `--engine`, `--input`, `--trail`, and `--host-data-root`. Its input
+is exactly `{format_version,evaluation_id,tether,event,facts}`, where
+`format_version` is `"1"`, `tether` is `{id,version}`, and `event` is
+`{id,name,data}`. Duplicate keys and unknown fields fail. The supplied
+evaluation ID and event ID are preserved exactly; they are never generated,
+normalised, or replaced.
+
+One invocation admits one external generation-zero event with host-owned
+correlation equal to the event ID and no causation, durably records that
+admission, and evaluates exactly one configured Tether selected by exact ID
+and version. Source, capabilities, policy, scope, pins, approval, causal,
+replay, and execution identity are host-owned and never accepted in public
+input.
+
+Ask reuses the exact approval-request seam and durable Trail record with a
+process-local approval store. Public output contains only the evaluation ID,
+Action ID, and redacted reason; it never exposes an approval ID or resume
+route. Typed service results map only to the frozen CLI outcome vocabulary and
+its matching exit codes, including distinct replay and unattempted outcomes.
