@@ -149,7 +149,11 @@ Before work:
 
 1. Confirm packet state, owner, route, worker-note path, base commit, and expected
    pre-existing changes.
-2. Inspect Git status.
+2. Before the first edit, confirm the exact worktree root, branch, `HEAD`, status,
+   expected base, and any packet-named external toolchain paths. Do not assume
+   ignored directories such as `_opam` exist in every worktree. Stop only when the
+   worktree, branch, base, or required toolchain genuinely differs; otherwise
+   continue without a separate preflight report.
 3. Run the task-packet checker.
 4. Read only packet-named context and task-relevant code.
 5. Stop if another owner already has the task `IN_PROGRESS`.
