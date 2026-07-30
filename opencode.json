@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "docs/PROJECT_CONTROL.md",
+    "docs/AGENT_WORKFLOW.md",
+    "docs/CURRENT_CLINE_TASK.md",
+    "docs/IMPLEMENTATION_LANGUAGE_STANDARD.md",
+    "docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md"
+  ]
+}
