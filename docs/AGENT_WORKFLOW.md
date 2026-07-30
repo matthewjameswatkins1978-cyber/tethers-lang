@@ -129,11 +129,11 @@ historical interface and does not name the active owner. The packet identifies:
 9. stop conditions;
 10. exact worker-note path.
 
-`PROPOSED` is design-ready but not authorised.  
-`READY` authorises the named implementation.  
-`IN_PROGRESS` belongs to that owner.  
-`COMPLETE` is the named owner's evidence-backed completion claim.  
-`BLOCKED` is a clean stop with one smallest unresolved question.  
+`PROPOSED` is design-ready but not authorised.
+`READY` authorises the named implementation.
+`IN_PROGRESS` belongs to that owner.
+`COMPLETE` is the named owner's evidence-backed completion claim.
+`BLOCKED` is a clean stop with one smallest unresolved question.
 `ACCEPTED` and `REJECTED` are Lucy or the required verifier's verdicts.
 
 ## Normal Work Sequence
