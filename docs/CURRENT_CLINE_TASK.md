@@ -2,135 +2,102 @@
 
 Control contract: `1`
 
-Task: `TOOLCHAIN-BASELINE-01 — enforce repository toolchain baseline`
+Task: `J13C - strict public trail command`
+
+Owner: `Goose`
 
 Status: `COMPLETE`
 
 Task colour: `Amber`
 
-Owner: `Goose`
+Route: `Goose Medium - bounded Amber public inspection route`
 
-Route: `Goose Medium — bounded toolchain enforcement`
+Base commit: `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`
 
-Worker note: `docs/worker-notes/2026-07-30-toolchain-baseline-01.md`
+Branch: `goose/j13c-trail-command`
 
-Base branch: `main`
-
-Base commit: `bb08cc0d09a74db147e3ce6845d4e414e883aad2`
-
-Branch: `goose/toolchain-baseline-01`
+Worker note: `docs/worker-notes/2026-07-30-j13c-trail-command.md`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
 ## Objective
 
-Enforce one reproducible repository-level toolchain baseline: Rust 1.89.0
-with MSRV, rustfmt, clippy, and locked Cargo; OCaml 5.5.0 with a tightened
-compatibility range, committed opam lock recording Dune 3.24.0 and Yojson
-2.2.2; and one non-mutating PowerShell preflight that verifies the baseline
-without installing software.
+Add one strict public command: `tethers-reference-host trail --trail <ABSOLUTE_PATH> --execution-id <exec_UUID>`.  The command reads one existing append-only JSONL Trail file, selects the entries belonging to exactly one execution identity, preserves their file order, and emits one stable `tethers.cli/1` JSON envelope.  This is a read-only inspection route.
 
 ## Relevant background and existing behaviour
 
-TOOLCHAIN-BASELINE-01 was approved on 30 July 2026 but remained unenforced.
-The OCaml guide and DECISIONS.md recorded the intent. The readiness audit
-(TOOLCHAIN-BASELINE-01-R0) confirmed the machine and explicit directory
-switch are ready. The existing package constraints are broader than the
-approved baseline: Cargo lacks rust-version, the OCaml opam file accepts
-compilers back to 5.1.0, no rust-toolchain.toml or opam lock exists.
+J13A (`check`) validates Tether source, engine, and provider availability.  J13B (`run`) submits one explicit Anchor and Facts through the real execution slice.  J13C completes J13 by providing read-only Trail inspection.  J14 depends on J13 being complete.
+
+The existing `replay::ExecutionId::parse` validates the `exec_<UUID>` format and remains authoritative.  Trail files are append-only JSONL with a top-level `execution_id` field on relevant entries.  Unrelated audit entries (event_admitted, etc.) have no `execution_id` and must be skipped.
 
 ## Required behaviour
 
-1. Create `rust-toolchain.toml` selecting Rust 1.89.0, minimal profile,
-   rustfmt and clippy components.
-2. Add `rust-version = "1.89"` to `Cargo.toml` while preserving edition 2021.
-3. Tighten `tethers_engine.opam` OCaml range to `>= 5.5.0 & < 5.6.0`.
-4. Generate `tethers_engine.opam.locked` through the explicit authorised
-   switch, recording OCaml 5.5.0, Dune 3.24.0, Yojson 2.2.2.
-5. Create `.github/scripts/check-tethers-toolchains.ps1` — non-mutating
-   preflight requiring explicit OcamlSwitchPath, disabling rustup auto-install
-   process-locally, restoring the prior value, and verifying versions.
-6. Create `.github/scripts/test-check-tethers-toolchains.ps1` — focused
-   PowerShell tests covering missing/relative/wrong switch, no _opam,
-   no .opam-switch, authorised switch success, RUSTUP_AUTO_INSTALL
-   preservation, failure output, no fallback search, no repository changes.
-7. Update `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` and
-   `docs/OCAML_GUIDE_FOR_AGENTS.md` to state TOOLCHAIN-BASELINE-01 is
-   now enforced.
-8. Update `docs/TASK_PACKET_TEMPLATE.md` for toolchain-preflight and
-   explicit-switch declarations. Inspect `docs/PROJECT_CONTROL.md` for
-   any necessary toolchain-related wording; no change was required.
-9. Add the enforcement decision to `docs/DECISIONS.md`.
-10. Verify unchanged Cargo.lock; pass all Rust, OCaml and repository checks.
+1. Add `Trail` variant to CLI enum with `--trail` and `--execution-id` mandatory options.
+2. Create `trail_command.rs` with read-only inspection coordinator.
+3. Wire from `main.rs`.
+4. Validate execution ID through `ExecutionId::parse` before opening the file.
+5. Validate trail path: absolute, exists, regular file, read-only.
+6. Read JSONL sequentially with 8 MiB line limit, UTF-8, LF/CRLF accepted.
+7. Reject blank lines, malformed JSON, duplicate keys, non-object JSON, non-string execution_id.
+8. Return matching entries in original file order.
+9. Zero matches returns not_found/9 with EXECUTION_NOT_FOUND.
+10. Malformed content returns audit_failed/8 with TRAIL_INVALID and safe line number.
+11. Emit exactly one compact JSON document to stdout.
+12. No mutation of Trail file, replay storage, or repository files.
+13. Create focused Rust tests (24 cases).
+14. Create public acceptance script (16 cases).
+15. Update DECISIONS.md.
 
 ## Relevant components
 
-- `rust-toolchain.toml` — new root toolchain selector
-- `tethers-0.1/host-rust/Cargo.toml` — edition and MSRV
-- `tethers-0.1/engine-ocaml/tethers_engine.opam` — compiler range
-- `tethers-0.1/engine-ocaml/tethers_engine.opam.locked` — new exact lock
-- `.github/scripts/check-tethers-toolchains.ps1` — new non-mutating preflight
-- `.github/scripts/test-check-tethers-toolchains.ps1` — new focused tests
-- `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` — enforced-baseline update
-- `docs/OCAML_GUIDE_FOR_AGENTS.md` — enforced-baseline update
-- `docs/TASK_PACKET_TEMPLATE.md` — toolchain declarations
-- `docs/PROJECT_CONTROL.md` — narrow project-control wording
-- `docs/DECISIONS.md` — enforcement decision record
-- `docs/CURRENT_CLINE_TASK.md` — this task packet
-- `docs/worker-notes/2026-07-30-toolchain-baseline-01.md` — evidence
+- `tethers-0.1/host-rust/src/cli.rs` - strict argument parsing
+- `tethers-0.1/host-rust/src/main.rs` - dispatch
+- `tethers-0.1/host-rust/src/trail_command.rs` - new read-only inspector
+- `tethers-0.1/scripts/test-j13c-trail.ps1` - new acceptance script
+- `docs/CURRENT_CLINE_TASK.md` - this task packet
+- `docs/DECISIONS.md` - decision record
+- `docs/worker-notes/2026-07-30-j13c-trail-command.md` - evidence
 
 ## Frozen decisions and invariants
 
-- Rust 1.89.0 is the sole development toolchain; MSRV is 1.89; edition 2021.
-- OCaml 5.5.0 is the sole development compiler; compatibility is 5.5.x only.
-- Dune 3.24.0 and Yojson 2.2.2 are locked; Dune language remains 3.10.
-- Cargo.lock is unchanged and authoritative; --locked is mandatory.
-- The preflight is non-mutating; no installation, upgrade, or repair.
-- The explicit absolute OcamlSwitchPath is mandatory; no worktree search.
-- RUSTUP_AUTO_INSTALL is disabled process-locally and restored.
-- No bare cargo, rustc, rustfmt or clippy invocation in the preflight.
-- Toolchain upgrades require a separate decision.
+- `ExecutionId::parse` remains authoritative for execution-ID validation.
+- Inspection is read-only; no engine, provider, replay, or mutation.
+- One explicit Trail path only; no search, replay lookup, or repair.
+- Matching top-level execution_id entries retain file order.
+- Malformed Trail content fails closed as audit_failed.
+- Zero matching entries is not_found.
+- J13 is complete only after this command is accepted.
 
 ## Acceptance criteria
 
-1. Branch started from exact base `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
+1. Branch started from exact base `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`.
 2. Effective Goose reasoning confirmed MEDIUM before mutation.
-3. `rust-toolchain.toml` selects exact Rust 1.89.0, minimal, rustfmt, clippy.
-4. Cargo declares edition 2021 and rust-version 1.89.
-5. Cargo.lock unchanged (SHA256: `d323870ea...`).
-6. OCaml range is `>= 5.5.0 & < 5.6.0`.
-7. opam lock records OCaml 5.5.0, Dune 3.24.0, Yojson 2.2.2.
-8. Lock has no local path, pin or unexplained drift.
-9. Preflight is genuinely non-mutating; RUSTUP_AUTO_INSTALL guarded.
-10. No bare Rust proxy invocation; no worktree search or global-switch fallback.
-11. Focused preflight tests pass all cases.
-12. Rust fmt, check, tests, clippy, builds pass with 1.89.0 and --locked.
-13. OCaml dune build passes with the explicit switch.
-14. Fixture, engine, MCP and demo scripts pass.
+3. CLI accepts `trail --trail --execution-id` in either order, rejects missing/duplicate/unknown options.
+4. `ExecutionId::parse` reused; no second parser.
+5. Trail path validated: absolute, exists, regular file.
+6. Read-only: Trail SHA-256 unchanged after all inspections.
+7. Matching entries returned in original file order.
+8. Unrelated execution IDs omitted, audit entries skipped.
+9. Zero matches: not_found/9 with EXECUTION_NOT_FOUND.
+10. Malformed content: audit_failed/8 with TRAIL_INVALID and safe line number.
+11. Exactly one compact JSON document on stdout, no timestamp.
+12. No raw Trail data or OS diagnostics in public errors.
+13. Cargo.lock byte-identical to d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602.
+14. All Rust, OCaml, and script regressions pass.
 15. Packet checker and whitespace checks pass.
 16. Only authorised files changed.
-17. Review branch pushed; main untouched.
-18. Original worktree and TETHERS_LUCY_NOTES.md untouched.
 
 ## Forbidden changes
 
-No production runtime, Tethers language/protocol, permission, replay, Trail,
-persistence, or dispatch change. No Dune language, Yojson, Rust crate,
-Cargo.lock, edition, or dependency change. No ocamlformat, reformatting,
-software installation, or global configuration change. No .gitattributes,
-.editorconfig, or Git configuration change. No merge or push to main. No
-amend, squash, rebase, or force-push. No branch or worktree deletion.
+No Cargo manifest, Cargo.lock, OCaml, configuration, Trail writer, replay backend, or production execution file.  No engine, provider, replay, or Trail mutation.  No timestamp in any envelope.  No -D warnings or warning-attribute changes.  No main merge or push.
 
 ## Stop conditions
 
-Return BLOCKED when: origin/main mismatch, dirty worktree, branch exists,
-reasoning not MEDIUM, Rust components missing, switch missing or wrong,
-lock contains unexpected versions/paths/pins, Cargo.lock changes, preflight
-cannot remain non-mutating, original worktree changes, two similar failures.
+Return BLOCKED when: origin/main mismatch, dirty worktree, branch exists with different history, reasoning not MEDIUM, toolchain preflight fails, ExecutionId::parse cannot be reused, Cargo.lock changes, any production file must change, public errors expose raw data, two similar failures.
 
 ## Expected pre-existing changes
 
-None. Starting from clean `main` at `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
+None. Starting from clean `main` at `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`.
 
 ## Required verification
 
@@ -139,82 +106,29 @@ None. Starting from clean `main` at `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
 rustup run 1.89.0 cargo fmt --manifest-path .\tethers-0.1\host-rust\Cargo.toml --check
 rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
 rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --tests
+rustup run 1.89.0 cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked j13c_ -- --nocapture
 rustup run 1.89.0 cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
 rustup run 1.89.0 cargo clippy --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --all-targets --all-features
 rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
 rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --release
 
-# OCaml (explicit switch)
-$OcamlSwitchPath = "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"
-pwsh -NoProfile -File .\.github\scripts\test-check-tethers-toolchains.ps1 -OcamlSwitchPath $OcamlSwitchPath
-pwsh -NoProfile -File .\.github\scripts\check-tethers-toolchains.ps1 -OcamlSwitchPath $OcamlSwitchPath
-Push-Location .\tethers-0.1\engine-ocaml
-opam exec --switch="$OcamlSwitchPath" -- dune build
-Pop-Location
+# Public acceptance
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13c-trail.ps1
 
-# Repository
-pwsh -NoProfile -File .\.github\scripts\check-tethers-task-packet.ps1
-pwsh -NoProfile -File .\tethers-0.1\scripts\check-fixtures.ps1
-$HadOpamSwitch = Test-Path Env:OPAMSWITCH
-$PreviousOpamSwitch = if ($HadOpamSwitch) {
-    $env:OPAMSWITCH
-} else {
-    $null
-}
+# Regressions
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13a-check.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13b-run.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\check-fixtures.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1
+pwsh -NoProfile -File .\tethers-0.1\scripts\test-engine.ps1
+pwsh -NoProfile -File .\tethers-0.1\scripts\demo.ps1
 
-try {
-    $env:OPAMSWITCH =
-      "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"
-
-    pwsh -NoProfile -ExecutionPolicy Bypass `
-      -File .\tethers-0.1\scripts\test-engine.ps1
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "test-engine.ps1 failed with exit code $LASTEXITCODE"
-    }
-
-    pwsh -NoProfile -ExecutionPolicy Bypass `
-      -File .\tethers-0.1\scripts\demo.ps1
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "demo.ps1 failed with exit code $LASTEXITCODE"
-    }
-}
-finally {
-    if ($HadOpamSwitch) {
-        $env:OPAMSWITCH = $PreviousOpamSwitch
-    } else {
-        Remove-Item Env:OPAMSWITCH -ErrorAction SilentlyContinue
-    }
-}
-
-pwsh -NoProfile -ExecutionPolicy Bypass `
-  -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1
+# Packet checker
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-task-packet.ps1
 
 # Diff and status
 git diff --check
-git diff --check bb08cc0d09a74db147e3ce6845d4e414e883aad2..HEAD
-git diff --stat bb08cc0d09a74db147e3ce6845d4e414e883aad2..HEAD
-git diff --name-status bb08cc0d09a74db147e3ce6845d4e414e883aad2..HEAD
+git diff --stat
+git diff
 git status --short --branch
 ```
-
-## Discoveries
-
-1. Ordinary Clippy exits zero with 24 pre-existing warnings across production
-   and test code (dead_code, unused_imports, unused_variables, clippy
-   complexity). These are not caused by the toolchain baseline changes and
-   do not block TOOLCHAIN-BASELINE-01 acceptance.
-2. `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` independently establishes
-   `cargo clippy ... -- -D warnings` which pre-dates this task. Not edited;
-   a future task should reconcile.
-3. `demo.ps1` and `test-engine.ps1` require an explicit OPAMSWITCH when no
-   global switch is set. Both pass with process-local OPAMSWITCH.
-
-## Frozen exclusions
-
-Do not change production runtime logic, the Tethers language or protocol,
-permissions, replay, Trail, persistence, dispatch, Dune language, Yojson,
-Rust crates, Cargo.lock, Rust edition, Windows binary-mode stdio, Git
-configuration, .gitattributes, or .editorconfig. Do not adopt ocamlformat,
-reformat code, or install/upgrade software.

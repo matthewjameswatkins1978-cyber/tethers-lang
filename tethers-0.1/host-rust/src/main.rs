@@ -20,6 +20,7 @@ pub mod run_command;
 pub mod run_input;
 pub mod runtime_config;
 pub mod stdio_provider;
+pub mod trail_command;
 pub mod trusted_store;
 mod validation;
 
@@ -702,6 +703,16 @@ fn main() {
                 None,
             );
             emit_envelope_and_exit(envelope, OutcomeStatus::Unavailable.exit_code());
+        }
+        Ok(Cli {
+            command:
+                Some(CliCommand::Trail {
+                    trail,
+                    execution_id,
+                }),
+        }) => {
+            let result = trail_command::run_trail(&trail, &execution_id);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli { command: None }) => {
             let envelope = CliEnvelope::error(

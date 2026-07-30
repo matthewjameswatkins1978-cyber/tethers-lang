@@ -74,6 +74,14 @@ pub enum Command {
         #[arg(value_name = "ABSOLUTE_TRAIL_PATH")]
         trail_path: PathBuf,
     },
+
+    /// Read and filter a Trail by execution identity.
+    Trail {
+        #[arg(long = "trail", value_name = "ABSOLUTE_PATH")]
+        trail: PathBuf,
+        #[arg(long = "execution-id", value_name = "exec_UUID")]
+        execution_id: String,
+    },
 }
 
 /// Outcome status vocabulary with exit codes.
@@ -425,5 +433,100 @@ mod tests {
             Some(Command::Check { config, .. }) => assert_eq!(config, PathBuf::from("c.json")),
             _ => panic!(),
         }
+    }
+    #[test]
+    fn j13c_valid_trail_command() {
+        let cli = parse_cli(&[
+            "trail",
+            "--trail",
+            "C:\\t.jsonl",
+            "--execution-id",
+            "exec_00000000-0000-4000-8000-000000000000",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Trail {
+                trail,
+                execution_id,
+            }) => {
+                assert_eq!(trail, PathBuf::from("C:\\t.jsonl"));
+                assert_eq!(execution_id, "exec_00000000-0000-4000-8000-000000000000");
+            }
+            _ => panic!("expected Trail"),
+        }
+    }
+
+    #[test]
+    fn j13c_trail_reordered_options() {
+        let cli = parse_cli(&[
+            "trail",
+            "--execution-id",
+            "exec_00000000-0000-4000-8000-000000000000",
+            "--trail",
+            "C:\\t.jsonl",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Trail { trail, .. }) => {
+                assert_eq!(trail, PathBuf::from("C:\\t.jsonl"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn j13c_duplicate_trail_rejected() {
+        assert!(parse_cli(&[
+            "trail",
+            "--trail",
+            "a.jsonl",
+            "--trail",
+            "b.jsonl",
+            "--execution-id",
+            "exec_00000000-0000-4000-8000-000000000000"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn j13c_duplicate_execution_id_rejected() {
+        assert!(parse_cli(&[
+            "trail",
+            "--trail",
+            "a.jsonl",
+            "--execution-id",
+            "exec_00000000-0000-4000-8000-000000000000",
+            "--execution-id",
+            "exec_00000000-0000-4000-8000-000000000001"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn j13c_missing_trail_rejected() {
+        assert!(parse_cli(&[
+            "trail",
+            "--execution-id",
+            "exec_00000000-0000-4000-8000-000000000000"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn j13c_missing_execution_id_rejected() {
+        assert!(parse_cli(&["trail", "--trail", "C:\\t.jsonl"]).is_err());
+    }
+
+    #[test]
+    fn j13c_unknown_trail_option_rejected() {
+        assert!(parse_cli(&[
+            "trail",
+            "--trail",
+            "C:\\t.jsonl",
+            "--execution-id",
+            "exec_00000000-0000-4000-8000-000000000000",
+            "--unknown"
+        ])
+        .is_err());
     }
 }
