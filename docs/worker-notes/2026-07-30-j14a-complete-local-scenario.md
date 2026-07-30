@@ -4,13 +4,17 @@
 - **Owner:** `OpenCode`
 - **Status:** `COMPLETE`
 - **Base Commit:** `0c64b48d860ce2178858c4c5d8a0af38708bc7cc`
-- **Implementation checkpoint:** `e4b773050f0ceb7e7bef8b236ec199692b827754`
 - **Original J14A implementation commit:** `e86471ed8d160d47ba2ca70a6acbfabaf552f6ac`
-- **Branch / Worktree:** `goose/j14a-complete-local-scenario` / `D:\The Next Thing\Tethers Lang - Goose Integration`
+- **J14A-R repair implementation commit:** `e4b773050f0ceb7e7bef8b236ec199692b827754`
+- **Branch / Worktree:** `opencode/j14a-closeout-bootstrap` / `D:\The Next Thing\Tethers Lang - Goose Integration`
 
-The final pushed repair SHA is reported in the external completion report.
+The original J14A implementation was the rejected candidate before J14A-R.
 
-Task: `J14A-R — harden trusted execution evidence and exercise the committed scenario`
+Original implementation owner: Goose. Repair owner: OpenCode. Verification owner: OpenCode.
+
+The final pushed verification-closeout SHA is reported in the external completion report.
+
+Task: `J14A-RV -- run missing regressions and correct final evidence`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
@@ -20,12 +24,7 @@ Status: `COMPLETE`
 
 Base commit: `0c64b48d860ce2178858c4c5d8a0af38708bc7cc`
 
-Implementation checkpoint: `e4b773050f0ceb7e7bef8b236ec199692b827754`
-
-Original J14A implementation commit: `e86471ed8d160d47ba2ca70a6acbfabaf552f6ac`
-
-Original implementation owner: Goose. Repair owner: OpenCode.
-Rejected candidate: `e86471ed8d160d47ba2ca70a6acbfabaf552f6ac`.
+Implementation checkpoint: `WORKTREE`
 
 ## Required Reading
 
@@ -119,11 +118,16 @@ identity round-trip.
 - First run: initialize=1, tools/list=1, tools/call=1
 - Replay: initialize=2, tools/list=2, tools/call=1 (no second effect)
 
-### Pre-existing regression not re-verified
+### Final regression verification
 
-Host denial, execution failure, result follow-up, engine, and demo scripts use a
-dune build step requiring the OCaml switch from the primary Tethers worktree.
-No OCaml code was changed.
+All five previously omitted regressions were run in this task using the
+process-local external OCaml switch and all PASS:
+
+- **test-host-denial:** PASS
+- **test-host-execution-failure:** PASS (scope gate prevents executor call)
+- **test-host-result-follow-up:** PASS (denied initial -> no follow-up)
+- **test-engine:** PASS (28 fixture cases, determinism repeat, MCP line-ending equivalence)
+- **demo:** PASS (unassessed structured scope denies before execution)
 
 ## Discoveries
 
