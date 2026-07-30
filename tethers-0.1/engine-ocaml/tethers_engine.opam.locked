@@ -1,0 +1,35 @@
+opam-version: "2.0"
+name: "tethers_engine"
+version: "dev"
+synopsis: "Reference deterministic planner for Tethers 0.1"
+description: """\
+The OCaml reference engine for the frozen Tethers 0.1 semantic baseline.
+It parses, validates, evaluates, and plans from supplied immutable inputs."""
+maintainer: "Matthew"
+authors: "Matthew"
+license: "UNLICENSED"
+depends: [
+  "arch-x86_64" {= "1"}
+  "base-bigarray" {= "base"}
+  "base-domains" {= "base"}
+  "base-effects" {= "base"}
+  "base-nnp" {= "base"}
+  "base-threads" {= "base"}
+  "base-unix" {= "base"}
+  "compiler-cloning" {= "enabled"}
+  "conf-mingw-w64-gcc-x86_64" {= "1"}
+  "dune" {= "3.24.0"}
+  "flexdll" {= "0.44"}
+  "host-arch-x86_64" {= "1"}
+  "host-system-mingw" {= "1"}
+  "mingw-w64-shims" {= "1.0.1"}
+  "ocaml" {= "5.5.0"}
+  "ocaml-base-compiler" {= "5.5.0"}
+  "ocaml-compiler" {= "5.5.0"}
+  "ocaml-env-mingw64" {= "1"}
+  "ocaml-options-vanilla" {= "1"}
+  "seq" {= "base"}
+  "system-mingw" {= "1"}
+  "yojson" {= "2.2.2"}
+]
+build: ["dune" "build" "-p" name]

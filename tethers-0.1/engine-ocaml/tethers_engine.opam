@@ -8,7 +8,7 @@ maintainer: "Matthew"
 authors: "Matthew"
 license: "UNLICENSED"
 depends: [
-  "ocaml" {>= "5.1.0" & < "6.0.0"}
+  "ocaml" {>= "5.5.0" & < "5.6.0"}
   "dune" {>= "3.10"}
   "yojson" {>= "2.0.0" & < "3.0.0"}
 ]

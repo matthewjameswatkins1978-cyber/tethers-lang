@@ -1,5 +1,21 @@
 # Decisions
 
+## 2026-07-30: Toolchain baseline enforcement
+
+Tethers uses Rust 1.89.0 with edition 2021 for the reference host and OCaml
+5.5.0 for deterministic Core. Cargo declares MSRV 1.89 and the repository
+selects the verified Rust toolchain through `rust-toolchain.toml`. The OCaml
+package supports the 5.5 minor series while a committed opam lock records the
+exact verified Dune 3.24.0 and Yojson 2.2.2 resolution. Dune project language
+remains 3.10.
+
+The PowerShell preflight is non-mutating. It disables rustup automatic
+installation process-locally, proves the pinned Rust toolchain and components
+are already installed, and restores the previous environment value. OCaml
+checks require an explicit absolute directory-switch path and never search
+worktrees or fall back to a global switch. Toolchain upgrades require a
+separate decision.
+
 ## 2026-07-30: Canonical OCaml Engineering Guide
 
 Decision: `docs/OCAML_GUIDE_FOR_AGENTS.md` is the canonical required operating
@@ -12,7 +28,7 @@ Reason: The former compact guide no longer carried enough authoritative detail
 for the deterministic Core and multi-worktree native-Windows workflow. One
 canonical guide prevents competing OCaml instructions.
 
-`TOOLCHAIN-BASELINE-01` is approved but not implemented by this documentation
+`TOOLCHAIN-BASELINE-01` is now implemented and enforced: the repository contains `rust-toolchain.toml`, MSRV 1.89, tightened OCaml range, and committed `tethers_engine.opam.locked`
 decision. The future bounded implementation task alone may change compiler or
 dependency constraints, create locks, add the non-mutating preflight, or alter
 toolchain-enforcement files. Windows binary-mode stdio and compiler warning

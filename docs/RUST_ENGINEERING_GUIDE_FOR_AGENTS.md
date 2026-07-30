@@ -88,22 +88,19 @@ Rust must not become a second planner or reinterpret Tether source.
 
 ## Toolchain and dependency truth
 
-The Tethers host currently declares edition 2021 but does not yet declare an
-MSRV or pin `rust-toolchain.toml`. This guide uses Rust 1.89.0 because Lantern
-Keeper declares Rust 1.89 and because agents need one known API baseline.
+The Tethers host uses Rust 1.89.0 with edition 2021, MSRV 1.89, and a root
+`rust-toolchain.toml` that selects the verified toolchain with rustfmt and
+Clippy. All verification commands use `--locked` against the committed
+`Cargo.lock`.
 
-Do not add `rust-version` or a toolchain pin during unrelated work. That is a
-separate repository decision.
+The non-mutating PowerShell preflight at
+`.github/scripts/check-tethers-toolchains.ps1` proves the Rust toolchain and
+components are installed before any proxied invocation. It disables rustup
+automatic installation process-locally and restores the previous environment
+value.
 
-Before coding:
-
-```powershell
-rustup run 1.89.0 rustc --version
-rustup run 1.89.0 cargo --version
-cargo +1.89.0 metadata --format-version 1 --locked
-cargo +1.89.0 tree -e features
-```
-
+Do not add or change `rust-version`, the toolchain pin, or `Cargo.lock`
+during unrelated work. Toolchain upgrades require a separate decision.
 Use local Rust 1.89 documentation and the locked crate versions. Never code
 against “latest” documentation without proving the versions match.
 

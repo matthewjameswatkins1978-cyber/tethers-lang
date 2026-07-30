@@ -368,9 +368,9 @@ Matthew approved `TOOLCHAIN-BASELINE-01` on 30 July 2026 with these OCaml rules:
 - a committed `tethers_engine.opam.locked` records the accepted resolution;
 - task and agent invocations supply an explicit absolute OCaml directory-switch path.
 
-The decision is approved but remains unenforced until its implementation packet is accepted. Until the repository files change, agents must distinguish the approved target from the still-broader checked-in package constraint.
+TOOLCHAIN-BASELINE-01 was implemented on 30 July 2026. The repository now enforces the exact approved versions: ust-toolchain.toml selects Rust 1.89.0 with rustfmt and Clippy, Cargo.toml declares MSRV 1.89, 	ethers_engine.opam requires OCaml >= 5.5.0 and < 5.6.0, and 	ethers_engine.opam.locked records the exact resolved dependency set including Dune 3.24.0 and Yojson 2.2.2.
 
-Do not independently implement or partially imitate the baseline during another task. Toolchain enforcement is one bounded Amber packet with a publication gate and independent review.
+The non-mutating preflight at .github/scripts/check-tethers-toolchains.ps1 verifies the baseline before every toolchain-dependent task. Toolchain upgrades require a separate decision.
 
 ---
 
@@ -1517,7 +1517,7 @@ Do not update unrelated packages while implementing a bounded task. Do not omit 
 
 ### 21.4 Locking is approved but remains packet-scoped
 
-`TOOLCHAIN-BASELINE-01` authorises a committed `tethers_engine.opam.locked` generated from the explicit verified switch. That decision does not authorise other tasks to generate, refresh, or repair the lock.
+`TOOLCHAIN-BASELINE-01` committed `tethers_engine.opam.locked`, generated from the explicit verified switch on 30 July 2026. Only a task packet that explicitly owns dependency locking may regenerate, refresh, or repair the lock.
 
 Ordinary OCaml tasks consume the accepted lock and report mismatch. Only a task packet that explicitly owns dependency locking may change it.
 
@@ -2089,7 +2089,7 @@ The compiler passing is necessary evidence. It is not sufficient evidence.
 
 The following distinguishes approved work from implementation already present in the repository.
 
-### 29.1 TOOLCHAIN-BASELINE-01 is approved, not yet implemented
+### 29.1 TOOLCHAIN-BASELINE-01 is implemented and enforced
 
 `TOOLCHAIN-BASELINE-01` is the controlling approved decision for a deliberate split between:
 
@@ -2098,11 +2098,11 @@ The following distinguishes approved work from implementation already present in
 - the exact locked dependency resolution;
 - the older Dune language understood by project files.
 
-It authorises a committed `tethers_engine.opam.locked`, but only its separately issued Amber implementation task may generate or change that lock. Until then, the checked-in package constraint remains the current repository state. Do not partially enact the approved baseline during another task.
+The repository now contains `rust-toolchain.toml`, MSRV 1.89 in `Cargo.toml`, tightened OCaml compiler range, and the committed `tethers_engine.opam.locked`. Only a separately authorised task may regenerate or change the lock.
 
 ### 29.2 The opam lock is approved but implementation-scoped
 
-The future `tethers_engine.opam.locked` must preserve the exact accepted dependency resolution while leaving the ordinary `.opam` compatibility ranges distinct. Its generation, inspection, and publication belong only to `TOOLCHAIN-BASELINE-01`.
+`tethers_engine.opam.locked` preserves the exact accepted dependency resolution while the ordinary `.opam` compatibility ranges remain distinct. Regeneration or change belongs only to an explicitly authorised task.
 
 ### 29.3 Define a compiler warning policy separately
 

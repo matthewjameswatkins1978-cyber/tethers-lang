@@ -2,109 +2,217 @@
 
 Control contract: `1`
 
-Task: `GIT-GUIDE-RECOVERY-01 — recover the original Git/worktree booklet`
+Task: `TOOLCHAIN-BASELINE-01 — enforce repository toolchain baseline`
 
 Status: `COMPLETE`
 
 Task colour: `Amber`
 
-Owner: `Codex`
+Owner: `Goose`
 
-Route: `Codex — evidence-led documentation recovery`
+Route: `Goose Medium — bounded toolchain enforcement`
 
-Worker note: `docs/worker-notes/2026-07-30-original-git-worktree-guide-recovery.md`
+Worker note: `docs/worker-notes/2026-07-30-toolchain-baseline-01.md`
 
 Base branch: `main`
 
-Base commit: `8a70a8f47ad8cf110e9987b283f80277705b2292`
+Base commit: `bb08cc0d09a74db147e3ce6845d4e414e883aad2`
 
-Branch: `docs/original-git-worktree-guide-recovery`
+Branch: `goose/toolchain-baseline-01`
+
+OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
 ## Objective
 
-Recover the original approved Git, worktrees, and line-endings booklet exactly,
-place it at the canonical repository path, and add only the narrow authority
-scaffolding needed for agents to find and use it.
+Enforce one reproducible repository-level toolchain baseline: Rust 1.89.0
+with MSRV, rustfmt, clippy, and locked Cargo; OCaml 5.5.0 with a tightened
+compatibility range, committed opam lock recording Dune 3.24.0 and Yojson
+2.2.2; and one non-mutating PowerShell preflight that verifies the baseline
+without installing software.
 
 ## Relevant background and existing behaviour
 
-The original booklet survives as commit
-3e958ceba22bbeed1937b1fa62fa3054fab1596b on the local branch
-docs/git-worktrees-line-endings-guide and as a byte-identical Desktop copy.
-The later Goose booklet on goose/git-worktrees-line-endings-guide was a
-duplicate and is deliberately not authority for this recovery.
+TOOLCHAIN-BASELINE-01 was approved on 30 July 2026 but remained unenforced.
+The OCaml guide and DECISIONS.md recorded the intent. The readiness audit
+(TOOLCHAIN-BASELINE-01-R0) confirmed the machine and explicit directory
+switch are ready. The existing package constraints are broader than the
+approved baseline: Cargo lacks rust-version, the OCaml opam file accepts
+compilers back to 5.1.0, no rust-toolchain.toml or opam lock exists.
 
 ## Required behaviour
 
-1. Recover the original booklet verbatim at
-   docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md.
-2. Add one narrow AGENTS.md required-reading rule for relevant Git and
-   worktree operations.
-3. Record the canonical-guide decision without creating Git, editor, encoding,
-   or line-ending policy.
-4. Record exact recovery provenance, comparison, checks, and the rejected
-   duplicate in the worker note.
-5. Keep the recovery branch documentation-only and preserve main, the Goose
-   duplicate, and the original dirty worktree.
+1. Create `rust-toolchain.toml` selecting Rust 1.89.0, minimal profile,
+   rustfmt and clippy components.
+2. Add `rust-version = "1.89"` to `Cargo.toml` while preserving edition 2021.
+3. Tighten `tethers_engine.opam` OCaml range to `>= 5.5.0 & < 5.6.0`.
+4. Generate `tethers_engine.opam.locked` through the explicit authorised
+   switch, recording OCaml 5.5.0, Dune 3.24.0, Yojson 2.2.2.
+5. Create `.github/scripts/check-tethers-toolchains.ps1` — non-mutating
+   preflight requiring explicit OcamlSwitchPath, disabling rustup auto-install
+   process-locally, restoring the prior value, and verifying versions.
+6. Create `.github/scripts/test-check-tethers-toolchains.ps1` — focused
+   PowerShell tests covering missing/relative/wrong switch, no _opam,
+   no .opam-switch, authorised switch success, RUSTUP_AUTO_INSTALL
+   preservation, failure output, no fallback search, no repository changes.
+7. Update `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` and
+   `docs/OCAML_GUIDE_FOR_AGENTS.md` to state TOOLCHAIN-BASELINE-01 is
+   now enforced.
+8. Update `docs/TASK_PACKET_TEMPLATE.md` and `docs/PROJECT_CONTROL.md` for
+   toolchain-preflight and explicit-switch declarations.
+9. Add the enforcement decision to `docs/DECISIONS.md`.
+10. Verify unchanged Cargo.lock; pass all Rust, OCaml and repository checks.
 
 ## Relevant components
 
-- AGENTS.md
-- docs/DECISIONS.md
-- docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md
-- docs/worker-notes/2026-07-30-original-git-worktree-guide-recovery.md
+- `rust-toolchain.toml` — new root toolchain selector
+- `tethers-0.1/host-rust/Cargo.toml` — edition and MSRV
+- `tethers-0.1/engine-ocaml/tethers_engine.opam` — compiler range
+- `tethers-0.1/engine-ocaml/tethers_engine.opam.locked` — new exact lock
+- `.github/scripts/check-tethers-toolchains.ps1` — new non-mutating preflight
+- `.github/scripts/test-check-tethers-toolchains.ps1` — new focused tests
+- `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` — enforced-baseline update
+- `docs/OCAML_GUIDE_FOR_AGENTS.md` — enforced-baseline update
+- `docs/TASK_PACKET_TEMPLATE.md` — toolchain declarations
+- `docs/PROJECT_CONTROL.md` — narrow project-control wording
+- `docs/DECISIONS.md` — enforcement decision record
+- `docs/CURRENT_CLINE_TASK.md` — this task packet
+- `docs/worker-notes/2026-07-30-toolchain-baseline-01.md` — evidence
 
 ## Frozen decisions and invariants
 
-- The original booklet text is authoritative; do not borrow Goose duplicate
-  prose into it.
-- The only permitted booklet corrections are strictly necessary path or
-  current-main metadata corrections; none are required for this recovery.
-- Do not modify .gitattributes, .editorconfig, Git configuration, production
-  code, toolchains, or main.
-- Do not delete, force-update, merge, or publish the Goose duplicate branch.
-- Preserve D:\The Next Thing\Tethers Lang on
-  cline/j10-result-event-queue with only its existing
-  docs/TETHERS_LUCY_NOTES.md modification.
+- Rust 1.89.0 is the sole development toolchain; MSRV is 1.89; edition 2021.
+- OCaml 5.5.0 is the sole development compiler; compatibility is 5.5.x only.
+- Dune 3.24.0 and Yojson 2.2.2 are locked; Dune language remains 3.10.
+- Cargo.lock is unchanged and authoritative; --locked is mandatory.
+- The preflight is non-mutating; no installation, upgrade, or repair.
+- The explicit absolute OcamlSwitchPath is mandatory; no worktree search.
+- RUSTUP_AUTO_INSTALL is disabled process-locally and restored.
+- No bare cargo, rustc, rustfmt or clippy invocation in the preflight.
+- Toolchain upgrades require a separate decision.
 
 ## Acceptance criteria
 
-1. The recovered booklet is byte-identical to the original commit source and
-   Desktop copy.
-2. The guide remains original in wording and organisation, with no Goose prose.
-3. AGENTS.md points to the guide only for relevant Git/worktree work.
-4. DECISIONS.md records the bounded canonical-guide decision.
-5. The worker note records source provenance, checksum, comparison, and exact
-   checks.
-6. Packet checker, word count, complete diff review, and whitespace checks
-   pass.
-7. Only AGENTS.md, this packet, docs/DECISIONS.md, the guide, and its worker
-   note change.
-8. main, the Goose duplicate branch, and the original dirty worktree remain
-   untouched.
-
-## Required verification
-
-    pwsh -NoProfile -ExecutionPolicy Bypass -File .github/scripts/check-tethers-task-packet.ps1
-    (Get-Content -LiteralPath docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md -Raw | Measure-Object -Word).Words
-    git diff --check 8a70a8f47ad8cf110e9987b283f80277705b2292..HEAD
-    git diff --stat 8a70a8f47ad8cf110e9987b283f80277705b2292..HEAD
-    git diff 8a70a8f47ad8cf110e9987b283f80277705b2292..HEAD
-    git status --short --branch
+1. Branch started from exact base `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
+2. Effective Goose reasoning confirmed MEDIUM before mutation.
+3. `rust-toolchain.toml` selects exact Rust 1.89.0, minimal, rustfmt, clippy.
+4. Cargo declares edition 2021 and rust-version 1.89.
+5. Cargo.lock unchanged (SHA256: `d323870ea...`).
+6. OCaml range is `>= 5.5.0 & < 5.6.0`.
+7. opam lock records OCaml 5.5.0, Dune 3.24.0, Yojson 2.2.2.
+8. Lock has no local path, pin or unexplained drift.
+9. Preflight is genuinely non-mutating; RUSTUP_AUTO_INSTALL guarded.
+10. No bare Rust proxy invocation; no worktree search or global-switch fallback.
+11. Focused preflight tests pass all cases.
+12. Rust fmt, check, tests, clippy, builds pass with 1.89.0 and --locked.
+13. OCaml dune build passes with the explicit switch.
+14. Fixture, engine, MCP and demo scripts pass.
+15. Packet checker and whitespace checks pass.
+16. Only authorised files changed.
+17. Review branch pushed; main untouched.
+18. Original worktree and TETHERS_LUCY_NOTES.md untouched.
 
 ## Forbidden changes
 
-- No .gitattributes, .editorconfig, Git configuration, production, toolchain,
-  or main changes.
-- No Goose-duplicate branch deletion, modification, merge, or publication.
-- No original-worktree mutation.
+No production runtime, Tethers language/protocol, permission, replay, Trail,
+persistence, or dispatch change. No Dune language, Yojson, Rust crate,
+Cargo.lock, edition, or dependency change. No ocamlformat, reformatting,
+software installation, or global configuration change. No .gitattributes,
+.editorconfig, or Git configuration change. No merge or push to main. No
+amend, squash, rebase, or force-push. No branch or worktree deletion.
 
 ## Stop conditions
 
-Stop if the original booklet cannot be recovered byte-for-byte, the expected
-base differs, any unauthorised path changes, or preservation of the original
-dirty worktree cannot be demonstrated.
+Return BLOCKED when: origin/main mismatch, dirty worktree, branch exists,
+reasoning not MEDIUM, Rust components missing, switch missing or wrong,
+lock contains unexpected versions/paths/pins, Cargo.lock changes, preflight
+cannot remain non-mutating, original worktree changes, two similar failures.
 
 ## Expected pre-existing changes
 
-None in this recovery worktree.
+None. Starting from clean `main` at `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
+
+1. `rust-toolchain.toml`
+2. `tethers-0.1/host-rust/Cargo.toml`
+3. `tethers-0.1/engine-ocaml/tethers_engine.opam`
+4. `tethers-0.1/engine-ocaml/tethers_engine.opam.locked`
+5. `.github/scripts/check-tethers-toolchains.ps1`
+6. `.github/scripts/test-check-tethers-toolchains.ps1`
+7. `docs/CURRENT_CLINE_TASK.md`
+8. `docs/TASK_PACKET_TEMPLATE.md`
+9. `docs/PROJECT_CONTROL.md`
+10. `docs/DECISIONS.md`
+11. `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
+12. `docs/OCAML_GUIDE_FOR_AGENTS.md`
+13. `docs/worker-notes/2026-07-30-toolchain-baseline-01.md`
+
+## Frozen exclusions
+
+Do not change production runtime logic, the Tethers language or protocol,
+permissions, replay, Trail, persistence, dispatch, Dune language, Yojson,
+Rust crates, Cargo.lock, Rust edition, Windows binary-mode stdio, Git
+configuration, .gitattributes, or .editorconfig. Do not adopt ocamlformat,
+reformat code, or install/upgrade software.
+
+## Acceptance criteria
+
+1. Branch started from exact base `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
+2. Effective Goose reasoning confirmed MEDIUM before mutation.
+3. `rust-toolchain.toml` selects exact Rust 1.89.0, minimal, rustfmt and clippy.
+4. Cargo declares edition 2021 and rust-version 1.89.
+5. Cargo.lock is unchanged.
+6. OCaml range is `>= 5.5.0 & < 5.6.0`.
+7. Committed opam lock records OCaml 5.5.0, Dune 3.24.0, Yojson 2.2.2.
+8. Lock contains no local path, pin or unexplained drift.
+9. Preflight is non-mutating, disables rustup auto-install, restores state.
+10. No bare Rust proxy invocation; no worktree search or global-switch fallback.
+11. Focused preflight tests pass.
+12. Rust format, check, tests, clippy, builds pass with 1.89.0 and --locked.
+13. OCaml build passes with the exact switch.
+14. Fixture, engine, MCP, demo, packet-checker, and whitespace checks pass.
+15. Only authorised files changed.
+16. Review branch pushed; main untouched.
+17. Original worktree and TETHERS_LUCY_NOTES.md untouched.
+
+## Required verification
+
+```powershell
+# Rust (all proxied through rustup run 1.89.0, RUSTUP_AUTO_INSTALL=0)
+rustup run 1.89.0 cargo fmt --manifest-path .\tethers-0.1\host-rust\Cargo.toml --check
+rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
+rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --tests
+rustup run 1.89.0 cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
+rustup run 1.89.0 cargo clippy --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --all-targets --all-features -- -D warnings
+rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
+rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --release
+
+# OCaml (explicit switch)
+$OcamlSwitchPath = "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"
+pwsh -NoProfile -File .\.github\scripts\test-check-tethers-toolchains.ps1 -OcamlSwitchPath $OcamlSwitchPath
+pwsh -NoProfile -File .\.github\scripts\check-tethers-toolchains.ps1 -OcamlSwitchPath $OcamlSwitchPath
+opam exec --switch="$OcamlSwitchPath" -- dune build
+
+# Repository
+pwsh -NoProfile -File .\.github\scripts\check-tethers-task-packet.ps1
+pwsh -NoProfile -File .\tethers-0.1\scripts\check-fixtures.ps1
+pwsh -NoProfile -File .\tethers-0.1\scripts\test-engine.ps1
+pwsh -NoProfile -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1
+pwsh -NoProfile -File .\tethers-0.1\scripts\demo.ps1
+
+# Diff and status
+git diff --check
+git diff --check bb08cc0d09a74db147e3ce6845d4e414e883aad2..HEAD
+git diff --stat bb08cc0d09a74db147e3ce6845d4e414e883aad2..HEAD
+git diff --name-status bb08cc0d09a74db147e3ce6845d4e414e883aad2..HEAD
+git status --short --branch
+```
+
+## Stop conditions
+
+Return BLOCKED when: origin/main mismatch, dirty worktree, branch exists,
+reasoning not MEDIUM, Rust components missing, switch missing or wrong,
+lock contains unexpected versions, Cargo.lock changes, preflight cannot
+remain non-mutating, original worktree changes.
+
+## Expected pre-existing changes
+
+None. Starting from clean `main` at `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
