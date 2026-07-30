@@ -12,7 +12,7 @@ Base commit: `bb08cc0d09a74db147e3ce6845d4e414e883aad2`
 
 Implementation checkpoint: `fb067efced287f83edb0b59e69e378458a5e20fe`
 
-Acceptance repair checkpoint: TBD after commit
+Acceptance repair checkpoint: `b2ddf5cf67aa1f8d7d8a8588edfb094897926b74`
 
 ## Requested outcome
 
