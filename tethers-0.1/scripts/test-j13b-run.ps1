@@ -71,6 +71,7 @@ function New-RunWorkspace {
         [string]$Name,
         [ValidateSet("allow", "deny")][string]$Policy = "allow",
         [switch]$Ask,
+        [switch]$InvalidTether,
         [string]$ProviderMode = ""
     )
     $root = Join-Path $script:TempRoot $Name
@@ -85,7 +86,17 @@ function New-RunWorkspace {
     Copy-Item -LiteralPath $manifestSource -Destination (Join-Path $manifestDir $manifestFile)
     Copy-Item -LiteralPath $FixtureProvider -Destination (Join-Path $scriptDir "tethers-stdio-fixture.ps1")
 
-    $source = if ($Ask) {
+    $source = if ($InvalidTether) {
+@'
+tether "Fixture invalid public run"
+
+anchor
+    coding.task_completed
+
+when
+    this is not valid Tethers source
+'@
+    } elseif ($Ask) {
 @'
 tether "Fixture public run Ask"
 
@@ -192,6 +203,12 @@ function Get-MethodCount {
     param([string]$Marker, [string]$Method)
     if (-not (Test-Path -LiteralPath $Marker -PathType Leaf)) { return 0 }
     return @((Get-Content -LiteralPath $Marker) | Where-Object { $_ -eq $Method }).Count
+}
+
+function Get-TotalMethodCount {
+    param([string]$Marker)
+    if (-not (Test-Path -LiteralPath $Marker -PathType Leaf)) { return 0 }
+    return @((Get-Content -LiteralPath $Marker)).Count
 }
 
 function Provision-ReplayRoot {
@@ -447,8 +464,28 @@ try {
             Write-Text $input $body
             $result = Invoke-Run $workspace $input (Join-Path $workspace.Root ("trail " + [guid]::NewGuid().ToString() + ".jsonl")) $root
             $null = ConvertFrom-SingleEnvelope $result "invalid_data" 3
-            Assert-Equal (Get-MethodCount $workspace.Marker "tools/call") 0 "invalid input must not call provider."
+            Assert-True ((-not (Test-Path -LiteralPath $workspace.Marker -PathType Leaf)) -or ((Get-TotalMethodCount $workspace.Marker) -eq 0)) "invalid input must not launch the provider."
         }
+        Write-RunInput $input
+        $unknownTether = Get-Content -Raw -LiteralPath $input | ConvertFrom-Json
+        $unknownTether.tether.id = "not-configured"
+        $unknownTether | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $input -Encoding utf8NoBOM
+        $unknownResult = Invoke-Run $workspace $input (Join-Path $workspace.Root "unknown-tether.jsonl") $root
+        $unknownEnvelope = ConvertFrom-SingleEnvelope $unknownResult "invalid_data" 3
+        Assert-Equal $unknownEnvelope.error.code "TETHER_NOT_FOUND" "unknown Tether code mismatch."
+        Assert-True ((-not (Test-Path -LiteralPath $workspace.Marker -PathType Leaf)) -or ((Get-TotalMethodCount $workspace.Marker) -eq 0)) "unknown Tether must not launch the provider."
+    }
+
+    Invoke-Case "invalid configured Tether stops before provider launch" {
+        $workspace = New-RunWorkspace -Name "invalid tether" -InvalidTether
+        $root = Join-Path $workspace.Root "replay root"
+        Provision-ReplayRoot $root $workspace.Root
+        $input = Join-Path $workspace.Root "input.json"
+        Write-RunInput $input
+        $result = Invoke-Run $workspace $input (Join-Path $workspace.Root "trail.jsonl") $root
+        $envelope = ConvertFrom-SingleEnvelope $result "invalid_data" 3
+        Assert-Equal $envelope.error.code "TETHER_INVALID" "invalid Tether code mismatch."
+        Assert-True ((-not (Test-Path -LiteralPath $workspace.Marker -PathType Leaf)) -or ((Get-TotalMethodCount $workspace.Marker) -eq 0)) "invalid Tether must not launch the provider."
     }
 
     Invoke-Case "reordered options and invalid CLI usage preserve the frozen envelope" {

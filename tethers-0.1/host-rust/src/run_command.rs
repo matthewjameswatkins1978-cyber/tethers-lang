@@ -5,7 +5,7 @@
 //! CLI-envelope mapping.  Planning, policy, approval, replay, durable intent,
 //! provider execution, and Result Anchors remain in their accepted seams.
 
-use crate::configured_runtime::prepare_runtime;
+use crate::configured_runtime::{prepare_runtime, PreparedRuntime};
 use crate::dispatch::{FileTrail, Trail};
 use crate::event_admission::EventAdmissionGate;
 use crate::host_execution::{
@@ -45,6 +45,32 @@ impl RunResult {
 /// Execute exactly one public input.  All untrusted file and JSON processing
 /// finishes before an engine or provider can launch.
 pub fn run(args: RunCommandArgs) -> RunResult {
+    run_with_boundaries(
+        args,
+        admit_external_event,
+        |runtime, paths, prepared_input| {
+            HostExecutionService::new(
+                &runtime,
+                &paths.engine,
+                &paths.trail,
+                Some(&paths.host_data_root),
+            )
+            .run_selected(std::slice::from_ref(&prepared_input))
+        },
+    )
+}
+
+/// Execute the one public coordinator while keeping its service boundary
+/// injectable for focused ordering tests.
+fn run_with_boundaries<A, S>(args: RunCommandArgs, admit: A, invoke_service: S) -> RunResult
+where
+    A: FnOnce(&Path, &RunInput) -> Result<(), RunResult>,
+    S: FnOnce(
+        PreparedRuntime,
+        ResolvedRunPaths,
+        PreparedEvaluationInput,
+    ) -> Result<Vec<ExecutionServiceResult>, ExecutionServiceError>,
+{
     let caller_cwd = match std::env::current_dir() {
         Ok(path) => path,
         Err(_) => {
@@ -124,7 +150,7 @@ pub fn run(args: RunCommandArgs) -> RunResult {
         );
     }
 
-    if let Err(result) = admit_external_event(&paths.trail, &input) {
+    if let Err(result) = admit(&paths.trail, &input) {
         return result;
     }
 
@@ -139,13 +165,7 @@ pub fn run(args: RunCommandArgs) -> RunResult {
         }),
         facts: input.facts,
     };
-    let service = HostExecutionService::new(
-        &runtime,
-        &paths.engine,
-        &paths.trail,
-        Some(&paths.host_data_root),
-    );
-    let results = match service.run_selected(std::slice::from_ref(&prepared_input)) {
+    let results = match invoke_service(runtime, paths, prepared_input) {
         Ok(results) => results,
         Err(error) => return service_error_failure(error),
     };
@@ -738,6 +758,23 @@ mod tests {
                 .status,
             OutcomeStatus::InvalidData
         );
+        let validation = service_error_failure(ExecutionServiceError::TetherValidation(
+            "untrusted engine detail".to_owned(),
+        ));
+        assert_eq!(validation.envelope.status, OutcomeStatus::InvalidData);
+        assert_eq!(validation.envelope.exit_code, 3);
+        assert_eq!(validation.envelope.error.unwrap().code, "TETHER_INVALID");
+
+        let operational = service_error_failure(ExecutionServiceError::Engine(
+            tethers_reference_host::engine_stdio::EngineError::ProtocolError(
+                "untrusted engine detail".to_owned(),
+            ),
+        ));
+        assert_eq!(operational.envelope.status, OutcomeStatus::Unavailable);
+        assert_eq!(operational.envelope.exit_code, 4);
+        let encoded = serde_json::to_string(&operational.envelope).unwrap();
+        assert!(encoded.contains("EXECUTION_UNAVAILABLE"));
+        assert!(!encoded.contains("untrusted engine detail"));
     }
 
     #[test]
@@ -768,6 +805,162 @@ mod tests {
         assert_eq!(entry["correlation_id"], "evt-public-001");
         assert_eq!(entry["causation_id"], Value::Null);
         assert_eq!(entry["generation"], 0);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn write_runtime_fixture(directory: &Path) -> RunCommandArgs {
+        let manifest_dir = directory.join("manifests");
+        let tether_dir = directory.join("tethers");
+        std::fs::create_dir_all(&manifest_dir).unwrap();
+        std::fs::create_dir_all(&tether_dir).unwrap();
+        let manifest =
+            include_str!("../../protocol/capability-manifests/fixture-ping-standing-allow.json");
+        let (_, digest) = crate::manifest::canonicalize_and_digest(manifest).unwrap();
+        std::fs::write(manifest_dir.join("fixture-ping.json"), manifest).unwrap();
+        std::fs::write(tether_dir.join("selected.tether"), "fixture source").unwrap();
+        let config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "j13b-run-test",
+                "version": "1",
+                "tethers": [{"id": "selected", "version": "1", "source_path": "tethers/selected.tether"}],
+                "capability_requirements": [{"name": "fixture.ping", "version": 1, "reason": "test"}]
+            },
+            "providers": [{
+                "id": "tethers-stdio-fixture",
+                "display_name": "Tethers Stdio Fixture",
+                "transport": {"kind": "stdio", "command": "unused.exe", "args": [], "protocol_version": "2025-11-25"},
+                "capabilities": [{
+                    "name": "fixture.ping", "version": 1,
+                    "manifest_path": "manifests/fixture-ping.json", "pinned_digest": digest,
+                    "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/path"}
+                }]
+            }],
+            "policy": {"default": "deny", "rules": []}
+        });
+        let config_path = directory.join("runtime.json");
+        std::fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let engine_path = directory.join("engine.exe");
+        std::fs::write(&engine_path, "unused").unwrap();
+        let input_path = directory.join("input.json");
+        std::fs::write(
+            &input_path,
+            serde_json::to_vec(&json!({
+                "format_version": "1",
+                "evaluation_id": "eval-public-001",
+                "tether": {"id": "selected", "version": "1"},
+                "event": {"id": "evt-public-001", "name": "coding.task_completed", "data": {}},
+                "facts": {}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        RunCommandArgs {
+            config: config_path,
+            engine: engine_path,
+            input: input_path,
+            trail: directory.join("trail.jsonl"),
+            host_data_root: directory.join("host-data"),
+        }
+    }
+
+    #[test]
+    fn j13b_run_rejections_do_not_reach_the_service_boundary() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let directory =
+            std::env::temp_dir().join(format!("j13b-run-boundary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let calls = Rc::new(Cell::new(0));
+        let invoke = |calls: Rc<Cell<usize>>| {
+            move |_, _, _| {
+                calls.set(calls.get() + 1);
+                Ok(vec![completed_result()])
+            }
+        };
+
+        for invalid in [
+            "{bad json",
+            r#"{"format_version":"1","format_version":"1"}"#,
+            r#"{"format_version":"1","evaluation_id":"eval","extra":true,"tether":{"id":"selected","version":"1"},"event":{"id":"evt","name":"event","data":{}},"facts":{}}"#,
+            r#"{"format_version":"1","evaluation_id":2,"tether":{"id":"selected","version":"1"},"event":{"id":"evt","name":"event","data":{}},"facts":{}}"#,
+            r#"{"format_version":"1","evaluation_id":"","tether":{"id":"selected","version":"1"},"event":{"id":"evt","name":"event","data":{}},"facts":{}}"#,
+        ] {
+            let mut invalid_args = write_runtime_fixture(&directory);
+            std::fs::write(&invalid_args.input, invalid).unwrap();
+            invalid_args.trail = directory.join(format!("invalid-{}.jsonl", uuid::Uuid::new_v4()));
+            let result =
+                run_with_boundaries(invalid_args, admit_external_event, invoke(calls.clone()));
+            assert_eq!(result.envelope.status, OutcomeStatus::InvalidData);
+        }
+
+        let mut unknown_args = write_runtime_fixture(&directory);
+        std::fs::write(&unknown_args.input, serde_json::to_vec(&json!({
+            "format_version": "1", "evaluation_id": "eval", "tether": {"id": "missing", "version": "1"},
+            "event": {"id": "evt", "name": "event", "data": {}}, "facts": {}
+        })).unwrap()).unwrap();
+        unknown_args.trail = directory.join("unknown.jsonl");
+        let unknown =
+            run_with_boundaries(unknown_args, admit_external_event, invoke(calls.clone()));
+        assert_eq!(unknown.envelope.error.unwrap().code, "TETHER_NOT_FOUND");
+
+        let invalid_path = run_with_boundaries(
+            RunCommandArgs {
+                engine: directory.join("missing.exe"),
+                trail: directory.join("path.jsonl"),
+                ..write_runtime_fixture(&directory)
+            },
+            admit_external_event,
+            invoke(calls.clone()),
+        );
+        assert_eq!(invalid_path.envelope.status, OutcomeStatus::InvalidData);
+
+        for phase in ["open", "write", "sync"] {
+            let result = run_with_boundaries(
+                RunCommandArgs {
+                    trail: directory.join(format!("{phase}.jsonl")),
+                    ..write_runtime_fixture(&directory)
+                },
+                |_, _| {
+                    Err(failure(
+                        OutcomeStatus::AuditFailed,
+                        "EVENT_ADMISSION_AUDIT_FAILED",
+                        "admission unavailable",
+                        None,
+                    ))
+                },
+                invoke(calls.clone()),
+            );
+            assert_eq!(result.envelope.status, OutcomeStatus::AuditFailed);
+        }
+        assert_eq!(calls.get(), 0);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn j13b_run_admits_before_invoking_the_service_boundary() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let directory =
+            std::env::temp_dir().join(format!("j13b-run-admitted-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let args = write_runtime_fixture(&directory);
+        let trail = args.trail.clone();
+        let calls = Rc::new(Cell::new(0));
+        let result = run_with_boundaries(args, admit_external_event, {
+            let calls = calls.clone();
+            move |_, _, _| {
+                calls.set(calls.get() + 1);
+                let entry: Value =
+                    serde_json::from_str(&std::fs::read_to_string(&trail).unwrap()).unwrap();
+                assert_eq!(entry["kind"], "event_admitted");
+                Ok(vec![completed_result()])
+            }
+        });
+        assert_eq!(result.envelope.status, OutcomeStatus::Completed);
+        assert_eq!(calls.get(), 1);
         std::fs::remove_dir_all(directory).unwrap();
     }
 

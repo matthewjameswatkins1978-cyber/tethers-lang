@@ -204,6 +204,7 @@ impl From<EngineError> for ExecutionServiceError {
     fn from(e: EngineError) -> Self {
         match e {
             EngineError::Interrupted => Self::Interrupted,
+            EngineError::ValidationFailed { message, .. } => Self::TetherValidation(message),
             other => Self::Engine(other),
         }
     }
@@ -559,14 +560,7 @@ impl<'a> HostExecutionService<'a> {
         // Call tethers.evaluate.
         let tethers_response = match engine.evaluate_tether(&input.evaluation_id, &envelope) {
             Ok(resp) => resp,
-            Err(e) => {
-                if matches!(e, EngineError::Interrupted) {
-                    return ExecutionServiceResult::Interrupted;
-                }
-                return ExecutionServiceResult::InvalidData {
-                    message: format!("engine evaluation failed: {e}"),
-                };
-            }
+            Err(error) => return Self::classify_engine_evaluation_failure(input, error),
         };
 
         let route = Self::classify_planner_response(input, tethers_response);
@@ -627,6 +621,20 @@ impl<'a> HostExecutionService<'a> {
         match route {
             PlannerResponseRoute::Matched(response) => dispatch(response),
             PlannerResponseRoute::Terminal(result) => result,
+        }
+    }
+
+    /// Keep engine transport failures distinct from valid planner error data.
+    fn classify_engine_evaluation_failure(
+        input: &PreparedEvaluationInput,
+        error: EngineError,
+    ) -> ExecutionServiceResult {
+        match error {
+            EngineError::Interrupted => ExecutionServiceResult::Interrupted,
+            _ => ExecutionServiceResult::Unavailable {
+                evaluation_id: input.evaluation_id.clone(),
+                reason: "engine evaluation unavailable".to_owned(),
+            },
         }
     }
 
@@ -1299,6 +1307,38 @@ mod tests {
                 code,
                 ..
             } if code == "parse_error"
+        ));
+    }
+
+    #[test]
+    fn j13b_engine_validation_and_evaluation_failures_remain_typed() {
+        let validation = ExecutionServiceError::from(EngineError::ValidationFailed {
+            tether_index: 0,
+            tether_id: "fixture.selected".to_owned(),
+            tether_version: "1.2.3".to_owned(),
+            error_code: "parse_error".to_owned(),
+            message: "untrusted engine detail".to_owned(),
+        });
+        assert!(matches!(
+            validation,
+            ExecutionServiceError::TetherValidation(_)
+        ));
+
+        let input = planner_input();
+        assert!(matches!(
+            HostExecutionService::classify_engine_evaluation_failure(
+                &input,
+                EngineError::ProtocolError("malformed framing".to_owned()),
+            ),
+            ExecutionServiceResult::Unavailable { evaluation_id, .. }
+                if evaluation_id == "eval-correlation-1"
+        ));
+        assert!(matches!(
+            HostExecutionService::classify_engine_evaluation_failure(
+                &input,
+                EngineError::Interrupted
+            ),
+            ExecutionServiceResult::Interrupted
         ));
     }
 
