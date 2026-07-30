@@ -1,17 +1,43 @@
 # Tethers Project Guidance For Coding Agents
 
-## Start Here
+## Mandatory startup gate
 
-Before changing the repository, read:
+Some coding agents automatically load this `AGENTS.md` but do not automatically
+load files merely because they are named inside it. A filename is not an import.
+
+Before any repository mutation, immediately use the available file-reading tool
+to read these files in full:
 
 1. `docs/PROJECT_CONTROL.md`
 2. `docs/AGENT_WORKFLOW.md`
 3. `docs/CURRENT_CLINE_TASK.md`
-4. `docs/PROJECT_DASHBOARD.md`
+4. `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md`
+5. `docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md`
 
-Before changing implementation code, also read
-`docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` and the task-relevant language guide.
+OpenCode's project configuration also names these files through `opencode.json`.
+That is additional protection, not permission to assume they were loaded. The
+agent must still verify the effective instruction context and explicitly read any
+missing file.
 
+Before editing, report:
+
+- the detected repository root;
+- the current branch and exact `HEAD`;
+- the instruction files loaded automatically;
+- the mandatory documents read explicitly;
+- the current task owner, status, and risk colour;
+- the authorised files and forbidden changes;
+- every stop condition;
+- the exact repeated-failure rule.
+
+Do not edit until this startup report is complete. A task packet may require
+additional reading but may not remove this gate.
+
+`docs/PROJECT_DASHBOARD.md` is a Matthew-facing summary, not implementation
+authority and not part of the automatic OpenCode instruction set. Read it only
+when the task concerns project reporting or the packet explicitly names it.
+
+Before changing implementation code, also read the task-relevant language guide.
 Then read only the authoritative documents, code, tests, and worker notes named
 by the current task packet. Do not load the complete project archive by default.
 
@@ -30,7 +56,7 @@ chat context.
 
 For Git topology, branch publication, worktree, line-ending or encoding
 investigation, history recovery, or destructive Git tasks, read
-docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md before the first Git
+`docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md` before the first Git
 mutation. It supports the task packet; it does not replace its authority.
 
 ## Current Operating Mode
@@ -39,10 +65,14 @@ mutation. It supports the task packet; it does not replace its authority.
 
 - Lucy in ordinary chat controls architecture, task compilation, GitHub-visible
   review, acceptance, and continuation.
-- Cline is the default implementation owner for ordinary Green and Amber work.
+- OpenCode is the default implementation owner for ordinary Green and Amber
+  work when the current packet names it.
 - Codex handles Red implementation or sign-off, difficult local failure,
   Git/environment/recovery, and machine-required diagnosis.
-- Matthew may paste Cline's concise report to Lucy as the normal return handoff.
+- Matthew may paste OpenCode's concise report to Lucy as the normal return
+  handoff.
+- Cline and Goose are not part of the active route. Historical filenames,
+  branches, packets, and worker notes may retain their names.
 - Copilot is not part of the active route.
 
 No implementation agent invents or begins the next task. Lucy controls
@@ -162,16 +192,16 @@ parallel Actions, branching inside `do`, or direct Action-result chaining.
 
 Before work:
 
-1. Confirm packet state, owner, route, worker-note path, base commit, and expected
+1. Complete the mandatory startup report above.
+2. Confirm packet state, owner, route, worker-note path, base commit, and expected
    pre-existing changes.
-2. Before the first edit, confirm the exact worktree root, branch, `HEAD`, status,
+3. Before the first edit, confirm the exact worktree root, branch, `HEAD`, status,
    expected base, and any packet-named external toolchain paths. Do not assume
-   ignored directories such as `_opam` exist in every worktree. Stop only when the
-   worktree, branch, base, or required toolchain genuinely differs; otherwise
-   continue without a separate preflight report.
-3. Run the task-packet checker.
-4. Read only packet-named context and task-relevant code.
-5. Stop if another owner already has the task `IN_PROGRESS`.
+   ignored directories such as `_opam` exist in every worktree. Stop only when
+   the worktree, branch, base, or required toolchain genuinely differs.
+4. Run the task-packet checker.
+5. Read only packet-named context and task-relevant code.
+6. Stop if another owner already has the task `IN_PROGRESS`.
 
 During work:
 
@@ -194,7 +224,8 @@ After work:
 2. Inspect the complete diff and final Git status.
 3. Write the worker note at the exact path named by the packet.
 4. Update the packet to `COMPLETE` or `BLOCKED` with honest evidence.
-5. Return the concise report defined by `docs/CLINE_HANDOFF.md`.
+5. Return the concise report defined by `docs/CLINE_HANDOFF.md`; that historical
+   filename applies to every named implementation owner.
 6. Stop. Do not select, compile, authorise, or begin the next task.
 
 Do not commit, push, merge, amend, tag, publish, install, or open a pull request
