@@ -866,3 +866,19 @@ process-local approval store. Public output contains only the evaluation ID,
 Action ID, and redacted reason; it never exposes an approval ID or resume
 route. Typed service results map only to the frozen CLI outcome vocabulary and
 its matching exit codes, including distinct replay and unattempted outcomes.
+
+## 2026-07-30: Canonical Git, Worktrees and Line Endings Guide
+
+Decision: docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md is the canonical
+operational guide for Git topology, worktrees, branch publication, line endings,
+encoding investigation, and authorised recovery. It supports task packets and
+does not replace their authority.
+
+The guide adds no .gitattributes, editor, EOL, or Git-configuration policy.
+Recovery tools remain available only under explicit task or recovery authority.
+Unrelated dirty work belongs to its existing owner and must be preserved.
+
+The canonical text was recovered unchanged from the earlier Work-mode branch
+docs/git-worktrees-line-endings-guide at
+3e958ceba22bbeed1937b1fa62fa3054fab1596b. The later Goose duplicate at
+e63a90d0587c918a07dc2697db6c0f1dace77872 is not authority for this guide.

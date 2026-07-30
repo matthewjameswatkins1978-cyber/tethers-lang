@@ -28,6 +28,11 @@ schema as required operating guidance. Record the guide under the task's
 required reading or worker-note evidence; do not merely rely on remembered
 chat context.
 
+For Git topology, branch publication, worktree, line-ending or encoding
+investigation, history recovery, or destructive Git tasks, read
+docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md before the first Git
+mutation. It supports the task packet; it does not replace its authority.
+
 ## Current Operating Mode
 
 **Gorilla Coding 🦄**
