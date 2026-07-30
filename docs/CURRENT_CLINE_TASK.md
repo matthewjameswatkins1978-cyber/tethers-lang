@@ -68,7 +68,7 @@ The existing `replay::ExecutionId::parse` validates the `exec_<UUID>` format and
 - Zero matching entries is not_found.
 - J13 is complete only after this command is accepted.
 
-## J13C-A corrected acceptance criteria
+## Acceptance criteria
 
 1. valid UTF-8 across arbitrary reader boundaries.
 2. exact lexical preservation of matching JSON objects.
