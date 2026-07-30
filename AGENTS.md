@@ -28,6 +28,11 @@ schema as required operating guidance. Record the guide under the task's
 required reading or worker-note evidence; do not merely rely on remembered
 chat context.
 
+For every Git, worktree, publication, recovery, or line-ending task, read
+`docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md` before the first edit. Use
+its location preflight and narrow-diff guidance to protect unrelated work; it
+does not authorise configuration or history-rewrite changes by itself.
+
 ## Current Operating Mode
 
 **Gorilla Coding 🦄**

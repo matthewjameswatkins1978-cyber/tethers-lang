@@ -2,6 +2,28 @@
 
 ## 2026-07-30: Canonical OCaml Engineering Guide
 
+
+## 2026-07-30: Canonical Git, Worktrees and Line-Endings Guide
+
+Decision: `docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md` is the canonical
+operational guide for Tethers agents working with Git topology, branch
+publication, worktrees, line-ending and encoding investigation, history
+recovery, and destructive Git commands. `AGENTS.md` requires it before the
+first Git mutation in those task categories.
+
+The guide assists rather than replaces explicit task instructions. It
+introduces no `.gitattributes`, `.editorconfig`, EOL policy, or global Git
+configuration. Destructive and history-rewriting operations remain available
+under explicit task or recovery authority. Unrelated dirty work must be
+preserved; agents must not clean up another worktree.
+
+Reason: Multiple worktrees, Windows/Unix text-file differences, and varied
+line-ending tool behaviour have caused agent confusion. One practical
+PowerShell-first reference avoids repeating the same diagnostic guidance in
+every task packet.
+
+## 2026-07-30: Canonical OCaml Engineering Guide
+
 Decision: `docs/OCAML_GUIDE_FOR_AGENTS.md` is the canonical required operating
 guide for every OCaml task. It records the Core/host boundary, deterministic
 engineering rules, exact worktree-safe `OcamlSwitchPath` contract, verification
