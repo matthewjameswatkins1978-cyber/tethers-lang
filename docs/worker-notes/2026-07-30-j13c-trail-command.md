@@ -23,7 +23,7 @@ Base commit: `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`
 | Implementation | `180a2feec6f8fd889e955d6f42c141e95602e337` |
 | Documentation checkpoint | `fdb6327bba8ce5abb784293a101e1d8029fcfbdd` |
 | Rejected report head | `3d27b2c8d1aa5905bc55fae1b48430707ddab5f0` |
-| Repair commit | `<TBD — fill after commit>` |
+| Repair commit | `afca84106d61767a0468606616e3aedd68c170f1` |
 
 The worker note previously contained the nonexistent SHA
 `fdb6327d3e13e7fb14965d3e3fb6f5e24fa3d6e0` (incorrectly labelled as

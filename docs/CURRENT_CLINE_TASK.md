@@ -6,7 +6,7 @@ Task: `J13C - strict public trail command`
 
 Owner: `Goose`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
