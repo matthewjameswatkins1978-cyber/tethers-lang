@@ -15,8 +15,11 @@ Before changing implementation code, also read
 Then read only the authoritative documents, code, tests, and worker notes named
 by the current task packet. Do not load the complete project archive by default.
 
-For OCaml work, read the task-relevant section of
-`docs/OCAML_GUIDE_FOR_AGENTS.md`.
+For every OCaml task, read `docs/OCAML_GUIDE_FOR_AGENTS.md` before the first
+edit. Treat its safety scan, Core/host boundary, explicit-switch contract,
+verification commands, stop conditions, and worker-note schema as required
+operating guidance. Record the guide under the task's required reading or
+worker-note evidence; do not merely rely on remembered chat context.
 
 For every Rust task, read `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` before the
 first edit. Treat its fast safety scan, trust-boundary rules, subprocess

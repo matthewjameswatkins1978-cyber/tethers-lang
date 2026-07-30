@@ -1,5 +1,23 @@
 # Decisions
 
+## 2026-07-30: Canonical OCaml Engineering Guide
+
+Decision: `docs/OCAML_GUIDE_FOR_AGENTS.md` is the canonical required operating
+guide for every OCaml task. It records the Core/host boundary, deterministic
+engineering rules, exact worktree-safe `OcamlSwitchPath` contract, verification
+expectations, and stop conditions. `AGENTS.md` requires it before the first
+OCaml edit.
+
+Reason: The former compact guide no longer carried enough authoritative detail
+for the deterministic Core and multi-worktree native-Windows workflow. One
+canonical guide prevents competing OCaml instructions.
+
+`TOOLCHAIN-BASELINE-01` is approved but not implemented by this documentation
+decision. The future bounded implementation task alone may change compiler or
+dependency constraints, create locks, add the non-mutating preflight, or alter
+toolchain-enforcement files. Windows binary-mode stdio and compiler warning
+policy remain separate excluded scopes.
+
 ## 2026-07-29: J13B Host Execution Service Architecture
 
 Decision: Extract host execution machinery from `main.rs` into a dedicated
