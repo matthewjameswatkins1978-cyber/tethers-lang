@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `Goose`
 Status: `COMPLETE`
 Base commit: `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`
-Implementation checkpoint: `<TBD>`
+Implementation checkpoint: `180a2feec6f8fd889e955d6f42c141e95602e337`
 Branch / Worktree: `goose/j13c-trail-command` / `D:\The Next Thing\Tethers Lang - Goose Integration`
 
 ## Reasoning Evidence
