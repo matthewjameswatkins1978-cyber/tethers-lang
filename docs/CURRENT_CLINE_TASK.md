@@ -6,7 +6,7 @@ Task: `J14A-R evidence closeout`
 
 Owner: `OpenCode`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Task colour: `Green`
 

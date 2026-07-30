@@ -4,7 +4,8 @@
 - **Owner:** `OpenCode`
 - **Status:** `COMPLETE`
 - **Base Commit:** `0c64b48d860ce2178858c4c5d8a0af38708bc7cc`
-- **Implementation checkpoint:** `WORKTREE`
+- **Implementation checkpoint:** `e4b773050f0ceb7e7bef8b236ec199692b827754`
+- **Original J14A implementation commit:** `e86471ed8d160d47ba2ca70a6acbfabaf552f6ac`
 - **Branch / Worktree:** `goose/j14a-complete-local-scenario` / `D:\The Next Thing\Tethers Lang - Goose Integration`
 
 The final pushed repair SHA is reported in the external completion report.
@@ -19,7 +20,9 @@ Status: `COMPLETE`
 
 Base commit: `0c64b48d860ce2178858c4c5d8a0af38708bc7cc`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `e4b773050f0ceb7e7bef8b236ec199692b827754`
+
+Original J14A implementation commit: `e86471ed8d160d47ba2ca70a6acbfabaf552f6ac`
 
 Original implementation owner: Goose. Repair owner: OpenCode.
 Rejected candidate: `e86471ed8d160d47ba2ca70a6acbfabaf552f6ac`.
