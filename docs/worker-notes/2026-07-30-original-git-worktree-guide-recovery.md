@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `8a70a8f47ad8cf110e9987b283f80277705b2292`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `87bc50356faeaaaa5b10a00c4f7e955364df340e`
 
 ## Requested outcome
 
