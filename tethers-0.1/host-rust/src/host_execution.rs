@@ -73,6 +73,7 @@ pub enum ExecutionServiceResult {
         evaluation_id: String,
         action_id: String,
         reason: String,
+        execution_id: Option<String>,
     },
     /// The planner returned no actions.
     NoActions {
@@ -146,6 +147,7 @@ pub enum ExecutionServiceResult {
     ReplayPersistenceUnavailable {
         evaluation_id: String,
         action_id: String,
+        execution_id: Option<String>,
     },
     /// Interrupted before provider invocation.
     Interrupted,
@@ -770,10 +772,11 @@ impl<'a> HostExecutionService<'a> {
         provider_availability: &ProviderAvailability,
         approvals: &mut crate::approval::ApprovalStore,
     ) -> ExecutionServiceResult {
-        // Strip any planner-supplied execution_id before processing.
-        // Only the replay-admission identity may populate trusted evidence.
+        // Strip any planner-supplied execution_id or _host_execution_id before
+        // processing. Only the replay-admission identity may populate trusted evidence.
         if let Some(obj) = response.as_object_mut() {
             obj.remove("execution_id");
+            obj.remove("_host_execution_id");
         }
         let proposed = match crate::extract_proposed_action(&response) {
             Ok(action) => action,
@@ -801,6 +804,7 @@ impl<'a> HostExecutionService<'a> {
                     evaluation_id,
                     action_id,
                     reason: format!("{:?}", policy_evaluation.reason),
+                    execution_id: None,
                 };
             }
             PermissionDecision::Ask => {
@@ -869,6 +873,7 @@ impl<'a> HostExecutionService<'a> {
                 evaluation_id,
                 action_id,
                 reason: "capability binding is not MCP".to_owned(),
+                execution_id: None,
             };
         }
         let session = match provider_sessions.get_mut(resolved.provider_identity()) {
@@ -988,6 +993,7 @@ impl<'a> HostExecutionService<'a> {
                 evaluation_id,
                 action_id,
                 reason: "shared execution boundary denied dispatch".to_owned(),
+                execution_id,
             },
             crate::SharedExecutionOutcome::AuditFailed => ExecutionServiceResult::AuditFailed {
                 evaluation_id,
@@ -1000,6 +1006,7 @@ impl<'a> HostExecutionService<'a> {
             ) => ExecutionServiceResult::ReplayPersistenceUnavailable {
                 evaluation_id,
                 action_id,
+                execution_id,
             },
             crate::SharedExecutionOutcome::Replay(
                 crate::replay_runtime::ReplayDispatchResult::BlockedCompletedSuccess,
@@ -1038,6 +1045,7 @@ impl<'a> HostExecutionService<'a> {
                     evaluation_id: proposed.evaluation_id.clone(),
                     action_id: proposed.action_id.clone(),
                     reason: "missing bridge capability version".to_owned(),
+                    execution_id: None,
                 })?;
         let provider = proposed
             .bridge_provider_identity
@@ -1046,6 +1054,7 @@ impl<'a> HostExecutionService<'a> {
                 evaluation_id: proposed.evaluation_id.clone(),
                 action_id: proposed.action_id.clone(),
                 reason: "missing bridge provider identity".to_owned(),
+                execution_id: None,
             })?;
         resolver::resolve_capability(
             self.runtime.trusted_store(),
@@ -1929,6 +1938,7 @@ mod tests {
             evaluation_id: "eval".into(),
             action_id: "action".into(),
             reason: "policy".into(),
+            execution_id: None,
         };
         let envelope = run_command::map_execution_result(&result);
         assert!(envelope.data.get("execution_id").is_none());
@@ -2039,6 +2049,7 @@ mod tests {
         let result = ExecutionServiceResult::ReplayPersistenceUnavailable {
             evaluation_id: "eval".into(),
             action_id: "action".into(),
+            execution_id: None,
         };
         let envelope = run_command::map_execution_result(&result);
         assert!(envelope.data.get("execution_id").is_none());
@@ -2071,5 +2082,64 @@ mod tests {
         };
         let envelope = run_command::map_execution_result(&result);
         assert!(envelope.data.get("execution_id").is_none());
+    }
+
+    /// Post-admission Denied (from shared boundary) exposes execution_id.
+    #[test]
+    fn j14a_post_admission_denied_exposes_execution_id() {
+        let result = HostExecutionService::map_shared_result(
+            crate::SharedExecutionResult {
+                outcome: crate::SharedExecutionOutcome::Denied,
+                execution_id: Some("exec_00000000-0000-4000-8000-000000000001".into()),
+            },
+            "eval".into(),
+            "action".into(),
+            serde_json::json!({}),
+        );
+        assert!(matches!(result, ExecutionServiceResult::Denied {
+            execution_id: Some(ref id), ..
+        } if id == "exec_00000000-0000-4000-8000-000000000001"));
+        let envelope = run_command::map_execution_result(&result);
+        assert_eq!(
+            envelope.data.get("execution_id").and_then(|v| v.as_str()),
+            Some("exec_00000000-0000-4000-8000-000000000001")
+        );
+        assert_eq!(envelope.data["execution_status"], "denied");
+    }
+
+    /// ReplayPersistenceUnavailable carries execution_id from shared result.
+    #[test]
+    fn j14a_replay_persistence_unavailable_with_identity() {
+        let result = HostExecutionService::map_shared_result(
+            crate::SharedExecutionResult {
+                outcome: crate::SharedExecutionOutcome::Replay(
+                    crate::replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+                ),
+                execution_id: Some("exec_00000000-0000-4000-8000-000000000002".into()),
+            },
+            "eval".into(),
+            "action".into(),
+            serde_json::json!({}),
+        );
+        assert!(matches!(
+            result,
+            ExecutionServiceResult::ReplayPersistenceUnavailable {
+                execution_id: Some(ref id), ..
+            } if id == "exec_00000000-0000-4000-8000-000000000002"
+        ));
+        let envelope = run_command::map_execution_result(&result);
+        assert_eq!(
+            envelope.data.get("execution_id").and_then(|v| v.as_str()),
+            Some("exec_00000000-0000-4000-8000-000000000002")
+        );
+    }
+
+    /// The public ID passes replay::ExecutionId::parse.
+    #[test]
+    fn j14a_public_execution_id_passes_parse() {
+        let id =
+            crate::replay::ExecutionId::parse("exec_00000000-0000-4000-8000-000000000001".into())
+                .unwrap();
+        assert_eq!(id.as_str(), "exec_00000000-0000-4000-8000-000000000001");
     }
 }

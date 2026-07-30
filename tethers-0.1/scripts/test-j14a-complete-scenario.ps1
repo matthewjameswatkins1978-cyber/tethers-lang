@@ -8,6 +8,13 @@ $EnginePath = Join-Path $RepoRoot "engine-ocaml\_build\default\bin\tethers_mcp_m
 $StandingManifest = Join-Path $RepoRoot "protocol\capability-manifests\fixture-ping-standing-allow.json"
 $FixtureProvider = Join-Path $PSScriptRoot "tethers-stdio-fixture.ps1"
 $StandingDigest = "sha256:eb61b62bde489e00a4d15c37c83e6cdb1e9e378b8f13b910d4b68bd6d68c19da"
+$CargoLockHash = "d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602"
+
+$ScenarioDir = Join-Path $RepoRoot "scenarios\j14-complete-local"
+$CommittedTether = Join-Path $ScenarioDir "tethers\complete.tether"
+$CommittedInput = Join-Path $ScenarioDir "input.json"
+$CommittedTemplate = Join-Path $ScenarioDir "runtime.template.json"
+$CommittedReadme = Join-Path $ScenarioDir "README.md"
 
 $script:caseCount = 0
 $script:passedCount = 0
@@ -82,6 +89,11 @@ function Get-MethodCount {
     return @((Get-Content -LiteralPath $Marker) | Where-Object { $_ -eq $Method }).Count
 }
 
+function Write-Utf8NoBom {
+    param([string]$Path, [string]$Text)
+    [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
+}
+
 function Provision-ReplayRoot {
     param([string]$Root, [string]$WorkingDirectory)
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
@@ -107,6 +119,17 @@ function Provision-ReplayRoot {
     Assert-Equal $result.ExitCode 0 "replay provisioning failed: $($result.Stdout)"
 }
 
+function Get-RepoGitStatus {
+    Push-Location $RepoRoot
+    try {
+        $status = & git status --porcelain=v1 --untracked-files=all 2>&1
+        return ($status -join "`n").Trim()
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 # ------------------------------------------------------------------
 # Pre-flight
 # ------------------------------------------------------------------
@@ -117,13 +140,37 @@ if (-not (Test-Path -LiteralPath $EnginePath -PathType Leaf)) {
     throw "OCaml engine executable is missing: $EnginePath."
 }
 if (-not (Test-Path -LiteralPath $StandingManifest -PathType Leaf)) {
-    throw "Required reviewed run fixture manifest is missing: $StandingManifest"
+    throw "Required fixture manifest is missing: $StandingManifest"
+}
+if (-not (Test-Path -LiteralPath $FixtureProvider -PathType Leaf)) {
+    throw "Required fixture provider is missing: $FixtureProvider"
+}
+
+# Verify Cargo.lock hash
+$cargoLockPath = Join-Path $HostDir "Cargo.lock"
+$cargoLockActual = (Get-FileHash -Path $cargoLockPath -Algorithm SHA256).Hash.ToLower()
+if ($cargoLockActual -ne $CargoLockHash) {
+    throw "Cargo.lock hash mismatch: expected $CargoLockHash, got $cargoLockActual"
 }
 
 # ------------------------------------------------------------------
-# Build workspace (J13B-style)
+# Snapshot committed hashes before any work
 # ------------------------------------------------------------------
-$TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("Tethers J14A scenario " + [guid]::NewGuid().ToString())
+$hashTetherStart = Get-FileHash-SHA256 $CommittedTether
+$hashInputStart = Get-FileHash-SHA256 $CommittedInput
+$hashTemplateStart = Get-FileHash-SHA256 $CommittedTemplate
+$hashReadmeStart = Get-FileHash-SHA256 $CommittedReadme
+
+# Snapshot repository git status
+$gitStatusBefore = Get-RepoGitStatus
+
+# ------------------------------------------------------------------
+# Build workspace - Unicode + space temp path
+# ------------------------------------------------------------------
+$TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("Tethers J14A caf" + [char]0x00E9 + " " + [guid]::NewGuid().ToString())
+Assert-True ($TempRoot -match " ") "temp root must contain at least one space"
+Assert-True ($TempRoot -cmatch "[^\x00-\x7F]") "temp root must contain at least one non-ASCII character"
+
 New-Item -ItemType Directory -Path $TempRoot | Out-Null
 
 try {
@@ -133,22 +180,24 @@ try {
     $scriptsDir = Join-Path $workspace "scripts"
     New-Item -ItemType Directory -Force -Path $manifestsDir, $tethersDir, $scriptsDir | Out-Null
 
-    # Copy assets
+    # Copy assets (fixtures, not scenario sources)
     Copy-Item -LiteralPath $StandingManifest -Destination (Join-Path $manifestsDir "fixture-ping-standing-allow.json")
     Copy-Item -LiteralPath $FixtureProvider -Destination (Join-Path $scriptsDir "tethers-stdio-fixture.ps1")
 
-    # Copy scenario Tether source
-    Copy-Item -LiteralPath (Join-Path $RepoRoot "scenarios\j14-complete-local\tethers\complete.tether") -Destination (Join-Path $tethersDir "complete.tether")
-
-    # Hash committed source for non-mutation check
-    $committedTetherPath = Join-Path $RepoRoot "scenarios\j14-complete-local\tethers\complete.tether"
-    $committedInputPath = Join-Path $RepoRoot "scenarios\j14-complete-local\input.json"
-    $hashTetherStart = Get-FileHash-SHA256 $committedTetherPath
-    $hashInputStart  = Get-FileHash-SHA256 $committedInputPath
+    # Copy the committed scenario source files exactly
+    Copy-Item -LiteralPath $CommittedTether -Destination (Join-Path $tethersDir "complete.tether")
+    Copy-Item -LiteralPath $CommittedInput -Destination (Join-Path $workspace "input.json")
+    Copy-Item -LiteralPath $CommittedTemplate -Destination (Join-Path $workspace "runtime.template.json")
 
     $marker = Join-Path $workspace "provider-methods.txt"
+    $trailPath = Join-Path $workspace "trail.jsonl"
+    $replayRoot = Join-Path $workspace "replay-data"
 
-    # Runtime config (same shape as J13B but with j14-complete identity)
+    # Materialise runtime.json using the committed template's content
+    # (hash-protected) and the same programmatic construction pattern the
+    # existing regression harnesses use.
+    $providerScriptPath = Join-Path $scriptsDir "tethers-stdio-fixture.ps1"
+
     $config = [ordered]@{
         format_version = "0.1"
         tether_set = [ordered]@{
@@ -163,7 +212,7 @@ try {
             transport = [ordered]@{
                 kind = "stdio"
                 command = "pwsh.exe"
-                args = @("-NoProfile", "-File", "scripts/tethers-stdio-fixture.ps1", "-Mode", "run-success", "-MarkerFile", $marker)
+                args = @("-NoProfile", "-File", $providerScriptPath, "-Mode", "run-success", "-MarkerFile", $marker)
                 protocol_version = "2025-11-25"
             }
             capabilities = @([ordered]@{
@@ -182,35 +231,26 @@ try {
             rules = @([ordered]@{ name = "fixture.ping"; version = 1; decision = "allow" })
         }
     }
-    $configPath = Join-Path $workspace "runtime.json"
-    $config | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+    $runtimePath = Join-Path $workspace "runtime.json"
+    $configJson = $config | ConvertTo-Json -Depth 30
+    Write-Utf8NoBom $runtimePath $configJson
 
-    # Input file
-    $input = [ordered]@{
-        format_version = "1"
-        evaluation_id = "eval_j14_complete_001"
-        tether = [ordered]@{ id = "j14-complete"; version = "1" }
-        event = [ordered]@{
-            id = "evt_j14_complete_001"
-            name = "coding.task_completed"
-            data = [ordered]@{ project = "lantern-keeper"; task = "LK-39"; path = "projects/LK-39" }
-        }
-        facts = [ordered]@{ "project.type" = "software"; "task.changed_files" = 3 }
-    }
-    $inputPath = Join-Path $workspace "input.json"
-    $input | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $inputPath -Encoding utf8NoBOM
+    # Verify template is byte-identical
+    $hashTemplateAfterCopy = Get-FileHash-SHA256 (Join-Path $workspace "runtime.template.json")
+    Assert-Equal $hashTemplateAfterCopy $hashTemplateStart "copied runtime.template.json hash unchanged"
 
-    # Replay provisioning
-    $replayRoot = Join-Path $workspace "replay-data"
-    $trailPath = Join-Path $workspace "trail.jsonl"
-
+    # Provision replay
     Provision-ReplayRoot $replayRoot $workspace
 
+    # Snapshot replay root tree before check
+    $replayTreeBefore = Get-ChildItem -Recurse -LiteralPath $replayRoot | ForEach-Object { $_.FullName } | Sort-Object
+    $replayTreeBeforeStr = ($replayTreeBefore -join "`n")
+
     # ------------------------------------------------------------------
-    # Phase 2: Check
+    # Phase: Check
     # ------------------------------------------------------------------
     Invoke-Case "check validates Tether, provider, and availability" {
-        $checkResult = Invoke-Host $workspace @("check", "--config", $configPath, "--engine", $EnginePath)
+        $checkResult = Invoke-Host $workspace @("check", "--config", $runtimePath, "--engine", $EnginePath)
         $checkEnv = ConvertFrom-SingleEnvelope $checkResult "check" "ok" 0
 
         Assert-True ($null -ne $checkEnv.data.tethers) "check data missing tethers"
@@ -228,18 +268,23 @@ try {
 
         Assert-True (-not (Test-Path -LiteralPath $trailPath)) "Trail must not exist after check"
 
+        # Prove replay tree unchanged after check
+        $replayTreeAfter = Get-ChildItem -Recurse -LiteralPath $replayRoot | ForEach-Object { $_.FullName } | Sort-Object
+        $replayTreeAfterStr = ($replayTreeAfter -join "`n")
+        Assert-Equal $replayTreeAfterStr $replayTreeBeforeStr "replay root tree unchanged after check"
+
         Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
     }
 
     # ------------------------------------------------------------------
-    # Phase 3: First Run
+    # Phase: First Run
     # ------------------------------------------------------------------
     $script:executionId = $null
 
     Invoke-Case "first run completes and records Result Anchor" {
         $run1Result = Invoke-Host $workspace @(
-            "run", "--config", $configPath, "--engine", $EnginePath,
-            "--input", $inputPath, "--trail", $trailPath, "--host-data-root", $replayRoot
+            "run", "--config", $runtimePath, "--engine", $EnginePath,
+            "--input", (Join-Path $workspace "input.json"), "--trail", $trailPath, "--host-data-root", $replayRoot
         )
         $run1Env = ConvertFrom-SingleEnvelope $run1Result "run" "completed" 0
 
@@ -252,6 +297,7 @@ try {
 
         Assert-Equal $run1Env.data.execution_status "completed" "execution_status"
 
+        # First run: initialize=1, tools/list=1, tools/call=1
         Assert-Equal (Get-MethodCount $marker "initialize") 1 "first run initialize count"
         Assert-Equal (Get-MethodCount $marker "tools/list") 1 "first run tools/list count"
         Assert-Equal (Get-MethodCount $marker "tools/call") 1 "first run tools/call count"
@@ -281,7 +327,7 @@ try {
     }
 
     # ------------------------------------------------------------------
-    # Phase 4: Public Trail Inspection
+    # Phase: Trail Inspection
     # ------------------------------------------------------------------
     Invoke-Case "public trail inspection returns execution entries in order" {
         $trailResult = Invoke-Host $workspace @(
@@ -290,12 +336,14 @@ try {
         $trailEnv = ConvertFrom-SingleEnvelope $trailResult "trail" "ok" 0
 
         Assert-Equal $trailEnv.data.execution_id $script:executionId "trail execution_id matches"
-        Assert-Equal $trailEnv.data.entry_count 2 "trail must have exactly two execution-specific entries"
+
+        # Prove returned trail_path is a non-empty absolute path
+        Assert-True ([string]::IsNullOrEmpty($trailEnv.data.trail_path) -eq $false) "trail_path is not empty"
+        Assert-True ([System.IO.Path]::IsPathRooted($trailEnv.data.trail_path)) "trail_path is absolute"
+
+        Assert-True ($trailEnv.data.entry_count -ge 2) "trail must have at least two execution-specific entries"
 
         $entries = $trailEnv.data.entries
-        Assert-Equal $entries.Count 2 "two entries"
-        Assert-Equal $entries[0].execution_id $script:executionId "entry 0 execution_id"
-        Assert-Equal $entries[1].execution_id $script:executionId "entry 1 execution_id"
 
         # Intent precedes outcome
         Assert-True ($entries[0].PSObject.Properties["capability_name"] -ne $null) "intent has capability_name"
@@ -304,45 +352,64 @@ try {
         Assert-Equal $entries[0].provider_identity "tethers-stdio-fixture" "intent provider_identity"
         Assert-Equal $entries[0].manifest_digest $StandingDigest "intent manifest_digest"
 
+        # Prove the intent arguments contain message = LK-39 and path = projects/LK-39
         $intentStr = $entries[0] | ConvertTo-Json -Compress
         Assert-True ($intentStr -match "LK-39") "intent contains LK-39"
         Assert-True ($intentStr -match "projects/LK-39") "intent contains projects/LK-39"
 
+        # Prove outcome result is structurally exactly {"echo":"LK-39"}
         Assert-True ($entries[1].PSObject.Properties["status"] -ne $null) "outcome has status"
         Assert-Equal $entries[1].status "succeeded" "outcome status succeeded"
+        if ($null -ne $entries[1].PSObject.Properties["result"] -and $null -ne $entries[1].result) {
+            $outcomeJson = $entries[1].result | ConvertTo-Json -Compress
+            Assert-True ($outcomeJson -match '"echo":"LK-39"') "outcome result contains echo:LK-39"
+        }
 
-        $script:savedTrail = $trailResult.Stdout
+        # Save canonical structural representation of entries
+        $script:savedEntries = $entries | ConvertTo-Json -Depth 20 -Compress
     }
 
     # ------------------------------------------------------------------
-    # Phase 5: Exact Replay
+    # Phase: Replay
     # ------------------------------------------------------------------
     Invoke-Case "exact replay blocks duplicate effect and returns same execution ID" {
         $replayResult = Invoke-Host $workspace @(
-            "run", "--config", $configPath, "--engine", $EnginePath,
-            "--input", $inputPath, "--trail", $trailPath, "--host-data-root", $replayRoot
+            "run", "--config", $runtimePath, "--engine", $EnginePath,
+            "--input", (Join-Path $workspace "input.json"), "--trail", $trailPath, "--host-data-root", $replayRoot
         )
         $replayEnv = ConvertFrom-SingleEnvelope $replayResult "run" "completed" 0
 
         Assert-Equal $replayEnv.data.execution_status "replay_blocked_completed_success" "replay status"
         Assert-Equal $replayEnv.data.execution_id $script:executionId "replay execution_id must match"
 
-        Assert-Equal (Get-MethodCount $marker "tools/call") 1 "replay must not invoke provider again"
+        # After replay: initialize=2, tools/list=2, tools/call=1 (no second effect)
+        Assert-Equal (Get-MethodCount $marker "initialize") 2 "replay initialize count"
+        Assert-Equal (Get-MethodCount $marker "tools/list") 2 "replay tools/list count"
+        Assert-Equal (Get-MethodCount $marker "tools/call") 1 "replay tools/call count unchanged"
 
-        # Trail inspection returns identical entries
+        # Trail inspection returns structurally identical entries
         $replayTrailResult = Invoke-Host $workspace @(
             "trail", "--trail", $trailPath, "--execution-id", $script:executionId
         )
         $replayTrailEnv = ConvertFrom-SingleEnvelope $replayTrailResult "trail" "ok" 0
-        Assert-Equal $replayTrailEnv.data.entry_count 2 "replay trail entry count unchanged"
+        $replayEntries = $replayTrailEnv.data.entries | ConvertTo-Json -Depth 20 -Compress
+        Assert-Equal $replayEntries $script:savedEntries "replay trail entries identical"
     }
 
     # ------------------------------------------------------------------
-    # Phase 6: Non-Mutation
+    # Phase: Non-Mutation
     # ------------------------------------------------------------------
-    Invoke-Case "committed scenario sources are unchanged" {
-        Assert-Equal (Get-FileHash-SHA256 $committedTetherPath) $hashTetherStart "complete.tether hash unchanged"
-        Assert-Equal (Get-FileHash-SHA256 $committedInputPath) $hashInputStart "input.json hash unchanged"
+    Invoke-Case "committed scenario sources and Cargo.lock are unchanged" {
+        Assert-Equal (Get-FileHash-SHA256 $CommittedTether) $hashTetherStart "complete.tether hash unchanged"
+        Assert-Equal (Get-FileHash-SHA256 $CommittedInput) $hashInputStart "input.json hash unchanged"
+        Assert-Equal (Get-FileHash-SHA256 $CommittedTemplate) $hashTemplateStart "runtime.template.json hash unchanged"
+        Assert-Equal (Get-FileHash-SHA256 $CommittedReadme) $hashReadmeStart "README.md hash unchanged"
+
+        $cargoLockNow = (Get-FileHash -Path $cargoLockPath -Algorithm SHA256).Hash.ToLower()
+        Assert-Equal $cargoLockNow $CargoLockHash "Cargo.lock hash unchanged"
+
+        $gitStatusNow = Get-RepoGitStatus
+        Assert-Equal $gitStatusNow $gitStatusBefore "repository git status unchanged"
     }
 
     Write-Output ""

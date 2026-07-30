@@ -2055,16 +2055,21 @@ pub(crate) enum SharedExecutionOutcome {
     Replay(replay_runtime::ReplayDispatchResult),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExecutionBoundaryEvidence {
+    execution_id: Option<String>,
+}
+
 impl SharedExecutionResult {
-    fn from_response(response: &Value) -> Result<Self, Box<dyn std::error::Error>> {
+    fn from_response_and_evidence(
+        response: &Value,
+        evidence: ExecutionBoundaryEvidence,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let status = response
             .get("execution_status")
             .and_then(Value::as_str)
             .ok_or("shared execution boundary returned no execution_status")?;
-        let execution_id = response
-            .get("_host_execution_id")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
+        let execution_id = evidence.execution_id;
         let outcome = match status {
             "completed" => SharedExecutionOutcome::Completed,
             "failed" => SharedExecutionOutcome::Failed,
@@ -2107,7 +2112,7 @@ pub(crate) fn execute_shared_boundary(
     approval_consumption: Option<&mut dyn ApprovalConsumption>,
     anchor_writer: &mut dyn ResultAnchorWriter,
 ) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
-    execute_boundary_impl(
+    let evidence = execute_boundary_impl(
         response,
         decision,
         resolved,
@@ -2125,16 +2130,12 @@ pub(crate) fn execute_shared_boundary(
         .and_then(Value::as_array)
         .is_some_and(|entries| entries.iter().any(|entry| entry["kind"] == "audit_failure"))
     {
-        let execution_id = response
-            .get("_host_execution_id")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
         return Ok(SharedExecutionResult {
             outcome: SharedExecutionOutcome::AuditFailed,
-            execution_id,
+            execution_id: evidence.execution_id,
         });
     }
-    SharedExecutionResult::from_response(response)
+    SharedExecutionResult::from_response_and_evidence(response, evidence)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2180,7 +2181,7 @@ fn execute_boundary_impl(
     replay_authority: &mut dyn replay_runtime::ReplayAuthority,
     approval_consumption: Option<&mut dyn ApprovalConsumption>,
     anchor_writer: &mut dyn ResultAnchorWriter,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<ExecutionBoundaryEvidence, Box<dyn std::error::Error>> {
     let original_event_id = input_context.event_id.as_str();
     let plan = response.get("plan").ok_or("matched response had no plan")?;
     let actions = plan
@@ -2235,7 +2236,7 @@ fn execute_boundary_impl(
     // must not claim an execution identity for it.
     if !matches!(&decision, PermissionDecision::Allow(_)) {
         present_non_dispatchable_response(response, &decision, &action_id.0)?;
-        return Ok(());
+        return Ok(ExecutionBoundaryEvidence { execution_id: None });
     }
 
     let logical_key =
@@ -2247,7 +2248,7 @@ fn execute_boundary_impl(
                     response,
                     replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
                 );
-                return Ok(());
+                return Ok(ExecutionBoundaryEvidence { execution_id: None });
             }
         };
     let binding = replay::ExecutionBinding {
@@ -2269,19 +2270,26 @@ fn execute_boundary_impl(
                 response,
                 replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
             );
-            return Ok(());
+            return Ok(ExecutionBoundaryEvidence { execution_id: None });
         }
     };
     if !replay_admission.is_fresh() {
-        response["_host_execution_id"] = Value::String(replay_admission.execution_id().to_owned());
+        let execution_id = replay_admission.execution_id().to_owned();
         set_replay_result(
             response,
             replay_runtime::ReplayDispatchResult::from_recovered_state(replay_admission.state()),
         );
-        return Ok(());
+        return Ok(ExecutionBoundaryEvidence {
+            execution_id: Some(execution_id),
+        });
     }
-    let execution_id = dispatch::ExecutionId::from_replay(replay_admission.execution_id());
-    response["_host_execution_id"] = Value::String(replay_admission.execution_id().to_owned());
+    let execution_id_str = replay_admission.execution_id().to_owned();
+    let execution_id = dispatch::ExecutionId::from_replay(&execution_id_str);
+
+    // Execution identity is now established. All subsequent paths carry it.
+    let trusted_evidence = ExecutionBoundaryEvidence {
+        execution_id: Some(execution_id_str.clone()),
+    };
 
     // Approved Ask is consumed exactly once only after the fresh claim is
     // durable and while the identity guard is held. Any failure leaves the
@@ -2292,7 +2300,7 @@ fn execute_boundary_impl(
                 response,
                 replay_runtime::ReplayDispatchResult::RequiresManualResolution,
             );
-            return Ok(());
+            return Ok(trusted_evidence);
         }
     }
 
@@ -2308,7 +2316,7 @@ fn execute_boundary_impl(
             response,
             replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
         );
-        return Ok(());
+        return Ok(trusted_evidence);
     }
 
     // Attempt durable Trail intent recording.
@@ -2322,8 +2330,6 @@ fn execute_boundary_impl(
     ) {
         Ok(ready) => ready,
         Err(err) => {
-            // Zero executor calls.  The durable Trail may contain no bytes,
-            // a partial record, or an unconfirmed complete record.
             json_trail.push(trail_entry(
                 sequence,
                 "authorisation",
@@ -2333,7 +2339,7 @@ fn execute_boundary_impl(
                 Some(&action_id.0),
             ));
             response["execution_status"] = Value::String("denied".into());
-            return Ok(());
+            return Ok(trusted_evidence);
         }
     };
 
@@ -2356,7 +2362,7 @@ fn execute_boundary_impl(
                 Some(&ready.action_id().0),
             ));
             response["execution_status"] = Value::String("unattempted".into());
-            return Ok(());
+            return Ok(trusted_evidence);
         }
     };
 
@@ -2368,7 +2374,7 @@ fn execute_boundary_impl(
             response,
             replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
         );
-        return Ok(());
+        return Ok(trusted_evidence);
     }
 
     // This volatile state transition is the invocation boundary: immediately
@@ -2487,7 +2493,7 @@ fn execute_boundary_impl(
             }
             .to_owned(),
         );
-        return Ok(());
+        return Ok(trusted_evidence);
     }
 
     let terminal_state = match &execution_outcome {
@@ -2502,7 +2508,7 @@ fn execute_boundary_impl(
                 response,
                 replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
             );
-            return Ok(());
+            return Ok(trusted_evidence);
         }
     };
     if replay_admission
@@ -2513,7 +2519,7 @@ fn execute_boundary_impl(
             response,
             replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
         );
-        return Ok(());
+        return Ok(trusted_evidence);
     }
 
     let presentation_status = if status == "succeeded" {
@@ -2550,7 +2556,7 @@ fn execute_boundary_impl(
                 if let Some(object) = response.as_object_mut() {
                     object.remove("result_anchor");
                 }
-                return Ok(());
+                return Ok(trusted_evidence);
             }
         };
         let anchor = ResultAnchor::new(
@@ -2570,14 +2576,14 @@ fn execute_boundary_impl(
             if let Some(object) = response.as_object_mut() {
                 object.remove("result_anchor");
             }
-            return Ok(());
+            return Ok(trusted_evidence);
         }
     }
 
     // Keep cross-process exclusion through the Result Anchor boundary,
     // including a failing Anchor write. Drop is intentionally last.
     drop(replay_admission);
-    Ok(())
+    Ok(trusted_evidence)
 }
 
 fn set_replay_result(response: &mut Value, result: replay_runtime::ReplayDispatchResult) {
@@ -6341,9 +6347,9 @@ mod tests {
                 response["result_anchor"]["facts"]["evaluation_id"],
                 "eval-j09-001"
             );
-            // _host_execution_id may appear in the internal response for
-            // typed service-result identity threading, but the Result Anchor
-            // must never contain the execution ID.
+            // Typed execution evidence is threaded directly through
+            // ExecutionBoundaryEvidence. The Result Anchor must never
+            // contain the execution ID.
             let anchor_str = response["result_anchor"].to_string();
             assert!(
                 !anchor_str.contains(replay_runtime::test_support::TEST_EXECUTION_ID),
@@ -8509,36 +8515,105 @@ mod tests {
         );
     }
 
-    /// Planner-supplied fake execution_id does not survive into the result anchor.
+    /// Planner-supplied fake execution_id and _host_execution_id do not
+    /// survive into typed evidence.
     #[test]
     fn j14a_planner_fake_execution_id_stripped() {
-        // Build a JSON response with a fake planner execution_id.
+        // Build a JSON response with both fake planner keys.
         let mut fake = json!({
             "execution_id": "exec_fake000-0000-4000-8000-000000000000",
+            "_host_execution_id": "exec_fake001-0000-4000-8000-000000000000",
             "result_anchor": {"event_id": "test", "facts": {}}
         });
         // Simulate the stripping that dispatch_matched_response performs.
         fake.as_object_mut().unwrap().remove("execution_id");
+        fake.as_object_mut().unwrap().remove("_host_execution_id");
         assert!(
             fake.get("execution_id").is_none(),
             "planner-supplied execution_id must be stripped"
         );
+        assert!(
+            fake.get("_host_execution_id").is_none(),
+            "planner-supplied _host_execution_id must be stripped"
+        );
     }
 
-    /// Completed result exposes execution_id in public envelope.
+    /// from_response_and_evidence uses typed evidence, ignoring
+    /// _host_execution_id in the response.
     #[test]
-    fn j14a_completed_result_exposes_execution_id() {
-        let result = crate::host_execution::ExecutionServiceResult::Completed {
-            evaluation_id: "eval".into(),
-            action_id: "action".into(),
-            response: json!({}),
-            execution_id: Some("exec_00000000-0000-4000-8000-000000000000".into()),
+    fn j14a_from_response_and_evidence_ignores_host_id_in_json() {
+        let evidence = ExecutionBoundaryEvidence {
+            execution_id: Some("exec_00000000-0000-4000-8000-000000000001".into()),
         };
-        let envelope = crate::run_command::map_execution_result(&result);
+        let response = json!({
+            "execution_status": "completed",
+            "_host_execution_id": "exec_spoofed-0000-4000-8000-000000000000"
+        });
+        let result =
+            SharedExecutionResult::from_response_and_evidence(&response, evidence).unwrap();
         assert_eq!(
-            envelope.data.get("execution_id").and_then(|v| v.as_str()),
-            Some("exec_00000000-0000-4000-8000-000000000000")
+            result.execution_id,
+            Some("exec_00000000-0000-4000-8000-000000000001".into())
         );
-        assert_eq!(envelope.data["execution_status"], "completed");
+        assert_eq!(result.outcome, SharedExecutionOutcome::Completed);
+        // The response JSON still has _host_execution_id, but it was ignored.
+        assert_eq!(
+            response["_host_execution_id"],
+            "exec_spoofed-0000-4000-8000-000000000000"
+        );
+    }
+
+    /// from_response_and_evidence for audit_failed outcome uses evidence.
+    #[test]
+    fn j14a_from_response_and_evidence_no_id_when_evidence_is_none() {
+        let evidence = ExecutionBoundaryEvidence { execution_id: None };
+        let response = json!({
+            "execution_status": "completed",
+            "_host_execution_id": "exec_spoofed-0000-4000-8000-000000000000"
+        });
+        let result =
+            SharedExecutionResult::from_response_and_evidence(&response, evidence).unwrap();
+        assert_eq!(result.execution_id, None);
+        assert_eq!(result.outcome, SharedExecutionOutcome::Completed);
+    }
+
+    /// A planner response containing an audit_failure trail entry cannot
+    /// manufacture an execution identity when evidence is None.
+    #[test]
+    fn j14a_audit_failure_without_evidence_has_no_id() {
+        let evidence = ExecutionBoundaryEvidence { execution_id: None };
+        let response = json!({
+            "execution_status": "failed",
+            "trail": [{"kind": "audit_failure", "message": "trail failed"}],
+            "_host_execution_id": "exec_spoofed-0000-4000-8000-000000000000"
+        });
+        // Simulate the audit_failure check from execute_shared_boundary.
+        let has_audit_failure = response
+            .get("trail")
+            .and_then(Value::as_array)
+            .is_some_and(|entries| entries.iter().any(|entry| entry["kind"] == "audit_failure"));
+        assert!(has_audit_failure);
+        // With evidence None, the execution_id must be None.
+        let result = SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id: evidence.execution_id,
+        };
+        assert_eq!(result.execution_id, None);
+    }
+
+    /// audit_failure with evidence carries the trusted ID.
+    #[test]
+    fn j14a_audit_failure_with_evidence_carries_id() {
+        let evidence = ExecutionBoundaryEvidence {
+            execution_id: Some("exec_00000000-0000-4000-8000-000000000003".into()),
+        };
+        let result = SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id: evidence.execution_id,
+        };
+        assert_eq!(
+            result.execution_id,
+            Some("exec_00000000-0000-4000-8000-000000000003".into())
+        );
     }
 }

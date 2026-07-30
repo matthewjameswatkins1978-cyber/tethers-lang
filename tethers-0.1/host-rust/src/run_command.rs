@@ -321,10 +321,16 @@ pub(crate) fn map_execution_result(result: &ExecutionServiceResult) -> CliEnvelo
         ExecutionServiceResult::Denied {
             evaluation_id,
             action_id,
+            execution_id,
             ..
         } => status_envelope(
             OutcomeStatus::Denied,
-            execution_data(evaluation_id, Some(action_id), Some("denied")),
+            execution_data_with_id(
+                evaluation_id,
+                Some(action_id),
+                Some("denied"),
+                execution_id.as_deref(),
+            ),
         ),
         ExecutionServiceResult::NoActions { evaluation_id, .. } => status_envelope(
             OutcomeStatus::NoActions,
@@ -463,14 +469,16 @@ pub(crate) fn map_execution_result(result: &ExecutionServiceResult) -> CliEnvelo
         ExecutionServiceResult::ReplayPersistenceUnavailable {
             evaluation_id,
             action_id,
+            execution_id,
         } => error_with_data(
             OutcomeStatus::Unavailable,
             "REPLAY_PERSISTENCE_UNAVAILABLE",
             "replay persistence is unavailable",
-            execution_data(
+            execution_data_with_id(
                 evaluation_id,
                 Some(action_id),
                 Some("replay_persistence_unavailable"),
+                execution_id.as_deref(),
             ),
         ),
         ExecutionServiceResult::Interrupted => error_with_data(
@@ -667,6 +675,7 @@ mod tests {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
                 reason: String::new(),
+                execution_id: None,
             },
             OutcomeStatus::Denied,
             None,
@@ -776,6 +785,7 @@ mod tests {
             ExecutionServiceResult::ReplayPersistenceUnavailable {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
+                execution_id: None,
             },
             OutcomeStatus::Unavailable,
             Some("REPLAY_PERSISTENCE_UNAVAILABLE"),
