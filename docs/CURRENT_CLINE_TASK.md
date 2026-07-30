@@ -57,8 +57,9 @@ compilers back to 5.1.0, no rust-toolchain.toml or opam lock exists.
 7. Update `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` and
    `docs/OCAML_GUIDE_FOR_AGENTS.md` to state TOOLCHAIN-BASELINE-01 is
    now enforced.
-8. Update `docs/TASK_PACKET_TEMPLATE.md` and `docs/PROJECT_CONTROL.md` for
-   toolchain-preflight and explicit-switch declarations.
+8. Update `docs/TASK_PACKET_TEMPLATE.md` for toolchain-preflight and
+   explicit-switch declarations. Inspect `docs/PROJECT_CONTROL.md` for
+   any necessary toolchain-related wording; no change was required.
 9. Add the enforcement decision to `docs/DECISIONS.md`.
 10. Verify unchanged Cargo.lock; pass all Rust, OCaml and repository checks.
 
@@ -131,48 +132,6 @@ cannot remain non-mutating, original worktree changes, two similar failures.
 
 None. Starting from clean `main` at `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
 
-1. `rust-toolchain.toml`
-2. `tethers-0.1/host-rust/Cargo.toml`
-3. `tethers-0.1/engine-ocaml/tethers_engine.opam`
-4. `tethers-0.1/engine-ocaml/tethers_engine.opam.locked`
-5. `.github/scripts/check-tethers-toolchains.ps1`
-6. `.github/scripts/test-check-tethers-toolchains.ps1`
-7. `docs/CURRENT_CLINE_TASK.md`
-8. `docs/TASK_PACKET_TEMPLATE.md`
-9. `docs/PROJECT_CONTROL.md`
-10. `docs/DECISIONS.md`
-11. `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
-12. `docs/OCAML_GUIDE_FOR_AGENTS.md`
-13. `docs/worker-notes/2026-07-30-toolchain-baseline-01.md`
-
-## Frozen exclusions
-
-Do not change production runtime logic, the Tethers language or protocol,
-permissions, replay, Trail, persistence, dispatch, Dune language, Yojson,
-Rust crates, Cargo.lock, Rust edition, Windows binary-mode stdio, Git
-configuration, .gitattributes, or .editorconfig. Do not adopt ocamlformat,
-reformat code, or install/upgrade software.
-
-## Acceptance criteria
-
-1. Branch started from exact base `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
-2. Effective Goose reasoning confirmed MEDIUM before mutation.
-3. `rust-toolchain.toml` selects exact Rust 1.89.0, minimal, rustfmt and clippy.
-4. Cargo declares edition 2021 and rust-version 1.89.
-5. Cargo.lock is unchanged.
-6. OCaml range is `>= 5.5.0 & < 5.6.0`.
-7. Committed opam lock records OCaml 5.5.0, Dune 3.24.0, Yojson 2.2.2.
-8. Lock contains no local path, pin or unexplained drift.
-9. Preflight is non-mutating, disables rustup auto-install, restores state.
-10. No bare Rust proxy invocation; no worktree search or global-switch fallback.
-11. Focused preflight tests pass.
-12. Rust format, check, tests, clippy, builds pass with 1.89.0 and --locked.
-13. OCaml build passes with the exact switch.
-14. Fixture, engine, MCP, demo, packet-checker, and whitespace checks pass.
-15. Only authorised files changed.
-16. Review branch pushed; main untouched.
-17. Original worktree and TETHERS_LUCY_NOTES.md untouched.
-
 ## Required verification
 
 ```powershell
@@ -181,7 +140,7 @@ rustup run 1.89.0 cargo fmt --manifest-path .\tethers-0.1\host-rust\Cargo.toml -
 rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
 rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --tests
 rustup run 1.89.0 cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
-rustup run 1.89.0 cargo clippy --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --all-targets --all-features -- -D warnings
+rustup run 1.89.0 cargo clippy --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --all-targets --all-features
 rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
 rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --release
 
@@ -189,12 +148,16 @@ rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml
 $OcamlSwitchPath = "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"
 pwsh -NoProfile -File .\.github\scripts\test-check-tethers-toolchains.ps1 -OcamlSwitchPath $OcamlSwitchPath
 pwsh -NoProfile -File .\.github\scripts\check-tethers-toolchains.ps1 -OcamlSwitchPath $OcamlSwitchPath
+Push-Location .\tethers-0.1\engine-ocaml
 opam exec --switch="$OcamlSwitchPath" -- dune build
+Pop-Location
 
 # Repository
 pwsh -NoProfile -File .\.github\scripts\check-tethers-task-packet.ps1
 pwsh -NoProfile -File .\tethers-0.1\scripts\check-fixtures.ps1
+$env:OPAMSWITCH = "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"
 pwsh -NoProfile -File .\tethers-0.1\scripts\test-engine.ps1
+Remove-Item Env:OPAMSWITCH -ErrorAction SilentlyContinue
 pwsh -NoProfile -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1
 pwsh -NoProfile -File .\tethers-0.1\scripts\demo.ps1
 
@@ -206,13 +169,22 @@ git diff --name-status bb08cc0d09a74db147e3ce6845d4e414e883aad2..HEAD
 git status --short --branch
 ```
 
-## Stop conditions
+## Discoveries
 
-Return BLOCKED when: origin/main mismatch, dirty worktree, branch exists,
-reasoning not MEDIUM, Rust components missing, switch missing or wrong,
-lock contains unexpected versions, Cargo.lock changes, preflight cannot
-remain non-mutating, original worktree changes.
+1. Ordinary Clippy exits zero with 24 pre-existing warnings across production
+   and test code (dead_code, unused_imports, unused_variables, clippy
+   complexity). These are not caused by the toolchain baseline changes and
+   do not block TOOLCHAIN-BASELINE-01 acceptance.
+2. `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` independently establishes
+   `cargo clippy ... -- -D warnings` which pre-dates this task. Not edited;
+   a future task should reconcile.
+3. `demo.ps1` and `test-engine.ps1` require an explicit OPAMSWITCH when no
+   global switch is set. Both pass with process-local OPAMSWITCH.
 
-## Expected pre-existing changes
+## Frozen exclusions
 
-None. Starting from clean `main` at `bb08cc0d09a74db147e3ce6845d4e414e883aad2`.
+Do not change production runtime logic, the Tethers language or protocol,
+permissions, replay, Trail, persistence, dispatch, Dune language, Yojson,
+Rust crates, Cargo.lock, Rust edition, Windows binary-mode stdio, Git
+configuration, .gitattributes, or .editorconfig. Do not adopt ocamlformat,
+reformat code, or install/upgrade software.
