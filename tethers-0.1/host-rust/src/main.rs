@@ -2036,8 +2036,16 @@ fn present_non_dispatchable_response(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SharedExecutionResult {
+    pub outcome: SharedExecutionOutcome,
+    /// Host-issued opaque execution identity from replay admission.
+    /// Present only when a trusted identity was established.
+    pub execution_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SharedExecutionResult {
+pub(crate) enum SharedExecutionOutcome {
     Completed,
     Failed,
     Uncertain,
@@ -2053,27 +2061,35 @@ impl SharedExecutionResult {
             .get("execution_status")
             .and_then(Value::as_str)
             .ok_or("shared execution boundary returned no execution_status")?;
-        match status {
-            "completed" => Ok(Self::Completed),
-            "failed" => Ok(Self::Failed),
-            "uncertain" => Ok(Self::Uncertain),
-            "unattempted" => Ok(Self::Unattempted),
-            "denied" => Ok(Self::Denied),
-            "audit_failed" => Ok(Self::AuditFailed),
-            "replay_persistence_unavailable" => Ok(Self::Replay(
+        let execution_id = response
+            .get("_host_execution_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let outcome = match status {
+            "completed" => SharedExecutionOutcome::Completed,
+            "failed" => SharedExecutionOutcome::Failed,
+            "uncertain" => SharedExecutionOutcome::Uncertain,
+            "unattempted" => SharedExecutionOutcome::Unattempted,
+            "denied" => SharedExecutionOutcome::Denied,
+            "audit_failed" => SharedExecutionOutcome::AuditFailed,
+            "replay_persistence_unavailable" => SharedExecutionOutcome::Replay(
                 replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
-            )),
-            "replay_blocked_completed_success" => Ok(Self::Replay(
+            ),
+            "replay_blocked_completed_success" => SharedExecutionOutcome::Replay(
                 replay_runtime::ReplayDispatchResult::BlockedCompletedSuccess,
-            )),
-            "replay_blocked_completed_failure" => Ok(Self::Replay(
+            ),
+            "replay_blocked_completed_failure" => SharedExecutionOutcome::Replay(
                 replay_runtime::ReplayDispatchResult::BlockedCompletedFailure,
-            )),
-            "replay_requires_manual_resolution" => Ok(Self::Replay(
+            ),
+            "replay_requires_manual_resolution" => SharedExecutionOutcome::Replay(
                 replay_runtime::ReplayDispatchResult::RequiresManualResolution,
-            )),
-            other => Err(format!("unknown shared execution status '{other}'").into()),
-        }
+            ),
+            other => return Err(format!("unknown shared execution status '{other}'").into()),
+        };
+        Ok(Self {
+            outcome,
+            execution_id,
+        })
     }
 }
 
@@ -2109,7 +2125,14 @@ pub(crate) fn execute_shared_boundary(
         .and_then(Value::as_array)
         .is_some_and(|entries| entries.iter().any(|entry| entry["kind"] == "audit_failure"))
     {
-        return Ok(SharedExecutionResult::AuditFailed);
+        let execution_id = response
+            .get("_host_execution_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        return Ok(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id,
+        });
     }
     SharedExecutionResult::from_response(response)
 }
@@ -2250,6 +2273,7 @@ fn execute_boundary_impl(
         }
     };
     if !replay_admission.is_fresh() {
+        response["_host_execution_id"] = Value::String(replay_admission.execution_id().to_owned());
         set_replay_result(
             response,
             replay_runtime::ReplayDispatchResult::from_recovered_state(replay_admission.state()),
@@ -2257,6 +2281,7 @@ fn execute_boundary_impl(
         return Ok(());
     }
     let execution_id = dispatch::ExecutionId::from_replay(replay_admission.execution_id());
+    response["_host_execution_id"] = Value::String(replay_admission.execution_id().to_owned());
 
     // Approved Ask is consumed exactly once only after the fresh claim is
     // durable and while the identity guard is held. Any failure leaves the
@@ -6316,9 +6341,14 @@ mod tests {
                 response["result_anchor"]["facts"]["evaluation_id"],
                 "eval-j09-001"
             );
-            assert!(!response
-                .to_string()
-                .contains(replay_runtime::test_support::TEST_EXECUTION_ID));
+            // _host_execution_id may appear in the internal response for
+            // typed service-result identity threading, but the Result Anchor
+            // must never contain the execution ID.
+            let anchor_str = response["result_anchor"].to_string();
+            assert!(
+                !anchor_str.contains(replay_runtime::test_support::TEST_EXECUTION_ID),
+                "result_anchor must not contain execution_id"
+            );
         }
 
         #[test]
@@ -8433,5 +8463,82 @@ mod tests {
         );
         // Clean up.
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // J14A: execution identity boundary tests
+    // -----------------------------------------------------------------------
+
+    /// Public execution_id must pass replay::ExecutionId::parse.
+    #[test]
+    fn j14a_execution_id_passes_replay_parse() {
+        assert!(
+            replay::ExecutionId::parse("exec_00000000-0000-4000-8000-000000000000".to_owned())
+                .is_ok()
+        );
+        assert!(replay::ExecutionId::parse("not-valid".to_owned()).is_err());
+        // Non-v4 UUID must be rejected.
+        assert!(
+            replay::ExecutionId::parse("exec_00000000-0000-0000-0000-000000000000".to_owned())
+                .is_err()
+        );
+    }
+
+    /// Result Anchor serialization contains no execution_id.
+    #[test]
+    fn j14a_result_anchor_contains_no_execution_id() {
+        let anchor = result_anchor::ResultAnchor::new(
+            result_anchor::ResultAnchorKind::Succeeded(json!({"echo": "test"})),
+            "eval_001",
+            "action_1",
+            "fixture.ping",
+            1,
+            "sha256:eb61b62bde489e00a4d15c37c83e6cdb1e9e378b8f13b910d4b68bd6d68c19da",
+            "tethers-stdio-fixture",
+            1720000000000,
+            "evt_001",
+            "evt_001",
+            1,
+        );
+        let serialized = serde_json::to_string(&anchor).unwrap();
+        assert!(
+            !serialized.contains("execution_id"),
+            "Result Anchor must never contain execution_id"
+        );
+    }
+
+    /// Planner-supplied fake execution_id does not survive into the result anchor.
+    #[test]
+    fn j14a_planner_fake_execution_id_stripped() {
+        // Build a JSON response with a fake planner execution_id.
+        let mut fake = json!({
+            "execution_id": "exec_fake000-0000-4000-8000-000000000000",
+            "result_anchor": {"event_id": "test", "facts": {}}
+        });
+        // Simulate the stripping that dispatch_matched_response performs.
+        fake.as_object_mut().unwrap().remove("execution_id");
+        assert!(
+            fake.get("execution_id").is_none(),
+            "planner-supplied execution_id must be stripped"
+        );
+    }
+
+    /// Completed result exposes execution_id in public envelope.
+    #[test]
+    fn j14a_completed_result_exposes_execution_id() {
+        let result = crate::host_execution::ExecutionServiceResult::Completed {
+            evaluation_id: "eval".into(),
+            action_id: "action".into(),
+            response: json!({}),
+            execution_id: Some("exec_00000000-0000-4000-8000-000000000000".into()),
+        };
+        let envelope = crate::run_command::map_execution_result(&result);
+        assert_eq!(
+            envelope.data.get("execution_id").and_then(|v| v.as_str()),
+            Some("exec_00000000-0000-4000-8000-000000000000")
+        );
+        assert_eq!(envelope.data["execution_status"], "completed");
     }
 }

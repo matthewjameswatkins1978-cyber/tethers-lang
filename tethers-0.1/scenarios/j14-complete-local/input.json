@@ -1,0 +1,21 @@
+{
+  "format_version": "1",
+  "evaluation_id": "eval_j14_complete_001",
+  "tether": {
+    "id": "j14-complete",
+    "version": "1"
+  },
+  "event": {
+    "id": "evt_j14_complete_001",
+    "name": "coding.task_completed",
+    "data": {
+      "project": "lantern-keeper",
+      "task": "LK-39",
+      "path": "projects/LK-39"
+    }
+  },
+  "facts": {
+    "project.type": "software",
+    "task.changed_files": 3
+  }
+}

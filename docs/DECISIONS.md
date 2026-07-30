@@ -1,4 +1,19 @@
 # Decisions
+## 2026-07-30: J14A public execution identity and positive scenario
+
+Decision: public run data exposes the exact host-issued execution ID when
+replay admission established a trusted identity. Callers and planners cannot
+provide or derive that identity. Result Anchor schema remains unchanged. Trail
+accepts the returned identity directly. Exact replay returns the same identity
+and causes no second effect. The canonical J14A scenario proves check, run,
+trail and replay. J14 remains incomplete until the negative matrix is accepted.
+
+Reason: the public run command previously did not expose the
+execution ID required by the trail command, breaking the run-to-trail
+round-trip. The typed ExecutionServiceResult boundary now carries trusted
+identity evidence without changing replay ID generation, storage format,
+or the Result Anchor schema.
+
 ## 2026-07-30: J13C public Trail inspection boundary
 
 Decision: `tethers-reference-host trail` accepts exactly

@@ -385,6 +385,10 @@ try {
         Assert-Equal $envelope.data.evaluation_id "eval_demo_001" "evaluation ID was not preserved."
         Assert-True ($null -ne $envelope.data.result_anchor) "completed run did not expose its Result Anchor."
         Assert-Equal (Get-MethodCount $allow.Marker "tools/call") 1 "expected one effectful provider call."
+        # J14A: execution_id is present
+        Assert-True ($null -ne $envelope.data.execution_id) "completed run must expose execution_id"
+        $script:j13bExecId = $envelope.data.execution_id
+        Assert-True ($script:j13bExecId -match "^exec_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$") "execution_id format"
         $entries = @(Get-Content -LiteralPath $trailPath | ForEach-Object { $_ | ConvertFrom-Json })
         $admissionIndex = [array]::FindIndex($entries, [Predicate[object]]{ param($entry) $entry.PSObject.Properties["kind"] -and $entry.kind -eq "event_admitted" })
         $intentIndex = [array]::FindIndex($entries, [Predicate[object]]{ param($entry) $null -ne $entry.PSObject.Properties["capability_name"] })
@@ -397,6 +401,9 @@ try {
         $envelope = ConvertFrom-SingleEnvelope $replay "completed" 0
         Assert-Equal $envelope.data.execution_status "replay_blocked_completed_success" "replay status mismatch."
         Assert-Equal (Get-MethodCount $allow.Marker "tools/call") 1 "replay must not invoke the provider."
+        # J14A: replay returns the same execution_id
+        Assert-True ($null -ne $envelope.data.execution_id) "replay must expose execution_id"
+        Assert-Equal $envelope.data.execution_id $script:j13bExecId "replay execution_id must match first run"
     }
 
     Invoke-Case "not-matched has no effectful provider call" {
@@ -406,8 +413,10 @@ try {
         $input = Join-Path $workspace.Root "input.json"
         Write-RunInput $input -EventName "coding.other"
         $result = Invoke-Run $workspace $input (Join-Path $workspace.Root "trail.jsonl") $root
-        $null = ConvertFrom-SingleEnvelope $result "no_actions" 0
+        $envelope = ConvertFrom-SingleEnvelope $result "no_actions" 0
         Assert-Equal (Get-MethodCount $workspace.Marker "tools/call") 0 "not-matched must not call the provider."
+        # J14A: no_actions exposes no execution_id
+        Assert-True ($null -eq $envelope.data.PSObject.Properties["execution_id"] -or $null -eq $envelope.data.execution_id) "no_actions must not expose execution_id"
     }
 
     Invoke-Case "Deny has no effectful provider call" {
@@ -417,8 +426,10 @@ try {
         $input = Join-Path $workspace.Root "input.json"
         Write-RunInput $input
         $result = Invoke-Run $workspace $input (Join-Path $workspace.Root "trail.jsonl") $root
-        $null = ConvertFrom-SingleEnvelope $result "denied" 0
+        $envelope = ConvertFrom-SingleEnvelope $result "denied" 0
         Assert-Equal (Get-MethodCount $workspace.Marker "tools/call") 0 "Deny must not call the provider."
+        # J14A: Deny exposes no execution_id
+        Assert-True ($null -eq $envelope.data.PSObject.Properties["execution_id"] -or $null -eq $envelope.data.execution_id) "Deny must not expose execution_id"
     }
 
     Invoke-Case "Ask records approval_requested without a public approval ID" {
@@ -434,6 +445,8 @@ try {
         Assert-Equal (Get-MethodCount $workspace.Marker "tools/call") 0 "Ask must not call the provider."
         Assert-True ((Get-Content -Raw -LiteralPath $trail) -match '"approval_requested"') "Ask Trail entry is missing."
         Assert-True ($null -ne $envelope.data.action_id) "Ask result omitted action ID."
+        # J14A: Ask exposes no execution_id
+        Assert-True ($null -eq $envelope.data.PSObject.Properties["execution_id"] -or $null -eq $envelope.data.execution_id) "Ask must not expose execution_id"
     }
 
     Invoke-Case "unprovisioned replay root is unavailable before provider effect" {
@@ -444,6 +457,8 @@ try {
         $envelope = ConvertFrom-SingleEnvelope $result "unavailable" 4
         Assert-Equal $envelope.error.code "REPLAY_PERSISTENCE_UNAVAILABLE" "replay unavailable code mismatch."
         Assert-Equal (Get-MethodCount $workspace.Marker "tools/call") 0 "unprovisioned root must not call provider."
+        # J14A: pre-admission unavailable exposes no execution_id
+        Assert-True ($null -eq $envelope.data.PSObject.Properties["execution_id"] -or $null -eq $envelope.data.execution_id) "unavailable must not expose execution_id"
     }
 
     Invoke-Case "invalid public input stops before engine or provider launch" {

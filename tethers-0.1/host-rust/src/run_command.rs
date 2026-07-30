@@ -313,9 +313,10 @@ pub(crate) fn map_execution_result(result: &ExecutionServiceResult) -> CliEnvelo
             evaluation_id,
             action_id,
             response,
+            execution_id,
         } => status_envelope(
             OutcomeStatus::Completed,
-            completed_data(evaluation_id, action_id, response),
+            completed_data(evaluation_id, action_id, response, execution_id.as_deref()),
         ),
         ExecutionServiceResult::Denied {
             evaluation_id,
@@ -355,78 +356,108 @@ pub(crate) fn map_execution_result(result: &ExecutionServiceResult) -> CliEnvelo
         ExecutionServiceResult::Failed {
             evaluation_id,
             action_id,
+            execution_id,
             ..
         } => error_with_data(
             OutcomeStatus::Failed,
             "ACTION_FAILED",
             "Action failed",
-            execution_data(evaluation_id, Some(action_id), Some("failed")),
+            execution_data_with_id(
+                evaluation_id,
+                Some(action_id),
+                Some("failed"),
+                execution_id.as_deref(),
+            ),
         ),
         ExecutionServiceResult::Uncertain {
             evaluation_id,
             action_id,
+            execution_id,
             ..
         } => error_with_data(
             OutcomeStatus::Uncertain,
             "ACTION_UNCERTAIN",
             "Action outcome is uncertain",
-            execution_data(evaluation_id, Some(action_id), Some("uncertain")),
+            execution_data_with_id(
+                evaluation_id,
+                Some(action_id),
+                Some("uncertain"),
+                execution_id.as_deref(),
+            ),
         ),
         ExecutionServiceResult::AuditFailed {
             evaluation_id,
             action_id,
+            execution_id,
             ..
         } => error_with_data(
             OutcomeStatus::AuditFailed,
             "EXECUTION_AUDIT_FAILED",
             "execution audit could not be confirmed",
-            execution_data(evaluation_id, Some(action_id), Some("audit_failed")),
+            execution_data_with_id(
+                evaluation_id,
+                Some(action_id),
+                Some("audit_failed"),
+                execution_id.as_deref(),
+            ),
         ),
         ExecutionServiceResult::Unattempted {
             evaluation_id,
             action_id,
+            execution_id,
             ..
         } => error_with_data(
             OutcomeStatus::Failed,
             "ACTION_UNATTEMPTED",
             "Action was not attempted",
-            execution_data(evaluation_id, Some(action_id), Some("unattempted")),
+            execution_data_with_id(
+                evaluation_id,
+                Some(action_id),
+                Some("unattempted"),
+                execution_id.as_deref(),
+            ),
         ),
         ExecutionServiceResult::ReplayBlockedCompletedSuccess {
             evaluation_id,
             action_id,
+            execution_id,
         } => status_envelope(
             OutcomeStatus::Completed,
-            execution_data(
+            execution_data_with_id(
                 evaluation_id,
                 Some(action_id),
                 Some("replay_blocked_completed_success"),
+                execution_id.as_deref(),
             ),
         ),
         ExecutionServiceResult::ReplayBlockedCompletedFailure {
             evaluation_id,
             action_id,
+            execution_id,
         } => error_with_data(
             OutcomeStatus::Failed,
             "REPLAY_BLOCKED_COMPLETED_FAILURE",
             "replay is blocked by a prior completed failure",
-            execution_data(
+            execution_data_with_id(
                 evaluation_id,
                 Some(action_id),
                 Some("replay_blocked_completed_failure"),
+                execution_id.as_deref(),
             ),
         ),
         ExecutionServiceResult::ReplayRequiresManualResolution {
             evaluation_id,
             action_id,
+            execution_id,
         } => error_with_data(
             OutcomeStatus::Uncertain,
             "REPLAY_REQUIRES_MANUAL_RESOLUTION",
             "replay requires manual resolution",
-            execution_data(
+            execution_data_with_id(
                 evaluation_id,
                 Some(action_id),
                 Some("replay_requires_manual_resolution"),
+                execution_id.as_deref(),
             ),
         ),
         ExecutionServiceResult::ReplayPersistenceUnavailable {
@@ -542,8 +573,31 @@ fn execution_data(
     Value::Object(data)
 }
 
-fn completed_data(evaluation_id: &str, action_id: &str, response: &Value) -> Value {
-    let mut data = execution_data(evaluation_id, Some(action_id), Some("completed"));
+fn execution_data_with_id(
+    evaluation_id: &str,
+    action_id: Option<&str>,
+    execution_status: Option<&str>,
+    execution_id: Option<&str>,
+) -> Value {
+    let mut data = execution_data(evaluation_id, action_id, execution_status);
+    if let (Some(obj), Some(exec_id)) = (data.as_object_mut(), execution_id) {
+        obj.insert("execution_id".to_owned(), Value::String(exec_id.to_owned()));
+    }
+    data
+}
+
+fn completed_data(
+    evaluation_id: &str,
+    action_id: &str,
+    response: &Value,
+    execution_id: Option<&str>,
+) -> Value {
+    let mut data = execution_data_with_id(
+        evaluation_id,
+        Some(action_id),
+        Some("completed"),
+        execution_id,
+    );
     if let Some(anchor) = response.get("result_anchor") {
         data["result_anchor"] = anchor.clone();
     }
@@ -579,6 +633,7 @@ mod tests {
             evaluation_id: "eval".to_owned(),
             action_id: "action".to_owned(),
             response: json!({}),
+            execution_id: None,
         }
     }
 
@@ -602,6 +657,7 @@ mod tests {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
                 response: json!({}),
+                execution_id: None,
             },
             OutcomeStatus::Completed,
             None,
@@ -654,6 +710,7 @@ mod tests {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
                 reason: String::new(),
+                execution_id: None,
             },
             OutcomeStatus::Failed,
             Some("ACTION_FAILED"),
@@ -663,6 +720,7 @@ mod tests {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
                 reason: String::new(),
+                execution_id: None,
             },
             OutcomeStatus::Uncertain,
             Some("ACTION_UNCERTAIN"),
@@ -672,6 +730,7 @@ mod tests {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
                 reason: String::new(),
+                execution_id: None,
             },
             OutcomeStatus::AuditFailed,
             Some("EXECUTION_AUDIT_FAILED"),
@@ -681,6 +740,7 @@ mod tests {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
                 reason: String::new(),
+                execution_id: None,
             },
             OutcomeStatus::Failed,
             Some("ACTION_UNATTEMPTED"),
@@ -689,6 +749,7 @@ mod tests {
             ExecutionServiceResult::ReplayBlockedCompletedSuccess {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
+                execution_id: None,
             },
             OutcomeStatus::Completed,
             None,
@@ -697,6 +758,7 @@ mod tests {
             ExecutionServiceResult::ReplayBlockedCompletedFailure {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
+                execution_id: None,
             },
             OutcomeStatus::Failed,
             Some("REPLAY_BLOCKED_COMPLETED_FAILURE"),
@@ -705,6 +767,7 @@ mod tests {
             ExecutionServiceResult::ReplayRequiresManualResolution {
                 evaluation_id: e.clone(),
                 action_id: a.clone(),
+                execution_id: None,
             },
             OutcomeStatus::Uncertain,
             Some("REPLAY_REQUIRES_MANUAL_RESOLUTION"),

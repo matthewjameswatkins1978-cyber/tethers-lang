@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Task: `J13C - strict public trail command`
+Task: `J14A - public run-to-trail identity and complete positive scenario`
 
 Owner: `Goose`
 
@@ -10,130 +10,88 @@ Status: `COMPLETE`
 
 Task colour: `Amber`
 
-Route: `Goose Medium - bounded Amber public inspection route`
+Route: `Goose Medium - Amber public integration proof`
 
-Base commit: `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`
+Base commit: `0c64b48d860ce2178858c4c5d8a0af38708bc7cc`
 
-Branch: `goose/j13c-trail-command`
+Branch: `goose/j14a-complete-local-scenario`
 
-Worker note: `docs/worker-notes/2026-07-30-j13c-trail-command.md`
+Worker note: `docs/worker-notes/2026-07-30-j14a-complete-local-scenario.md`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
 ## Objective
 
-Add one strict public command: `tethers-reference-host trail --trail <ABSOLUTE_PATH> --execution-id <exec_UUID>`.  The command reads one existing append-only JSONL Trail file, selects the entries belonging to exactly one execution identity, preserves their file order, and emits one stable `tethers.cli/1` JSON envelope.  This is a read-only inspection route.
+Create one reproducible native-Windows positive scenario using the public
+operational commands check, run, and trail. Expose the host-issued execution ID
+through the public run envelope.
 
 ## Relevant background and existing behaviour
 
-J13A (`check`) validates Tether source, engine, and provider availability.  J13B (`run`) submits one explicit Anchor and Facts through the real execution slice.  J13C completes J13 by providing read-only Trail inspection.  J14 depends on J13 being complete.
-
-The existing `replay::ExecutionId::parse` validates the `exec_<UUID>` format and remains authoritative.  Trail files are append-only JSONL with a top-level `execution_id` field on relevant entries.  Unrelated audit entries (event_admitted, etc.) have no `execution_id` and must be skipped.
+J13A (`check`) validates Tether source, engine, and provider availability.
+J13B (`run`) submits one explicit Anchor and Facts through the real execution
+slice. J13C (`trail`) provides read-only Trail inspection. The public run
+command did not expose the host-issued execution ID required by trail.
 
 ## Required behaviour
 
-1. Add `Trail` variant to CLI enum with `--trail` and `--execution-id` mandatory options.
-2. Create `trail_command.rs` with read-only inspection coordinator.
-3. Wire from `main.rs`.
-4. Validate execution ID through `ExecutionId::parse` before opening the file.
-5. Validate trail path: absolute, exists, regular file, read-only.
-6. Read JSONL sequentially with 8 MiB line limit, UTF-8, LF/CRLF accepted.
-7. Reject blank lines, malformed JSON, duplicate keys, non-object JSON, non-string execution_id.
-8. Return matching entries in original file order.
-9. Zero matches returns not_found/9 with EXECUTION_NOT_FOUND.
-10. Malformed content returns audit_failed/8 with TRAIL_INVALID and safe line number.
-11. Emit exactly one compact JSON document to stdout.
-12. No mutation of Trail file, replay storage, or repository files.
-13. Create focused Rust tests (35 cases: 7 CLI parsing, 28 trail command).
-14. Create public acceptance script (19 cases).
-15. Update DECISIONS.md.
+1. Public run envelope gains `data.execution_id` when a trusted replay
+   admission identity exists.
+2. Execution ID is never accepted from the caller, planner, or CLI layer.
+3. Result Anchor schema remains unchanged.
+4. Complete J14A scenario proves check, run, trail, and replay.
+5. Focused Rust tests prove identity presence, absence, and spoofing protection.
+6. Update J13B acceptance to prove execution_id presence/absence.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/cli.rs` - strict argument parsing
-- `tethers-0.1/host-rust/src/main.rs` - dispatch
-- `tethers-0.1/host-rust/src/trail_command.rs` - new read-only inspector
-- `tethers-0.1/scripts/test-j13c-trail.ps1` - new acceptance script
-- `docs/CURRENT_CLINE_TASK.md` - this task packet
+- `tethers-0.1/host-rust/src/main.rs` - SharedExecutionResult, execute_boundary_impl
+- `tethers-0.1/host-rust/src/host_execution.rs` - ExecutionServiceResult, map_shared_result
+- `tethers-0.1/host-rust/src/run_command.rs` - map_execution_result, execution_data
+- `tethers-0.1/scripts/test-j14a-complete-scenario.ps1` - new acceptance script
+- `tethers-0.1/scenarios/j14-complete-local/` - scenario files
 - `docs/DECISIONS.md` - decision record
-- `docs/worker-notes/2026-07-30-j13c-trail-command.md` - evidence
-
-## Frozen decisions and invariants
-
-- `ExecutionId::parse` remains authoritative for execution-ID validation.
-- Inspection is read-only; no engine, provider, replay, or mutation.
-- One explicit Trail path only; no search, replay lookup, or repair.
-- Matching top-level execution_id entries retain file order.
-- Malformed Trail content fails closed as audit_failed.
-- Zero matching entries is not_found.
-- J13 is complete only after this command is accepted.
-
-## Acceptance criteria
-
-1. valid UTF-8 across arbitrary reader boundaries.
-2. exact lexical preservation of matching JSON objects.
-3. DECISIONS.md range diff is 15 additions and 0 deletions.
-4. range git diff --check produces no output.
-5. Branch started from exact base `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`.
-6. Effective Goose reasoning confirmed MEDIUM before mutation.
-7. CLI accepts `trail --trail --execution-id` in either order, rejects missing/duplicate/unknown options.
-8. `ExecutionId::parse` reused; no second parser.
-9. Trail path validated: absolute, exists, regular file.
-10. Read-only: Trail SHA-256 unchanged after all inspections.
-11. Matching entries returned in original file order.
-12. Unrelated execution IDs omitted, audit entries skipped.
-13. Zero matches: not_found/9 with EXECUTION_NOT_FOUND.
-14. Malformed content: audit_failed/8 with TRAIL_INVALID and safe line number.
-15. Exactly one compact JSON document on stdout, no timestamp.
-16. No raw Trail data or OS diagnostics in public errors.
-17. Cargo.lock byte-identical to d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602.
-18. All Rust, OCaml, and script regressions pass.
-19. Packet checker and whitespace checks pass.
-20. Only authorised files changed.
-21. Goose worktree contains no tracked or untracked changes after completion.
-
-## Forbidden changes
-
-No Cargo manifest, Cargo.lock, OCaml, configuration, Trail writer, replay backend, or production execution file.  No engine, provider, replay, or Trail mutation.  No timestamp in any envelope.  No -D warnings or warning-attribute changes.  No main merge or push.
-
-## Stop conditions
-
-Return BLOCKED when: origin/main mismatch, dirty worktree, branch exists with different history, reasoning not MEDIUM, toolchain preflight fails, ExecutionId::parse cannot be reused, Cargo.lock changes, any production file must change, public errors expose raw data, two similar failures.
+- `docs/CURRENT_CLINE_TASK.md` - this task packet
 
 ## Expected pre-existing changes
 
-None. Starting from clean `main` at `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`.
+None. Starting from clean `0c64b48d860ce2178858c4c5d8a0af38708bc7cc` on branch
+`goose/j14a-complete-local-scenario`.
+
+## Frozen decisions and invariants
+
+- `replay::ExecutionId::parse` remains authoritative.
+- Execution ID is obtained only from successful replay admission, never from planner.
+- Result Anchor schema and serialization remain unchanged.
+- Replay does not allocate a new execution identity for replay.
+- Typed boundary: run_command consumes ExecutionServiceResult, not raw JSON.
+
+## Acceptance criteria
+
+1. Public run data exposes execution_id when trusted identity exists.
+2. Execution_id absent for Deny, Ask, NoActions, Unavailable, pre-admission failures.
+3. Planner-supplied fake execution_id is stripped.
+4. Result Anchor contains no execution_id.
+5. J14A scenario: 5 cases, check/run/trail/replay all pass.
+6. All Rust tests pass (716), including 19 new j14a_ tests.
+7. All regression scripts pass.
+8. DECISIONS.md: additions-only diff, zero deleted lines.
+9. Cargo.lock hash unchanged.
+10. Packet checker and whitespace checks pass.
+
+## Forbidden changes
+
+No OCaml, Cargo.toml, Cargo.lock, engine, provider, replay-storage changes.
+No Result Anchor schema change. No change to how execution IDs are generated.
+
+## Stop conditions
+
+Return BLOCKED when: origin/main differs, dirty worktree, reasoning not MEDIUM,
+toolchain preflight fails, Cargo.lock changes, Result Anchor must change.
 
 ## Required verification
 
-```powershell
-# Rust (all proxied through rustup run 1.89.0, RUSTUP_AUTO_INSTALL=0)
-rustup run 1.89.0 cargo fmt --manifest-path .\tethers-0.1\host-rust\Cargo.toml --check
-rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
-rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --tests
-rustup run 1.89.0 cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked j13c_ -- --nocapture
-rustup run 1.89.0 cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
-rustup run 1.89.0 cargo clippy --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --all-targets --all-features
-rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
-rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --release
-
-# Public acceptance
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13c-trail.ps1
-
-# Regressions
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13a-check.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13b-run.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\check-fixtures.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1
-pwsh -NoProfile -File .\tethers-0.1\scripts\test-engine.ps1
-pwsh -NoProfile -File .\tethers-0.1\scripts\demo.ps1
-
-# Packet checker
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-task-packet.ps1
-
-# Diff and status
-git diff --check
-git diff --stat
-git diff
-git status --short --branch
-```
+Full Rust test suite, fmt, clippy, build (debug+release).
+J14A public scenario (5 cases).
+J13A/B/C regressions, host integration scripts, engine, demo, fixtures, MCP.
+Packet checker, whitespace checks, Cargo.lock hash, DECISIONS.md numstat.

@@ -1,0 +1,63 @@
+{
+  "format_version": "0.1",
+  "tether_set": {
+    "id": "scenario.j14.complete-local",
+    "version": "1",
+    "tethers": [
+      {
+        "id": "j14-complete",
+        "version": "1",
+        "source_path": "tethers/complete.tether"
+      }
+    ],
+    "capability_requirements": [
+      {
+        "name": "fixture.ping",
+        "version": 1,
+        "reason": "J14A complete local scenario"
+      }
+    ]
+  },
+  "providers": [
+    {
+      "id": "tethers-stdio-fixture",
+      "display_name": "Tethers Stdio Fixture",
+      "transport": {
+        "kind": "stdio",
+        "command": "pwsh.exe",
+        "args": [
+          "-NoProfile",
+          "-File",
+          "__PROVIDER_SCRIPT__",
+          "-Mode",
+          "run-success",
+          "-MarkerFile",
+          "__PROVIDER_MARKER__"
+        ],
+        "protocol_version": "2025-11-25"
+      },
+      "capabilities": [
+        {
+          "name": "fixture.ping",
+          "version": 1,
+          "manifest_path": "__MANIFEST_PATH__",
+          "pinned_digest": "sha256:eb61b62bde489e00a4d15c37c83e6cdb1e9e378b8f13b910d4b68bd6d68c19da",
+          "scope_binding": {
+            "kind": "path_prefix",
+            "argument_json_pointer": "/path"
+          }
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "default": "deny",
+    "rules": [
+      {
+        "name": "fixture.ping",
+        "version": 1,
+        "decision": "allow"
+      }
+    ]
+  }
+}

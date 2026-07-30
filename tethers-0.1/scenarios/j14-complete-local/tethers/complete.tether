@@ -1,0 +1,13 @@
+tether "J14 complete local scenario"
+
+anchor
+    coding.task_completed
+
+when
+    project.type is "software"
+    and task.changed_files greater_than 0
+
+do
+    fixture.ping
+        message: anchor.task
+        path: anchor.path
