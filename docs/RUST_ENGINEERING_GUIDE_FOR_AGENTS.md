@@ -1,9 +1,9 @@
 # Tethers Rust Engineering Guide for Agents
 
-**Status:** required operational guidance for Rust implementation  
-**Primary audience:** Goose, Cline, Codex, and other AI coding agents  
-**Secondary audience:** senior Rust engineers and reviewers  
-**Baseline:** Rust 1.89.0, edition 2021  
+**Status:** required operational guidance for Rust implementation<br>
+**Primary audience:** Goose, Cline, Codex, and other AI coding agents<br>
+**Secondary audience:** senior Rust engineers and reviewers<br>
+**Baseline:** Rust 1.89.0, edition 2021<br>
 **Scope:** `tethers-0.1/host-rust/` and Rust capability-provider work
 
 This guide does not replace the current task packet, Tethers 0.1 specification,
@@ -600,7 +600,7 @@ Use this schema unless project control is stricter:
 
 ## Unrun Checks and Reason
 - `None`
-  
+
 or:
 - `<exact command>` — `NOT RUN`: `<reason>`
 
@@ -609,7 +609,7 @@ or:
 
 ## Remaining Risks
 - `None`
-  
+
 or:
 - `<specific risk and boundary>`
 
