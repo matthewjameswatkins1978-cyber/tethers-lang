@@ -14,7 +14,7 @@ Implementation checkpoint: `fb067efced287f83edb0b59e69e378458a5e20fe`
 
 Acceptance repair checkpoint: `b2ddf5cf67aa1f8d7d8a8588edfb094897926b74`
 
-Acceptance finalisation checkpoint: TBD after commit
+Acceptance finalisation checkpoint: `3131d1d02aab118f4e3a59aa7490e4aab477bee7`
 
 ## Requested outcome
 
