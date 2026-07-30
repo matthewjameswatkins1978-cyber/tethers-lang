@@ -10,7 +10,7 @@ determinism, implementation quality, and evidence while using the smallest
 practical team.
 
 The current operating mode is **Gorilla Coding 🦄**: Lucy controls architecture
-and continuation, Cline normally implements, and Codex enters for Red work or
+and continuation, OpenCode normally implements, and Codex enters for Red work or
 genuine difficulty. It is agile and asymmetric, never sloppy.
 
 The Constitution, specifications, decisions, implementation standard, code,
@@ -24,16 +24,29 @@ engineering evidence.
 - **Lucy, task compiler and controller:** resolves ambiguity, freezes relevant
   decisions, classifies risk, assembles one bounded packet, reviews pushed
   evidence, and chooses accept, correct, or escalate.
-- **Cline, default implementation owner:** owns ordinary Green and Amber work from
-  authorised packet through changes, checks, report, and worker note.
+- **OpenCode, default implementation owner:** owns ordinary Green and Amber work
+  from authorised packet through changes, checks, report, and worker note.
 - **Codex, escalation engineer and Red reviewer:** handles Red implementation or
   sign-off, difficult local diagnosis, Git/environment/recovery work, and tasks
-  Cline cannot complete reliably.
+  OpenCode cannot complete reliably.
 - **Repository:** holds durable packets, decisions, current state, worker notes,
   code, tests, and evidence references.
 
+Cline and Goose are not part of the active route. Historical filenames,
+branches, packets, and worker notes may retain their names.
+
 One worker owns each implementation task. Red work requires independent
 architectural sign-off; no implementation owner signs off its own Red work.
+
+## Instruction Loading
+
+`AGENTS.md` is the startup authority for coding agents. OpenCode also loads the
+core control documents through the project-root `opencode.json` when the active
+OpenCode release supports the `instructions` field.
+
+A file named inside `AGENTS.md` is not assumed to have been loaded. Before any
+mutation, the implementation owner must complete the startup gate in `AGENTS.md`
+and explicitly read any mandatory document missing from the effective context.
 
 ## Risk Is Separate From Routing
 
@@ -41,8 +54,8 @@ A colour describes risk, not a permanent model assignment.
 
 | Class | Meaning | Current route |
 | --- | --- | --- |
-| Green | Existing pattern, narrow, reversible, objectively testable | Cline implements; Lucy reviews as needed |
-| Amber | Multi-file or module interaction, settled behaviour, moderate judgement | Cline implements; Lucy performs one bounded review |
+| Green | Existing pattern, narrow, reversible, objectively testable | OpenCode implements; Lucy reviews as needed |
+| Amber | Multi-file or module interaction, settled behaviour, moderate judgement | OpenCode implements; Lucy performs one bounded review |
 | Red | Semantics, permissions, trust, persistence, compatibility, concurrency, determinism, security, or architecture | Lucy freezes the design; Codex normally implements or performs computer-enabled sign-off |
 
 Do not lower a risk class to fit available compute. Do not escalate ordinary
@@ -51,7 +64,8 @@ work merely because it uses advanced language features.
 ## One Active-Task State Machine
 
 `docs/CURRENT_CLINE_TASK.md` is the single current implementation contract. Its
-historical filename does not make Cline responsible for task compilation.
+historical filename does not make Cline responsible for task compilation or
+implementation.
 
 1. `PROPOSED` — Lucy has compiled a candidate task; implementation is not yet
    authorised.
@@ -86,9 +100,9 @@ Each packet contains only context capable of changing the task:
 - stop and escalation conditions;
 - exact worker-note path.
 
-Workers read the packet, the files it names, and task-relevant code. They do not
-load the whole project archive by default. Lucy and Red reviewers may inspect
-wider architectural context when necessary.
+Workers read the startup documents, the packet, the files it names, and
+task-relevant code. They do not load the whole project archive by default. Lucy
+and Red reviewers may inspect wider architectural context when necessary.
 
 Issued decisions remain frozen. A worker may implement them, demonstrate a
 contradiction, or stop with one precise question. It may not silently redesign
@@ -97,7 +111,7 @@ the surrounding system.
 ## Work And Failure Rules
 
 - One task has one implementation owner.
-- Cline and Codex must not edit the same task or checkout simultaneously.
+- OpenCode and Codex must not edit the same task or checkout simultaneously.
 - Another worker may continue only after formal reassignment or rejection.
 - After two materially similar failed attempts, stop. Record the exact command or
   action, failure, attempted remedies, and smallest unresolved question.
@@ -116,9 +130,9 @@ owner creates it from `docs/WORKER_NOTE_TEMPLATE.md`.
 The note records actual changes, in-scope decisions, exact evidence, discoveries,
 remaining risks, and references. It is concise project memory, not a transcript.
 
-Cline also returns a short report to Matthew. Matthew may paste that report into
-ordinary chat Lucy. During Gorilla Coding mode this is an accepted and useful
-transport step.
+OpenCode also returns a short report to Matthew. Matthew may paste that report
+into ordinary chat Lucy. During Gorilla Coding mode this is an accepted and
+useful transport step.
 
 The pasted report does not replace durable evidence. Lucy verifies pushed GitHub
 state where available and uses the worker note, diff, tests, packet, and Git
@@ -130,7 +144,7 @@ Lucy routes the check to Codex or asks for the smallest exact local evidence.
 Green work may be accepted from objective evidence when the diff is narrow and
 the packet permits it.
 
-Amber work receives one bounded final Lucy review. Cline remains the normal
+Amber work receives one bounded final Lucy review. OpenCode remains the normal
 implementation owner unless Lucy routes a specific task to Codex.
 
 Red work requires:
@@ -153,17 +167,19 @@ smallest correction as a new task rather than allowing an open-ended repair loop
 
 ## Matthew-Facing Dashboard
 
-`docs/PROJECT_DASHBOARD.md` remains the short control surface. Keep it factual:
+`docs/PROJECT_DASHBOARD.md` remains the short human-facing control surface. It is
+not implementation authority and is not automatically loaded into OpenCode.
+Keep it factual when a reporting task updates it:
 
 - current milestone and accepted checkpoint;
 - active task, owner, state, and risk;
 - last accepted result;
 - decision required from Matthew, or `None`;
-- next route: Cline, Codex, or stop;
+- next route: OpenCode, Codex, or stop;
 - cost or risk drift.
 
 Matthew should not need implementation transcripts to understand the project,
-but he may paste Cline's concise report to Lucy to keep the current low-cost loop
+but he may paste OpenCode's concise report to Lucy to keep the current loop
 moving.
 
 ## Control Check
