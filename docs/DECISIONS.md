@@ -1,4 +1,19 @@
 # Decisions
+## 2026-07-30: J13C public Trail inspection boundary
+
+Decision: `tethers-reference-host trail` accepts exactly
+`--trail <ABSOLUTE_PATH>` and `--execution-id <exec_UUID>`. The existing
+`replay::ExecutionId::parse` remains authoritative.
+
+Inspection is read-only and uses only the supplied Trail file. It does not
+search, inspect replay storage, repair records, start an engine or provider, or
+execute a Tether. Matching top-level `execution_id` entries retain their file
+order and original lexical JSON form.
+
+Malformed or ambiguous Trail content fails closed as `audit_failed`; zero
+matching entries returns `not_found`. J13 becomes complete only after this
+command is accepted.
+
 
 ## 2026-07-30: Toolchain baseline enforcement
 
@@ -727,17 +742,6 @@ admitted identities, manifests, policy, or Tether order after construction.
   output and Result Anchor through the public route, complete positive and
   negative integration matrix.
 
-
-## 2026-07-30: J13C public Trail inspection boundary
-
-Decision: 	ethers-reference-host trail --trail <ABSOLUTE_PATH> --execution-id <exec_UUID> is the frozen public Trail inspection command.  It reads one existing append-only JSONL Trail file, selects entries whose top-level xecution_id matches the supplied execution identity, preserves file order, and emits one stable 	ethers.cli/1 JSON envelope.
-
-The existing eplay::ExecutionId::parse remains the sole execution-ID authority.  Inspection is read-only: it never executes a Tether, starts the OCaml engine, starts a provider, consults or mutates replay persistence, creates or appends a Trail, or changes any Trail record schema.  One explicit Trail path is required; there is no directory scanning, replay-store lookup, or path inference.
-
-Matching requires a string-typed top-level xecution_id field.  Entries without xecution_id (unrelated audit entries) are skipped.  Entries with a non-string xecution_id invalidate the inspection.  Malformed Trail content fails closed as udit_failed / exit 8 with only a safe one-based line number in the public error.  Zero matching entries returns
-ot_found / exit 9 with EXECUTION_NOT_FOUND.
-
-Reason: J13C completes the public CLI surface defined by J13, enabling read-only Trail inspection before J14's full integration scenario.  No new parsers, engines, or providers are introduced; the command is a pure read boundary.
 ### Open Decisions
 
 - Whether future documentation should live at the workspace root, inside

@@ -6,7 +6,7 @@ Task: `J13C - strict public trail command`
 
 Owner: `Goose`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Task colour: `Amber`
 
@@ -68,9 +68,13 @@ The existing `replay::ExecutionId::parse` validates the `exec_<UUID>` format and
 - Zero matching entries is not_found.
 - J13 is complete only after this command is accepted.
 
-## Acceptance criteria
+## J13C-A corrected acceptance criteria
 
-1. Branch started from exact base `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`.
+1. valid UTF-8 across arbitrary reader boundaries.
+2. exact lexical preservation of matching JSON objects.
+3. a small additions-only DECISIONS.md diff.
+4. range git diff --check with no output.
+5. Branch started from exact base `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`.
 2. Effective Goose reasoning confirmed MEDIUM before mutation.
 3. CLI accepts `trail --trail --execution-id` in either order, rejects missing/duplicate/unknown options.
 4. `ExecutionId::parse` reused; no second parser.

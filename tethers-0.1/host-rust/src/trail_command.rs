@@ -18,18 +18,8 @@ const MAX_LINE_BYTES: u64 = 8 * 1024 * 1024; // 8 MiB
 /// Result of a trail command invocation.
 #[derive(Debug)]
 pub struct TrailResult {
-    pub envelope: CliEnvelope,
+    pub json_output: String,
     pub exit_code: i32,
-}
-
-impl TrailResult {
-    fn from_envelope(envelope: CliEnvelope) -> Self {
-        let exit_code = envelope.exit_code;
-        Self {
-            envelope,
-            exit_code,
-        }
-    }
 }
 
 /// Execute the public trail command.  All untrusted file and JSON processing
@@ -105,17 +95,19 @@ pub fn run_trail(trail_path: &Path, execution_id_str: &str) -> TrailResult {
 
     // --- 4. Read and filter entries ---
     let reader = BufReader::new(file);
-    let entries = match read_and_filter(reader, &execution_id_value) {
+    let raw_entries = match read_and_filter(reader, &execution_id_value) {
         Ok(entries) => entries,
         Err(result) => return result,
     };
 
-    // --- 5. Build envelope ---
-    let entry_count = entries.len();
+    // --- 5. Build output ---
+    let entry_count = raw_entries.len();
+    let trail_path_display = canonical_path.display().to_string();
+
     if entry_count == 0 {
         let data = json!({
             "execution_id": execution_id_value,
-            "trail_path": canonical_path.display().to_string(),
+            "trail_path": trail_path_display,
             "entry_count": 0,
         });
         let envelope = CliEnvelope::error_with_data(
@@ -126,52 +118,95 @@ pub fn run_trail(trail_path: &Path, execution_id_str: &str) -> TrailResult {
             Some("--execution-id".to_string()),
             data,
         );
-        return TrailResult::from_envelope(envelope);
+        let json_output = serde_json::to_string(&envelope)
+            .unwrap_or_else(|_| r#"{"schema":"tethers.cli/1"}"#.into());
+        return TrailResult {
+            json_output,
+            exit_code: envelope.exit_code,
+        };
     }
 
-    let entries_array: Vec<Value> = entries;
-    let data = json!({
-        "execution_id": execution_id_value,
-        "trail_path": canonical_path.display().to_string(),
-        "entry_count": entry_count,
-        "entries": entries_array,
-    });
-    TrailResult::from_envelope(CliEnvelope::ok("trail", data))
+    // Build success envelope manually to preserve original entry text.
+    // Only execution_id and trail_path are escaped by serde_json; raw
+    // entries are already validated single-object JSON strings inserted
+    // directly.
+    let escaped_exec_id =
+        serde_json::to_string(&execution_id_value).unwrap_or_else(|_| "\"\"".into());
+    let escaped_trail =
+        serde_json::to_string(&trail_path_display).unwrap_or_else(|_| "\"\"".into());
+    let entries_joined = raw_entries.join(",");
+
+    let json_output = format!(
+        concat!(
+            r#"{{"schema":"tethers.cli/1","#,
+            r#""command":"trail","#,
+            r#""status":"ok","#,
+            r#""exit_code":0,"#,
+            r#""error":null,"#,
+            r#""data":{{"#,
+            r#""execution_id":{},"#,
+            r#""trail_path":{},"#,
+            r#""entry_count":{},"#,
+            r#""entries":[{}]"#,
+            r#"}}}}"#
+        ),
+        escaped_exec_id, escaped_trail, entry_count, entries_joined,
+    );
+
+    TrailResult {
+        json_output,
+        exit_code: 0,
+    }
 }
 
-/// Read a JSONL file, parse each line as strict JSON, and collect entries
-/// whose top-level `execution_id` matches the supplied value.
+/// Read a JSONL file, parse each line as strict JSON, and collect raw text
+/// of entries whose top-level `execution_id` matches the supplied value.
+///
+/// Each line is accumulated as raw bytes, validated as UTF-8 once on the
+/// complete line (so multibyte characters split across reader-buffer
+/// boundaries are handled correctly), then structurally validated.
 ///
 /// Any malformed line, duplicate key, blank line, non-object JSON, or line
 /// exceeding `MAX_LINE_BYTES` invalidates the entire inspection.
 fn read_and_filter(
     mut reader: impl BufRead,
     execution_id: &str,
-) -> Result<Vec<Value>, TrailResult> {
-    let mut entries: Vec<Value> = Vec::new();
+) -> Result<Vec<String>, TrailResult> {
+    let mut entries: Vec<String> = Vec::new();
     let mut line_count: u64 = 0;
-    let mut line_buf = String::new();
+    let mut line_bytes: Vec<u8> = Vec::new();
 
     loop {
         line_count += 1;
-        line_buf.clear();
+        line_bytes.clear();
 
-        let bytes_read = read_line_limited(&mut line_buf, &mut reader, line_count)?;
+        let bytes_read = read_line_limited(&mut line_bytes, &mut reader, line_count)?;
         if bytes_read == 0 {
             break; // EOF
         }
 
-        // Strip trailing CR for CRLF files, then check if line is empty.
-        let mut line = line_buf.as_str();
-        line = line.strip_suffix('\r').unwrap_or(line);
-        line = line.strip_suffix('\n').unwrap_or(line);
+        // Strip physical line terminator: trailing LF, then one preceding CR.
+        let mut content: &[u8] = &line_bytes;
+        if content.last() == Some(&b'\n') {
+            content = &content[..content.len() - 1];
+        }
+        if content.last() == Some(&b'\r') {
+            content = &content[..content.len() - 1];
+        }
 
-        if line.is_empty() {
+        // Empty lines are invalid.
+        if content.is_empty() {
             return Err(invalid_trail(line_count));
         }
 
+        // Validate UTF-8 once on the complete accumulated line.
+        let line_str = match std::str::from_utf8(content) {
+            Ok(s) => s,
+            Err(_) => return Err(invalid_trail(line_count)),
+        };
+
         // Strict JSON parsing with duplicate-key rejection.
-        let value = match manifest::parse_value_no_dupes(line) {
+        let value = match manifest::parse_value_no_dupes(line_str) {
             Ok(v) => v,
             Err(_) => return Err(invalid_trail(line_count)),
         };
@@ -179,10 +214,10 @@ fn read_and_filter(
         // Must be a JSON object.
         match value {
             Value::Object(obj) => {
-                // Check top-level execution_id field.
                 match obj.get("execution_id") {
                     Some(Value::String(id)) if id == execution_id => {
-                        entries.push(Value::Object(obj));
+                        // Store the exact raw validated text.
+                        entries.push(line_str.to_owned());
                     }
                     Some(Value::String(_)) => {
                         // Different execution ID: skip silently.
@@ -192,7 +227,7 @@ fn read_and_filter(
                         return Err(invalid_trail(line_count));
                     }
                     None => {
-                        // No execution_id: skip silently.
+                        // No execution_id field: skip silently (audit entry).
                     }
                 }
             }
@@ -203,10 +238,17 @@ fn read_and_filter(
     Ok(entries)
 }
 
-/// Read one logical line, enforcing the 8 MiB size limit.
-/// Returns the number of bytes read (including line terminator).
+/// Read one physical line (up to and including LF) into the supplied byte
+/// buffer, enforcing the 8 MiB size limit.
+///
+/// Bytes are accumulated across `fill_buf` / `consume` cycles without
+/// intermediate UTF‑8 validation so that a multibyte character split across
+/// internal reader‑buffer boundaries is not rejected prematurely.
+///
+/// Returns the number of bytes read (including the line terminator), or 0 at
+/// EOF with no data.
 fn read_line_limited(
-    buf: &mut String,
+    buf: &mut Vec<u8>,
     reader: &mut impl BufRead,
     line_number: u64,
 ) -> Result<usize, TrailResult> {
@@ -219,7 +261,7 @@ fn read_line_limited(
                     OutcomeStatus::AuditFailed,
                     "TRAIL_INVALID",
                     "cannot read trail file",
-                    None,
+                    None::<String>,
                 ));
             }
         };
@@ -227,9 +269,10 @@ fn read_line_limited(
             return Ok(total as usize);
         }
 
-        // Find newline in the buffer.
-        let consume = match available.iter().position(|&b| b == b'\n') {
-            Some(pos) => pos + 1, // Include the LF
+        // Find LF in the available chunk.
+        let newline_pos = available.iter().position(|&b| b == b'\n');
+        let consume = match newline_pos {
+            Some(pos) => pos + 1, // include the LF
             None => available.len(),
         };
 
@@ -238,21 +281,12 @@ fn read_line_limited(
             return Err(invalid_trail(line_number));
         }
 
-        // UTF-8 validation.
-        let chunk = &available[..consume];
-        if std::str::from_utf8(chunk).is_err() {
-            return Err(invalid_trail(line_number));
-        }
-
-        // SAFETY: validated as UTF-8 above.
-        buf.push_str(unsafe { std::str::from_utf8_unchecked(chunk) });
-
+        buf.extend_from_slice(&available[..consume]);
         total += chunk_len;
 
-        let found_newline = chunk.last() == Some(&b'\n');
         reader.consume(consume);
 
-        if found_newline {
+        if newline_pos.is_some() {
             break;
         }
     }
@@ -260,16 +294,26 @@ fn read_line_limited(
 }
 
 fn invalid_trail(line_number: u64) -> TrailResult {
-    let mut data = serde_json::Map::new();
-    data.insert("line".to_owned(), json!(line_number));
-    let mut result = failure(
-        OutcomeStatus::AuditFailed,
-        "TRAIL_INVALID",
-        "trail file content is invalid",
-        None,
-    );
-    result.envelope.data = Value::Object(data);
-    result
+    // Build the complete output manually so the line number survives.
+    let envelope_with_data = json!({
+        "schema": "tethers.cli/1",
+        "command": "trail",
+        "status": "audit_failed",
+        "exit_code": 8,
+        "error": {
+            "code": "TRAIL_INVALID",
+            "message": "trail file content is invalid"
+        },
+        "data": {
+            "line": line_number
+        }
+    });
+    let json_output = serde_json::to_string(&envelope_with_data)
+        .unwrap_or_else(|_| r#"{"schema":"tethers.cli/1"}"#.into());
+    TrailResult {
+        json_output,
+        exit_code: 8,
+    }
 }
 
 fn failure(
@@ -278,7 +322,14 @@ fn failure(
     message: impl Into<String>,
     field: Option<String>,
 ) -> TrailResult {
-    TrailResult::from_envelope(CliEnvelope::error("trail", status, code, message, field))
+    let envelope = CliEnvelope::error("trail", status, code, message, field);
+    let exit_code = envelope.exit_code;
+    let json_output =
+        serde_json::to_string(&envelope).unwrap_or_else(|_| r#"{"schema":"tethers.cli/1"}"#.into());
+    TrailResult {
+        json_output,
+        exit_code,
+    }
 }
 
 #[cfg(test)]
@@ -286,22 +337,25 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    // Helper: build a JSONL string from a slice of JSON values.
-    fn jsonl(entries: &[Value]) -> String {
-        entries
-            .iter()
-            .map(|v| serde_json::to_string(v).unwrap())
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n"
+    // Helper: build a JSONL string from a slice of raw JSON strings.
+    fn jsonl(lines: &[&str]) -> String {
+        let mut out = String::new();
+        for line in lines {
+            out.push_str(line);
+            out.push('\n');
+        }
+        out
     }
 
-    fn entry_with_id(execution_id: &str, extra: &str) -> Value {
-        json!({"execution_id": execution_id, "kind": "test", "extra": extra})
+    fn entry_with_id(execution_id: &str, extra: &str) -> String {
+        format!(
+            r#"{{"execution_id":"{}","kind":"test","extra":"{}"}}"#,
+            execution_id, extra
+        )
     }
 
-    fn entry_no_id(extra: &str) -> Value {
-        json!({"kind": "audit", "extra": extra})
+    fn entry_no_id(extra: &str) -> String {
+        format!(r#"{{"kind":"audit","extra":"{}"}}"#, extra)
     }
 
     #[test]
@@ -330,68 +384,68 @@ mod tests {
         let target = "exec_00000000-0000-4000-8000-000000000000";
         let other = "exec_00000000-0000-4000-8000-000000000001";
         let input = jsonl(&[
-            entry_with_id(other, "1"),
-            entry_with_id(target, "2"),
-            entry_no_id("3"),
-            entry_with_id(target, "4"),
-            entry_with_id(other, "5"),
-            entry_with_id(target, "6"),
+            &entry_with_id(other, "1"),
+            &entry_with_id(target, "2"),
+            &entry_no_id("3"),
+            &entry_with_id(target, "4"),
+            &entry_with_id(other, "5"),
+            &entry_with_id(target, "6"),
         ]);
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
-        let entries = read_and_filter(reader, target).unwrap();
-        assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0]["extra"], "2");
-        assert_eq!(entries[1]["extra"], "4");
-        assert_eq!(entries[2]["extra"], "6");
+        let raw = read_and_filter(reader, target).unwrap();
+        assert_eq!(raw.len(), 3);
+        // Parse each back to check ordering.
+        let extra_vals: Vec<String> = raw
+            .iter()
+            .map(|s| {
+                let v: Value = serde_json::from_str(s).unwrap();
+                v["extra"].as_str().unwrap().to_owned()
+            })
+            .collect();
+        assert_eq!(extra_vals, vec!["2", "4", "6"]);
     }
 
     #[test]
     fn j13c_unrelated_execution_ids_omitted() {
         let target = "exec_00000000-0000-4000-8000-000000000000";
         let other = "exec_00000000-0000-4000-8000-000000000001";
-        let input = jsonl(&[entry_with_id(other, "1"), entry_with_id(other, "2")]);
+        let input = jsonl(&[&entry_with_id(other, "1"), &entry_with_id(other, "2")]);
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
-        let entries = read_and_filter(reader, target).unwrap();
-        assert!(entries.is_empty());
+        let raw = read_and_filter(reader, target).unwrap();
+        assert!(raw.is_empty());
     }
 
     #[test]
     fn j13c_valid_audit_entries_without_execution_id_skipped() {
         let target = "exec_00000000-0000-4000-8000-000000000000";
         let input = jsonl(&[
-            entry_no_id("a"),
-            entry_with_id(target, "b"),
-            entry_no_id("c"),
+            &entry_no_id("a"),
+            &entry_with_id(target, "b"),
+            &entry_no_id("c"),
         ]);
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
-        let entries = read_and_filter(reader, target).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0]["extra"], "b");
+        let raw = read_and_filter(reader, target).unwrap();
+        assert_eq!(raw.len(), 1);
+        let v: Value = serde_json::from_str(&raw[0]).unwrap();
+        assert_eq!(v["extra"], "b");
     }
 
     #[test]
     fn j13c_zero_matches_maps_to_not_found() {
         let tmp =
             std::env::temp_dir().join(format!("j13c-zero-match-{}.jsonl", uuid::Uuid::new_v4()));
-        let content = jsonl(&[entry_with_id(
+        let content = jsonl(&[&entry_with_id(
             "exec_00000000-0000-4000-8000-000000000001",
             "x",
         )]);
         fs::write(&tmp, &content).unwrap();
         let result = run_trail(&tmp, "exec_00000000-0000-4000-8000-000000000000");
-        assert_eq!(result.envelope.status, OutcomeStatus::NotFound);
+        let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
         assert_eq!(result.exit_code, 9);
-        assert_eq!(
-            result.envelope.error.as_ref().unwrap().code,
-            "EXECUTION_NOT_FOUND"
-        );
-        assert_eq!(result.envelope.data["entry_count"], 0);
-        assert!(!result
-            .envelope
-            .data
-            .as_object()
-            .unwrap()
-            .contains_key("entries"));
+        assert_eq!(envelope["status"], "not_found");
+        assert_eq!(envelope["error"]["code"], "EXECUTION_NOT_FOUND");
+        assert_eq!(envelope["data"]["entry_count"], 0);
+        assert!(envelope["data"].get("entries").is_none());
         let _ = fs::remove_file(&tmp);
     }
 
@@ -401,50 +455,41 @@ mod tests {
             Path::new("relative/path.jsonl"),
             "exec_00000000-0000-4000-8000-000000000000",
         );
-        assert_eq!(result.envelope.status, OutcomeStatus::InvalidData);
+        let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "invalid_data");
         assert_eq!(result.exit_code, 3);
-        assert_eq!(
-            result.envelope.error.as_ref().unwrap().code,
-            "TRAIL_NOT_ABSOLUTE"
-        );
+        assert_eq!(envelope["error"]["code"], "TRAIL_NOT_ABSOLUTE");
     }
 
     #[test]
     fn j13c_missing_trail_file_maps_to_not_found() {
         let missing = Path::new("C:\\does-not-exist-j13c-test.jsonl");
         let result = run_trail(missing, "exec_00000000-0000-4000-8000-000000000000");
-        assert_eq!(result.envelope.status, OutcomeStatus::NotFound);
+        let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "not_found");
         assert_eq!(result.exit_code, 9);
-        assert_eq!(
-            result.envelope.error.as_ref().unwrap().code,
-            "TRAIL_NOT_FOUND"
-        );
+        assert_eq!(envelope["error"]["code"], "TRAIL_NOT_FOUND");
     }
 
     #[test]
     fn j13c_directory_path_rejected() {
         let dir = std::env::temp_dir();
         let result = run_trail(&dir, "exec_00000000-0000-4000-8000-000000000000");
-        assert_eq!(result.envelope.status, OutcomeStatus::InvalidData);
+        let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "invalid_data");
         assert_eq!(result.exit_code, 3);
-        assert_eq!(
-            result.envelope.error.as_ref().unwrap().code,
-            "TRAIL_NOT_FILE"
-        );
+        assert_eq!(envelope["error"]["code"], "TRAIL_NOT_FILE");
     }
 
     #[test]
     fn j13c_malformed_json_maps_to_audit_failed() {
         let target = "exec_00000000-0000-4000-8000-000000000000";
-        let input =
-            "{\"execution_id\": \"exec_00000000-0000-4000-8000-000000000000\"}\n{not json\n";
+        let input = format!("{{\"execution_id\": \"{}\"}}\n{{not json\n", target);
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
         let result = read_and_filter(reader, target);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().envelope.status,
-            OutcomeStatus::AuditFailed
-        );
+        let envelope: Value = serde_json::from_str(&result.unwrap_err().json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
     }
 
     #[test]
@@ -454,10 +499,8 @@ mod tests {
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
         let result = read_and_filter(reader, target);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().envelope.status,
-            OutcomeStatus::AuditFailed
-        );
+        let envelope: Value = serde_json::from_str(&result.unwrap_err().json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
     }
 
     #[test]
@@ -467,10 +510,8 @@ mod tests {
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
         let result = read_and_filter(reader, target);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().envelope.status,
-            OutcomeStatus::AuditFailed
-        );
+        let envelope: Value = serde_json::from_str(&result.unwrap_err().json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
     }
 
     #[test]
@@ -480,10 +521,8 @@ mod tests {
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
         let result = read_and_filter(reader, target);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().envelope.status,
-            OutcomeStatus::AuditFailed
-        );
+        let envelope: Value = serde_json::from_str(&result.unwrap_err().json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
     }
 
     #[test]
@@ -493,10 +532,8 @@ mod tests {
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
         let result = read_and_filter(reader, target);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().envelope.status,
-            OutcomeStatus::AuditFailed
-        );
+        let envelope: Value = serde_json::from_str(&result.unwrap_err().json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
     }
 
     #[test]
@@ -508,10 +545,8 @@ mod tests {
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
         let result = read_and_filter(reader, target);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().envelope.status,
-            OutcomeStatus::AuditFailed
-        );
+        let envelope: Value = serde_json::from_str(&result.unwrap_err().json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
     }
 
     #[test]
@@ -533,8 +568,8 @@ mod tests {
 
         assert_eq!(lf_entries.len(), 1);
         assert_eq!(crlf_entries.len(), 1);
-        assert_eq!(lf_entries[0]["execution_id"], target);
-        assert_eq!(crlf_entries[0]["execution_id"], target);
+        // Both should contain the same raw text (CRLF stripped to the same content).
+        assert_eq!(lf_entries[0], crlf_entries[0]);
     }
 
     #[test]
@@ -544,8 +579,7 @@ mod tests {
         let content = format!("{{\"execution_id\": \"{target}\"}}\n");
         fs::write(&tmp, &content).unwrap();
         let result = run_trail(&tmp, target);
-        let json_str = serde_json::to_string(&result.envelope).unwrap();
-        assert!(!json_str.contains("timestamp"));
+        assert!(!result.json_output.contains("timestamp"));
         let _ = fs::remove_file(&tmp);
     }
 
@@ -557,13 +591,9 @@ mod tests {
         let content = format!("{{\"execution_id\": \"{other}\"}}\n");
         fs::write(&tmp, &content).unwrap();
         let result = run_trail(&tmp, "exec_00000000-0000-4000-8000-000000000000");
-        assert_eq!(result.envelope.data["entry_count"], 0);
-        assert!(!result
-            .envelope
-            .data
-            .as_object()
-            .unwrap()
-            .contains_key("entries"));
+        let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["data"]["entry_count"], 0);
+        assert!(envelope["data"].get("entries").is_none());
         let _ = fs::remove_file(&tmp);
     }
 
@@ -574,10 +604,8 @@ mod tests {
         let reader = BufReader::new(Cursor::new(input.as_bytes()));
         let result = read_and_filter(reader, target);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().envelope.status,
-            OutcomeStatus::AuditFailed
-        );
+        let envelope: Value = serde_json::from_str(&result.unwrap_err().json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
     }
 
     #[test]
@@ -586,17 +614,11 @@ mod tests {
         // The execution-ID error should take precedence.
         let missing = Path::new("C:\\does-not-exist-j13c-precedence.jsonl");
         let result = run_trail(missing, "not-a-valid-exec-id");
-        // Even though file doesn't exist, execution-ID format fails first.
-        assert_eq!(result.envelope.status, OutcomeStatus::InvalidData);
+        let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "invalid_data");
         assert_eq!(result.exit_code, 3);
-        assert_eq!(
-            result.envelope.error.as_ref().unwrap().code,
-            "EXECUTION_ID_INVALID"
-        );
-        assert_eq!(
-            result.envelope.error.as_ref().unwrap().field.as_deref(),
-            Some("--execution-id")
-        );
+        assert_eq!(envelope["error"]["code"], "EXECUTION_ID_INVALID");
+        assert_eq!(envelope["error"]["field"], "--execution-id");
     }
 
     #[test]
@@ -608,13 +630,126 @@ mod tests {
         );
         fs::write(&tmp, &content).unwrap();
         let result = run_trail(&tmp, target);
-        assert_eq!(result.envelope.schema, "tethers.cli/1");
-        assert_eq!(result.envelope.command, "trail");
-        assert_eq!(result.envelope.status, OutcomeStatus::Ok);
+        let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["schema"], "tethers.cli/1");
+        assert_eq!(envelope["command"], "trail");
+        assert_eq!(envelope["status"], "ok");
         assert_eq!(result.exit_code, 0);
-        assert_eq!(result.envelope.data["entry_count"], 2);
-        assert_eq!(result.envelope.data["entries"].as_array().unwrap().len(), 2);
-        assert!(result.envelope.error.is_none());
+        assert_eq!(envelope["data"]["entry_count"], 2);
+        assert_eq!(envelope["data"]["entries"].as_array().unwrap().len(), 2);
+        assert!(envelope["error"].is_null());
         let _ = fs::remove_file(&tmp);
+    }
+
+    // -------------------------------------------------------------------
+    // J13C-A corrected tests
+    // -------------------------------------------------------------------
+
+    /// Multibyte UTF-8 character split across 1-byte reader buffers must
+    /// succeed — the old per-chunk validation would reject this.
+    #[test]
+    fn j13c_utf8_split_across_buffer_boundary() {
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        // U+00E9 (é) is 0xC3 0xA9 in UTF-8 — two bytes.
+        // Include it inside a value so the JSON is still valid.
+        let line = format!("{{\"execution_id\":\"{target}\",\"note\":\"caf\u{00E9}\"}}\n");
+        // BufReader with capacity 1 forces one-byte fill_buf() chunks.
+        let reader = BufReader::with_capacity(1, Cursor::new(line.as_bytes()));
+        let raw = read_and_filter(reader, target).unwrap();
+        assert_eq!(raw.len(), 1, "multibyte entry must be accepted");
+        let v: Value = serde_json::from_str(&raw[0]).unwrap();
+        assert_eq!(v["note"], "caf\u{00E9}");
+    }
+
+    /// Non-alphabetical key order must be preserved in output.
+    #[test]
+    fn j13c_preserves_non_alphabetical_key_order() {
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        let line = format!("{{\"z\":1,\"execution_id\":\"{target}\",\"a\":2}}\n");
+        let reader = BufReader::new(Cursor::new(line.as_bytes()));
+        let raw = read_and_filter(reader, target).unwrap();
+        assert_eq!(raw.len(), 1);
+        // The raw text must contain "z" before "a".
+        let z_pos = raw[0].find("\"z\"").unwrap();
+        let a_pos = raw[0].find("\"a\"").unwrap();
+        assert!(
+            z_pos < a_pos,
+            "key order must be preserved: z before a, got: {}",
+            raw[0]
+        );
+    }
+
+    /// Spaces inside a matching object must be unchanged.
+    #[test]
+    fn j13c_preserves_internal_spaces() {
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        let line = format!("{{  \"execution_id\" : \"{target}\" , \"x\" :  1  }}\n");
+        let reader = BufReader::new(Cursor::new(line.as_bytes()));
+        let raw = read_and_filter(reader, target).unwrap();
+        assert_eq!(raw.len(), 1);
+        // The raw text should contain the exact spacing (excluding the \n).
+        let expected_no_lf = line.trim_end_matches('\n');
+        assert_eq!(raw[0], expected_no_lf, "spaces must be preserved exactly");
+    }
+
+    /// The success JSON output must parse as valid JSON.
+    #[test]
+    fn j13c_success_output_is_valid_json() {
+        let tmp =
+            std::env::temp_dir().join(format!("j13c-valid-json-{}.jsonl", uuid::Uuid::new_v4()));
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        let content = format!("{{\"execution_id\":\"{target}\",\"k\":\"v\"}}\n");
+        fs::write(&tmp, &content).unwrap();
+        let result = run_trail(&tmp, target);
+        // Must parse without error.
+        let _envelope: Value =
+            serde_json::from_str(&result.json_output).expect("output must be valid JSON");
+        let _ = fs::remove_file(&tmp);
+    }
+
+    /// The exact original matching object must appear inside the entries array.
+    #[test]
+    fn j13c_exact_original_text_in_entries() {
+        let tmp = std::env::temp_dir().join(format!("j13c-exact-{}.jsonl", uuid::Uuid::new_v4()));
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        let entry_text = format!("{{\"z\":1,\"execution_id\":\"{target}\",\"a\":2}}");
+        let content = format!("{entry_text}\n");
+        fs::write(&tmp, &content).unwrap();
+        let result = run_trail(&tmp, target);
+        // The raw output string must contain the exact original entry text.
+        assert!(
+            result.json_output.contains(&entry_text),
+            "raw output must contain original entry text:\n{}",
+            result.json_output
+        );
+        // The output must still parse as valid JSON.
+        let _envelope: Value =
+            serde_json::from_str(&result.json_output).expect("output must be valid JSON");
+        let _ = fs::remove_file(&tmp);
+    }
+
+    /// CRLF removes only the physical terminator, not internal data.
+    #[test]
+    fn j13c_crlf_preserves_internal_data() {
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        let data = format!("{{\"execution_id\":\"{target}\",\"value\":\"hello\"}}\r\n");
+        let reader = BufReader::new(Cursor::new(data.as_bytes()));
+        let raw = read_and_filter(reader, target).unwrap();
+        assert_eq!(raw.len(), 1);
+        // The \r is removed, the rest is intact.
+        let v: Value = serde_json::from_str(&raw[0]).unwrap();
+        assert_eq!(v["value"], "hello");
+        // Raw text must not contain \r.
+        assert!(!raw[0].contains('\r'), "CR must be stripped");
+    }
+
+    /// Malformed later data prevents all successful output (fail-closed).
+    #[test]
+    fn j13c_malformed_later_prevents_all_output() {
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        let input = format!("{{\"execution_id\":\"{target}\",\"ok\":true}}\n{{broken\n");
+        let reader = BufReader::new(Cursor::new(input.as_bytes()));
+        let result = read_and_filter(reader, target);
+        assert!(result.is_err(), "must fail on later malformed line");
     }
 }

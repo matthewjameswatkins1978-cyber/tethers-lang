@@ -90,10 +90,6 @@ try {
 {"execution_id":"$OtherExecId","kind":"other"}
 "@
 
-    $trailWithUnicode = New-TrailFile "trail-unicode.jsonl" @"
-{"execution_id":"$ValidExecId","kind":"entry","note":"path test"}
-"@
-
     # Path with spaces
     $spaceDir = New-Item -ItemType Directory -Path (Join-Path $TempRoot "path with spaces") -Force
     $spaceTrail = Join-Path $spaceDir "trail.jsonl"
@@ -298,6 +294,63 @@ try {
         $null = Invoke-Host "trail", "--trail", $singlePath, "--execution-id", $OtherExecId
         $hashAfter = Get-FileHash-SHA256 $singlePath
         Assert-Equal $hashBefore $hashAfter "SHA-256 unchanged after not_found"
+    }
+
+    # ------------------------------------------------------------------
+    # Case 17: Unicode value inside a Trail entry succeeds (J13C-A)
+    # ------------------------------------------------------------------
+    Invoke-Case "unicode value in trail entry succeeds" {
+        # Use WriteAllText with explicit UTF-8 for the e-acute character
+        $unicodePath = Join-Path $TempRoot "trail-unicode.jsonl"
+        $unicodeContent = "{`"execution_id`":`"$ValidExecId`",`"kind`":`"cafe`",`"note`":`"caf" + [char]0x00E9 + "`"}`r`n"
+        [System.IO.File]::WriteAllText($unicodePath, $unicodeContent)
+        $hashBefore = Get-FileHash-SHA256 $unicodePath
+        $result = Invoke-Host "trail", "--trail", $unicodePath, "--execution-id", $ValidExecId
+        $hashAfter = Get-FileHash-SHA256 $unicodePath
+        $env = ConvertFrom-SingleEnvelope $result "trail" "ok" 0
+        Assert-Equal $env.data.entry_count 1 "entry count"
+        Assert-Equal $hashBefore $hashAfter "SHA-256 unchanged"
+    }
+
+    # ------------------------------------------------------------------
+    # Case 18: Non-alphabetical key order and internal spacing preserved (J13C-A)
+    # ------------------------------------------------------------------
+    Invoke-Case "non-alphabetical key order and spacing preserved" {
+        $orderedPath = Join-Path $TempRoot "trail-ordered.jsonl"
+        $orderedContent = "{ `"z`": 1, `"execution_id`": `"$ValidExecId`", `"a`": 2 }`r`n"
+        [System.IO.File]::WriteAllText($orderedPath, $orderedContent)
+        $hashBefore = Get-FileHash-SHA256 $orderedPath
+        $result = Invoke-Host "trail", "--trail", $orderedPath, "--execution-id", $ValidExecId
+        $hashAfter = Get-FileHash-SHA256 $orderedPath
+        $env = ConvertFrom-SingleEnvelope $result "trail" "ok" 0
+        Assert-Equal $env.data.entry_count 1 "entry count"
+        Assert-Equal $hashBefore $hashAfter "SHA-256 unchanged"
+        # The raw stdout must contain "z" before "a" with the exact spacing.
+        $zPos = $result.Stdout.IndexOf('"z"')
+        $aPos = $result.Stdout.IndexOf('"a"')
+        Assert-True ($zPos -ge 0) '"z" key present in output'
+        Assert-True ($aPos -ge 0) '"a" key present in output'
+        Assert-True ($zPos -lt $aPos) '"z" appears before "a" in output'
+        # Also verify the exact spacing is preserved: ' "z": 1' not '"z":1'
+        Assert-True ($result.Stdout -match ' "z": 1') 'exact spacing around z key preserved'
+    }
+
+    # ------------------------------------------------------------------
+    # Case 19: stdout remains exactly one JSON document after success (J13C-A)
+    # ------------------------------------------------------------------
+    Invoke-Case "stdout is exactly one JSON document after success" {
+        $singlePath = Join-Path $TempRoot "trail-single-verify.jsonl"
+        $singleContent = "{`"execution_id`":`"$ValidExecId`",`"kind`":`"verify`"}`r`n"
+        [System.IO.File]::WriteAllText($singlePath, $singleContent)
+        $result = Invoke-Host "trail", "--trail", $singlePath, "--execution-id", $ValidExecId
+        $lines = @($result.Stdout -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        Assert-Equal $lines.Count 1 "stdout must be exactly one line"
+        # Verify it parses as JSON
+        $env = $lines[0] | ConvertFrom-Json -ErrorAction Stop
+        Assert-Equal $env.schema "tethers.cli/1" "schema"
+        Assert-Equal $env.command "trail" "command"
+        Assert-Equal $env.status "ok" "status"
+        Assert-Equal $env.exit_code 0 "exit code"
     }
 
     # ------------------------------------------------------------------

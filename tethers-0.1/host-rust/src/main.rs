@@ -712,7 +712,8 @@ fn main() {
                 }),
         }) => {
             let result = trail_command::run_trail(&trail, &execution_id);
-            emit_envelope_and_exit(result.envelope, result.exit_code);
+            println!("{}", result.json_output);
+            std::process::exit(result.exit_code);
         }
         Ok(Cli { command: None }) => {
             let envelope = CliEnvelope::error(
