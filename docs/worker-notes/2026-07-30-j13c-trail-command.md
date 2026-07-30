@@ -1,11 +1,20 @@
 # Worker Note
 
-Task: `J13C-A — preserve Trail text and repair acceptance evidence`
+Task: `J13C - strict public trail command`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `Goose`
 Status: `COMPLETE`
 Base commit: `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`
-Implementation checkpoint: `a31e1fafd88f8147ecd92e764a02ce8ca835992d`
+Original implementation commit:
+`180a2feec6f8fd889e955d6f42c141e95602e337`
+
+Repair implementation commit:
+`afca84106d61767a0468606616e3aedd68c170f1`
+
+Reviewed candidate before evidence closeout:
+`0a78176fb680e7188eb79170266e381814df1f86`
+
+Implementation checkpoint: `afca84106d61767a0468606616e3aedd68c170f1`
 
 ## Required Reading
 
@@ -67,20 +76,26 @@ Correct three acceptance defects in J13C and repair checkpoint evidence:
   repair commit undoes the defects at the working-tree level. The combined range
   diff `3020e7ea..HEAD` is clean.
 
-## Commits on this branch
+## Complete branch commit list (`git log --reverse 3020e7ea..HEAD`)
 
-| Role | SHA |
-|------|-----|
-| Implementation | `180a2feec6f8fd889e955d6f42c141e95602e337` |
-| Documentation checkpoint | `fdb6327bba8ce5abb784293a101e1d8029fcfbdd` |
-| Rejected report head | `3d27b2c8d1aa5905bc55fae1b48430707ddab5f0` |
-| Repair commit | `afca84106d61767a0468606616e3aedd68c170f1` |
-| Evidence commit | `96e8629efa929bc83583d356f9d9eedf08f0cac1` |
-| Packet heading fix | `1dde192b4c044f3b4694b48670d6b3ccb589df4c` |
-| Implementation checkpoint | `0e8d56e592cdebf6dc66f38db738f31fff528348` |
+| SHA | Message |
+|-----|---------|
+| `180a2feec6f8fd889e955d6f42c141e95602e337` | feat: add strict public trail command |
+| `fdb6327bba8ce5abb784293a101e1d8029fcfbdd` | docs: record j13c implementation checkpoint |
+| `3d27b2c8d1aa5905bc55fae1b48430707ddab5f0` | docs: finalise worker note sections |
+| `afca84106d61767a0468606616e3aedd68c170f1` | fix: preserve trail text and line endings |
+| `96e8629efa929bc83583d356f9d9eedf08f0cac1` | docs: record repair evidence and mark COMPLETE |
+| `1dde192b4c044f3b4694b48670d6b3ccb589df4c` | docs: restore packet heading for checker |
+| `0e8d56e554a539b69e1a58496945d91bdb5bfdfd` | docs: add implementation checkpoint to worker note |
+| `a31e1fafd88f8147ecd92e764a02ce8ca835992d` | docs: restructure worker note with required sections |
+| `0a78176fb680e7188eb79170266e381814df1f86` | docs: update implementation checkpoint to final HEAD |
 
-The nonexistent SHA `fdb6327d3e13e7fb14965d3e3fb6f5e24fa3d6e0` (previously
-mislabelled as implementation checkpoint) has been removed.
+Code-bearing commits:
+
+- **Original feature implementation:** `180a2feec6f8fd889e955d6f42c141e95602e337`
+- **Accepted repair implementation:** `afca84106d61767a0468606616e3aedd68c170f1`
+
+The final pushed branch SHA is reported in the external completion report.
 
 ## Evidence
 
@@ -153,5 +168,5 @@ after J13 is accepted.
 
 - Branch: `goose/j13c-trail-command`
 - Base: `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`
-- Final HEAD: `0e8d56e592cdebf6dc66f38db738f31fff528348`
+- Final pushed branch SHA: reported in the external completion report
 - Remote: `origin/goose/j13c-trail-command`

@@ -44,8 +44,8 @@ The existing `replay::ExecutionId::parse` validates the `exec_<UUID>` format and
 10. Malformed content returns audit_failed/8 with TRAIL_INVALID and safe line number.
 11. Emit exactly one compact JSON document to stdout.
 12. No mutation of Trail file, replay storage, or repository files.
-13. Create focused Rust tests (24 cases).
-14. Create public acceptance script (16 cases).
+13. Create focused Rust tests (35 cases: 7 CLI parsing, 28 trail command).
+14. Create public acceptance script (19 cases).
 15. Update DECISIONS.md.
 
 ## Relevant components
@@ -72,24 +72,25 @@ The existing `replay::ExecutionId::parse` validates the `exec_<UUID>` format and
 
 1. valid UTF-8 across arbitrary reader boundaries.
 2. exact lexical preservation of matching JSON objects.
-3. a small additions-only DECISIONS.md diff.
-4. range git diff --check with no output.
+3. DECISIONS.md range diff is 15 additions and 0 deletions.
+4. range git diff --check produces no output.
 5. Branch started from exact base `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`.
-2. Effective Goose reasoning confirmed MEDIUM before mutation.
-3. CLI accepts `trail --trail --execution-id` in either order, rejects missing/duplicate/unknown options.
-4. `ExecutionId::parse` reused; no second parser.
-5. Trail path validated: absolute, exists, regular file.
-6. Read-only: Trail SHA-256 unchanged after all inspections.
-7. Matching entries returned in original file order.
-8. Unrelated execution IDs omitted, audit entries skipped.
-9. Zero matches: not_found/9 with EXECUTION_NOT_FOUND.
-10. Malformed content: audit_failed/8 with TRAIL_INVALID and safe line number.
-11. Exactly one compact JSON document on stdout, no timestamp.
-12. No raw Trail data or OS diagnostics in public errors.
-13. Cargo.lock byte-identical to d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602.
-14. All Rust, OCaml, and script regressions pass.
-15. Packet checker and whitespace checks pass.
-16. Only authorised files changed.
+6. Effective Goose reasoning confirmed MEDIUM before mutation.
+7. CLI accepts `trail --trail --execution-id` in either order, rejects missing/duplicate/unknown options.
+8. `ExecutionId::parse` reused; no second parser.
+9. Trail path validated: absolute, exists, regular file.
+10. Read-only: Trail SHA-256 unchanged after all inspections.
+11. Matching entries returned in original file order.
+12. Unrelated execution IDs omitted, audit entries skipped.
+13. Zero matches: not_found/9 with EXECUTION_NOT_FOUND.
+14. Malformed content: audit_failed/8 with TRAIL_INVALID and safe line number.
+15. Exactly one compact JSON document on stdout, no timestamp.
+16. No raw Trail data or OS diagnostics in public errors.
+17. Cargo.lock byte-identical to d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602.
+18. All Rust, OCaml, and script regressions pass.
+19. Packet checker and whitespace checks pass.
+20. Only authorised files changed.
+21. Goose worktree contains no tracked or untracked changes after completion.
 
 ## Forbidden changes
 
