@@ -130,23 +130,74 @@ try {
         $Script:Passed++
     }
 
-    # --- Test 9: RUSTUP_AUTO_INSTALL restored after failure post-Rust-guard ---
+    # --- Test 9: RUSTUP_AUTO_INSTALL restored after genuine post-guard failure ---
     Write-Host ""
-    Write-Host "Test 9: RUSTUP_AUTO_INSTALL restored after failure post-Rust-guard"
+    Write-Host "Test 9: RUSTUP_AUTO_INSTALL restored after genuine post-guard failure"
+
+    # Record the real rustup application path before shadowing
+    $realRustupPath = (Get-Command rustup -ErrorAction Stop).Source
+
+    # Script-scoped variable captured by the shadow function
+    $script:observedGuardValue = $null
+
+    # Shadow rustup with a function that observes then throws
+    function global:rustup {
+        $script:observedGuardValue = $env:RUSTUP_AUTO_INSTALL
+        throw "SYNTHETIC TEST FAILURE: rustup shadow invoked"
+    }
+
     $sentinel2 = "fail-restore-$(Get-Random)"
     $env:RUSTUP_AUTO_INSTALL = $sentinel2
+
+    $failureOccurred = $false
+    $afterValue = $null
     try {
-        # The real switch succeeds fully, which exercises the Rust guard try/finally
-        $r = Invoke-CheckInProcess -Path $TestSwitchPath
+        # Invoke directly, not through Invoke-CheckInProcess, so we catch the exception
+        $exitCode = Invoke-TethersToolchainCheck -SwitchPath $TestSwitchPath
+        $afterValue = $env:RUSTUP_AUTO_INSTALL
+    } catch {
+        $failureOccurred = $true
         $afterValue = $env:RUSTUP_AUTO_INSTALL
     } finally {
+        # Clean up the shadow function
+        Remove-Item "Function:\rustup" -ErrorAction SilentlyContinue
         Remove-Item Env:RUSTUP_AUTO_INSTALL -ErrorAction SilentlyContinue
     }
-    if ($afterValue -eq $sentinel2) {
-        Write-Host "  PASS: RUSTUP_AUTO_INSTALL restored after real switch check ($sentinel2)"
+
+    # Fact 1: shadow rustup observed RUSTUP_AUTO_INSTALL = "0"
+    if ($script:observedGuardValue -eq "0") {
+        Write-Host "  PASS: Shadow rustup observed RUSTUP_AUTO_INSTALL = `"0`""
         $Script:Passed++
     } else {
-        Write-Host "  FAIL: RUSTUP_AUTO_INSTALL changed after real switch check ($sentinel2 -> $afterValue)"
+        Write-Host "  FAIL: Shadow rustup observed RUSTUP_AUTO_INSTALL = `"$script:observedGuardValue`" (expected `"0`")"
+        $Script:Failed++
+    }
+
+    # Fact 2: the invocation genuinely failed
+    if ($failureOccurred) {
+        Write-Host "  PASS: Invocation failed (synthetic exception from shadowed rustup)"
+        $Script:Passed++
+    } else {
+        Write-Host "  FAIL: Invocation did not fail (expected synthetic exception)"
+        $Script:Failed++
+    }
+
+    # Fact 3: RUSTUP_AUTO_INSTALL restored to original sentinel
+    if ($afterValue -eq $sentinel2) {
+        Write-Host "  PASS: RUSTUP_AUTO_INSTALL restored to sentinel after failure ($sentinel2)"
+        $Script:Passed++
+    } else {
+        Write-Host "  FAIL: RUSTUP_AUTO_INSTALL not restored after failure ($sentinel2 -> $afterValue)"
+        $Script:Failed++
+    }
+
+    # Fact 4: real rustup command resolves again after shadow removal
+    $realAfterPath = (Get-Command rustup -ErrorAction Stop).Source
+    if ($realAfterPath -eq $realRustupPath) {
+        Write-Host "  PASS: Real rustup command resolved after shadow removal"
+        $Script:Passed++
+    } else {
+        Write-Host "  FAIL: Real rustup did not resolve after shadow removal (expected $realRustupPath, got $realAfterPath)"
         $Script:Failed++
     }
 

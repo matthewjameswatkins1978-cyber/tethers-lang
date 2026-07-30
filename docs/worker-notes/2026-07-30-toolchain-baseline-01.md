@@ -14,6 +14,8 @@ Implementation checkpoint: `fb067efced287f83edb0b59e69e378458a5e20fe`
 
 Acceptance repair checkpoint: `b2ddf5cf67aa1f8d7d8a8588edfb094897926b74`
 
+Acceptance finalisation checkpoint: TBD after commit
+
 ## Requested outcome
 
 Enforce one reproducible repository-level toolchain baseline: Rust 1.89.0 with
@@ -21,13 +23,33 @@ MSRV, rustfmt, clippy, and locked Cargo; OCaml 5.5.0 with tightened
 compatibility range and committed opam lock; one non-mutating PowerShell
 preflight verifying the baseline without installing software.
 
-## Rejection reason
+## Rejection history
+
+### First rejection
 
 The first COMPLETE report was rejected because two required checks were
 reported as failures (clippy -D warnings, test-engine.ps1 without explicit
 switch) and the focused test script did not prove several required behaviours:
 real authorised-switch success, in-process RUSTUP_AUTO_INSTALL restoration,
 repository non-mutation, and no-fallback proof with neighbouring directories.
+
+### Second rejection
+
+The second acceptance review found that Test 9 ("RUSTUP_AUTO_INSTALL restored
+after failure post-Rust-guard") was still a successful path — it invoked the
+real switch which passes, rather than inducing a genuine failure after the Rust
+guard was entered. The test has been replaced with a synthetic rustup shadow
+that:
+
+- observes RUSTUP_AUTO_INSTALL = "0" inside the guard;
+- throws a test exception;
+- proves the guard's finally block restores the sentinel;
+- proves the real rustup command resolves again after shadow removal.
+
+Additionally, the task packet's Required verification section contained an
+unsafe OPAMSWITCH pattern (`$env:OPAMSWITCH = ... ; Remove-Item`) which has
+been replaced with a try/finally wrapper that preserves pre-existing
+OPAMSWITCH values.
 
 ## Warning-policy correction
 
@@ -132,7 +154,7 @@ Total changed files: 12 (7 modified + 5 new).
 - No local paths, pins, or drift V
 
 ### Focused preflight tests (test-check-tethers-toolchains.ps1)
-20 of 20 assertions pass:
+23 of 23 assertions pass:
 - Empty switch path: exit 1, mentions "required" V
 - Relative switch path: exit 1, mentions "absolute" V
 - Nonexistent root: exit 1, mentions "does not exist" V
@@ -141,7 +163,9 @@ Total changed files: 12 (7 modified + 5 new).
 - Real authorised switch: exit 0, "All toolchain checks passed" V
 - RUSTUP_AUTO_INSTALL sentinel restored after success (in-process) V
 - RUSTUP_AUTO_INSTALL absent after success when absent before (in-process) V
-- RUSTUP_AUTO_INSTALL restored after real check (post-Rust-guard) (in-process) V
+- Genuine post-guard failure: shadow rustup observed "0", synthetic exception
+  occurred, sentinel restored exactly, real rustup resolved after shadow
+  removal (in-process) V
 - Neighbouring _opam does not cause fallback V
 - Failure returns non-zero with FAIL identifier V
 - Repository status byte-for-byte unchanged after preflight V
@@ -177,7 +201,8 @@ Total changed files: 12 (7 modified + 5 new).
 - MCP transcripts (test-mcp-transcripts.ps1): PASS (15/15)
 - demo (demo.ps1): PASS (with process-local OPAMSWITCH)
 - test-engine.ps1: PASS (28/28 engine responses match) through process-local
-  OPAMSWITCH wrapping. OPAMSWITCH absent before and after.
+  OPAMSWITCH wrapping with try/finally preservation. OPAMSWITCH absent before
+  and after.
 - Cargo.lock unchanged V
 
 ### Diff and status
@@ -198,6 +223,9 @@ Total changed files: 12 (7 modified + 5 new).
 2. Ordinary Clippy exits zero with 24 pre-existing warnings across production
    and test code. These are not caused by the toolchain baseline changes and
    are recorded, not treated as failures.
+3. The task packet's Required verification section now uses a try/finally
+   OPAMSWITCH wrapper that preserves pre-existing values rather than
+   unconditionally removing the variable.
 
 ## Remaining risks
 

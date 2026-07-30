@@ -155,11 +155,41 @@ Pop-Location
 # Repository
 pwsh -NoProfile -File .\.github\scripts\check-tethers-task-packet.ps1
 pwsh -NoProfile -File .\tethers-0.1\scripts\check-fixtures.ps1
-$env:OPAMSWITCH = "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"
-pwsh -NoProfile -File .\tethers-0.1\scripts\test-engine.ps1
-Remove-Item Env:OPAMSWITCH -ErrorAction SilentlyContinue
-pwsh -NoProfile -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1
-pwsh -NoProfile -File .\tethers-0.1\scripts\demo.ps1
+$HadOpamSwitch = Test-Path Env:OPAMSWITCH
+$PreviousOpamSwitch = if ($HadOpamSwitch) {
+    $env:OPAMSWITCH
+} else {
+    $null
+}
+
+try {
+    $env:OPAMSWITCH =
+      "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"
+
+    pwsh -NoProfile -ExecutionPolicy Bypass `
+      -File .\tethers-0.1\scripts\test-engine.ps1
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "test-engine.ps1 failed with exit code $LASTEXITCODE"
+    }
+
+    pwsh -NoProfile -ExecutionPolicy Bypass `
+      -File .\tethers-0.1\scripts\demo.ps1
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "demo.ps1 failed with exit code $LASTEXITCODE"
+    }
+}
+finally {
+    if ($HadOpamSwitch) {
+        $env:OPAMSWITCH = $PreviousOpamSwitch
+    } else {
+        Remove-Item Env:OPAMSWITCH -ErrorAction SilentlyContinue
+    }
+}
+
+pwsh -NoProfile -ExecutionPolicy Bypass `
+  -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1
 
 # Diff and status
 git diff --check
