@@ -98,15 +98,21 @@ and execution boundaries.
   observed the existing Ctrl+C case as `unavailable`; a clean repeat passed all
   ten cases. No source change was made for that non-repeatable observation.
 - `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` was read before the correction.
-  Its Rust `1.89.0` toolchain is not installed (`rustup run 1.89.0 rustc
-  --version` reports a missing manifest), so no installation was attempted.
-  The packet's specified bare Cargo commands were verified with installed Rust
-  `1.97.1` / Cargo `1.97.1`.
+  `rustup show` and `rustup toolchain list -v` report the installed
+  `1.89.0-x86_64-pc-windows-msvc` toolchain at
+  `C:\Users\Matmus\.rustup\toolchains\1.89.0-x86_64-pc-windows-msvc`; the
+  rustup home is `C:\Users\Matmus\.rustup`. Exact probes passed: Rust
+  `1.89.0 (29483883e 2025-08-04)` and Cargo `1.89.0 (c24e10642 2025-06-23)`.
+  Installed components include cargo, clippy, rust-docs, rust-std, rustc, and
+  rustfmt. From `host-rust`, `cargo +1.89.0 metadata --format-version 1
+  --locked`, `cargo +1.89.0 tree -e features`, `cargo +1.89.0 check --locked`,
+  and `cargo +1.89.0 test --locked` all passed. The packet's bare Cargo checks
+  were also verified with active stable Rust `1.97.1` / Cargo `1.97.1`.
 
 ## Remaining risks
 
-No Packet 2 implementation or verification risk remains. The unavailable
-Rust 1.89.0 guide baseline is recorded above without modifying local tooling.
+No Packet 2 implementation or verification risk remains. The Rust 1.89.0
+guide baseline is verified above without modifying local tooling.
 
 ## Smallest next action
 
