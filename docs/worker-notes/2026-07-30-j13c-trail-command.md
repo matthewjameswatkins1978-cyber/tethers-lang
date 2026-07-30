@@ -5,8 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `Goose`
 Status: `COMPLETE`
 Base commit: `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`
-Implementation checkpoint: `180a2feec6f8fd889e955d6f42c141e95602e337`
-Branch / Worktree: `goose/j13c-trail-command` / `D:\The Next Thing\Tethers Lang - Goose Integration`
+Implementation checkpoint: `fdb6327bba8ce5abb784293a101e1d8029fcfbdd`
 
 ## Reasoning Evidence
 
@@ -16,80 +15,64 @@ Branch / Worktree: `goose/j13c-trail-command` / `D:\The Next Thing\Tethers Lang 
 - Required: MEDIUM
 - Match: Yes
 
-## Required Reading
+## Requested outcome
 
-All packet-named documents read: AGENTS.md, CURRENT_CLINE_TASK.md, PROJECT_CONTROL.md, AGENT_WORKFLOW.md, RUST_ENGINEERING_GUIDE_FOR_AGENTS.md, GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md, ROAD_TO_0_2.md (J13/J14 sections), DECISIONS.md (J12/J13/J14 and J13A/J13B/J13C boundaries), worker notes for J13A and J13B, cli.rs, main.rs, run_command.rs, dispatch.rs, replay.rs, test scripts for J13A and J13B.
+Add the frozen public `trail --trail <ABSOLUTE_PATH> --execution-id <exec_UUID>` read-only inspection command. The command reads one existing JSONL Trail file, selects entries matching the supplied execution identity, preserves file order, and emits one compact `tethers.cli/1` JSON envelope.
 
-## Files Modified
+## Changes made
 
-- `tethers-0.1/host-rust/src/cli.rs` - Added `Trail` variant with mandatory options; 7 CLI parsing tests
-- `tethers-0.1/host-rust/src/main.rs` - Added module declaration and match arm
-- `tethers-0.1/host-rust/src/trail_command.rs` - New read-only Trail inspector
-- `tethers-0.1/scripts/test-j13c-trail.ps1` - New public acceptance script (16 cases)
-- `docs/CURRENT_CLINE_TASK.md` - Replaced with control-v1 J13C task packet
-- `docs/DECISIONS.md` - Added J13C decision record
-- `docs/worker-notes/2026-07-30-j13c-trail-command.md` - This worker note
+- `cli.rs`: Added `Trail` variant with `--trail` and `--execution-id` mandatory options; 7 CLI parsing tests
+- `main.rs`: Added `pub mod trail_command;` declaration and match arm for `CliCommand::Trail`
+- `trail_command.rs`: New read-only Trail inspector with path validation, strict JSONL parsing, execution-ID filtering, and envelope mapping; 21 focused tests
+- `test-j13c-trail.ps1`: New public acceptance script; 16 cases covering matching, ordering, error codes, non-mutation, and CLI behaviour
+- `CURRENT_CLINE_TASK.md`: Replaced with control-v1 J13C task packet
+- `DECISIONS.md`: Added J13C public Trail inspection boundary decision record
 
-## Behavioural Result
+## Decisions and assumptions
 
-`tethers-reference-host trail --trail <ABSOLUTE_PATH> --execution-id <exec_UUID>` is a read-only inspection route that reads an existing JSONL Trail file, selects entries matching the supplied execution identity, preserves file order, and emits one compact `tethers.cli/1` JSON envelope. Does not execute a Tether, start the OCaml engine, start a provider, consult replay, or mutate any file.
+- `replay::ExecutionId::parse` remains the sole execution-ID authority; no second parser created
+- `manifest::parse_value_no_dupes` provides duplicate-key rejection for each JSONL line
+- Trail path validation (absolute, exists, regular file) occurs after execution-ID validation
+- `Path::canonicalize()` returns `\\?\C:\...` format on Windows; used in envelope
+- Acceptance tests use filename containment rather than exact canonical path matching
 
-## Invariants Preserved
+## Evidence
 
-- `ExecutionId::parse` remains sole execution-ID authority
-- Read-only: no Trail, replay, or filesystem mutation
-- One explicit path; no directory scanning or path inference
-- Matching entries retain original file order
-- Malformed content fails closed as audit_failed/8
-- Zero matching entries is not_found/9
-- One compact JSON document to stdout; no timestamp
-- No raw Trail data or OS diagnostics in public errors
-
-## Negative Tests Added or Updated
-
-28 focused Rust tests + 16 public acceptance cases covering:
-- CLI: missing options, duplicate options, unknown options, reordered options, valid/malformed execution IDs
-- Trail reading: matching entries in order, unrelated IDs omitted, audit entries skipped, zero matches, relative path, missing file, directory path
-- Content validation: malformed JSON, duplicate keys, blank lines, non-object JSON, non-string execution_id, oversize lines
-- Output: LF/CRLF equivalence, no timestamp, not-found contains no invented entries, no partial success, execution-ID validated before file access, success envelope shape
-- Non-mutation: SHA-256 unchanged after all inspections
-
-## Commands Executed
-
-- `cargo fmt --check` - PASS (after formatting fix)
-- `cargo check --locked` - PASS
-- `cargo check --locked --tests` - PASS
-- `cargo test j13c_ -- --nocapture` - 28 passed, 0 failed
-- `cargo test --locked` - 690 passed, 0 failed
-- `cargo clippy --all-targets --all-features` - PASS, 0 errors
-- `cargo build --locked` - PASS
-- `cargo build --locked --release` - PASS
-- `test-j13c-trail.ps1` - 16 passed, 0 failed
-- `test-j13a-check.ps1` - 25 passed, 0 failed
-- `test-j13b-run.ps1` - 10 passed, 0 failed
-- `check-fixtures.ps1` - 46 JSON + 30 JSONL valid
-- `test-mcp-transcripts.ps1` - 15 cases PASS
-- `test-engine.ps1` - PASS
-- `demo.ps1` - PASS
-- `check-tethers-task-packet.ps1` - PASS
-- `git diff --check` - pre-existing warnings only
-- `git status --short --branch` - 4M + 2 untracked (authorised)
-
-## Unrun Checks and Reason
-
-None.
+- cargo fmt --check: PASS
+- cargo check --locked: PASS
+- cargo check --locked --tests: PASS
+- cargo test j13c_: 28 passed, 0 failed (7 CLI + 21 trail command)
+- cargo test --locked: 690 passed, 0 failed
+- cargo clippy --all-targets --all-features: PASS, 0 errors (pre-existing warnings only)
+- cargo build --locked: PASS
+- cargo build --locked --release: PASS
+- test-j13c-trail.ps1: 16 passed, 0 failed
+- test-j13a-check.ps1: 25 passed, 0 failed
+- test-j13b-run.ps1: 10 passed, 0 failed
+- check-fixtures.ps1: 46 JSON + 30 JSONL valid
+- test-mcp-transcripts.ps1: 15 cases PASS
+- test-engine.ps1: PASS
+- demo.ps1: PASS
+- Cargo.lock SHA-256: d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602 (unchanged)
 
 ## Discoveries
 
-- `Path::canonicalize()` on Windows returns `\\?\C:\...` while PowerShell `Resolve-Path` returns `C:\...`. Acceptance tests use filename containment rather than exact path matching.
-- `failure()` function using `Option<impl Into<String>>` caused type inference issues with `None` calls; switched to `Option<String>`.
-- `read_line_limited` with `fill_buf`/`consume` required mutable borrow restructuring.
-- DECISIONS.md has pre-existing CRLF line-ending behavior causing trailing-whitespace warnings.
+- `Path::canonicalize()` on Windows returns `\\?\C:\...` format while PowerShell `Resolve-Path` returns `C:\...`. Acceptance tests use filename containment.
+- `failure()` using `Option<impl Into<String>>` caused type inference with `None`; switched to `Option<String>`.
+- `read_line_limited` with `fill_buf`/`consume` required borrow restructuring to avoid conflicting borrows.
+- DECISIONS.md has pre-existing CRLF line-ending behavior causing `git diff --check` trailing-whitespace warnings.
 
-## Remaining Risks
+## Remaining risks
 
-None. J13C is a pure read boundary.
+None. J13C is a pure read boundary introducing no new engine, provider, replay, or mutation paths.
 
-## Recommended Next Action
+## Smallest next action
 
-Publish branch, mark COMPLETE, and hand off to Lucy for review. J14 follows after J13 is accepted.
+Push branch `goose/j13c-trail-command` and hand off to Lucy for review. J14 follows after J13 is accepted.
+
+## References
+
+- Branch: `goose/j13c-trail-command`
+- Base: `3020e7ea3c68ac2bdec5e50a91a0232fedd503f0`
+- Implementation: `180a2feec6f8fd889e955d6f42c141e95602e337`
+- Documentation/checkpoint: `fdb6327d3e13e7fb14965d3e3fb6f5e24fa3d6e0`
