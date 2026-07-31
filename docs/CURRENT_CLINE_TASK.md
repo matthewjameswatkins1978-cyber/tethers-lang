@@ -10,6 +10,8 @@ Status: `COMPLETE`
 
 Task colour: `Amber`
 
+Correction: `J14B-R ÔÇö strengthen negative matrix assertions and evidence`
+
 Route: `OpenCode implementation - Lucy independent review`
 
 Base commit: `8a06b0883f968f1561153bf8d54bfce3818fbde8`

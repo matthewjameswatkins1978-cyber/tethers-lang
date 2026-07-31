@@ -124,7 +124,7 @@ try {
 
         switch ($request.method) {
             "initialize" {
-                if ($Mode -in @("record-methods", "run-success", "run-explicit-error", "run-invalid-output", "run-hang-call") -and $MarkerFile) {
+                if ($Mode -in @("record-methods", "run-success", "run-explicit-error", "run-invalid-output", "run-hang-call", "missing-tool") -and $MarkerFile) {
                     Add-Content -Path $MarkerFile -Value "initialize"
                 }
                 if ($Mode -eq "malformed-json") {
@@ -155,7 +155,7 @@ try {
                 $clientInitialized = $true
             }
             "tools/list" {
-                if ($Mode -in @("record-methods", "run-success", "run-explicit-error", "run-invalid-output", "run-hang-call") -and $MarkerFile) {
+                if ($Mode -in @("record-methods", "run-success", "run-explicit-error", "run-invalid-output", "run-hang-call", "missing-tool") -and $MarkerFile) {
                     Add-Content -Path $MarkerFile -Value "tools/list"
                 }
                 if ($Mode -eq "hang-tools-list") {

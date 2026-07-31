@@ -8687,4 +8687,118 @@ mod tests {
         );
         assert_eq!(response["execution_status"], "denied");
     }
+
+    #[test]
+    fn j14b_failed_and_uncertain_result_anchor_kinds() {
+        struct CountingExecutor<'a> {
+            clock: &'a outcome::TestMonotonicClock,
+            advance: Duration,
+            result: Result<Value, outcome::ProviderDiagnostic>,
+            calls: usize,
+        }
+
+        impl CapabilityExecutor for CountingExecutor<'_> {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                panic!("j14b_failed_and_uncertain_result_anchor_kinds uses execute_classified")
+            }
+
+            fn execute_classified(
+                &mut self,
+                _ready: &DispatchReadyAction,
+                _remaining: Duration,
+            ) -> Result<Value, outcome::ProviderDiagnostic> {
+                self.calls += 1;
+                self.clock.advance(self.advance);
+                self.result.clone()
+            }
+        }
+
+        fn run_j14b_case(executor: &mut CountingExecutor<'_>) -> Value {
+            let (_store, resolved) = resolved_lantern();
+            let mut response = make_matched_response(
+                "j14b-eval",
+                "j14b-action",
+                "lantern.task.record",
+                json!({"project": "p", "task": "t"}),
+            );
+            let clock = executor.clock;
+            authorise_and_execute_without_bridge_pins_with_clock(
+                &mut response,
+                allow_decision_for(&resolved),
+                &resolved,
+                &mut RecordingTrail::new(),
+                executor,
+                "j14b-input",
+                clock,
+            )
+            .unwrap();
+            response
+        }
+
+        fn assert_no_execution_id_in_anchor(response: &Value) {
+            let anchor_str = response["result_anchor"].to_string();
+            assert!(
+                !anchor_str.contains(replay_runtime::test_support::TEST_EXECUTION_ID),
+                "Result Anchor must not contain execution_id"
+            );
+        }
+
+        // 1. Executor returns a known error -> capability.failed.
+        {
+            let clock = outcome::TestMonotonicClock::new();
+            let mut executor = CountingExecutor {
+                clock: &clock,
+                advance: Duration::ZERO,
+                result: Err(outcome::ProviderDiagnostic::ExplicitProviderError),
+                calls: 0,
+            };
+            let response = run_j14b_case(&mut executor);
+            assert_eq!(
+                executor.calls, 1,
+                "explicit provider error: exactly one call"
+            );
+            assert_eq!(response["execution_status"], "failed");
+            assert_eq!(response["result_anchor"]["event_name"], "capability.failed");
+            assert_no_execution_id_in_anchor(&response);
+        }
+
+        // 2. Provider returns output invalid against the schema -> capability.failed.
+        {
+            let clock = outcome::TestMonotonicClock::new();
+            let mut executor = CountingExecutor {
+                clock: &clock,
+                advance: Duration::ZERO,
+                result: Ok(json!({"wrong_field": "not echo"})),
+                calls: 0,
+            };
+            let response = run_j14b_case(&mut executor);
+            assert_eq!(executor.calls, 1, "invalid output: exactly one call");
+            assert_eq!(response["execution_status"], "failed");
+            assert_eq!(response["result_anchor"]["event_name"], "capability.failed");
+            assert_no_execution_id_in_anchor(&response);
+        }
+
+        // 3. Deadline expires after the invocation boundary -> capability.uncertain.
+        {
+            let clock = outcome::TestMonotonicClock::new();
+            let mut executor = CountingExecutor {
+                clock: &clock,
+                advance: Duration::from_secs(10),
+                result: Ok(json!({"status": "recorded"})),
+                calls: 0,
+            };
+            let response = run_j14b_case(&mut executor);
+            assert_eq!(executor.calls, 1, "deadline expiry: exactly one call");
+            assert_eq!(response["execution_status"], "uncertain");
+            assert_eq!(
+                response["result_anchor"]["event_name"],
+                "capability.uncertain"
+            );
+            assert_no_execution_id_in_anchor(&response);
+        }
+    }
 }

@@ -15,7 +15,8 @@ variants lack the `response` field. M07/M08/M09 verify capability.failed and
 capability.uncertain through exit code, machine code, execution ID, provider
 call count, and durable Trail evidence.
 
-J14 is now complete with both J14A positive and J14B negative evidence accepted.
+J14B completes its implementation claim when all eleven rows pass. J14 becomes
+complete only after Lucy independently accepts and the candidate is published.
 
 Reason: the negative matrix must be proved without adding production
 fault-injection branches or weakening the existing trust boundaries. The three
