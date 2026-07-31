@@ -8616,4 +8616,75 @@ mod tests {
             Some("exec_00000000-0000-4000-8000-000000000003".into())
         );
     }
+
+    // -----------------------------------------------------------------------
+    // J14B: negative public integration matrix unit test
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn j14b_post_admission_intent_failure_retains_id() {
+        let (_store, resolved) = resolved_lantern();
+        let decision = allow_decision_for(&resolved);
+        let mut response = make_matched_response(
+            "eval-001",
+            "action_1",
+            "lantern.task.record",
+            json!({"project": "p", "task": "t"}),
+        );
+
+        let mut trail = RecordingTrail::new();
+        trail.injected_intent_error = Some(dispatch::TrailError::FlushFailed(
+            "simulated flush failure".into(),
+        ));
+
+        struct AssertNoCallExecutor;
+        impl CapabilityExecutor for AssertNoCallExecutor {
+            fn provider_identity(&self) -> &str {
+                "lantern-local"
+            }
+            fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
+                panic!("executor must not be called for intent failure");
+            }
+        }
+
+        let mut executor = AssertNoCallExecutor;
+        let clock = outcome::ProductionMonotonicClock::new();
+        let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+        let context = InputEventContext::for_initial("evt_input_001");
+        let mut anchor_writer = ResponseResultAnchorWriter;
+
+        let result = execute_shared_boundary(
+            &mut response,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context,
+            false,
+            &clock,
+            &mut replay_authority,
+            None,
+            &mut anchor_writer,
+        )
+        .unwrap();
+
+        assert!(
+            result.execution_id.is_some(),
+            "execution_id must be present when replay admission succeeded before intent failure"
+        );
+        assert_eq!(result.outcome, SharedExecutionOutcome::Denied);
+        assert!(
+            trail.entries.is_empty(),
+            "intent failure must produce zero durable intent entries"
+        );
+        assert!(
+            trail.outcome_entries.is_empty(),
+            "intent failure must produce zero durable outcome entries"
+        );
+        assert!(
+            response.get("result_anchor").is_none(),
+            "intent failure must emit no Result Anchor"
+        );
+        assert_eq!(response["execution_status"], "denied");
+    }
 }

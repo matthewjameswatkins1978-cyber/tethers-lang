@@ -6,7 +6,8 @@ param(
         "malformed-json", "exit-early",
         "hang-initialize", "hang-tools-list", "stdout-log-text",
         "oversized-line", "retained-stderr", "descendant-alive",
-        "record-methods", "record-cwd", "run-success", "run-hang-initialize"
+        "record-methods", "record-cwd", "run-success", "run-hang-initialize",
+        "run-explicit-error", "run-invalid-output", "run-hang-call"
     )]
     [string]$Mode = "valid",
     [string]$MarkerFile = "",
@@ -43,7 +44,7 @@ function New-Tool {
         required = @("message")
         additionalProperties = $false
     }
-    if ($Mode -eq "run-success") {
+    if ($Mode -in @("run-success", "run-explicit-error", "run-invalid-output", "run-hang-call")) {
         $inputSchema.properties.path = @{ type = "string" }
         $inputSchema.required = @("message", "path")
     }
@@ -123,7 +124,7 @@ try {
 
         switch ($request.method) {
             "initialize" {
-                if ($Mode -in @("record-methods", "run-success") -and $MarkerFile) {
+                if ($Mode -in @("record-methods", "run-success", "run-explicit-error", "run-invalid-output", "run-hang-call") -and $MarkerFile) {
                     Add-Content -Path $MarkerFile -Value "initialize"
                 }
                 if ($Mode -eq "malformed-json") {
@@ -154,7 +155,7 @@ try {
                 $clientInitialized = $true
             }
             "tools/list" {
-                if ($Mode -in @("record-methods", "run-success") -and $MarkerFile) {
+                if ($Mode -in @("record-methods", "run-success", "run-explicit-error", "run-invalid-output", "run-hang-call") -and $MarkerFile) {
                     Add-Content -Path $MarkerFile -Value "tools/list"
                 }
                 if ($Mode -eq "hang-tools-list") {
@@ -185,6 +186,24 @@ try {
                         result = @{ echo = $message }
                     }
                     continue
+                }
+                if ($Mode -eq "run-explicit-error") {
+                    if ($MarkerFile) { Add-Content -Path $MarkerFile -Value "tools/call" }
+                    Write-ErrorResponse $request.id -32600 "fixture explicit error for negative matrix"
+                    continue
+                }
+                if ($Mode -eq "run-invalid-output") {
+                    if ($MarkerFile) { Add-Content -Path $MarkerFile -Value "tools/call" }
+                    Write-JsonLine @{
+                        jsonrpc = "2.0"; id = $request.id
+                        result = @{ wrong_field = "not echo" }
+                    }
+                    continue
+                }
+                if ($Mode -eq "run-hang-call") {
+                    if ($MarkerFile) { Add-Content -Path $MarkerFile -Value "tools/call" }
+                    $stderr.WriteLine("fixture: hanging during tools/call")
+                    while ($true) { Start-Sleep -Seconds 60 }
                 }
                 if ($Mode -eq "record-methods" -and $MarkerFile) {
                     Add-Content -Path $MarkerFile -Value "tools/call"
