@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Task: `J16B - reconstruct the clean toolchains and build both runtimes`
+Task: `J16C - prove restart and durable replay from the clean checkout`
 
 Owner: `Codex`
 
@@ -10,101 +10,71 @@ Status: `COMPLETE`
 
 Task colour: `Red`
 
-Route: `Codex native Windows clean-build proof`
+Route: `Codex native Windows replay proof`
 
 Base commit: `75186ce4413c0fbf860d258b86d7adecadcff780`
 
 Branch: `codex/j16-clean-checkout-proof`
 
-Worker note: `docs/worker-notes/2026-07-31-j16b-clean-build.md`
+Worker note: `docs/worker-notes/2026-07-31-j16c-restart-replay.md`
 
 ## Objective
 
-Reconstruct the committed native Windows toolchains in the clean checkout and
-prove both OCaml and Rust runtimes build without changing source or locks.
+Prove restart and durable replay from `D:\The Next Thing\Tethers Lang - J16 Clean`.
 
 ## Relevant background and existing behaviour
 
-J16A established the clean checkout at `75186ce4413c0fbf860d258b86d7adecadcff780`.
-The J16B starting SHA was `354c46b35ecbbcff7fb18e38eecfaf4af2733e36`, one
-commit ahead of `origin/main`. The OCaml switch must remain a path-bound local
-environment beneath this checkout.
+J16C began at `3aa1108d159a4d358c408752f0c31389ed9d383e`; J16B's path-bound switch remains at `tethers-0.1\engine-ocaml`.
 
 ## Required behaviour
 
-1. Create the exact path-bound OCaml 5.5.0 switch at the fresh OCaml root.
-2. Install only the committed locked OCaml dependencies and pass the repository toolchain gate.
-3. Build the OCaml runtime through the local switch.
-4. Build the Rust runtime in locked debug and release modes with process-local `RUSTUP_AUTO_INSTALL=0` restoration.
-5. Prove generated `_opam` and `target` directories are confined to the fresh checkout and the four committed input hashes are unchanged.
-6. Update only this packet and the named worker note after all environment and build checks pass.
+1. Run the existing focused replay inventory and suite once.
+2. Map every restart/replay claim to named existing tests.
+3. Run J14C once through the public route.
+4. Prove no J16 Clean executable remains running.
+5. Update only this packet and worker note.
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/tethers_engine.opam`, `tethers_engine.opam.locked`, and `dune-project`.
-- `rust-toolchain.toml`, `tethers-0.1/host-rust/Cargo.toml`, and committed `Cargo.lock`.
-- `.github/scripts/check-tethers-toolchains.ps1` and `.github/scripts/check-tethers-task-packet.ps1`.
+- `tethers-0.1/host-rust` replay tests; `tethers-0.1/scripts/verify-0.2.ps1`.
 
 ## Frozen decisions and invariants
 
-- Fresh checkout: `D:\The Next Thing\Tethers Lang - J16 Clean`.
-- OCaml switch root: `D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\engine-ocaml`.
-- Rust root: `D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\host-rust`.
-- Only `docs/CURRENT_CLINE_TASK.md` and `docs/worker-notes/2026-07-31-j16b-clean-build.md` may change.
-- The exact locked dependency command installed OCaml `5.5.0`, Dune `3.24.0`, and Yojson `2.2.2`; the toolchain gate passed all checks.
-- OCaml build passed in `00:00:03.7795542` (exit `0`); Rust debug passed in `00:00:19.5149661` (exit `0`); Rust release passed in `00:00:16.2295630` (exit `0`).
-- SHA-256 values were byte-identical before and after: Cargo.lock `D323870EA02F09391A5D0D9AA0E9A701CF686A5AC005B840EE7218E70EDB5602`; opam `54D0FB7C8A88DC90DD61D1033672F6B74DCF1E7BB06E3781704F2A9CD6ABB87A`; opam.locked `CC2C2F1818E8A4E9AF1FFEDE4F384514384C319AEAADA76A2D2A715D9D19C495`; rust-toolchain `7C3E6D894826E0E8846092BB8E037303CD71B4CA210BF70F64D9BC4B7C819969`.
-- No tests, J15 matrix, restart proof, replay proof, lock regeneration, or source, manifest, lock, test, or script modification occurred. J16C and J17 have not begun.
+- Replay suite: `118 passed, 0 failed, 0 ignored`, `00:00:01.1373973`, exit `0`.
+- J14C: `9 rows, 9 passed, 0 failed`, `196 assertions`, `RESULT: PASS`, `00:00:08.1891185`, exit `0`.
+- First move count `1`; replay move count `0`; execution ID was retained.
+- PID `18360` is `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml\_build\default\bin\tethers_mcp_main.exe`, parent PID `25156` `opam.exe`, and unrelated; zero executable paths are beneath J16 Clean.
+- No test rerun, source, lock, fixture, test, or script change occurred. J16D and J17 have not begun.
 
 ## Acceptance criteria
 
-1. The J16B starting branch, SHA, and clean preconditions are recorded.
-2. The switch and locked-install commands, exact local paths, and locked OCaml/Dune/Yojson versions are recorded.
-3. The repository toolchain gate passes.
-4. OCaml, Rust debug, and Rust release builds each pass with recorded duration and exit `0`.
-5. `RUSTUP_AUTO_INSTALL` restoration, confined generated directories, and all four byte-identical input hashes are recorded.
-6. No forbidden build, test, verification, restart, replay, lock, manifest, source, or script action occurred.
-7. Only the two authorised documentation paths change and final packet/whitespace checks pass before one commit and push.
+1. Toolchain gate PASS and clean preflight are recorded.
+2. Claims map to `j09_replay_runtime_native_fresh_success_restart_makes_zero_second_call`; `ledger_06_restart_recovers_same_execution_identity`/`ledger_30_restart_never_generates_new_uuid_for_existing_tuple`; `ledger_24`/`ledger_25`; recovered claim/g0/g1/uncertain tests; recovered-generation and terminal-mutation tests; `ledger_01`; `ledger_02`; `ledger_03`; and `ledger_09_binding_mismatch_fails_closed`.
+3. Replay and J14C results above pass exactly once.
+4. Only the two authorised documentation paths change.
+5. Packet and whitespace checks pass before the single commit.
 
 ## Required verification
 
-- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-toolchains.ps1 -OcamlSwitchPath "D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\engine-ocaml"`
-- `opam exec --switch="D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\engine-ocaml" -- dune build`
-- `rustup run 1.89.0 cargo build --locked`
-- `rustup run 1.89.0 cargo build --release --locked`
-- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-task-packet.ps1`
-- `git diff --check`, `git diff --name-status`, and `git status --porcelain=v1 --untracked-files=all`
+- Captured `cargo test replay -- --list`, `cargo test replay -- --nocapture`, J14C, and toolchain-gate results.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-task-packet.ps1`; `git diff --check`; status checks.
 
 ## Forbidden changes
 
-- Any repository path other than the two authorised documentation paths.
-- Rust or OCaml tests, Cargo format checks, Clippy, J15 consolidated verification, restart proof, replay proof, J16C, or J17.
-- `opam update`, `opam upgrade`, lock regeneration, package pinning, copying or using a neighbouring switch, moving the engine directory, or changing the global default switch.
-- Pushing `main`, force-pushing, or creating a second completion commit.
+- Tests, source, locks, manifests, scripts, fixtures, J16D, J17, or `main`.
 
 ## Stop conditions
 
-- Any preflight, clean-build precondition, locked-install, toolchain-gate, build, hash, artifact-location, or final-check requirement fails.
-- Any source, lock, manifest, test, script, or unauthorised repository path changes.
-- Two materially similar failed attempts occur; return the exact evidence and smallest unresolved issue.
+- Any changed unauthorised path, failed required evidence, or executable beneath J16 Clean.
 
 ## Expected pre-existing changes
 
-None. J16B began from the clean J16A proof commit.
+None.
 
 ## Commit and publication boundary
 
-Create exactly one commit:
-
-`build: prove clean j16 runtime builds`
-
-Push only `codex/j16-clean-checkout-proof`. Do not push `main`, create a second
-completion commit, run a test suite after committing, or begin J16C.
+Create exactly one commit: `test: prove j16 restart and durable replay`; push only `codex/j16-clean-checkout-proof`.
 
 ## Return contract
 
-Return `COMPLETE` with the commit SHA, exact switch path, OCaml/Dune/Yojson
-versions, toolchain-gate result, three build durations and exits, four unchanged
-hashes, changed paths, ahead/behind state, and final worktree status. Otherwise
-return `BLOCKED` with the exact failed command, exit code, and smallest
-environmental or lockfile issue. Stop after reporting.
+Return the replay/J14C proof, process provenance, commit, Git state, and stop.
