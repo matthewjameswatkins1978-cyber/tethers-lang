@@ -2,151 +2,109 @@
 
 Control contract: `1`
 
-Task: `J15D - run the complete consolidated 0.2 failure matrix`
+Task: `J16A - establish the clean native Windows checkout baseline`
 
-Owner: `OpenCode`
-
-Recommended model: `Hy3 High`
+Owner: `Codex`
 
 Status: `COMPLETE`
 
-Task colour: `Green`
+Task colour: `Red`
 
-Route: `OpenCode implementation - Lucy independent review`
+Route: `Codex native Windows release-engineering baseline`
 
-Base commit: `12b4ed70a77de59d7e24285637a4877151308cc1`
+Base commit: `75186ce4413c0fbf860d258b86d7adecadcff780`
 
-Branch: `opencode/j15-consolidated-verification`
+Branch: `codex/j16-clean-checkout-proof`
 
-Worker note: `docs/worker-notes/2026-07-31-j15d-full-matrix.md`
-
-OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
+Worker note: `docs/worker-notes/2026-07-31-j16a-clean-checkout-baseline.md`
 
 ## Objective
 
-Run the complete consolidated J15 release matrix through `verify-0.2.ps1` with
-no `-Suite` argument, proving the canonical six-suite order and the full
-accepted child matrix. This is a verification-and-evidence job only.
+Establish and document a clean native Windows checkout at the accepted J16 base,
+ready for the separately authorised J16B clean build.
 
 ## Relevant background and existing behaviour
 
-J15A delivered the runner and J15B wired all six suites (canonical default order
-J13A, J13B, J13C, J14A, J14B, J14C). J15C proved the runner contract with an
-isolated stub test and ran the focused J14B suite. The runner is unchanged.
-
-The complete matrix was not run until this task: the full default six-suite run
-was explicitly deferred from J15A/J15B/J15C.
+J16 requires a clean native Windows proof. The original integration worktree is
+not part of this task. The OCaml directory switch is path-bound and must not be
+moved, copied, selected, or recreated for this baseline.
 
 ## Required behaviour
 
-1. Run `tethers-0.1/scripts/verify-0.2.ps1` exactly once with no `-Suite`
-   argument, capturing output to a temp file under `$env:TEMP` and measuring
-   wall-clock time.
-2. Require canonical execution order J13A, J13B, J13C, J14A, J14B, J14C, exactly
-   one `START` and one `PASS` per suite, and no `FAIL` line.
-3. Require the exact child results: J13A `25 passed, 0 failed`, J13B
-   `10 passed, 0 failed`, J13C `19 cases, 19 passed, 0 failed`, J14A
-   `5 cases, 5 passed, 0 failed` and `95 assertions`, J14B
-   `11 rows, 11 passed, 0 failed` and `243 assertions`, J14C
-   `9 rows, 9 passed, 0 failed` and `196 assertions`.
-4. Require the final consolidated `TOTAL: 6 suites, 6 passed, 0 failed`,
-   `RESULT: PASS`, and process exit 0.
-5. Delete any external temporary capture after extracting evidence; do not create
-   any helper or log inside the repository.
-6. Only after a passing run, update this packet to COMPLETE and add the J15D
-   worker note; nothing else may change.
+1. Clone the configured `origin` remote into `D:\The Next Thing\Tethers Lang - J16 Clean` at the exact base commit.
+2. Confirm the fresh checkout and published proof branch both resolve to `75186ce4413c0fbf860d258b86d7adecadcff780` and begin clean.
+3. Record the exact native Windows, PowerShell, Git, Rustup, Rust, Cargo, and opam inventory.
+4. Record the availability result of default `opam exec` OCaml and Dune without creating or restoring a switch.
+5. Record that no install, update, Rust or OCaml build, verification suite, restart proof, or replay proof occurred.
+6. Update only this packet and the named worker note.
 
 ## Relevant components
 
-- `tethers-0.1/scripts/verify-0.2.ps1` (runner; not modified).
-- Six child suites: `test-j13a-check.ps1`, `test-j13b-run.ps1`,
-  `test-j13c-trail.ps1`, `test-j14a-complete-scenario.ps1`,
-  `test-j14b-negative-matrix.ps1`, `test-j14c-real-file-move.ps1`.
+- `AGENTS.md`, `docs/PROJECT_CONTROL.md`, `docs/AGENT_WORKFLOW.md`, and `docs/ROAD_TO_0_2.md`.
+- `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` and `docs/OCAML_GUIDE_FOR_AGENTS.md`.
+- `.github/scripts/check-tethers-task-packet.ps1`.
 
 ## Frozen decisions and invariants
 
-- Base commit is exactly `12b4ed70a77de59d7e24285637a4877151308cc1`.
-- The runner and every child test script are unchanged; this is evidence only.
-- The accepted child matrix represents 79 release cases or rows in total
-  (25 + 10 + 19 + 5 + 11 + 9).
-- No prerequisite detection, repair, retries, parallelism, JSON, logs, config, or
-  CI changes are added.
-- J15 implementation is complete pending Lucy's independent acceptance.
-- Publication to main is not part of this task. J16 has not begun.
+- Fresh checkout path: `D:\The Next Thing\Tethers Lang - J16 Clean`.
+- Configured origin remote: `https://github.com/matthewjameswatkins1978-cyber/tethers-lang.git`.
+- Exact clean starting SHA: `75186ce4413c0fbf860d258b86d7adecadcff780`.
+- The only authorised paths are `docs/CURRENT_CLINE_TASK.md` and `docs/worker-notes/2026-07-31-j16a-clean-checkout-baseline.md`.
+- Windows: `Microsoft Windows [Version 10.0.22631.6199]`; PowerShell: `7.6.4`; Git: `2.54.0.windows.1`.
+- Rustup: `1.29.0 (28d1352db 2026-03-05)`; toolchains: `stable-x86_64-pc-windows-msvc (default)` and `1.89.0-x86_64-pc-windows-msvc (active)`; Rust: `1.89.0 (29483883e 2025-08-04)`; Cargo: `1.89.0 (c24e10642 2025-06-23)`.
+- opam: `2.5.2`; default `opam exec -- ocamlc -version` and `opam exec -- dune --version` both report no current switch and exit `50`.
+- No build, verification suite, restart proof, replay proof, install, update, or opam switch creation occurred. J16B performs the clean build; J17 has not begun.
 
 ## Acceptance criteria
 
-1. The public packet checker passes for control-v1 consistency with this packet.
-2. The complete matrix runs once with no `-Suite`, canonical order
-   J13A, J13B, J13C, J14A, J14B, J14C, exactly one `START` and one `PASS` per
-   suite, and zero `FAIL` lines.
-3. Child counts match exactly: J13A 25/0, J13B 10/0, J13C 19 cases/19 passed/0
-   failed, J14A 5 cases/5 passed/0 failed/95 assertions, J14B 11 rows/11 passed/0
-   failed/243 assertions, J14C 9 rows/9 passed/0 failed/196 assertions (79 total).
-4. Final consolidated `TOTAL: 6 suites, 6 passed, 0 failed`, `RESULT: PASS`,
-   process exit 0.
-5. Wall-clock duration is recorded and the external temp capture is removed.
-6. Only the two authorised paths change: `docs/CURRENT_CLINE_TASK.md` and
-   `docs/worker-notes/2026-07-31-j15d-full-matrix.md`.
+1. The clone path and configured origin remote are recorded exactly.
+2. The starting local SHA, `origin/main`, and published proof-branch SHA are recorded as `75186ce4413c0fbf860d258b86d7adecadcff780`.
+3. The starting checkout status is recorded as clean.
+4. The complete requested Windows and toolchain inventory is recorded exactly.
+5. OCaml and Dune default-opam availability is recorded honestly, including exit `50` and the absent current switch.
+6. The record states that no installation, update, build, test, verification suite, switch creation, restart proof, or replay proof was performed.
+7. Only the two authorised documentation paths change.
+8. The task-packet checker and `git diff --check` pass before the one authorised commit and push.
 
 ## Required verification
 
-Run exactly once:
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-task-packet.ps1`
+- `git diff --check`
+- `git diff --name-status`
+- `git status --porcelain=v1 --untracked-files=all`
 
-`pwsh -NoProfile -ExecutionPolicy Bypass -File tethers-0.1/scripts/verify-0.2.ps1`
-
--> canonical six-suite order, six `START`/`PASS`, no `FAIL`, child counts as
-above, consolidated `TOTAL: 6 suites, 6 passed, 0 failed`, `RESULT: PASS`, exit 0.
+No Rust or OCaml build, test, verification-suite, restart, or replay command is authorised for J16A.
 
 ## Forbidden changes
 
-Do not modify:
-
-- `tethers-0.1/scripts/verify-0.2.ps1` (the runner);
-- the six child scripts;
-- production Rust, Rust tests, or OCaml;
-- any manifest, scenario, fixture, Cargo file, `Cargo.lock`;
-- public CLI, runtime schema, scope model, Trail schema, replay format, Result
-  Anchor schema, language grammar, or protocol version;
-- AGENTS.md or workflow/control documents other than this packet;
-- any path outside the two authorised files.
+- Any path other than `docs/CURRENT_CLINE_TASK.md` and `docs/worker-notes/2026-07-31-j16a-clean-checkout-baseline.md`.
+- Rust or OCaml builds, tests, verification suites, restart proof, or replay proof.
+- Installing or updating software, running `rustup update`, or creating, moving, copying, restoring, or selecting an opam switch.
+- Moving `tethers-0.1/engine-ocaml`, modifying the original integration worktree, pushing `main`, or beginning J16B or J17.
 
 ## Stop conditions
 
-Return `BLOCKED` when:
-
-- any pre-flight ref or worktree differs;
-- any unauthorised path changes;
-- any suite fails, any expected count differs, output order differs, or the
-  runner exits non-zero (report the failing suite, actual summary, and exit code;
-  do not repair);
-- two materially similar attempts fail.
+- The required local branch, local `HEAD`, `origin/main`, or published proof-branch SHA differs from the exact base.
+- The checkout is not clean before authorised documentation changes.
+- An unauthorised path changes, a required final check fails, or a required Git operation fails.
+- Two materially similar failed attempts occur; return exact evidence and the smallest unresolved question.
 
 ## Expected pre-existing changes
 
-At start of this task the branch `opencode/j15-consolidated-verification` was at
-`56ae7d7` (J15A + J15B + J15C committed), 4 ahead of and 0 behind `origin/main`,
-with a clean worktree.
+None. The fresh checkout began clean at the exact base commit.
 
 ## Commit and publication boundary
 
 Create exactly one commit:
 
-`test: verify complete j15 release matrix`
+`docs: establish j16 clean checkout baseline`
 
-The packet must already say `COMPLETE` before this commit. Push only:
-
-`opencode/j15-consolidated-verification`
-
-Do not push main. Do not create a second completion commit. Do not begin J16.
+Push only `codex/j16-clean-checkout-proof`. Do not push `main`, create a second
+completion commit, or begin J16B.
 
 ## Return contract
 
-Return `COMPLETE` or `BLOCKED` and stop.
-
-For `COMPLETE`, report commit SHA, wall-clock duration, six suite results, total
-release cases or rows, J14 assertion counts, consolidated final summary, runner
-exit code, packet checker result, changed paths, branch ahead/behind, and
-worktree cleanliness.
-
-Stop after reporting. Do not begin J16.
+Return `COMPLETE` with the checkout path, commit SHA, branch, exact toolchain
+versions, OCaml/Dune availability, packet-checker result, changed paths,
+ahead/behind state, and worktree cleanliness. Otherwise return `BLOCKED` with
+the exact failed requirement. Stop after reporting.
