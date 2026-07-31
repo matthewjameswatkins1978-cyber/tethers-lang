@@ -6,7 +6,7 @@ Task: `J14B - negative public integration matrix`
 
 Owner: `OpenCode`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 

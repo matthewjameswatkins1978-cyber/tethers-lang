@@ -1,4 +1,28 @@
 # Decisions
+## 2026-07-31: J14B negative public integration matrix
+
+Decision: J14B proves the J14 negative matrix through 11 reproducible native
+Windows boundary rows using the public check/run commands and one focused Rust
+test seam. The `tethers-stdio-fixture.ps1` provider gained three deterministic
+failure modes (`run-explicit-error`, `run-invalid-output`, `run-hang-call`) that
+exercise executor failure, invalid output, and uncertain timeout without a
+production fault switch. Row M06 (post-admission intent failure) uses the
+accepted `#[cfg(test)]` test boundary with zero production code change. Row M11
+(causal depth) uses the existing debug-only `event-admission-trail-probe`
+compiled boundary. The public run CLI exposes `result_anchor` only for
+`Completed` outcomes; the `ExecutionServiceResult::Failed` and `::Uncertain`
+variants lack the `response` field. M07/M08/M09 verify capability.failed and
+capability.uncertain through exit code, machine code, execution ID, provider
+call count, and durable Trail evidence.
+
+J14 is now complete with both J14A positive and J14B negative evidence accepted.
+
+Reason: the negative matrix must be proved without adding production
+fault-injection branches or weakening the existing trust boundaries. The three
+new fixture modes, one test-only Rust seam, and the existing debug probe
+together cover all eleven negative cases while preserving the invariant that no
+hidden runtime bypass exists.
+
 ## 2026-07-30: J14A public execution identity and positive scenario
 
 Decision: public run data exposes the exact host-issued execution ID when
