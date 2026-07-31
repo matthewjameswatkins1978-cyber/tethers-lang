@@ -25,9 +25,12 @@ $SuiteMap = [ordered]@{
     "J13A" = "test-j13a-check.ps1"
     "J13B" = "test-j13b-run.ps1"
     "J13C" = "test-j13c-trail.ps1"
+    "J14A" = "test-j14a-complete-scenario.ps1"
+    "J14B" = "test-j14b-negative-matrix.ps1"
+    "J14C" = "test-j14c-real-file-move.ps1"
 }
 
-$DefaultOrder = @("J13A", "J13B", "J13C")
+$DefaultOrder = @("J13A", "J13B", "J13C", "J14A", "J14B", "J14C")
 $KnownIds = $SuiteMap.Keys
 
 if ($List) {
