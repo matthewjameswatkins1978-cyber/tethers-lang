@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Task: `J16A - establish the clean native Windows checkout baseline`
+Task: `J16B - reconstruct the clean toolchains and build both runtimes`
 
 Owner: `Codex`
 
@@ -10,101 +10,101 @@ Status: `COMPLETE`
 
 Task colour: `Red`
 
-Route: `Codex native Windows release-engineering baseline`
+Route: `Codex native Windows clean-build proof`
 
 Base commit: `75186ce4413c0fbf860d258b86d7adecadcff780`
 
 Branch: `codex/j16-clean-checkout-proof`
 
-Worker note: `docs/worker-notes/2026-07-31-j16a-clean-checkout-baseline.md`
+Worker note: `docs/worker-notes/2026-07-31-j16b-clean-build.md`
 
 ## Objective
 
-Establish and document a clean native Windows checkout at the accepted J16 base,
-ready for the separately authorised J16B clean build.
+Reconstruct the committed native Windows toolchains in the clean checkout and
+prove both OCaml and Rust runtimes build without changing source or locks.
 
 ## Relevant background and existing behaviour
 
-J16 requires a clean native Windows proof. The original integration worktree is
-not part of this task. The OCaml directory switch is path-bound and must not be
-moved, copied, selected, or recreated for this baseline.
+J16A established the clean checkout at `75186ce4413c0fbf860d258b86d7adecadcff780`.
+The J16B starting SHA was `354c46b35ecbbcff7fb18e38eecfaf4af2733e36`, one
+commit ahead of `origin/main`. The OCaml switch must remain a path-bound local
+environment beneath this checkout.
 
 ## Required behaviour
 
-1. Clone the configured `origin` remote into `D:\The Next Thing\Tethers Lang - J16 Clean` at the exact base commit.
-2. Confirm the fresh checkout and published proof branch both resolve to `75186ce4413c0fbf860d258b86d7adecadcff780` and begin clean.
-3. Record the exact native Windows, PowerShell, Git, Rustup, Rust, Cargo, and opam inventory.
-4. Record the availability result of default `opam exec` OCaml and Dune without creating or restoring a switch.
-5. Record that no install, update, Rust or OCaml build, verification suite, restart proof, or replay proof occurred.
-6. Update only this packet and the named worker note.
+1. Create the exact path-bound OCaml 5.5.0 switch at the fresh OCaml root.
+2. Install only the committed locked OCaml dependencies and pass the repository toolchain gate.
+3. Build the OCaml runtime through the local switch.
+4. Build the Rust runtime in locked debug and release modes with process-local `RUSTUP_AUTO_INSTALL=0` restoration.
+5. Prove generated `_opam` and `target` directories are confined to the fresh checkout and the four committed input hashes are unchanged.
+6. Update only this packet and the named worker note after all environment and build checks pass.
 
 ## Relevant components
 
-- `AGENTS.md`, `docs/PROJECT_CONTROL.md`, `docs/AGENT_WORKFLOW.md`, and `docs/ROAD_TO_0_2.md`.
-- `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` and `docs/OCAML_GUIDE_FOR_AGENTS.md`.
-- `.github/scripts/check-tethers-task-packet.ps1`.
+- `tethers-0.1/engine-ocaml/tethers_engine.opam`, `tethers_engine.opam.locked`, and `dune-project`.
+- `rust-toolchain.toml`, `tethers-0.1/host-rust/Cargo.toml`, and committed `Cargo.lock`.
+- `.github/scripts/check-tethers-toolchains.ps1` and `.github/scripts/check-tethers-task-packet.ps1`.
 
 ## Frozen decisions and invariants
 
-- Fresh checkout path: `D:\The Next Thing\Tethers Lang - J16 Clean`.
-- Configured origin remote: `https://github.com/matthewjameswatkins1978-cyber/tethers-lang.git`.
-- Exact clean starting SHA: `75186ce4413c0fbf860d258b86d7adecadcff780`.
-- The only authorised paths are `docs/CURRENT_CLINE_TASK.md` and `docs/worker-notes/2026-07-31-j16a-clean-checkout-baseline.md`.
-- Windows: `Microsoft Windows [Version 10.0.22631.6199]`; PowerShell: `7.6.4`; Git: `2.54.0.windows.1`.
-- Rustup: `1.29.0 (28d1352db 2026-03-05)`; toolchains: `stable-x86_64-pc-windows-msvc (default)` and `1.89.0-x86_64-pc-windows-msvc (active)`; Rust: `1.89.0 (29483883e 2025-08-04)`; Cargo: `1.89.0 (c24e10642 2025-06-23)`.
-- opam: `2.5.2`; default `opam exec -- ocamlc -version` and `opam exec -- dune --version` both report no current switch and exit `50`.
-- No build, verification suite, restart proof, replay proof, install, update, or opam switch creation occurred. J16B performs the clean build; J17 has not begun.
+- Fresh checkout: `D:\The Next Thing\Tethers Lang - J16 Clean`.
+- OCaml switch root: `D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\engine-ocaml`.
+- Rust root: `D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\host-rust`.
+- Only `docs/CURRENT_CLINE_TASK.md` and `docs/worker-notes/2026-07-31-j16b-clean-build.md` may change.
+- The exact locked dependency command installed OCaml `5.5.0`, Dune `3.24.0`, and Yojson `2.2.2`; the toolchain gate passed all checks.
+- OCaml build passed in `00:00:03.7795542` (exit `0`); Rust debug passed in `00:00:19.5149661` (exit `0`); Rust release passed in `00:00:16.2295630` (exit `0`).
+- SHA-256 values were byte-identical before and after: Cargo.lock `D323870EA02F09391A5D0D9AA0E9A701CF686A5AC005B840EE7218E70EDB5602`; opam `54D0FB7C8A88DC90DD61D1033672F6B74DCF1E7BB06E3781704F2A9CD6ABB87A`; opam.locked `CC2C2F1818E8A4E9AF1FFEDE4F384514384C319AEAADA76A2D2A715D9D19C495`; rust-toolchain `7C3E6D894826E0E8846092BB8E037303CD71B4CA210BF70F64D9BC4B7C819969`.
+- No tests, J15 matrix, restart proof, replay proof, lock regeneration, or source, manifest, lock, test, or script modification occurred. J16C and J17 have not begun.
 
 ## Acceptance criteria
 
-1. The clone path and configured origin remote are recorded exactly.
-2. The starting local SHA, `origin/main`, and published proof-branch SHA are recorded as `75186ce4413c0fbf860d258b86d7adecadcff780`.
-3. The starting checkout status is recorded as clean.
-4. The complete requested Windows and toolchain inventory is recorded exactly.
-5. OCaml and Dune default-opam availability is recorded honestly, including exit `50` and the absent current switch.
-6. The record states that no installation, update, build, test, verification suite, switch creation, restart proof, or replay proof was performed.
-7. Only the two authorised documentation paths change.
-8. The task-packet checker and `git diff --check` pass before the one authorised commit and push.
+1. The J16B starting branch, SHA, and clean preconditions are recorded.
+2. The switch and locked-install commands, exact local paths, and locked OCaml/Dune/Yojson versions are recorded.
+3. The repository toolchain gate passes.
+4. OCaml, Rust debug, and Rust release builds each pass with recorded duration and exit `0`.
+5. `RUSTUP_AUTO_INSTALL` restoration, confined generated directories, and all four byte-identical input hashes are recorded.
+6. No forbidden build, test, verification, restart, replay, lock, manifest, source, or script action occurred.
+7. Only the two authorised documentation paths change and final packet/whitespace checks pass before one commit and push.
 
 ## Required verification
 
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-toolchains.ps1 -OcamlSwitchPath "D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\engine-ocaml"`
+- `opam exec --switch="D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\engine-ocaml" -- dune build`
+- `rustup run 1.89.0 cargo build --locked`
+- `rustup run 1.89.0 cargo build --release --locked`
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-task-packet.ps1`
-- `git diff --check`
-- `git diff --name-status`
-- `git status --porcelain=v1 --untracked-files=all`
-
-No Rust or OCaml build, test, verification-suite, restart, or replay command is authorised for J16A.
+- `git diff --check`, `git diff --name-status`, and `git status --porcelain=v1 --untracked-files=all`
 
 ## Forbidden changes
 
-- Any path other than `docs/CURRENT_CLINE_TASK.md` and `docs/worker-notes/2026-07-31-j16a-clean-checkout-baseline.md`.
-- Rust or OCaml builds, tests, verification suites, restart proof, or replay proof.
-- Installing or updating software, running `rustup update`, or creating, moving, copying, restoring, or selecting an opam switch.
-- Moving `tethers-0.1/engine-ocaml`, modifying the original integration worktree, pushing `main`, or beginning J16B or J17.
+- Any repository path other than the two authorised documentation paths.
+- Rust or OCaml tests, Cargo format checks, Clippy, J15 consolidated verification, restart proof, replay proof, J16C, or J17.
+- `opam update`, `opam upgrade`, lock regeneration, package pinning, copying or using a neighbouring switch, moving the engine directory, or changing the global default switch.
+- Pushing `main`, force-pushing, or creating a second completion commit.
 
 ## Stop conditions
 
-- The required local branch, local `HEAD`, `origin/main`, or published proof-branch SHA differs from the exact base.
-- The checkout is not clean before authorised documentation changes.
-- An unauthorised path changes, a required final check fails, or a required Git operation fails.
-- Two materially similar failed attempts occur; return exact evidence and the smallest unresolved question.
+- Any preflight, clean-build precondition, locked-install, toolchain-gate, build, hash, artifact-location, or final-check requirement fails.
+- Any source, lock, manifest, test, script, or unauthorised repository path changes.
+- Two materially similar failed attempts occur; return the exact evidence and smallest unresolved issue.
 
 ## Expected pre-existing changes
 
-None. The fresh checkout began clean at the exact base commit.
+None. J16B began from the clean J16A proof commit.
 
 ## Commit and publication boundary
 
 Create exactly one commit:
 
-`docs: establish j16 clean checkout baseline`
+`build: prove clean j16 runtime builds`
 
 Push only `codex/j16-clean-checkout-proof`. Do not push `main`, create a second
-completion commit, or begin J16B.
+completion commit, run a test suite after committing, or begin J16C.
 
 ## Return contract
 
-Return `COMPLETE` with the checkout path, commit SHA, branch, exact toolchain
-versions, OCaml/Dune availability, packet-checker result, changed paths,
-ahead/behind state, and worktree cleanliness. Otherwise return `BLOCKED` with
-the exact failed requirement. Stop after reporting.
+Return `COMPLETE` with the commit SHA, exact switch path, OCaml/Dune/Yojson
+versions, toolchain-gate result, three build durations and exits, four unchanged
+hashes, changed paths, ahead/behind state, and final worktree status. Otherwise
+return `BLOCKED` with the exact failed command, exit code, and smallest
+environmental or lockfile issue. Stop after reporting.
