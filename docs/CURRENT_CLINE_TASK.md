@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Task: `J16C - prove restart and durable replay from the clean checkout`
+Task: `J16D-F1 - make Ctrl+C classification deterministic`
 
 Owner: `Codex`
 
@@ -10,62 +10,90 @@ Status: `COMPLETE`
 
 Task colour: `Red`
 
-Route: `Codex native Windows replay proof`
+Route: `Codex native Windows interruption-race repair`
 
 Base commit: `75186ce4413c0fbf860d258b86d7adecadcff780`
 
 Branch: `codex/j16-clean-checkout-proof`
 
-Worker note: `docs/worker-notes/2026-07-31-j16c-restart-replay.md`
+Worker note: `docs/worker-notes/2026-07-31-j16d-ctrl-c-race-repair.md`
 
 ## Objective
 
-Prove restart and durable replay from `D:\The Next Thing\Tethers Lang - J16 Clean`.
+Make the Windows Ctrl+C classification at the provider stdout-disconnect and
+process-exit seam deterministic without changing public interruption, provider,
+replay, permission, or Trail semantics.
 
 ## Relevant background and existing behaviour
 
-J16C began at `3aa1108d159a4d358c408752f0c31389ed9d383e`; J16B's path-bound switch remains at `tethers-0.1\engine-ocaml`.
+J16D-R2 step 22 found that the blocked-provider J13B case could report
+`unavailable` after `CTRL_C_EVENT`: the provider could disconnect stdout before
+the host reader saw the global interruption flag. The historical J13B worker
+note had recorded the same non-repeatable observation. Ordinary provider exits
+without a host interruption remain `unavailable`.
 
 ## Required behaviour
 
-1. Run the existing focused replay inventory and suite once.
-2. Map every restart/replay claim to named existing tests.
-3. Run J14C once through the public route.
-4. Prove no J16 Clean executable remains running.
-5. Update only this packet and worker note.
+1. Give explicit host interruption precedence over a concurrently caused stdout
+   disconnect or process exit.
+2. Preserve ordinary provider-exit classification when no interruption appears.
+3. Prove immediate, slightly late, absent, and bounded interruption observation
+   deterministically in the child-process module.
+4. Prove public J13B interruption stability in five planned independent runs.
+5. Preserve the frozen public interruption expectation and defer J16D-R3.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust` replay tests; `tethers-0.1/scripts/verify-0.2.ps1`.
+- `tethers-0.1/host-rust/src/child_process.rs` owns the supervised stdout reader.
+- `tethers-0.1/scripts/test-j13b-run.ps1` is the existing public acceptance proof.
 
 ## Frozen decisions and invariants
 
-- Replay suite: `118 passed, 0 failed, 0 ignored`, `00:00:01.1373973`, exit `0`.
-- J14C: `9 rows, 9 passed, 0 failed`, `196 assertions`, `RESULT: PASS`, `00:00:08.1891185`, exit `0`.
-- First move count `1`; replay move count `0`; execution ID was retained.
-- PID `18360` is `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml\_build\default\bin\tethers_mcp_main.exe`, parent PID `25156` `opam.exe`, and unrelated; zero executable paths are beneath J16 Clean.
-- No test rerun, source, lock, fixture, test, or script change occurred. J16D and J17 have not begun.
+- On reader disconnect, the host observes `INTERRUPTED` for at most `50 ms`, in
+  `1 ms` pauses; a visible interruption returns `ChildError::Interrupted`.
+- The helper is clock/pause-injected for deterministic unit tests. It returns
+  the original `ChildError::ProcessExited` when no interrupt becomes visible.
+- The public interruption envelope remains `interrupted`, exit `10`, machine
+  code `INTERRUPTED`; the acceptance continues to require zero `tools/call` and
+  interruption within five seconds.
+- No public envelope, replay, permission, Trail, provider protocol, fixture, or
+  test expectation changed.
 
 ## Acceptance criteria
 
-1. Toolchain gate PASS and clean preflight are recorded.
-2. Claims map to `j09_replay_runtime_native_fresh_success_restart_makes_zero_second_call`; `ledger_06_restart_recovers_same_execution_identity`/`ledger_30_restart_never_generates_new_uuid_for_existing_tuple`; `ledger_24`/`ledger_25`; recovered claim/g0/g1/uncertain tests; recovered-generation and terminal-mutation tests; `ledger_01`; `ledger_02`; `ledger_03`; and `ledger_09_binding_mismatch_fails_closed`.
-3. Replay and J14C results above pass exactly once.
-4. Only the two authorised documentation paths change.
-5. Packet and whitespace checks pass before the single commit.
+1. The disconnect seam returns `ChildError::Interrupted` when the host flag is
+   observed in the bounded window.
+2. A non-interrupted process exit remains `ChildError::ProcessExited` and maps
+   through the existing provider path to `unavailable`.
+3. Four deterministic child-process tests cover immediate, late, absent, and
+   bounded observation; all Rust checks pass.
+4. Five separate J13B runs each pass `10 passed, 0 failed`; their tenth case
+   asserts `interrupted`/`10`/`INTERRUPTED`, at most five seconds, and zero
+   `tools/call`.
+5. Only the authorised source and documentation paths change; the retained
+   J16D and J16D-R2 evidence remains unchanged; J16D-R3 and J17 have not begun.
 
 ## Required verification
 
-- Captured `cargo test replay -- --list`, `cargo test replay -- --nocapture`, J14C, and toolchain-gate results.
-- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-task-packet.ps1`; `git diff --check`; status checks.
+- `rustup run 1.89.0 cargo fmt --all`, then `cargo fmt --check`, `cargo check
+  --locked`, focused `child_process`, focused `j13b`, and full `cargo test
+  --locked`, all under Rust `1.89.0` with `RUSTUP_AUTO_INSTALL=0` scoped and
+  restored.
+- Five separately started `test-j13b-run.ps1` processes under the explicit J16
+  OCaml switch, all passing.
+- Packet checker, `git diff --check`, changed-path inspection, status, retained
+  evidence hashes, process inspection, and temporary-root inspection.
 
 ## Forbidden changes
 
-- Tests, source, locks, manifests, scripts, fixtures, J16D, J17, or `main`.
+- No public-envelope, replay, permission, Trail, provider-protocol, fixture,
+  J13B expectation, `Cargo.lock`, J16D-R3, J17, or `main` change.
 
 ## Stop conditions
 
-- Any changed unauthorised path, failed required evidence, or executable beneath J16 Clean.
+- Stop on a substantive verification failure, an unauthorised changed path,
+  altered retained evidence, a J16 executable remaining, or an unexpected
+  temporary test root.
 
 ## Expected pre-existing changes
 
@@ -73,8 +101,10 @@ None.
 
 ## Commit and publication boundary
 
-Create exactly one commit: `test: prove j16 restart and durable replay`; push only `codex/j16-clean-checkout-proof`.
+Create exactly one commit: `fix: make interrupted provider exit deterministic`;
+push only `codex/j16-clean-checkout-proof`.
 
 ## Return contract
 
-Return the replay/J14C proof, process provenance, commit, Git state, and stop.
+Return the bounded precedence rule, focused and full Rust evidence, all five
+public J13B results, changed paths, branch topology, and final cleanliness.

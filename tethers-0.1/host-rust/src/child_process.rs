@@ -20,6 +20,10 @@ const DEFAULT_GRACEFUL_CLOSE_SECS: u64 = 2;
 const MAX_PROTOCOL_LINE_BYTES: usize = 8 * 1024 * 1024; // 8 MiB
 const STDERR_TAIL_BYTES: usize = 64 * 1024; // 64 KiB
 const SYNC_CHANNEL_BOUND: usize = 16;
+// A console interrupt can close a provider's stdout before the host handler
+// publishes the interrupt flag. Give that hand-off a short, bounded window.
+const INTERRUPT_DISCONNECT_OBSERVATION: Duration = Duration::from_millis(50);
+const INTERRUPT_DISCONNECT_POLL: Duration = Duration::from_millis(1);
 
 // Global interruption state.
 pub static INTERRUPTED: AtomicBool = AtomicBool::new(false);
@@ -170,6 +174,45 @@ impl fmt::Display for ChildError {
 
 impl std::error::Error for ChildError {}
 
+/// Prefer a host interruption that becomes visible immediately after a
+/// disconnect over the disconnect's ordinary error. The caller supplies the
+/// clock and pause operations so this ordering boundary is deterministic in
+/// tests; production pauses for at most 50 ms in one-millisecond increments.
+fn classify_disconnect_with_interrupt_observation<Interrupted, Elapsed, Pause>(
+    ordinary_error: ChildError,
+    observation_window: Duration,
+    mut interrupted: Interrupted,
+    mut elapsed: Elapsed,
+    mut pause: Pause,
+) -> ChildError
+where
+    Interrupted: FnMut() -> bool,
+    Elapsed: FnMut() -> Duration,
+    Pause: FnMut(),
+{
+    let deadline = elapsed().saturating_add(observation_window);
+    loop {
+        if interrupted() {
+            return ChildError::Interrupted;
+        }
+        if elapsed() >= deadline {
+            return ordinary_error;
+        }
+        pause();
+    }
+}
+
+fn classify_disconnect_after_interrupt_observation(ordinary_error: ChildError) -> ChildError {
+    let started = Instant::now();
+    classify_disconnect_with_interrupt_observation(
+        ordinary_error,
+        INTERRUPT_DISCONNECT_OBSERVATION,
+        is_interrupted,
+        || started.elapsed(),
+        || thread::sleep(INTERRUPT_DISCONNECT_POLL),
+    )
+}
+
 impl SupervisedChild {
     pub fn launch(config: ChildConfig) -> Result<Self, ChildError> {
         #[cfg(windows)]
@@ -319,17 +362,18 @@ impl SupervisedChild {
                 Ok(result) => return result,
                 Err(mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    // Reader thread exited. Check if child exited.
-                    match self.child.try_wait() {
-                        Ok(Some(status)) => {
-                            return Err(ChildError::ProcessExited(status.code().unwrap_or(-1)));
-                        }
-                        _ => {
-                            return Err(ChildError::ProtocolError(
-                                "stdout reader disconnected unexpectedly".to_owned(),
-                            ));
-                        }
-                    }
+                    // A CTRL_C_EVENT can close the provider's stdout before the
+                    // host handler publishes INTERRUPTED. Preserve interruption
+                    // precedence through this small bounded observation window.
+                    let ordinary_error = match self.child.try_wait() {
+                        Ok(Some(status)) => ChildError::ProcessExited(status.code().unwrap_or(-1)),
+                        _ => ChildError::ProtocolError(
+                            "stdout reader disconnected unexpectedly".to_owned(),
+                        ),
+                    };
+                    return Err(classify_disconnect_after_interrupt_observation(
+                        ordinary_error,
+                    ));
                 }
             }
         }
@@ -549,6 +593,7 @@ fn create_job_object() -> Result<usize, ChildError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
     fn fixture_script() -> std::path::PathBuf {
         let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -616,6 +661,69 @@ mod tests {
         set_interrupted();
         assert!(is_interrupted());
         INTERRUPTED.store(false, Ordering::Release);
+    }
+
+    #[test]
+    fn interrupted_is_returned_when_visible_at_stdout_disconnect() {
+        let pauses = Cell::new(0);
+        let result = classify_disconnect_with_interrupt_observation(
+            ChildError::ProcessExited(7),
+            Duration::from_millis(3),
+            || true,
+            || Duration::ZERO,
+            || pauses.set(pauses.get() + 1),
+        );
+
+        assert!(matches!(result, ChildError::Interrupted));
+        assert_eq!(pauses.get(), 0, "visible interruption must not wait");
+    }
+
+    #[test]
+    fn interrupted_is_returned_when_visible_shortly_after_stdout_disconnect() {
+        let elapsed_millis = Cell::new(0);
+        let observations = Cell::new(0);
+        let result = classify_disconnect_with_interrupt_observation(
+            ChildError::ProcessExited(7),
+            Duration::from_millis(3),
+            || {
+                observations.set(observations.get() + 1);
+                observations.get() >= 2
+            },
+            || Duration::from_millis(elapsed_millis.get()),
+            || elapsed_millis.set(elapsed_millis.get() + 1),
+        );
+
+        assert!(matches!(result, ChildError::Interrupted));
+        assert_eq!(elapsed_millis.get(), 1, "late observation stays bounded");
+    }
+
+    #[test]
+    fn ordinary_process_exit_remains_process_exited_without_interruption() {
+        let elapsed_millis = Cell::new(0);
+        let result = classify_disconnect_with_interrupt_observation(
+            ChildError::ProcessExited(47),
+            Duration::from_millis(3),
+            || false,
+            || Duration::from_millis(elapsed_millis.get()),
+            || elapsed_millis.set(elapsed_millis.get() + 1),
+        );
+
+        assert!(matches!(result, ChildError::ProcessExited(47)));
+    }
+
+    #[test]
+    fn interrupt_observation_window_terminates_at_its_bound() {
+        let elapsed_millis = Cell::new(0);
+        let result = classify_disconnect_with_interrupt_observation(
+            ChildError::ProcessExited(1),
+            Duration::from_millis(3),
+            || false,
+            || Duration::from_millis(elapsed_millis.get()),
+            || elapsed_millis.set(elapsed_millis.get() + 1),
+        );
+
+        assert!(matches!(result, ChildError::ProcessExited(1)));
+        assert_eq!(elapsed_millis.get(), 3, "observation loop is bounded");
     }
 
     #[test]
