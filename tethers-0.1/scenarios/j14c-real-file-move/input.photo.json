@@ -1,0 +1,20 @@
+{
+  "format_version": "1",
+  "evaluation_id": "eval_j14c_photo_001",
+  "tether": {
+    "id": "j14c-sort-invoice",
+    "version": "1"
+  },
+  "event": {
+    "id": "evt_j14c_photo_001",
+    "name": "folder.received_file",
+    "data": {
+      "source_path": "workspace/inbox/holiday-photo.jpg",
+      "destination_path": "workspace/invoices/holiday-photo.jpg"
+    }
+  },
+  "facts": {
+    "file.type": "jpg",
+    "file.name": "holiday-photo.jpg"
+  }
+}

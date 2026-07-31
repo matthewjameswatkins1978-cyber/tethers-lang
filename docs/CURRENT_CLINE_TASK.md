@@ -8,7 +8,7 @@ Owner: `OpenCode`
 
 Recommended model: `Hy3 High`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
@@ -41,6 +41,24 @@ This task is deliberately inserted before J15. J14 proved the runtime with a
 fixture capability. J14C proves that the same machinery performs a recognisable
 real-world effect. J15 remains the later consolidated release verification entry
 point.
+
+## Relevant background and existing behaviour
+
+J13 delivered the public `check`, `run`, and `trail` commands. J14A proved the
+complete positive local route and J14B proved the eleven-row negative matrix,
+both using `tethers-0.1/scripts/tethers-stdio-fixture.ps1` and the reviewed
+`fixture.ping` manifests. That machinery is accepted and unchanged.
+
+The accepted runtime already provides: RFC 8785/SHA-256 manifest digests with
+host-pinned admission, live MCP `initialize` and `tools/list` schema comparison,
+one `path_prefix` scope binding per capability through a single JSON pointer,
+durable intent before the effectful call, exactly one `tools/call` per attempted
+Action, no automatic retry, standard Result Anchors without `execution_id`, and
+replay admission that blocks a second external effect.
+
+What has never been proved is that this same machinery causes an intelligible
+external effect. Every accepted row so far ends in an echoed fixture string.
+J14C changes only the provider and the reviewed capability, not the runtime.
 
 ## Product demonstration
 
@@ -77,7 +95,18 @@ workspace/invoices/invoice-july.pdf
 
 An unrelated `workspace/inbox/holiday-photo.jpg` must remain untouched.
 
-## Required implementation
+## Required behaviour
+
+1. Add one dedicated real local stdio MCP provider exposing exactly one
+   `file_move` tool.
+2. Confine that provider to one canonical root with configured source and
+   destination prefixes and no overwrite, traversal, or reparse-point escape.
+3. Add one reviewed `file.move` version 1 capability manifest with an honestly
+   computed RFC 8785/SHA-256 canonical digest.
+4. Bind host `path_prefix` scope to `/source_path` only and record that split.
+5. Commit one readable scenario with its Tether, inputs, runtime template, and
+   README.
+6. Add one public proof harness reporting exactly rows F01 through F09.
 
 ### 1. Dedicated real local provider
 
@@ -467,7 +496,7 @@ Add a decision at the top of `docs/DECISIONS.md` recording:
 - no watcher, GUI, general filesystem API, overwrite, retry, or production host
   redesign is included.
 
-## Relevant existing components
+## Relevant components
 
 Read and reuse patterns from:
 
@@ -528,7 +557,7 @@ If the accepted public runtime cannot prove this capability without one of those
 changes, return `BLOCKED` with the smallest exact missing boundary. Do not widen
 the task silently.
 
-## Frozen invariants
+## Frozen decisions and invariants
 
 - Published base is exactly `e5c3328bf8dc54c738190134d4255bdaa9e7181f`.
 - J14 remains accepted and unchanged.

@@ -5,7 +5,7 @@ Owner and final product authority: Matthew
 Programme architect and controller: Lucy  
 Red implementation and machine escalation: Codex  
 Default implementation owner: Cline  
-Updated: 25 July 2026
+Updated: 31 July 2026
 
 ## 1. Release Decision
 
@@ -169,7 +169,7 @@ the task.
 | B. Exact approval | J05 | One-shot approval and resume proven |
 | C. Honest execution | J06-J09 | Deadline, uncertainty, Result Anchor, and replay semantics proven |
 | D. Event continuation | J10-J11 | Result events queue safely to depth eight |
-| E. Operable slice | J12-J14 | Check/run/trail route and real scenario proven |
+| E. Operable slice | J12-J14C | Check/run/trail route, real scenario, and real file-move capability proven |
 | F. Harden and release | J15-J17 | Clean-checkout proof and 0.2 sign-off |
 
 No stage starts merely because code exists. Its gate requires an evidence-backed
@@ -296,12 +296,26 @@ verdict.
   Ask states, Deny, stale pin, intent failure, executor failure, invalid output,
   uncertain timeout, duplicate replay, and loop depth.
 
+### J14C: Real Local File Move Capability Proof
+
+- Risk: Amber.
+- Implementation owner: OpenCode.
+- Reviewer: Lucy independently.
+- Depends on: J14 accepted.
+- Outcome: a dedicated local stdio MCP provider moves one real file from a bounded
+  inbox to a bounded invoices folder through the same public check/run/trail
+  commands. A non-fixture capability performs one intelligible external effect
+  while non-match, out-of-scope, traversal, overwrite, and junction-escape inputs
+  cause no filesystem effect.
+- Release-acceptance claim: a non-fixture local provider performs a bounded
+  visible file move while non-match and out-of-scope inputs cause no effect.
+
 ### J15: Consolidate The 0.2 Failure Matrix
 
 - Risk: Amber verification.
 - Owner: Cline.
 - Reviewer: Lucy.
-- Depends on: J14 accepted.
+- Depends on: J14C accepted.
 - Outcome: one discoverable Windows verification entry point reports every
   release case separately and honestly.
 

@@ -1,0 +1,67 @@
+{
+  "format_version": "0.1",
+  "tether_set": {
+    "id": "scenario.j14c.real-file-move",
+    "version": "1",
+    "tethers": [
+      {
+        "id": "j14c-sort-invoice",
+        "version": "1",
+        "source_path": "tethers/sort-invoice.tether"
+      }
+    ],
+    "capability_requirements": [
+      {
+        "name": "file.move",
+        "version": 1,
+        "reason": "J14C real local file move proof"
+      }
+    ]
+  },
+  "providers": [
+    {
+      "id": "tethers-local-file-provider",
+      "display_name": "Tethers Local File Provider",
+      "transport": {
+        "kind": "stdio",
+        "command": "pwsh.exe",
+        "args": [
+          "-NoProfile",
+          "-File",
+          "__PROVIDER_SCRIPT__",
+          "-ProviderRoot",
+          "__PROVIDER_ROOT__",
+          "-SourcePrefix",
+          "workspace/inbox/",
+          "-DestinationPrefix",
+          "workspace/invoices/",
+          "-MarkerFile",
+          "__PROVIDER_MARKER__"
+        ],
+        "protocol_version": "2025-11-25"
+      },
+      "capabilities": [
+        {
+          "name": "file.move",
+          "version": 1,
+          "manifest_path": "__MANIFEST_PATH__",
+          "pinned_digest": "__MANIFEST_DIGEST__",
+          "scope_binding": {
+            "kind": "path_prefix",
+            "argument_json_pointer": "/source_path"
+          }
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "default": "deny",
+    "rules": [
+      {
+        "name": "file.move",
+        "version": 1,
+        "decision": "allow"
+      }
+    ]
+  }
+}

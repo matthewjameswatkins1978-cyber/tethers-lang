@@ -1,0 +1,79 @@
+{
+  "manifest_format_version": "1.0",
+  "capability_name": "file.move",
+  "capability_version": 1,
+  "title": "Local File Move",
+  "description": "Reviewed capability that moves one existing file between two directories configured beneath a single provider root. The provider exposes no separate idempotency mechanism: a repeated call with the same arguments fails because the source no longer exists, so replay protection is owned by the host and automatic retry is forbidden.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "source_path": {
+        "type": "string"
+      },
+      "destination_path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source_path",
+      "destination_path"
+    ],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "moved": {
+        "type": "boolean"
+      },
+      "source_path": {
+        "type": "string"
+      },
+      "destination_path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "moved",
+      "source_path",
+      "destination_path"
+    ],
+    "additionalProperties": false
+  },
+  "effects": [
+    "file.move"
+  ],
+  "permission_scope": {
+    "kind": "path_prefix",
+    "allowed_prefixes": ["workspace/inbox/"]
+  },
+  "reversibility": "compensatable",
+  "determinism": "deterministic",
+  "idempotency": {
+    "mechanism": "none"
+  },
+  "confirmation_policy": {
+    "standing_permitted": true,
+    "per_call_required": false
+  },
+  "timeout_ms": 5000,
+  "retry_policy": {
+    "max_retries": 0,
+    "backoff_ms": 0,
+    "allowed_on": [],
+    "requires_idempotency_proof": true
+  },
+  "provider": {
+    "identity": "tethers-local-file-provider",
+    "display_name": "Tethers Local File Provider",
+    "identity_source": "host_configuration",
+    "description": "Dedicated local stdio provider confined to one canonical root."
+  },
+  "binding": {
+    "kind": "mcp",
+    "server_name": "tethers-local-file-provider",
+    "tool_name": "file_move",
+    "adapter": null
+  },
+  "digest": "sha256:6a99459d4f01bca270ae7453757bcab9ce6b8fd4634f0be185a07ae13a34ac4e"
+}

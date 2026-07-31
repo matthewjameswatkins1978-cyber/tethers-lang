@@ -1,4 +1,35 @@
 # Decisions
+## 2026-07-31: J14C real local file move capability proof
+
+Decision: Matthew authorised J14C after J14 publication. J14 proved the execution
+machinery with a fixture ping capability, but every accepted row so far ended in
+an echoed fixture string. J14C proves that the same machinery performs one
+intelligible, externally visible job — moving a real file from a bounded inbox to
+a bounded invoices folder — without changing the runtime.
+
+J14C remains inside the existing 0.2 promise of one real local permissioned
+execution loop. Host scope binds `/source_path` only because the accepted runtime
+currently supports one JSON pointer per capability. The dedicated provider
+independently enforces both source and destination confinement, canonical-root
+containment, reparse-point inspection, and safety boundaries for traversal,
+overwrite, and junction escape. No watcher, GUI, general filesystem API,
+overwrite, retry, or production host redesign is included.
+
+The proof harness reports exactly F01–F09: check admission, untouched photo after
+non-match, a successful invoice move preserving byte content, public Trail
+explaining the move, blocked replay, out-of-scope denial, traversal refusal,
+overwrite refusal, and junction-escape refusal. Every row proves one JSON
+envelope, matching process and embedded exit codes, exact provider method counts,
+exact identity and Result Anchor rules, durable Trail evidence, and no retry.
+All effects occur beneath one unique system temporary root with a space and a
+non-ASCII character; no repository file is mutated.
+
+Reason: fixture ping proved the execution machinery but not an intelligible
+external effect. J14C proves a recognisable real-world effect through the same
+public check/run/trail commands and the same trust boundaries. The safety split
+between host-side scope on `/source_path` and provider-side confinement for both
+paths is a deliberate design decision, not a gap.
+
 ## 2026-07-31: J14B negative public integration matrix
 
 Decision: J14B proves the J14 negative matrix through 11 reproducible native

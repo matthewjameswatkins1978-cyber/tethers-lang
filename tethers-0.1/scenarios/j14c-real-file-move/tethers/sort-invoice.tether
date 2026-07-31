@@ -1,0 +1,13 @@
+tether "Sort received invoices"
+
+anchor
+    folder.received_file
+
+when
+    file.type is "pdf"
+    and file.name contains "invoice"
+
+do
+    file.move
+        source_path: anchor.source_path
+        destination_path: anchor.destination_path
