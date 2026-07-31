@@ -2,210 +2,583 @@
 
 Control contract: `1`
 
-Task: `J14B - negative public integration matrix`
+Task: `J14C - real local file move capability proof`
 
 Owner: `OpenCode`
 
-Status: `COMPLETE`
+Recommended model: `Hy3 High`
+
+Status: `READY`
 
 Task colour: `Amber`
 
-Correction: `J14B-R - strengthen negative matrix assertions and evidence`
-
 Route: `OpenCode implementation - Lucy independent review`
 
-Base commit: `8a06b0883f968f1561153bf8d54bfce3818fbde8`
+Base commit: `e5c3328bf8dc54c738190134d4255bdaa9e7181f`
 
-Branch: `opencode/j14b-negative-public-matrix`
+Branch: `opencode/j14c-real-file-move`
 
-Worker note: `docs/worker-notes/2026-07-30-j14b-negative-public-matrix.md`
+Worker note: `docs/worker-notes/2026-07-31-j14c-real-file-move.md`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
 ## Objective
 
-Complete J14 by proving the required negative matrix through reproducible native
-Windows boundaries.
+Prove that Tethers performs one intelligible, externally visible job through the
+accepted public Windows route.
 
-Create one J14B verification script that reports eleven named matrix rows:
+A readable Tether must inspect one `folder.received_file` event and immutable
+Facts. When the file is a PDF and its name contains `invoice`, Tethers must plan
+and authorise `file.move`. A dedicated local stdio MCP provider must then move
+one real file from a bounded inbox to a bounded invoices folder.
 
-1. malformed manifest;
-2. unavailable provider;
-3. Ask;
-4. Deny;
-5. stale pin;
-6. post-admission durable intent failure;
-7. executor failure;
-8. invalid provider output;
-9. uncertain timeout;
-10. duplicate replay;
-11. causal depth beyond eight.
+The proof must use public `check`, `run`, and `trail` commands. It must also prove
+that a non-matching image is untouched, an out-of-scope source is denied, exact
+replay does not move the file twice, and unsafe destinations fail without an
+external effect.
 
-Use the real public `check` or `run` commands wherever the failure can be induced
-without weakening production. Use an existing accepted internal seam only where
-public fault injection would itself be a product defect.
+This task is deliberately inserted before J15. J14 proved the runtime with a
+fixture capability. J14C proves that the same machinery performs a recognisable
+real-world effect. J15 remains the later consolidated release verification entry
+point.
 
-J14 remains incomplete until Lucy independently accepts this branch.
+## Product demonstration
 
-## Relevant background and existing behaviour
+The committed Tether should read like this, subject only to exact accepted 0.1
+syntax:
 
-J14A is accepted and published at
-`8a06b0883f968f1561153bf8d54bfce3818fbde8`. It proves the positive public
-`check -> run -> trail -> replay` route and exact trusted execution identity.
+```text
+tether "Sort received invoices"
 
-The roadmap requires J14 negative cases for malformed manifest, unavailable
-provider, Ask, Deny, stale pin, intent failure, executor failure, invalid output,
-uncertain timeout, duplicate replay, and loop depth.
+anchor
+    folder.received_file
 
-The public `check` and `run` commands can naturally prove nine of those rows.
-Post-admission Trail-intent failure cannot be safely induced through the public
-CLI without a production fault switch. Depth-nine rejection already has an
-accepted compiled debug boundary in `event-admission-trail-probe`. J14B must use
-those narrow seams rather than add a hidden production bypass.
+when
+    file.type is "pdf"
+    and file.name contains "invoice"
 
-The public `run` coordinator still owns exactly one selected external input. Do
-not expand public follow-up evaluation, change queue semantics, or redesign
-J10/J11 in this task.
+do
+    file.move
+        source_path: anchor.source_path
+        destination_path: anchor.destination_path
+```
 
-## Required behaviour
+Do not add `facts.*` Action arguments. Tethers 0.1 resolves Action arguments only
+from literals and `anchor.*` references. Conditions continue to read immutable
+Facts.
 
-1. Complete the mandatory `AGENTS.md` startup report and all pre-flight checks
-   before mutation.
-2. Add `tethers-0.1/scripts/test-j14b-negative-matrix.ps1` as the single J14B
-   scenario entry point. It must print each matrix row separately and finish
-   with honest case and assertion totals.
-3. Create all generated configurations, inputs, Trails, replay state, markers,
-   and temporary assets beneath one unique system temporary directory containing
-   both a space and a non-ASCII character. Remove it in `finally` on success or
-   failure.
-4. Exercise rows 1-5 and 7-10 through the real public `check` or `run` commands,
-   the real OCaml engine, the real prepared runtime, and the real stdio provider
-   boundary. Do not use `__legacy` for those rows.
-5. Prove row 6 with one focused `#[cfg(test)]` Rust test in `main.rs` using the
-   accepted execution boundary and existing test doubles. Do not add a runtime
-   environment variable, CLI flag, global state, or production fault-injection
-   branch.
-6. Prove row 11 through the existing debug-only
-   `event-admission-trail-probe causal-depth` compiled boundary. Also prove the
-   release binary does not expose that debug command.
-7. Extend `tethers-stdio-fixture.ps1` only with the three deterministic run modes
-   required by J14B: `run-explicit-error`, `run-invalid-output`, and
-   `run-hang-call`. All three must advertise the same accepted input and output
-   schemas as `run-success` and record initialize, tools/list, and tools/call in
-   the marker file.
-8. Preserve exact public envelope status, process exit code, machine code,
-   execution-ID presence rule, Result Anchor presence rule, provider call count,
-   Trail evidence, and no-retry rule for every public row.
-9. For malformed manifest and stale pinned digest, prove failure occurs before
-   provider launch and before Trail or replay mutation.
-10. For Ask and Deny, prove zero effectful calls, no trusted execution ID, and no
-    Result Anchor. Ask must durably record `approval_requested` and expose no
-    public approval ID.
-11. For executor failure, invalid output, and uncertain timeout, prove exactly
-    one effectful call, a trusted execution ID, the correct standard Result
-    Anchor kind, and no automatic retry.
-12. For duplicate replay, prove the second public run returns the original
-    execution ID, performs no second effectful call, and leaves the filtered
-    execution Trail structurally unchanged.
-13. Record the boundary decision in `docs/DECISIONS.md` and write the required
-    worker note with exact results and honest exceptions.
-14. Run the complete required verification, create one implementation commit and
-    at most one documentation closeout commit, push only the feature branch, and
-    stop without beginning J15.
+The successful demonstration should visibly produce:
 
-## Relevant components
+```text
+workspace/inbox/invoice-july.pdf
+    -> Tethers public run
+workspace/invoices/invoice-july.pdf
+```
 
-- `tethers-0.1/scripts/test-j14b-negative-matrix.ps1` - new matrix harness.
-- `tethers-0.1/scripts/tethers-stdio-fixture.ps1` - three deterministic provider
-  failure modes.
-- `tethers-0.1/host-rust/src/main.rs` - test-only post-admission intent-failure
-  proof; production code must remain unchanged.
-- `tethers-0.1/scripts/test-j14a-complete-scenario.ps1` - accepted positive
-  scenario patterns and public envelope helpers.
-- `tethers-0.1/scripts/test-j13a-check.ps1` - accepted public check patterns.
-- `tethers-0.1/scripts/test-j13b-run.ps1` - accepted public run, Ask, Deny, and
-  replay patterns.
-- `tethers-0.1/scripts/test-host-event-admission-trail.ps1` - accepted durable
-  depth rejection contract.
-- `docs/DECISIONS.md` - boundary decision.
-- `docs/worker-notes/2026-07-30-j14b-negative-public-matrix.md` - evidence.
+An unrelated `workspace/inbox/holiday-photo.jpg` must remain untouched.
+
+## Required implementation
+
+### 1. Dedicated real local provider
+
+Add:
+
+`tethers-0.1/providers/tethers-local-file-provider.ps1`
+
+This is a dedicated provider, not a new mode in the test fixture.
+
+It must:
+
+- implement the accepted line-delimited stdio MCP protocol version
+  `2025-11-25`;
+- identify itself exactly as `tethers-local-file-provider`;
+- advertise exactly one tool named `file_move`;
+- write protocol JSON only to stdout;
+- write diagnostics only to stderr;
+- support an optional marker file recording exact method names
+  `initialize`, `tools/list`, and `tools/call`;
+- accept trusted host configuration parameters for one absolute provider root,
+  one allowed source prefix, and one allowed destination prefix;
+- perform no background watching, scanning, polling, network access, or daemon
+  behaviour.
+
+The tool input is exactly:
+
+```json
+{
+  "source_path": "string",
+  "destination_path": "string"
+}
+```
+
+The successful output is exactly:
+
+```json
+{
+  "moved": true,
+  "source_path": "workspace/inbox/invoice-july.pdf",
+  "destination_path": "workspace/invoices/invoice-july.pdf"
+}
+```
+
+The provider must return JSON-RPC errors for expected validation and filesystem
+failures. It must never print a success response unless the source is absent,
+the destination exists as a regular file, and the move is known to have
+completed.
+
+### 2. Provider filesystem boundary
+
+The provider root is an existing absolute directory supplied by trusted runtime
+configuration. Resource paths are relative forward-slash paths beneath that
+root.
+
+For both source and destination, reject:
+
+- empty strings;
+- absolute, rooted, drive-relative, UNC, or device paths;
+- backslashes;
+- colons;
+- NUL;
+- empty segments;
+- `.` or `..` segments;
+- wildcard interpretation;
+- paths outside the canonical provider root;
+- any existing reparse point, junction, or symbolic-link component beneath the
+  provider root.
+
+Also require:
+
+- source is beneath the configured source prefix;
+- destination is beneath the configured destination prefix;
+- source exists and is a regular file;
+- destination parent already exists and is a regular directory;
+- destination does not already exist;
+- source and destination are not the same canonical path;
+- comparison and root containment are Windows case-insensitive and preserve a
+  path-segment boundary;
+- no directory is created implicitly;
+- no overwrite occurs;
+- literal .NET filesystem APIs are used, not wildcard-expanding cmdlets.
+
+Use an operation equivalent to `System.IO.File.Move(source, destination, false)`.
+Do not implement copy, delete, rename batches, recursive moves, compensation, or
+an overwrite flag.
+
+### 3. Capability manifest
+
+Add:
+
+`tethers-0.1/protocol/capability-manifests/file-move-local.json`
+
+The manifest must:
+
+- declare `file.move`, version `1`;
+- bind provider identity and MCP server name to
+  `tethers-local-file-provider`;
+- bind tool name to `file_move`;
+- advertise the exact input and output schemas above;
+- declare effect `file.move`;
+- use `path_prefix` permission scope with reviewed source prefix
+  `workspace/inbox/`;
+- allow standing permission for this bounded scenario;
+- declare zero automatic retries;
+- honestly state that the provider itself has no separate idempotency mechanism;
+- use the existing accepted manifest format and enum vocabulary;
+- contain the exact RFC 8785/SHA-256 canonical digest expected by the host.
+
+Do not use the raw file hash as the manifest digest. Compute the canonical digest
+using the existing manifest rules and prove it through public `check`.
+
+### 4. Scope split
+
+The current host `path_prefix` contract binds one JSON pointer. Do not redesign
+it in this task.
+
+The runtime configuration must bind host scope to:
+
+`/source_path`
+
+The host therefore proves that the source is beneath `workspace/inbox/` before
+dispatch. The dedicated provider independently enforces both configured source
+and destination prefixes and canonical-root confinement.
+
+Record this split explicitly in `docs/DECISIONS.md` and the scenario README. Do
+not imply that the host currently evaluates both path arguments.
+
+### 5. Committed scenario
+
+Add:
+
+- `tethers-0.1/scenarios/j14c-real-file-move/README.md`
+- `tethers-0.1/scenarios/j14c-real-file-move/runtime.template.json`
+- `tethers-0.1/scenarios/j14c-real-file-move/input.invoice.json`
+- `tethers-0.1/scenarios/j14c-real-file-move/input.photo.json`
+- `tethers-0.1/scenarios/j14c-real-file-move/tethers/sort-invoice.tether`
+
+The runtime template must contain placeholders for:
+
+- the provider script;
+- the provider root;
+- the provider marker;
+- the manifest path;
+- the exact pinned manifest digest.
+
+Configure:
+
+- provider root: one generated case-local root;
+- provider source prefix: `workspace/inbox/`;
+- provider destination prefix: `workspace/invoices/`;
+- host scope binding: `/source_path`;
+- host policy: Allow only `file.move` version 1.
+
+The invoice input must use:
+
+- event name `folder.received_file`;
+- source `workspace/inbox/invoice-july.pdf`;
+- destination `workspace/invoices/invoice-july.pdf`;
+- Fact `file.type = pdf`;
+- Fact `file.name = invoice-july.pdf`.
+
+The photo input must use:
+
+- event name `folder.received_file`;
+- source `workspace/inbox/holiday-photo.jpg`;
+- destination `workspace/invoices/holiday-photo.jpg`;
+- Fact `file.type = jpg`;
+- Fact `file.name = holiday-photo.jpg`.
+
+The README must show the human-readable Tether, the before/after directory tree,
+the public commands, the safety boundary, and one command that runs the proof.
+
+### 6. Public proof harness
+
+Add:
+
+`tethers-0.1/scripts/test-j14c-real-file-move.ps1`
+
+Use one unique system temporary root containing both a space and a non-ASCII
+character. Put every generated config, input, provider root, marker, Trail,
+replay root, junction target, and output beneath it. Remove it in `finally` on
+success or failure.
+
+The script must report exactly these nine rows, once each and in this order:
+
+| ID | Row |
+| --- | --- |
+| F01 | public check admits real file provider |
+| F02 | non-matching photo remains untouched |
+| F03 | matching invoice moves exactly once |
+| F04 | public Trail explains the move |
+| F05 | exact replay causes no second move |
+| F06 | out-of-scope source is denied |
+| F07 | traversal destination fails safely |
+| F08 | existing destination is never overwritten |
+| F09 | junction escape fails safely |
+
+Use explicit row IDs and assert the final sequence is exactly F01 through F09,
+with no duplicate or extra row. Print honest row and assertion totals.
+
+## Row contracts
+
+### F01 - public check admits real file provider
+
+Run the real public `check` command with the real OCaml engine and dedicated
+provider.
+
+Require:
+
+- one JSON envelope;
+- command `check`;
+- status `ok` and process/embedded exit 0;
+- exactly one provider and one capability;
+- provider and capability are available;
+- exact `file.move` version 1 identity;
+- marker counts: initialize 1, tools/list 1, tools/call 0;
+- no file is moved or created by check.
+
+### F02 - non-matching photo remains untouched
+
+Create both the photo and its destination directory. Run the public `run`
+command with `input.photo.json`.
+
+Require:
+
+- status `no_actions`, exit 0;
+- no execution ID;
+- no Result Anchor;
+- marker counts: initialize 1, tools/list 1, tools/call 0;
+- photo remains byte-identical in the inbox;
+- no destination photo exists;
+- no other file changes.
+
+### F03 - matching invoice moves exactly once
+
+Create:
+
+- `workspace/inbox/invoice-july.pdf` with deterministic non-empty bytes;
+- `workspace/inbox/holiday-photo.jpg` with different deterministic bytes;
+- existing empty `workspace/invoices/` directory.
+
+Record hashes before the run. Run the public `run` command with
+`input.invoice.json`.
+
+Require:
+
+- one JSON envelope;
+- status `completed`, exit 0;
+- execution status `completed`;
+- one parseable trusted `exec_<UUID>` execution ID;
+- exactly one `capability.succeeded` Result Anchor;
+- Result Anchor contains no `execution_id`;
+- marker counts: initialize 1, tools/list 1, tools/call 1;
+- source invoice is absent;
+- destination invoice exists as a regular file;
+- destination hash equals the original source hash;
+- output contains exact source and destination resource paths and `moved: true`;
+- unrelated photo remains byte-identical in the inbox;
+- no automatic retry.
+
+### F04 - public Trail explains the move
+
+Use the execution ID returned by F03 with the real public `trail` command.
+
+Require:
+
+- one JSON envelope;
+- command `trail`, status `ok`, exit 0;
+- only entries for the exact F03 execution ID;
+- the durable intent precedes the terminal succeeded outcome;
+- capability is `file.move` version 1;
+- provider identity is `tethers-local-file-provider`;
+- exact source and destination arguments are visible in the appropriate durable
+  evidence;
+- exactly one terminal succeeded outcome;
+- the Trail makes no claim that a second call occurred.
+
+Use the accepted J14A Trail helper patterns and exact existing Trail field names.
+Do not invent a second Trail schema.
+
+### F05 - exact replay causes no second move
+
+Run the exact F03 public input again against the same replay root and Trail.
+
+Require:
+
+- status `completed`, exit 0;
+- execution status `replay_blocked_completed_success`;
+- exact same execution ID as F03;
+- total marker counts across both runs: initialize 2, tools/list 2, tools/call 1;
+- destination invoice remains byte-identical;
+- source remains absent;
+- unrelated photo remains untouched;
+- filtered Trail entries for the execution ID remain structurally identical;
+- no second external effect.
+
+### F06 - out-of-scope source is denied
+
+Create `workspace/outside/invoice-secret.pdf`. Generate a matching invoice event
+whose source is that path and whose destination is within the invoices prefix.
+
+Require:
+
+- public `run` status `denied`, exit 0;
+- no execution ID;
+- no Result Anchor;
+- marker counts: initialize 1, tools/list 1, tools/call 0;
+- outside source remains byte-identical;
+- destination is absent.
+
+This row proves the host-side `/source_path` scope binding.
+
+### F07 - traversal destination fails safely
+
+Create a fresh in-scope source and use a destination containing a `..` segment
+that would escape the configured invoices prefix if interpreted.
+
+Require:
+
+- host policy allows the source and dispatch reaches the provider;
+- public `run` status `failed`, exit 6, machine code `ACTION_FAILED`;
+- one trusted execution ID;
+- marker counts: initialize 1, tools/list 1, tools/call 1;
+- source remains byte-identical;
+- no destination or outside file is created;
+- Trail records one terminal failed outcome;
+- no retry.
+
+### F08 - existing destination is never overwritten
+
+Create a fresh source and a pre-existing destination with different content.
+
+Require:
+
+- public `run` status `failed`, exit 6, `ACTION_FAILED`;
+- marker counts: initialize 1, tools/list 1, tools/call 1;
+- source remains byte-identical;
+- destination remains byte-identical to its original content;
+- exactly one terminal failed outcome;
+- no retry.
+
+### F09 - junction escape fails safely
+
+Create a provider root and a separate outside directory beneath the case root.
+Create a Windows directory junction beneath the configured invoices directory
+that points to the outside directory. Use a destination path passing through the
+junction.
+
+Require:
+
+- the junction is created successfully on the native Windows environment;
+- public `run` status `failed`, exit 6, `ACTION_FAILED`;
+- marker counts: initialize 1, tools/list 1, tools/call 1;
+- source remains byte-identical;
+- no file appears in the outside directory;
+- exactly one terminal failed outcome;
+- no retry.
+
+Do not skip this row. Return `BLOCKED` with the exact native error if a junction
+cannot be created or inspected safely.
+
+## Programme and decision updates
+
+Update `docs/ROAD_TO_0_2.md` to:
+
+- insert J14C between J14 and J15;
+- describe J14C as the real local file-move capability proof;
+- make J15 depend on accepted J14C;
+- change Stage E to cover J12 through J14C;
+- add one release-acceptance claim that a non-fixture local provider performs a
+  bounded visible file move while non-match and out-of-scope inputs cause no
+  effect;
+- record the programme update date as 31 July 2026.
+
+Do not rewrite completed job history or update unrelated old checkpoint text.
+
+Add a decision at the top of `docs/DECISIONS.md` recording:
+
+- Matthew authorised J14C after J14 publication;
+- fixture ping proved the execution machinery but not an intelligible external
+  effect;
+- J14C remains inside the existing 0.2 promise of one real local permissioned
+  execution loop;
+- host scope binds source only because the accepted runtime currently supports
+  one JSON pointer;
+- the provider independently confines source and destination;
+- no watcher, GUI, general filesystem API, overwrite, retry, or production host
+  redesign is included.
+
+## Relevant existing components
+
+Read and reuse patterns from:
+
+- `tethers-0.1/scenarios/j14-complete-local/`
+- `tethers-0.1/scripts/test-j14a-complete-scenario.ps1`
+- `tethers-0.1/scripts/test-j14b-negative-matrix.ps1`
+- `tethers-0.1/scripts/tethers-stdio-fixture.ps1`
+- `tethers-0.1/protocol/capability-manifests/fixture-ping-standing-allow.json`
+- `tethers-0.1/host-rust/src/configured_runtime.rs` path validation and scope
+  assessment
+- `tethers-0.1/host-rust/src/stdio_provider.rs`
+- `tethers-0.1/host-rust/src/host_execution.rs`
+- `tethers-0.1/SPEC.md`
+- `docs/CAPABILITY_BRIDGE.md`
 
 ## Expected pre-existing changes
 
 None.
 
-The branch contains one planning commit after the base and the live worktree must
-be completely clean before implementation.
+The branch contains exactly one planning commit after the published J14 base.
+The live implementation worktree must be completely clean before mutation.
 
-## Frozen decisions and invariants
+## Authorised paths
 
-- J14A at `8a06b0883f968f1561153bf8d54bfce3818fbde8` is the immutable base.
+Modify or add only these twelve paths:
+
+1. `docs/CURRENT_CLINE_TASK.md`
+2. `docs/ROAD_TO_0_2.md`
+3. `docs/DECISIONS.md`
+4. `docs/worker-notes/2026-07-31-j14c-real-file-move.md`
+5. `tethers-0.1/providers/tethers-local-file-provider.ps1`
+6. `tethers-0.1/protocol/capability-manifests/file-move-local.json`
+7. `tethers-0.1/scenarios/j14c-real-file-move/README.md`
+8. `tethers-0.1/scenarios/j14c-real-file-move/runtime.template.json`
+9. `tethers-0.1/scenarios/j14c-real-file-move/input.invoice.json`
+10. `tethers-0.1/scenarios/j14c-real-file-move/input.photo.json`
+11. `tethers-0.1/scenarios/j14c-real-file-move/tethers/sort-invoice.tether`
+12. `tethers-0.1/scripts/test-j14c-real-file-move.ps1`
+
+No other path is authorised.
+
+## Forbidden changes
+
+Do not modify:
+
+- production Rust;
+- Rust tests;
+- OCaml;
+- existing provider fixtures;
+- existing manifests or scenarios;
+- Cargo files or `Cargo.lock`;
+- public CLI, runtime configuration schema, scope model, Trail schema, replay
+  format, Result Anchor schema, language grammar, or protocol version;
+- AGENTS.md or workflow/control documents other than the current task packet;
+- J15 implementation.
+
+If the accepted public runtime cannot prove this capability without one of those
+changes, return `BLOCKED` with the smallest exact missing boundary. Do not widen
+the task silently.
+
+## Frozen invariants
+
+- Published base is exactly `e5c3328bf8dc54c738190134d4255bdaa9e7181f`.
+- J14 remains accepted and unchanged.
 - Public status and exit-code vocabulary remains frozen.
 - Trusted execution identity comes only from replay admission.
-- Callers and planners cannot supply execution identity.
-- Result Anchor schema remains unchanged and never contains `execution_id`.
-- Exactly one provider invocation is the maximum for an attempted action.
+- Result Anchors never contain `execution_id`.
+- Intent is durable before the effectful call.
+- At most one provider call occurs per attempted Action.
 - No automatic retry or compensation.
-- Ask, Deny, unavailable, malformed configuration, and pre-admission failure
-  produce no Result Anchor.
-- Known executor failure and invalid output produce `capability.failed`.
-- Timeout after possible dispatch produces `capability.uncertain`.
-- Exact replay does not repeat an external effect.
-- Event generation nine is rejected with maximum generation eight.
-- No public fault-injection option, environment variable, magic path, or hidden
-  mutable global may be added.
-- No public follow-up coordinator expansion in J14B.
-- J15 remains a later consolidation task and must not begin here.
+- Exact replay does not repeat the move.
+- A non-matching Tether performs no action.
+- Host scope denial performs no provider call.
+- Provider validation failure performs no filesystem effect.
+- Existing destinations are never overwritten.
+- Repository files are never used as move targets; all effects occur beneath the
+  generated system temporary root.
+- J15 does not begin in this task.
 
 ## Acceptance criteria
 
-1. Startup report and pre-flight prove the exact worktree, branch, base, remote
-   refs, clean status, authorised paths, stop conditions, and two-failure rule.
-2. The J14B script reports exactly 11 named matrix rows, all PASS, with exact
-   assertion totals and no swallowed child-process failure.
-3. Every temporary path is beneath one Unicode-plus-space temporary root, all
-   temporary state is removed in `finally`, repository status is unchanged by
-   the harness, and Cargo.lock remains byte-identical.
-4. Rows 1-5 and 7-10 invoke only public `check` or `run` commands with the real
-   engine and provider boundary.
-5. The focused `j14b_` intent-failure test uses the accepted execution seam,
-   establishes replay identity before the failing Trail intent, retains that
-   exact identity, performs zero provider calls, emits no Result Anchor, and
-   contains no production fault switch.
-6. Depth row records exactly one external generation-zero admission and one
-   generation-nine rejection with `causal_depth_exceeded` and
-   `maximum_generation = 8`; no later sibling is recorded or evaluated. Release
-   CLI rejects the debug command.
-7. Fixture changes are limited to the three named modes, preserve all existing
-   modes, preserve advertised schema for run modes, and add no unrelated output.
-8. Every public row proves one JSON envelope, matching embedded/process exit
-   codes, exact machine code, exact identity presence or absence, exact Result
-   Anchor presence or absence, exact provider method counts, and no retry.
-9. Malformed manifest and stale pinned digest both return `invalid_data`, exit 3,
-   `RUNTIME_PREPARE_FAILED`, launch no provider, and create no Trail or replay
-   state.
-10. Unavailable provider returns `unavailable`, exit 4,
-    `PROVIDER_CAPABILITY_UNAVAILABLE`, performs no tools/call, and preserves
-    provider evidence.
-11. Ask returns `approval_required`, exit 5, records `approval_requested`, exposes
-    no public approval ID or execution ID, performs zero calls, and emits no
-    Result Anchor. Deny returns `denied`, exit 0, with the same zero-effect and
-    identity/anchor absence rules.
-12. Executor error and invalid output return `failed`, exit 6, `ACTION_FAILED`,
-    expose a parseable trusted execution ID, perform exactly one tools/call,
-    emit `capability.failed`, and do not retry. Timeout returns `uncertain`, exit
-    7, `ACTION_UNCERTAIN`, exactly one call, `capability.uncertain`, and bounded
-    completion after the manifest deadline.
-13. Duplicate replay returns `replay_blocked_completed_success`, the exact first
-    execution ID, one total tools/call across both runs, and structurally
-    identical filtered Trail entries.
-14. Decision, worker note, packet, focused/full Rust checks, matrix script,
-    regressions, toolchain checks, Cargo.lock hash, packet checker, whitespace,
-    branch range, and clean worktrees all pass and are reported honestly.
+1. Mandatory startup report and pre-flight prove exact worktree, refs, clean
+   status, twelve authorised paths, stop conditions, and two-failure rule.
+2. Dedicated provider implements exactly one real `file_move` tool and no fixture
+   modes or unrelated capability.
+3. Manifest, live MCP tool schema, provider identity, server name, binding, and
+   pinned canonical digest agree exactly.
+4. Public `check` admits the provider and performs no effect.
+5. Public non-match returns `no_actions` and leaves the photo untouched.
+6. Public matching run physically moves the invoice, preserves bytes, leaves the
+   photo untouched, returns trusted identity, and emits `capability.succeeded`.
+7. Public Trail inspection explains the exact move with intent before success.
+8. Exact replay returns the same identity and performs no second move.
+9. Out-of-scope source is denied before tools/call.
+10. Traversal destination, existing destination, and junction escape each fail
+    after exactly one call and cause no filesystem effect.
+11. Every row proves one JSON envelope where applicable, matching process and
+    embedded exit codes, exact method counts, exact identity and Result Anchor
+    rules, durable Trail evidence, and no retry.
+12. Harness reports exactly F01 through F09, all PASS, with honest assertion
+    totals, Unicode-plus-space root, cleanup, unchanged repository status, and
+    unchanged Cargo.lock hash.
+13. Scenario README provides a convincing human-readable demonstration from a
+    clean built checkout.
+14. Programme, decision, worker note, packet checker, focused scenario,
+    regressions, toolchains, Cargo.lock, whitespace, branch range, and worktrees
+    are reported honestly.
+15. No production Rust, Rust test, OCaml, schema, or existing fixture change is
+    present.
 
-## Required verification
-
-### Mandatory reading
+## Mandatory reading
 
 Read in full before editing:
 
@@ -215,17 +588,13 @@ Read in full before editing:
 - `docs/CURRENT_CLINE_TASK.md`
 - `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md`
 - `docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md`
-- `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
-- `docs/ROAD_TO_0_2.md` J14 and J15 sections
-- `docs/DECISIONS.md` J14A decision
-- `tethers-0.1/host-rust/src/main.rs` relevant execution tests and debug probes
-- `tethers-0.1/scripts/tethers-stdio-fixture.ps1`
-- `tethers-0.1/scripts/test-j13a-check.ps1`
-- `tethers-0.1/scripts/test-j13b-run.ps1`
-- `tethers-0.1/scripts/test-j14a-complete-scenario.ps1`
-- `tethers-0.1/scripts/test-host-event-admission-trail.ps1`
+- `docs/ROAD_TO_0_2.md` J14 through J17
+- `docs/DECISIONS.md` J14A and J14B decisions
+- `docs/CAPABILITY_BRIDGE.md`
+- `tethers-0.1/SPEC.md`
+- all relevant components listed above.
 
-### Pre-flight
+## Pre-flight
 
 Run:
 
@@ -235,7 +604,7 @@ git branch --show-current
 git status --porcelain=v1 --untracked-files=all
 git fetch origin --prune
 git rev-parse HEAD
-git rev-parse origin/opencode/j14b-negative-public-matrix
+git rev-parse origin/opencode/j14c-real-file-move
 git rev-parse origin/main
 git merge-base HEAD origin/main
 git rev-list --count origin/main..HEAD
@@ -246,10 +615,10 @@ git worktree list --porcelain
 Require:
 
 - worktree `D:\The Next Thing\Tethers Lang - Goose Integration`;
-- branch `opencode/j14b-negative-public-matrix`;
+- branch `opencode/j14c-real-file-move`;
 - completely clean status;
 - local and remote branch identical;
-- origin/main exactly `8a06b0883f968f1561153bf8d54bfce3818fbde8`;
+- origin/main exactly `e5c3328bf8dc54c738190134d4255bdaa9e7181f`;
 - merge base exactly origin/main;
 - branch exactly one planning commit ahead and zero behind;
 - original worktree preserved on `cline/j10-result-event-queue` with only
@@ -264,176 +633,118 @@ pwsh -NoProfile -ExecutionPolicy Bypass `
     "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"
 ```
 
-### Matrix row contract
+## Required verification
 
-Implement these exact rows:
+Use process-local `RUSTUP_AUTO_INSTALL=0`, restoring its exact previous state in
+`finally`.
 
-| ID | Boundary | Required result |
-| --- | --- | --- |
-| M01 | public `check` | malformed manifest -> `invalid_data` / 3 / `RUNTIME_PREPARE_FAILED`; no provider, Trail, or replay |
-| M02 | public `check` | missing advertised tool -> `unavailable` / 4 / `PROVIDER_CAPABILITY_UNAVAILABLE`; zero tools/call |
-| M03 | public `run` | Ask -> `approval_required` / 5; approval Trail; no public approval ID, execution ID, call, or Result Anchor |
-| M04 | public `run` | Deny -> `denied` / 0; no execution ID, call, or Result Anchor |
-| M05 | public `check` | one-nibble stale pinned digest -> `invalid_data` / 3 / `RUNTIME_PREPARE_FAILED`; no provider, Trail, or replay |
-| M06 | focused Rust seam | fresh replay admission followed by durable Trail intent failure retains exact ID; denied; zero call; no Result Anchor |
-| M07 | public `run` | explicit provider error -> `failed` / 6 / `ACTION_FAILED`; one call; ID; `capability.failed` |
-| M08 | public `run` | schema-invalid returned value -> `failed` / 6 / `ACTION_FAILED`; one call; ID; `capability.failed` |
-| M09 | public `run` | tools/call hangs past timeout -> `uncertain` / 7 / `ACTION_UNCERTAIN`; one call; ID; `capability.uncertain`; no retry |
-| M10 | public `run` twice | exact replay -> same ID; one total effectful call; structurally unchanged filtered Trail |
-| M11 | debug compiled boundary | generation 9 rejected; maximum 8; no later sibling; release command hidden |
-
-### Rust and build checks
-
-Use process-local `RUSTUP_AUTO_INSTALL=0`, restoring its previous value in
-`finally`. Run:
+Run:
 
 ```powershell
 rustup run 1.89.0 cargo fmt --manifest-path .\tethers-0.1\host-rust\Cargo.toml --check
-rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
-rustup run 1.89.0 cargo check --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --tests
-rustup run 1.89.0 cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked j14b_ -- --nocapture
 rustup run 1.89.0 cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
-rustup run 1.89.0 cargo clippy --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --all-targets --all-features
 rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
 rustup run 1.89.0 cargo build --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked --release
 ```
 
-Ordinary baseline warnings are acceptable. Add no allow/suppression and report
-exact warning counts.
-
-### Scenario and regressions
-
-Run:
+Then run:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j14b-negative-matrix.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j14c-real-file-move.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j14a-complete-scenario.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j14b-negative-matrix.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13a-check.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13b-run.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-j13c-trail.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-host-denial.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-host-execution-failure.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-host-result-follow-up.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-host-event-admission.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-host-event-admission-trail.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\check-fixtures.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-engine.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\demo.ps1
 ```
 
-Run `test-engine.ps1` and `demo.ps1` through the accepted safe process-local
-`OPAMSWITCH` wrapper using the exact external switch path above. Restore the
-previous environment value in `finally`.
-
-Confirm Cargo.lock SHA-256 remains:
-
-`d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602`
-
-Run the task packet checker after setting the packet COMPLETE:
+Run the packet and Git checks:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\check-tethers-task-packet.ps1
+git diff --check e5c3328bf8dc54c738190134d4255bdaa9e7181f..HEAD
+git diff --name-status e5c3328bf8dc54c738190134d4255bdaa9e7181f..HEAD
+git status --porcelain=v1 --untracked-files=all
 ```
 
-### Commit and push
+Require Cargo.lock SHA-256 to remain exactly:
 
-Before the implementation commit, require only authorised paths changed.
+`d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602`
 
-Authorised paths:
+The pre-existing J13B Ctrl+C interruption test is known to be flaky on native
+Windows. One materially identical retry is permitted and must be reported. A
+second failure returns `BLOCKED`; do not weaken the assertion.
 
-1. `docs/CURRENT_CLINE_TASK.md`
-2. `docs/DECISIONS.md`
-3. `docs/worker-notes/2026-07-30-j14b-negative-public-matrix.md`
-4. `tethers-0.1/host-rust/src/main.rs`
-5. `tethers-0.1/scripts/tethers-stdio-fixture.ps1`
-6. `tethers-0.1/scripts/test-j14b-negative-matrix.ps1`
+## Worker note
 
-In `main.rs`, only `#[cfg(test)]` test code may change. Prove the production
-semantic diff is empty. Do not touch public command routing or runtime logic.
+Write `docs/worker-notes/2026-07-31-j14c-real-file-move.md` with:
 
-Create the implementation commit first from code/test paths only:
+- flat checker-compatible metadata;
+- exact base and implementation checkpoint;
+- exact manifest digest;
+- exact F01-F09 results and assertion count;
+- exact before/after file hashes for the successful move;
+- exact provider method counts for every row;
+- exact F03 and replay execution IDs;
+- exact public Trail evidence;
+- exact unsafe-path and junction evidence;
+- Rust and regression totals;
+- Cargo.lock hash;
+- honest discoveries and remaining risks;
+- smallest next action: J15 consolidation.
 
-```powershell
-git add -- `
-  tethers-0.1/host-rust/src/main.rs `
-  tethers-0.1/scripts/tethers-stdio-fixture.ps1 `
-  tethers-0.1/scripts/test-j14b-negative-matrix.ps1
+Do not insert a future closeout commit SHA into the note. Report it externally.
 
-git commit -m "test: prove j14b negative matrix"
-```
+## Commit and publication boundary
 
-Record that exact implementation SHA in the worker note as
-`Implementation checkpoint`.
+Create one implementation commit and at most one documentation closeout commit.
+Suggested implementation commit:
 
-Then update `docs/DECISIONS.md`, the worker note, and this packet to COMPLETE.
-Create at most one documentation closeout commit:
-
-```powershell
-git add -- `
-  docs/CURRENT_CLINE_TASK.md `
-  docs/DECISIONS.md `
-  docs/worker-notes/2026-07-30-j14b-negative-public-matrix.md
-
-git commit -m "docs: complete j14b negative matrix"
-```
-
-Do not amend, squash, rebase, reset, merge, or force-push.
-
-Run:
-
-```powershell
-git diff --check 8a06b0883f968f1561153bf8d54bfce3818fbde8..HEAD
-git diff --name-status 8a06b0883f968f1561153bf8d54bfce3818fbde8..HEAD
-git log --oneline 8a06b0883f968f1561153bf8d54bfce3818fbde8..HEAD
-git status --short --branch --untracked-files=all
-```
+`feat: prove real file move capability`
 
 Push only:
 
-```powershell
-git push -u origin opencode/j14b-negative-public-matrix
-```
+`opencode/j14c-real-file-move`
 
-Return the final local and remote SHA, implementation SHA, exact changed paths,
-all eleven row results, public envelope and provider-call evidence, focused and
-full Rust totals, regression results, Cargo.lock hashes, packet-checker and
-whitespace results, clean worktree status, unchanged origin/main, and preserved
-original worktree.
-
-## Forbidden changes
-
-- No production Rust behaviour change.
-- No OCaml change.
-- No CLI flag, environment fault switch, magic filename, hidden mutable global,
-  or runtime bypass.
-- No Result Anchor, Trail, replay, manifest, runtime-config, or public-envelope
-  schema change.
-- No modification to existing J13 or J14A scenario scripts.
-- No new package or dependency.
-- No Cargo.toml or Cargo.lock change.
-- No roadmap, dashboard, task queue, constitution, SPEC, or engineering-guide
-  update.
-- No public follow-up coordinator integration.
-- No automatic retry.
-- No main push, merge, branch deletion, worktree deletion, or J15 work.
+Do not push main. Do not delete branches or worktrees. Do not begin J15.
 
 ## Stop conditions
 
-Return `BLOCKED` with exact evidence when:
+Return `BLOCKED` when:
 
-- startup report is incomplete;
-- repository root, branch, base, remote ref, or worktree differs;
-- origin/main is not exactly `8a06b0883f968f1561153bf8d54bfce3818fbde8`;
-- either worktree has unexpected state;
-- toolchain preflight fails;
-- a required row cannot be proved without production fault injection or a
-  production semantic change;
-- any public envelope differs from the frozen vocabulary;
-- a case performs an unexpected provider call or retry;
-- a trusted execution-ID rule or Result Anchor rule differs;
-- a non-authorised path must change;
+- any pre-flight ref or worktree differs;
+- any unauthorised path changes;
+- production Rust, Rust tests, OCaml, schema, grammar, or existing fixtures would
+  need modification;
+- provider confinement cannot reject traversal, overwrite, or junction escape;
+- the manifest cannot be admitted with an honestly computed canonical digest;
+- any public row is weaker than its contract;
+- the scenario mutates any path outside its generated temporary root;
 - Cargo.lock changes;
 - two materially similar attempts fail.
 
-After two materially similar failed attempts, stop. Do not broaden research,
-reread unchanged files repeatedly, or continue exploring outside authorised
-paths. Return the smallest unresolved question and exact evidence.
+## Return contract
+
+Return `COMPLETE` or `BLOCKED` and stop.
+
+For `COMPLETE`, report:
+
+- local and remote branch SHA;
+- exact twelve-path branch range;
+- exact F01-F09 results and assertion total;
+- exact manifest digest;
+- exact successful before/after paths and hashes;
+- exact execution and replay identity;
+- exact provider method counts;
+- exact Trail evidence;
+- traversal, overwrite, and junction safety evidence;
+- Rust totals and regression results;
+- packet checker, whitespace, Cargo.lock, branch relationship, and clean status;
+- preserved original worktree;
+- unresolved risks and honest exceptions.
+
+Stop after reporting. Do not begin J15.
