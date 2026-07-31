@@ -378,6 +378,12 @@ try {
         Assert-Equal $replayFiltered $script:sharedFilteredTrail "filtered F03 Trail structurally identical after replay"
     }
 
+    Write-Output ""
+    Write-Output "EVIDENCE F03 execution_id=$($script:sharedExecutionId)"
+    Write-Output "EVIDENCE invoice hash before move=$sharedInvoiceHash"
+    Write-Output "EVIDENCE invoice hash after move=$(Get-FileHash-SHA256 $sharedDst)"
+    Write-Output "EVIDENCE F05 replay execution_id=$($script:sharedExecutionId)"
+
     # ------------------------------------------------------------------
     # F06 out-of-scope source is denied
     # ------------------------------------------------------------------
@@ -409,10 +415,11 @@ try {
     # F07 traversal destination fails safely
     # ------------------------------------------------------------------
     Invoke-Case "F07" {
-        $w = New-Workspace "F07" $CommittedInput "workspace/inbox/invoice-july.pdf" "workspace/invoices/../invoices/invoice-july.pdf"
+        $w = New-Workspace "F07" $CommittedInput "workspace/inbox/invoice-july.pdf" "workspace/invoices/../outside/invoice-july.pdf"
         New-Item -ItemType Directory -Force -Path (Join-Path $w.ws "workspace/inbox") | Out-Null
         New-Item -ItemType Directory -Force -Path (Join-Path $w.ws "workspace/invoices") | Out-Null
-        Write-InputJson $w.inputPath "workspace/inbox/invoice-july.pdf" "workspace/invoices/../invoices/invoice-july.pdf" "pdf" "invoice-july.pdf"
+        New-Item -ItemType Directory -Force -Path (Join-Path $w.ws "workspace/outside") | Out-Null
+        Write-InputJson $w.inputPath "workspace/inbox/invoice-july.pdf" "workspace/invoices/../outside/invoice-july.pdf" "pdf" "invoice-july.pdf"
         $src = Join-Path $w.ws "workspace/inbox/invoice-july.pdf"
         [System.IO.File]::WriteAllText($src, $invoiceBytes)
         $srcHash = Get-FileHash-SHA256 $src
@@ -430,7 +437,7 @@ try {
 
         Assert-True (Test-Path -LiteralPath $src) "f07 source untouched"
         Assert-Equal (Get-FileHash-SHA256 $src) $srcHash "f07 source hash unchanged"
-        Assert-True (-not (Test-Path -LiteralPath (Join-Path $w.ws "workspace/invoices/../invoices/invoice-july.pdf"))) "no traversal destination created"
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $w.ws "workspace/outside/invoice-july.pdf"))) "no traversal-escaped file in outside"
 
         Assert-TrailExecutionOutcome $w.trailPath $env.data.execution_id "failed" "file.move"
     }

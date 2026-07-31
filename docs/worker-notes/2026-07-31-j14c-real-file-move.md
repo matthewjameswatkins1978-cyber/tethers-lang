@@ -10,9 +10,11 @@ Status: `COMPLETE`
 
 Base commit: `e5c3328bf8dc54c738190134d4255bdaa9e7181f`
 
+Implementation checkpoint: `b175c9dbcf599f42bd35398017ea9ea8682c5c22`
+
 Implementation commit: `b175c9dbcf599f42bd35398017ea9ea8682c5c22`
 
-Correction commits: two harness corrections; final SHA to be reported externally
+Correction commits: three harness corrections; final SHA to be reported externally
 
 ## Requested outcome
 
@@ -42,17 +44,26 @@ rows (F01-F09).
 
 ### Correction
 
-One bounded harness correction after review:
+Three bounded harness corrections after review:
 
-- `tethers-0.1/scripts/test-j14c-real-file-move.ps1`: removed the tenth
-  "non-mutation" row; moved source/Cargo.lock non-mutation checks to ordinary
-  assertions outside the row counter. Made F03, F04, and F05 one continuous
-  shared-workspace proof. Completed every missing packet assertion: provider
-  output (moved, source_path, destination_path) in F03, Trail intent arguments
-  in F04, structural Trail comparison in F05, no execution ID and no Result
-  Anchor in F02 and F06, ACTION_FAILED machine code and Trail evidence in
-  F07-F09, byte hashes for source/destination/photo in every relevant row.
-  Wrapped all test execution in one try/finally with honest cleanup assertion.
+1. Removed the tenth "non-mutation" row; moved source/Cargo.lock non-mutation
+   checks to ordinary assertions outside the row counter. Made F03, F04, and F05
+   one continuous shared-workspace proof. Completed every missing packet
+   assertion: provider output (moved, source_path, destination_path) in F03,
+   Trail intent arguments in F04, structural Trail comparison in F05, no
+   execution ID and no Result Anchor in F02 and F06, ACTION_FAILED machine code
+   and Trail evidence in F07-F09, byte hashes for source/destination/photo in
+   every relevant row. Wrapped all test execution in one try/finally with honest
+   cleanup assertion.
+
+2. Added explicit row-ID sequence tracking (`$script:rowIds`) and assertion of
+   exact F01-F09 order. Fixed F05 structural Trail comparison to save filtered
+   entries in F03 and assert equality after replay.
+
+3. Replaced F07 traversal path from `workspace/invoices/../invoices/` (which
+   normalises to the invoices prefix) to `workspace/invoices/../outside/` (which
+   genuinely escapes the destination prefix). Created `workspace/outside`
+   directory before the run and proved it remains empty.
 
 ## Decisions and assumptions
 
@@ -115,16 +126,19 @@ identical filtered Trail entries, and zero second external effect.
 
 ### Successful move evidence
 
-- Before: `workspace/inbox/invoice-july.pdf` (hash: derived from deterministic bytes)
-- After: `workspace/invoices/invoice-july.pdf` (hash identical to before)
-- Source absent, destination present, byte-identical content
+- Invoice SHA-256: `281071e7259b57c687d2d8fc5923fcac8b7258920f1969f98b5fb289813b0a10`
+- Before: `workspace/inbox/invoice-july.pdf`
+- After: `workspace/invoices/invoice-july.pdf` (byte-identical to source)
+- Source absent after move, destination present
 - Unrelated photo `workspace/inbox/holiday-photo.jpg` byte hash unchanged
 
 ### Provider safety boundaries
 
-- Traversal destination (`..` segment): refused by provider `Test-ResourcePath`,
-  provider returns JSON-RPC error, ACTION_FAILED machine code, Trail terminal
-  failed, no filesystem effect, source hash unchanged.
+- Traversal destination (`workspace/invoices/../outside/invoice-july.pdf`):
+  genuine prefix escape; refused by provider `Test-ResourcePath`, provider
+  returns JSON-RPC error, ACTION_FAILED machine code, Trail terminal
+  failed, no filesystem effect, source hash unchanged, `workspace/outside/`
+  remains empty.
 - Existing destination (pre-created with different bytes): refused, source and
   destination remain byte-identical to original content, terminal Trail failed.
 - Junction escape (directory junction `escape-target` -> `outside`):
@@ -133,7 +147,7 @@ identical filtered Trail entries, and zero second external effect.
 
 ### Execution identity
 
-- F03 execution ID: `exec_<UUIDv4>` (verified by regex)
+- F03 execution ID: `exec_8c698c71-9c07-4b73-a6b8-f87b363dd863` (verified UUIDv4)
 - F04 Trail filtered to exact F03 execution ID
 - F05 replay returns the identical execution ID
 - Result Anchor serialised JSON does not contain `"execution_id"` (verified by `-notmatch`)
@@ -182,7 +196,7 @@ The provider implements:
 | Packet checker | PASS |
 | Toolchain preflight | 24/24 PASS |
 | git diff --check | PASS |
-| Authorised path check | 12 paths in branch range, 1 path in working tree (harness correction) |
+| Authorised path check | 12 paths in branch range, clean final worktree |
 
 ### Engine and demo
 
@@ -190,7 +204,7 @@ The provider implements:
 `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`. Both were run
 successfully using `opam env --switch` to set the external switch in the shell
 before invoking the scripts. No OCaml source changes exist in this branch.
-The engine binary is proven working by all ten harness rows.
+The engine binary is proven working by nine harness rows.
 
 ## Discoveries
 
