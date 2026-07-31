@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Task colour: `Amber`
 
-Correction: `J14B-R ÔÇö strengthen negative matrix assertions and evidence`
+Correction: `J14B-R - strengthen negative matrix assertions and evidence`
 
 Route: `OpenCode implementation - Lucy independent review`
 

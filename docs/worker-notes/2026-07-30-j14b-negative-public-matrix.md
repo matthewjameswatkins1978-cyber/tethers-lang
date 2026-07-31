@@ -112,7 +112,7 @@ All required checks PASS:
 - `check-tethers-toolchains.ps1` — PASS
 - Cargo.lock SHA-256: `d323870ea02f09391a5d0d9aa0e9a701cf686a5ac005b840ee7218e70edb5602` confirmed
 - `git diff --check 8a06b0883f968f1561153bf8d54bfce3818fbde8..HEAD` — PASS (whitespace clean)
-- Branch range contains only the six authorised paths plus this worker note and packet update
+- Branch range contains exactly the six authorised paths
 
 ## Discoveries
 

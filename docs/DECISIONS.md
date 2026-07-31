@@ -11,9 +11,12 @@ accepted `#[cfg(test)]` test boundary with zero production code change. Row M11
 (causal depth) uses the existing debug-only `event-admission-trail-probe`
 compiled boundary. The public run CLI exposes `result_anchor` only for
 `Completed` outcomes; the `ExecutionServiceResult::Failed` and `::Uncertain`
-variants lack the `response` field. M07/M08/M09 verify capability.failed and
-capability.uncertain through exit code, machine code, execution ID, provider
-call count, and durable Trail evidence.
+variants lack the `response` field. The public M07/M08/M09 rows prove envelope
+status, process and embedded exit codes, machine codes, trusted execution
+identity, exact provider method counts, and durable Trail outcomes. Two focused
+test-only Rust tests on the accepted execution seam prove the internal
+capability.failed and capability.uncertain Result Anchor kinds, which the
+current public Failed and Uncertain result variants do not expose.
 
 J14B completes its implementation claim when all eleven rows pass. J14 becomes
 complete only after Lucy independently accepts and the candidate is published.
