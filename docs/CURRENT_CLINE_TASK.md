@@ -8,7 +8,7 @@ Owner: `OpenCode`
 
 Recommended model: `Hy3 High`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Green`
 
