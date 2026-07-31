@@ -44,8 +44,8 @@ J16D-R3 evidence directory: `C:\Users\Matmus\AppData\Local\Temp\J16D-R3-6d997f4f
 
 - `runner.ps1` SHA-256 `D57AE505FFC740A804BCFB3E6B96433BD2FB5B2B09A2B83D8952F8BC604CBE5C`.
 - `plan.json` SHA-256 `21AC25C0035CC96D561D24A4620ED5889CE12B7F843672C479AC53B9EA02FF0B`.
-- `steps.jsonl` SHA-256 `807AAA6699F97848CF65704847F63E4A44E9B8290B2CE9C26ED052FBE8A66A3B`.
-- `summary.txt` SHA-256 `EE5673B8A1F029AD911D863EAF7F38A46D9B8790CFA308E5F817DBDF1BD32189`.
+- Pre-final `steps.jsonl` snapshot SHA-256 `807AAA6699F97848CF65704847F63E4A44E9B8290B2CE9C26ED052FBE8A66A3B`.
+- Pre-final `summary.txt` snapshot SHA-256 `EE5673B8A1F029AD911D863EAF7F38A46D9B8790CFA308E5F817DBDF1BD32189`.
 - Step `00` inventory — exit `0`, `00:00:00.0573788`, `00.log`, SHA-256 `62AFD05BB5791A6344192F5962008EA1A22A2246B421AD37E9EE651F2FA63A6F`.
 - Step `01` toolchain gate — exit `0`, `00:00:04.9772700`, `01.log`, SHA-256 `2545B1A09868F8E0A8EEE97B279F4717C8593BAF57BA1FC7452B401980ECB50C`; `All toolchain checks passed.`
 - Step `02` focused toolchain test — exit `0`, `00:00:10.4202133`, `02.log`, SHA-256 `7963500671F6300E9565D71649C758E8F574CDB3D8741BF405594D0F93DBCCC8`; 23 passed, 0 failed.
@@ -63,6 +63,34 @@ J16D-R3 evidence directory: `C:\Users\Matmus\AppData\Local\Temp\J16D-R3-6d997f4f
 - `RUSTUP_AUTO_INSTALL` restored before step 08 and `OPAMSWITCH` restored in runner `finally`; no verification command was rerun.
 - Prior preserved evidence: `C:\Users\Matmus\AppData\Local\Temp\J16D-8d5b20f3-7c55-47d8-85c9-4057b64f3e11` and `C:\Users\Matmus\AppData\Local\Temp\J16D-R2-674d594e-43ab-4859-9933-f252c5a4f40e`; both inventories were hash-identical to their recorded retained values.
 - The previous J16D harness stopped before durable combined-chain evidence. J16D-R2 captured the genuine J13B Ctrl+C race; J16D-F1 repaired it in commit `b4f2cda96bb8e65f05866e3f37948af15caf8273`.
+
+## Final evidence-manifest reconciliation
+
+Classification: `TWO_VALID_SNAPSHOTS`.
+
+This was a read-only reconciliation of the retained J16D-R3 evidence. No test
+or verification command was rerun, and no evidence file was modified. The
+substantive J16 verification result remains unchanged and passed.
+
+Current final manifest values:
+
+- `runner.ps1`: SHA-256 `D57AE505FFC740A804BCFB3E6B96433BD2FB5B2B09A2B83D8952F8BC604CBE5C`; 6,393 bytes; last write `2026-08-01T00:41:30.6992050+01:00`.
+- `plan.json`: SHA-256 `21AC25C0035CC96D561D24A4620ED5889CE12B7F843672C479AC53B9EA02FF0B`; 5,231 bytes; last write `2026-08-01T00:40:03.0708462+01:00`.
+- `steps.jsonl`: SHA-256 `39AA90A1955D125FB9526DC8D7DBE7097D45C331A09001DC8C040A099C2CED41`; 15,122 bytes; last write `2026-08-01T00:50:00.5291156+01:00`.
+- `summary.txt`: SHA-256 `92328736ACA52E30440BF03287CA19CE48E421B057D8A846DABEB4B23A8F87A5`; 3,198 bytes; last write `2026-08-01T00:50:00.5405114+01:00`.
+
+`steps.jsonl` contains 24 records. Its final recorded step IDs are `18`,
+`19`, `90`, `91`, `92`, and `93` (the complete ID sequence is `00` through
+`19`, then `90` through `93`). Steps `90`–`93` are the appended final packet,
+whitespace, changed-path, and status checks.
+
+The earlier `steps.jsonl` hash is the exact SHA-256 of the current file's
+12,778-byte prefix before those four final records were appended. The earlier
+`summary.txt` hash is the exact SHA-256 of the current file's 2,686-byte prefix
+before the corresponding four final summaries were appended. They are therefore
+proven non-final but valid earlier snapshots, not incorrect worker-note entries
+or unexplained evidence mutation. The hashes above are the complete final
+post-check values.
 
 ## Discoveries
 
