@@ -16,6 +16,7 @@ $CommittedTemplate = Join-Path $RepoRoot "scenarios\j14c-real-file-move\runtime.
 $script:caseCount = 0
 $script:passedCount = 0
 $script:assertionCount = 0
+$script:rowIds = @()
 
 function Assert-True {
     param([bool]$Condition, [string]$Message)
@@ -195,6 +196,7 @@ function New-Workspace {
 
 function Invoke-Case {
     param([string]$RowId, [scriptblock]$Body)
+    $script:rowIds += $RowId
     $script:caseCount++
     Write-Output "ROW: $RowId"
     & $Body
@@ -322,6 +324,8 @@ try {
         Assert-Equal (Get-FileHash-SHA256 $sharedDst) $sharedInvoiceHash "destination preserves source bytes"
 
         Assert-True (Test-Path -LiteralPath (Join-Path $sharedWs "workspace/inbox/holiday-photo.jpg")) "unrelated photo untouched in inbox"
+
+        $script:sharedFilteredTrail = Get-Content -LiteralPath $sharedTrail | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.PSObject.Properties["execution_id"] -and $_.execution_id -eq $execId } | ConvertTo-Json -Depth 20 -Compress
     }
 
     # --- F04 ---
@@ -370,9 +374,8 @@ try {
         Assert-True (Test-Path -LiteralPath (Join-Path $sharedWs "workspace/inbox/holiday-photo.jpg")) "photo untouched"
         Assert-Equal (Get-FileHash-SHA256 (Join-Path $sharedWs "workspace/inbox/holiday-photo.jpg")) $sharedPhotoHash "photo byte hash unchanged"
 
-        $filteredNow = Get-Content -LiteralPath $sharedTrail | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.PSObject.Properties["execution_id"] -and $_.execution_id -eq $script:sharedExecutionId } | ConvertTo-Json -Depth 20 -Compress
-        $run3count = @($env.data.PSObject.Properties["result_anchor"] -ne $null).Count
-        Write-Output "  F05 filtered Trail entries match pre-replay count"
+        $replayFiltered = Get-Content -LiteralPath $sharedTrail | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.PSObject.Properties["execution_id"] -and $_.execution_id -eq $script:sharedExecutionId } | ConvertTo-Json -Depth 20 -Compress
+        Assert-Equal $replayFiltered $script:sharedFilteredTrail "filtered F03 Trail structurally identical after replay"
     }
 
     # ------------------------------------------------------------------
@@ -514,6 +517,8 @@ try {
     # ------------------------------------------------------------------
     # Verify exact row IDs
     # ------------------------------------------------------------------
+    $expectedRowIds = @("F01","F02","F03","F04","F05","F06","F07","F08","F09")
+    Assert-Equal ($script:rowIds -join ",") ($expectedRowIds -join ",") "exact row ID sequence F01-F09"
     Assert-Equal $script:caseCount 9 "exactly nine rows executed"
     Assert-Equal $script:passedCount 9 "all nine rows passed"
 }

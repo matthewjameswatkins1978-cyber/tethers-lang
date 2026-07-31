@@ -12,7 +12,7 @@ Base commit: `e5c3328bf8dc54c738190134d4255bdaa9e7181f`
 
 Implementation commit: `b175c9dbcf599f42bd35398017ea9ea8682c5c22`
 
-Correction commit: to be reported externally
+Correction commits: two harness corrections; final SHA to be reported externally
 
 ## Requested outcome
 
@@ -80,7 +80,7 @@ One bounded harness correction after review:
 
 ### Row results
 
-All nine rows PASS (9/9, 194 assertions):
+All nine rows PASS (9/9, 196 assertions). Row-ID sequence F01-F09 verified explicitly:
 
 | Row | Result | Key evidence |
 | --- | --- | --- |
@@ -164,7 +164,7 @@ The provider implements:
 
 | Check | Result |
 | --- | --- |
-| J14C harness (corrected) | 9/9 PASS, 194 assertions |
+| J14C harness (corrected) | 9/9 PASS, 196 assertions |
 | test-engine.ps1 | 27/27 PASS (fixture cases) |
 | demo.ps1 | PASS |
 | J14A | 5/5 PASS, 95 assertions |
