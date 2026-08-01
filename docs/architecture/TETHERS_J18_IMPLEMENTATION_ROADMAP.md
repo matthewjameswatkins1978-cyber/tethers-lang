@@ -115,12 +115,14 @@ the release path until parity is accepted.
 **Exclusions:** package parsing, installation, signatures, trust, credentials,
 File/PDF providers, new CLI and durable external-event stores.
 
-## Milestone 2: Package inspection, quarantine and installed identity
+## Milestone 2: Package inspection, quarantine and installation-candidate identity
 
 **Result:** A `.tetherplug` can be inspected without execution, strictly
 validated, selected for Windows x86_64, semantically digested, and extracted only
-to quarantine. Host-owned immutable installed material is disabled by default.
-Package, installed, provider and capability identities remain distinct.
+to quarantine. The host creates an immutable installation-candidate identity;
+package, candidate, payload, provider and capability identities remain distinct.
+The candidate is uninstalled, disabled and non-operational: it creates no active
+binding, developer trust, installation approval or operational provider launch.
 
 **Contracts:** J18D package paths, `plug.json`, payload index and semantic digest;
 J18E identities/classes/effects/scopes; J18G install integrity, unsigned
@@ -132,13 +134,13 @@ semantics, path validation patterns from `replay_windows.rs`, existing duplicate
 JSON tests and host data-root conventions. Do not reinterpret legacy manifests.
 
 **Anticipated modules/stores:** archive inspector, package metadata/value types,
-payload selector, quarantine extractor, installed identity registry interface,
-and immutable disabled installation record. Store schema is a separate packet.
+payload selector, quarantine extractor and installation-candidate/quarantine
+registry interface. A candidate registry is not an installed Plug registry.
 
 **Packets:** P4-PACKAGE-INSPECT (Red): strict archive and semantic validation.
 P5-QUARANTINE-PATHS (Red): safe extraction and Windows path/reparse handling.
-P6-INSTALLED-IDENTITY (Amber): immutable disabled material and identity
-separation, with registry schema packet preceding durable code.
+P6-INSTALL-CANDIDATE-REGISTRY (Amber): immutable quarantine/candidate identity
+and lifecycle evidence only, with registry schema packet preceding durable code.
 
 **Owner/colour:** Codex Terra High/Red for archive and path attacks; DeepSeek Pro
 V4/Amber for registry integration; Lucy architecture review.
@@ -147,11 +149,13 @@ V4/Amber for registry integration; Lucy architecture review.
 
 **Evidence:** parser and duplicate-key tests; archive/path adversarial tests for
 archive bombs, traversal, symlink/junction/reparse, case collision,
-duplicate-entry and TOCTOU; package/install lifecycle tests; disabled-state and
+duplicate-entry and TOCTOU; package/candidate lifecycle tests; no-binding and
 no-execution proofs.
 
 **Stop:** ambiguous archive semantics, path escape, digest/identity conflation,
 execution during inspection/extraction, or need to change J18D.
+
+**Lifecycle ordering:** conformance from quarantine; conformance evidence review; installation approval; Plug present but disabled; explicit enablement.
 
 **Rollback:** quarantine and registry code can be removed without touching the
 legacy runtime or user 0.2 configuration.
@@ -161,11 +165,15 @@ launch, enablement, File/PDF payloads and public install CLI.
 
 ## Milestone 3: Trust, launch and conformance gate
 
-**Result:** Host-owned publisher trust and Ed25519 package verification gate a
-revalidated exact payload launch. The environment is constructed from scratch,
-the existing Job Object supervision is retained, resource limits are bounded,
-and the supervised profile is visibly labelled. Conformance evidence is pinned
-to all required identities and does not enable a Plug.
+**Result:** Milestone 3 alone performs the candidate-to-installed-disabled
+transition: host-owned publisher trust and Ed25519 package verification,
+revalidated exact quarantine payload launch, accepted-profile conformance,
+provider shutdown, immutable evidence review, explicit installation approval,
+immutable installed record and exact provider/capability bindings. The resulting
+Plug is present but disabled; conformance success neither approves, installs,
+binds nor enables it. The environment is constructed from scratch, the existing
+Job Object supervision is retained, resource limits are bounded, and the
+supervised profile is visibly labelled.
 
 **Contracts:** J18G signature, trust, revocation, developer mode, credentials,
 sandbox honesty and conformance; J18C exact executable/argument launch and
@@ -179,14 +187,19 @@ supervision or use shell/PATH lookup.
 
 **Anticipated modules/stores:** publisher trust store, revocation state,
 conformance evidence store, launch profile/environment builder, payload
-revalidation and optional Credential Manager metadata store. Each durable store
-gets its own schema/crash/recovery packet.
+revalidation, installation-approval record and installed-Plug registry. Each
+durable store gets its own schema/crash/recovery packet. Credential Manager
+metadata is deferred and optional; the first providers are credential-free and
+receive no credential delivery.
 
 **Packets:** P7-TRUST-SIGNATURE (Red): semantic digest, Ed25519 and publisher
-trust/revocation. P8-LAUNCH-PROFILE (Red): exact launch, clean environment,
-supervision and visible supervised label. P9-CONFORMANCE-GATE (Red): pinned
-evidence, invalidation and disabled-state gate. P10-CREDENTIAL-METADATA
-(Amber, optional): profile metadata only; no secret delivery in the first slice.
+trust/revocation. P8-LAUNCH-PROFILE (Red): exact quarantine test launch, clean
+environment, supervision and visible supervised label. P9-CONFORMANCE-GATE
+(Red): host-orchestrated quarantine test, pinned evidence and invalidation;
+passing leaves the candidate uninstalled and non-operational pending review and
+approval. P10-INSTALL-APPROVAL (Amber): review/refuse trust and conformance,
+atomically record immutable installed identity and exact disabled bindings, and
+prove no invocation or event admission before explicit enablement.
 
 **Owner/colour:** Codex Terra High/Red for cryptography, Windows launch and
 process boundaries; DeepSeek Pro V4/Amber for evidence integration; Lucy review.
@@ -195,8 +208,9 @@ process boundaries; DeepSeek Pro V4/Amber for evidence integration; Lucy review.
 
 **Evidence:** cryptographic vectors and trust lifecycle tests; real Windows
 child/Job Object tests; clean-environment and exact-argument tests; package,
-install, trust and conformance lifecycle; payload TOCTOU revalidation; proof
-that passing conformance leaves the Plug disabled.
+candidate, trust, conformance and approval lifecycle; payload TOCTOU
+revalidation; proof that passing conformance leaves the candidate uninstalled;
+and proof that an installed-disabled Plug cannot invoke or admit events.
 
 **Stop:** any claim that supervision is isolation, secret leakage, shell/PATH
 execution, trust-on-first-use, conformance-as-permission, or frozen J18G change.
@@ -210,9 +224,12 @@ credential delivery, network providers and third-party enablement.
 ## Milestone 4: File Tools Action/Query vertical slice
 
 **Result:** One credential-free, no-network Windows File Tools provider is
-packaged as `.tetherplug` and runs the complete installed-Plug path: inspect,
-trust/developer approval, install, discovery, binding, policy, intent, one
-invocation, canonical outcome, replay terminal, Result Anchor and Trail.
+packaged as `.tetherplug` and runs the complete path: inspect, quarantine,
+validate, test-launch, conformance, evidence review, installation approval,
+installed-disabled exact binding, explicit enablement, discovery, policy,
+intent, one invocation, canonical outcome, replay terminal, Result Anchor and
+Trail. No active binding exists before approval, and M4 owns the first explicit
+enablement.
 Bounded read/metadata Query and exact move Action refuse overwrite and enforce
 path scope. Unattempted, failed and uncertain outcomes are demonstrated.
 
@@ -363,14 +380,14 @@ them. Every packet is intended to fit one focused agent run and one review.
 | P3-DISCOVERY-CATALOGUE | Pagination/drift/invalidation; P2 | Luna / Amber | duplicate/schema/catalogue tests | No / No | J18C ambiguity; revert discovery |
 | P4-PACKAGE-INSPECT | Strict `.tetherplug` inspection; P3 | Codex / Red | parser/archive adversarial evidence | Yes, dedicated / No | parser ambiguity; discard inspector |
 | P5-QUARANTINE-PATHS | Safe extraction; P4 | Codex / Red | traversal/reparse/TOCTOU evidence | No / No | escape; remove extractor |
-| P6-INSTALLED-IDENTITY | Disabled immutable registry; P4/P5 | DeepSeek / Amber | identity/store lifecycle evidence | Yes, design first / No |
+| P6-INSTALL-CANDIDATE-REGISTRY | Immutable quarantine/candidate registry; P4/P5 | DeepSeek / Amber | candidate ID/digests/quarantine/platform/inspection/validation/lifecycle evidence; never installed, approved, enabled or operational; no active binding | Yes, design first / No |
 | P7-TRUST-SIGNATURE | Ed25519/trust/revocation; P6 | Codex / Red | crypto/trust vectors | Yes, design first / No | false trust; disable gate |
-| P8-LAUNCH-PROFILE | Clean exact supervised launch; P7 | Codex / Red | Windows process/environment tests | No / No | isolation overclaim; revert profile |
-| P9-CONFORMANCE-GATE | Pinned evidence and invalidation; P7/P8 | Codex / Red | conformance lifecycle, disabled-after-pass | Yes, design first / No |
-| P10-CREDENTIAL-METADATA | Optional metadata only; P7 | DeepSeek / Amber | confidentiality/store tests | Yes, design first / No | secret delivery request; omit |
-| P11-FILE-CONTRACT | Freeze File Action/Query schema; P1-P9 | Luna / Amber | approved contract and scope matrix | Yes / No | semantic disagreement; stop |
-| P12-FILE-PROVIDER | Package credential-free provider; P11 | Luna / Amber | provider conformance/filesystem fixtures | Package schema as approved / No |
-| P13-FILE-END-TO-END | First runnable Plug; P12 | DeepSeek / Amber | complete lifecycle/outcome/Trail demo | No / No | boundary failure; disable Plug |
+| P8-LAUNCH-PROFILE | Clean exact supervised quarantine test launch; P7/candidate | Codex / Red | Windows process/environment tests | No / No | isolation overclaim; revert profile |
+| P9-CONFORMANCE-GATE | Host-orchestrated quarantine conformance and invalidation; P7/P8 | Codex / Red | accepted-profile evidence proves candidate remains uninstalled/non-operational after pass | Yes, design first / No |
+| P10-INSTALL-APPROVAL | Review/refuse trust and conformance; atomic installed-disabled identity and exact bindings; P6/P7/P8/P9 | DeepSeek / Amber | approval audit, no invocation/event admission before enablement | Yes, design first / No | approval ambiguity; refuse install |
+| P11-FILE-CONTRACT | Freeze File Action/Query schema; P1-P10 | Luna / Amber | approved contract and scope matrix | Yes / No | semantic disagreement; stop |
+| P12-FILE-PROVIDER | Package credential-free provider; P10/P11 | Luna / Amber | provider conformance/filesystem fixtures | Package schema as approved / No |
+| P13-FILE-END-TO-END | First explicitly enabled runnable Plug; P10/P12 | DeepSeek / Amber | complete lifecycle/outcome/Trail demo | No / No | boundary failure; disable Plug |
 | P14-ANCHOR-STORE-DESIGN | Durable admission authority design; P13 | Codex / Red | crash/atomicity/security design review | Yes / No | unresolved store authority; stop |
 | P15-LOCAL-SOURCE-DESIGN | Stable local event identity; P14 | Codex / Red | identity/admission contract review | Yes / No | fabricated identity risk; stop |
 | P16-ANCHOR-LIFECYCLE | Implement durable Anchor lifecycle; P14/P15 | Codex / Red | restart/admission/ack tests | Yes / No | false admission; disable source |
@@ -413,17 +430,20 @@ bounded and fail closed until measured.
 
 ## Durable stores and schemas
 
-The following authorities remain separate: installed Plug registry; publisher
-trust store; conformance evidence; credential profile metadata; operation replay;
-external-event admission; and Trail. Existing replay and Trail authorities are
-not merged with new stores.
+The following authorities remain separate: candidate/quarantine registry;
+installed Plug registry; publisher trust store; conformance evidence; credential
+profile metadata; operation replay; external-event admission; and Trail.
+Candidate and installed records may share immutable references but have no
+implicit lifecycle authority. The candidate-to-installed transition is an
+explicit atomic, audited P10 approval; no active binding is created before it.
+Existing replay and Trail authorities are not merged with new stores.
 
 Each new durable store requires a schema/version design packet, atomicity and
 crash-recovery model, permissions/confidentiality review, migration/rollback
 plan, corruption behaviour, and tests proving no automatic retry or false
-admission. Installation, trust, conformance, credentials, replay, admission and
-Trail may reference one another by immutable identity but must not share
-authority.
+admission. Candidate/quarantine, installed, trust, conformance, credentials,
+replay, admission and Trail may reference one another by immutable identity but
+must not share authority.
 
 ## First-slice exclusions
 
@@ -443,7 +463,7 @@ language changes. Supervised execution is not hostile-code isolation.
 | 0.2 regression during extraction | smallest P1 seam, parity first | full Rust/OCaml/CLI suites | retain legacy path, revert seam | Luna/Lucy |
 | package/archive attack surface | strict parser, quarantine, no execution | adversarial archive/path tests | quarantine discard, disable install | Codex |
 | identity/digest conflation | distinct types and registry indexes | conflict/property tests | reject and quarantine | Codex |
-| false trust from signing/conformance | host trust is separate; conformance no permission | trust/revocation tests | revoke/disable | Codex |
+| candidate mistaken for installed | distinct candidate/installed types and registries; P10 approval | lifecycle/binding audit and no-invocation proof | retain quarantine, create no binding, fail closed | DeepSeek/Codex/Lucy |
 | supervised mode mistaken for isolation | visible labels and refusal text | review/search and launch tests | refuse production use | Lucy/Codex |
 | Windows path/reparse escape | handle-based validation, no reparse following | traversal/junction/TOCTOU tests | quarantine and disable | Codex |
 | environment/credential leakage | clean environment, deny network, metadata only | child-process and redaction tests | terminate/quarantine; no retry | Codex |

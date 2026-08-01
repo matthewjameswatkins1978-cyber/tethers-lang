@@ -1,5 +1,19 @@
 # J18I Worker Note
 
+Task: `J18I-F1 - Restore Frozen Installation and Conformance Order`
+Task packet: `docs/CURRENT_CLINE_TASK.md`
+Owner: `Codex`
+Status: `COMPLETE`
+Base commit: `e028b0b80f1a092f5f4198714c0b7a4477323cc8`
+Implementation checkpoint: `acd6c8ae33765182bc967be34b48761c04cc3d60`
+
+## Requested outcome
+
+Correct only the J18I roadmap sequencing so a package candidate remains in
+quarantine until accepted conformance evidence is reviewed and installation is
+explicitly approved; preserve the frozen J18 architecture and all implementation
+boundaries.
+
 ## Task
 
 J18I - First Plug Kit Implementation Roadmap. Owner: Luna. Amber,
@@ -7,7 +21,7 @@ documentation and implementation sequencing only. Control-plane base:
 `e028b0b80f1a092f5f4198714c0b7a4477323cc8`. Frozen architecture:
 `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`.
 
-## Changes
+## Changes made
 
 Created `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md` with the
 required six vertical milestones, current-code inventory, bounded packet map,
@@ -142,6 +156,79 @@ CLI. J18I deliberately does not decide those implementation details.
 Lucy reviews the roadmap. If accepted, issue only P1-SOCKET-PARITY as the first
 implementation packet. Do not begin package parsing, File Tools or security work
 from this roadmap alone.
+
+## Decisions and assumptions
+
+The accepted J18F lifecycle governs this correction. A candidate and an installed
+Plug are separate authorities; P10 is the explicit atomic/audited transition.
+Later installed re-conformance requires a separately reviewed lifecycle rule.
+
+## Remaining risks
+
+The correction addresses the risk of a candidate being mistaken for an installed
+Plug. The roadmap requires separate types and registries, P10 approval,
+lifecycle/binding/no-invocation detection, and quarantine/no-binding/fail-closed
+containment. No implementation risk was introduced because no implementation
+artifact changed.
+
+## Smallest next action
+
+Lucy reviews this Red roadmap correction. If accepted, only P1-SOCKET-PARITY may
+be issued as the first implementation packet.
+
+## J18I-F1 installation and conformance sequencing correction
+
+This documentation-only correction preserves the frozen J18 architecture and
+implementation boundaries. The lifecycle is now recorded in its required order:
+package received; archive inspected without execution; package validated; payload
+extracted into quarantine; manifests and compatibility validated; test
+configuration created; provider launched in the accepted test profile;
+conformance from quarantine; provider stopped; conformance evidence reviewed;
+installation approved; exact bindings created; Plug present but disabled;
+explicit enablement; operational use. Conformance success alone does not
+approve, install, bind or enable; no active binding exists before approval.
+
+Lucy accepted the overall six-milestone and twenty-packet structure. Roadmap
+review found that installation had been sequenced before conformance and
+approval; the fault originated in the J18I control packet, not in implementation
+or the frozen J18 architecture.
+
+Milestone 2 is titled `Milestone 2: Package inspection, quarantine and
+installation-candidate identity`. It owns only an immutable candidate/quarantine
+registry which can record candidate ID, digests, quarantine location, platform,
+inspection, validation and lifecycle evidence. It never represents an installed,
+approved, enabled or operational Plug, and it cannot create an active binding.
+Unsigned inspection remains untrusted and permitted only for inspection; explicit
+developer trust is a Milestone 3 concern.
+
+Milestone 3 alone owns the candidate-to-installed-disabled transition: P7 trust
+and signature verification, P8 exact quarantine test launch, P9 host-orchestrated
+quarantine conformance and immutable evidence, then P10 installation approval.
+P9 proves that a successful conformance run leaves the candidate uninstalled and
+non-operational pending review and approval. P10 reviews or refuses the trust and
+conformance evidence, atomically records immutable installed identity and exact
+disabled provider/capability bindings, and proves no invocation or event
+admission before enablement. Credential Manager is deferred/optional; first
+providers are credential-free and receive no credential delivery. M4 owns first
+explicit File Tools enablement.
+
+The corrected dependencies are P7 after P6; P8 after P7 and the candidate; P9
+after P7/P8; P10 after P6/P7/P8/P9; and P11-P13 after P10 wherever installed
+state is required. Candidate/quarantine registry, installed registry, publisher
+trust, conformance evidence, credential metadata, operation replay, external
+event admission and Trail remain separate authorities. Candidate and installed
+records may share immutable references, but only P10 performs their atomic,
+audited lifecycle transition.
+
+The roadmap still has exactly six milestones and twenty future packets, with
+routing totals of five Luna/OpenCode, five DeepSeek and ten Codex packets. Its
+risk register now names the candidate-mistaken-for-installed risk with type and
+registry prevention, lifecycle/binding/no-invocation detection, quarantine/no
+binding/fail-closed containment, and DeepSeek/Codex/Lucy ownership. File Tools
+remains credential-free, no-network and unchanged in scope apart from the
+explicit installed-disabled-to-enabled sequencing. No source, test, fixture,
+script, package, schema, lock, credential, key or frozen architecture document
+was changed.
 
 ## References
 

@@ -1,11 +1,11 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J18I - First Plug Kit Implementation Roadmap`
-Owner: `Luna`
-Status: `IN_PROGRESS`
-Task colour: `Amber`
-Route: `Luna on OpenCode, implementation sequencing and repository-fit audit`
+Task: `J18I-F1 - Restore Frozen Installation and Conformance Order`
+Owner: `Codex`
+Status: `COMPLETE`
+Task colour: `Red`
+Route: `Codex, frozen lifecycle sequencing correction and roadmap evidence review`
 Base branch: `main`
 Base commit: `e028b0b80f1a092f5f4198714c0b7a4477323cc8`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
@@ -317,7 +317,7 @@ Required outcome:
 The roadmap must identify the smallest extraction from binary-owned modules and
 must forbid a broad `main.rs` rewrite.
 
-### Milestone 2: Package inspection, quarantine and installed identity
+### Milestone 2: Package inspection, quarantine and installation-candidate identity
 
 Required outcome:
 
@@ -325,10 +325,11 @@ Required outcome:
 - validate strict archive paths, `plug.json`, payload index and semantic digest;
 - select the exact Windows x86_64 payload;
 - extract only into quarantine;
-- create immutable host-owned installed material in a disabled state;
-- keep package identity, installed identity, provider identity and capability
+- create immutable host-owned installation-candidate material in quarantine;
+- keep package identity, candidate identity, provider identity and capability
   identity distinct;
-- support explicit unsigned developer mode only;
+- record candidate/quarantine evidence only, never an installed record, active
+  binding, developer trust, installation approval or operational launch;
 - no provider invocation from Downloads, source ZIP or quarantine.
 
 The roadmap must place archive-bomb, traversal, symlink/junction/reparse,
@@ -345,12 +346,17 @@ Required outcome:
 - environment constructed from scratch;
 - retained Job Object supervision and bounded resources;
 - visible supervised-profile labelling;
-- conformance run from quarantine or installed disabled state;
+- conformance run only from quarantine using the accepted test profile, followed
+  by provider shutdown and immutable evidence review;
 - conformance evidence pinned to package, payload, manifest, provider, Socket,
   protocol, host, platform and suite versions;
-- passing conformance does not enable a Plug;
-- Windows Credential Manager profile storage may be implemented, but operational
-  secret delivery remains unused by credential-free File/PDF references.
+- passing conformance leaves the candidate uninstalled and non-operational;
+- only after P7/P8/P9 may P10 review/refuse trust and conformance, explicitly
+  approve installation, atomically create immutable installed identity and exact
+  disabled bindings, and record the Plug present but disabled;
+- no invocation or event admission is allowed before explicit enablement;
+- Credential Manager work is deferred/optional; first providers are
+  credential-free and receive no credential delivery.
 
 Do not claim AppContainer or hostile-code isolation in this milestone.
 
@@ -363,15 +369,40 @@ Required outcome:
 - bounded file read and metadata Query operations;
 - bounded file move Action with exact source/destination, overwrite refusal and
   path-scope enforcement;
-- complete path from package inspection through trust/developer approval,
-  install, discovery, binding, policy, durable intent, one invocation, canonical
-  outcome, replay terminal, Result Anchor and Trail;
+- complete path from package inspection through quarantine validation,
+  conformance, evidence review, installation approval, installed-disabled exact
+  binding, explicit enablement, discovery, policy, durable intent, one
+  invocation, canonical outcome, replay terminal, Result Anchor and Trail;
 - clear unattempted, failed and uncertain demonstrations;
 - deterministic disposable filesystem conformance fixtures;
 - first runnable Plug Kit demonstration.
 
 Capability names and machine schemas must be frozen only in dedicated
 implementation packets, not invented by J18I prose.
+
+### J18I-F1 frozen installation and conformance order
+
+The frozen lifecycle is: package received; archive inspected without execution;
+package validated; payload extracted into quarantine; manifests and compatibility
+validated; test configuration created; provider launched in the accepted test
+profile; conformance from quarantine; provider stopped; conformance evidence
+reviewed; installation approved; exact bindings created; Plug present but
+disabled; explicit enablement; operational use. Conformance success does not
+approve, install, bind or enable, and no active binding exists before approval.
+
+M2 owns only candidate/quarantine identity and registry evidence. It is not an
+installed Plug registry. M3 owns the candidate-to-installed-disabled transition:
+P7 trust/signature, P8 quarantine launch profile, P9 host-orchestrated
+conformance, then P10 installation approval. P10 depends on P6/P7/P8/P9 and
+creates the immutable installed identity with exact disabled provider/capability
+bindings. M4 owns first explicit File Tools enablement. P11-P13 depend on P10
+where installed state is required. Candidate/quarantine registry, installed
+registry, publisher trust, conformance evidence, credential metadata, replay,
+event admission and Trail remain separate authorities; the transition is atomic
+and audited. The roadmap retains exactly 20 future packets and routing totals of
+5 Luna/OpenCode, 5 DeepSeek and 10 Codex.
+
+Lifecycle ordering: conformance from quarantine; conformance evidence review; installation approval; Plug present but disabled; explicit enablement.
 
 ### Milestone 5: Durable local Anchor and lifecycle completion
 
