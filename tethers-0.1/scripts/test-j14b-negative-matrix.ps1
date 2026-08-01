@@ -421,7 +421,10 @@ try {
         Assert-Contains $rustText $name "focused Rust test name missing: $name"
     }
     Assert-Contains $rustText "0 failed" "focused Rust tests reported failures"
-    $rustTestCount = ([regex]::Matches($rustText, "test tests::j14b_")).Count
+    # The P1 application seam moved the shared test owner from the binary
+    # crate root to the library's application module. Preserve the exact two
+    # named proofs while accepting their library-owned test path.
+    $rustTestCount = ([regex]::Matches($rustText, "test application::tests::j14b_")).Count
     Assert-Equal $rustTestCount 2 "focused Rust j14b_ test count"
     Write-Output "INTERNAL: focused Rust j14b_ tests passed ($rustTestCount tests)"
     Assert-RepositoryIntegrity "after internal Rust proofs"
