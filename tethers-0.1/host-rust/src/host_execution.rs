@@ -238,6 +238,8 @@ fn classify_provider_error(error: &StdioProviderError) -> outcome::ProviderDiagn
         }
         StdioProviderError::Interrupted => outcome::ProviderDiagnostic::ProtocolInterrupted,
         StdioProviderError::EmptyResponse
+        | StdioProviderError::CatalogueStale
+        | StdioProviderError::CatalogueChangedDuringDiscovery
         | StdioProviderError::MalformedResponse(_)
         | StdioProviderError::ProtocolError(_)
         | StdioProviderError::ReadFailed(_)
@@ -453,11 +455,9 @@ impl<'a> HostExecutionService<'a> {
         })
         .map_err(|e| provider_service_error("establish", &prepared.identity, e))?;
 
-        let tools = session
-            .discover()
-            .map_err(|e| provider_service_error("tools/list", &prepared.identity, e))?;
-        if validate_prepared_discovery(prepared, &tools).is_err() {
-            session.invalidate_catalogue();
+        if !refresh_prepared_catalogue(prepared, &mut session)
+            .map_err(|e| provider_service_error("tools/list", &prepared.identity, e))?
+        {
             session.close();
             return Ok(None);
         }
@@ -807,6 +807,41 @@ impl<'a> HostExecutionService<'a> {
                 };
             }
         };
+        let Some(prepared_provider) = self
+            .runtime
+            .providers()
+            .iter()
+            .find(|provider| provider.identity == resolved.provider_identity())
+        else {
+            return ExecutionServiceResult::Unavailable {
+                evaluation_id,
+                reason: format!(
+                    "provider '{}' has no prepared catalogue authority",
+                    resolved.provider_identity()
+                ),
+            };
+        };
+        match refresh_prepared_catalogue(prepared_provider, session) {
+            Ok(true) => {}
+            Ok(false) => {
+                return ExecutionServiceResult::Unavailable {
+                    evaluation_id,
+                    reason: format!(
+                        "provider '{}' catalogue no longer matches trusted bindings",
+                        resolved.provider_identity()
+                    ),
+                };
+            }
+            Err(error) => {
+                return ExecutionServiceResult::Unavailable {
+                    evaluation_id,
+                    reason: format!(
+                        "provider '{}' catalogue refresh unavailable: {error}",
+                        resolved.provider_identity()
+                    ),
+                };
+            }
+        }
         let mut executor = ProviderSessionExecutor {
             session,
             tool_name: binding.tool_name.clone(),
@@ -1059,6 +1094,35 @@ fn validate_prepared_discovery(
     Ok(())
 }
 
+const MAX_CATALOGUE_DISCOVERY_ATTEMPTS: usize = 2;
+
+/// Refresh only when the semantic Socket reports stale state. Discovery is
+/// bounded and the host, not Socket, owns exact trusted-schema revalidation.
+fn refresh_prepared_catalogue(
+    prepared: &crate::configured_runtime::PreparedProvider,
+    session: &mut RetainedProviderSession,
+) -> Result<bool, StdioProviderError> {
+    if !session.observe_catalogue_change()? && session.catalogue().is_some() {
+        return Ok(true);
+    }
+
+    for _ in 0..MAX_CATALOGUE_DISCOVERY_ATTEMPTS {
+        match session.discover() {
+            Ok(catalogue) => {
+                if validate_prepared_discovery(prepared, catalogue.operations()).is_ok() {
+                    return Ok(true);
+                }
+                session.invalidate_catalogue();
+                return Ok(false);
+            }
+            Err(StdioProviderError::CatalogueChangedDuringDiscovery) => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    session.invalidate_catalogue();
+    Err(StdioProviderError::CatalogueChangedDuringDiscovery)
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -1066,6 +1130,7 @@ fn validate_prepared_discovery(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::configured_runtime::{PreparedCapability, PreparedProvider};
     use crate::dispatch::{self, ActionId, ExecutionId, RecordingTrail};
     use crate::policy::{CapabilityRequirement, HostLocalPolicy, ScopeAssessment};
     use crate::replay::LogicalExecutionKey;
@@ -1141,6 +1206,80 @@ mod tests {
                 "adapter": null
             }
         })
+    }
+
+    fn catalogue_test_provider(mode: &str) -> PreparedProvider {
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts")
+            .join("tethers-stdio-fixture.ps1");
+        let verified_manifest = crate::manifest::verify_manifest(include_str!(
+            "../../protocol/capability-manifests/fixture-ping.json"
+        ))
+        .unwrap();
+        PreparedProvider {
+            identity: "tethers-stdio-fixture".to_owned(),
+            display_name: "Tethers Stdio Fixture".to_owned(),
+            working_directory: script.parent().unwrap().to_path_buf(),
+            stdio_config: crate::stdio_provider::StdioProviderConfig {
+                command: "pwsh.exe".to_owned(),
+                args: vec![
+                    "-NoProfile".to_owned(),
+                    "-ExecutionPolicy".to_owned(),
+                    "Bypass".to_owned(),
+                    "-File".to_owned(),
+                    script.to_string_lossy().into_owned(),
+                    "-Mode".to_owned(),
+                    mode.to_owned(),
+                ],
+                protocol_version: "2025-11-25".to_owned(),
+                provider_config: crate::provider::ProviderConfig {
+                    identity: "tethers-stdio-fixture".to_owned(),
+                    display_name: "Tethers Stdio Fixture".to_owned(),
+                    allowed_capabilities: Vec::new(),
+                },
+            },
+            capabilities: vec![PreparedCapability {
+                name: "fixture.ping".to_owned(),
+                version: 1,
+                manifest_path: PathBuf::from("fixture-ping.json"),
+                verified_manifest,
+                scope_binding: None,
+            }],
+        }
+    }
+
+    fn establish_catalogue_test_session(prepared: &PreparedProvider) -> RetainedProviderSession {
+        let manifest = prepared.capabilities[0].verified_manifest.manifest();
+        RetainedProviderSession::establish(SocketEstablishment {
+            command: &prepared.stdio_config.command,
+            args: &prepared.stdio_config.args,
+            working_directory: &prepared.working_directory,
+            protocol_version: &prepared.stdio_config.protocol_version,
+            server_name: &manifest.binding.server_name,
+            identity: &prepared.identity,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn m1_host_bounded_rediscovery_retains_exact_unchanged_binding() {
+        let prepared = catalogue_test_provider("catalogue-change-unchanged");
+        let mut session = establish_catalogue_test_session(&prepared);
+        assert!(refresh_prepared_catalogue(&prepared, &mut session).unwrap());
+        assert!(!session.catalogue_is_stale());
+        assert_eq!(session.catalogue().unwrap().operations().len(), 1);
+        session.close();
+    }
+
+    #[test]
+    fn m1_host_schema_drift_invalidates_binding_before_invocation() {
+        let prepared = catalogue_test_provider("catalogue-change-drift");
+        let mut session = establish_catalogue_test_session(&prepared);
+        assert!(!refresh_prepared_catalogue(&prepared, &mut session).unwrap());
+        assert!(session.catalogue_is_stale());
+        assert!(session.catalogue().is_none());
+        session.close();
     }
 
     // -----------------------------------------------------------------------

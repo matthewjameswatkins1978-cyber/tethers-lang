@@ -10,7 +10,7 @@ use crate::trusted_store::TrustedManifestStore;
 use std::collections::HashSet;
 use std::fmt;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const INITIALIZE_REQUEST_ID: u64 = 1;
 const TOOLS_LIST_REQUEST_ID: u64 = 2;
@@ -19,6 +19,7 @@ const TOOLS_LIST_REQUEST_ID: u64 = 2;
 pub struct ManagedProvider {
     child: Option<SupervisedChild>,
     read_timeout: Duration,
+    catalogue_change_observed: bool,
 }
 
 impl ManagedProvider {
@@ -49,6 +50,7 @@ impl ManagedProvider {
         Ok(Self {
             child: Some(child),
             read_timeout: Duration::from_secs(10),
+            catalogue_change_observed: false,
         })
     }
 
@@ -119,7 +121,20 @@ impl ManagedProvider {
             "params": params
         }))?;
 
-        let response = self.read_message(timeout)?;
+        let started = Instant::now();
+        let response = loop {
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Err(StdioProviderError::ReadFailed(
+                    "timeout waiting for JSON-RPC response".to_owned(),
+                ));
+            }
+            let message = self.read_message(remaining)?;
+            if self.observe_server_notification(&message)? {
+                continue;
+            }
+            break message;
+        };
         let object = response.as_object().ok_or_else(|| {
             StdioProviderError::ProtocolError("JSON-RPC response must be an object".to_owned())
         })?;
@@ -145,6 +160,60 @@ impl ManagedProvider {
                 "JSON-RPC response for {method} had no result"
             ))
         })
+    }
+
+    fn observe_server_notification(
+        &mut self,
+        message: &serde_json::Value,
+    ) -> Result<bool, StdioProviderError> {
+        let Some(object) = message.as_object() else {
+            return Ok(false);
+        };
+        if object.contains_key("id") {
+            return Ok(false);
+        }
+        let Some(method) = object.get("method").and_then(serde_json::Value::as_str) else {
+            return Ok(false);
+        };
+        if object.get("jsonrpc").and_then(serde_json::Value::as_str) != Some("2.0") {
+            return Err(StdioProviderError::ProtocolError(
+                "JSON-RPC notification must declare jsonrpc 2.0".to_owned(),
+            ));
+        }
+        if method == "notifications/tools/list_changed" {
+            self.catalogue_change_observed = true;
+        }
+        Ok(true)
+    }
+
+    /// Drain already-buffered server notifications before the next serial
+    /// request. A response outside an active request is a protocol error.
+    pub(crate) fn poll_notifications(&mut self) -> Result<(), StdioProviderError> {
+        loop {
+            let line = match self
+                .child_mut()?
+                .try_read_protocol_line()
+                .map_err(|error| StdioProviderError::ReadFailed(error.to_string()))?
+            {
+                Some(line) => line,
+                None => return Ok(()),
+            };
+            let message: serde_json::Value =
+                serde_json::from_str(line.trim()).map_err(|error| {
+                    StdioProviderError::MalformedResponse(format!(
+                        "provider stdout was not valid JSON: {error}"
+                    ))
+                })?;
+            if !self.observe_server_notification(&message)? {
+                return Err(StdioProviderError::ProtocolError(
+                    "provider emitted a response outside an active request".to_owned(),
+                ));
+            }
+        }
+    }
+
+    pub(crate) fn take_catalogue_change_observed(&mut self) -> bool {
+        std::mem::take(&mut self.catalogue_change_observed)
     }
 
     fn notify(
@@ -210,23 +279,77 @@ impl ManagedProvider {
 
     /// List tools from the provider.
     pub fn list_tools(&mut self) -> Result<Vec<serde_json::Value>, StdioProviderError> {
-        self.list_tools_with_id(TOOLS_LIST_REQUEST_ID)
+        let mut next_request_id = TOOLS_LIST_REQUEST_ID;
+        self.list_tools_paginated(&mut next_request_id)
     }
 
-    pub(crate) fn list_tools_with_id(
+    pub(crate) fn list_tools_paginated(
         &mut self,
-        id: u64,
+        next_request_id: &mut u64,
     ) -> Result<Vec<serde_json::Value>, StdioProviderError> {
-        let result = self.request(id, "tools/list", serde_json::json!({}))?;
-        result
-            .get("tools")
-            .and_then(serde_json::Value::as_array)
-            .cloned()
-            .ok_or_else(|| {
-                StdioProviderError::ProtocolError(
-                    "tools/list result must contain a tools array".to_owned(),
-                )
-            })
+        let mut tools = Vec::new();
+        let mut operation_names = HashSet::new();
+        let mut observed_cursors = HashSet::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let request_id = *next_request_id;
+            *next_request_id = request_id.checked_add(1).ok_or_else(|| {
+                StdioProviderError::ProtocolError("Socket request id exhausted".to_owned())
+            })?;
+            let params = cursor.as_ref().map_or_else(
+                || serde_json::json!({}),
+                |value| serde_json::json!({"cursor": value}),
+            );
+            let result = self.request(request_id, "tools/list", params)?;
+            let page = result
+                .get("tools")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| {
+                    StdioProviderError::ProtocolError(
+                        "tools/list result must contain a tools array".to_owned(),
+                    )
+                })?;
+            for tool in page {
+                let object = tool.as_object().ok_or_else(|| {
+                    StdioProviderError::ProtocolError(
+                        "every tools/list entry must be an object".to_owned(),
+                    )
+                })?;
+                let name = object
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| {
+                        StdioProviderError::ProtocolError(
+                            "every tools/list entry must have a string name".to_owned(),
+                        )
+                    })?;
+                if !operation_names.insert(name.to_owned()) {
+                    return Err(StdioProviderError::ProtocolError(format!(
+                        "tools/list contained duplicate tool name '{name}'"
+                    )));
+                }
+                tools.push(tool.clone());
+            }
+
+            cursor = match result.get("nextCursor") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(serde_json::Value::String(value)) => Some(value.clone()),
+                Some(_) => {
+                    return Err(StdioProviderError::ProtocolError(
+                        "tools/list nextCursor must be a string when present".to_owned(),
+                    ))
+                }
+            };
+            match cursor.as_ref() {
+                Some(value) if observed_cursors.insert(value.clone()) => {}
+                Some(_) => {
+                    return Err(StdioProviderError::ProtocolError(
+                        "tools/list cursor repeated or looped".to_owned(),
+                    ))
+                }
+                None => return Ok(tools),
+            }
+        }
     }
 
     pub fn ping(&mut self, id: u64) -> Result<serde_json::Value, StdioProviderError> {
@@ -316,6 +439,8 @@ pub enum StdioProviderError {
     MalformedResponse(String),
     ProtocolError(String),
     ExplicitProviderError(String),
+    CatalogueStale,
+    CatalogueChangedDuringDiscovery,
     Interrupted,
     TrustedManifestInvalid(String),
     AdmissionFailed(String),
@@ -336,6 +461,15 @@ impl fmt::Display for StdioProviderError {
             Self::MalformedResponse(m) => write!(f, "malformed response: {m}"),
             Self::ProtocolError(m) => write!(f, "MCP protocol error: {m}"),
             Self::ExplicitProviderError(m) => write!(f, "MCP JSON-RPC error: {m}"),
+            Self::CatalogueStale => {
+                write!(
+                    f,
+                    "Socket catalogue is stale; exact rediscovery is required"
+                )
+            }
+            Self::CatalogueChangedDuringDiscovery => {
+                write!(f, "catalogue changed during discovery")
+            }
             Self::Interrupted => write!(f, "provider call interrupted"),
             Self::TrustedManifestInvalid(m) => write!(f, "trusted manifest invalid: {m}"),
             Self::AdmissionFailed(m) => write!(f, "admission failed: {m}"),

@@ -379,6 +379,29 @@ impl SupervisedChild {
         }
     }
 
+    /// Read one already-buffered protocol line without waiting.
+    ///
+    /// This is used only at a serial protocol boundary, before issuing the
+    /// next request, so server notifications can invalidate host state before
+    /// another operation is invoked.
+    pub fn try_read_protocol_line(&mut self) -> Result<Option<String>, ChildError> {
+        match self.line_rx.try_recv() {
+            Ok(result) => result.map(Some),
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                let ordinary_error = match self.child.try_wait() {
+                    Ok(Some(status)) => ChildError::ProcessExited(status.code().unwrap_or(-1)),
+                    _ => ChildError::ProtocolError(
+                        "stdout reader disconnected unexpectedly".to_owned(),
+                    ),
+                };
+                Err(classify_disconnect_after_interrupt_observation(
+                    ordinary_error,
+                ))
+            }
+        }
+    }
+
     pub fn stderr_tail(&self) -> String {
         if let Ok(guard) = self.stderr_buffer.lock() {
             String::from_utf8_lossy(&guard).to_string()

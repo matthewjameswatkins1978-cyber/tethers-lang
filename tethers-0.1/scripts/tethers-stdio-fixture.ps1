@@ -6,6 +6,9 @@ param(
         "malformed-json", "exit-early",
         "hang-initialize", "hang-tools-list", "stdout-log-text",
         "oversized-line", "retained-stderr", "descendant-alive",
+        "paginated-tools", "cursor-loop", "paged-duplicate",
+        "catalogue-change-unchanged", "catalogue-change-drift",
+        "catalogue-change-on-probe",
         "record-methods", "record-cwd", "run-success", "run-hang-initialize",
         "run-explicit-error", "run-invalid-output", "run-hang-call"
     )]
@@ -20,6 +23,7 @@ $stderr = [System.Console]::Error
 $protocolVersion = "2025-11-25"
 $initialized = $false
 $clientInitialized = $false
+$toolsListCount = 0
 
 function Write-JsonLine {
     param([Parameter(Mandatory = $true)]$Object)
@@ -155,6 +159,7 @@ try {
                 $clientInitialized = $true
             }
             "tools/list" {
+                $toolsListCount += 1
                 if ($Mode -in @("record-methods", "run-success", "run-explicit-error", "run-invalid-output", "run-hang-call", "missing-tool") -and $MarkerFile) {
                     Add-Content -Path $MarkerFile -Value "tools/list"
                 }
@@ -165,9 +170,45 @@ try {
                     Write-ErrorResponse $request.id -32002 "Server not initialized"
                     continue
                 }
+                if ($Mode -in @("paginated-tools", "cursor-loop", "paged-duplicate")) {
+                    $hasCursor = $null -ne $request.params.PSObject.Properties["cursor"]
+                    if (-not $hasCursor) {
+                        Write-JsonLine @{
+                            jsonrpc = "2.0"; id = $request.id
+                            result = @{ tools = @(New-Tool); nextCursor = "opaque::+/=" }
+                        }
+                        continue
+                    }
+                    if ($request.params.cursor -ne "opaque::+/=") {
+                        Write-ErrorResponse $request.id -32602 "opaque cursor was changed"
+                        continue
+                    }
+                    [object[]]$pageTools = if ($Mode -eq "paged-duplicate") {
+                        @(New-Tool)
+                    } else {
+                        @(@{
+                            name = "fixture_unapproved_addition"
+                            description = "Untrusted additional operation."
+                            inputSchema = @{ type = "object" }
+                            outputSchema = @{ type = "object" }
+                            annotations = @{ readOnlyHint = $true }
+                        })
+                    }
+                    $result = @{ tools = $pageTools }
+                    if ($Mode -eq "cursor-loop") { $result.nextCursor = "opaque::+/=" }
+                    Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id; result = $result }
+                    continue
+                }
+
                 $tools = @()
                 if ($Mode -ne "missing-tool") { $tools += New-Tool }
                 if ($Mode -eq "duplicate-tool") { $tools += New-Tool }
+                if ($Mode -eq "catalogue-change-drift" -and $toolsListCount -gt 1) {
+                    $tools[0].inputSchema.required = @("different")
+                }
+                if ($Mode -in @("catalogue-change-unchanged", "catalogue-change-drift") -and $toolsListCount -eq 1) {
+                    Write-JsonLine @{ jsonrpc = "2.0"; method = "notifications/tools/list_changed"; params = @{} }
+                }
                 Write-JsonLine @{
                     jsonrpc = "2.0"; id = $request.id
                     result = @{ tools = $tools }
@@ -209,6 +250,12 @@ try {
                     Add-Content -Path $MarkerFile -Value "tools/call"
                 }
                 Write-ErrorResponse $request.id -32601 "Method not found"
+            }
+            "ping" {
+                if ($Mode -eq "catalogue-change-on-probe") {
+                    Write-JsonLine @{ jsonrpc = "2.0"; method = "notifications/tools/list_changed"; params = @{} }
+                }
+                Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id; result = @{} }
             }
             default {
                 if ($Mode -eq "record-methods" -and $MarkerFile) {
