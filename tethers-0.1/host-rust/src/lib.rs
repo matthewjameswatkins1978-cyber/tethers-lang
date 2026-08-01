@@ -7,6 +7,7 @@ pub mod check_command;
 pub mod child_process;
 pub mod cli;
 pub mod configured_runtime;
+pub mod conformance;
 pub mod dispatch;
 pub mod engine_stdio;
 pub mod event_admission;
