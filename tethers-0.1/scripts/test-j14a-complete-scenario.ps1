@@ -8,7 +8,7 @@ $EnginePath = Join-Path $RepoRoot "engine-ocaml\_build\default\bin\tethers_mcp_m
 $StandingManifest = Join-Path $RepoRoot "protocol\capability-manifests\fixture-ping-standing-allow.json"
 $FixtureProvider = Join-Path $PSScriptRoot "tethers-stdio-fixture.ps1"
 $StandingDigest = "sha256:eb61b62bde489e00a4d15c37c83e6cdb1e9e378b8f13b910d4b68bd6d68c19da"
-$CargoLockHash = "c72087d25475c82a13e3b57396f57e965dbeca1f76a33b738322523a54fc20a3"
+$CargoLockHash = "4238151009218547ce20e9686c2a8cf12d321e31998b35e1d087b10d0ce674d7"
 
 $ScenarioDir = Join-Path $RepoRoot "scenarios\j14-complete-local"
 $CommittedTether = Join-Path $ScenarioDir "tethers\complete.tether"
