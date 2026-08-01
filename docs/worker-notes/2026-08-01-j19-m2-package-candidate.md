@@ -6,7 +6,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex Terra High`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Base commit: `337ab11c9cd4059402ef48d5949365c9517867a7`
 

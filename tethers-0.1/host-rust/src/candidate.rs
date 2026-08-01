@@ -585,6 +585,41 @@ mod tests {
         fs::remove_dir_all(quarantine).unwrap();
     }
 
+    #[test]
+    fn filename_disagreement_and_duplicate_identity_evidence_fail_closed() {
+        let root = std::env::temp_dir().join(format!("tethers-registry-{}", Uuid::new_v4()));
+        let quarantine =
+            std::env::temp_dir().join(format!("tethers-quarantine-{}", Uuid::new_v4()));
+        let registry = CandidateRegistry::open(&root, &quarantine).unwrap();
+        let fixture = include_str!("../fixtures/m2/candidate-record-v1.json");
+        fs::write(root.join("wrong-name.json"), fixture).unwrap();
+        assert_eq!(registry.load_all().unwrap_err().code, "record_invalid");
+        fs::remove_file(root.join("wrong-name.json")).unwrap();
+
+        let value = manifest::parse_value_no_dupes(fixture).unwrap();
+        let record: CandidateRecord = serde_json::from_value(value).unwrap();
+        fs::write(root.join(format!("{}.json", record.candidate_id)), fixture).unwrap();
+        fs::write(root.join("duplicate-evidence.json"), fixture).unwrap();
+        assert!(registry.load_all().is_err());
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(quarantine).unwrap();
+    }
+
+    #[test]
+    fn preexisting_staging_target_and_escape_destination_fail_closed_without_write() {
+        let root = std::env::temp_dir().join(format!("tethers-quarantine-{}", Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!("tethers-outside-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&outside).unwrap();
+        let staging = root.join(".staging-fixed-test");
+        fs::create_dir(&staging).unwrap();
+        assert_eq!(create_dir(&staging).unwrap_err().code, "already_exists");
+        assert_eq!(confined(&root, &outside).unwrap_err().code, "unsafe_destination");
+        assert!(!outside.join("provider-marker.exe").exists());
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn real_windows_junction_is_refused_as_a_quarantine_root() {
@@ -606,11 +641,13 @@ mod tests {
             status.success(),
             "could not create Windows junction fixture"
         );
-        let refusal = match CandidateRegistry::open(&registry, &junction) {
+        let configured_child = junction.join("configured-quarantine");
+        let refusal = match CandidateRegistry::open(&registry, &configured_child) {
             Err(error) => error,
             Ok(_) => panic!("junction quarantine root was accepted"),
         };
         assert_eq!(refusal.code, "unsafe_destination");
+        assert!(!target.join("configured-quarantine").exists());
         fs::remove_dir(junction).unwrap();
         fs::remove_dir_all(target).unwrap();
         fs::remove_dir_all(registry).unwrap();

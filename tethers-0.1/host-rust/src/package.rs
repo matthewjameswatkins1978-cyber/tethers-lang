@@ -267,6 +267,12 @@ fn validate_eocd_profile(bytes: &[u8]) -> Result<()> {
         })
         .ok_or_else(|| refusal("invalid_archive", "archive has no valid EOCD"))?;
     let fixed = &bytes[eocd..eocd + 22];
+    if le_u16(&fixed[20..22]) != 0 {
+        return Err(refusal(
+            "unsupported_archive_feature",
+            "ZIP archive comments are refused",
+        ));
+    }
     let disk = le_u16(&fixed[4..6]);
     let directory_disk = le_u16(&fixed[6..8]);
     let entries_on_disk = le_u16(&fixed[8..10]);
@@ -973,8 +979,93 @@ mod tests {
         assert!(inspect(&too_large).is_err());
         fs::remove_file(too_large).unwrap();
 
+        let per_entry = temporary("entry-limit.tetherplug");
+        hostile_archive(
+            &per_entry,
+            &[("docs/large", &vec![0; MAX_ENTRY_BYTES as usize + 1])],
+        );
+        assert_eq!(inspect(&per_entry).unwrap_err().code, "resource_limit");
+        fs::remove_file(per_entry).unwrap();
+
+        let ratio = temporary("ratio-limit.tetherplug");
+        let file = File::create(&ratio).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file(
+            "docs/repeated",
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+        )
+        .unwrap();
+        zip.write_all(&vec![0; 1024 * 1024]).unwrap();
+        zip.finish().unwrap();
+        assert_eq!(inspect(&ratio).unwrap_err().code, "resource_limit");
+        fs::remove_file(ratio).unwrap();
+
+        let total = temporary("total-limit.tetherplug");
+        let file = File::create(&total).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        for index in 0..5 {
+            zip.start_file(
+                format!("docs/{index}"),
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+            )
+            .unwrap();
+            zip.write_all(&vec![0; 14 * 1024 * 1024]).unwrap();
+        }
+        zip.finish().unwrap();
+        assert_eq!(inspect(&total).unwrap_err().code, "resource_limit");
+        fs::remove_file(total).unwrap();
+
+        let nested = temporary("nested.tetherplug");
+        hostile_archive(&nested, &[("assets/inner.tetherplug", b"PK\x03\x04")]);
+        assert_eq!(
+            inspect(&nested).unwrap_err().code,
+            "unsupported_archive_feature"
+        );
+        fs::remove_file(nested).unwrap();
+
         assert!(bounded_read(&mut Cursor::new(vec![0; 2]), 1).is_err());
-        assert!(validate_path(b"assets/nested.tetherplug").is_ok());
+    }
+
+    #[test]
+    fn frozen_zip_profile_refuses_comments_and_nonordinary_unix_metadata() {
+        let commented = temporary("commented.tetherplug");
+        let file = File::create(&commented).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file("docs/readme", SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"x").unwrap();
+        zip.set_comment("unsupported metadata");
+        zip.finish().unwrap();
+        assert_eq!(
+            inspect(&commented).unwrap_err().code,
+            "unsupported_archive_feature"
+        );
+        fs::remove_file(commented).unwrap();
+
+        let symlink = temporary("unix-symlink.tetherplug");
+        let file = File::create(&symlink).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file(
+            "provider/link",
+            SimpleFileOptions::default().unix_permissions(0o120_777),
+        )
+        .unwrap();
+        zip.write_all(b"target").unwrap();
+        zip.finish().unwrap();
+        patch_zip(&symlink, |bytes| {
+            for offset in 0..=bytes.len() - 42 {
+                if bytes[offset..offset + 4] == *b"PK\x01\x02" {
+                    bytes[offset + 5] = 3; // Unix "version made by" platform.
+                    bytes[offset + 38..offset + 42]
+                        .copy_from_slice(&(0o120_777u32 << 16).to_le_bytes());
+                }
+            }
+        });
+        assert_eq!(
+            inspect(&symlink).unwrap_err().code,
+            "unsupported_archive_feature"
+        );
+        fs::remove_file(symlink).unwrap();
     }
 
     #[test]
