@@ -13,6 +13,7 @@ pub mod event_admission;
 mod event_queue;
 pub mod executor;
 pub mod host_execution;
+mod m3_store;
 mod manifest;
 mod outcome;
 pub mod package;
@@ -30,6 +31,7 @@ pub mod runtime_config;
 pub mod socket;
 pub mod stdio_provider;
 pub mod trail_command;
+pub mod trust;
 pub mod trusted_store;
 mod validation;
 pub(crate) use application::{
