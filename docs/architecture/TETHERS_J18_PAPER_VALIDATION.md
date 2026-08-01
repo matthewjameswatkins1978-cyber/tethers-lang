@@ -1,4 +1,7 @@
-Status: J18H candidate, pending Lucy paper-validation review
+Status: Accepted J18H paper validation
+Accepted by Lucy: 2026-08-01
+Verdict: VALIDATED
+Architecture freeze: Final
 Validation generation: 1
 Implementation: Not authorised
 
@@ -633,18 +636,18 @@ accepted J05/J18 contracts; external queue behaviour unresolved.
 17. Unsuitable integration forced into support: **PASS**.
 18. First implementation remains File Tools and PDF-sized: **PASS**.
 19. J18I can produce a roadmap without reopening semantics: **PASS**.
-20. Final architecture freeze recommended: **PASS**, subject to Lucy accepting this validation.
+ 20. Final architecture freeze: **PASS**.
 
 ## Revision Register
 
 None. Every pressure case fits through accepted support, deferral, reservation,
 brokering, gateway mediation or refusal. No accepted document or section requires
-revision, and J18I remains blocked until Lucy accepts J18H.
+revision.
 
 ## Final Freeze Recommendation
 
-Recommend final architecture freeze after Lucy paper-validation review. Keep
-implementation unauthorised, preserve J18G security restrictions, and keep Job,
+The architecture freeze is final. Keep implementation unauthorised, preserve
+J18G security restrictions, and keep Job,
 Stream and Human Task reserved. The first implementation remains credential-free
 File Tools and bounded PDF Tools reference work only.
 

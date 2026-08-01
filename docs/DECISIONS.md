@@ -1,4 +1,17 @@
 # Decisions
+## 2026-08-01: J18 architecture frozen and implementation roadmap opened
+
+1. J18H is accepted with verdict `VALIDATED`.
+2. J18B through J18H form the frozen Universal Plug architecture.
+3. Tether `0.1` semantics remain unchanged.
+4. J18I is roadmap-only and authorises no implementation.
+5. The first Plug Kit remains credential-free File Tools and bounded PDF Tools.
+6. Action, Query and Anchor are first-programme classes.
+7. Job, Stream and Human Task remain reserved.
+8. The six-milestone vertical implementation route is being planned.
+9. Existing 0.2 behaviour remains supported.
+10. Only a later explicit packet may start implementation.
+
 ## 2026-08-01: J18 paper-validation result
 
 1. All sixteen representative integrations were paper-tested against accepted

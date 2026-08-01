@@ -7,9 +7,90 @@ Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `Luna on OpenCode, implementation sequencing and repository-fit audit`
 Base branch: `main`
+Base commit: `e028b0b80f1a092f5f4198714c0b7a4477323cc8`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 Branch: `luna/j18i-first-plug-kit-roadmap`
 Worker note: `docs/worker-notes/2026-08-01-j18i-first-plug-kit-roadmap.md`
+
+## Relevant background and existing behaviour
+
+J18B through J18H are accepted contracts and the Universal Plug architecture is
+frozen at the stated architecture base. Tethers 0.2.0 remains the released
+baseline, with Tether 0.1 syntax and semantics unchanged. The existing Rust host
+already provides typed execution, policy, approval, intent-first dispatch,
+canonical outcomes, replay, Result Anchors, event admission, Trail and
+supervised MCP/engine sessions, but these modules are largely binary-owned.
+
+## Required behaviour
+
+1. Produce a documentation-only, executable roadmap with exactly six vertical
+   milestones.
+2. Include a bounded future packet map, current-code inventory, compatibility
+   strategy, evidence layers, durable-store sequencing, exclusions and risks.
+3. Keep implementation unauthorised and do not create implementation artifacts.
+4. Make the first future implementation packet the smallest Milestone 1
+   extraction/parity task only.
+5. Preserve released 0.2 behaviour and all frozen J18 trust/outcome boundaries.
+6. Record evidence-based reuse, extraction, extension, supersession and deferral
+   decisions.
+
+## Relevant components
+
+The authoritative roadmap must cover the Rust host modules, current CLI and
+PowerShell checks, capability manifests, runtime configurations, MCP fixture
+provider, local file provider, Rust/OCaml/integration test surfaces, and the
+accepted J18B-J18H architecture documents named by this packet.
+
+## Frozen decisions and invariants
+
+Core remains deterministic and application-agnostic; the host owns trust,
+policy, credentials, dispatch, outcomes, replay, admission, conformance and
+Trail; providers translate vendor protocols. Action, Query and Anchor are first
+classes, while Job, Stream and Human Task remain reserved. There are exactly
+three attempted operation outcomes, no automatic retry, and inbound admission
+is separate from operation outcomes. Supervision is not isolation, and packages,
+signatures, conformance and installation grant no permission.
+
+## Acceptance criteria
+
+1. Exactly eight authorised Markdown paths change relative to the frozen base.
+2. J18H is accepted and the architecture freeze is final without altering its
+   validation analysis.
+3. Current implementation is inventoried with evidence and reuse decisions.
+4. Exactly six vertical milestones and a bounded worker-routed packet map exist.
+5. P1 is the smallest Milestone 1 extraction/parity task and does not begin
+   package, File Tools or security work.
+6. Compatibility, exclusions, risks, evidence and durable-store sequencing are
+   explicit; no implementation or schema is created.
+
+## Required verification
+
+Run whitespace, exact changed-path, staged-diff and task-packet checks; required
+milestone, reuse, boundary, packet and forbidden-claim searches; no-
+implementation-artifact verification; and remote main/tag reference checks.
+
+## Forbidden changes
+
+Do not modify or create Rust, OCaml, Cargo, Dune, opam, scripts, tests, fixtures,
+manifests, runtime configuration, schemas, packages, providers, MCP transcripts,
+credentials, trust stores, keys, signatures, sandboxes, durable store files,
+Tether specification, Constitution, release material, tags or GitHub Releases.
+Do not begin implementation.
+
+## Stop conditions
+
+Stop on branch, base, ownership, authorised-path or architecture mismatch; a
+missing implementation fact that cannot be established from repository evidence;
+an unresolved frozen-semantic contradiction; a failed required check; or any
+request to implement rather than roadmap. After two materially similar failed
+attempts, stop with exact evidence and one smallest unresolved question.
+
+## Expected pre-existing changes
+
+The control-plane commit `e028b0b80f1a092f5f4198714c0b7a4477323cc8` is expected as
+the branch base. The worktree is expected to be clean before J18I documentation
+changes; the frozen architecture base remains an earlier ancestor used for
+changed-path verification.
 
 ## Control-plane starting rule
 

@@ -4,8 +4,8 @@ Updated: 2026-08-01
 
 ## Goal
 
-Transcribe and audit the candidate Universal Plug architecture without changing
-the Tethers 0.1 language semantics or weakening the 0.2 runtime boundaries.
+Roadmap the first Tethers Plug Kit without changing Tethers 0.1 language
+semantics or weakening the released 0.2 runtime boundaries.
 
 ## Accepted Baseline
 
@@ -13,10 +13,10 @@ Tethers 0.2.0 is the accepted and published baseline. J17 is complete; `main`
 and the annotated `v0.2.0` tag point to the signed-off commit
 `b5546411661dcbcb53e1cf2538eaec594c6f76f2`.
 
-J18A is complete, J18B through J18G are accepted. J18H is active and pending
-Lucy paper-validation review; its current verdict is `VALIDATED`, but final
-architecture freeze still requires Lucy acceptance. J18I remains blocked until
-J18H acceptance. Implementation remains unauthorised.
+J18A is complete. J18B through J18H are accepted and the Universal Plug
+architecture is frozen at `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`. J18I is
+active and pending Lucy roadmap review. Implementation remains unauthorised; the
+first implementation packet follows only after J18I acceptance.
 
 ## J18 Boundaries
 

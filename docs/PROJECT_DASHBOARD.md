@@ -4,8 +4,9 @@ Updated: 2026-08-01
 
 ## Current Milestone
 
-J18H: Universal Plug Paper Validation Matrix, documentation-only and pending
-Lucy paper-validation review. Current candidate verdict: `VALIDATED`.
+J18I: First Plug Kit Implementation Roadmap, documentation-only and pending Lucy
+roadmap review. Architecture freeze: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`.
+Implementation remains unauthorised.
 
 ## Published Baseline
 
@@ -28,13 +29,13 @@ the release.
 
 ## Active Task
 
-J18H - Universal Plug Paper Validation Matrix
+J18I - First Plug Kit Implementation Roadmap
 
 ## Next Route
 
-J18B through J18G are accepted. J18H is active and pending Lucy review; final
-architecture freeze is not yet accepted. J18I remains blocked until J18H
-acceptance.
+J18B through J18H are accepted; architecture freeze is final. J18I is active and
+pending Lucy roadmap review. The first implementation packet follows only after
+J18I acceptance.
 
 Plug implementation remains unauthorised. Plugs remain outside Tethers Core;
 host-owned permissions, credentials, canonical outcomes, and Trails remain
