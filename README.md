@@ -25,12 +25,16 @@ Tethers uses a layered set of authoritative and operational documents:
 - `docs/ROAD_TO_0_2.md` is the dependency-ordered release programme through
   Tethers 0.2.
 
-## Release Candidate
+## Tethers 0.2.0
 
 - Tethers product version: 0.2.0
-- Status: awaiting independent J17 sign-off
-- Tag: not yet created
+- Status: released
+- Tag: `v0.2.0`
+- Language semantics: 0.1
 - Release notes: [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md)
+
+The next design programme concerns universal external capabilities through
+plugs. Plug functionality is not part of Tethers 0.2.0.
 
 Current operating route:
 

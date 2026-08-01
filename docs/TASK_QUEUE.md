@@ -4,41 +4,38 @@ Updated: 2026-08-01
 
 ## Current State
 
-Latest accepted release-candidate checkpoint:
+Tethers 0.2.0 is published at
+`b5546411661dcbcb53e1cf2538eaec594c6f76f2` with annotated tag `v0.2.0`.
+Language semantics remain `0.1`.
 
-`58affc8c30ddfa9284933a5e38f598dad573f4dd`
+J17 is complete. Its bounded release history includes:
 
-Accepted work is complete through J17A3:
+- J17-V3 runner matcher failure.
+- J17-V4 unsupported Rust-total claim.
+- J17-V5 successful final reconciliation.
+- Final Lucy sign-off: `SIGNED OFF FOR 0.2.0`.
+- J17-P1 narrow fetch-ref preflight failure.
+- J17-P2 successful publication.
 
-- [x] All accepted baseline work through J04a.
-- [x] J05 exact one-shot approval.
-- [x] J06 honest outcome classification.
-- [x] J07 deadline and uncertainty handling.
-- [x] J08 uncertain Result Anchor.
-- [x] J09 durable replay protection.
-- [x] J10 serial Result Anchor continuation.
-- [x] J11 event deduplication and causal depth eight.
-- [x] J12 minimal runnable configuration.
-- [x] J13 public `check`, `run`, and `trail` routes.
-- [x] J14 complete local scenario.
-- [x] J14C real bounded file move.
-- [x] J15 consolidated release matrix.
-- [x] J16 clean checkout, builds, restart, and replay proof.
-- [x] J17A1 product identity.
-- [x] J17A2 release notes.
-- [x] J17A3 current-state alignment.
+All 17 ROAD_TO_0_2 acceptance claims were proven. Large evidence logs remain in
+the retained release evidence and worker records.
 
-## Active Gate
+## J18 Universal Plug Architecture And Plug Kit
 
-J17 independent 0.2.0 release sign-off
+Only J18A is active. Plug functionality is not yet authorised.
 
-## Remaining 0.2 Queue
+- [x] J18A: post-release reset.
+- [ ] J18B: Universal Plug Architecture.
+- [ ] J18C: Tethers Socket v1 protocol.
+- [ ] J18D: `.tetherplug` package format.
+- [ ] J18E: capability classes, effects, and scopes.
+- [ ] J18F: lifecycle, outcomes, events, and conformance.
+- [ ] J18G: security and sandbox threat model.
+- [ ] J18H: paper validation against representative integrations.
+- [ ] J18I: first Plug Kit implementation roadmap.
 
-- [ ] Final independent native Windows verification.
-- [ ] Evidence-backed release verdict.
-- [ ] Fast-forward exact accepted commit to `main`, only after sign-off.
-- [ ] Create annotated `v0.2.0` tag, only after sign-off.
-- [ ] Verify remote main and tag targets.
+The first J18 phase is architecture and paper validation. Plugs remain outside
+Tethers Core, which remains application-agnostic.
 
 ## Deferred Beyond 0.2
 
@@ -67,6 +64,3 @@ Lucy inspects and compiles
 -> Codex Terra High handles Red and machine-required gates
 -> Matthew returns concise reports to Lucy
 ```
-
-J17 is the only remaining release gate. Do not begin feature implementation or
-release publication before its evidence-backed verdict.
