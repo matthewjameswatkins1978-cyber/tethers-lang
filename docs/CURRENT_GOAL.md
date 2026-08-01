@@ -13,10 +13,9 @@ Tethers 0.2.0 is the accepted and published baseline. J17 is complete; `main`
 and the annotated `v0.2.0` tag point to the signed-off commit
 `b5546411661dcbcb53e1cf2538eaec594c6f76f2`.
 
-J18A is complete, J18B and J18C are accepted, and J18D is accepted at
-`70b95a38983ee270b908f47503be6350083b3e42`. J18E is active and design-only.
-Capability, effect, and scope implementation remains unauthorised. J18F
-follows only after Lucy accepts J18E.
+J18A is complete, J18B, J18C, J18D, and J18E are accepted. J18E is accepted at
+`eb6548ca61a2c8b108e675f01f3512f0598bc6b6`. J18F is active and design-only;
+implementation remains unauthorised. J18G follows only after Lucy accepts J18F.
 
 ## J18 Boundaries
 

@@ -1,6 +1,8 @@
 # Tethers Capabilities, Effects and Scopes v1
 
-Status: J18E candidate, pending Lucy capability review
+Status: Accepted J18E capability contract
+Accepted by Lucy: 2026-08-01
+Final architecture freeze: Requires J18H paper validation
 Contract generation: 1
 Implementation: Not authorised
 

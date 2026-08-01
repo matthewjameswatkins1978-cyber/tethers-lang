@@ -1,4 +1,24 @@
 # Decisions
+## 2026-08-01: Lifecycle, outcome, event, and conformance boundary
+
+1. Installation, session, health, catalogue, binding, operation, replay,
+   event-admission and conformance states remain separate.
+2. Readiness is capability-specific.
+3. Unattempted is not a canonical outcome.
+4. Canonical outcomes remain succeeded, failed and uncertain.
+5. Ambiguity after invocation remains uncertain.
+6. Standard Result Anchors exist only after attempted durable outcomes.
+7. Replay authority remains separate from Trail.
+8. No replay or restart path authorises another provider call.
+9. Plug Anchors require stable source event identity.
+10. Durable external-event admission is distinct from operation replay and J11
+    causal admission.
+11. Acknowledgement follows durable event admission.
+12. Cursors do not replace event identity.
+13. Conformance is host-orchestrated evidence, not authority or permission.
+14. Passing conformance does not approve, install or enable a Plug.
+15. No automatic retry or Tether syntax change is introduced.
+
 ## 2026-08-01: Capability class, effect, and scope boundary
 
 1. Every capability has exactly one reviewed class.

@@ -22,22 +22,22 @@ the retained release evidence and worker records.
 
 ## J18 Universal Plug Architecture And Plug Kit
 
-J18B, J18C, and J18D are accepted. J18E is active and design-only. Plug
+J18B, J18C, J18D, and J18E are accepted. J18F is active and design-only. Plug
 functionality remains unauthorised.
 
 - [x] J18A: post-release reset.
 - [x] J18B: Universal Plug Architecture (accepted boundary; J18H freeze gate).
 - [x] J18C: Tethers Socket v1 protocol and MCP stdio binding (accepted).
 - [x] J18D: `.tetherplug` package format (accepted).
-- [~] J18E: capability classes, effects, and scopes (pending Lucy review).
-- [ ] J18F: lifecycle, outcomes, events, and conformance.
+- [x] J18E: capability classes, effects, and scopes (accepted at `eb6548c`).
+- [~] J18F: lifecycle, outcomes, events, and conformance (pending Lucy review).
 - [ ] J18G: security and sandbox threat model.
 - [ ] J18H: paper validation against representative integrations.
 - [ ] J18I: first Plug Kit implementation roadmap.
 
 The first J18 phase is architecture and paper validation. Plugs remain outside
-Tethers Core, which remains application-agnostic. J18E is design-only; J18F is
-next only after Lucy accepts J18E.
+Tethers Core, which remains application-agnostic. J18F is design-only; J18G is
+next only after Lucy accepts J18F.
 
 ## Deferred Beyond 0.2
 
