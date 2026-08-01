@@ -2,105 +2,136 @@
 
 Control contract: `1`
 
-Task: `J16D - complete the repaired clean native Windows verification gate`
-
-Owner: `Codex`
-
+Task: `J17A1 - set the product release identity to 0.2.0`
+Owner: `Hy3`
 Status: `COMPLETE`
-
-Task colour: `Red`
-
-Route: `Codex native Windows complete clean verification`
-
-Base commit: `75186ce4413c0fbf860d258b86d7adecadcff780`
-
-Branch: `codex/j16-clean-checkout-proof`
-
-Worker note: `docs/worker-notes/2026-08-01-j16d-complete-clean-verification.md`
+Task colour: `Green`
+Route: `Hy3 implementation - Green product-metadata update`
+Branch: `hy3/j17a-product-version`
+Base commit: `160f4d4da1641b12380644227a273e1d3db1a8bb`
+Worker note: `docs/worker-notes/2026-08-01-j17a-product-version.md`
 
 ## Objective
 
-Complete the repaired clean native Windows verification gate from the J16
-checkout and retain reproducible external evidence for Lucy's independent
-acceptance review.
+Set the Tethers product release identity from `0.1.0` to `0.2.0` across every
+live product surface (Rust host package, CLI, engine and provider `serverInfo`
+identities, and the real-engine golden transcripts) without touching the frozen
+`0.1` language semantics, the MCP wire `protocolVersion`, fixture identity, or
+dependency versions.
 
 ## Relevant background and existing behaviour
 
-J16A established the clean checkout, J16B reconstructed its native toolchains,
-J16C proved restart/replay, and J16D-F1 repaired the observed Ctrl+C race. The
-previous J16D harness had incomplete evidence; J16D-R2 captured the genuine
-race, and J16D-R3 reran the complete gate with one durable log per command.
+J16D completed the clean native Windows verification gate and left the release
+at `0.1.0` product identity. J17A1 is the first release-identity step for 0.2.0.
+The version bump necessarily changes `Cargo.lock` (root package only), which
+invalidated J14C's exact whole-file `Cargo.lock` digest pin; that pin was
+refreshed to the new reviewed hash. The host's strict CLI wraps Clap's
+`--version` output inside the `invalid_cli_usage` JSON envelope and exits 2;
+that pre-existing behaviour is recorded but not changed.
 
 ## Required behaviour
 
-1. Run each complete-gate command once with durable external evidence.
-2. Prove both toolchains, all repository scripts, the runner contract, and the
-   consolidated matrix pass from the clean checkout.
-3. Reconcile the full Rust suite by its actual Cargo targets.
-4. Preserve prior evidence, source boundaries, process integrity, and temporary
-   directory integrity.
-5. Record completion without publishing to `main` or beginning J17.
+1. Change the seven live product identities from `0.1.0` to `0.2.0`: the Rust
+   package `Cargo.toml`, `Cargo.lock` root entry, `cli.rs`, `engine_stdio.rs`
+   `clientInfo.version`, `stdio_provider.rs` `clientInfo.version`,
+   `tethers_mcp_server.ml` `serverInfo.version`, and
+   `tethers-local-file-provider.ps1` `serverInfo.version`.
+2. Change `serverInfo.version` from `0.1.0` to `0.2.0` in the 13 real-engine
+   `tethers-0.1/protocol/mcp-transcripts/*/stdout.jsonl` files, leaving the two
+   error-only transcripts and every fixture/`protocolVersion` byte unchanged.
+3. Refresh J14C's exact `Cargo.lock` digest pin to the new reviewed hash
+   (`894f2ce6…`); the digest guard stays exact and was not weakened.
+4. Preserve frozen `0.1` language semantics, MCP `protocolVersion` (`2025-11-25`)
+   and fixture server identity.
 
 ## Relevant components
 
-- J16 checkout: `D:\The Next Thing\Tethers Lang - J16 Clean`.
-- External evidence: `C:\Users\Matmus\AppData\Local\Temp\J16D-R3-6d997f4f-cb20-4d68-bc04-7de37261399e`.
-- Rust host, path-bound OCaml switch, fixture/engine/MCP/host/demo scripts, and
-  the J15 consolidated verifier.
+- `tethers-0.1/host-rust/Cargo.toml`, `Cargo.lock`, `src/cli.rs`,
+  `src/engine_stdio.rs`, `src/stdio_provider.rs`
+- `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml`
+- `tethers-0.1/providers/tethers-local-file-provider.ps1`
+- `tethers-0.1/protocol/mcp-transcripts/*/stdout.jsonl` (13 real-engine files)
+- `tethers-0.1/scripts/test-j14c-real-file-move.ps1` (pin refresh only)
 
 ## Frozen decisions and invariants
 
-- All 20 planned verification children completed once with exit `0`.
-- Rust totals are `797 passed, 0 failed, 0 ignored`: 44 `src/lib.rs` tests, 724
-  `src/main.rs` tests, 29 `tests/j13a_cli.rs` integration tests, and 0 doctests.
-  The earlier 768 figure omitted the successful 29-test integration target.
-- Runner contract: six rows passed with 49 assertions. Consolidated matrix: six
-  suites, six passed, zero failed, 79 accepted release cases/rows, `RESULT: PASS`.
-- J13B test 10 passed as `interrupted`, not `unavailable`.
-- J16D proves verification only; publication to `main` and J17 remain deferred.
+- Product release identity is now `0.2.0`; the frozen language semantics remain
+  `0.1`.
+- MCP wire `protocolVersion` (`2025-11-25`) and the supported-version list are
+  unchanged.
+- The fixture `tethers-stdio-fixture.ps1` `serverInfo.version` stays `0.1.0`.
+- `Cargo.lock` changed only at the root package version; no dependency version,
+  checksum, source, or unrelated lock entry differs.
+- The J14C `Cargo.lock` digest guard remains exact (whole-file SHA-256), merely
+  updated to the reviewed post-bump hash.
+- The strict CLI envelope reporting `0.2.0` with exit 2 is pre-existing and not
+  altered by this metadata task.
+- Release notes, J17 sign-off, main publication and tagging are deferred.
 
 ## Acceptance criteria
 
-1. Toolchain, Rust, OCaml, fixture, engine, MCP, host, demo, runner-contract,
-   and consolidated-matrix steps have one durable exit-0 record each.
-2. Cargo target headings and totals reconcile exactly to 797 with no failures or
-   ignored tests.
-3. The runner contract and six-suite, 79-case matrix contain their required PASS
-   markers and assertion counts.
-4. Retained evidence, source/lock boundaries, process state, and current test
-   temporary roots are clean.
-5. Only this packet and its worker note change; main is not pushed and J17 does
-   not begin.
+1. All seven product identities read `0.2.0`; `cargo metadata` reports the root
+   package version `0.2.0`.
+2. `Cargo.lock` differs only at the root package version; its SHA-256 is
+   `894f2ce6692837fa4c449c0fc593a37ed5597577ea5b4093da0912e6ee2b14e3`.
+3. The 13 real-engine transcripts report `serverInfo.version` `0.2.0`; the two
+   error-only transcripts and every `protocolVersion`/`fixture` byte are
+   unchanged.
+4. J14C passes `9 rows, 9 passed, 0 failed` with `196 assertions`, exit 0; the
+   refreshed digest pin matches the reviewed hash.
+5. `cargo fmt --check`, `cargo check --locked`, `cargo test --locked` (797
+   passed, 0 failed, 0 ignored), `opam exec dune build`, `check-fixtures.ps1`
+   and the 15-case MCP transcript suite all pass.
+6. The packet checker passes for control-v1 consistency.
+7. Only the updated authorised paths change.
 
 ## Required verification
 
-- J16D-R3 `steps.jsonl`, `summary.txt`, separate logs `00` through `19`,
-  `runner.ps1`, `plan.json`, and inventory in the retained external directory.
-- Final packet checker, whitespace, changed-path, and Git-status checks captured
-  as separate external final steps before the completion commit.
+- `cargo fmt --check`, `cargo metadata --locked --no-deps`, `cargo check
+  --locked`, `cargo test --locked` (797/0/0) — all exit 0.
+- `opam exec --switch=… -- dune build` — exit 0.
+- `check-fixtures.ps1` — 46 JSON + 30 JSONL valid.
+- `test-mcp-transcripts.ps1` — 15/15 cases pass.
+- `test-j14c-real-file-move.ps1` — exit 0, 9/9, 196 assertions.
+- `check-tethers-task-packet.ps1` — PASS.
 
 ## Forbidden changes
 
-- No implementation, test, script, fixture, manifest, lock, `main`, or J17
-  change; no verification child may be rerun.
+- `tethers-0.1/SPEC.md`, `tethers-0.1/README.md`, `tethers-0.1` directory name.
+- `tethers-0.1/engine-ocaml/tethers_engine.opam` / `.opam.locked` wording.
+- MCP `protocolVersion` values, manifest/capability versions, fixture versions,
+  dependency versions, historical worker notes.
+- CLI parsing or envelope behaviour.
+- main, release notes, J17 sign-off, or any tag.
 
 ## Stop conditions
 
-- A non-zero verification child, incomplete evidence, changed unauthorised path,
-  altered retained evidence, live J16 executable, or unresolved temporary-root
-  residue stops the task.
+- A product identity left at `0.1.0`, an unintended `Cargo.lock` entry change,
+  a transcript `protocolVersion` or fixture byte change, J14C failure, or any
+  unauthorised path change stops the task.
 
 ## Expected pre-existing changes
 
-None.
+The branch `hy3/j17a-product-version` was created at `160f4d4` (6 ahead of and
+0 behind `origin/main`) with the 20 intended product/transcript modifications
+already applied; this task added the authorised J14C pin refresh.
 
 ## Commit and publication boundary
 
-Create exactly one commit: `test: complete j16 clean verification`; push only
-`codex/j16-clean-checkout-proof`.
+Create exactly one commit: `chore: set product version to 0.2.0`.
+
+Push only: `hy3/j17a-product-version`.
+
+Do not push main. Do not create a tag. Do not begin release notes or J17
+sign-off.
 
 ## Return contract
 
-Return the evidence location and hashes, exact Rust target totals, all twenty
-exit-0 results, matrix/runner results, changed paths, branch topology, and final
-cleanliness.
+Return `COMPLETE` or `BLOCKED` and stop.
+
+For `COMPLETE`, report the commit SHA, changed product identities, old and new
+`Cargo.lock` hashes, J14C pin refresh, J14C result, exact 13 transcript paths,
+Rust result, Cargo metadata result, CLI version-envelope result, preserved `0.1`
+categories, changed paths, branch ahead/behind, and worktree cleanliness.
+
+Stop after reporting. Do not begin J17 sign-off.

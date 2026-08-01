@@ -173,7 +173,7 @@ impl ManagedProvider {
                 "capabilities": {},
                 "clientInfo": {
                     "name": "tethers-reference-host",
-                    "version": "0.1.0"
+                    "version": "0.2.0"
                 }
             }),
         )?;

@@ -63,7 +63,7 @@ let handle_initialize id fields =
           ("capabilities", `Assoc [ ("tools", `Assoc []) ]);
           ( "serverInfo",
             `Assoc
-              [ ("name", `String "tethers"); ("version", `String "0.1.0") ] );
+              [ ("name", `String "tethers"); ("version", `String "0.2.0") ] );
         ]
     in
     Some (make_response id result)

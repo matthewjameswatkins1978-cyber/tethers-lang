@@ -309,7 +309,7 @@ try {
                     result = @{
                         protocolVersion = $protocolVersion
                         capabilities = @{ tools = @{} }
-                        serverInfo = @{ name = $serverName; version = "0.1.0" }
+                        serverInfo = @{ name = $serverName; version = "0.2.0" }
                     }
                 }
             }

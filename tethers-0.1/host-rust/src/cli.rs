@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(
     name = "tethers-reference-host",
-    version = "0.1.0",
+    version = "0.2.0",
     about = "Tethers Reference Host",
     disable_help_subcommand = true
 )]
