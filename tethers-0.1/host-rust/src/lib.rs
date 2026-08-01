@@ -14,6 +14,7 @@ pub mod event_admission;
 mod event_queue;
 pub mod executor;
 pub mod host_execution;
+pub mod installed;
 pub mod launch_profile;
 mod m3_store;
 mod manifest;
