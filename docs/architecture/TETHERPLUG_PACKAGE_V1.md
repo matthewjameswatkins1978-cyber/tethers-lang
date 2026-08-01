@@ -1,6 +1,8 @@
 # Tethers `.tetherplug` Package Format v1
 
-Status: J18D candidate, pending Lucy package review
+Status: Accepted J18D package contract
+Accepted by Lucy: 2026-08-01
+Final architecture freeze: Requires J18H paper validation
 Package format version: 1
 Implementation: Not authorised
 

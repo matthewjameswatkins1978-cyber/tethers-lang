@@ -4,11 +4,13 @@ Status: design
 Date: 2026-07-21
 Purpose: safe, generic bridge between discovered MCP tools and trusted Tethers capabilities
 
-Status note: This records the accepted 0.2 capability trust bridge. J18B and
-J18C are authoritative for Universal Plug architecture and Socket v1. Older
-retry examples are non-authoritative: no automatic retry exists without later
-end-to-end proof and an explicit decision. Existing 0.2 manifest and runtime
-guarantees remain valid until deliberately superseded.
+Status note: This remains authoritative for the accepted 0.2 capability trust
+bridge and implemented manifest/runtime behaviour. J18E is authoritative for
+future Universal Plug class, effect, and scope semantics. Broader J18E concepts
+are not yet implemented. Existing 0.2 manifest fields and runtime guarantees
+remain unchanged until an explicit implementation decision. Older retry
+examples are non-authoritative: no automatic retry exists without later
+end-to-end proof and an explicit decision.
 
 This is the universal plug contract. It must work later for MCP, Git, Google,
 Obsidian, Lantern Keeper, and other providers without making Tethers itself

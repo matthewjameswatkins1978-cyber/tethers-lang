@@ -4,8 +4,8 @@ Updated: 2026-08-01
 
 ## Current Milestone
 
-J18D: `.tetherplug` Package Format v1, package-design only and pending Lucy
-package review.
+J18E: Capability Classes, Effects and Scopes v1, design-only and pending Lucy
+capability review.
 
 ## Published Baseline
 
@@ -28,12 +28,12 @@ the release.
 
 ## Active Task
 
-J18D - `.tetherplug` Package Format v1
+J18E - Capability Classes, Effects and Scopes v1
 
 ## Next Route
 
-J18B and J18C are accepted. J18D is package-design only and pending Lucy
-package review. J18E is next only after acceptance.
+J18B, J18C, and J18D are accepted. J18E is design-only and pending Lucy
+capability review. J18F is next only after acceptance.
 
 Plug implementation remains unauthorised. Plugs remain outside Tethers Core;
 host-owned permissions, credentials, canonical outcomes, and Trails remain

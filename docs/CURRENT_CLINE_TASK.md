@@ -2,20 +2,21 @@
 
 Control contract: `1`
 
-Task: `J18D - .tetherplug Package Format v1`
+Task: `J18E - Capability Classes, Effects and Scopes v1`
 Owner: `Luna`
 Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `Luna on OpenCode, architecture transcription and consistency audit`
 Base branch: `main`
-Base commit: `202abbb79d0095d2e9b4e07cd2d1d67f335f2302`
-Branch: `luna/j18d-tetherplug-package-v1`
-Worker note: `docs/worker-notes/2026-08-01-j18d-tetherplug-package-v1.md`
+Base commit: `70b95a38983ee270b908f47503be6350083b3e42`
+Branch: `luna/j18e-capabilities-effects-scopes-v1`
+Worker note: `docs/worker-notes/2026-08-01-j18e-capabilities-effects-scopes-v1.md`
 
 ## Objective
 
-Define the precise first `.tetherplug` portable package format as documentation
-and contract design only.
+Define the canonical J18 contract for capability classes, declared effects,
+structured scopes, explicit bindings, effective scope, policy inputs, safety,
+drift, and versioning as documentation only.
 
 ## Required outcome
 

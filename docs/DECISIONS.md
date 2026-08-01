@@ -1,4 +1,22 @@
 # Decisions
+## 2026-08-01: Capability class, effect, and scope boundary
+
+1. Every capability has exactly one reviewed class.
+2. Class, effect, scope, policy, and outcome are distinct.
+3. Action, Query, and Anchor target the first Plug architecture.
+4. Job, Stream, and Human Task remain reserved.
+5. Effects must be complete, conservative, and host-understood.
+6. Unknown effects fail closed.
+7. Scope is structured, deterministic, and host-readable.
+8. Effective scope is the intersection of supported scope, installation grant,
+   policy, and resolved target.
+9. Scope mappings are explicit and never inferred from prose.
+10. Query remains permissioned.
+11. Anchor events are admitted only after source and scope validation.
+12. Existing 0.2 scope behaviour remains unchanged.
+13. Drift cannot silently alter class, effects, or scopes.
+14. No automatic retry or Tether syntax change is introduced.
+
 ## 2026-08-01: `.tetherplug` package format v1 boundary
 
 1. `.tetherplug` v1 is a narrowly profiled ZIP archive.
