@@ -14,6 +14,7 @@ pub mod executor;
 pub mod host_execution;
 mod manifest;
 mod outcome;
+pub mod package;
 pub mod policy;
 pub mod provider;
 pub mod replay;

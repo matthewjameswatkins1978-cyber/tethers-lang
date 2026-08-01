@@ -7,6 +7,7 @@ Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `Codex, autonomous package inspection, quarantine and candidate-registry implementation`
 Base branch: `main`
+Base commit: `337ab11c9cd4059402ef48d5949365c9517867a7`
 Accepted implementation baseline: `43179db362efbfed4a0079249ef7a940cde7054e`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 Branch: `codex/j19-m2-package-candidate`
@@ -66,6 +67,24 @@ M2 ends with a candidate that is:
 - absent from active provider and capability bindings;
 - incapable of provider launch, Socket establishment, invocation or Anchor
   admission.
+
+## Relevant background and existing behaviour
+
+The accepted M1 Socket/application seam and released 0.2 configuration path are
+already present. `manifest.rs` supplies strict duplicate-key parsing, RFC 8785
+canonicalisation and verified capability-manifest evidence; `replay_windows.rs`
+contains the existing Windows reparse-safe persistence patterns. Neither legacy
+manifests nor runtime configuration are Plug packages, candidates, or installed
+records.
+
+## Required behaviour
+
+1. Inspect one untrusted `.tetherplug` archive without extraction, execution,
+   launch, trust, installation, binding, or runtime mutation.
+2. Extract only an accepted inspection result into a new host-owned quarantine
+   directory using a staged, no-overwrite publication boundary.
+3. Persist and reload immutable installation-candidate records that remain
+   uninstalled, disabled, unapproved, untrusted, and non-operational.
 
 Return only at:
 
@@ -391,6 +410,28 @@ No public Plug lifecycle CLI is authorised in M2. Library APIs and test-owned
 fixtures are sufficient. Do not add broad public module visibility merely to
 make tests convenient.
 
+## Relevant components
+
+- `tethers-0.1/host-rust/src/manifest.rs` for the existing strict capability
+  manifest verifier and JCS/SHA-256 implementation.
+- `tethers-0.1/host-rust/src/replay_windows.rs` for target-specific safe
+  publication and reparse-point patterns; replay state itself remains separate.
+- `tethers-0.1/host-rust/src/lib.rs` for the smallest M2 library surface.
+- `tethers-0.1/host-rust/Cargo.toml` and `Cargo.lock` only for the authorised
+  archive parser and its transitive compression dependencies.
+
+## Acceptance criteria
+
+1. P4 accepts valid stored and deflated packages, produces separate raw and
+   semantic identities, and refuses every specified malformed archive, path,
+   JSON, payload, manifest, compatibility, and resource-limit branch.
+2. P5 extracts only accepted bytes under a fresh quarantine child, verifies
+   bytes a second time, refuses destination tricks, and proves no launch or
+   write outside the configured root.
+3. P6 creates and reloads strict immutable candidate records, refuses conflict,
+   corruption and mutation, and proves that candidates create no runtime
+   binding, availability, policy, event, or provider effect.
+
 ## Required evidence
 
 Add deterministic positive and negative evidence for at least:
@@ -439,6 +480,14 @@ Add deterministic positive and negative evidence for at least:
 - candidate/provider/package/capability identity distinctions;
 - candidate remains uninstalled, disabled, unapproved, untrusted and absent
   from every runtime availability/binding path.
+
+## Required verification
+
+Run the full regression matrix named below, including locked Rust checks and
+builds, existing M1 Socket/catalogue and MCP tests, host PowerShell suites,
+the J14C proof, OCaml build/tests through the established switch, fixture and
+runner validation, the packet checker, whitespace check, lockfile hashes, and
+process cleanup proof. Do not suppress a failing proof.
 
 ### Full regression
 
@@ -510,6 +559,13 @@ Do not implement:
   downloads;
 - Tether syntax or Core semantic changes.
 
+## Forbidden changes
+
+Do not add package trust, signatures, approval, installed state, bindings,
+provider launch, Socket use, credentials, conformance, lifecycle CLI, network
+behaviour, runtime configuration changes, legacy 0.2 reinterpretation, M3
+work, or Tether/Core semantic changes.
+
 ## Genuine stop conditions
 
 Continue and record the decision when the issue concerns ordinary module layout,
@@ -535,6 +591,12 @@ different evidence-based attempts:
 - public CLI or machine contracts outside the named M2 schemas must change;
 - Git history would require force, published rebase or release-ref mutation.
 
+## Stop conditions
+
+Only the genuine stop conditions above qualify, and only after two materially
+different evidence-based attempts. Ordinary implementation decisions, coherent
+scope growth inside M2, or later packets remaining unfinished are not stops.
+
 A BLOCKED report must include the exact failing command, two attempted
 approaches, smallest relevant evidence, external effects, safe rollback and one
 concrete decision that cannot reasonably be made by the implementation owner.
@@ -547,6 +609,11 @@ concrete decision that cannot reasonably be made by the implementation owner.
 - worktree is clean;
 - no M2 implementation exists;
 - Milestone 3 is not authorised.
+
+## Expected pre-existing changes
+
+None. The M2 branch starts clean at the control commit; the current task packet
+is the only control-plane content added there.
 
 ## Worker note
 
