@@ -66,6 +66,11 @@ Retained provider code supplies implementation evidence for session phases
 without constituting a lifecycle state machine. J09 and J11 must remain distinct
 from future durable external-event admission.
 
+The staged whitespace check found two intentional-looking Markdown hard breaks
+in the J18F status block. Lucy authorised a follow-up correction commit rather
+than history rewriting. The two trailing-space sequences were removed. No
+normative wording or behaviour changed, and no implementation or schema changed.
+
 ## Remaining risks
 
 J18G must define credential secrecy and sandbox enforcement. J18H must paper

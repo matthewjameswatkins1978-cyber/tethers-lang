@@ -1,7 +1,7 @@
 # Tethers Lifecycle, Outcomes, Events and Conformance v1
 
-Status: J18F candidate, pending Lucy lifecycle review  
-Contract generation: 1  
+Status: J18F candidate, pending Lucy lifecycle review
+Contract generation: 1
 Implementation: Not authorised
 
 ## 1. Central distinctions
