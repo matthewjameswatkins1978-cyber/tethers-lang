@@ -242,6 +242,17 @@ impl CandidateRegistry {
         &self,
         quarantined: &QuarantinedPackage,
     ) -> Result<CandidateRecord, PackageError> {
+        for existing in self.load_all()? {
+            if existing.package_id == quarantined.report.package.package_id
+                && existing.package_version == quarantined.report.package.package_version
+                && existing.semantic_package_digest != quarantined.report.package.semantic_digest
+            {
+                return Err(err(
+                    "semantic_conflict",
+                    "same package release has different semantic evidence",
+                ));
+            }
+        }
         let directory = confined(&self.quarantine_root, &quarantined.directory)?;
         let relative = directory
             .strip_prefix(&self.quarantine_root)
@@ -325,6 +336,12 @@ impl CandidateRegistry {
             )?;
             if !payload.is_dir() {
                 return Err(err("record_invalid", "quarantine payload missing"));
+            }
+            for (relative, expected_digest) in &record.payload_digests {
+                let bytes = io(fs::read(payload.join(relative)))?;
+                if sha(&bytes) != *expected_digest {
+                    return Err(err("record_invalid", "quarantine payload was mutated"));
+                }
             }
             records.push(record);
         }

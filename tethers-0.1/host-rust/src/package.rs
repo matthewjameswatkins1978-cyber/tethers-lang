@@ -567,6 +567,75 @@ fn is_version(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use std::fs::File;
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+
+    fn temporary(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("tethers-m2-{}-{name}", uuid::Uuid::new_v4()))
+    }
+
+    fn manifest_bytes() -> Vec<u8> {
+        let mut manifest = json!({
+            "manifest_format_version":"1.0", "capability_name":"notes.note.read", "capability_version":1,
+            "title":"Read", "description":"Read", "input_schema":{"type":"object"},
+            "output_schema":{"type":"object"}, "effects":["filesystem.read"],
+            "permission_scope":{"kind":"path_prefix","allowed_prefixes":["projects/"]},
+            "reversibility":"reversible", "determinism":"deterministic",
+            "idempotency":{"mechanism":"none"},
+            "confirmation_policy":{"standing_permitted":true,"per_call_required":false},
+            "timeout_ms":1000, "retry_policy":{"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":false},
+            "provider":{"identity":"local-provider","display_name":"Local","identity_source":"host_configuration","description":null},
+            "binding":{"kind":"mcp","server_name":"local","tool_name":"read","adapter":null}
+        });
+        let (_, digest) = manifest::canonicalize_and_digest(&manifest.to_string()).unwrap();
+        manifest["digest"] = json!(digest);
+        serde_json::to_vec(&manifest).unwrap()
+    }
+
+    fn valid_archive(path: &Path, method: CompressionMethod) {
+        let provider = b"harmless provider marker";
+        let manifest = manifest_bytes();
+        let manifest_digest = manifest::verify_manifest(std::str::from_utf8(&manifest).unwrap())
+            .unwrap()
+            .verified_digest()
+            .to_owned();
+        let plug = json!({
+            "package_format_version":"1", "package_id":"tethers.file-tools", "package_version":"0.1.0",
+            "display_name":"File Tools", "description":"fixture", "publisher":"fixture", "licence":"MIT", "socket_major":1,
+            "protocol_bindings":[{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],
+            "platforms":[{"os":"windows","architecture":"x86_64"}],
+            "provider":{"provider_id":"tethers.file-provider","provider_version":"0.1.0","launch":{"path":"provider/tool.exe","arguments":["--serve"]},"working_directory":"provider","capability_operation_namespace":"file"},
+            "capabilities":[{"capability_name":"notes.note.read","capability_version":1,"manifest_path":"manifests/read.json","manifest_digest":manifest_digest,"provider_operation_name":"read"}],
+            "payload_index":[
+              {"path":"manifests/read.json","sha256":digest(&manifest),"size_bytes":manifest.len(),"role":"capability_manifest"},
+              {"path":"provider/tool.exe","sha256":digest(provider),"size_bytes":provider.len(),"role":"provider_executable"}
+            ]
+        });
+        let file = File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default().compression_method(method);
+        for (name, bytes) in [
+            ("plug.json", serde_json::to_vec(&plug).unwrap()),
+            ("manifests/read.json", manifest),
+            ("provider/tool.exe", provider.to_vec()),
+        ] {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(&bytes).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    fn hostile_archive(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        for (name, bytes) in entries {
+            zip.start_file(*name, SimpleFileOptions::default()).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap();
+    }
     #[test]
     fn package_paths_reject_windows_escape_forms() {
         for p in [
@@ -588,5 +657,71 @@ mod tests {
     fn digest_syntax_is_strict() {
         assert!(validate_digest(&format!("sha256:{}", "a".repeat(64))).is_ok());
         assert!(validate_digest("sha256:ABC").is_err());
+    }
+
+    #[test]
+    fn stored_and_deflated_archives_have_distinct_raw_but_equal_semantic_identity() {
+        let stored = temporary("stored.tetherplug");
+        let deflated = temporary("deflated.tetherplug");
+        valid_archive(&stored, CompressionMethod::Stored);
+        valid_archive(&deflated, CompressionMethod::Deflated);
+        let a = inspect(&stored).unwrap();
+        let b = inspect(&deflated).unwrap();
+        assert_ne!(a.raw_archive_digest, b.raw_archive_digest);
+        assert_eq!(a.package, b.package);
+        fs::remove_file(stored).unwrap();
+        fs::remove_file(deflated).unwrap();
+    }
+
+    #[test]
+    fn hostile_archive_paths_and_collisions_fail_closed() {
+        for (name, entries) in [
+            ("traversal", vec![("../provider/tool.exe", b"x" as &[u8])]),
+            (
+                "case",
+                vec![("provider/a", b"x" as &[u8]), ("provider/A", b"x")],
+            ),
+            (
+                "prefix",
+                vec![("provider/a", b"x" as &[u8]), ("provider/a/b", b"x")],
+            ),
+            ("unknown", vec![("evil/x", b"x")]),
+        ] {
+            let path = temporary(&format!("{name}.tetherplug"));
+            hostile_archive(&path, &entries);
+            assert!(inspect(&path).is_err());
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn quarantine_and_candidate_stay_host_owned_and_detect_mutation_and_conflict() {
+        let source = temporary("candidate.tetherplug");
+        let root = temporary("quarantine");
+        let registry_root = temporary("registry");
+        valid_archive(&source, CompressionMethod::Stored);
+        let report = inspect(&source).unwrap();
+        let quarantined = crate::candidate::extract_to_quarantine(&report, &root).unwrap();
+        assert!(quarantined.directory.starts_with(fs::canonicalize(&root).unwrap()));
+        assert_eq!(
+            fs::read(quarantined.directory.join("provider/tool.exe")).unwrap(),
+            b"harmless provider marker"
+        );
+        let registry = crate::candidate::CandidateRegistry::open(&registry_root, &root).unwrap();
+        let candidate = registry.create(&quarantined).unwrap();
+        assert_eq!(candidate.state, "quarantined_installation_candidate");
+        assert_eq!(registry.load_all().unwrap().len(), 1);
+
+        let mut conflicting = quarantined.clone();
+        conflicting.report.package.semantic_digest = format!("sha256:{}", "b".repeat(64));
+        assert_eq!(
+            registry.create(&conflicting).unwrap_err().code,
+            "semantic_conflict"
+        );
+        fs::write(quarantined.directory.join("provider/tool.exe"), b"mutated").unwrap();
+        assert_eq!(registry.load_all().unwrap_err().code, "record_invalid");
+        fs::remove_file(source).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(registry_root).unwrap();
     }
 }
