@@ -1,689 +1,645 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J19-M2 - Autonomous Package Candidate Programme`
-Owner: `Codex Terra High`
-Status: `COMPLETE`
+Task: `J19-M3 - Autonomous Trust, Launch, Conformance and Install Programme`
+Owner: `Codex Sol Medium`
+Status: `IN_PROGRESS`
 Task colour: `Red`
-Route: `Codex, autonomous package inspection, quarantine and candidate-registry implementation`
+Route: `Codex Sol Medium, one continuous autonomous Milestone 3 implementation`
 Base branch: `main`
-Base commit: `337ab11c9cd4059402ef48d5949365c9517867a7`
-Accepted implementation baseline: `43179db362efbfed4a0079249ef7a940cde7054e`
+Accepted M2 baseline: `17d2a17468a9d7395d31d4b66b5f6e828f82102c`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
-Branch: `codex/j19-m2-package-candidate`
-Worker note: `docs/worker-notes/2026-08-01-j19-m2-package-candidate.md`
+Branch: `codex/j19-m3-trust-launch-conformance`
+Worker note: `docs/worker-notes/2026-08-01-j19-m3-trust-launch-conformance.md`
 
 ## Control-plane starting rule
 
-Start a fresh Codex Terra High session. Fetch `origin/main`, create or reset only
-the new clean milestone branch from the commit containing this control packet,
-and record that exact control commit in the worker note.
+Start a fresh Codex Sol Medium session.
 
-The accepted M1 implementation baseline is
-`43179db362efbfed4a0079249ef7a940cde7054e`. The control-only commit containing
-this packet authorises M2 but changes no runtime semantics.
+Fetch `origin/main`, create or reset only the milestone branch named above from the commit containing this control packet, and record that exact control commit in the worker note.
 
-Use normal commits and normal pushes only. Do not amend, rebase published work,
-force-push, move `main`, move tags, or create a release.
+The accepted implementation baseline is M2 at:
+
+`17d2a17468a9d7395d31d4b66b5f6e828f82102c`
+
+The control-only commit containing this packet authorises Milestone 3 but changes no runtime semantics by itself.
+
+Use normal commits and normal pushes only. Do not amend or rebase published work, force-push, move `main`, move tags, create a release, or begin Milestone 4.
 
 ## Tooling preflight
 
-Before writing a helper or searching manually, inspect the tools already installed:
+Read `AGENTS.md` and run the repository-owned diagnostic before implementation:
+
+```powershell
+just tools
+```
+
+Use the installed workshop tools where they reduce friction:
 
 - `rg` for repository and symbol search;
 - `fd` for file discovery;
-- `jq` and `yq` for structured test data inspection;
+- `jq` and `yq` for structured fixture inspection;
 - `gh` for GitHub inspection;
-- `pwsh` for the existing Windows verification scripts;
-- `just` only when an existing or clearly useful repeatable project command
-  already justifies it.
+- `pwsh` for Windows verification;
+- `just` for the existing repeatable project commands.
 
-Use the existing tool before inventing a wrapper. Do not add a `justfile`, source
-generator, second build layer, or broad helper framework merely for convenience.
-Small test-fixture builders are allowed when they are the safest way to create
-adversarial archives and remain test-owned.
+The root `justfile` and `scripts/check-dev-tools.ps1` are accepted project infrastructure. Extend the `justfile` only when a thin recipe genuinely reduces repeated command noise. Do not create a second build system, broad wrapper framework, generator layer, or parallel task authority.
 
-## Objective
+## Mission
 
-Complete Milestone 2 from the accepted J18I roadmap:
+Complete all of Milestone 3 in one continuous implementation run:
 
-1. `P4-PACKAGE-INSPECT`;
-2. `P5-QUARANTINE-PATHS`;
-3. `P6-INSTALL-CANDIDATE-REGISTRY`.
+1. `P7-TRUST-SIGNATURE`;
+2. `P8-LAUNCH-PROFILE`;
+3. `P9-CONFORMANCE-GATE`;
+4. `P10-INSTALL-APPROVAL`.
 
-The result is a host-owned, non-executing path that can inspect one
-`.tetherplug`, strictly validate its package and manifest evidence, select the
-accepted Windows x86_64 payload, compute exact raw and semantic identities,
-extract accepted bytes only into a host-owned quarantine root, and create one
-immutable installation-candidate record.
-
-M2 ends with a candidate that is:
-
-- uninstalled;
-- disabled;
-- unapproved;
-- untrusted;
-- non-operational;
-- absent from active provider and capability bindings;
-- incapable of provider launch, Socket establishment, invocation or Anchor
-  admission.
-
-## Relevant background and existing behaviour
-
-The accepted M1 Socket/application seam and released 0.2 configuration path are
-already present. `manifest.rs` supplies strict duplicate-key parsing, RFC 8785
-canonicalisation and verified capability-manifest evidence; `replay_windows.rs`
-contains the existing Windows reparse-safe persistence patterns. Neither legacy
-manifests nor runtime configuration are Plug packages, candidates, or installed
-records.
-
-## Required behaviour
-
-1. Inspect one untrusted `.tetherplug` archive without extraction, execution,
-   launch, trust, installation, binding, or runtime mutation.
-2. Extract only an accepted inspection result into a new host-owned quarantine
-   directory using a staged, no-overwrite publication boundary.
-3. Persist and reload immutable installation-candidate records that remain
-   uninstalled, disabled, unapproved, untrusted, and non-operational.
+Continue automatically from P7 through P10. Make bounded commits at coherent checkpoints, run focused evidence after each checkpoint, and finish with the complete regression matrix.
 
 Return only at:
 
-`M2 COMPLETE - PACKAGE CANDIDATE`
+`M3 COMPLETE - INSTALLED DISABLED PLUG`
 
-or on a genuine stop condition defined below.
+or at a genuine major stop condition defined in this packet.
+
+Do not pause merely because a decision is difficult, a diff is larger than expected, a test needs a fixture, a store needs a schema, or ordinary compiler-guided untangling is required. Use engineering judgement within the frozen contracts.
+
+## Required final state
+
+Milestone 3 alone may transition one accepted M2 installation candidate through these separate gates:
+
+1. exact package and payload evidence revalidated;
+2. detached Ed25519 signature evidence verified;
+3. signing key resolved through host-owned trust or explicit unsigned developer-mode approval;
+4. exact supervised conformance launch prepared from accepted host-owned candidate material;
+5. host-orchestrated conformance run under bounded test conditions;
+6. provider stopped;
+7. immutable conformance evidence reviewed;
+8. explicit installation approval recorded;
+9. accepted bytes published into a host-owned immutable installation location;
+10. immutable installed-Plug record and exact provider/capability bindings created;
+11. Plug remains present but disabled.
+
+At M3 completion the Plug is:
+
+- installed as host-owned immutable material;
+- explicitly approved for installation;
+- bound to exact package, payload, manifest, provider, protocol and conformance evidence;
+- present but disabled;
+- absent from active runtime availability;
+- incapable of operational invocation;
+- incapable of Anchor admission;
+- incapable of receiving production credentials;
+- incapable of silently enabling itself.
+
+M3 does not implement operational enablement. The first enablement and real capability invocation belong to M4.
 
 ## Governing contracts
 
-Implement against the accepted documents already in the repository:
+Implement against the accepted repository documents and accepted M1-M2 code:
 
 - `docs/architecture/TETHERPLUG_PACKAGE_V1.md`;
+- `docs/architecture/TETHERS_SOCKET_AND_MCP_BINDING_V1.md` or the accepted Socket/MCP contract present in the repository;
 - `docs/architecture/TETHERS_CAPABILITIES_EFFECTS_SCOPES_V1.md`;
-- `docs/architecture/TETHERS_SECURITY_TRUST_CREDENTIALS_SANDBOX_V1.md`;
 - `docs/architecture/TETHERS_LIFECYCLE_OUTCOMES_EVENTS_CONFORMANCE_V1.md`;
+- `docs/architecture/TETHERS_SECURITY_TRUST_CREDENTIALS_SANDBOX_V1.md`;
 - `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`;
-- the accepted M1 Socket/application seam at the implementation baseline.
+- the accepted M1 Socket/application seam;
+- the accepted M2 package inspector, quarantine boundary and candidate registry.
 
-Where J18D names a conceptual field but does not freeze its exact Rust type or
-nested JSON spelling, this packet authorises Terra to choose and freeze the
-smallest direct v1 machine representation consistent with every named field and
-refusal rule. Record those choices in fixtures and the worker note. Do not add
-fields that grant authority, policy, trust, credentials, installation,
-enablement or runtime configuration.
+Where a frozen document names a conceptual record but does not freeze exact Rust field spelling or nesting, Sol may choose and freeze the smallest direct v1 machine representation consistent with every named distinction, refusal rule and lifecycle gate. Freeze each durable schema in Rust types, committed golden fixtures and the worker note before relying on it.
 
-The current strict capability-manifest parser may be reused behind a clearly
-named verifier seam. Existing loose 0.2 manifests and runtime configuration must
-not be relabelled as packages, installed Plugs or candidate records. Reuse
-parsing, duplicate-key, JCS, digest and semantic-validation code where sound;
-do not silently change legacy manifest semantics.
+Do not silently reinterpret legacy 0.2 manifests, runtime configuration, trust stores or fixtures as Plug installation state. The released 0.2 path remains intact.
 
-## Autonomy rule
+## Autonomy and decision authority
 
-Codex owns ordinary engineering decisions needed to complete the milestone,
-including:
+Sol owns ordinary engineering decisions needed to complete M3, including:
 
-- module names and source-file boundaries;
+- module names and source boundaries;
 - public versus crate-private visibility;
-- exact value types and error enums;
-- archive-reader integration;
-- test-fixture layout;
-- conservative package resource limits;
-- quarantine directory layout;
-- immutable candidate-record representation;
-- atomic-write and crash-recovery mechanics;
-- focused test versus integration-test placement;
-- commit count and intermediate local layout;
-- compiler-guided untangling;
-- narrow updates to existing scripts whose assumptions move without changing
-  the proof they enforce.
+- value types and error enums;
+- durable record field spelling and nesting;
+- store layout beneath host-supplied roots;
+- fixture and test layout;
+- Windows API details needed by the accepted contract;
+- exact bounded resource constants;
+- clean-environment allow-list details for a self-contained native provider;
+- launch-profile representation;
+- conformance suite representation;
+- atomic publication and crash-recovery mechanics;
+- commit count and intermediate layout;
+- narrow updates to scripts or `justfile` recipes whose assumptions legitimately move;
+- mature Rust dependencies needed for accepted cryptography, strict base64url, DER SPKI parsing or Windows process controls.
 
-These are not blockers. An unfinished packet, dirty worktree during work, a
-larger-than-estimated but coherent diff, or later M2 packets remaining is not a
-BLOCKED condition.
+These are not blockers. Sol should inspect existing patterns, choose a conservative solution, implement it, test it and record the decision.
 
-A minimal mature Rust ZIP/archive dependency and its necessary transitive
-compression dependencies are authorised if required. It must support Rust
-1.89, be used only for archive parsing/decompression, be pinned by `Cargo.lock`,
-and be documented in the worker note with version, purpose and why a custom ZIP
-parser was rejected. Existing JCS and SHA-256 dependencies must be reused. No
-new cryptography, signature, network, shell or executable-helper dependency is
-authorised. A justified archive dependency and resulting `Cargo.lock` change do
-not require another approval.
+Do not write custom cryptographic primitives. Use a mature, maintained Ed25519 implementation compatible with Rust 1.89. Pin dependencies through `Cargo.lock`, minimise feature sets, and document each new direct dependency and purpose in the worker note.
 
-## P4 required result: package inspection
+## Absolute security truths
 
-P4 creates a pure inspection boundary. Inspection reads untrusted bytes and
-returns a typed inspection report or typed refusal. It does not extract, launch,
-install, approve, trust, bind, enable, mutate runtime configuration or invoke a
-provider.
+These are frozen and must remain visible in code, types, tests and documentation:
 
-### Archive profile
+- host policy and operating-system containment are separate;
+- a provider remains untrusted after signing, conformance, installation or health checks;
+- a valid signature proves possession of one key over one exact semantic digest, not safety or publisher identity;
+- publisher identity is host-owned trust-store data, never package presentation text;
+- no trust on first use;
+- conformance is evidence, not trust, permission, installation approval or enablement;
+- supervision is not hostile-code isolation;
+- the M3 supervised profile is only for explicitly trusted reference/development providers;
+- no production credential delivery is authorised;
+- no shell, PATH lookup, command concatenation, profile script or launch download;
+- no automatic retry;
+- no active binding before explicit installation approval;
+- no operational binding or invocation before M4 enablement;
+- drift invalidates readiness and relevant evidence;
+- raw provider stderr is never trusted or copied into durable canonical evidence.
 
-Accept only the J18D v1 ZIP-compatible profile:
+## P7 required result: trust, signature and revocation
 
-- `.tetherplug` source treated as untrusted bytes;
-- ordinary files using stored or deflated compression only;
-- exactly one root `plug.json`;
-- required `provider/` payload and at least one `manifests/` entry;
-- optional `tests/`, `docs/`, `assets/`, `licenses/` and `signatures/` areas;
-- no files outside the canonical roots;
-- no unnecessary empty directory entries;
-- no encryption, multi-disk archive, self-extracting form, Zip64, unsupported
-  compression, nested `.tetherplug`, symbolic link, hard link, device, FIFO,
-  junction/reparse-point, alternate-data-stream or executable metadata feature;
-- bounded archive size, entry count, per-entry size, total uncompressed size,
-  compression ratio, path length, JSON size and manifest count;
-- deterministic fail-closed refusal when a limit is exceeded.
+### Signature verification
 
-Terra chooses conservative explicit limit constants and records them. Limits
-must comfortably permit the planned credential-free File Tools and PDF Tools
-reference packages without becoming an archive-bomb invitation.
+Implement the accepted package-signature v1 contract exactly:
 
-### Package paths
+- algorithm is Ed25519 only, as defined by RFC 8032;
+- trusted public keys are exact RFC 8410 DER SubjectPublicKeyInfo bytes;
+- `key_id` is `sha256:<lowercase hex SHA-256 of the exact DER SPKI bytes>`;
+- the exact UTF-8 signing input is:
 
-Every archive path must:
+```text
+tethers.tetherplug.signature.v1
+<semantic-package-digest>
+```
 
-- be relative and use `/`;
-- contain lowercase ASCII segments matching
-  `[a-z0-9][a-z0-9._-]*`;
-- reject spaces, empty segments, `.`, `..`, leading slash, backslash, drive
-  letters, colon, NUL/control characters and non-ASCII path bytes;
-- reject trailing dots or spaces and Windows reserved device names, including
-  reserved names with extensions;
-- reject duplicate raw paths, case-insensitive collisions, normalized
-  collisions, file/directory-prefix collisions and any path that can escape the
-  eventual quarantine root;
-- reject archive entries whose metadata claims link, reparse, device or other
-  non-ordinary-file semantics.
+The final newline is mandatory.
 
-Do not trust the archive library's convenience extraction path as the security
-boundary. Validate the original archive name and the host destination
-independently.
+The strict signature envelope contains only:
 
-### Strict `plug.json`
+- `signature_format_version` equal to `"1"`;
+- `algorithm` equal to `"ed25519"`;
+- `key_id`;
+- `semantic_package_digest`;
+- unpadded base64url `signature`.
 
-Implement strict UTF-8 JSON without BOM, duplicate keys, unknown fields,
-invalid I-JSON values or trailing data. Use RFC 8785 JCS for canonical bytes and
-semantic digest input.
+Reject duplicate or unknown fields, padded or malformed base64url, signatures not exactly 64 bytes after decoding, wrong key IDs, wrong digest, wrong signing input, unsupported algorithm, duplicate authority from one key and malformed signature filenames.
 
-The implemented v1 machine model must directly represent the J18D fields:
+Signature files remain detached evidence under `signatures/`. They are excluded from semantic package identity and never alter package or manifest authority.
 
-- package format version `"1"`;
-- lowercase dotted `package_id`;
-- strict `MAJOR.MINOR.PATCH` `package_version`;
-- display name, description, publisher presentation string and licence;
-- Socket major 1;
-- protocol binding MCP `2025-11-25` over local stdio;
-- platform Windows x86_64;
-- exactly one provider declaration with provider identity/version, launch,
-  package-relative working directory and capability operation namespace;
-- a non-empty canonical capability list containing capability identity,
-  manifest path/digest and provider operation name;
-- a complete canonical payload index containing path, lowercase
-  `sha256:<hex>`, exact size and accepted role.
+### Host trust store
 
-Capability entries sort by name then version. Payload entries sort by path.
-Duplicate capability identities and duplicate provider operation names fail.
-Launch is an ordered, package-relative declaration with no shell command string,
-interpolation, `cmd /c`, PowerShell `-Command`, PATH lookup, install command or
-unbounded user fragment. Interpreter-backed operational launch remains deferred;
-M2 may inspect and report such a declaration only if the package contract marks
-it unsupported for the first envelope. Nothing is launched.
+Create a separate host-owned publisher trust store. It must not share state with packages, candidates, installed records, capability manifests, policy, credentials, Trail or replay.
 
-### Payload and manifest validation
+A v1 key record must preserve at least:
 
-The payload index is complete for every non-signature payload. `plug.json` is
-not self-indexed. Signature entries remain evidence-only and excluded from
-semantic package identity.
+- exact key ID;
+- exact DER SPKI bytes or an exact stable encoding of them;
+- host-assigned publisher identity;
+- trust state: trusted, disabled or revoked;
+- optional namespace restriction where implemented;
+- creation/update times;
+- approving authority evidence;
+- optional expiry;
+- revocation reason and time where relevant;
+- schema version and record-integrity evidence.
 
-For every indexed payload:
+Trust changes require explicit host authority. Packages cannot add keys, map publishers or choose trust state. No TOFU exists.
 
-- the archive entry exists exactly once;
-- no unindexed non-signature payload exists;
-- path and role are compatible with the canonical root;
-- declared size equals actual decompressed size;
-- declared SHA-256 equals the exact payload bytes;
-- the provider launch path resolves to one indexed provider payload;
-- every capability manifest path resolves beneath `manifests/` with role
-  `capability_manifest`;
-- package capability identity, operation name and manifest digest agree with
-  the verified authoritative manifest evidence;
-- manifest schemas, effects, scopes and behaviour cannot be overridden by
-  `plug.json` presentation fields.
+Rotation is explicit. Revoked keys preserve historical evidence but are not currently trusted. Install and later launch re-evaluate current trust. Do not invent trusted timestamps or proof of pre-compromise signing.
 
-Descriptions, annotations, publisher strings, archive metadata and signature
-files are untrusted observations. They never alter trusted manifest semantics.
+Use create-only or explicit state-transition records with crash-aware publication, duplicate/conflict refusal, reparse-safe roots, strict reload and corruption refusal.
 
-### Identity and inspection report
+### Unsigned developer mode
 
-Keep these identities distinct:
+Implement explicit unsigned developer-mode evidence as a separate host-owned approval path:
 
-- raw archive identity and SHA-256;
-- package lineage `package_id`;
-- human release `package_id + package_version`;
-- exact package identity adding semantic package digest;
+- off by default;
+- exact semantic digest approval only;
+- visibly unsigned;
+- no publisher-trust claim;
+- no inheritance to another digest or version;
+- no automatic enablement;
+- no silent conversion to production trust.
+
+Developer mode does not make arbitrary third-party code safe and may only feed the visibly supervised, non-isolated M3 path.
+
+### P7 evidence
+
+Include deterministic evidence for:
+
+- accepted RFC 8032 vectors;
+- wrong message, digest, key and signature;
+- strict 64-byte unpadded base64url handling;
+- exact mandatory final newline;
+- RFC 8410 SPKI parsing and key-ID derivation;
+- duplicate/unknown envelope fields;
+- unknown, disabled, expired and revoked keys;
+- host publisher mapping distinct from package `publisher` text;
+- trust-store restart, corruption, torn write, duplicate and conflict handling;
+- developer mode exact-digest binding and non-inheritance;
+- no package-driven trust mutation.
+
+Commit P7 separately after focused and regression evidence passes, then continue directly to P8.
+
+## P8 required result: supervised conformance launch profile
+
+P8 extends the existing Windows child-process and Socket foundations behind an explicit launch-profile boundary. Preserve existing Job Object ownership and released behaviour.
+
+### Honest profile model
+
+Implement and visibly label a `supervised` profile. It provides bounded process ownership and launch hygiene only. It must never be named or reported as isolated, sandboxed, hostile-code-safe or production credential-safe.
+
+AppContainer or another strong isolated profile remains deferred. Do not simulate isolation with a restricted token or Job Object label.
+
+### Exact launch
+
+For an accepted candidate test launch:
+
+- revalidate candidate record, package semantic digest, every payload digest, manifest digest, launch path and exact file set immediately before launch;
+- launch only an exact absolute executable resolved from host-owned accepted candidate material;
+- never launch from the source archive, Downloads, repository checkout, arbitrary current directory or incomplete staging directory;
+- use no shell, `cmd /c`, PowerShell command, PATH lookup, file association, interpreter discovery or command-string concatenation;
+- preserve ordered package arguments exactly after host validation;
+- use an exact host-approved working directory;
+- use explicit stdio handles;
+- retain process-tree ownership and kill-on-close semantics;
+- bound child count, memory, CPU or wall time where the accepted Windows API can prove it;
+- bound protocol line/message sizes, queues and stderr tail;
+- require bounded graceful shutdown followed by forced tree termination when necessary;
+- prove no unnoticed surviving process.
+
+### Environment from scratch
+
+Construct the provider environment from scratch. Do not inherit the ambient process environment wholesale.
+
+Include only variables required for a self-contained native Windows provider, such as accepted Windows system location values and host-owned disposable temp/scratch paths. Exclude ambient API, cloud, Git, SSH, editor, proxy, repository and unrelated PATH secrets.
+
+PATH must not select the executable or interpreter. No production credential variables are authorised. The conformance fixture should prove representative ambient secret variables are absent from the child.
+
+Use a fresh host-owned bounded scratch directory separate from package payload, installation, candidate registry, trust, conformance evidence, Trail, replay and user resources. Clean it after the test session where safe; preserve only bounded host-owned evidence.
+
+### P8 evidence
+
+Include real Windows tests for:
+
+- exact executable and argument delivery;
+- no shell or PATH selection;
+- clean environment and absent ambient test secrets;
+- exact working directory;
+- payload mutation, missing file, additional file and reparse refusal before launch;
+- Job Object process-tree termination;
+- child/process/resource limits where supported;
+- timeout and forced shutdown;
+- bounded stdout/protocol and stderr behaviour;
+- no surviving child;
+- no credential delivery;
+- profile labelled supervised and explicitly not isolated.
+
+Commit P8 separately after focused and regression evidence passes, then continue directly to P9.
+
+## P9 required result: host-owned conformance gate
+
+Conformance is host-orchestrated test evidence for one exact package/provider/capability combination. Package tests are untrusted data and cannot certify themselves.
+
+### Conformance execution
+
+Run only after inspection and candidate creation, before installation approval and before active bindings.
+
+Use:
+
+- the accepted supervised profile or a stricter profile if one genuinely exists;
+- exact candidate and launch evidence;
+- test-only configuration;
+- disposable fixture data and scratch;
+- no production Tether Sets or effective policy;
+- no production credentials;
+- no production filesystem or network effects;
+- no active provider/capability bindings.
+
+The host owns the suite, test orchestration, pass/fail criteria, deadlines, output validation and evidence publication. Package-provided conformance material may be bounded declarative input only. Do not execute a package-supplied test runner or script.
+
+The provider must be stopped at the end of pass, fail or interruption. A passing run leaves the candidate uninstalled and non-operational until separate review and approval.
+
+### Required conformance categories
+
+Implement the smallest coherent M3 suite covering the generic first envelope:
+
+- static package and candidate revalidation;
+- exact launch and clean environment;
+- MCP initialize and protocol pin;
 - provider identity;
-- capability `name + version`;
-- capability-manifest digest;
-- later host-generated candidate identity.
+- complete discovery and exact operation/schema agreement;
+- catalogue drift/staleness behaviour;
+- bounded valid and invalid fixture calls where an accepted fixture provider permits them;
+- trusted output/schema validation;
+- no hidden retry;
+- timeout, malformed response and process-loss observation;
+- bounded stderr and redaction/non-persistence;
+- shutdown and process cleanup;
+- trust, revocation and payload-drift refusal.
 
-Compute semantic package digest from exact RFC 8785 JCS bytes of the fully
-validated `plug.json` only after array order, archive/index agreement, sizes,
-payload bytes and payload digests have passed. The digest is not stored inside
-`plug.json`.
+Do not implement M4 File Tools capability contracts merely to satisfy P9. Reuse accepted fixture providers and test-owned deterministic operations.
 
-The report must preserve enough bounded evidence to explain acceptance or
-refusal without copying arbitrary raw provider stderr, executing content or
-creating authority. Same package ID and version with different semantic digests
-must conflict and fail closed or remain separately quarantined for explicit
-later review, never silently merge.
+### Conformance evidence store
 
-P4 ends with inspection only. Commit P4 separately after its focused and
-regression evidence passes. Continue directly to P5 without returning.
+Freeze a separate immutable v1 conformance-evidence schema. It must pin at least:
 
-## P5 required result: safe quarantine extraction
-
-P5 extracts only a P4-accepted inspection result and only after an explicit
-library/API continuation call. It does not expose a public install CLI.
-
-### Quarantine rules
-
-- Destination is a new unique child of a host-supplied, host-owned quarantine
-  root, never the source archive directory, Downloads, repository checkout,
-  current working directory or final installation root.
-- Create the candidate in a same-volume staging directory, then publish it by
-  one atomic rename only after every entry and record passes.
-- Revalidate every destination path independently from the archive-reader path.
-- Reject pre-existing target files/directories, links, junctions, mount points,
-  reparse points, case collisions and prefix conflicts.
-- Use create-new/no-overwrite file creation and do not follow links.
-- Verify bytes, sizes and SHA-256 again while or immediately after writing.
-- Recheck quarantine-root and parent integrity before publication.
-- Apply restrictive host-owned permissions where the current host can prove
-  them; mark accepted payload immutable/read-only for M2 purposes.
-- Keep package payload, signature evidence, inspection report and future mutable
-  provider state conceptually and physically separate.
-- Clean incomplete staging safely on ordinary failure. Preserve bounded refusal
-  evidence without leaving executable-looking partial candidates.
-- Never execute from the archive, source path, staging path or quarantine.
-- Never call Socket, initialize MCP, run conformance, import credentials or
-  create active bindings.
-
-Use Windows APIs where required to identify and refuse reparse points and path
-tricks. Existing `replay_windows.rs` patterns may be reused, but replay state and
-candidate state remain separate.
-
-Real Windows adversarial tests must prove no write outside the quarantine root,
-including traversal, absolute/drive paths, alternate streams, case collisions,
-pre-existing targets, link/junction/reparse destinations and file/directory
-prefix collisions. Include a harmless provider-marker fixture and prove
-inspection/extraction never creates the marker process effect.
-
-P5 ends with a safely published quarantine directory and typed evidence, not an
-installed Plug. Commit P5 separately after its focused and regression evidence
-passes. Continue directly to P6 without returning.
-
-## P6 required result: installation-candidate registry
-
-P6 introduces a dedicated candidate/quarantine registry only. It is not the M3
-installed-Plug registry.
-
-### Schema-first rule
-
-Before durable registry code, freeze one explicit candidate-record schema in
-Rust types, golden fixtures and the worker note. This schema decision is part of
-P6 and does not require a separate Lucy round trip.
-
-The immutable record must include at least:
-
-- host-generated candidate ID;
-- fixed state identifying a quarantined installation candidate;
-- package ID and version;
+- candidate and exact package identity;
 - semantic package digest;
-- raw archive digest and source size;
-- exact quarantine location beneath the configured root;
-- selected Windows x86_64 payload identity and payload digests;
-- provider claim identity/version and launch evidence;
-- capability identities, operation names and verified manifest digests;
-- inspection-report identity/version;
-- unverified signature-presence evidence without trust claims;
-- creation time and schema version;
-- enough information to detect same-release semantic conflicts and corrupted
-  candidate records on reload.
+- every relevant payload and capability-manifest digest;
+- signature/key/publisher or unsigned-developer evidence used;
+- launch profile and exact launch identity;
+- provider identity and version;
+- Socket major, MCP protocol and binding versions;
+- host build identity;
+- platform and architecture;
+- suite version and digest;
+- test-configuration digest;
+- start/end times;
+- each case identity and result;
+- bounded safe diagnostics only;
+- final disposition: passed, failed or interrupted;
+- schema and evidence digest.
 
-The record must not contain:
+Evidence is immutable historical evidence. It grants no permission.
 
-- installed identity;
-- active binding identity;
-- publisher trust;
-- signature validity or key trust;
-- installation approval;
-- conformance approval;
-- enablement;
-- policy decisions or installation grants;
-- credentials or credential references;
-- generated runtime configuration;
-- provider session state;
-- Trail, replay or Anchor authority.
+Invalidate or mark stale when package, payload, manifest, capability, launch, Socket, protocol/binding, tested platform, suite or material security boundary changes. Trust revocation must prevent later approval/readiness even when historical conformance remains preserved.
 
-### Durable behaviour
+Store states such as not-run, running, passed, failed, interrupted and invalidated as separate conformance state, not package trust or installation state.
 
-- Candidate IDs are host-generated and never package-selected.
-- Candidate records are immutable and create-only.
-- Candidate registry and quarantine payload roots are separate.
-- Use crash-aware create, flush and atomic publication on the same volume.
-- Never overwrite or merge an existing candidate.
-- Reload strictly validates schema, duplicate identities, exact root
-  confinement and record integrity.
-- Torn temporary files, malformed records and missing/mutated payload evidence
-  fail closed and cannot become available candidates.
-- Same package ID/version with a different semantic digest is an explicit
-  conflict.
-- A repeated exact package may be reported as already represented or receive a
-  distinct candidate ID according to one recorded deterministic rule, but it
-  must never silently replace existing evidence.
-- Candidate creation produces no active provider/capability availability and no
-  mutation of legacy 0.2 configuration or stores.
+### P9 evidence
 
-Tests must prove process restart/load, exact immutable replay of records,
-conflict refusal, torn-write handling, missing/corrupted payload refusal,
-registry/quarantine separation and total absence of provider launch, Socket
-traffic, runtime binding, policy availability and event admission.
+Prove:
 
-Commit P6 separately after all M2 evidence passes.
+- pass, fail and interrupted paths;
+- exact pinning and deterministic evidence digest;
+- provider always stopped;
+- no installation, approval, binding or enablement after pass alone;
+- stale/invalidation after payload, manifest, launch, suite or security-boundary drift;
+- trust revocation prevents use of historical pass;
+- malformed/corrupt/torn evidence fails closed;
+- raw stderr and secrets are absent from durable evidence;
+- conformance performs no automatic retry.
+
+Commit P9 separately after focused and regression evidence passes, then continue directly to P10.
+
+## P10 required result: review, installation approval and installed-disabled state
+
+P10 is the only M3 packet allowed to create installed Plug state. It does not enable it.
+
+### Explicit review and approval
+
+Create a host-owned installation-review and approval boundary separate from operational Ask approval.
+
+The review must bind the exact:
+
+- candidate identity;
+- package ID, version and semantic digest;
+- raw archive and payload evidence;
+- signature, key and host publisher evidence, or explicit unsigned developer-mode evidence;
+- current trust/revocation state;
+- provider identity/version and launch declaration;
+- capability identities, manifest digests, effects and scopes;
+- supervised profile label and its explicit limitations;
+- complete current conformance evidence;
+- approval authority, time, schema and evidence digest.
+
+Approval is explicit and create-only. It cannot be inferred from a signature, trust state, successful conformance, package metadata, existing 0.2 configuration or previous version.
+
+Any material drift before publication invalidates the approval attempt.
+
+### Host-owned installation publication
+
+After explicit approval:
+
+- revalidate current trust and all exact candidate/package/payload/manifest/conformance pins;
+- copy only accepted files into a new host-owned same-volume installation staging directory;
+- use create-new/no-overwrite semantics;
+- independently revalidate destination paths and existing ancestors;
+- refuse links, junctions, mount points and other reparse points;
+- verify sizes and digests during or immediately after copy;
+- publish by one atomic rename into a unique immutable installation location;
+- mark package payload read-only and keep future mutable provider state/scratch separate;
+- never execute during the installation transaction;
+- preserve candidate, trust, conformance and approval history in their separate stores.
+
+Execution integrity must be rechecked again before any later launch. M3 does not perform an operational launch from the installed location.
+
+### Installed Plug registry and disabled bindings
+
+Freeze a separate immutable installed-Plug v1 schema. It must preserve at least:
+
+- host-generated installed identity;
+- fixed present-but-disabled state;
+- package lineage, version and exact semantic digest;
+- source candidate identity;
+- installation location beneath the configured install root;
+- raw archive, payload and manifest identities/digests;
+- signature/key/publisher or unsigned developer evidence;
+- installation approval identity;
+- conformance evidence identity;
+- provider identity, version, exact launch path/arguments/working directory;
+- supervised profile label;
+- exact Socket, MCP and platform pins;
+- exact capability identities and provider operations;
+- exact disabled binding records;
+- creation time, schema version and record digest.
+
+The installed record must not contain:
+
+- enabled state;
+- operational policy grant;
+- production credentials or credential references;
+- active provider session;
+- active resolver availability;
+- runtime Ask approval;
+- operation replay state;
+- Anchor admission authority;
+- fabricated isolation claim.
+
+Create exact provider/capability binding records only in a disabled state. Do not insert them into active resolver/provider availability, do not create runtime configuration that makes them invocable, and do not create a public enable command.
+
+### P10 evidence
+
+Prove:
+
+- conformance pass alone creates no install or binding;
+- explicit approval is required and is bound to exact evidence;
+- trust revocation, payload drift, manifest drift or conformance invalidation before publication refuses installation;
+- atomic installation and restart/reload;
+- torn writes, corruption, duplicate IDs, same-release conflicts, path escapes and reparse destinations fail closed;
+- installed bytes and record are immutable and exact;
+- installed Plug is present but disabled;
+- disabled bindings are absent from active runtime availability;
+- no provider launch, Socket invocation, policy availability, replay admission, Result Anchor, external Anchor admission or Trail operation effect occurs;
+- no credentials are stored or delivered;
+- M4 enablement remains impossible without a new authoritative packet.
+
+Commit P10 separately after all M3 evidence passes.
+
+## Durable-store rules
+
+Publisher trust, unsigned developer approval, conformance evidence, installation approval and installed Plug state are separate stores and state families. They may share a small audited persistence utility but must not collapse into one generic status file or one authority-bearing record.
+
+For every durable store:
+
+- freeze schema first in Rust types and committed golden fixtures;
+- use strict JSON without duplicate or unknown fields;
+- use canonical covered bytes and a record digest where appropriate;
+- use host-generated IDs;
+- use create-only or explicit immutable state-transition records;
+- use same-volume temporary publication and atomic rename;
+- flush file data and directory metadata where the host can prove it;
+- refuse torn temporary files, malformed records, unexpected files and duplicate/conflicting identities;
+- revalidate root confinement and Windows reparse safety on open and before publication;
+- reload strictly across process restart;
+- preserve historical evidence without making it current authority.
 
 ## Required source boundaries
 
-Create the smallest coherent M2 implementation. Reasonable concepts include:
+Keep these concerns distinct even when implementation utilities are shared:
 
-- package/archive inspection;
-- strict package value types and report/error types;
-- safe package path validation;
-- quarantine extraction;
-- candidate record and registry.
+- signature envelope and cryptographic verification;
+- publisher trust and revocation;
+- unsigned developer approval;
+- launch profile/environment construction;
+- conformance orchestration;
+- conformance evidence and invalidation;
+- installation review/approval;
+- immutable installation publication;
+- installed Plug registry;
+- disabled binding representation.
 
-These names and file counts are not requirements. Keep archive and quarantine
-code out of Core and out of the MCP Socket module. M1 Socket semantics should
-not need modification except for a genuine compile/import correction. The
-legacy 0.2 path must remain callable and unchanged.
+Do not put trust, installation or conformance authority in Core, Socket, provider output, package metadata, capability manifests, Trail, replay or result Anchors.
 
-No public Plug lifecycle CLI is authorised in M2. Library APIs and test-owned
-fixtures are sufficient. Do not add broad public module visibility merely to
-make tests convenient.
-
-## Relevant components
-
-- `tethers-0.1/host-rust/src/manifest.rs` for the existing strict capability
-  manifest verifier and JCS/SHA-256 implementation.
-- `tethers-0.1/host-rust/src/replay_windows.rs` for target-specific safe
-  publication and reparse-point patterns; replay state itself remains separate.
-- `tethers-0.1/host-rust/src/lib.rs` for the smallest M2 library surface.
-- `tethers-0.1/host-rust/Cargo.toml` and `Cargo.lock` only for the authorised
-  archive parser and its transitive compression dependencies.
-
-## Acceptance criteria
-
-1. P4 accepts valid stored and deflated packages, produces separate raw and
-   semantic identities, and refuses every specified malformed archive, path,
-   JSON, payload, manifest, compatibility, and resource-limit branch.
-2. P5 extracts only accepted bytes under a fresh quarantine child, verifies
-   bytes a second time, refuses destination tricks, and proves no launch or
-   write outside the configured root.
-3. P6 creates and reloads strict immutable candidate records, refuses conflict,
-   corruption and mutation, and proves that candidates create no runtime
-   binding, availability, policy, event, or provider effect.
-
-## Required evidence
-
-Add deterministic positive and negative evidence for at least:
-
-### P4 inspection
-
-- valid stored and deflated package variants;
-- raw archive digest changes while semantic digest remains stable across ZIP
-  ordering, timestamps and compression representation;
-- duplicate `plug.json`, duplicate archive entries and unknown roots;
-- missing provider/manifests, unindexed payload and missing indexed payload;
-- size and SHA mismatch;
-- strict JSON duplicate keys, unknown fields, BOM, trailing data and invalid
-  values;
-- invalid package IDs/versions and incompatible Socket/protocol/platform;
-- non-canonical capability/payload ordering;
-- duplicate capability identity and operation name;
-- manifest identity/schema/effect/scope/digest mismatch;
-- traversal, absolute, drive, backslash, colon/ADS, Unicode path, reserved
-  device, trailing dot/space and prefix/case collisions;
-- encrypted, Zip64, multi-disk, unsupported compression, links, devices,
-  reparse metadata, nested package and resource-limit/archive-bomb refusal;
-- signature presence remains unverified evidence and grants nothing;
-- inspection produces no extraction, process or host-binding effect.
-
-### P5 quarantine
-
-- real Windows safe extraction of an accepted package;
-- second byte/digest verification;
-- no overwrite and no escape;
-- malicious destination link/junction/reparse refusal;
-- case and prefix collision refusal;
-- incomplete staging cleanup;
-- published payload read-only/immutable evidence;
-- no launch from source, archive, staging or quarantine;
-- no provider process remains beneath the test checkout.
-
-### P6 candidate registry
-
-- schema golden and strict unknown/duplicate-field refusal;
-- create, flush, atomic publish, reload and lookup;
-- immutable no-overwrite behaviour;
-- same-release semantic conflict;
-- torn temp and malformed/corrupted record refusal;
-- missing or mutated quarantine payload refusal;
-- candidate/provider/package/capability identity distinctions;
-- candidate remains uninstalled, disabled, unapproved, untrusted and absent
-  from every runtime availability/binding path.
-
-## Required verification
-
-Run the full regression matrix named below, including locked Rust checks and
-builds, existing M1 Socket/catalogue and MCP tests, host PowerShell suites,
-the J14C proof, OCaml build/tests through the established switch, fixture and
-runner validation, the packet checker, whitespace check, lockfile hashes, and
-process cleanup proof. Do not suppress a failing proof.
-
-### Full regression
-
-Before reporting M2, run at least:
-
-- Rust 1.89 formatting check;
-- `cargo check --all-targets --all-features --locked`;
-- `cargo test --all-targets --all-features --locked`;
-- locked debug build;
-- locked release build;
-- all accepted M1 Socket/catalogue tests;
-- all existing MCP transcripts;
-- all existing host PowerShell suites and consolidated matrix;
-- J14C real file move and zero-replay-move proof;
-- OCaml `dune build` and `dune runtest` through the established switch;
-- engine fixtures, JSON/JSONL fixture validation, demo and runner contract;
-- task-packet checker;
-- `git diff --check`;
-- before/after `Cargo.lock` hashes and dependency explanation;
-- process cleanup proving no child remains beneath the checkout.
-
-Do not weaken, skip, rename away or suppress a failing proof merely to finish
-M2. Existing tracked non-fatal warnings may remain visible; new warnings caused
-by M2 should be fixed unless there is a documented compatibility reason.
-
-## Frozen decisions and invariants
-
-- Tethers Core remains deterministic and application-agnostic.
-- Tether language syntax and semantics remain `0.1`.
-- The accepted M1 Socket/application seam remains intact.
-- Socket, MCP protocol binding and byte transport remain distinct.
-- The host owns inspection, identity, quarantine and candidate state.
-- Providers and packages remain untrusted observations.
-- Package possession, valid structure and semantic digest grant no authority.
-- Signature presence grants no authority; signature verification and publisher
-  trust are M3.
-- Candidate is not installed, approved, enabled, bound or operational.
-- No execution occurs during inspection, extraction or candidate creation.
-- No launch occurs from archive, Downloads, source, staging or quarantine.
-- No active provider/capability binding exists before M3 installation approval
-  and later explicit enablement.
-- No policy permission, credential, conformance result, provider health or
-  runtime availability is created in M2.
-- Attempted-operation outcomes, replay, Result Anchors, event admission and
-  Trail ordering remain unchanged and unused by package inspection.
-- No automatic retry exists.
-- Released `v0.2.0`, tags, releases and legacy user configuration remain
-  unchanged.
-
-## Explicit exclusions
-
-Do not implement:
-
-- Ed25519 verification or signature-envelope trust decisions;
-- publisher trust, key rotation or revocation;
-- unsigned developer-mode approval;
-- conformance launch or conformance evidence approval;
-- installation approval or installed-Plug registry;
-- present-disabled installed bindings;
-- provider launch profiles, clean environment or AppContainer;
-- credentials or Credential Manager;
-- operational launch, Socket establishment or invocation from a candidate;
-- enable/disable/remove lifecycle;
-- File Tools or PDF Tools packaged provider payloads;
-- public inspect/install/enable CLI;
-- durable external Anchor admission;
-- Jobs, Streams or Human Tasks;
-- network providers, listeners, update channels, marketplace or registry
-  downloads;
-- Tether syntax or Core semantic changes.
+Do not alter the three canonical attempted outcomes. M3 is pre-operational and should not need to create a normal provider operation outcome or Result Anchor.
 
 ## Forbidden changes
 
-Do not add package trust, signatures, approval, installed state, bindings,
-provider launch, Socket use, credentials, conformance, lifecycle CLI, network
-behaviour, runtime configuration changes, legacy 0.2 reinterpretation, M3
-work, or Tether/Core semantic changes.
+Do not implement:
 
-## Genuine stop conditions
+- M4 File Tools capability contracts or provider package;
+- operational enablement;
+- active Plug invocation;
+- external Anchor delivery or durable event admission;
+- AppContainer or claims of hostile-code isolation unless a separately reviewed contract is first required and approved;
+- production credential storage or delivery;
+- OAuth, network providers, listeners or remote transport;
+- marketplace, registry, updater or automatic download;
+- interpreter-backed provider launch;
+- shell execution;
+- automatic retry;
+- changes to Tether syntax or OCaml Core semantics;
+- movement of `v0.2.0`, release tags or release objects;
+- silent migration of legacy 0.2 configuration.
 
-Continue and record the decision when the issue concerns ordinary module layout,
-resource-limit values, test-fixture construction, archive-crate API usage,
-visibility, error wording, atomic-file representation, candidate ID generation,
-commit structure or compiler-guided refactoring.
+## Major stop rule
 
-Begin `BLOCKED` only when one of these remains after at least two materially
-different evidence-based attempts:
+Sol must continue through ordinary engineering problems and use its own reasoning to resolve them conservatively.
 
-- the frozen J18D/J18E/J18G contract must change;
-- safe archive inspection cannot reject a required forbidden ZIP feature with
-  the selected library and no mature Rust alternative can do so;
-- Windows destination confinement or reparse refusal cannot be proved;
-- semantic package identity cannot be computed without conflating raw archive,
-  package, manifest or candidate identity;
-- a persistent released-0.2 or M1 regression cannot be repaired without
-  semantic change;
-- a dependency beyond the authorised archive/decompression purpose is required;
-- inspection/extraction would require execution, shelling out or entering M3;
-- durable candidate state would need trust, installation approval, bindings,
-  credentials, conformance or provider launch;
-- public CLI or machine contracts outside the named M2 schemas must change;
-- Git history would require force, published rebase or release-ref mutation.
+A stop is permitted only for a major issue that cannot be resolved within the frozen contracts after at least two materially different, evidence-based attempts.
 
-## Stop conditions
+Major stop conditions are limited to:
 
-Only the genuine stop conditions above qualify, and only after two materially
-different evidence-based attempts. Ordinary implementation decisions, coherent
-scope growth inside M2, or later packets remaining unfinished are not stops.
+- a direct contradiction between accepted J18 contracts that changes a security or lifecycle outcome and cannot be reconciled without architecture authority;
+- inability to implement or honestly test a required cryptographic boundary using a mature Rust 1.89-compatible library;
+- inability to enforce the exact Windows launch/no-shell/clean-environment boundary without weakening the accepted security promise;
+- evidence that the accepted supervised profile would be falsely represented as isolation;
+- a discovered secret-leak path that cannot be safely closed within M3;
+- an unavoidable regression in released 0.2 or accepted M1-M2 semantics after two materially different repairs;
+- a required new external service, administrator privilege, kernel component, network dependency or production credential;
+- a need to enter M4, alter frozen Tether/Core semantics, move release refs, force-push or rewrite published history.
 
-A BLOCKED report must include the exact failing command, two attempted
-approaches, smallest relevant evidence, external effects, safe rollback and one
-concrete decision that cannot reasonably be made by the implementation owner.
+The following are explicitly not blockers:
 
-## Expected starting state
+- choosing module names or file counts;
+- designing the named v1 schemas;
+- adding golden fixtures;
+- selecting mature authorised dependencies;
+- ordinary compiler errors;
+- Windows API friction;
+- moving tests to sensible units or integration files;
+- creating deterministic fixture executables;
+- a coherent larger diff;
+- test runtime;
+- an unfinished later packet;
+- a dirty worktree while actively working;
+- uncertainty that can be resolved by inspecting accepted documents and code.
 
-- `main` equals accepted M1 SHA
-  `43179db362efbfed4a0079249ef7a940cde7054e` before this control-only commit;
-- the new M2 branch starts from the control commit containing this packet;
-- worktree is clean;
-- no M2 implementation exists;
-- Milestone 3 is not authorised.
+A genuine `BLOCKED` report must include:
 
-## Expected pre-existing changes
+- the exact frozen-contract conflict or failing security boundary;
+- exact command and smallest evidence;
+- two materially different attempts;
+- observed external effects;
+- safe rollback/current clean checkpoint;
+- one concrete architecture decision that only Lucy or Matthew can make.
 
-None. The M2 branch starts clean at the control commit; the current task packet
-is the only control-plane content added there.
+Do not report `BLOCKED` merely to ask permission for an ordinary engineering choice.
+
+## Commit and continuation discipline
+
+Use bounded normal commits. A suitable map is:
+
+- P7 trust/signature;
+- P8 supervised launch profile;
+- P9 conformance gate;
+- P10 installation approval and installed-disabled registry;
+- narrow compatibility or evidence commits when genuinely required;
+- final worker-note ledger.
+
+Commit names and count may vary. Continue automatically after each successful checkpoint.
+
+Do not amend or rebase commits once pushed. Push normal checkpoints to:
+
+`codex/j19-m3-trust-launch-conformance`
+
+## Required full verification
+
+At final handoff run, at minimum:
+
+```powershell
+just tools
+just fmt
+just check
+just test-rust
+just verify
+```
+
+Run all focused P7-P10 tests, locked debug and release builds, all Rust targets/features, the established OCaml toolchain gate, `dune build`, `dune runtest`, the complete `verify-0.2.ps1` matrix, packet checker, whitespace check and process-cleanup proof.
+
+Add or extend a thin `just test-m3` or `just verify-m3` recipe only when it directly exposes the real underlying commands and remains readable.
+
+Do not suppress failing tests or warnings newly introduced by M3. Distinguish pre-existing warnings in the worker note.
 
 ## Worker note
 
 Create and maintain:
 
-`docs/worker-notes/2026-08-01-j19-m2-package-candidate.md`
+`docs/worker-notes/2026-08-01-j19-m3-trust-launch-conformance.md`
 
 Record:
 
-- exact control commit, branch base and toolchain;
-- installed-tools preflight and any helper retained;
-- archive dependency and lockfile change, if any;
-- machine `plug.json` representation choices;
-- explicit resource limits;
-- P4/P5/P6 commit map and rollback points;
-- package/path/digest/manifest identity decisions;
-- quarantine Windows path and reparse strategy;
-- candidate schema and crash/recovery strategy;
-- positive and adversarial fixtures;
-- every regression and correction;
-- exact final commands and totals;
-- proof of no execution, no binding and no M3 work;
-- remaining risks.
-
-## Suggested commit map
-
-Use bounded, reviewable commits. A reasonable stack is:
-
-- `feat: inspect tetherplug packages`;
-- `feat: extract packages into quarantine`;
-- `feat: record immutable installation candidates`;
-- optional narrowly scoped fixture or compatibility correction commits.
-
-The wording is not mandatory. P4, P5 and P6 must remain identifiable and
-individually reversible.
-
-Push only:
-
-`codex/j19-m2-package-candidate`
-
-Do not push `main`, tags or releases.
+- exact control commit and branch starting point;
+- commit map for P7-P10;
+- every schema and golden fixture;
+- direct dependencies added and why;
+- exact cryptographic and Windows API decisions;
+- clean-environment allow-list and exclusions;
+- supervised-profile limitations;
+- conformance categories, suite identity and invalidation rules;
+- installation and disabled-binding transaction;
+- focused and full verification commands and counts;
+- externally visible effects;
+- remaining risks and deferred isolation/credentials;
+- final branch SHA;
+- confirmation that no M4 behaviour was added.
 
 ## Completion report
 
-Begin exactly:
+Return only:
 
-`M2 COMPLETE - PACKAGE CANDIDATE`
+`M3 COMPLETE - INSTALLED DISABLED PLUG`
 
-Report:
+Include no progress essay in the completion message. The worker note is the evidence ledger.
 
-1. branch, final SHA and control commit;
-2. P4/P5/P6 commit map and rollback points;
-3. changed paths by packet;
-4. final module and store layout;
-5. archive dependency and final `Cargo.lock` hash;
-6. exact `plug.json` machine representation choices;
-7. package/path/resource refusal rules;
-8. raw, semantic, manifest and candidate identity evidence;
-9. quarantine extraction and Windows reparse evidence;
-10. candidate schema, atomicity and restart evidence;
-11. no-execution, no-binding and no-M3 proofs;
-12. full test commands and exact totals;
-13. 0.2 and M1 compatibility confirmation;
-14. remaining risks;
-15. clean worktree and branch ahead/behind `main`;
-16. confirmation that `main`, tags and releases are untouched.
-
-On a genuine stop condition begin exactly:
-
-`BLOCKED`
-
-Stop after the report. Do not begin Milestone 3 until Lucy accepts M2 and installs
-a new authoritative packet.
+Do not begin M4.
