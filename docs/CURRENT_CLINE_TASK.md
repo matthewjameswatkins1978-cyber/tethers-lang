@@ -1,372 +1,397 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J19-P1 - Host Application Seam and 0.2 Parity`
+Task: `J19-M1 - Autonomous Socket Parity Programme`
 Owner: `Codex Terra High`
 Status: `IN_PROGRESS`
 Task colour: `Red`
-Route: `Codex, bounded Rust crate-ownership extraction and parity proof`
+Route: `Codex, autonomous Rust restructuring and Socket parity implementation`
 Base branch: `main`
 Accepted implementation baseline: `cfdb372ab18c7935c6046faf5cf82da2fe742440`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 Branch: `codex/j19-first-plug-kit`
-Worker note: `docs/worker-notes/2026-08-01-j19-p1-host-application-seam.md`
+Worker note: `docs/worker-notes/2026-08-01-j19-m1-socket-parity.md`
 
 ## Control-plane starting rule
 
 Fetch `origin/main`, fast-forward the existing clean programme branch to the
-commit containing this control packet, and record that exact control commit in
-the worker note.
+commit containing this control packet, record the control commit in the worker
+note, and continue on `codex/j19-first-plug-kit`.
 
 The accepted implementation baseline remains
-`cfdb372ab18c7935c6046faf5cf82da2fe742440`. The control-only commit changes task
-authority and is not an implementation change.
-
-## Blocker resolution
-
-The initial P1 attempt proved that `HostExecutionService` and its dependencies
-are owned by the binary crate root. `lib.rs` currently exposes only
-`child_process`, `cli`, and `engine_stdio`, while `main.rs` owns the wider module
-graph and shared execution-boundary helpers.
-
-Two bounded façade attempts failed at the same crate-ownership boundary.
-
-Lucy authorises the smallest real structural correction:
-
-- move shared host module ownership from the binary crate root to the library
-  crate root;
-- extract binary-root helpers and shared types required by host execution into a
-  dedicated library application module;
-- make `main.rs` a thin CLI and compatibility dispatcher over the library;
-- preserve all released 0.2 behaviour.
-
-This is the accepted P1 seam. It is not a broad host redesign.
+`cfdb372ab18c7935c6046faf5cf82da2fe742440`. Control-only commits after that SHA
+change task authority, not runtime semantics.
 
 ## Objective
 
-Create one reusable Rust library application seam around the existing host
-execution machinery while preserving byte-level or semantically exact released
-0.2 behaviour.
+Complete Milestone 1 from the accepted J18I roadmap:
 
-P1 ends when the library owns the shared host module graph, the binary delegates
-to it, and all parity evidence passes.
+1. P1-SOCKET-PARITY;
+2. P2-SOCKET-BOUNDARY;
+3. P3-DISCOVERY-CATALOGUE.
 
-Do not begin P2 Socket operations, discovery pagination, package work, File
-Tools, trust, security profiles, credentials, durable stores, new public CLI, or
-Tether changes.
+Codex owns ordinary source-layout, module, visibility, test-placement and commit
+choices required to complete this milestone. Lucy will review the finished
+milestone diff and evidence. Do not stop merely because the safest implementation
+is larger than an earlier guessed file count or requires a different Rust module
+layout.
 
-## Required structural result
+Return only at:
 
-1. `lib.rs` becomes the owner of the shared host modules needed by the existing
-   application and execution path.
-2. `main.rs` no longer declares a duplicate host module graph.
-3. Shared execution-boundary helpers and types currently trapped in `main.rs`
-   move into one dedicated library-owned application module or the smallest
-   coherent set of library-owned modules.
-4. `HostExecutionService` compiles as library code and is reachable through a
-   deliberately small public application surface.
-5. Existing internal modules remain private or crate-private unless the binary
-   or an external integration test genuinely requires public access.
-6. The binary remains responsible only for process entry, argument capture,
-   calling the library dispatcher, emitting the existing envelope/output, and
-   exiting with the existing code. Legacy and debug routes may delegate through
-   the application module but must retain their behaviour.
-7. No duplicated implementation may remain compiled once in the library and
-   again in the binary.
-8. Existing file layout may be retained. Moving module declarations into the
-   library does not require moving every `.rs` file.
+`M1 COMPLETE - SOCKET PARITY`
 
-## Authorised extraction scope
+or on a genuine stop condition defined below.
 
-Create at most one new production module under:
+## Blocker resolution and autonomy rule
 
-`tethers-0.1/host-rust/src/`
+The initial P1 attempts proved that the useful host execution machinery is
+binary-crate-root coupled. `main.rs` owns the host module graph, shared
+execution-boundary helpers and a large body of legacy tests, while `lib.rs`
+exports only a small foundation.
 
-Recommended name:
+The following are explicitly authorised and are not blockers:
 
-`application.rs`
+- move shared host module ownership from `main.rs` to `lib.rs`;
+- make `main.rs` a thin process-entry and CLI compatibility dispatcher;
+- create as many coherent Rust modules as are reasonably needed for the
+  extraction, rather than forcing everything into one file;
+- split application dispatch, legacy compatibility, event-drain helpers and
+  debug probes into separate concept-owned modules when that reduces coupling;
+- move unit tests out of `main.rs` into the module that owns the tested code;
+- move broad parity tests into `tests/` integration-test files;
+- preserve tests byte-for-byte where useful, or refactor test helpers when the
+  assertions and covered behaviour remain equivalent or stronger;
+- change `pub`, `pub(crate)` and private visibility as needed while keeping the
+  external public API deliberately small;
+- change import paths, crate aliases and module declarations;
+- change `Cargo.toml` only when required to declare or configure existing
+  library/binary/test targets, with no new dependency unless a genuine blocker
+  is reported;
+- create a bounded commit stack and reorganise it before first publication;
+- choose the exact extraction order and temporary intermediate layout;
+- use compiler errors and tests to guide the dependency untangling;
+- make ordinary engineering decisions without requesting Lucy approval.
 
-A different single name is allowed only when it more accurately describes the
-same boundary. Do not create an abstract framework or directory hierarchy.
+`Cargo.lock` must remain unchanged unless a separately reported dependency
+change is genuinely required. No dependency change is currently authorised.
 
-The new module may own or expose only the existing application-level seams
-needed for:
+A source-layout decision, number of touched Rust files, movement of existing
+tests, visibility adjustment, or temporary compilation break during the local
+refactor is not grounds for a BLOCKED report.
 
-- command dispatch;
-- prepared runtime execution;
-- host execution service construction and invocation;
-- shared execution-boundary mapping;
-- bridge projection;
-- outcome, replay, Result Anchor and Trail orchestration already implemented;
-- legacy compatibility routing;
-- existing debug probe delegation where necessary for parity.
+## Required P1 result
 
-Pure helpers or types may instead move into the existing module that already
-owns their concept when that is smaller and avoids a dependency cycle.
+P1 is complete when:
 
-## Authorised code paths
+1. the library crate owns the shared host module graph;
+2. `HostExecutionService` and its required types compile as library code;
+3. one deliberately small public application surface exists;
+4. the binary delegates to the library rather than compiling duplicate host
+   implementations;
+5. `main.rs` contains only process entry, argument capture, library dispatch,
+   output emission and process exit, plus the smallest unavoidable platform
+   glue;
+6. legacy and debug routes still behave as before, regardless of which module
+   now owns them;
+7. existing 0.2 CLI behaviour, envelopes, exit codes and ordering remain
+   compatible;
+8. no P2 Socket semantics have been introduced merely to finish P1;
+9. parity and full regression evidence pass.
 
-Only the minimum necessary subset of these paths may change:
+Codex decides the concrete module map. A reasonable shape may include
+`application`, `legacy`, `event_flow` or test modules, but these names and counts
+are not requirements.
 
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/main.rs`
-- one new application module under `tethers-0.1/host-rust/src/`
-- existing Rust host modules whose imports, visibility, crate aliases or tests
-  must change solely because ownership moves from binary root to library root
-- existing Rust host integration tests solely for parity coverage
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-01-j19-p1-host-application-seam.md`
+## P2 authorised scope
 
-The potentially affected existing host modules are limited to:
+After P1 passes locally, continue automatically to P2.
 
-- `approval.rs`
-- `check_command.rs`
-- `configured_runtime.rs`
-- `dispatch.rs`
-- `event_admission.rs`
-- `event_queue.rs`
-- `executor.rs`
-- `host_execution.rs`
-- `manifest.rs`
-- `outcome.rs`
-- `policy.rs`
-- `provider.rs`
-- `replay.rs`
-- `replay_runtime.rs`
-- `replay_windows.rs`
-- `resolver.rs`
-- `result_anchor.rs`
-- `run_command.rs`
-- `run_input.rs`
-- `runtime_config.rs`
-- `stdio_provider.rs`
-- `trail_command.rs`
-- `trusted_store.rs`
-- `validation.rs`
+Place retained MCP stdio provider sessions behind a semantic Socket boundary
+covering the accepted Socket v1 operations:
 
-Do not edit every listed file pre-emptively. Touch only files proven necessary by
-compiler errors, dependency direction, tests, or duplicate ownership.
+- establish;
+- discover;
+- invoke;
+- observe_result;
+- observe_catalogue_change;
+- probe;
+- close.
 
-`Cargo.toml` may change only if Rust's automatic library/binary discovery cannot
-express the accepted seam. Do not add dependencies, features, build scripts or
-workspace changes. `Cargo.lock` must not change.
+The Socket returns observations only. It does not own trust, policy, approval,
+credentials, canonical outcomes, replay, Result Anchors, Trail or retries.
 
-## Extraction laws
+The first binding remains MCP `2025-11-25` over local stdio. Standard MCP
+methods remain the wire mapping. Do not invent custom Socket wire methods.
 
-- Move code, do not reinterpret it.
-- Preserve function bodies and data semantics unless a visibility-neutral
-  wrapper is required.
-- Preserve exact outcome classification.
-- Preserve replay admission and terminal publication.
-- Preserve Result Anchor ordering and suppression rules.
-- Preserve Trail contents and ordering.
-- Preserve policy, approval and scope decisions.
-- Preserve engine and provider lifecycle.
-- Preserve request, evaluation, action and execution identities.
-- Preserve current CLI JSON envelopes, stdout/stderr placement and exit codes.
-- Preserve current debug probes and legacy route unless a test proves they are
-  unreachable in the released build.
-- Do not make internal modules public merely to silence compiler errors.
-- Do not use global mutable state, hidden singletons, new retries or new threads.
-- Do not alter serialized schemas or version strings.
+Preserve:
 
-## Allowed public surface
+- one active invocation per session;
+- monotonically unique session-local JSON-RPC request IDs;
+- no batching;
+- no parallel invocation;
+- no hidden restart queue;
+- no automatic retry;
+- exact executable/argument launch behaviour currently in the legacy path;
+- bounded close and child cleanup;
+- protocol stdout separate from diagnostic stderr.
 
-Expose the smallest coherent application API.
+Codex owns the exact trait, structs, enums and module layout needed to express
+this boundary.
 
-It may include:
+## P3 authorised scope
 
-- the existing typed `HostExecutionService` boundary;
-- its existing prepared input, result and error types;
-- a library command-dispatch result carrying existing output/envelope and exit
-  status;
-- a small constructor or façade needed by the binary and future Socket seam.
+After P2 passes locally, continue automatically to P3.
 
-It must not expose:
+Implement the accepted discovery and catalogue behaviour:
 
-- raw replay mutation;
-- raw Trail mutation;
-- provider invocation that bypasses policy and durable intent;
-- internal trust-store mutation;
-- direct Result Anchor creation without the existing durable gates;
-- a generic callback framework;
-- package, Plug or Socket v1 types not already implemented.
+- consume every `tools/list` page;
+- treat cursors as opaque;
+- detect repeated or looping cursors and fail closed;
+- reject duplicate operation names;
+- validate live input and output schemas against trusted binding expectations;
+- preserve provider descriptions and annotations only as untrusted observations;
+- represent a complete catalogue snapshot;
+- make catalogue-change notification mark discovery stale;
+- prevent affected invocation while stale;
+- perform bounded rediscovery through the host-owned lifecycle;
+- retain exact unchanged bindings;
+- make missing, changed or incompatible bindings unavailable or quarantined as
+  required by the accepted contracts;
+- leave unapproved additions unavailable;
+- never convert catalogue notifications into Tethers Anchors.
 
-## Baseline evidence before editing
+Codex owns the exact catalogue types, pagination implementation and transcript or
+fixture layout.
 
-Record the exact baseline results from the clean accepted implementation commit
-for all commands that currently pass.
+## Frozen decisions and invariants
 
-At minimum run:
+- Tethers Core remains deterministic and application-agnostic.
+- The Rust host owns trust, policy, approval, credentials, dispatch, outcomes,
+  replay, event admission, conformance and Trail.
+- Providers own vendor-specific translation.
+- Socket semantics, protocol binding and byte transport remain distinct.
+- Attempted operation outcomes remain exactly `succeeded`, `failed` and
+  `uncertain`.
+- Unattempted remains a disposition, not a fourth outcome.
+- No automatic retry or restart retry exists.
+- Idempotency does not authorise retry.
+- Event admission remains separate from operation outcomes.
+- Durable outcome and replay-terminal publication precede Result Anchor
+  creation.
+- No Result Anchor exists for unattempted work.
+- Supervised execution is not hostile-code isolation.
+- Tether language syntax and semantics remain `0.1`.
+- Released `v0.2.0` and its history remain unchanged.
 
-```powershell
-rustup run 1.89.0 cargo test --manifest-path tethers-0.1\host-rust\Cargo.toml --lib
-rustup run 1.89.0 cargo test --manifest-path tethers-0.1\host-rust\Cargo.toml
-rustup run 1.89.0 cargo build --locked --manifest-path tethers-0.1\host-rust\Cargo.toml
-rustup run 1.89.0 cargo build --locked --release --manifest-path tethers-0.1\host-rust\Cargo.toml
-rustup run 1.89.0 cargo fmt --manifest-path tethers-0.1\host-rust\Cargo.toml -- --check
-```
+## Relevant components
 
-Also identify the exact repository scripts for:
+Codex may inspect and modify the minimum coherent set under:
 
-- consolidated 0.2 verification;
-- OCaml engine tests;
-- public check/run/trail proof;
-- J14C real file-move proof;
-- MCP transcript validation.
+- `tethers-0.1/host-rust/src/`;
+- `tethers-0.1/host-rust/tests/`;
+- `tethers-0.1/host-rust/Cargo.toml` only under the target-configuration rule;
+- existing MCP fixtures/transcripts and test scripts required for P2/P3 evidence;
+- `docs/CURRENT_CLINE_TASK.md` for status only;
+- `docs/worker-notes/2026-08-01-j19-m1-socket-parity.md`.
 
-Run the strongest applicable existing entry points before and after extraction.
-Do not guess script names when repository inspection can establish them.
+Existing runtime configuration, capability manifests, providers and scenarios may
+be used unchanged as regression evidence. Do not reinterpret them as
+`.tetherplug` v1.
 
-## Required parity evidence
+## Required behaviour
 
-After extraction require:
+1. Preserve released 0.2 behaviour while moving shared host ownership into the
+   library.
+2. Complete P1, P2 and P3 without asking for ordinary source-layout approval.
+3. Keep every commit reviewable and the legacy route recoverable.
+4. Run focused tests during development and the complete required evidence before
+   reporting M1.
+5. Record architectural discoveries and deliberate layout choices in the worker
+   note.
+6. Do not begin package inspection, trust, File Tools packaging or Milestone 2.
 
-1. `cargo test --lib` passes.
-2. Full Rust tests pass with no ignored new failure.
-3. Debug and release locked builds pass.
-4. Formatting passes.
-5. `Cargo.lock` hash is unchanged.
-6. Existing OCaml engine tests pass.
-7. Existing consolidated 0.2 verification passes.
-8. Existing public `check`, `run`, and `trail` behaviour passes.
-9. Existing J14C real file-move proof passes.
-10. Existing MCP transcript tests pass.
-11. Existing legacy route and debug probes pass where covered by repository
-    tests.
-12. No provider call count, Result Anchor count, Trail entry, execution identity,
-    replay state, JSON envelope field or exit code changes.
+## Acceptance criteria
 
-Where baseline output is deterministic, compare exact normalized output before
-and after. Where paths, timestamps or UUIDs vary, compare the existing structural
-contract and explain the normalization.
+M1 is accepted for review only when all of the following are true:
 
-## Focused new tests
+1. P1, P2 and P3 each have identifiable commits or a clearly mapped commit
+   stack.
+2. The library owns the reusable application and Socket seams.
+3. The binary is thin and has no duplicate host implementation.
+4. Existing `check`, `run`, `trail`, legacy, replay and debug-probe behaviour is
+   compatible.
+5. Existing policy, approval, dispatch, outcome, replay, Result Anchor, event
+   admission and Trail ordering remain intact.
+6. Socket operations preserve serial invocation and no retry.
+7. Discovery proves complete pagination, repeated-cursor refusal, duplicate-name
+   refusal, schema drift handling and catalogue invalidation.
+8. Catalogue notifications are not Anchors.
+9. Full Rust and OCaml regression passes.
+10. Existing real file-move and public 0.2 verification passes.
+11. Formatting, locked builds, packet checks and whitespace checks pass.
+12. `Cargo.lock` remains unchanged.
+13. Worktree is clean and the programme branch is pushed normally.
+14. No Milestone 2 implementation has begun.
 
-Add only tests necessary to prove the new seam:
+## Required verification
 
-- library compilation owns `HostExecutionService` and dependencies;
-- binary calls the library application dispatcher rather than compiling duplicate
-  host modules;
-- one representative no-action route is parity-identical;
-- one representative denied or unavailable route is parity-identical;
-- one representative successful execution route preserves intent, terminal
-  outcome, Result Anchor and Trail ordering;
-- public API cannot directly bypass the accepted execution gates.
+Use focused tests freely during implementation. Before the M1 report, run at
+least:
 
-Prefer existing fixtures and helpers. Do not duplicate the whole 0.2 harness.
+- `rustup run 1.89.0 cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --lib`;
+- complete Rust tests for the host crate;
+- locked debug build;
+- locked release build;
+- `cargo fmt --check`;
+- existing MCP transcript and provider tests;
+- existing public `check`, `run` and `trail` verification;
+- existing real local file-move proof;
+- full OCaml engine tests and demo through the established Windows/opam route;
+- repository JSON/JSONL fixture checks;
+- task-packet checker;
+- `git diff --check`;
+- `Cargo.lock` hash comparison against the recorded baseline.
 
-## Forbidden work
+Add focused parity, Socket and discovery tests where existing suites do not prove
+the acceptance criteria.
 
-Do not:
+Do not suppress, ignore or delete a failing regression merely to complete the
+milestone.
 
-- implement Socket v1 semantic operations;
-- modify MCP protocol behaviour;
-- add discovery pagination or catalogue invalidation;
-- parse `.tetherplug`;
-- add package, candidate, installation, trust or conformance state;
-- add File Tools or PDF Tools;
-- add credentials or environment sanitation;
-- change child-process security behaviour;
-- alter replay or external event admission stores;
-- change Tether 0.1 syntax or semantics;
-- change public CLI syntax;
-- remove the legacy path;
-- move or recreate `v0.2.0`;
-- create a release;
-- begin P2.
+## Forbidden changes
+
+Do not begin or implement:
+
+- `.tetherplug` parsing or extraction;
+- quarantine or installed registries;
+- signatures, publisher trust or revocation;
+- clean-environment security profiles beyond preserving existing launch
+  behaviour;
+- credentials or credential delivery;
+- conformance stores;
+- durable external-event admission;
+- packaged File Tools or PDF Tools;
+- new public Plug lifecycle CLI;
+- Jobs, Streams or Human Tasks;
+- network providers or listeners;
+- Tether syntax or semantic changes;
+- release tags or GitHub Releases.
+
+Do not move or rewrite `v0.2.0` history.
 
 ## Stop conditions
 
-Stop with `BLOCKED` when:
+Do not stop for ordinary refactoring uncertainty.
 
-- extracting ownership requires changing a frozen semantic boundary;
-- a helper cannot be placed without creating a circular authority dependency;
-- CLI parity cannot be retained;
-- replay, Result Anchor, Trail or outcome ordering changes;
-- a new dependency appears necessary;
-- broad unrelated rewrites become necessary;
-- two materially similar extraction attempts fail;
-- any required baseline or post-change test fails without a bounded understood
-  cause.
+Continue, choose a reasonable implementation, test it, and record the choice when
+the issue concerns:
 
-Do not bypass a test or weaken visibility to continue.
+- module names or count;
+- exact source-file boundaries;
+- movement of existing tests;
+- visibility and import paths;
+- helper placement;
+- whether a parity test is unit or integration level;
+- intermediate commit structure;
+- compiler-guided dependency untangling;
+- a larger-than-estimated but still bounded P1 diff.
 
-## Git and publication
+Stop and begin `BLOCKED` only when one of these remains after at least two
+materially different, evidence-based attempts:
 
-Use the existing branch:
+- the frozen architecture must change;
+- released 0.2 semantics cannot be preserved;
+- a required regression fails for reasons not caused by ordinary test relocation
+  or harness adjustment;
+- a new third-party dependency appears necessary;
+- public CLI or machine schemas must change;
+- outcome, replay, admission or Result Anchor truth would change;
+- a security or durable-state boundary outside M1 must be implemented;
+- source evidence reveals existing corruption or unsafe behaviour that cannot be
+  contained within M1;
+- work would cross into Milestone 2;
+- Git history would require force, rebase of published work or release-ref
+  mutation.
 
-`codex/j19-first-plug-kit`
+A BLOCKED report must include the exact failing command, both attempted
+approaches, smallest relevant diff or compiler evidence, external effects, safe
+rollback and one concrete decision that cannot reasonably be made by the
+implementation owner.
 
-No force-push, amend, rebase of published work, or main update.
+## Expected pre-existing changes
 
-Create one bounded P1 commit or a small reported stack when compiler-safe
-checkpoints materially improve rollback.
-
-Preferred final commit message:
-
-`refactor: extract host application seam`
-
-Do not begin P2 after committing P1.
+The programme branch is expected to be clean and equal to the prior control
+commit before fast-forwarding to this packet. No P1 implementation commit is
+expected yet.
 
 ## Worker note
 
-Create:
+Create and maintain:
 
-`docs/worker-notes/2026-08-01-j19-p1-host-application-seam.md`
+`docs/worker-notes/2026-08-01-j19-m1-socket-parity.md`
 
-Use headings:
+Record:
 
-- Task
-- Initial blocker
-- Ownership map before
-- Extraction design
-- Changed paths
-- Public surface
-- Ownership map after
-- Baseline evidence
-- Post-extraction evidence
-- Parity comparison
-- Frozen-boundary checks
-- Rollback
-- Discoveries
-- Remaining risks
-- Next action
+- control commit and branch base;
+- baseline commands and totals;
+- chosen source layout and why;
+- P1, P2 and P3 commit map;
+- moved tests and preserved assertions;
+- public library surface;
+- compatibility evidence;
+- Socket identity and lifecycle decisions;
+- discovery pagination and invalidation evidence;
+- regressions encountered and resolutions;
+- exact final checks;
+- remaining risks;
+- rollback points;
+- confirmation that Milestone 2 did not begin.
 
-Record every compiler failure that materially shaped the seam, but do not paste
-large logs.
+## Commit and publication boundary
+
+Use bounded commits with descriptive messages. A suggested stack is:
+
+- `refactor: extract host application library seam`;
+- `refactor: add semantic socket boundary`;
+- `feat: complete socket discovery catalogue`;
+- optional focused test or correction commits.
+
+This wording is not mandatory. The packet-to-commit mapping must be clear.
+
+Push only:
+
+`codex/j19-first-plug-kit`
+
+Do not push `main`, tags or releases.
 
 ## Completion report
 
-On success begin exactly:
+Begin exactly:
 
-`P1 COMPLETE - HOST APPLICATION SEAM`
+`M1 COMPLETE - SOCKET PARITY`
 
 Report:
 
-1. branch and final SHA or stack;
-2. exact control-plane commit used;
-3. exact changed paths;
-4. module ownership before and after;
-5. helpers/types moved from binary root;
-6. final public application surface;
-7. why `main.rs` is now a thin dispatcher;
-8. baseline and final Rust totals;
-9. OCaml and integration results;
-10. exact parity evidence;
-11. Cargo.lock hash result;
-12. forbidden-work confirmation;
-13. rollback commit;
-14. clean worktree;
-15. ahead/behind `origin/main`;
-16. remaining risks;
-17. explicit confirmation P2 has not begun.
+1. branch and final SHA;
+2. control commit;
+3. P1/P2/P3 commit map;
+4. changed paths by packet;
+5. final source layout;
+6. public library/application/Socket surfaces;
+7. test commands and exact totals;
+8. 0.2 compatibility evidence;
+9. Socket lifecycle evidence;
+10. pagination, cursor, duplicate, drift and invalidation evidence;
+11. frozen-boundary checks;
+12. `Cargo.lock` hash result;
+13. rollback points;
+14. remaining risks;
+15. clean worktree;
+16. ahead/behind main;
+17. confirmation Milestone 2 did not begin.
 
-On failure begin exactly:
+On a genuine stop condition begin exactly:
 
 `BLOCKED`
-
-Report the exact smallest compiler or parity boundary, rollback state, and one
-smallest unresolved question.
 
 Stop after the report.
