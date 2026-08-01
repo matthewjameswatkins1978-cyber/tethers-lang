@@ -1,6 +1,8 @@
 # Tethers Lifecycle, Outcomes, Events and Conformance v1
 
-Status: J18F candidate, pending Lucy lifecycle review
+Status: Accepted J18F lifecycle contract
+Accepted by Lucy: 2026-08-01
+Final architecture freeze: Requires J18H paper validation
 Contract generation: 1
 Implementation: Not authorised
 

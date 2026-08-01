@@ -4,8 +4,8 @@ Updated: 2026-08-01
 
 ## Current Milestone
 
-J18F: Lifecycle, Outcomes, Events and Conformance v1, design-only and pending
-Lucy lifecycle review.
+J18G: Security, Trust, Credentials and Sandbox Threat Model v1, design-only and
+pending Lucy security review.
 
 ## Published Baseline
 
@@ -28,12 +28,12 @@ the release.
 
 ## Active Task
 
-J18F - Lifecycle, Outcomes, Events and Conformance v1
+J18G - Security, Trust, Credentials and Sandbox Threat Model v1
 
 ## Next Route
 
-J18B, J18C, J18D, and J18E are accepted. J18F is design-only and pending Lucy
-lifecycle review. J18G is next only after acceptance.
+J18B, J18C, J18D, J18E, and J18F are accepted. J18G is design-only and pending
+Lucy security review. J18H is next only after acceptance.
 
 Plug implementation remains unauthorised. Plugs remain outside Tethers Core;
 host-owned permissions, credentials, canonical outcomes, and Trails remain

@@ -140,6 +140,10 @@ trust, revocation, envelope, and publisher policy. Malformed signatures are
 reported and ignored or quarantined according to host policy; they never bypass
 inspection or approval.
 
+J18G is authoritative for signature algorithm, envelope, trust-store,
+publisher-trust, revocation and developer-mode semantics. J18D remains
+authoritative for the package container and semantic package digest.
+
 ## 7. Inspection and Extraction
 
 Inspection performs no execution. The host records raw archive digest and size,

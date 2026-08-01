@@ -1,4 +1,23 @@
 # Decisions
+## 2026-08-01: Security, trust, credentials, and sandbox boundary
+
+1. Host policy and provider containment are separate.
+2. Providers remain untrusted after signing and conformance.
+3. Package signature v1 uses Ed25519 over a domain-separated semantic package digest.
+4. Publisher trust comes only from the host trust store.
+5. Trust-on-first-use is not permitted.
+6. Revoked keys cannot satisfy current trust.
+7. Unsigned packages require explicit developer mode.
+8. Job Object supervision is not a complete security sandbox.
+9. Supervised and isolated provider profiles remain distinct.
+10. Third-party production providers require proven isolation.
+11. Provider environments are constructed from scratch.
+12. Credentials use host-owned profiles and exact session delivery.
+13. Credential values enter no durable evidence.
+14. Filesystem and network access begin at deny.
+15. Security violations quarantine or disable and never authorise retry.
+16. No implementation or Tether syntax change is introduced.
+
 ## 2026-08-01: Lifecycle, outcome, event, and conformance boundary
 
 1. Installation, session, health, catalogue, binding, operation, replay,
