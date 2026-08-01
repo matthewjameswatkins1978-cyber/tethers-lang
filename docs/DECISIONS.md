@@ -1,4 +1,18 @@
 # Decisions
+## 2026-08-01: Tethers Socket v1 and first MCP binding
+
+1. Socket v1 is a semantic normalization contract.
+2. The first binding uses standard MCP methods rather than custom methods.
+3. The Tethers host is the MCP client and the Plug provider is the MCP server.
+4. This is separate from the existing Tethers Core-facing MCP server.
+5. JSON-RPC IDs are session correlation, not durable execution identity.
+6. Tool discovery remains untrusted.
+7. Structured output is authoritative only after trusted-schema validation.
+8. `tools/list_changed` is catalogue drift, not a Tethers Anchor.
+9. MCP Tasks, progress, resources, and elicitation do not automatically map to
+   Tethers capability classes.
+10. No automatic retry is introduced.
+11. Anchor delivery and canonical outcome expansion remain J18F decisions.
 ## 2026-08-01: Universal Plug Architecture boundary
 
 1. The Tethers Socket is a semantic host-provider contract, not a transport.

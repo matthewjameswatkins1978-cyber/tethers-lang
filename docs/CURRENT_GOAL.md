@@ -13,10 +13,10 @@ Tethers 0.2.0 is the accepted and published baseline. J17 is complete; `main`
 and the annotated `v0.2.0` tag point to the signed-off commit
 `b5546411661dcbcb53e1cf2538eaec594c6f76f2`.
 
-J18A is complete. J18B is active and architecture-only. The canonical candidate
-is `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`. Plug
-implementation remains unauthorised. J18C is the next task only after Lucy
-accepts J18B.
+J18A is complete and J18B is accepted as the architectural boundary. J18C is
+active and design-only: Socket v1 and its MCP stdio binding do not authorise
+implementation. J18D follows only after Lucy accepts J18C. Plug
+implementation remains unauthorised.
 
 ## J18 Boundaries
 

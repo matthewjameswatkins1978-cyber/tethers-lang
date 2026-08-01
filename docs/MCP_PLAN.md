@@ -5,6 +5,11 @@ Date researched: 2026-07-20
 Owner: Matthew  
 Purpose: durable direction for connecting MCP directly to Tethers
 
+Status note: This document governs Tethers exposing its deterministic Core
+through an MCP server. It does not define the Universal Plug provider Socket.
+The J18 Socket documents are authoritative for the host-as-client provider
+binding. These two MCP directions must not be conflated.
+
 ## The decision in one sentence
 
 **Tethers itself will expose an MCP interface in OCaml. Lantern Keeper is one application plugged into Tethers, not the gateway through which every MCP connection must pass.**

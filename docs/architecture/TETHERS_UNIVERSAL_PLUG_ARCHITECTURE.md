@@ -1,6 +1,9 @@
 # Tethers Universal Plug Architecture
 
-Status: `J18B candidate architecture, pending Lucy acceptance`
+Status: Accepted J18 architectural boundary
+Accepted by Lucy: 2026-08-01
+Final architecture freeze: Requires J18H paper validation
+Implementation: Not authorised
 
 This document defines the large architectural boundary for Universal Plugs. It
 does not freeze the Socket wire contract or package format, and does not

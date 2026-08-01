@@ -2,15 +2,15 @@
 
 Control contract: `1`
 
-Task: `J18B - Universal Plug Architecture`
+Task: `J18C - Tethers Socket v1 Contract and MCP Stdio Binding`
 Owner: `Luna`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `Luna on OpenCode, architecture transcription and consistency audit`
 Base branch: `main`
-Base commit: `f28b0b8b416a8a14920bf405dab89e3db91b5de1`
-Branch: `luna/j18b-universal-plug-architecture`
-Worker note: `docs/worker-notes/2026-08-01-j18b-universal-plug-architecture.md`
+Base commit: `2930fd4c672805b89eef566d4315a4773f6bd603`
+Branch: `luna/j18c-socket-v1-contract`
+Worker note: `docs/worker-notes/2026-08-01-j18c-socket-v1-contract.md`
 
 ## Objective
 
