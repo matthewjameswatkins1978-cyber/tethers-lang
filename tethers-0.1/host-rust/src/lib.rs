@@ -2,6 +2,7 @@ extern crate self as tethers_reference_host;
 
 pub mod application;
 pub mod approval;
+pub mod candidate;
 pub mod check_command;
 pub mod child_process;
 pub mod cli;
