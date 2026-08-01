@@ -702,7 +702,9 @@ mod tests {
         valid_archive(&source, CompressionMethod::Stored);
         let report = inspect(&source).unwrap();
         let quarantined = crate::candidate::extract_to_quarantine(&report, &root).unwrap();
-        assert!(quarantined.directory.starts_with(fs::canonicalize(&root).unwrap()));
+        assert!(quarantined
+            .directory
+            .starts_with(fs::canonicalize(&root).unwrap()));
         assert_eq!(
             fs::read(quarantined.directory.join("provider/tool.exe")).unwrap(),
             b"harmless provider marker"
