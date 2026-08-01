@@ -3,10 +3,11 @@
 Control contract: `1`
 Task: `J19-M1 - Autonomous Socket Parity Programme`
 Owner: `Codex Terra High`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `Codex, autonomous Rust restructuring and Socket parity implementation`
 Base branch: `main`
+Base commit: `41a8a67737c7987a0fa05e219aeb5f202a96be26`
 Accepted implementation baseline: `cfdb372ab18c7935c6046faf5cf82da2fe742440`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 Branch: `codex/j19-first-plug-kit`
@@ -41,6 +42,16 @@ Return only at:
 `M1 COMPLETE - SOCKET PARITY`
 
 or on a genuine stop condition defined below.
+
+## Relevant background and existing behaviour
+
+The accepted 0.2 host already owns trusted configuration, retained MCP stdio
+providers, serial dispatch, outcomes, replay, Result Anchors and Trail. Before
+M1, that behavior was coupled to the binary crate root: `main.rs` owned the
+shared module graph and broad regression tests while `lib.rs` exposed only a
+small foundation. Discovery consumed one `tools/list` response and exact
+trusted schema comparison existed at initial provider admission, but there was
+no reusable semantic Socket boundary or complete stale catalogue lifecycle.
 
 ## Blocker resolution and autonomy rule
 
@@ -395,3 +406,26 @@ On a genuine stop condition begin exactly:
 `BLOCKED`
 
 Stop after the report.
+
+## Completion ledger
+
+- Control commit: `41a8a67737c7987a0fa05e219aeb5f202a96be26`.
+- P1: `a7ea653f87a554405dbfbcceda2493c893cf181d` — library-owned
+  application graph and thin binary dispatcher.
+- P2: `34be88b` — semantic Socket lifecycle over one retained MCP stdio
+  session.
+- P3: `3c525ae` — complete paginated catalogue, opaque-cursor and duplicate
+  refusal, stale notification handling, bounded exact revalidation and drift
+  invalidation.
+- Compatibility correction: `5bc483c` — J14B follows the two unchanged named
+  proofs at their library-owned test path.
+- Final Rust: `777` library tests plus `29` integration tests passed; locked
+  debug and release builds passed.
+- Final release matrix: `6` suites passed, `0` failed; J14C retained its single
+  real move and zero-additional-move replay proof.
+- OCaml build and runtest, engine fixtures, MCP transcripts, JSON/JSONL
+  fixtures, host scripts, demo, runner contract, formatting and toolchain gate
+  passed.
+- `Cargo.lock` remains byte-identical at SHA-256
+  `894F2CE6692837FA4C449C0FC593A37ED5597577EA5B4093DA0912E6EE2B14E3`.
+- Milestone 2 did not begin.
