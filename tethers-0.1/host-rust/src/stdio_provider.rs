@@ -210,7 +210,14 @@ impl ManagedProvider {
 
     /// List tools from the provider.
     pub fn list_tools(&mut self) -> Result<Vec<serde_json::Value>, StdioProviderError> {
-        let result = self.request(TOOLS_LIST_REQUEST_ID, "tools/list", serde_json::json!({}))?;
+        self.list_tools_with_id(TOOLS_LIST_REQUEST_ID)
+    }
+
+    pub(crate) fn list_tools_with_id(
+        &mut self,
+        id: u64,
+    ) -> Result<Vec<serde_json::Value>, StdioProviderError> {
+        let result = self.request(id, "tools/list", serde_json::json!({}))?;
         result
             .get("tools")
             .and_then(serde_json::Value::as_array)
@@ -220,6 +227,10 @@ impl ManagedProvider {
                     "tools/list result must contain a tools array".to_owned(),
                 )
             })
+    }
+
+    pub fn ping(&mut self, id: u64) -> Result<serde_json::Value, StdioProviderError> {
+        self.request(id, "ping", serde_json::json!({}))
     }
 
     /// MCP tools/call invocation for retained-session dispatch.

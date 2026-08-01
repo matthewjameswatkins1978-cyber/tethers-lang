@@ -16,7 +16,8 @@ use crate::outcome::{self, ProductionMonotonicClock};
 use crate::policy::{self, PermissionDecision, ProposedAction};
 use crate::replay_runtime::FileReplayAuthority;
 use crate::resolver::{self, ProviderAvailability, ResolvedCapability};
-use crate::stdio_provider::{ManagedProvider, StdioProviderError};
+use crate::socket::{RetainedProviderSession, Socket, SocketEstablishment};
+use crate::stdio_provider::StdioProviderError;
 use serde_json::Value;
 
 use std::collections::HashMap;
@@ -217,81 +218,6 @@ impl From<EngineError> for ExecutionServiceError {
             EngineError::ValidationFailed { message, .. } => Self::TetherValidation(message),
             other => Self::Engine(other),
         }
-    }
-}
-
-// ===========================================================================
-// Retained provider session
-// ===========================================================================
-
-/// Retained MCP provider session with monotonically increasing request IDs.
-///
-/// Each retained session wraps one live ManagedProvider and supports exact
-/// `tools/call` invocation for dispatch.  JSON-RPC errors are mapped to
-/// typed provider errors.
-pub struct RetainedProviderSession {
-    provider: ManagedProvider,
-    request_ids: RequestIdSequence,
-    identity: String,
-}
-
-#[derive(Debug)]
-struct RequestIdSequence {
-    next: u64,
-}
-
-impl RequestIdSequence {
-    fn after_initialization() -> Self {
-        Self { next: 3 }
-    }
-
-    fn take(&mut self) -> u64 {
-        let current = self.next;
-        self.next += 1;
-        current
-    }
-}
-
-impl RetainedProviderSession {
-    /// Wrap an already-initialized-and-listed `ManagedProvider`.
-    pub fn new(provider: ManagedProvider, identity: String) -> Self {
-        // Request IDs start at 3 after initialize (1) and tools/list (2).
-        Self {
-            provider,
-            request_ids: RequestIdSequence::after_initialization(),
-            identity,
-        }
-    }
-
-    /// The provider identity.
-    pub fn identity(&self) -> &str {
-        &self.identity
-    }
-
-    /// Invoke a `tools/call` with monotonically increasing request ID.
-    ///
-    /// Validates JSON-RPC version, matching response ID, and maps JSON-RPC
-    /// errors to typed errors.  Returns the `result` portion of the
-    /// response.
-    pub fn tools_call(
-        &mut self,
-        tool_name: &str,
-        arguments: &Value,
-        remaining: Duration,
-    ) -> Result<Value, StdioProviderError> {
-        let id = self.request_ids.take();
-        self.provider
-            .tools_call_with_timeout(id, tool_name, arguments, remaining)
-    }
-
-    /// Retained stderr tail from the provider process.
-    pub fn stderr_tail(&self) -> String {
-        self.provider.stderr_tail()
-    }
-
-    /// Graceful close with Drop as emergency fallback.
-    pub fn close(&mut self) {
-        self.provider.close();
     }
 }
 
@@ -512,38 +438,31 @@ impl<'a> HostExecutionService<'a> {
     ) -> Result<Option<RetainedProviderSession>, ExecutionServiceError> {
         let config = &prepared.stdio_config;
 
-        let mut provider = ManagedProvider::launch(
-            &config.command,
-            &config.args,
-            &prepared.working_directory,
-            None,
-            None,
-        )
-        .map_err(|e| provider_service_error("launch", &prepared.identity, e))?;
-
-        // MCP initialize.
         let expected_server_name = prepared
             .capabilities
             .first()
             .map(|c| c.verified_manifest.manifest().binding.server_name.as_str())
             .unwrap_or("");
-        provider
-            .initialize(&config.protocol_version, expected_server_name)
-            .map_err(|e| provider_service_error("initialize", &prepared.identity, e))?;
+        let mut session = RetainedProviderSession::establish(SocketEstablishment {
+            command: &config.command,
+            args: &config.args,
+            working_directory: &prepared.working_directory,
+            protocol_version: &config.protocol_version,
+            server_name: expected_server_name,
+            identity: &prepared.identity,
+        })
+        .map_err(|e| provider_service_error("establish", &prepared.identity, e))?;
 
-        // MCP tools/list.
-        let tools = provider
-            .list_tools()
+        let tools = session
+            .discover()
             .map_err(|e| provider_service_error("tools/list", &prepared.identity, e))?;
         if validate_prepared_discovery(prepared, &tools).is_err() {
-            provider.close();
+            session.invalidate_catalogue();
+            session.close();
             return Ok(None);
         }
 
-        Ok(Some(RetainedProviderSession::new(
-            provider,
-            prepared.identity.clone(),
-        )))
+        Ok(Some(session))
     }
 
     /// Evaluate one prepared input through the engine and dispatch pipeline.
@@ -1151,6 +1070,7 @@ mod tests {
     use crate::policy::{CapabilityRequirement, HostLocalPolicy, ScopeAssessment};
     use crate::replay::LogicalExecutionKey;
     use crate::run_command;
+    use crate::stdio_provider::ManagedProvider;
     use crate::trusted_store::TrustedManifestStore;
     use serde_json::json;
     use tethers_reference_host::cli::OutcomeStatus;
@@ -1751,16 +1671,6 @@ mod tests {
         assert!(matches!(result, ExecutionServiceResult::Unattempted { .. }));
     }
 
-    /// The retained provider continues after initialize/list with strictly
-    /// increasing request IDs across evaluations.
-    #[test]
-    fn j13b_retained_session_monotonic_ids() {
-        let mut ids = RequestIdSequence::after_initialization();
-        assert_eq!(ids.take(), 3);
-        assert_eq!(ids.take(), 4);
-        assert_eq!(ids.take(), 5);
-    }
-
     #[test]
     fn j13b_one_retained_provider_serves_multiple_calls_with_monotonic_ids() {
         let marker = std::env::temp_dir().join(format!(
@@ -1790,7 +1700,7 @@ mod tests {
             .unwrap();
         provider.list_tools().unwrap();
         let mut session =
-            RetainedProviderSession::new(provider, "tethers-stdio-fixture".to_owned());
+            RetainedProviderSession::from_discovered(provider, "tethers-stdio-fixture".to_owned());
         assert!(matches!(
             session
                 .tools_call(
@@ -1811,7 +1721,7 @@ mod tests {
                 .unwrap_err(),
             StdioProviderError::ExplicitProviderError(_)
         ));
-        assert_eq!(session.request_ids.next, 5);
+        assert_eq!(session.next_request_id(), 5);
         session.close();
         let methods = fs::read_to_string(&marker).unwrap();
         assert!(methods.contains("initialize"));
