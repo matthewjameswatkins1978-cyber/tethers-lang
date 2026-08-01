@@ -1,367 +1,733 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J18H - Universal Plug Paper Validation Matrix`
+Task: `J18I - First Plug Kit Implementation Roadmap`
 Owner: `Luna`
 Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `Luna on OpenCode, adversarial architecture validation`
+Route: `Luna on OpenCode, implementation sequencing and repository-fit audit`
 Base branch: `main`
-Base commit: `41235a3093ed73b3d58533bcfad45ef490211560`
-Accepted architecture base: `8f1f2c685fb9f700cf7c1dfe3d877958b8bea6f7`
-Branch: `luna/j18h-paper-validation`
-Worker note: `docs/worker-notes/2026-08-01-j18h-paper-validation.md`
+Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
+Branch: `luna/j18i-first-plug-kit-roadmap`
+Worker note: `docs/worker-notes/2026-08-01-j18i-first-plug-kit-roadmap.md`
 
 ## Control-plane starting rule
 
 Fetch `origin/main`, switch to `main`, and fast-forward to the commit containing
-this J18H control contract. Create `luna/j18h-paper-validation` from that updated
-`main`.
+this J18I control contract. Create `luna/j18i-first-plug-kit-roadmap` from that
+updated `main`.
 
-The accepted architecture being validated remains exactly
-`8f1f2c685fb9f700cf7c1dfe3d877958b8bea6f7`. The control-plane commit changes
-only task authority and is not a new architecture decision. Final J18H changed-
-path verification is measured against the accepted architecture base above.
+On the task branch, add a `Base commit` line containing the exact control-plane
+commit from which the branch was created.
+
+The architecture being roadmapped is frozen exactly at
+`a5fd63593a9d9acd397030ecd2e27b4f318c87fd`. The control-plane commit changes
+only task authority and is not a new architecture decision. Final changed-path
+verification is measured against the frozen architecture base above.
 
 ## Objective
 
-Paper-test the accepted J18 Universal Plug architecture against all sixteen
-representative integrations required by J18B. Determine whether each example is
-honestly supported, deferred, reserved, brokered, gateway-mediated, unsuitable,
-or refused without changing Tether 0.1 semantics or inserting vendor logic into
-Core.
+Produce the executable implementation roadmap for the first Tethers Plug Kit.
 
-This is documentation and paper validation only. Do not implement Plugs,
-providers, schemas, packages, protocols, listeners, credentials, sandboxes,
-storage, Jobs, Streams, Human Tasks, hardware control, or Tether syntax.
+The roadmap must turn the accepted and paper-validated J18B through J18H
+architecture into small, reviewable implementation packets that reuse the proven
+Tethers 0.2 host rather than replacing it.
 
-## Accepted contracts under test
+This task is documentation and sequencing only.
+
+Do not implement code, schemas, packages, providers, signatures, credentials,
+sandboxes, stores, CLI commands, fixtures or tests.
+
+## Accepted and frozen baseline
+
+Released product:
+
+- Tethers 0.2.0.
+- `v0.2.0^{}` -> `b5546411661dcbcb53e1cf2538eaec594c6f76f2`.
+- Language syntax and semantics remain `0.1`.
+
+Accepted J18 contracts:
 
 - J18B Universal Plug Architecture.
-- J18C Socket v1 and MCP stdio binding.
+- J18C Socket v1 and MCP 2025-11-25 stdio binding.
 - J18D `.tetherplug` package v1.
 - J18E capability classes, effects and scopes.
 - J18F lifecycle, outcomes, events and conformance.
 - J18G security, trust, credentials and sandbox.
+- J18H paper validation, verdict `VALIDATED`.
 
-J18B through J18G are accepted. Plug implementation remains unauthorised.
-Language semantics remain `0.1`.
+J18B through J18H are accepted. The Universal Plug architecture is finally
+frozen at `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`.
 
-## Frozen laws
+Implementation remains unauthorised until Lucy accepts J18I and issues the first
+bounded implementation packet.
 
-- Tethers coordinates; the host owns trust, policy, credentials, dispatch,
-  replay, event admission and canonical outcomes.
-- Providers own vendor-specific translation.
-- Core remains application-agnostic.
-- Class, effects, scope, policy and outcome remain distinct.
-- Action, Query and Anchor are the first-programme classes.
-- Job, Stream and Human Task remain reserved.
-- Attempted outcomes remain exactly `succeeded`, `failed`, and `uncertain`.
-- Unattempted is not an execution outcome.
-- No automatic retry exists.
-- Replay authority remains separate from Trail.
-- External Anchors require stable identity and durable duplicate admission.
-- Signing, conformance and installation do not grant operational permission.
-- Supervised execution is not hostile-code isolation.
-- Credential-bearing production providers require proven isolation or a reviewed
-  host broker.
-- Unsupported or unsafe systems are refused honestly.
+## Frozen laws the roadmap must preserve
 
-## Required integrations
-
-Validate all sixteen without removing, merging or renaming them:
-
-1. local file tool;
-2. PDF processor;
-3. GitHub service;
-4. email service;
-5. SQL database;
-6. cloud drive;
-7. remote AI model;
-8. local AI model;
-9. webhook source;
-10. long-running video renderer;
-11. live sensor stream;
-12. printer;
-13. MIDI instrument;
-14. smart lock;
-15. industrial machine;
-16. human approval queue.
-
-## Required analysis for every integration
-
-For every example record:
-
-- technical possibility and architectural fit;
-- provider, package and capability identities;
-- exact class or reserved class and why;
-- effects, structured scopes, policy and approval;
-- Socket operation, protocol binding, transport and translation owner;
-- discovery, drift, authentication, credential and isolation boundary;
-- filesystem, network, resource, privacy and cost boundaries;
-- attempt boundary and exact meanings of success, failure and uncertainty;
-- unattempted cases, partial completion, cancellation and restart behaviour;
-- replay, stable event/job identity, ordering, cursor and acknowledgement where
-  relevant;
-- Trail evidence, conformance, invalidation, install/removal consequences;
-- first implementation status and exact refusal boundary;
-- whether accepted architecture requires revision;
-- evidence basis: accepted Tethers contract, primary source, inference, or
-  unresolved fact.
-
-No required field may be silently omitted. A compact structured template may be
-used, but it must preserve every required question.
-
-## Required pressure boundaries
-
-- File Tools and PDF Tools remain the first-slice references.
-- PDF input is hostile parser input.
-- GitHub, email, SQL and cloud drive separate Query, Action and Anchor shapes.
-- SMTP acceptance is not proof of recipient delivery or reading.
-- SQL connection loss around commit may be uncertain.
-- Cloud-drive notification is a change hint, not automatically the change data.
-- Remote/local AI streaming is Stream-shaped; background inference is Job-shaped.
-- Webhook admission requires authentication, stable identity and durable dedup.
-- Long renders are Job-shaped; progress is not automatically a Stream.
-- Continuous sensors and MIDI input are Stream-shaped.
-- A spooler job ID does not prove paper emerged correctly.
-- Smart-lock and industrial effects require physical/security refusal boundaries.
-- Tethers is not a safety PLC, certified controller or hard-real-time loop.
-- Immediate host `Ask` is not a general Human Task implementation.
-
-## Relevant background and existing behaviour
-
-J18B through J18G are accepted architecture contracts. Tethers 0.2.0 is the
-published baseline. Action, Query and Anchor are first-programme candidates;
-Job, Stream and Human Task remain reserved. The accepted architecture is
-validated against representative integrations without implementation.
-
-## Required behaviour
-
-1. Validate all sixteen representative integrations without changing frozen
-   semantics.
-2. Record class, effects, scopes, policy, Socket/binding/transport, security,
-   lifecycle, outcomes, events, Trail, conformance and refusal for each.
-3. Test cross-example contradictions and produce one final verdict.
-4. Update only the eight authorised Markdown paths and preserve implementation
-   unauthorised.
-
-## Relevant components
-
-- `docs/architecture/TETHERS_J18_PAPER_VALIDATION.md`
-- Accepted J18B through J18G architecture documents.
-- `docs/DECISIONS.md`, current-state documents and J18H worker note.
-
-## Frozen decisions and invariants
-
-- Tethers coordinates; the host owns trust, policy, credentials, dispatch and
-  outcomes; providers own vendor translation.
-- Core remains application-agnostic and Tether 0.1 semantics remain unchanged.
-- Job, Stream and Human Task remain reserved and unsupported.
-- Unknown effects/scopes fail closed; no automatic retry exists.
-- Stable event identity, durable admission, truthful outcomes and physical safety
-  boundaries remain mandatory.
-
-## Acceptance criteria
-
-1. Exactly eight authorised Markdown paths differ from accepted architecture base.
-2. All sixteen integrations are present and fully analysed.
-3. Every integration has an honest class, security mode, lifecycle and refusal.
-4. Summary tables, contradiction tests and revision register are complete.
-5. Exactly one final verdict is present and consistent with the register.
-6. J18G is marked accepted; J18H remains pending Lucy review; J18I remains
-   blocked; implementation remains unauthorised.
-7. No implementation, schema, provider, credential, sandbox or Tether change.
-
-## Required verification
-
-- Run whitespace, exact changed-path, staged-diff and task-packet checks.
-- Run integration presence, class/disposition, truth-boundary, security and
-  forbidden-conflation searches.
-- Verify exactly one verdict, refs, clean topology and no implementation artifact.
-
-## Forbidden changes
-
-Do not modify Rust, OCaml, build files, scripts, tests, fixtures, manifests,
-runtime configuration, schemas, packages, providers, credentials, trust stores,
-keys, signatures, sandboxes, event/replay storage, Tether specification,
-Constitution, release material, or begin J18I. Do not modify J18B through J18F.
-
-## Stop conditions
-
-Stop on branch, base, ownership, authorised-path or boundary mismatch; an
-unresolved semantic contradiction; failed required checks; or a source claim
-that cannot be supported. After two materially similar failed attempts, stop
-with exact evidence and one smallest unresolved question.
-
-## Expected pre-existing changes
-
-The control-only J18H packet commit is expected on `main`; no working-tree
-changes are expected before this task.
+1. Tethers Core remains deterministic and application-agnostic.
+2. Tethers coordinates; the host owns trust, policy, credentials, dispatch,
+   canonical outcomes, replay, event admission, conformance and Trail.
+3. Providers own vendor-specific translation.
+4. Socket semantics, protocol binding and byte transport remain distinct.
+5. Capability class, effects, scope, policy and outcome remain distinct.
+6. Action, Query and Anchor are first-programme classes.
+7. Job, Stream and Human Task remain reserved and unimplemented.
+8. Attempted operation outcomes remain exactly `succeeded`, `failed`, and
+   `uncertain`.
+9. Unattempted is not an execution outcome.
+10. No automatic retry or restart retry exists.
+11. Replay authority remains separate from Trail.
+12. Inbound event admission remains separate from operation outcomes.
+13. Packages, signatures, conformance and installation grant no operational
+    permission.
+14. Supervised execution is not hostile-code isolation.
+15. Credential-bearing production providers require proven isolation or a
+    reviewed host-owned broker.
+16. File Tools and bounded PDF Tools are the first reference Plugs.
+17. First reference providers are credential-free and have no network access.
+18. Arbitrary third-party Plug enablement remains unavailable without proven
+    isolated execution.
+19. Tether `0.1` syntax does not change.
+20. Existing released `0.2.0` behaviour and refs remain intact.
 
 ## Canonical output
 
 Create:
 
+`docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`
+
+Begin exactly:
+
+Status: J18I candidate, pending Lucy roadmap review
+Architecture freeze: a5fd63593a9d9acd397030ecd2e27b4f318c87fd
+Implementation: Not authorised
+
+## Roadmap philosophy
+
+The roadmap must be vertical, not a collection of horizontal rewrites.
+
+Every implementation milestone must:
+
+- deliver one testable end-to-end capability or host boundary;
+- reuse proven 0.2 machinery where it is sound;
+- leave `main` releasable and old 0.2 behaviour working;
+- define exact entry and exit evidence;
+- identify one rollback boundary;
+- stop when frozen architecture would need revision;
+- avoid speculative framework work.
+
+No big-bang host rewrite is permitted.
+
+No milestone may require all future security, marketplace, remote-provider or
+reserved-class work before the first useful Plug runs.
+
+## Required current-code inventory
+
+Inspect and record the exact current role, reuse decision and known gap for at
+least:
+
+- `tethers-0.1/host-rust/src/main.rs`;
+- `tethers-0.1/host-rust/src/lib.rs`;
+- `runtime_config.rs`;
+- `configured_runtime.rs`;
+- `manifest.rs`;
+- `trusted_store.rs`;
+- `provider.rs`;
+- `resolver.rs`;
+- `policy.rs`;
+- `approval.rs`;
+- `dispatch.rs`;
+- `stdio_provider.rs`;
+- `host_execution.rs`;
+- `outcome.rs`;
+- `replay_runtime.rs` and `replay_windows.rs`;
+- `result_anchor.rs`;
+- `event_admission.rs` and `event_queue.rs`;
+- `child_process.rs`;
+- `engine_stdio.rs`;
+- current CLI and check/run commands;
+- current capability manifests, runtime configurations and MCP fixture provider;
+- current Rust, OCaml and integration test surfaces.
+
+For every component classify:
+
+- reuse unchanged;
+- extract behind a stable seam;
+- extend under frozen semantics;
+- supersede only for the new Plug path;
+- defer.
+
+Do not merely list files.
+
+## Known implementation gaps to test
+
+The roadmap must verify and place, not silently assume, at least these gaps:
+
+- no explicit Tethers Socket application seam yet;
+- host modules are still largely binary-owned while `lib.rs` exposes only a
+  small foundation;
+- current runtime configuration directly carries command/args and reviewed
+  manifests rather than installed Plug identities;
+- current manifest format is not the J18D package and J18E contract;
+- current MCP discovery does not yet prove the full J18C pagination and catalogue
+  lifecycle contract;
+- no `.tetherplug` archive inspector or quarantine installer;
+- no semantic package digest/signature/trust-store implementation;
+- no immutable installed-Plug registry;
+- no sanitized provider environment;
+- no conformance evidence store and invalidation engine;
+- no explicit supervised-versus-isolated launch profile implementation;
+- no Windows Credential Manager profile store;
+- no credential delivery or broker, which remains outside the first
+  credential-free reference slice;
+- no durable external-event admission authority across process restarts;
+- no first-class Action/Query/Anchor machine contract for installed Plugs;
+- no File Tools or PDF Tools packaged reference provider;
+- no Plug inspection, install, enable, disable, conformance and removal user
+  workflow;
+- no arbitrary third-party hostile-code containment.
+
+If repository inspection disproves or refines a gap, record the evidence.
+
+## Compatibility and migration rule
+
+Freeze this roadmap rule:
+
+- the released 0.2 runtime path remains working;
+- Plug Kit implementation is introduced through a new host-owned path and stable
+  seam;
+- existing runtime configuration, manifests and fixtures are reused as evidence
+  and adapters where sound, not silently reinterpreted as `.tetherplug` v1;
+- no in-place mutation of user 0.2 configuration is required;
+- no legacy path is removed during the first Plug Kit;
+- any migration or dual-read format requires a separately reviewed packet;
+- the v0.2.0 tag never moves.
+
+## Required six vertical milestones
+
+Define exactly six implementation milestones. Each milestone must include:
+
+- user-visible or machine-visible result;
+- exact architectural contracts exercised;
+- existing modules reused;
+- new modules or stores anticipated, without freezing filenames unnecessarily;
+- packet breakdown;
+- owner and task colour recommendation;
+- dependencies;
+- tests and evidence;
+- stop conditions;
+- rollback boundary;
+- explicit exclusions.
+
+### Milestone 1: Socket seam and 0.2 parity
+
+Required outcome:
+
+- expose the existing host execution path behind a reusable application/library
+  seam without changing released behaviour;
+- introduce the semantic Socket boundary around retained MCP stdio sessions;
+- preserve exact lifecycle, request identity, no-batch and no-retry rules;
+- implement full J18C discovery pagination, duplicate detection, schema drift and
+  catalogue-change invalidation;
+- keep current engine, policy, outcome, replay, Result Anchor and Trail behaviour
+  passing;
+- no package installation yet.
+
+The roadmap must identify the smallest extraction from binary-owned modules and
+must forbid a broad `main.rs` rewrite.
+
+### Milestone 2: Package inspection, quarantine and installed identity
+
+Required outcome:
+
+- inspect `.tetherplug` without execution;
+- validate strict archive paths, `plug.json`, payload index and semantic digest;
+- select the exact Windows x86_64 payload;
+- extract only into quarantine;
+- create immutable host-owned installed material in a disabled state;
+- keep package identity, installed identity, provider identity and capability
+  identity distinct;
+- support explicit unsigned developer mode only;
+- no provider invocation from Downloads, source ZIP or quarantine.
+
+The roadmap must place archive-bomb, traversal, symlink/junction/reparse,
+case-collision, duplicate-entry and TOCTOU tests.
+
+### Milestone 3: Trust, launch and conformance gate
+
+Required outcome:
+
+- Ed25519 package verification and host-owned publisher trust;
+- explicit trust, developer-mode and revocation state;
+- pre-launch payload digest revalidation;
+- exact executable and argument launch with no shell or PATH lookup;
+- environment constructed from scratch;
+- retained Job Object supervision and bounded resources;
+- visible supervised-profile labelling;
+- conformance run from quarantine or installed disabled state;
+- conformance evidence pinned to package, payload, manifest, provider, Socket,
+  protocol, host, platform and suite versions;
+- passing conformance does not enable a Plug;
+- Windows Credential Manager profile storage may be implemented, but operational
+  secret delivery remains unused by credential-free File/PDF references.
+
+Do not claim AppContainer or hostile-code isolation in this milestone.
+
+### Milestone 4: File Tools Action/Query vertical slice
+
+Required outcome:
+
+- one self-contained Windows reference provider packaged as `.tetherplug`;
+- no credentials and no network;
+- bounded file read and metadata Query operations;
+- bounded file move Action with exact source/destination, overwrite refusal and
+  path-scope enforcement;
+- complete path from package inspection through trust/developer approval,
+  install, discovery, binding, policy, durable intent, one invocation, canonical
+  outcome, replay terminal, Result Anchor and Trail;
+- clear unattempted, failed and uncertain demonstrations;
+- deterministic disposable filesystem conformance fixtures;
+- first runnable Plug Kit demonstration.
+
+Capability names and machine schemas must be frozen only in dedicated
+implementation packets, not invented by J18I prose.
+
+### Milestone 5: Durable local Anchor and lifecycle completion
+
+Required outcome:
+
+- host-owned durable external-event admission authority separate from operation
+  replay, Trail and the existing per-invocation J11 gate;
+- one bounded local reference source with provider-persisted stable event identity;
+- admitted, duplicate, identity-conflict, rejected and admission-uncertain paths;
+- acknowledgement only after durable admission;
+- root Anchor generation 0 and existing generation 0 through 8 causal limits;
+- install, enable, disable, restart and removal behaviour for the source;
+- no network listener;
+- no raw unbounded stream;
+- no operation outcome created merely by event admission.
+
+The roadmap must require a separate design packet for the exact durable store and
+reference-source event identity before code.
+
+### Milestone 6: PDF Tools and first Plug Kit release gate
+
+Required outcome:
+
+- bounded PDF extraction Query provider packaged as `.tetherplug`;
+- PDF treated as hostile parser input;
+- exact input materialization, page/byte/time/memory/output limits and disposable
+  scratch;
+- no network and no credentials;
+- supervised mode labelled for bounded reference/competition use only;
+- production use refused without proven isolation;
+- user workflow for inspect, install, conformance, approve, enable, list, disable
+  and remove;
+- retained 0.2 path regression coverage;
+- complete release evidence for the first Plug Kit slice;
+- no claim of arbitrary third-party safety.
+
+The roadmap must identify the final Red review and Git publication gate but must
+not create a release or version number.
+
+## Packet map
+
+Within the six milestones, define a sequence of bounded future work packets.
+
+Every packet must record:
+
+- stable packet ID;
+- objective;
+- dependencies;
+- proposed owner;
+- Green, Amber or Red classification;
+- expected code/document/test areas;
+- exact acceptance evidence;
+- stop conditions;
+- whether it may modify schemas;
+- whether it may change public CLI;
+- rollback or revert boundary.
+
+Prefer packets that fit one focused agent run and one review.
+
+Do not authorize any packet merely by listing it.
+
+The first implementation packet after J18I acceptance must be the smallest
+Milestone 1 extraction/parity task. It must not begin package parsing, File Tools
+or security work at the same time.
+
+## Worker routing
+
+Use this default routing unless inspection gives a stronger reason:
+
+- Luna on OpenCode: bounded Green implementation, fixtures, documentation and
+  ordinary Amber work under frozen interfaces;
+- DeepSeek Pro V4: thicker middle implementation and cross-module integration
+  requiring Lucy review;
+- Codex Terra High: Red gates, Windows security/process boundaries, archive and
+  path attacks, cryptography/trust, durable storage migrations, Git surgery and
+  final release verification;
+- Lucy: architecture guard, packet design, review and final verdict;
+- Matthew: final product authority.
+
+Do not route every task to the strongest worker.
+
+## Test and evidence strategy
+
+Define the required evidence layers:
+
+1. pure unit tests;
+2. parser and duplicate-key tests;
+3. archive/path adversarial tests;
+4. real Windows child-process and Job Object tests;
+5. MCP transcript and pagination tests;
+6. package/install/trust lifecycle tests;
+7. policy/scope/approval tests;
+8. durable replay and event-admission restart tests;
+9. Result Anchor and Trail ordering tests;
+10. reference-provider conformance tests;
+11. full Rust and OCaml regression suites;
+12. end-to-end File Tools and PDF Tools demonstrations;
+13. clean-machine or isolated test-host evidence before release.
+
+For each milestone state which layers are mandatory.
+
+Do not freeze performance numbers without a measurement packet. Use bounded
+host-owned limits and require measurement before choosing final defaults.
+
+## Storage and schema sequencing
+
+Identify separate implementation authorities for:
+
+- installed Plug registry;
+- publisher trust store;
+- conformance evidence;
+- credential profile metadata;
+- operation replay;
+- external-event admission;
+- Trail.
+
+Do not merge these because they are all durable.
+
+For every new durable store require:
+
+- schema/version design packet;
+- atomicity and crash-recovery model;
+- permissions and confidentiality review;
+- migration/rollback plan;
+- corruption behaviour;
+- tests proving no automatic retry or false admission.
+
+## First-slice exclusions
+
+Keep outside the first Plug Kit implementation:
+
+- public registry or marketplace;
+- automatic download or update;
+- remote HTTP providers;
+- OAuth implementation;
+- general network egress;
+- network listeners;
+- general credential-bearing production integrations;
+- arbitrary third-party enablement;
+- AppContainer completion unless separately authorised as a security track;
+- Jobs;
+- Streams;
+- Human Tasks;
+- long-running renderers;
+- live sensors;
+- printers and MIDI;
+- smart locks;
+- industrial actuation;
+- unrestricted shell;
+- interpreter-backed production providers;
+- dependency installation;
+- plug-to-plug communication;
+- Tether language changes.
+
+## Risk register
+
+Include at least:
+
+- accidental 0.2 regression during module extraction;
+- package parser and archive extraction attack surface;
+- identity/digest conflation;
+- false trust from signing or conformance;
+- supervised mode being mistaken for isolation;
+- Windows path and reparse escape;
+- environment or credential leakage;
+- stale live discovery;
+- provider process survival;
+- outcome misclassification after invocation;
+- replay-terminal or Result Anchor publication failure;
+- external-event identity conflict;
+- durable-store corruption;
+- first-slice scope growth;
+- competition deadline pressure causing security shortcuts.
+
+For each risk give prevention, detection, containment and owner.
+
+## Architecture and status alignment
+
+Update:
+
 `docs/architecture/TETHERS_J18_PAPER_VALIDATION.md`
 
-Begin:
+Change only its status preamble and final-freeze wording so that it records:
 
-Status: J18H candidate, pending Lucy paper-validation review
-Validation generation: 1
-Implementation: Not authorised
-
-End with exactly one verdict:
-
-`VALIDATED`
-
-or:
-
-`REVISION_REQUIRED`
-
-`VALIDATED` means all examples fit honestly through support, reservation,
-deferral, brokering, gateway mediation or refusal without changing frozen
-semantics.
-
-`REVISION_REQUIRED` means at least one example exposes a genuine contradiction
-or missing authority boundary. Record the affected document and section, the
-smallest correction, affected examples and whether J18I remains blocked.
-
-Do not silently edit accepted J18B through J18F contracts in this task.
-
-## Required summary material
-
-Include:
-
-- integration disposition table;
-- class pressure table;
-- security pressure table;
-- outcome pressure table;
-- cross-example contradiction results;
-- revision register;
-- final-freeze recommendation.
-
-The cross-example review must explicitly test vendor leakage into Core/host
-policy, concealed mutation, false Action/Query use, unstable event identity,
-excess success claims, timeout-to-failure conversion, retry after restart,
-permission from signatures/conformance, false supervised isolation, unsafe
-credential delivery, physical safety claims and first-slice size.
-
-## Source discipline
-
-Use accepted repository documents for Tethers facts and official primary sources
-for external integration facts. Distinguish source fact, accepted Tethers rule,
-architectural inference and unresolved fact. Record exact source title, final URL
-and access date in the worker note. Do not invent delivery guarantees,
-identifiers, cancellation, transaction, ordering or safety behaviour.
-
-## J18G acceptance alignment
-
-Update the J18G status block only to:
-
-Status: Accepted J18G security contract
+Status: Accepted J18H paper validation
 Accepted by Lucy: 2026-08-01
-Final architecture freeze: Requires J18H paper validation
+Verdict: VALIDATED
+Architecture freeze: Final
 Implementation: Not authorised
 
-Do not otherwise redesign J18G.
+Do not alter the validated integration analysis.
 
-## Current-state and decision updates
+## Decision log
 
-Update the decision log and current-state documents to record:
+Prepend to `docs/DECISIONS.md`:
 
-- J18B through J18G accepted;
-- J18H active and pending Lucy review;
-- actual J18H verdict;
-- architecture not finally frozen until Lucy accepts J18H;
-- J18I blocked until J18H acceptance;
+`## 2026-08-01: J18 architecture frozen and implementation roadmap opened`
+
+Record concisely:
+
+1. J18H is accepted with verdict `VALIDATED`.
+2. J18B through J18H form the frozen Universal Plug architecture.
+3. Tether `0.1` semantics remain unchanged.
+4. J18I is roadmap-only and authorises no implementation.
+5. The first Plug Kit remains credential-free File Tools and bounded PDF Tools.
+6. Action, Query and Anchor are first-programme classes.
+7. Job, Stream and Human Task remain reserved.
+8. The six-milestone vertical implementation route is being planned.
+9. Existing 0.2 behaviour remains supported.
+10. Only a later explicit packet may start implementation.
+
+## Current-state updates
+
+Update:
+
+- `docs/CURRENT_GOAL.md`;
+- `docs/PROJECT_DASHBOARD.md`;
+- `docs/TASK_QUEUE.md`;
+- `docs/CURRENT_CLINE_TASK.md`.
+
+Required state:
+
+- J18B through J18H accepted;
+- architecture frozen at `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`;
+- J18I active and pending Lucy roadmap review;
+- roadmap candidate status recorded;
 - implementation remains unauthorised;
-- refusal and deferral count as valid validation results;
-- no implementation or Tether semantic change.
-
-Do not claim Lucy accepted J18H.
-
-## Authorised changed paths
-
-Exactly eight paths relative to accepted architecture base
-`8f1f2c685fb9f700cf7c1dfe3d877958b8bea6f7`:
-
-1. `docs/architecture/TETHERS_J18_PAPER_VALIDATION.md`
-2. `docs/architecture/TETHERS_SECURITY_TRUST_CREDENTIALS_SANDBOX_V1.md`
-3. `docs/DECISIONS.md`
-4. `docs/CURRENT_GOAL.md`
-5. `docs/PROJECT_DASHBOARD.md`
-6. `docs/TASK_QUEUE.md`
-7. `docs/CURRENT_CLINE_TASK.md`
-8. `docs/worker-notes/2026-08-01-j18h-paper-validation.md`
-
-No other path may change.
+- the first implementation packet follows only after J18I acceptance;
+- v0.2.0 refs remain unchanged.
 
 ## Worker note
 
 Create:
 
-`docs/worker-notes/2026-08-01-j18h-paper-validation.md`
+`docs/worker-notes/2026-08-01-j18i-first-plug-kit-roadmap.md`
 
 Use headings:
 
 - Task
 - Changes
-- Validation method
-- Repository contracts inspected
-- External primary sources inspected
-- Integration findings
-- Cross-example findings
-- Revision candidates
+- Frozen architecture inspected
+- Current implementation inventory
+- Reuse and extraction findings
+- Compatibility strategy
+- Six milestones
+- Packet map
+- Worker routing
+- Test and evidence plan
+- Durable stores and schemas
+- Risks
 - Tool bootstrap
 - Evidence
 - Discoveries
-- Remaining risks
-- Final verdict
+- Remaining questions
 - Next action
 - References
 
-Record resolved tool paths and versions, every source and redirect/failure, the
-exact verdict, and confirmation that no implementation or schema changed.
+Record resolved tool paths and versions, exact repository files inspected,
+current implementation gaps, milestone/packet counts, and confirmation that no
+implementation or schema changed.
 
-## Acceptance criteria
+## Authorised changed paths
 
-1. Exactly eight authorised Markdown paths differ from accepted architecture
-   base `8f1f2c685fb9f700cf7c1dfe3d877958b8bea6f7`.
-2. All sixteen integrations are present and fully analysed.
-3. Every example has an honest class, reserved class, mediation or refusal.
-4. No example changes Tether syntax or introduces vendor logic into Core.
-5. Canonical outcome, uncertainty, replay and no-retry laws remain intact.
-6. Event identities, cursors and acknowledgements are not conflated.
-7. Credential and isolation claims match accepted J18G.
-8. Physical and industrial integrations do not imply safety certification.
-9. Summary tables, contradiction tests and revision register are complete.
-10. Exactly one final verdict is present and consistent with the register.
-11. J18G is marked accepted; J18H is not falsely marked accepted.
-12. J18I remains blocked until Lucy accepts J18H.
-13. No implementation, schema, package, provider, credential or Tether change.
-14. Diff, staged-diff, task-packet and content checks pass.
-15. Worktree is clean and branch is pushed normally.
+Exactly eight paths relative to frozen architecture base
+`a5fd63593a9d9acd397030ecd2e27b4f318c87fd`:
+
+1. `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`
+2. `docs/architecture/TETHERS_J18_PAPER_VALIDATION.md`
+3. `docs/DECISIONS.md`
+4. `docs/CURRENT_GOAL.md`
+5. `docs/PROJECT_DASHBOARD.md`
+6. `docs/TASK_QUEUE.md`
+7. `docs/CURRENT_CLINE_TASK.md`
+8. `docs/worker-notes/2026-08-01-j18i-first-plug-kit-roadmap.md`
+
+No other path may change.
 
 ## Forbidden changes
 
-Do not modify Rust, OCaml, Cargo, Dune, opam, scripts, tests, fixtures,
-manifests, runtime configuration, JSON Schema, packages, ZIPs, providers,
-protocol transcripts, credentials, trust stores, keys, signatures, AppContainer
-profiles, event/replay storage, Tether specification, Constitution, release
-notes, tags, GitHub Releases, or an implementation roadmap.
+Do not modify or create:
 
-Do not begin J18I.
+- Rust;
+- OCaml;
+- Cargo;
+- Dune;
+- opam;
+- scripts;
+- tests;
+- fixtures;
+- manifests;
+- runtime configuration;
+- JSON Schema;
+- `.tetherplug` or ZIP files;
+- providers;
+- MCP transcripts;
+- credentials;
+- trust stores;
+- keys or signatures;
+- AppContainer profiles;
+- durable store files;
+- Tether specification;
+- Constitution;
+- release notes;
+- tags;
+- GitHub Releases.
+
+Do not begin implementation.
+
+## Preflight
+
+Run:
+
+```text
+git fetch origin --prune --tags
+git switch main
+git pull --ff-only origin main
+git rev-parse HEAD
+git rev-parse v0.2.0^{}
+git status --short
+```
+
+Require the worktree to be clean and the peeled release tag to remain:
+
+`b5546411661dcbcb53e1cf2538eaec594c6f76f2`
+
+Confirm the fetched `docs/CURRENT_CLINE_TASK.md` contains this J18I contract and
+the frozen architecture base.
+
+Create:
+
+```text
+git switch -c luna/j18i-first-plug-kit-roadmap
+```
+
+## Required verification
+
+Before staging:
+
+```text
+git diff --check
+git diff --name-only
+git status --short
+```
+
+Require exactly the eight authorised paths relative to the frozen architecture
+base.
+
+Stage all intended files, then run:
+
+```text
+git diff --cached --check
+git diff --cached --name-only
+```
+
+Require no whitespace errors and exactly eight staged paths.
+
+Run the task-packet checker.
+
+Required milestone search:
+
+```text
+rg -n "^## Milestone [1-6]|Socket seam|Package inspection|Trust.*conformance|File Tools|Durable.*Anchor|PDF Tools" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md
+```
+
+Require exactly six milestone headings and all six required subjects.
+
+Required reuse search:
+
+```text
+rg -n "reuse unchanged|extract behind|extend under|supersede|defer|main.rs|runtime_config|configured_runtime|stdio_provider|host_execution|replay|result_anchor|event_admission|child_process" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md
+```
+
+Required boundary search:
+
+```text
+rg -n "no automatic retry|operation outcomes|event admission|supervised.*not.*isolation|credential-free|third-party|Job|Stream|Human Task|0.1" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md
+```
+
+Required packet search:
+
+```text
+rg -n "packet ID|dependencies|owner|Green|Amber|Red|acceptance evidence|stop conditions|rollback|schema|public CLI" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md
+```
+
+Forbidden implementation claim search:
+
+```text
+rg -n "implemented in J18I|J18I adds code|Plug Kit is now implemented|third-party packages are supported|AppContainer is implemented|credentials are securely delivered|automatic retry" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md docs/CURRENT_GOAL.md docs/PROJECT_DASHBOARD.md
+```
+
+Any positive implementation claim fails. Explicit negations are permitted.
+
+Confirm no implementation artifact changed:
+
+```text
+git diff --name-only a5fd63593a9d9acd397030ecd2e27b4f318c87fd...HEAD | rg "\.(rs|ml|mli|toml|opam|json|ps1|sh|key|pem|pfx|p12|sig|tetherplug|zip)$"
+```
+
+Require no result.
+
+Verify refs:
+
+```text
+git ls-remote origin refs/heads/main refs/tags/v0.2.0 refs/tags/v0.2.0^{}
+```
+
+## Acceptance criteria
+
+1. Exactly eight authorised Markdown paths change relative to the frozen base.
+2. J18H is marked accepted without altering its validation analysis.
+3. The architecture freeze is recorded as final.
+4. Current implementation is inventoried with evidence, not assumptions.
+5. Reuse, extraction, extension, supersession and deferral decisions are clear.
+6. Exactly six vertical milestones are defined.
+7. Every milestone has outcome, dependencies, evidence, stop and rollback gates.
+8. The packet map is bounded and worker-routed.
+9. The first implementation packet is a Milestone 1 extraction/parity task only.
+10. Existing 0.2 compatibility and tag immutability are preserved.
+11. File Tools is the first runnable reference Plug.
+12. PDF Tools remains bounded reference/competition work.
+13. Durable Anchor admission is separately sequenced.
+14. Trust, signing, conformance and supervised-mode honesty are sequenced.
+15. Credential delivery and arbitrary third-party support remain outside the
+    first credential-free slice.
+16. Jobs, Streams and Human Tasks remain reserved.
+17. No schema, CLI, code, fixture, package or provider is implemented.
+18. All checks pass, worktree is clean and branch is pushed normally.
 
 ## Commit and publication boundary
 
-Create one J18H work commit:
+Create one commit:
 
-`docs: paper-validate universal plug architecture`
+`docs: define first plug kit implementation roadmap`
 
 Push only:
 
-`luna/j18h-paper-validation`
+`luna/j18i-first-plug-kit-roadmap`
 
 Do not push `main`, tags or releases.
 
@@ -369,14 +735,35 @@ Do not push `main`, tags or releases.
 
 Begin exactly:
 
-`COMPLETE - READY_FOR_LUCY_PAPER_VALIDATION_REVIEW`
+`COMPLETE - READY_FOR_LUCY_ROADMAP_REVIEW`
 
-Report branch/commit, tools, exact paths, final verdict, disposition and class
-coverage, first-slice/deferred/refused conclusions, outcome/event/security/safety
-findings, revision register, freeze recommendation, J18G status update, sources,
-checks, refs, clean topology, confirmation of no implementation change, and the
-smallest next action.
+Report:
+
+1. branch and commit SHA;
+2. exact control-plane base commit;
+3. tools and versions;
+4. exact eight changed paths;
+5. final architecture-freeze status;
+6. current implementation inventory and key reuse decisions;
+7. six milestones;
+8. packet count and routing distribution;
+9. first implementation packet recommendation;
+10. compatibility strategy;
+11. test/evidence strategy;
+12. durable-store/schema sequencing;
+13. first-slice exclusions;
+14. risk register highlights;
+15. unresolved questions;
+16. J18H status and decision-log updates;
+17. required and forbidden search results;
+18. diff, staged-diff and packet checks;
+19. published main and tag verification;
+20. clean worktree and ahead/behind;
+21. confirmation no implementation or schema changed;
+22. smallest next action.
 
 On failure begin exactly:
 
 `BLOCKED`
+
+Stop after the report.
