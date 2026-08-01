@@ -346,7 +346,8 @@ mod tests {
     #[test]
     fn torn_temporary_record_fails_closed() {
         let root = std::env::temp_dir().join(format!("tethers-registry-{}", Uuid::new_v4()));
-        let quarantine = std::env::temp_dir().join(format!("tethers-quarantine-{}", Uuid::new_v4()));
+        let quarantine =
+            std::env::temp_dir().join(format!("tethers-quarantine-{}", Uuid::new_v4()));
         let registry = CandidateRegistry::open(&root, &quarantine).unwrap();
         fs::write(root.join(".candidate.tmp"), b"partial").unwrap();
         assert_eq!(registry.load_all().unwrap_err().code, "record_invalid");
