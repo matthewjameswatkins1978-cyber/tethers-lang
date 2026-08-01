@@ -49,14 +49,20 @@ claims of a completed sandbox.
 Accessed 2026-08-01 from official sources:
 
 - Microsoft Learn, “Job Objects - Win32 apps”.
-- Microsoft Learn, “AppContainer for legacy apps - Win32 apps”.
+- Microsoft Learn, “AppContainer isolation - Win32 apps”.
+- Microsoft Learn, “Launch an AppContainer - Win32 apps”.
 - Microsoft Learn, “Restricted Tokens - Win32 apps”.
+- Microsoft Learn, “Credentials Management - Win32 apps”.
+- Microsoft Learn, “Kinds of Credentials - Win32 apps”.
+- Microsoft Learn, “CredWriteW function (wincred.h) - Win32 apps”.
+- Microsoft Learn, “CryptProtectData function (dpapi.h) - Win32 apps”.
 - RFC Editor, “RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)”.
 - RFC Editor, “RFC 8410: Algorithm Identifiers for Ed25519, Ed448, X25519, and
   X448 for Use in the Internet X.509 Public Key Infrastructure”.
 
 The initially guessed Microsoft Credential Manager and DPAPI URLs returned 404;
-no unsupported normative claim is based on those pages.
+no evidence was fabricated from them. Lucy subsequently supplied the verified
+replacement links above, and Luna inspected them before this correction.
 
 ## Tool bootstrap
 
@@ -81,6 +87,13 @@ The existing host has strong lifecycle supervision and manifest integrity but no
 proof of malicious-provider containment, package signatures, publisher trust, or
 credential vault delivery. J18G therefore keeps those protections explicitly
 future architecture rather than overstating the current 0.2 implementation.
+
+Lucy’s security review accepted the ten-path shape and broader architecture but
+found a contradiction between supervised-mode limits and the credential-delivery
+wording, plus incomplete Credential Manager/DPAPI source inspection. The
+correction distinguishes credential storage, deliberate secret delivery and
+OS-enforced isolation. It adds exact 64-octet Ed25519 signature decoding. No
+implementation, schema, key, signature, credential or sandbox artifact changed.
 
 ## Remaining risks
 

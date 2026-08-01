@@ -60,7 +60,9 @@ The final newline is mandatory and the digest is the exact J18D lowercase
 envelope contains only `signature_format_version` (`"1"`), `algorithm`
 (`"ed25519"`), `key_id`, `semantic_package_digest`, and unpadded base64url
 `signature`. Duplicate, unknown, malformed, mismatched, or unknown fields fail
-closed. Verification uses an accepted host cryptographic library. Signature
+closed. Unpadded base64url decoding must produce exactly 64 octets; any other
+length fails before cryptographic verification. Verification uses an accepted
+host cryptographic library. Signature
 files are beneath `signatures/` with deterministic lowercase names such as
 `ed25519-<64-lowercase-hex-key-id>.json`; multiple keys may sign, but duplicates
 from one key add no authority. No JSON Schema or fixture is created here.
@@ -153,18 +155,37 @@ Unenforceable destinations make a capability unavailable.
 
 ## 10. Credentials
 
-The first Windows host stores values in Windows Credential Manager. Profiles are
-host-generated opaque identities bound to provider, account/service, capability,
-rotation and state. Values never enter packages, manifests, runtime JSON, Tether
-source, arguments, paths, Trail, replay, event admission, conformance or Result
-Anchors. DPAPI-wrapped files require a later explicit decision.
+Windows Credential Manager is host-owned credential storage, not by itself a
+provider-isolation boundary. Microsoft documents long-term generic-credential
+storage and that generic credentials can be read and written by user processes.
+Profiles are host-generated opaque identities bound to provider, account/service,
+capability, rotation and state. Values never enter packages, manifests, runtime
+JSON, Tether source, arguments, paths, Trail, replay, event admission,
+conformance or Result Anchors. DPAPI-wrapped files require a later explicit
+decision.
 
-For local stdio, the host delivers only credentials required by exact enabled
-bindings through a fresh per-process environment. Secret names are host-owned;
-packages cannot choose arbitrary names. Values enter immediately before process
-creation, never MCP messages or command line. Session replacement follows
-rotation/revocation. The authorised provider necessarily receives its own secret;
-J18G protects it from unrelated contexts, not from that provider.
+For local stdio, the host deliberately delivers only credentials required by
+exact enabled bindings through a fresh per-process environment. Secret names are
+host-owned; packages cannot choose arbitrary names. Values enter immediately
+before process creation, never MCP messages or command line. A sanitized
+environment prevents deliberate inheritance of unrelated secret variables, but
+does not prevent a supervised provider in the same ordinary user security
+context from attempting same-user Credential Manager API access, filesystem
+access, process inspection or other ambient access not blocked by OS containment.
+Exact session delivery means only the required secret is intentionally supplied;
+it does not prove that unrelated credentials cannot be discovered. The authorised
+provider necessarily receives its own secret.
+
+A credential-bearing production provider requires an isolated profile proven to
+prevent access to unrelated credentials, or a separately reviewed host-owned
+credential broker. AppContainer is the intended first Windows isolation
+candidate, but its exact Credential Manager behaviour is not implemented or
+proven by J18G. A restricted token alone is insufficient proof. General
+credential-bearing supervised production providers are unavailable.
+
+Supervised development may receive a dedicated test credential only through
+explicit risk acceptance, and the host must label that session not credential-
+isolated. File Tools and PDF Tools reference providers require no credentials.
 
 Different accounts, privilege, secret sets or scopes require separate sessions or
 refusal. One low-risk capability must not make a high-privilege secret ambient.
@@ -220,11 +241,15 @@ disables dependent readiness.
 The first security envelope is Windows x86_64, local MCP 2025-11-25 stdio,
 self-contained executable, exact hashing, immutable installation, supervised
 ownership, sanitised environment, bounded resources, no reference-provider
-network, Credential Manager profiles, Ed25519 verification and explicit unsigned
-developer mode. Tethers-authored references may use supervised mode, but arbitrary
-third-party packages are not thereby safe or currently supported. General
-third-party enablement waits for proven isolated mode. J18G authorises no
-implementation.
+network, Windows Credential Manager profile storage, Ed25519 verification and
+explicit unsigned developer mode. File Tools and PDF Tools remain credential-
+free. Supervised reference-provider mode is not authorised for credential-bearing
+production integrations. Operational credential delivery waits for proven
+isolated execution or an accepted host-owned credential broker. Storage
+implementation must not be confused with delivery isolation. Tethers-authored
+references may use supervised mode, but arbitrary third-party packages are not
+thereby safe or currently supported. General third-party enablement waits for
+proven isolated mode. J18G authorises no implementation.
 
 Deferred: registries, certificates, transparency/timestamps, automatic
 revocation, marketplace trust, remote/OAuth/listener/network providers,
@@ -252,10 +277,32 @@ conformance, no retry on violations, honest reference-provider limits, unchanged
 
 ## Primary sources inspected
 
-Accessed 2026-08-01: Microsoft Learn, “Job Objects - Win32 apps”; “AppContainer
-for legacy apps - Win32 apps”; “Restricted Tokens - Win32 apps”; RFC Editor,
-“RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)”; and “RFC 8410:
-Algorithm Identifiers for Ed25519, Ed448, X25519, and X448 for Use in the
-Internet X.509 Public Key Infrastructure.” Microsoft Credential Manager and
-DPAPI pages were not available at the initially requested URLs and are not used
-as normative citations here.
+Accessed 2026-08-01: Microsoft Learn, “Job Objects - Win32 apps”
+(https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects);
+“AppContainer isolation - Win32 apps”
+(https://learn.microsoft.com/en-us/windows/win32/secauthz/appcontainer-isolation);
+“Launch an AppContainer - Win32 apps”
+(https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer);
+“Restricted Tokens - Win32 apps”
+(https://learn.microsoft.com/en-us/windows/win32/secauthz/restricted-tokens);
+“Credentials Management - Win32 apps”
+(https://learn.microsoft.com/en-us/windows/win32/secauthn/credentials-management);
+“Kinds of Credentials - Win32 apps”
+(https://learn.microsoft.com/en-us/windows/win32/secauthn/kinds-of-credentials);
+“CredWriteW function (wincred.h) - Win32 apps”
+(https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credwritew);
+“CryptProtectData function (dpapi.h) - Win32 apps”
+(https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata);
+“RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)”
+(https://www.rfc-editor.org/rfc/rfc8032.html); and “RFC 8410: Algorithm
+Identifiers for Ed25519, Ed448, X25519, and X448 for Use in the Internet X.509
+Public Key Infrastructure” (https://www.rfc-editor.org/rfc/rfc8410.html).
+
+Two initially guessed Microsoft URLs returned 404; no evidence was fabricated
+from them. Lucy supplied the verified Microsoft Learn replacements above, and
+Luna inspected the corrected source set. Microsoft documents long-term generic-
+credential storage and also states that generic credentials are readable and
+writable by user processes. CredWrite associates credentials with the current
+token's logon session. AppContainer supplies a stronger credential-isolation
+boundary. CryptProtectData is user/machine-bound protection and remains a
+deferred alternative rather than the accepted first vault.
