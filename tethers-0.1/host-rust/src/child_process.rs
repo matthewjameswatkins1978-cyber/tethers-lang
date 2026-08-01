@@ -5,6 +5,7 @@
 // stdout reader thread with mpsc channel for timeout-aware protocol
 // reads, and stored reader-thread JoinHandles for proper cleanup.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -63,6 +64,12 @@ pub struct ChildConfig {
     pub graceful_close_timeout: Duration,
     pub max_protocol_line_bytes: usize,
     pub stderr_tail_bytes: usize,
+    /// When true the child receives only `environment`; no ambient process
+    /// environment is inherited.
+    pub clear_environment: bool,
+    pub environment: BTreeMap<String, String>,
+    pub max_processes: u32,
+    pub process_memory_limit_bytes: usize,
 }
 
 impl Default for ChildConfig {
@@ -75,6 +82,10 @@ impl Default for ChildConfig {
             graceful_close_timeout: Duration::from_secs(DEFAULT_GRACEFUL_CLOSE_SECS),
             max_protocol_line_bytes: MAX_PROTOCOL_LINE_BYTES,
             stderr_tail_bytes: STDERR_TAIL_BYTES,
+            clear_environment: false,
+            environment: BTreeMap::new(),
+            max_processes: 8,
+            process_memory_limit_bytes: 256 * 1024 * 1024,
         }
     }
 }
@@ -216,13 +227,18 @@ fn classify_disconnect_after_interrupt_observation(ordinary_error: ChildError) -
 impl SupervisedChild {
     pub fn launch(config: ChildConfig) -> Result<Self, ChildError> {
         #[cfg(windows)]
-        let job_handle = create_job_object()?;
+        let job_handle =
+            create_job_object(config.max_processes, config.process_memory_limit_bytes)?;
 
         let mut cmd = Command::new(&config.command);
         cmd.args(&config.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if config.clear_environment {
+            cmd.env_clear();
+        }
+        cmd.envs(&config.environment);
         if let Some(ref dir) = config.current_dir {
             cmd.current_dir(dir);
         }
@@ -306,13 +322,15 @@ impl SupervisedChild {
             loop {
                 match reader.read(&mut chunk) {
                     Ok(0) => break,
-                    Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                    Ok(n) => {
+                        buf.extend_from_slice(&chunk[..n]);
+                        if buf.len() > stderr_tail {
+                            let excess = buf.len() - stderr_tail;
+                            buf.drain(..excess);
+                        }
+                    }
                     Err(_) => break,
                 }
-            }
-            if buf.len() > stderr_tail {
-                let start = buf.len() - stderr_tail;
-                buf = buf[start..].to_vec();
             }
             if let Ok(mut guard) = stderr_buf.lock() {
                 *guard = buf;
@@ -570,10 +588,14 @@ fn read_until_newline(
 }
 
 #[cfg(windows)]
-fn create_job_object() -> Result<windows_sys::Win32::Foundation::HANDLE, ChildError> {
+fn create_job_object(
+    max_processes: u32,
+    process_memory_limit_bytes: usize,
+) -> Result<windows_sys::Win32::Foundation::HANDLE, ChildError> {
     use windows_sys::Win32::System::JobObjects::{
         CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
     };
 
     // Unnamed: NULL, NULL.
@@ -585,7 +607,11 @@ fn create_job_object() -> Result<windows_sys::Win32::Foundation::HANDLE, ChildEr
     }
 
     let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+    limits.BasicLimitInformation.ActiveProcessLimit = max_processes;
+    limits.ProcessMemoryLimit = process_memory_limit_bytes;
 
     let success = unsafe {
         SetInformationJobObject(
@@ -609,7 +635,10 @@ fn create_job_object() -> Result<windows_sys::Win32::Foundation::HANDLE, ChildEr
 }
 
 #[cfg(not(windows))]
-fn create_job_object() -> Result<usize, ChildError> {
+fn create_job_object(
+    _max_processes: u32,
+    _process_memory_limit_bytes: usize,
+) -> Result<usize, ChildError> {
     Ok(0)
 }
 

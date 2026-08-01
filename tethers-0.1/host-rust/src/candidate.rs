@@ -349,7 +349,7 @@ impl CandidateRecord {
         copy.record_digest.clear();
         serde_json_canonicalizer::to_vec(&copy).map_err(|e| err("record_invalid", e.to_string()))
     }
-    fn validate(&self) -> Result<(), PackageError> {
+    pub(crate) fn validate(&self) -> Result<(), PackageError> {
         if self.schema_version != 1
             || self.state != "quarantined_installation_candidate"
             || self.candidate_id.is_empty()
