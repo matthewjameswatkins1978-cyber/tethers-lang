@@ -1,128 +1,44 @@
 # Task Queue
 
-Updated: 2026-07-25
+Updated: 2026-08-01
 
 ## Current State
 
-Latest accepted implementation checkpoint:
+Latest accepted release-candidate checkpoint:
 
-`d5ed278d4a2cae5e9ab8a3e1d8700fdcba7ae851`
+`58affc8c30ddfa9284933a5e38f598dad573f4dd`
 
-- [x] Tethers 0.1 semantic and protocol baseline signed off.
-- [x] OCaml MCP planner and validation surface complete.
-- [x] Manifest parsing, canonicalisation, digesting, and trusted store complete.
-- [x] Configured local stdio provider discovery and fail-closed admission complete.
-- [x] Deterministic capability projection complete.
-- [x] Planner-to-dispatch manifest, version, and provider pinning complete.
-- [x] Intent-first dispatch proof boundary complete.
-- [x] Executor output validation complete.
-- [x] Known-outcome Result Anchors complete.
-- [x] Four-outcome effective policy complete:
-  `allow`, `ask`, `deny`, and `unavailable`.
-- [x] J04a stale-digest and unestablished-scope correction accepted.
+Accepted work is complete through J17A3:
 
-The rejected J04 attempt remains in worker notes and Git history. It is not
-current project state.
+- [x] All accepted baseline work through J04a.
+- [x] J05 exact one-shot approval.
+- [x] J06 honest outcome classification.
+- [x] J07 deadline and uncertainty handling.
+- [x] J08 uncertain Result Anchor.
+- [x] J09 durable replay protection.
+- [x] J10 serial Result Anchor continuation.
+- [x] J11 event deduplication and causal depth eight.
+- [x] J12 minimal runnable configuration.
+- [x] J13 public `check`, `run`, and `trail` routes.
+- [x] J14 complete local scenario.
+- [x] J14C real bounded file move.
+- [x] J15 consolidated release matrix.
+- [x] J16 clean checkout, builds, restart, and replay proof.
+- [x] J17A1 product identity.
+- [x] J17A2 release notes.
+- [x] J17A3 current-state alignment.
 
 ## Active Gate
 
-- [ ] J05 Red design: exact one-shot Ask approval and resume semantics.
-
-No J05 implementation is authorised until Lucy freezes:
-
-- exact approval identity and Action proof binding;
-- creation, expiry, cancellation, invalidation, and consumption;
-- resumed-Ask precedence;
-- denial and cancellation Trail behaviour;
-- unattempted Action and Result Anchor behaviour;
-- replay, stale-plan, and double-consumption failure cases.
-
-Expected route:
-
-- Lucy: design and task compilation.
-- Codex: Red implementation or computer-enabled sign-off.
-- Cline: only later bounded Green or Amber subwork explicitly routed by Lucy.
+J17 independent 0.2.0 release sign-off
 
 ## Remaining 0.2 Queue
 
-### Exact Approval
-
-- [ ] J05 implement and prove exact one-shot Ask resolution.
-
-### Honest Execution
-
-- [ ] J06 freeze deadline and outcome classification.
-- [ ] J07 implement deadlines and first-class `uncertain` outcomes.
-- [ ] J08 emit `capability.uncertain` Result Anchors.
-- [ ] J09 add durable replay protection.
-
-### Event Continuation
-
-- [ ] J10 queue generated Result Anchors serially.
-- [ ] J11 reject duplicate event IDs and enforce causal depth eight.
-
-### Operable Runtime
-
-- [ ] J12 freeze the minimal runnable Tether Set and configuration boundary.
-- [ ] J13 implement local `check`, `run`, and `trail` routes.
-- [ ] J14 prove one complete real local scenario and required negative cases.
-
-### Hardening And Release
-
-- [ ] J15 consolidate the 0.2 failure matrix.
-- [ ] J16 prove clean-checkout, restart, and replay behaviour.
-- [ ] J17 independently sign off and tag 0.2.0.
-
-The detailed dependency and acceptance map lives in `docs/ROAD_TO_0_2.md`.
-Executable tasks are compiled just in time into `docs/CURRENT_CLINE_TASK.md`.
-
-## Gorilla Coding Route 🦄
-
-```text
-Lucy inspects and compiles
--> Matthew routes to Cline or Codex
--> one worker implements and verifies
--> worker writes the note and concise report
--> Matthew pastes the report to Lucy
--> Lucy accepts, corrects, or escalates
-```
-
-- Cline is the default Green and Amber implementation owner.
-- Codex handles Red work, difficult local failure, Git/environment/recovery, and
-  machine-required verification.
-- Copilot is not part of the active workflow.
-- Cline does not compile or begin the next task.
-
-## Completed Foundations
-
-### Toolchain And Verification
-
-- [x] Native Windows OCaml 5.5.0, Dune, Yojson, Rust, and PowerShell 7 workflows.
-- [x] Fixture validation, OCaml build, Rust tests, golden engine tests, MCP
-  transcripts, host denial/failure tests, demo, and whitespace checks.
-- [x] Deterministic-repeat and focused failure-branch coverage.
-
-### Tethers 0.1
-
-- [x] Parser, protocol helpers, deterministic evaluator, ordered Plans, and causal
-  evaluation Trails.
-- [x] Correlated evaluation and planning errors.
-- [x] Version rejection, indentation, argument uniqueness, type, missing Fact,
-  unknown Capability, and operator fixtures.
-- [x] Host authorisation, execution, idempotency identity, and execution Trail.
-
-### MCP And Capability Bridge
-
-- [x] M0-M7 MCP planning and authoring direction.
-- [x] `tethers.evaluate` and `tethers.validate` over stdio.
-- [x] Trusted manifest and provider binding design.
-- [x] Exact capability projection and opaque digest pass-through.
-
-### Columbo
-
-- [x] C1 manifest parsing, duplicate-key rejection, RFC 8785/JCS canonicalisation,
-  SHA-256 digesting, and semantic validation.
-- [x] C2 verified manifest admission and identity/digest indexes.
+- [ ] Final independent native Windows verification.
+- [ ] Evidence-backed release verdict.
+- [ ] Fast-forward exact accepted commit to `main`, only after sign-off.
+- [ ] Create annotated `v0.2.0` tag, only after sign-off.
+- [ ] Verify remote main and tag targets.
 
 ## Deferred Beyond 0.2
 
@@ -141,3 +57,16 @@ Lucy inspects and compiles
 The ten-minute implementation-step limit is a runaway brake, not a deadline.
 Stop at a coherent recoverable point and return exact evidence rather than rush,
 repeat attempts blindly, or invent missing decisions.
+
+## Gorilla Coding Route
+
+```text
+Lucy inspects and compiles
+-> Luna handles bounded Green and ordinary Amber work
+-> DeepSeek Pro V4 handles thicker middle implementation requiring review
+-> Codex Terra High handles Red and machine-required gates
+-> Matthew returns concise reports to Lucy
+```
+
+J17 is the only remaining release gate. Do not begin feature implementation or
+release publication before its evidence-backed verdict.

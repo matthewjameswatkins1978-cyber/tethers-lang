@@ -2,105 +2,72 @@
 
 Control contract: `1`
 
-Task: `J17A2 - draft the Tethers 0.2.0 release notes`
+Task: `J17A3 - align current project state for 0.2.0 sign-off`
 Owner: `Luna`
 Status: `COMPLETE`
 Task colour: `Green`
-Route: `Luna on OpenCode - documentation-only release preparation`
-Branch: `luna/j17a-release-notes`
-Base commit: `7179087ed82a9d2055f4958d23b1e38ac366ebb1`
-Worker note: `docs/worker-notes/2026-08-01-j17a-release-notes.md`
-
-## Outcome
-
-Draft the 0.2.0 release candidate notes and identify the candidate in README.
-This is documentation-only preparation. J17 sign-off, main publication, and
-tagging remain deferred.
+Route: `Luna on OpenCode - documentation-only current-state alignment`
+Branch: `luna/j17a-current-state`
+Base commit: `58affc8c30ddfa9284933a5e38f598dad573f4dd`
+Worker note: `docs/worker-notes/2026-08-01-j17a-current-state.md`
 
 ## Objective
 
-Create a factual 0.2.0 release-candidate document and add a concise README
-release-candidate pointer without claiming that the release is signed off.
+Align the current-state documents with the actual completed 0.2.0 candidate and
+leave J17 as the only remaining release gate.
 
 ## Relevant background and existing behaviour
 
-J16 clean native Windows verification and J17A1 product identity work are
-accepted project records. The 0.2 language semantics remain the signed-off 0.1
-semantics, and the active implementation directory remains `tethers-0.1/`.
+J17A1 established product identity `0.2.0`; J17A2 drafted the candidate release
+notes. J05 through J16 are accepted project work. J17 verification and sign-off
+remain pending.
 
 ## Required behaviour
 
-1. Create `docs/releases/v0.2.0.md` with the requested candidate structure and
-   accepted verification totals.
-2. Update only the requested README release-candidate section and worker route.
-3. Keep J17 sign-off, main publication, and tag creation explicitly pending.
+1. Install the accepted candidate checkpoint in the three current-state documents.
+2. Mark J05 through J17A3 complete and leave only the J17 release queue.
+3. Update the current Luna, DeepSeek, and Codex route without changing release
+   notes or historical worker notes.
+4. Preserve frozen boundaries and authoritative-reference links.
 
 ## Relevant components
 
-- `README.md`
-- `docs/releases/v0.2.0.md`
-- Accepted J16 and J17A1 worker notes named by the task.
+- `docs/CURRENT_GOAL.md`
+- `docs/PROJECT_DASHBOARD.md`
+- `docs/TASK_QUEUE.md`
+- `docs/releases/v0.2.0.md` (read-only)
 
 ## Frozen decisions and invariants
 
-- The document is a release candidate, not a signed-off release.
-- No implementation or release evidence changes.
-- Do not imply support beyond native Windows and configured local stdio MCP
-  providers.
-
-## Frozen Scope
-
-- Release notes are a candidate document only.
-- The signed-off 0.1 language and `tethers-0.1/` tree remain unchanged.
-- No implementation, tests, scripts, fixtures, manifests, locks, or product
-  version strings change.
+- No J17 verification or sign-off is performed here.
+- Product identity is `0.2.0`; language semantics remain `0.1`.
 - Main and tags remain untouched.
-
-## Authorised Paths
-
-- `docs/releases/v0.2.0.md`
-- `README.md`
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-01-j17a-release-notes.md`
-
-## Verification
-
-- Release status and tag wording remain pending.
-- `SIGNED OFF FOR 0.2.0` appears only as the future J17 condition.
-- The packet checker, `git diff --check`, changed-path inspection, and clean
-  worktree check pass.
+- No implementation, tests, scripts, fixtures, manifests, locks, or version
+  strings change.
 
 ## Acceptance criteria
 
-1. The release note contains only supported candidate claims and the required
-   sections.
-2. README contains the requested release-candidate section and route.
-3. The phrase `SIGNED OFF FOR 0.2.0` appears only as the future condition.
-4. Exactly the four authorised paths change and all required checks pass.
+1. The three current-state documents record candidate `58affc8c30ddfa9284933a5e38f598dad573f4dd`.
+2. J17 is the only remaining release gate and no feature work is authorised.
+3. Stale J04a, J05-future, and Cline route claims are absent from those documents.
+4. Exactly the five authorised paths change and required checks pass.
 
 ## Required verification
 
-- Run the phrase and version searches requested by the task.
-- Run `check-tethers-task-packet.ps1`, `git diff --check`, changed-path, and
-  final status checks.
+- Run the four stale-state audits requested by the task.
+- Run the packet checker, `git diff --check`, changed-path, and status checks.
+
+## Forbidden changes
+
+Do not modify release notes or historical worker notes, perform J17 verification
+or sign-off, publish main, create or modify tags, or change any unauthorised path.
 
 ## Stop conditions
 
-Stop if any unsupported release claim, unauthorised path, failed check, or
-conflicting source record is found. After two materially similar failures,
-return the exact evidence and one smallest unresolved question.
+Stop on any conflicting source statement, stale audit result, failed check, or
+unauthorised path. After two materially similar failures, return exact evidence
+and the smallest unresolved issue.
 
 ## Expected pre-existing changes
 
 None in the new branch before this task.
-
-## Forbidden Changes
-
-Do not perform J17 sign-off, publish `main`, create or modify a tag, or change
-any path outside the four authorised paths.
-
-## Completion Record
-
-Release notes are a candidate document only. J17 sign-off remains pending.
-Main and tags remain untouched. README now identifies the release candidate and
-current worker route. No implementation or release evidence changed.

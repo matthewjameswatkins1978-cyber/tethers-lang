@@ -1,70 +1,48 @@
 # Current Goal
 
-Updated: 2026-07-25
+Updated: 2026-08-01
 
 ## Goal
 
-Complete the first vertical Tethers 0.2 runtime slice around the verified
-manifest store and capability bridge, while preserving the signed-off Tethers
-0.1 language and protocol semantics.
+Independently sign off the completed Tethers 0.2.0 release candidate and, only
+after a `SIGNED OFF FOR 0.2.0` verdict, publish the exact accepted commit to
+`main` and create the annotated `v0.2.0` tag.
 
 ## Current Accepted Baseline
 
-The accepted implementation baseline includes:
+The accepted baseline through the release candidate includes:
 
-- verified manifest parsing, digesting, admission, and trusted-store lookup;
-- deterministic live capability projection for one Tether Set;
-- opaque manifest digest, capability version, and provider identity carried from
-  approved projection through planning to dispatch;
-- production dispatch requiring a `DispatchReadyAction` created only after
-  durable intent preparation;
-- configured local stdio MCP provider discovery and admission;
-- executor output validation and known-outcome Result Anchors;
-- effective host policy outcomes of `allow`, `ask`, `deny`, and `unavailable`;
-- fail-closed rejection of stale manifest pins and unestablished structured
-  scope.
+- J05 exact one-shot approval.
+- J06-J09 honest outcomes, uncertainty, and durable replay.
+- J10-J11 serial Result Anchor continuation, event deduplication, and depth eight.
+- J12-J14C public runtime routes and the real bounded file move.
+- J15 consolidated release matrix.
+- J16 clean checkout, builds, restart, and replay proof.
+- J16D-F1 deterministic Ctrl+C classification repair.
+- J17A1 product identity `0.2.0`.
+- J17A2 release-candidate notes.
 
-Latest accepted implementation checkpoint:
-`d5ed278d4a2cae5e9ab8a3e1d8700fdcba7ae851`.
-
-J04a effective-policy correction is accepted. J05 and later approval/resume
-work remain unauthorised until a separate Red design packet is approved.
+Latest accepted candidate checkpoint:
+`58affc8c30ddfa9284933a5e38f598dad573f4dd`
 
 ## Immediate Definition Of Done
 
-The runtime slice is complete when all of the following are implemented and
-independently verified:
-
-1. A configured local provider binding is admitted only through a verified
-   manifest and the Trusted Manifest Store.
-2. A live capability projection supplies exact capability versions, provider
-   identity, and opaque manifest digest to deterministic planning.
-3. Every planned bridge Action is resolved through host-owned effective policy
-   with exactly one outcome: `allow`, `ask`, `deny`, or `unavailable`.
-4. Dispatch is serial, conservative, intent-first, and has no automatic retries.
-5. Trail records distinguish authorisation, dispatch, success, failure,
-   unavailability, denial, timeout, and uncertain outcome honestly.
-6. Known successful and failed outcomes produce standard Result Anchors;
-   unattempted Actions do not.
-7. AI judgement, when used, is an explicit capability Action whose structured
-   result becomes data for a later Anchor. It never runs invisibly inside
-   deterministic Condition evaluation.
+1. Verify the exact candidate from the accepted native Windows checkout.
+2. Map every ROAD_TO_0_2 release-acceptance claim to evidence.
+3. Return exactly `SIGNED OFF FOR 0.2.0` or `NOT SIGNED OFF`.
+4. Only after sign-off, fast-forward `main` to the exact accepted commit.
+5. Create annotated tag `v0.2.0` at that exact commit.
+6. Verify remote main and tag targets.
 
 ## Next Authorised Work
 
-Stop after the accepted J04a checkpoint.
+J17 independent 0.2.0 release sign-off only.
 
-The next work must begin with a separate Red design packet for J05 covering the
-approval and resume boundary. That design must freeze, before implementation:
-
-- one-shot approval identity and binding;
-- approval creation, expiry, invalidation, and consumption;
-- resumed Ask precedence;
-- denial and cancellation Trail semantics;
-- dispatch and Result Anchor behaviour for unattempted Actions;
-- replay, stale-plan, and double-consumption failure cases.
-
-No J05 implementation is authorised merely because J04a is complete.
+- No further feature implementation is authorised before J17.
+- Product identity is `0.2.0`.
+- Language semantics remain `0.1`.
+- Release notes remain a candidate until J17.
+- Main and tags are still untouched.
 
 ## Frozen Boundaries
 
@@ -86,20 +64,15 @@ No J05 implementation is authorised merely because J04a is complete.
 
 ## Active Development Posture
 
-Current operating mode: **Gorilla Coding 🦄**.
+Current operating mode: **Gorilla Coding**.
 
-- Lucy in ordinary chat controls architecture, task compilation, GitHub-visible
-  review, acceptance, and continuation.
-- Cline is the default implementation owner for ordinary Green and Amber work.
-- Codex enters for Red implementation or sign-off, difficult local failure,
-  Git/environment/recovery work, or machine-required diagnosis.
-- Matthew may paste Cline's concise report to Lucy as the normal return handoff.
-- Copilot is not part of the active route.
+- Lucy: architecture, task compilation, and independent review.
+- Luna on OpenCode: bounded Green and ordinary Amber implementation.
+- DeepSeek Pro V4: thicker middle implementation requiring review.
+- Codex Terra High: Red work, machine failures, and release gates.
+- Matthew: product authority and report-routing bridge.
 - Active prototype tree: `tethers-0.1/`.
 - Required automation shell: PowerShell 7 (`pwsh.exe`).
-- Keep implementation tasks small, bounded, and owned by one worker.
-- Require focused regressions plus the complete relevant verification suite.
-- Do not load the whole project history for routine implementation tasks.
 
 ## Authoritative References
 
@@ -114,12 +87,3 @@ Current operating mode: **Gorilla Coding 🦄**.
 - Dependency-ordered programme: `docs/ROAD_TO_0_2.md`
 - Detailed queue and completed milestones: `docs/TASK_QUEUE.md`
 - Evidence and reviews: `docs/worker-notes/`
-
-## Historical Record
-
-This file is intentionally limited to the present goal, accepted baseline,
-frozen boundaries, next authorised work, and current operating posture.
-Completed milestone narratives, toolchain setup history, fixture-by-fixture
-records, and prior verification results belong in the task queue, decisions,
-worker notes, dashboard, and Git history rather than in every agent's default
-current-context package.
