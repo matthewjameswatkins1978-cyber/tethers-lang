@@ -7,6 +7,7 @@ Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `Luna on OpenCode, adversarial architecture validation`
 Base branch: `main`
+Base commit: `41235a3093ed73b3d58533bcfad45ef490211560`
 Accepted architecture base: `8f1f2c685fb9f700cf7c1dfe3d877958b8bea6f7`
 Branch: `luna/j18h-paper-validation`
 Worker note: `docs/worker-notes/2026-08-01-j18h-paper-validation.md`
@@ -127,6 +128,76 @@ used, but it must preserve every required question.
 - Smart-lock and industrial effects require physical/security refusal boundaries.
 - Tethers is not a safety PLC, certified controller or hard-real-time loop.
 - Immediate host `Ask` is not a general Human Task implementation.
+
+## Relevant background and existing behaviour
+
+J18B through J18G are accepted architecture contracts. Tethers 0.2.0 is the
+published baseline. Action, Query and Anchor are first-programme candidates;
+Job, Stream and Human Task remain reserved. The accepted architecture is
+validated against representative integrations without implementation.
+
+## Required behaviour
+
+1. Validate all sixteen representative integrations without changing frozen
+   semantics.
+2. Record class, effects, scopes, policy, Socket/binding/transport, security,
+   lifecycle, outcomes, events, Trail, conformance and refusal for each.
+3. Test cross-example contradictions and produce one final verdict.
+4. Update only the eight authorised Markdown paths and preserve implementation
+   unauthorised.
+
+## Relevant components
+
+- `docs/architecture/TETHERS_J18_PAPER_VALIDATION.md`
+- Accepted J18B through J18G architecture documents.
+- `docs/DECISIONS.md`, current-state documents and J18H worker note.
+
+## Frozen decisions and invariants
+
+- Tethers coordinates; the host owns trust, policy, credentials, dispatch and
+  outcomes; providers own vendor translation.
+- Core remains application-agnostic and Tether 0.1 semantics remain unchanged.
+- Job, Stream and Human Task remain reserved and unsupported.
+- Unknown effects/scopes fail closed; no automatic retry exists.
+- Stable event identity, durable admission, truthful outcomes and physical safety
+  boundaries remain mandatory.
+
+## Acceptance criteria
+
+1. Exactly eight authorised Markdown paths differ from accepted architecture base.
+2. All sixteen integrations are present and fully analysed.
+3. Every integration has an honest class, security mode, lifecycle and refusal.
+4. Summary tables, contradiction tests and revision register are complete.
+5. Exactly one final verdict is present and consistent with the register.
+6. J18G is marked accepted; J18H remains pending Lucy review; J18I remains
+   blocked; implementation remains unauthorised.
+7. No implementation, schema, provider, credential, sandbox or Tether change.
+
+## Required verification
+
+- Run whitespace, exact changed-path, staged-diff and task-packet checks.
+- Run integration presence, class/disposition, truth-boundary, security and
+  forbidden-conflation searches.
+- Verify exactly one verdict, refs, clean topology and no implementation artifact.
+
+## Forbidden changes
+
+Do not modify Rust, OCaml, build files, scripts, tests, fixtures, manifests,
+runtime configuration, schemas, packages, providers, credentials, trust stores,
+keys, signatures, sandboxes, event/replay storage, Tether specification,
+Constitution, release material, or begin J18I. Do not modify J18B through J18F.
+
+## Stop conditions
+
+Stop on branch, base, ownership, authorised-path or boundary mismatch; an
+unresolved semantic contradiction; failed required checks; or a source claim
+that cannot be supported. After two materially similar failed attempts, stop
+with exact evidence and one smallest unresolved question.
+
+## Expected pre-existing changes
+
+The control-only J18H packet commit is expected on `main`; no working-tree
+changes are expected before this task.
 
 ## Canonical output
 

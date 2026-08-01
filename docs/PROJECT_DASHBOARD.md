@@ -4,8 +4,8 @@ Updated: 2026-08-01
 
 ## Current Milestone
 
-J18G: Security, Trust, Credentials and Sandbox Threat Model v1, design-only and
-pending Lucy security review.
+J18H: Universal Plug Paper Validation Matrix, documentation-only and pending
+Lucy paper-validation review. Current candidate verdict: `VALIDATED`.
 
 ## Published Baseline
 
@@ -28,12 +28,13 @@ the release.
 
 ## Active Task
 
-J18G - Security, Trust, Credentials and Sandbox Threat Model v1
+J18H - Universal Plug Paper Validation Matrix
 
 ## Next Route
 
-J18B, J18C, J18D, J18E, and J18F are accepted. J18G is design-only and pending
-Lucy security review. J18H is next only after acceptance.
+J18B through J18G are accepted. J18H is active and pending Lucy review; final
+architecture freeze is not yet accepted. J18I remains blocked until J18H
+acceptance.
 
 Plug implementation remains unauthorised. Plugs remain outside Tethers Core;
 host-owned permissions, credentials, canonical outcomes, and Trails remain

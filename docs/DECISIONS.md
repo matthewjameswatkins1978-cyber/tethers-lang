@@ -1,4 +1,16 @@
 # Decisions
+## 2026-08-01: J18 paper-validation result
+
+1. All sixteen representative integrations were paper-tested against accepted
+   J18B through J18G contracts.
+2. J18H verdict: `VALIDATED`; final freeze is recommended after Lucy review.
+3. Revision candidates: 0. Job, Stream and Human Task remain reserved.
+4. The first implementation remains credential-free File Tools and bounded PDF
+   Tools reference work.
+5. Refusal and deferral count as valid architectural results.
+6. J18I remains blocked until Lucy accepts J18H.
+7. No implementation or Tether semantic change occurred.
+
 ## 2026-08-01: Security, trust, credentials, and sandbox boundary
 
 1. Host policy and provider containment are separate.

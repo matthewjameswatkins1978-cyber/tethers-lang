@@ -1,6 +1,8 @@
 # Tethers Security, Trust, Credentials and Sandbox v1
 
-Status: J18G candidate, pending Lucy security review
+Status: Accepted J18G security contract
+Accepted by Lucy: 2026-08-01
+Final architecture freeze: Requires J18H paper validation
 Threat model generation: 1
 Implementation: Not authorised
 
