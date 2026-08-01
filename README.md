@@ -25,13 +25,21 @@ Tethers uses a layered set of authoritative and operational documents:
 - `docs/ROAD_TO_0_2.md` is the dependency-ordered release programme through
   Tethers 0.2.
 
+## Release Candidate
+
+- Tethers product version: 0.2.0
+- Status: awaiting independent J17 sign-off
+- Tag: not yet created
+- Release notes: [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md)
+
 Current operating route:
 
 ```text
 Lucy controls architecture, tasks, review, and continuation
--> Cline implements ordinary Green and Amber work
--> Codex handles Red or difficult machine work
--> Matthew routes Cline's concise report back to Lucy
+-> Luna on OpenCode implements bounded Green and ordinary Amber work
+-> DeepSeek Pro V4 handles thicker middle implementation requiring review
+-> Codex Terra High handles Red work, machine failures, and release gates
+-> Matthew routes concise worker reports back to Lucy
 ```
 
 Copilot is not part of the active workflow.
