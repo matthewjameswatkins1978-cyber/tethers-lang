@@ -27,14 +27,15 @@ the release.
 
 ## Active Task
 
-J18A post-release reset
+J18B Universal Plug Architecture
 
 ## Next Route
 
-Lucy designs the Plug architecture and compiles bounded implementation tasks
-after design acceptance.
+J18B is architecture-only and pending Lucy acceptance. Candidate document:
+`docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`. J18C is next only
+after acceptance.
 
-Plug implementation is not yet authorised. Plugs remain outside Tethers Core;
+Plug implementation remains unauthorised. Plugs remain outside Tethers Core;
 host-owned permissions, credentials, canonical outcomes, and Trails remain
 unchanged.
 

@@ -1,4 +1,19 @@
 # Decisions
+## 2026-08-01: Universal Plug Architecture boundary
+
+1. The Tethers Socket is a semantic host-provider contract, not a transport.
+2. Socket semantics, protocol binding, and transport are separate layers.
+3. The first intended stack is MCP 2025-11-25 over local stdio.
+4. Tethers Core remains unaware of packages and Plugs.
+5. The host owns trust, permissions, credentials, bindings, outcomes, lifecycle,
+   and Trail.
+6. Vendor-specific translation remains outside the host.
+7. Six capability classes are reserved; only Action, Query, and Anchor target
+   the first implementation.
+8. Job, Stream, and Human Task remain unimplemented.
+9. Version axes remain independent.
+10. Paper validation is required before architecture acceptance.
+
 ## 2026-07-31: J14C real local file move capability proof
 
 Decision: Matthew authorised J14C after J14 publication. J14 proved the execution

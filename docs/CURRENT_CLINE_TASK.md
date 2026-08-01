@@ -2,77 +2,133 @@
 
 Control contract: `1`
 
-Task: `J18A - post-release reset`
+Task: `J18B - Universal Plug Architecture`
 Owner: `Luna`
 Status: `COMPLETE`
-Task colour: `Green`
-Route: `Luna on OpenCode - documentation-only project-state alignment`
-Branch: `luna/j18a-post-release-reset`
-Base commit: `b5546411661dcbcb53e1cf2538eaec594c6f76f2`
-Worker note: `docs/worker-notes/2026-08-01-j18a-post-release-reset.md`
+Task colour: `Amber`
+Route: `Luna on OpenCode, architecture transcription and consistency audit`
+Base branch: `main`
+Base commit: `f28b0b8b416a8a14920bf405dab89e3db91b5de1`
+Branch: `luna/j18b-universal-plug-architecture`
+Worker note: `docs/worker-notes/2026-08-01-j18b-universal-plug-architecture.md`
 
 ## Objective
 
-Close Tethers 0.2.0 as independently signed off and published, then open the
-J18 Universal Plug Architecture and Plug Kit programme without implementing
-Plug functionality.
+Create the canonical Universal Plug Architecture as a candidate architecture
+document. This defines the large boundary only; it does not implement Plug
+functionality or freeze J18C-J18I contracts.
+
+## Required outcome
+
+Define Plug, Socket, binding, transport, layer ownership, request/result/event
+routes, state and outcome boundaries, capability classes, installation/removal,
+first implementation envelope, deferred scope, unsuitable systems, and J18H
+paper validation without changing language or runtime semantics.
 
 ## Relevant background and existing behaviour
 
-The exact accepted release commit is `b5546411661dcbcb53e1cf2538eaec594c6f76f2`.
-Remote `main` and peeled tag `v0.2.0` identify that commit. J17 returned
-`SIGNED OFF FOR 0.2.0`; all 17 release claims were proven. Language semantics
-remain `0.1`.
+Tethers 0.2.0 is released at `b5546411661dcbcb53e1cf2538eaec594c6f76f2`.
+J18A aligned the published baseline and opened the Universal Plug programme.
+The Core and host separation, deterministic planning, permission boundaries,
+canonical outcomes, replay guarantees, and Trails are existing contracts.
 
 ## Required behaviour
 
-1. Mark the 0.2.0 release published and signed off in release notes and README.
-2. Align current goal, dashboard, and queue with J18 and the published baseline.
-3. Replace this packet with the completed J18A packet after verification.
-4. Create the J18A worker note and preserve all runtime and release boundaries.
+1. Create the canonical candidate architecture document with all required
+   Socket, layer, flow, state, capability, installation, removal, validation,
+   and acceptance boundaries.
+2. Prepend the dated J18B decision log entry.
+3. Align current-state documents with J18B active and J18C next after acceptance.
+4. Preserve the unchanged language, runtime, trust, and release boundaries.
 
-## Relevant components
+## Changes made
 
-- `README.md`
-- `docs/CURRENT_GOAL.md`
-- `docs/PROJECT_DASHBOARD.md`
-- `docs/TASK_QUEUE.md`
-- `docs/releases/v0.2.0.md`
+The canonical candidate is
+`docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`. The decision log and
+current-state documents identify J18B as active, architecture-only, pending Lucy
+acceptance, with J18C next only after acceptance.
 
 ## Frozen decisions and invariants
 
-- No Plug implementation, package schema, Socket code, CLI command, or provider
-  change is authorised.
-- Tethers Core remains application-agnostic and plugs remain outside the core.
-- Permissions, credentials, canonical outcomes, and Trails remain host-owned.
-- Tethers 0.1 language semantics and 0.2 runtime boundaries are unchanged.
-- `ROAD_TO_0_2.md`, release evidence, tag, and implementation files are read-only.
+- Tethers 0.1 syntax and semantics remain unchanged.
+- Deterministic planning, Action ordering, permission semantics, Trail ordering,
+  replay guarantees, and canonical 0.2 behaviour remain unchanged.
+- Core remains unaware of packages and Plugs.
+- Socket semantics, protocol binding, and transport remain separate.
+- The first intended stack is MCP 2025-11-25 over local stdio.
+- Trust, permissions, credentials, bindings, outcomes, lifecycle, and Trail are
+  host-owned.
+- Vendor-specific translation remains outside the host.
+- Action, Query, and Anchor are first-slice candidates; Job, Stream, and Human
+  Task remain reserved and unimplemented.
+- No implementation is authorised by this packet.
 
-## Acceptance criteria
+## Relevant components
 
-1. All current documents state that 0.2.0 is published at the exact accepted SHA.
-2. J17 is complete and J18 is the only active programme.
-3. Plug implementation remains explicitly unauthorised.
-4. Exactly seven authorised paths change and all required checks pass.
+- `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`
+- `docs/DECISIONS.md`
+- `docs/CURRENT_GOAL.md`
+- `docs/PROJECT_DASHBOARD.md`
+- `docs/TASK_QUEUE.md`
 
-## Required verification
+## Authorised paths
 
-- Verify local and remote published refs and peeled tag target.
-- Run stale release-state search across current documents.
-- Run `git diff --check`, path/status checks, and the packet checker.
+- `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`
+- `docs/DECISIONS.md`
+- `docs/CURRENT_GOAL.md`
+- `docs/PROJECT_DASHBOARD.md`
+- `docs/TASK_QUEUE.md`
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/worker-notes/2026-08-01-j18b-universal-plug-architecture.md`
 
 ## Forbidden changes
 
-Do not modify Rust, OCaml, tests, scripts, fixtures, manifests, Cargo files,
-protocol transcripts, version strings, `docs/ROAD_TO_0_2.md`, tag objects,
-GitHub Releases, or release evidence directories. Do not begin Plug
-implementation.
+Do not modify Rust, OCaml, Cargo, Dune, opam, tests, scripts, fixtures,
+manifests, protocol transcripts, the Tether specification, Constitution,
+released notes, tags, GitHub Releases, or implementation/evidence files. Do
+not create JSON schemas, packages, CLI commands, provider code, Socket messages,
+installation code, or sandbox code.
+
+## Acceptance criteria
+
+1. The architecture separates Core, host, Socket, binding, transport, provider,
+   and outside system.
+2. Socket is a semantic contract, not a transport.
+3. No vendor-specific behaviour enters Core or host policy.
+4. Host authority boundaries remain explicit.
+5. Package, installation, provider, capability, and binding are distinct.
+6. Action, Query, and Anchor are first-slice candidates.
+7. Job, Stream, and Human Task remain reserved and unimplemented.
+8. Installation and removal preserve trust and historical Trails.
+9. Version axes are independent.
+10. J18H paper validation is mandatory before freeze.
+11. No implementation or schema files change.
+12. Exactly seven authorised paths change and required checks pass.
+13. Branch is committed and pushed.
+
+## Required verification
+
+- `git diff --check`
+- exact changed-path and clean-worktree checks
+- task-packet checker
+- architecture heading scan
+- required-boundary search
+- false-claim search
+- published main and peeled tag verification
 
 ## Stop conditions
 
-Stop if published refs differ, a stale release claim remains, an unauthorised
-path changes, or any required check fails.
+Stop if the base, branch, published refs, worktree, or authorised paths differ;
+if a false implementation claim appears; if a required boundary is missing; or
+if verification fails. Do not silently redesign the architecture or begin J18C.
 
 ## Expected pre-existing changes
 
-None in the new branch before this task.
+None on the new branch before J18B work.
+
+## Commit and publication boundary
+
+Create exactly one commit: `docs: define universal plug architecture`.
+
+Push only `luna/j18b-universal-plug-architecture`. Do not push main, tag,
+release, or begin J18C.

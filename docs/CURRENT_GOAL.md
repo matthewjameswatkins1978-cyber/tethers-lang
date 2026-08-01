@@ -4,8 +4,8 @@ Updated: 2026-08-01
 
 ## Goal
 
-Design and freeze the first Universal Plug architecture without changing the
-Tethers 0.1 language semantics or weakening the 0.2 runtime boundaries.
+Transcribe and audit the candidate Universal Plug architecture without changing
+the Tethers 0.1 language semantics or weakening the 0.2 runtime boundaries.
 
 ## Accepted Baseline
 
@@ -13,8 +13,10 @@ Tethers 0.2.0 is the accepted and published baseline. J17 is complete; `main`
 and the annotated `v0.2.0` tag point to the signed-off commit
 `b5546411661dcbcb53e1cf2538eaec594c6f76f2`.
 
-The next programme is J18. Its first phase is architecture and paper validation;
-Plug implementation is not yet authorised.
+J18A is complete. J18B is active and architecture-only. The canonical candidate
+is `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`. Plug
+implementation remains unauthorised. J18C is the next task only after Lucy
+accepts J18B.
 
 ## J18 Boundaries
 
