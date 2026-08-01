@@ -7,6 +7,7 @@ Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `Codex Sol Medium, one continuous autonomous Milestone 3 implementation`
 Base branch: `main`
+Base commit: `17d2a17468a9d7395d31d4b66b5f6e828f82102c`
 Accepted M2 baseline: `17d2a17468a9d7395d31d4b66b5f6e828f82102c`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 Branch: `codex/j19-m3-trust-launch-conformance`
@@ -63,6 +64,58 @@ Return only at:
 or at a genuine major stop condition defined in this packet.
 
 Do not pause merely because a decision is difficult, a diff is larger than expected, a test needs a fixture, a store needs a schema, or ordinary compiler-guided untangling is required. Use engineering judgement within the frozen contracts.
+
+## Objective
+
+Transition one accepted M2 candidate through the complete authorised M3 trust,
+supervised-conformance, explicit-installation-approval, and immutable
+installed-disabled lifecycle without adding operational enablement.
+
+## Relevant background and existing behaviour
+
+M1 provides the accepted Socket/application and supervised-child foundations.
+M2 provides strict package inspection, reparse-safe quarantine extraction, and
+immutable candidate records. The released 0.2 path remains separate and must
+continue to behave exactly as before.
+
+## Required behaviour
+
+1. Verify detached Ed25519 evidence against a separate host-owned trust or exact unsigned-developer approval path.
+2. Revalidate and launch accepted candidate material only through the honestly labelled supervised profile with a clean bounded environment.
+3. Run host-owned conformance and persist immutable exact-pinned evidence without granting installation authority.
+4. Require explicit installation approval, publish immutable installed material, and record exact disabled bindings with no active availability.
+
+## Relevant components
+
+- M2 `package.rs` and `candidate.rs` inspection, quarantine and candidate evidence.
+- Existing `child_process.rs`, `stdio_provider.rs`, Socket and provider foundations.
+- Existing strict JSON, JCS/SHA-256, reparse-safe publication and immutable-store patterns.
+- New M3 trust, launch, conformance, approval and installed-state modules, schemas, fixtures and focused tests.
+
+## Frozen decisions and invariants
+
+Signature validity is not publisher trust; publisher trust is not conformance;
+conformance is not installation approval; installation is not enablement.
+Supervision is not isolation. No shell, PATH selection, ambient secret
+inheritance, production credential, automatic retry, active binding, provider
+operation, Anchor admission, or M4 behaviour is authorised.
+
+## Acceptance criteria
+
+1. P7 cryptographic, trust/revocation and exact unsigned-developer evidence passes its focused positive and negative matrix.
+2. P8 real Windows evidence proves exact no-shell launch, clean environment, bounded supervision, drift refusal and process cleanup.
+3. P9 pass/fail/interrupted and invalidation evidence is immutable, exact-pinned, secret-safe and non-authorising.
+4. P10 explicit approval and atomic publication produce only immutable installed-disabled records and bindings absent from active runtime availability.
+
+## Stop conditions
+
+Only the major conditions and two-materially-different-attempt rule in the
+`Major stop rule` section qualify. Ordinary design, dependency, compiler,
+fixture, Windows API, test-layout, schema and coherent scope decisions do not.
+
+## Expected pre-existing changes
+
+None. The milestone branch starts clean at the M3 control commit.
 
 ## Required final state
 
@@ -610,6 +663,13 @@ Run all focused P7-P10 tests, locked debug and release builds, all Rust targets/
 Add or extend a thin `just test-m3` or `just verify-m3` recipe only when it directly exposes the real underlying commands and remains readable.
 
 Do not suppress failing tests or warnings newly introduced by M3. Distinguish pre-existing warnings in the worker note.
+
+## Required verification
+
+Run the complete focused P7-P10 evidence and full verification matrix stated in
+`Required full verification`, including tools, format, check, all Rust
+targets/features and builds, OCaml build/tests, the complete 0.2 matrix, packet
+checker, whitespace check, and process-cleanup proof.
 
 ## Worker note
 
