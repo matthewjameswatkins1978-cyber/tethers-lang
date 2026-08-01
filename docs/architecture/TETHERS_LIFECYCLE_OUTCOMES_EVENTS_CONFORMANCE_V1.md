@@ -110,20 +110,26 @@ implement cancellation.
 
 Known in-memory classification remains known after audit failure. Audit failure
 does not downgrade success or failure to uncertainty. No standard Result Anchor
-is created when required durable outcome publication fails. Replay-terminal
+is created when either required durable publication fails. Replay-terminal
 failure never authorises another provider call; incomplete replay state requires
 manual resolution. Raw diagnostics remain redacted.
 
 ## 11. Result Anchors
 
 The standard names remain `capability.succeeded`, `capability.failed`, and
-`capability.uncertain`. Exactly one standard Result Anchor exists per attempted
-operation whose required durable outcome publication succeeded; unattempted work
-gets none. The host creates it after classification and durable evidence, never
-Socket. It carries stable host identity, capability/manifest identity, provider
-identity, correlation, causation, causal generation, validated result or stable
-redacted error, and no raw stderr, secret, token, stack, path, or unreviewed
-provider message.
+`capability.uncertain`. The host classifies first. Durable outcome and replay-terminal
+publication must both succeed before Result Anchor creation.
+Only after both durable publications succeed does it attempt exactly one
+standard Result Anchor write. A successful write creates exactly one standard
+Result Anchor; a failed write creates none and does not change the canonical
+outcome, replay state, or no-retry boundary. Failure of either durable
+publication suppresses Anchor creation. A failed publication does not authorise retry.
+Unattempted work gets no
+standard Result Anchor. The host creates the Anchor, never Socket. It carries
+stable host identity, capability/manifest identity, provider identity,
+correlation, causation, causal generation, validated result or stable redacted
+error, and no raw stderr, secret, token, stack, path, or unreviewed provider
+message.
 
 ## 12. Replay and restart
 
@@ -254,9 +260,13 @@ admission/conformance evidence, and handles credentials by separate choice.
 
 The first Plug Kit may target one local session, serial Action/Query invocation,
 three outcomes, current Result Anchors, existing replay, host conformance, File
-Tools, and PDF Tools. Anchor delivery, cancellation, partial extensions, remote
-providers, Jobs, Streams, Human Tasks, updates, general subscriptions, and
-failover remain deferred. J18F authorises no implementation.
+Tools, PDF Tools, and Anchor delivery. Anchor delivery remains a first-slice
+candidate, but requires a separately authorised implementation task providing
+the accepted source contract and host-owned durable external-event admission
+authority. J18F alone does not authorise that implementation. Cancellation,
+partial-completion extensions, remote providers, Jobs, Streams, Human Tasks,
+automatic updates, general subscription management, and multi-provider failover
+remain deferred.
 
 Refuse or mark unavailable when lifecycle, binding, attempt boundary, final
 truth, replay authority, event identity, duplicate admission, acknowledgement,

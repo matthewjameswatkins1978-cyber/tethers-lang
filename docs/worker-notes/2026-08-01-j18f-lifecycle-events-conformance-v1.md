@@ -71,6 +71,12 @@ in the J18F status block. Lucy authorised a follow-up correction commit rather
 than history rewriting. The two trailing-space sequences were removed. No
 normative wording or behaviour changed, and no implementation or schema changed.
 
+Lucy accepted the whitespace correction. Lifecycle review found that the Result
+Anchor rule omitted the existing replay-terminal publication gate, and that the
+first-envelope wording deferred Anchor delivery too broadly. Both ambiguities
+were corrected. No accepted runtime behaviour changed; no schema, test, fixture,
+provider, package, or implementation changed.
+
 ## Remaining risks
 
 J18G must define credential secrecy and sandbox enforcement. J18H must paper
