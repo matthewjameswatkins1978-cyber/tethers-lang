@@ -72,10 +72,12 @@ Illustrative host vocabulary includes observation (`data.read`,
 an exhaustive registry or machine schema. Arbitrary dotted strings are not
 trusted without an accepted effect definition or reviewed adapter.
 
-An effect definition preserves semantic identity, target kind, observational or
-mutating nature, locality, persistence, privacy, resource/financial impact,
+The complete capability contract preserves enough information for the host to
+determine semantic effect identity, target kind, observational or mutating
+nature, locality, persistence, privacy, resource or financial impact,
 reversibility, and deterministic or probabilistic behaviour. Existing manifest
-reversibility and determinism fields remain authoritative and are not duplicated.
+reversibility and determinism fields remain authoritative and are not duplicated
+inside effect declarations.
 
 The declared set is the maximum honest description of one invocation. Deliberate
 secondary effects, AI probabilistic behaviour, physical effects, cost/quota,
@@ -148,7 +150,10 @@ source and scope before admitting an Anchor; lifecycle remains J18F.
 ## 9. Policy, Confirmation, and Safety
 
 Class, effects, and effective scope are policy inputs, not policy decisions.
-The existing four-outcome vocabulary remains authoritative. Confirmation binds
+The existing four-decision policy vocabulary remains authoritative: `allow`,
+`ask`, `deny`, and `unavailable`. Canonical execution outcomes remain
+`succeeded`, `failed`, and `uncertain`; their broader Plug lifecycle mapping
+remains a J18F decision. Confirmation binds
 capability identity/version, manifest digest, provider binding, arguments,
 resolved scope, declared effects, and durable execution identity where relevant.
 Approval for one scope is not approval for a wider scope and does not survive

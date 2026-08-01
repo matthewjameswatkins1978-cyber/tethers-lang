@@ -57,6 +57,11 @@ The runtime already separates verified manifest claims, provider bindings,
 manifest pins, explicit path scope bindings, and host policy. The broader J18E
 model must remain a future contract rather than being presented as implemented.
 
+Lucy found a policy-decision/outcome terminology collision and an ambiguity
+about whether effects duplicate reversibility and determinism. Both were
+clarified without changing the architecture. No schema, manifest, or
+implementation changed.
+
 ## Remaining risks
 
 J18F must define Anchor lifecycle and outcome evidence. J18G must define
