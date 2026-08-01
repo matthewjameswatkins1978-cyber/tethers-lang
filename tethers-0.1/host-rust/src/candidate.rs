@@ -614,7 +614,10 @@ mod tests {
         let staging = root.join(".staging-fixed-test");
         fs::create_dir(&staging).unwrap();
         assert_eq!(create_dir(&staging).unwrap_err().code, "already_exists");
-        assert_eq!(confined(&root, &outside).unwrap_err().code, "unsafe_destination");
+        assert_eq!(
+            confined(&root, &outside).unwrap_err().code,
+            "unsafe_destination"
+        );
         assert!(!outside.join("provider-marker.exe").exists());
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(outside).unwrap();
