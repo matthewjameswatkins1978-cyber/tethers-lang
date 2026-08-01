@@ -51,6 +51,10 @@ manifest paths and digests, scope bindings, and policy. The package therefore
 references candidate manifests and payloads without replacing installed host
 authority.
 
+Lucy found an empty-directory contradiction in the illustrative package tree.
+The bare `signatures/` entry was removed. No normative package rule changed;
+no implementation or schema was created.
+
 ## Remaining risks
 
 J18F must define conformance material and J18G must define signature trust,

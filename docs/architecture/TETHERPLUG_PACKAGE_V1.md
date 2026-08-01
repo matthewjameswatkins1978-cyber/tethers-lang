@@ -207,8 +207,9 @@ manifests/file.read-v1.json
 tests/conformance.json
 docs/readme.md
 licenses/mit.txt
-signatures/
 ```
+
+The optional `signatures/` area appears only when the package contains detached signature material; empty directory entries are omitted.
 
 An illustrative fragment is deliberately non-executable:
 
