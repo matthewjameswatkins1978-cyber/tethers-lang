@@ -33,6 +33,14 @@ Before editing, report:
 Do not edit until this startup report is complete. A task packet may require
 additional reading but may not remove this gate.
 
+After completing the report and before any task-specific tool assumption, run
+`pwsh -NoProfile -File scripts/check-dev-tools.ps1`. It is the single
+repository-owned diagnostic for `rg`, `fd`, `jq`, `yq`, `gh`, `just`, `git`, and
+`pwsh`; stop and report a missing tool rather than guessing. The diagnostic is
+read-only. If User PATH changed, start a fresh application process before
+treating its result as the environment seen by Codex, OpenCode, VS Code, or a
+terminal.
+
 `docs/PROJECT_DASHBOARD.md` is a Matthew-facing summary, not implementation
 authority and not part of the automatic OpenCode instruction set. Read it only
 when the task concerns project reporting or the packet explicitly names it.
