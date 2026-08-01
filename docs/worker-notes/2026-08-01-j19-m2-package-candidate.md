@@ -6,7 +6,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex Terra High`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `337ab11c9cd4059402ef48d5949365c9517867a7`
 
@@ -108,6 +108,26 @@ event admission, trust, approval, installation, or enablement.
 - Toolchain gate, OCaml `dune build` and `dune runtest`, and
   `tethers-0.1/scripts/verify-0.2.ps1` — PASS (6/6 suites; J14C 9 rows,
   196 assertions). Packet checker and whitespace-range check — PASS.
+
+## Final evidence patch
+
+- Final implementation/test commit: `cb4d5b0` (final branch SHA is recorded by
+  the normal publication handoff).
+- Added real inspector fixtures for a nested `.tetherplug`, entry/total/ratio
+  limits, ZIP comments, and Unix symlink metadata; stable profile refusals use
+  `resource_limit` or `unsupported_archive_feature` as applicable.
+- Added candidate evidence for filename/identity disagreement, duplicate
+  identity evidence, pre-existing staging-target refusal, ancestor junction
+  refusal, and a no-outside-write marker assertion. Existing unexpected-file,
+  `plug.json` mutation, payload mutation, read-only, semantic-conflict, torn
+  record, and reparse-root tests remain in the focused matrix.
+- Final focused counts: `package::tests` 9 passed; `candidate::tests` 6 passed.
+  `just test-rust` passed 792 unit tests and 29 integration tests. `just fmt`,
+  `just check`, `just test-m2`, and `just verify` passed; pre-existing warnings
+  remained unchanged. OCaml build/tests and `verify-0.2.ps1` passed again.
+- No M3 behaviour, provider launch, Socket establishment, binding, trust,
+  installation, approval, credential, policy, session, enablement, or Anchor
+  admission was added.
 
 ## Remaining risks
 
