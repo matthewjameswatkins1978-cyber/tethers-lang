@@ -1,377 +1,591 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J19-M1 - Autonomous Socket Parity Programme`
+Task: `J19-M2 - Autonomous Package Candidate Programme`
 Owner: `Codex Terra High`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Red`
-Route: `Codex, autonomous Rust restructuring and Socket parity implementation`
+Route: `Codex, autonomous package inspection, quarantine and candidate-registry implementation`
 Base branch: `main`
-Base commit: `41a8a67737c7987a0fa05e219aeb5f202a96be26`
-Accepted implementation baseline: `cfdb372ab18c7935c6046faf5cf82da2fe742440`
+Accepted implementation baseline: `43179db362efbfed4a0079249ef7a940cde7054e`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
-Branch: `codex/j19-first-plug-kit`
-Worker note: `docs/worker-notes/2026-08-01-j19-m1-socket-parity.md`
+Branch: `codex/j19-m2-package-candidate`
+Worker note: `docs/worker-notes/2026-08-01-j19-m2-package-candidate.md`
 
 ## Control-plane starting rule
 
-Fetch `origin/main`, fast-forward the existing clean programme branch to the
-commit containing this control packet, record the control commit in the worker
-note, and continue on `codex/j19-first-plug-kit`.
+Start a fresh Codex Terra High session. Fetch `origin/main`, create or reset only
+the new clean milestone branch from the commit containing this control packet,
+and record that exact control commit in the worker note.
 
-The accepted implementation baseline remains
-`cfdb372ab18c7935c6046faf5cf82da2fe742440`. Control-only commits after that SHA
-change task authority, not runtime semantics.
+The accepted M1 implementation baseline is
+`43179db362efbfed4a0079249ef7a940cde7054e`. The control-only commit containing
+this packet authorises M2 but changes no runtime semantics.
+
+Use normal commits and normal pushes only. Do not amend, rebase published work,
+force-push, move `main`, move tags, or create a release.
+
+## Tooling preflight
+
+Before writing a helper or searching manually, inspect the tools already installed:
+
+- `rg` for repository and symbol search;
+- `fd` for file discovery;
+- `jq` and `yq` for structured test data inspection;
+- `gh` for GitHub inspection;
+- `pwsh` for the existing Windows verification scripts;
+- `just` only when an existing or clearly useful repeatable project command
+  already justifies it.
+
+Use the existing tool before inventing a wrapper. Do not add a `justfile`, source
+generator, second build layer, or broad helper framework merely for convenience.
+Small test-fixture builders are allowed when they are the safest way to create
+adversarial archives and remain test-owned.
 
 ## Objective
 
-Complete Milestone 1 from the accepted J18I roadmap:
+Complete Milestone 2 from the accepted J18I roadmap:
 
-1. P1-SOCKET-PARITY;
-2. P2-SOCKET-BOUNDARY;
-3. P3-DISCOVERY-CATALOGUE.
+1. `P4-PACKAGE-INSPECT`;
+2. `P5-QUARANTINE-PATHS`;
+3. `P6-INSTALL-CANDIDATE-REGISTRY`.
 
-Codex owns ordinary source-layout, module, visibility, test-placement and commit
-choices required to complete this milestone. Lucy will review the finished
-milestone diff and evidence. Do not stop merely because the safest implementation
-is larger than an earlier guessed file count or requires a different Rust module
-layout.
+The result is a host-owned, non-executing path that can inspect one
+`.tetherplug`, strictly validate its package and manifest evidence, select the
+accepted Windows x86_64 payload, compute exact raw and semantic identities,
+extract accepted bytes only into a host-owned quarantine root, and create one
+immutable installation-candidate record.
+
+M2 ends with a candidate that is:
+
+- uninstalled;
+- disabled;
+- unapproved;
+- untrusted;
+- non-operational;
+- absent from active provider and capability bindings;
+- incapable of provider launch, Socket establishment, invocation or Anchor
+  admission.
 
 Return only at:
 
-`M1 COMPLETE - SOCKET PARITY`
+`M2 COMPLETE - PACKAGE CANDIDATE`
 
 or on a genuine stop condition defined below.
 
-## Relevant background and existing behaviour
+## Governing contracts
 
-The accepted 0.2 host already owns trusted configuration, retained MCP stdio
-providers, serial dispatch, outcomes, replay, Result Anchors and Trail. Before
-M1, that behavior was coupled to the binary crate root: `main.rs` owned the
-shared module graph and broad regression tests while `lib.rs` exposed only a
-small foundation. Discovery consumed one `tools/list` response and exact
-trusted schema comparison existed at initial provider admission, but there was
-no reusable semantic Socket boundary or complete stale catalogue lifecycle.
+Implement against the accepted documents already in the repository:
 
-## Blocker resolution and autonomy rule
+- `docs/architecture/TETHERPLUG_PACKAGE_V1.md`;
+- `docs/architecture/TETHERS_CAPABILITIES_EFFECTS_SCOPES_V1.md`;
+- `docs/architecture/TETHERS_SECURITY_TRUST_CREDENTIALS_SANDBOX_V1.md`;
+- `docs/architecture/TETHERS_LIFECYCLE_OUTCOMES_EVENTS_CONFORMANCE_V1.md`;
+- `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`;
+- the accepted M1 Socket/application seam at the implementation baseline.
 
-The initial P1 attempts proved that the useful host execution machinery is
-binary-crate-root coupled. `main.rs` owns the host module graph, shared
-execution-boundary helpers and a large body of legacy tests, while `lib.rs`
-exports only a small foundation.
+Where J18D names a conceptual field but does not freeze its exact Rust type or
+nested JSON spelling, this packet authorises Terra to choose and freeze the
+smallest direct v1 machine representation consistent with every named field and
+refusal rule. Record those choices in fixtures and the worker note. Do not add
+fields that grant authority, policy, trust, credentials, installation,
+enablement or runtime configuration.
 
-The following are explicitly authorised and are not blockers:
+The current strict capability-manifest parser may be reused behind a clearly
+named verifier seam. Existing loose 0.2 manifests and runtime configuration must
+not be relabelled as packages, installed Plugs or candidate records. Reuse
+parsing, duplicate-key, JCS, digest and semantic-validation code where sound;
+do not silently change legacy manifest semantics.
 
-- move shared host module ownership from `main.rs` to `lib.rs`;
-- make `main.rs` a thin process-entry and CLI compatibility dispatcher;
-- create as many coherent Rust modules as are reasonably needed for the
-  extraction, rather than forcing everything into one file;
-- split application dispatch, legacy compatibility, event-drain helpers and
-  debug probes into separate concept-owned modules when that reduces coupling;
-- move unit tests out of `main.rs` into the module that owns the tested code;
-- move broad parity tests into `tests/` integration-test files;
-- preserve tests byte-for-byte where useful, or refactor test helpers when the
-  assertions and covered behaviour remain equivalent or stronger;
-- change `pub`, `pub(crate)` and private visibility as needed while keeping the
-  external public API deliberately small;
-- change import paths, crate aliases and module declarations;
-- change `Cargo.toml` only when required to declare or configure existing
-  library/binary/test targets, with no new dependency unless a genuine blocker
-  is reported;
-- create a bounded commit stack and reorganise it before first publication;
-- choose the exact extraction order and temporary intermediate layout;
-- use compiler errors and tests to guide the dependency untangling;
-- make ordinary engineering decisions without requesting Lucy approval.
+## Autonomy rule
 
-`Cargo.lock` must remain unchanged unless a separately reported dependency
-change is genuinely required. No dependency change is currently authorised.
+Codex owns ordinary engineering decisions needed to complete the milestone,
+including:
 
-A source-layout decision, number of touched Rust files, movement of existing
-tests, visibility adjustment, or temporary compilation break during the local
-refactor is not grounds for a BLOCKED report.
+- module names and source-file boundaries;
+- public versus crate-private visibility;
+- exact value types and error enums;
+- archive-reader integration;
+- test-fixture layout;
+- conservative package resource limits;
+- quarantine directory layout;
+- immutable candidate-record representation;
+- atomic-write and crash-recovery mechanics;
+- focused test versus integration-test placement;
+- commit count and intermediate local layout;
+- compiler-guided untangling;
+- narrow updates to existing scripts whose assumptions move without changing
+  the proof they enforce.
 
-## Required P1 result
+These are not blockers. An unfinished packet, dirty worktree during work, a
+larger-than-estimated but coherent diff, or later M2 packets remaining is not a
+BLOCKED condition.
 
-P1 is complete when:
+A minimal mature Rust ZIP/archive dependency and its necessary transitive
+compression dependencies are authorised if required. It must support Rust
+1.89, be used only for archive parsing/decompression, be pinned by `Cargo.lock`,
+and be documented in the worker note with version, purpose and why a custom ZIP
+parser was rejected. Existing JCS and SHA-256 dependencies must be reused. No
+new cryptography, signature, network, shell or executable-helper dependency is
+authorised. A justified archive dependency and resulting `Cargo.lock` change do
+not require another approval.
 
-1. the library crate owns the shared host module graph;
-2. `HostExecutionService` and its required types compile as library code;
-3. one deliberately small public application surface exists;
-4. the binary delegates to the library rather than compiling duplicate host
-   implementations;
-5. `main.rs` contains only process entry, argument capture, library dispatch,
-   output emission and process exit, plus the smallest unavoidable platform
-   glue;
-6. legacy and debug routes still behave as before, regardless of which module
-   now owns them;
-7. existing 0.2 CLI behaviour, envelopes, exit codes and ordering remain
-   compatible;
-8. no P2 Socket semantics have been introduced merely to finish P1;
-9. parity and full regression evidence pass.
+## P4 required result: package inspection
 
-Codex decides the concrete module map. A reasonable shape may include
-`application`, `legacy`, `event_flow` or test modules, but these names and counts
-are not requirements.
+P4 creates a pure inspection boundary. Inspection reads untrusted bytes and
+returns a typed inspection report or typed refusal. It does not extract, launch,
+install, approve, trust, bind, enable, mutate runtime configuration or invoke a
+provider.
 
-## P2 authorised scope
+### Archive profile
 
-After P1 passes locally, continue automatically to P2.
+Accept only the J18D v1 ZIP-compatible profile:
 
-Place retained MCP stdio provider sessions behind a semantic Socket boundary
-covering the accepted Socket v1 operations:
+- `.tetherplug` source treated as untrusted bytes;
+- ordinary files using stored or deflated compression only;
+- exactly one root `plug.json`;
+- required `provider/` payload and at least one `manifests/` entry;
+- optional `tests/`, `docs/`, `assets/`, `licenses/` and `signatures/` areas;
+- no files outside the canonical roots;
+- no unnecessary empty directory entries;
+- no encryption, multi-disk archive, self-extracting form, Zip64, unsupported
+  compression, nested `.tetherplug`, symbolic link, hard link, device, FIFO,
+  junction/reparse-point, alternate-data-stream or executable metadata feature;
+- bounded archive size, entry count, per-entry size, total uncompressed size,
+  compression ratio, path length, JSON size and manifest count;
+- deterministic fail-closed refusal when a limit is exceeded.
 
-- establish;
-- discover;
-- invoke;
-- observe_result;
-- observe_catalogue_change;
-- probe;
-- close.
+Terra chooses conservative explicit limit constants and records them. Limits
+must comfortably permit the planned credential-free File Tools and PDF Tools
+reference packages without becoming an archive-bomb invitation.
 
-The Socket returns observations only. It does not own trust, policy, approval,
-credentials, canonical outcomes, replay, Result Anchors, Trail or retries.
+### Package paths
 
-The first binding remains MCP `2025-11-25` over local stdio. Standard MCP
-methods remain the wire mapping. Do not invent custom Socket wire methods.
+Every archive path must:
 
-Preserve:
+- be relative and use `/`;
+- contain lowercase ASCII segments matching
+  `[a-z0-9][a-z0-9._-]*`;
+- reject spaces, empty segments, `.`, `..`, leading slash, backslash, drive
+  letters, colon, NUL/control characters and non-ASCII path bytes;
+- reject trailing dots or spaces and Windows reserved device names, including
+  reserved names with extensions;
+- reject duplicate raw paths, case-insensitive collisions, normalized
+  collisions, file/directory-prefix collisions and any path that can escape the
+  eventual quarantine root;
+- reject archive entries whose metadata claims link, reparse, device or other
+  non-ordinary-file semantics.
 
-- one active invocation per session;
-- monotonically unique session-local JSON-RPC request IDs;
-- no batching;
-- no parallel invocation;
-- no hidden restart queue;
-- no automatic retry;
-- exact executable/argument launch behaviour currently in the legacy path;
-- bounded close and child cleanup;
-- protocol stdout separate from diagnostic stderr.
+Do not trust the archive library's convenience extraction path as the security
+boundary. Validate the original archive name and the host destination
+independently.
 
-Codex owns the exact trait, structs, enums and module layout needed to express
-this boundary.
+### Strict `plug.json`
 
-## P3 authorised scope
+Implement strict UTF-8 JSON without BOM, duplicate keys, unknown fields,
+invalid I-JSON values or trailing data. Use RFC 8785 JCS for canonical bytes and
+semantic digest input.
 
-After P2 passes locally, continue automatically to P3.
+The implemented v1 machine model must directly represent the J18D fields:
 
-Implement the accepted discovery and catalogue behaviour:
+- package format version `"1"`;
+- lowercase dotted `package_id`;
+- strict `MAJOR.MINOR.PATCH` `package_version`;
+- display name, description, publisher presentation string and licence;
+- Socket major 1;
+- protocol binding MCP `2025-11-25` over local stdio;
+- platform Windows x86_64;
+- exactly one provider declaration with provider identity/version, launch,
+  package-relative working directory and capability operation namespace;
+- a non-empty canonical capability list containing capability identity,
+  manifest path/digest and provider operation name;
+- a complete canonical payload index containing path, lowercase
+  `sha256:<hex>`, exact size and accepted role.
 
-- consume every `tools/list` page;
-- treat cursors as opaque;
-- detect repeated or looping cursors and fail closed;
-- reject duplicate operation names;
-- validate live input and output schemas against trusted binding expectations;
-- preserve provider descriptions and annotations only as untrusted observations;
-- represent a complete catalogue snapshot;
-- make catalogue-change notification mark discovery stale;
-- prevent affected invocation while stale;
-- perform bounded rediscovery through the host-owned lifecycle;
-- retain exact unchanged bindings;
-- make missing, changed or incompatible bindings unavailable or quarantined as
-  required by the accepted contracts;
-- leave unapproved additions unavailable;
-- never convert catalogue notifications into Tethers Anchors.
+Capability entries sort by name then version. Payload entries sort by path.
+Duplicate capability identities and duplicate provider operation names fail.
+Launch is an ordered, package-relative declaration with no shell command string,
+interpolation, `cmd /c`, PowerShell `-Command`, PATH lookup, install command or
+unbounded user fragment. Interpreter-backed operational launch remains deferred;
+M2 may inspect and report such a declaration only if the package contract marks
+it unsupported for the first envelope. Nothing is launched.
 
-Codex owns the exact catalogue types, pagination implementation and transcript or
-fixture layout.
+### Payload and manifest validation
+
+The payload index is complete for every non-signature payload. `plug.json` is
+not self-indexed. Signature entries remain evidence-only and excluded from
+semantic package identity.
+
+For every indexed payload:
+
+- the archive entry exists exactly once;
+- no unindexed non-signature payload exists;
+- path and role are compatible with the canonical root;
+- declared size equals actual decompressed size;
+- declared SHA-256 equals the exact payload bytes;
+- the provider launch path resolves to one indexed provider payload;
+- every capability manifest path resolves beneath `manifests/` with role
+  `capability_manifest`;
+- package capability identity, operation name and manifest digest agree with
+  the verified authoritative manifest evidence;
+- manifest schemas, effects, scopes and behaviour cannot be overridden by
+  `plug.json` presentation fields.
+
+Descriptions, annotations, publisher strings, archive metadata and signature
+files are untrusted observations. They never alter trusted manifest semantics.
+
+### Identity and inspection report
+
+Keep these identities distinct:
+
+- raw archive identity and SHA-256;
+- package lineage `package_id`;
+- human release `package_id + package_version`;
+- exact package identity adding semantic package digest;
+- provider identity;
+- capability `name + version`;
+- capability-manifest digest;
+- later host-generated candidate identity.
+
+Compute semantic package digest from exact RFC 8785 JCS bytes of the fully
+validated `plug.json` only after array order, archive/index agreement, sizes,
+payload bytes and payload digests have passed. The digest is not stored inside
+`plug.json`.
+
+The report must preserve enough bounded evidence to explain acceptance or
+refusal without copying arbitrary raw provider stderr, executing content or
+creating authority. Same package ID and version with different semantic digests
+must conflict and fail closed or remain separately quarantined for explicit
+later review, never silently merge.
+
+P4 ends with inspection only. Commit P4 separately after its focused and
+regression evidence passes. Continue directly to P5 without returning.
+
+## P5 required result: safe quarantine extraction
+
+P5 extracts only a P4-accepted inspection result and only after an explicit
+library/API continuation call. It does not expose a public install CLI.
+
+### Quarantine rules
+
+- Destination is a new unique child of a host-supplied, host-owned quarantine
+  root, never the source archive directory, Downloads, repository checkout,
+  current working directory or final installation root.
+- Create the candidate in a same-volume staging directory, then publish it by
+  one atomic rename only after every entry and record passes.
+- Revalidate every destination path independently from the archive-reader path.
+- Reject pre-existing target files/directories, links, junctions, mount points,
+  reparse points, case collisions and prefix conflicts.
+- Use create-new/no-overwrite file creation and do not follow links.
+- Verify bytes, sizes and SHA-256 again while or immediately after writing.
+- Recheck quarantine-root and parent integrity before publication.
+- Apply restrictive host-owned permissions where the current host can prove
+  them; mark accepted payload immutable/read-only for M2 purposes.
+- Keep package payload, signature evidence, inspection report and future mutable
+  provider state conceptually and physically separate.
+- Clean incomplete staging safely on ordinary failure. Preserve bounded refusal
+  evidence without leaving executable-looking partial candidates.
+- Never execute from the archive, source path, staging path or quarantine.
+- Never call Socket, initialize MCP, run conformance, import credentials or
+  create active bindings.
+
+Use Windows APIs where required to identify and refuse reparse points and path
+tricks. Existing `replay_windows.rs` patterns may be reused, but replay state and
+candidate state remain separate.
+
+Real Windows adversarial tests must prove no write outside the quarantine root,
+including traversal, absolute/drive paths, alternate streams, case collisions,
+pre-existing targets, link/junction/reparse destinations and file/directory
+prefix collisions. Include a harmless provider-marker fixture and prove
+inspection/extraction never creates the marker process effect.
+
+P5 ends with a safely published quarantine directory and typed evidence, not an
+installed Plug. Commit P5 separately after its focused and regression evidence
+passes. Continue directly to P6 without returning.
+
+## P6 required result: installation-candidate registry
+
+P6 introduces a dedicated candidate/quarantine registry only. It is not the M3
+installed-Plug registry.
+
+### Schema-first rule
+
+Before durable registry code, freeze one explicit candidate-record schema in
+Rust types, golden fixtures and the worker note. This schema decision is part of
+P6 and does not require a separate Lucy round trip.
+
+The immutable record must include at least:
+
+- host-generated candidate ID;
+- fixed state identifying a quarantined installation candidate;
+- package ID and version;
+- semantic package digest;
+- raw archive digest and source size;
+- exact quarantine location beneath the configured root;
+- selected Windows x86_64 payload identity and payload digests;
+- provider claim identity/version and launch evidence;
+- capability identities, operation names and verified manifest digests;
+- inspection-report identity/version;
+- unverified signature-presence evidence without trust claims;
+- creation time and schema version;
+- enough information to detect same-release semantic conflicts and corrupted
+  candidate records on reload.
+
+The record must not contain:
+
+- installed identity;
+- active binding identity;
+- publisher trust;
+- signature validity or key trust;
+- installation approval;
+- conformance approval;
+- enablement;
+- policy decisions or installation grants;
+- credentials or credential references;
+- generated runtime configuration;
+- provider session state;
+- Trail, replay or Anchor authority.
+
+### Durable behaviour
+
+- Candidate IDs are host-generated and never package-selected.
+- Candidate records are immutable and create-only.
+- Candidate registry and quarantine payload roots are separate.
+- Use crash-aware create, flush and atomic publication on the same volume.
+- Never overwrite or merge an existing candidate.
+- Reload strictly validates schema, duplicate identities, exact root
+  confinement and record integrity.
+- Torn temporary files, malformed records and missing/mutated payload evidence
+  fail closed and cannot become available candidates.
+- Same package ID/version with a different semantic digest is an explicit
+  conflict.
+- A repeated exact package may be reported as already represented or receive a
+  distinct candidate ID according to one recorded deterministic rule, but it
+  must never silently replace existing evidence.
+- Candidate creation produces no active provider/capability availability and no
+  mutation of legacy 0.2 configuration or stores.
+
+Tests must prove process restart/load, exact immutable replay of records,
+conflict refusal, torn-write handling, missing/corrupted payload refusal,
+registry/quarantine separation and total absence of provider launch, Socket
+traffic, runtime binding, policy availability and event admission.
+
+Commit P6 separately after all M2 evidence passes.
+
+## Required source boundaries
+
+Create the smallest coherent M2 implementation. Reasonable concepts include:
+
+- package/archive inspection;
+- strict package value types and report/error types;
+- safe package path validation;
+- quarantine extraction;
+- candidate record and registry.
+
+These names and file counts are not requirements. Keep archive and quarantine
+code out of Core and out of the MCP Socket module. M1 Socket semantics should
+not need modification except for a genuine compile/import correction. The
+legacy 0.2 path must remain callable and unchanged.
+
+No public Plug lifecycle CLI is authorised in M2. Library APIs and test-owned
+fixtures are sufficient. Do not add broad public module visibility merely to
+make tests convenient.
+
+## Required evidence
+
+Add deterministic positive and negative evidence for at least:
+
+### P4 inspection
+
+- valid stored and deflated package variants;
+- raw archive digest changes while semantic digest remains stable across ZIP
+  ordering, timestamps and compression representation;
+- duplicate `plug.json`, duplicate archive entries and unknown roots;
+- missing provider/manifests, unindexed payload and missing indexed payload;
+- size and SHA mismatch;
+- strict JSON duplicate keys, unknown fields, BOM, trailing data and invalid
+  values;
+- invalid package IDs/versions and incompatible Socket/protocol/platform;
+- non-canonical capability/payload ordering;
+- duplicate capability identity and operation name;
+- manifest identity/schema/effect/scope/digest mismatch;
+- traversal, absolute, drive, backslash, colon/ADS, Unicode path, reserved
+  device, trailing dot/space and prefix/case collisions;
+- encrypted, Zip64, multi-disk, unsupported compression, links, devices,
+  reparse metadata, nested package and resource-limit/archive-bomb refusal;
+- signature presence remains unverified evidence and grants nothing;
+- inspection produces no extraction, process or host-binding effect.
+
+### P5 quarantine
+
+- real Windows safe extraction of an accepted package;
+- second byte/digest verification;
+- no overwrite and no escape;
+- malicious destination link/junction/reparse refusal;
+- case and prefix collision refusal;
+- incomplete staging cleanup;
+- published payload read-only/immutable evidence;
+- no launch from source, archive, staging or quarantine;
+- no provider process remains beneath the test checkout.
+
+### P6 candidate registry
+
+- schema golden and strict unknown/duplicate-field refusal;
+- create, flush, atomic publish, reload and lookup;
+- immutable no-overwrite behaviour;
+- same-release semantic conflict;
+- torn temp and malformed/corrupted record refusal;
+- missing or mutated quarantine payload refusal;
+- candidate/provider/package/capability identity distinctions;
+- candidate remains uninstalled, disabled, unapproved, untrusted and absent
+  from every runtime availability/binding path.
+
+### Full regression
+
+Before reporting M2, run at least:
+
+- Rust 1.89 formatting check;
+- `cargo check --all-targets --all-features --locked`;
+- `cargo test --all-targets --all-features --locked`;
+- locked debug build;
+- locked release build;
+- all accepted M1 Socket/catalogue tests;
+- all existing MCP transcripts;
+- all existing host PowerShell suites and consolidated matrix;
+- J14C real file move and zero-replay-move proof;
+- OCaml `dune build` and `dune runtest` through the established switch;
+- engine fixtures, JSON/JSONL fixture validation, demo and runner contract;
+- task-packet checker;
+- `git diff --check`;
+- before/after `Cargo.lock` hashes and dependency explanation;
+- process cleanup proving no child remains beneath the checkout.
+
+Do not weaken, skip, rename away or suppress a failing proof merely to finish
+M2. Existing tracked non-fatal warnings may remain visible; new warnings caused
+by M2 should be fixed unless there is a documented compatibility reason.
 
 ## Frozen decisions and invariants
 
 - Tethers Core remains deterministic and application-agnostic.
-- The Rust host owns trust, policy, approval, credentials, dispatch, outcomes,
-  replay, event admission, conformance and Trail.
-- Providers own vendor-specific translation.
-- Socket semantics, protocol binding and byte transport remain distinct.
-- Attempted operation outcomes remain exactly `succeeded`, `failed` and
-  `uncertain`.
-- Unattempted remains a disposition, not a fourth outcome.
-- No automatic retry or restart retry exists.
-- Idempotency does not authorise retry.
-- Event admission remains separate from operation outcomes.
-- Durable outcome and replay-terminal publication precede Result Anchor
-  creation.
-- No Result Anchor exists for unattempted work.
-- Supervised execution is not hostile-code isolation.
 - Tether language syntax and semantics remain `0.1`.
-- Released `v0.2.0` and its history remain unchanged.
+- The accepted M1 Socket/application seam remains intact.
+- Socket, MCP protocol binding and byte transport remain distinct.
+- The host owns inspection, identity, quarantine and candidate state.
+- Providers and packages remain untrusted observations.
+- Package possession, valid structure and semantic digest grant no authority.
+- Signature presence grants no authority; signature verification and publisher
+  trust are M3.
+- Candidate is not installed, approved, enabled, bound or operational.
+- No execution occurs during inspection, extraction or candidate creation.
+- No launch occurs from archive, Downloads, source, staging or quarantine.
+- No active provider/capability binding exists before M3 installation approval
+  and later explicit enablement.
+- No policy permission, credential, conformance result, provider health or
+  runtime availability is created in M2.
+- Attempted-operation outcomes, replay, Result Anchors, event admission and
+  Trail ordering remain unchanged and unused by package inspection.
+- No automatic retry exists.
+- Released `v0.2.0`, tags, releases and legacy user configuration remain
+  unchanged.
 
-## Relevant components
+## Explicit exclusions
 
-Codex may inspect and modify the minimum coherent set under:
+Do not implement:
 
-- `tethers-0.1/host-rust/src/`;
-- `tethers-0.1/host-rust/tests/`;
-- `tethers-0.1/host-rust/Cargo.toml` only under the target-configuration rule;
-- existing MCP fixtures/transcripts and test scripts required for P2/P3 evidence;
-- `docs/CURRENT_CLINE_TASK.md` for status only;
-- `docs/worker-notes/2026-08-01-j19-m1-socket-parity.md`.
-
-Existing runtime configuration, capability manifests, providers and scenarios may
-be used unchanged as regression evidence. Do not reinterpret them as
-`.tetherplug` v1.
-
-## Required behaviour
-
-1. Preserve released 0.2 behaviour while moving shared host ownership into the
-   library.
-2. Complete P1, P2 and P3 without asking for ordinary source-layout approval.
-3. Keep every commit reviewable and the legacy route recoverable.
-4. Run focused tests during development and the complete required evidence before
-   reporting M1.
-5. Record architectural discoveries and deliberate layout choices in the worker
-   note.
-6. Do not begin package inspection, trust, File Tools packaging or Milestone 2.
-
-## Acceptance criteria
-
-M1 is accepted for review only when all of the following are true:
-
-1. P1, P2 and P3 each have identifiable commits or a clearly mapped commit
-   stack.
-2. The library owns the reusable application and Socket seams.
-3. The binary is thin and has no duplicate host implementation.
-4. Existing `check`, `run`, `trail`, legacy, replay and debug-probe behaviour is
-   compatible.
-5. Existing policy, approval, dispatch, outcome, replay, Result Anchor, event
-   admission and Trail ordering remain intact.
-6. Socket operations preserve serial invocation and no retry.
-7. Discovery proves complete pagination, repeated-cursor refusal, duplicate-name
-   refusal, schema drift handling and catalogue invalidation.
-8. Catalogue notifications are not Anchors.
-9. Full Rust and OCaml regression passes.
-10. Existing real file-move and public 0.2 verification passes.
-11. Formatting, locked builds, packet checks and whitespace checks pass.
-12. `Cargo.lock` remains unchanged.
-13. Worktree is clean and the programme branch is pushed normally.
-14. No Milestone 2 implementation has begun.
-
-## Required verification
-
-Use focused tests freely during implementation. Before the M1 report, run at
-least:
-
-- `rustup run 1.89.0 cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --lib`;
-- complete Rust tests for the host crate;
-- locked debug build;
-- locked release build;
-- `cargo fmt --check`;
-- existing MCP transcript and provider tests;
-- existing public `check`, `run` and `trail` verification;
-- existing real local file-move proof;
-- full OCaml engine tests and demo through the established Windows/opam route;
-- repository JSON/JSONL fixture checks;
-- task-packet checker;
-- `git diff --check`;
-- `Cargo.lock` hash comparison against the recorded baseline.
-
-Add focused parity, Socket and discovery tests where existing suites do not prove
-the acceptance criteria.
-
-Do not suppress, ignore or delete a failing regression merely to complete the
-milestone.
-
-## Forbidden changes
-
-Do not begin or implement:
-
-- `.tetherplug` parsing or extraction;
-- quarantine or installed registries;
-- signatures, publisher trust or revocation;
-- clean-environment security profiles beyond preserving existing launch
-  behaviour;
-- credentials or credential delivery;
-- conformance stores;
-- durable external-event admission;
-- packaged File Tools or PDF Tools;
-- new public Plug lifecycle CLI;
+- Ed25519 verification or signature-envelope trust decisions;
+- publisher trust, key rotation or revocation;
+- unsigned developer-mode approval;
+- conformance launch or conformance evidence approval;
+- installation approval or installed-Plug registry;
+- present-disabled installed bindings;
+- provider launch profiles, clean environment or AppContainer;
+- credentials or Credential Manager;
+- operational launch, Socket establishment or invocation from a candidate;
+- enable/disable/remove lifecycle;
+- File Tools or PDF Tools packaged provider payloads;
+- public inspect/install/enable CLI;
+- durable external Anchor admission;
 - Jobs, Streams or Human Tasks;
-- network providers or listeners;
-- Tether syntax or semantic changes;
-- release tags or GitHub Releases.
+- network providers, listeners, update channels, marketplace or registry
+  downloads;
+- Tether syntax or Core semantic changes.
 
-Do not move or rewrite `v0.2.0` history.
+## Genuine stop conditions
 
-## Stop conditions
+Continue and record the decision when the issue concerns ordinary module layout,
+resource-limit values, test-fixture construction, archive-crate API usage,
+visibility, error wording, atomic-file representation, candidate ID generation,
+commit structure or compiler-guided refactoring.
 
-Do not stop for ordinary refactoring uncertainty.
+Begin `BLOCKED` only when one of these remains after at least two materially
+different evidence-based attempts:
 
-Continue, choose a reasonable implementation, test it, and record the choice when
-the issue concerns:
+- the frozen J18D/J18E/J18G contract must change;
+- safe archive inspection cannot reject a required forbidden ZIP feature with
+  the selected library and no mature Rust alternative can do so;
+- Windows destination confinement or reparse refusal cannot be proved;
+- semantic package identity cannot be computed without conflating raw archive,
+  package, manifest or candidate identity;
+- a persistent released-0.2 or M1 regression cannot be repaired without
+  semantic change;
+- a dependency beyond the authorised archive/decompression purpose is required;
+- inspection/extraction would require execution, shelling out or entering M3;
+- durable candidate state would need trust, installation approval, bindings,
+  credentials, conformance or provider launch;
+- public CLI or machine contracts outside the named M2 schemas must change;
+- Git history would require force, published rebase or release-ref mutation.
 
-- module names or count;
-- exact source-file boundaries;
-- movement of existing tests;
-- visibility and import paths;
-- helper placement;
-- whether a parity test is unit or integration level;
-- intermediate commit structure;
-- compiler-guided dependency untangling;
-- a larger-than-estimated but still bounded P1 diff.
+A BLOCKED report must include the exact failing command, two attempted
+approaches, smallest relevant evidence, external effects, safe rollback and one
+concrete decision that cannot reasonably be made by the implementation owner.
 
-Stop and begin `BLOCKED` only when one of these remains after at least two
-materially different, evidence-based attempts:
+## Expected starting state
 
-- the frozen architecture must change;
-- released 0.2 semantics cannot be preserved;
-- a required regression fails for reasons not caused by ordinary test relocation
-  or harness adjustment;
-- a new third-party dependency appears necessary;
-- public CLI or machine schemas must change;
-- outcome, replay, admission or Result Anchor truth would change;
-- a security or durable-state boundary outside M1 must be implemented;
-- source evidence reveals existing corruption or unsafe behaviour that cannot be
-  contained within M1;
-- work would cross into Milestone 2;
-- Git history would require force, rebase of published work or release-ref
-  mutation.
-
-A BLOCKED report must include the exact failing command, both attempted
-approaches, smallest relevant diff or compiler evidence, external effects, safe
-rollback and one concrete decision that cannot reasonably be made by the
-implementation owner.
-
-## Expected pre-existing changes
-
-The programme branch is expected to be clean and equal to the prior control
-commit before fast-forwarding to this packet. No P1 implementation commit is
-expected yet.
+- `main` equals accepted M1 SHA
+  `43179db362efbfed4a0079249ef7a940cde7054e` before this control-only commit;
+- the new M2 branch starts from the control commit containing this packet;
+- worktree is clean;
+- no M2 implementation exists;
+- Milestone 3 is not authorised.
 
 ## Worker note
 
 Create and maintain:
 
-`docs/worker-notes/2026-08-01-j19-m1-socket-parity.md`
+`docs/worker-notes/2026-08-01-j19-m2-package-candidate.md`
 
 Record:
 
-- control commit and branch base;
-- baseline commands and totals;
-- chosen source layout and why;
-- P1, P2 and P3 commit map;
-- moved tests and preserved assertions;
-- public library surface;
-- compatibility evidence;
-- Socket identity and lifecycle decisions;
-- discovery pagination and invalidation evidence;
-- regressions encountered and resolutions;
-- exact final checks;
-- remaining risks;
-- rollback points;
-- confirmation that Milestone 2 did not begin.
+- exact control commit, branch base and toolchain;
+- installed-tools preflight and any helper retained;
+- archive dependency and lockfile change, if any;
+- machine `plug.json` representation choices;
+- explicit resource limits;
+- P4/P5/P6 commit map and rollback points;
+- package/path/digest/manifest identity decisions;
+- quarantine Windows path and reparse strategy;
+- candidate schema and crash/recovery strategy;
+- positive and adversarial fixtures;
+- every regression and correction;
+- exact final commands and totals;
+- proof of no execution, no binding and no M3 work;
+- remaining risks.
 
-## Commit and publication boundary
+## Suggested commit map
 
-Use bounded commits with descriptive messages. A suggested stack is:
+Use bounded, reviewable commits. A reasonable stack is:
 
-- `refactor: extract host application library seam`;
-- `refactor: add semantic socket boundary`;
-- `feat: complete socket discovery catalogue`;
-- optional focused test or correction commits.
+- `feat: inspect tetherplug packages`;
+- `feat: extract packages into quarantine`;
+- `feat: record immutable installation candidates`;
+- optional narrowly scoped fixture or compatibility correction commits.
 
-This wording is not mandatory. The packet-to-commit mapping must be clear.
+The wording is not mandatory. P4, P5 and P6 must remain identifiable and
+individually reversible.
 
 Push only:
 
-`codex/j19-first-plug-kit`
+`codex/j19-m2-package-candidate`
 
 Do not push `main`, tags or releases.
 
@@ -379,53 +593,30 @@ Do not push `main`, tags or releases.
 
 Begin exactly:
 
-`M1 COMPLETE - SOCKET PARITY`
+`M2 COMPLETE - PACKAGE CANDIDATE`
 
 Report:
 
-1. branch and final SHA;
-2. control commit;
-3. P1/P2/P3 commit map;
-4. changed paths by packet;
-5. final source layout;
-6. public library/application/Socket surfaces;
-7. test commands and exact totals;
-8. 0.2 compatibility evidence;
-9. Socket lifecycle evidence;
-10. pagination, cursor, duplicate, drift and invalidation evidence;
-11. frozen-boundary checks;
-12. `Cargo.lock` hash result;
-13. rollback points;
+1. branch, final SHA and control commit;
+2. P4/P5/P6 commit map and rollback points;
+3. changed paths by packet;
+4. final module and store layout;
+5. archive dependency and final `Cargo.lock` hash;
+6. exact `plug.json` machine representation choices;
+7. package/path/resource refusal rules;
+8. raw, semantic, manifest and candidate identity evidence;
+9. quarantine extraction and Windows reparse evidence;
+10. candidate schema, atomicity and restart evidence;
+11. no-execution, no-binding and no-M3 proofs;
+12. full test commands and exact totals;
+13. 0.2 and M1 compatibility confirmation;
 14. remaining risks;
-15. clean worktree;
-16. ahead/behind main;
-17. confirmation Milestone 2 did not begin.
+15. clean worktree and branch ahead/behind `main`;
+16. confirmation that `main`, tags and releases are untouched.
 
 On a genuine stop condition begin exactly:
 
 `BLOCKED`
 
-Stop after the report.
-
-## Completion ledger
-
-- Control commit: `41a8a67737c7987a0fa05e219aeb5f202a96be26`.
-- P1: `a7ea653f87a554405dbfbcceda2493c893cf181d` — library-owned
-  application graph and thin binary dispatcher.
-- P2: `34be88b` — semantic Socket lifecycle over one retained MCP stdio
-  session.
-- P3: `3c525ae` — complete paginated catalogue, opaque-cursor and duplicate
-  refusal, stale notification handling, bounded exact revalidation and drift
-  invalidation.
-- Compatibility correction: `5bc483c` — J14B follows the two unchanged named
-  proofs at their library-owned test path.
-- Final Rust: `777` library tests plus `29` integration tests passed; locked
-  debug and release builds passed.
-- Final release matrix: `6` suites passed, `0` failed; J14C retained its single
-  real move and zero-additional-move replay proof.
-- OCaml build and runtest, engine fixtures, MCP transcripts, JSON/JSONL
-  fixtures, host scripts, demo, runner contract, formatting and toolchain gate
-  passed.
-- `Cargo.lock` remains byte-identical at SHA-256
-  `894F2CE6692837FA4C449C0FC593A37ED5597577EA5B4093DA0912E6EE2B14E3`.
-- Milestone 2 did not begin.
+Stop after the report. Do not begin Milestone 3 until Lucy accepts M2 and installs
+a new authoritative packet.
