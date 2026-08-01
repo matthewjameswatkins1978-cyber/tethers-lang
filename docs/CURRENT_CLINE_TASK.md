@@ -1,881 +1,372 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J18I-F1 - Restore Frozen Installation and Conformance Order`
-Owner: `Codex`
-Status: `COMPLETE`
+Task: `J19-P1 - Host Application Seam and 0.2 Parity`
+Owner: `Codex Terra High`
+Status: `IN_PROGRESS`
 Task colour: `Red`
-Route: `Codex, frozen lifecycle sequencing correction and roadmap evidence review`
+Route: `Codex, bounded Rust crate-ownership extraction and parity proof`
 Base branch: `main`
-Base commit: `e028b0b80f1a092f5f4198714c0b7a4477323cc8`
+Accepted implementation baseline: `cfdb372ab18c7935c6046faf5cf82da2fe742440`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
-Branch: `luna/j18i-first-plug-kit-roadmap`
-Worker note: `docs/worker-notes/2026-08-01-j18i-first-plug-kit-roadmap.md`
-
-## Relevant background and existing behaviour
-
-J18B through J18H are accepted contracts and the Universal Plug architecture is
-frozen at the stated architecture base. Tethers 0.2.0 remains the released
-baseline, with Tether 0.1 syntax and semantics unchanged. The existing Rust host
-already provides typed execution, policy, approval, intent-first dispatch,
-canonical outcomes, replay, Result Anchors, event admission, Trail and
-supervised MCP/engine sessions, but these modules are largely binary-owned.
-
-## Required behaviour
-
-1. Produce a documentation-only, executable roadmap with exactly six vertical
-   milestones.
-2. Include a bounded future packet map, current-code inventory, compatibility
-   strategy, evidence layers, durable-store sequencing, exclusions and risks.
-3. Keep implementation unauthorised and do not create implementation artifacts.
-4. Make the first future implementation packet the smallest Milestone 1
-   extraction/parity task only.
-5. Preserve released 0.2 behaviour and all frozen J18 trust/outcome boundaries.
-6. Record evidence-based reuse, extraction, extension, supersession and deferral
-   decisions.
-
-## Relevant components
-
-The authoritative roadmap must cover the Rust host modules, current CLI and
-PowerShell checks, capability manifests, runtime configurations, MCP fixture
-provider, local file provider, Rust/OCaml/integration test surfaces, and the
-accepted J18B-J18H architecture documents named by this packet.
-
-## Frozen decisions and invariants
-
-Core remains deterministic and application-agnostic; the host owns trust,
-policy, credentials, dispatch, outcomes, replay, admission, conformance and
-Trail; providers translate vendor protocols. Action, Query and Anchor are first
-classes, while Job, Stream and Human Task remain reserved. There are exactly
-three attempted operation outcomes, no automatic retry, and inbound admission
-is separate from operation outcomes. Supervision is not isolation, and packages,
-signatures, conformance and installation grant no permission.
-
-## Acceptance criteria
-
-1. Exactly eight authorised Markdown paths change relative to the frozen base.
-2. J18H is accepted and the architecture freeze is final without altering its
-   validation analysis.
-3. Current implementation is inventoried with evidence and reuse decisions.
-4. Exactly six vertical milestones and a bounded worker-routed packet map exist.
-5. P1 is the smallest Milestone 1 extraction/parity task and does not begin
-   package, File Tools or security work.
-6. Compatibility, exclusions, risks, evidence and durable-store sequencing are
-   explicit; no implementation or schema is created.
-
-## Required verification
-
-Run whitespace, exact changed-path, staged-diff and task-packet checks; required
-milestone, reuse, boundary, packet and forbidden-claim searches; no-
-implementation-artifact verification; and remote main/tag reference checks.
-
-## Forbidden changes
-
-Do not modify or create Rust, OCaml, Cargo, Dune, opam, scripts, tests, fixtures,
-manifests, runtime configuration, schemas, packages, providers, MCP transcripts,
-credentials, trust stores, keys, signatures, sandboxes, durable store files,
-Tether specification, Constitution, release material, tags or GitHub Releases.
-Do not begin implementation.
-
-## Stop conditions
-
-Stop on branch, base, ownership, authorised-path or architecture mismatch; a
-missing implementation fact that cannot be established from repository evidence;
-an unresolved frozen-semantic contradiction; a failed required check; or any
-request to implement rather than roadmap. After two materially similar failed
-attempts, stop with exact evidence and one smallest unresolved question.
-
-## Expected pre-existing changes
-
-The control-plane commit `e028b0b80f1a092f5f4198714c0b7a4477323cc8` is expected as
-the branch base. The worktree is expected to be clean before J18I documentation
-changes; the frozen architecture base remains an earlier ancestor used for
-changed-path verification.
+Branch: `codex/j19-first-plug-kit`
+Worker note: `docs/worker-notes/2026-08-01-j19-p1-host-application-seam.md`
 
 ## Control-plane starting rule
 
-Fetch `origin/main`, switch to `main`, and fast-forward to the commit containing
-this J18I control contract. Create `luna/j18i-first-plug-kit-roadmap` from that
-updated `main`.
+Fetch `origin/main`, fast-forward the existing clean programme branch to the
+commit containing this control packet, and record that exact control commit in
+the worker note.
 
-On the task branch, add a `Base commit` line containing the exact control-plane
-commit from which the branch was created.
+The accepted implementation baseline remains
+`cfdb372ab18c7935c6046faf5cf82da2fe742440`. The control-only commit changes task
+authority and is not an implementation change.
 
-The architecture being roadmapped is frozen exactly at
-`a5fd63593a9d9acd397030ecd2e27b4f318c87fd`. The control-plane commit changes
-only task authority and is not a new architecture decision. Final changed-path
-verification is measured against the frozen architecture base above.
+## Blocker resolution
+
+The initial P1 attempt proved that `HostExecutionService` and its dependencies
+are owned by the binary crate root. `lib.rs` currently exposes only
+`child_process`, `cli`, and `engine_stdio`, while `main.rs` owns the wider module
+graph and shared execution-boundary helpers.
+
+Two bounded façade attempts failed at the same crate-ownership boundary.
+
+Lucy authorises the smallest real structural correction:
+
+- move shared host module ownership from the binary crate root to the library
+  crate root;
+- extract binary-root helpers and shared types required by host execution into a
+  dedicated library application module;
+- make `main.rs` a thin CLI and compatibility dispatcher over the library;
+- preserve all released 0.2 behaviour.
+
+This is the accepted P1 seam. It is not a broad host redesign.
 
 ## Objective
 
-Produce the executable implementation roadmap for the first Tethers Plug Kit.
-
-The roadmap must turn the accepted and paper-validated J18B through J18H
-architecture into small, reviewable implementation packets that reuse the proven
-Tethers 0.2 host rather than replacing it.
-
-This task is documentation and sequencing only.
-
-Do not implement code, schemas, packages, providers, signatures, credentials,
-sandboxes, stores, CLI commands, fixtures or tests.
-
-## Accepted and frozen baseline
-
-Released product:
-
-- Tethers 0.2.0.
-- `v0.2.0^{}` -> `b5546411661dcbcb53e1cf2538eaec594c6f76f2`.
-- Language syntax and semantics remain `0.1`.
-
-Accepted J18 contracts:
-
-- J18B Universal Plug Architecture.
-- J18C Socket v1 and MCP 2025-11-25 stdio binding.
-- J18D `.tetherplug` package v1.
-- J18E capability classes, effects and scopes.
-- J18F lifecycle, outcomes, events and conformance.
-- J18G security, trust, credentials and sandbox.
-- J18H paper validation, verdict `VALIDATED`.
-
-J18B through J18H are accepted. The Universal Plug architecture is finally
-frozen at `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`.
-
-Implementation remains unauthorised until Lucy accepts J18I and issues the first
-bounded implementation packet.
-
-## Frozen laws the roadmap must preserve
-
-1. Tethers Core remains deterministic and application-agnostic.
-2. Tethers coordinates; the host owns trust, policy, credentials, dispatch,
-   canonical outcomes, replay, event admission, conformance and Trail.
-3. Providers own vendor-specific translation.
-4. Socket semantics, protocol binding and byte transport remain distinct.
-5. Capability class, effects, scope, policy and outcome remain distinct.
-6. Action, Query and Anchor are first-programme classes.
-7. Job, Stream and Human Task remain reserved and unimplemented.
-8. Attempted operation outcomes remain exactly `succeeded`, `failed`, and
-   `uncertain`.
-9. Unattempted is not an execution outcome.
-10. No automatic retry or restart retry exists.
-11. Replay authority remains separate from Trail.
-12. Inbound event admission remains separate from operation outcomes.
-13. Packages, signatures, conformance and installation grant no operational
-    permission.
-14. Supervised execution is not hostile-code isolation.
-15. Credential-bearing production providers require proven isolation or a
-    reviewed host-owned broker.
-16. File Tools and bounded PDF Tools are the first reference Plugs.
-17. First reference providers are credential-free and have no network access.
-18. Arbitrary third-party Plug enablement remains unavailable without proven
-    isolated execution.
-19. Tether `0.1` syntax does not change.
-20. Existing released `0.2.0` behaviour and refs remain intact.
-
-## Canonical output
-
-Create:
-
-`docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`
-
-Begin exactly:
-
-Status: J18I candidate, pending Lucy roadmap review
-Architecture freeze: a5fd63593a9d9acd397030ecd2e27b4f318c87fd
-Implementation: Not authorised
-
-## Roadmap philosophy
-
-The roadmap must be vertical, not a collection of horizontal rewrites.
-
-Every implementation milestone must:
-
-- deliver one testable end-to-end capability or host boundary;
-- reuse proven 0.2 machinery where it is sound;
-- leave `main` releasable and old 0.2 behaviour working;
-- define exact entry and exit evidence;
-- identify one rollback boundary;
-- stop when frozen architecture would need revision;
-- avoid speculative framework work.
-
-No big-bang host rewrite is permitted.
-
-No milestone may require all future security, marketplace, remote-provider or
-reserved-class work before the first useful Plug runs.
-
-## Required current-code inventory
-
-Inspect and record the exact current role, reuse decision and known gap for at
-least:
-
-- `tethers-0.1/host-rust/src/main.rs`;
-- `tethers-0.1/host-rust/src/lib.rs`;
-- `runtime_config.rs`;
-- `configured_runtime.rs`;
-- `manifest.rs`;
-- `trusted_store.rs`;
-- `provider.rs`;
-- `resolver.rs`;
-- `policy.rs`;
-- `approval.rs`;
-- `dispatch.rs`;
-- `stdio_provider.rs`;
-- `host_execution.rs`;
-- `outcome.rs`;
-- `replay_runtime.rs` and `replay_windows.rs`;
-- `result_anchor.rs`;
-- `event_admission.rs` and `event_queue.rs`;
-- `child_process.rs`;
-- `engine_stdio.rs`;
-- current CLI and check/run commands;
-- current capability manifests, runtime configurations and MCP fixture provider;
-- current Rust, OCaml and integration test surfaces.
-
-For every component classify:
-
-- reuse unchanged;
-- extract behind a stable seam;
-- extend under frozen semantics;
-- supersede only for the new Plug path;
-- defer.
-
-Do not merely list files.
-
-## Known implementation gaps to test
-
-The roadmap must verify and place, not silently assume, at least these gaps:
-
-- no explicit Tethers Socket application seam yet;
-- host modules are still largely binary-owned while `lib.rs` exposes only a
-  small foundation;
-- current runtime configuration directly carries command/args and reviewed
-  manifests rather than installed Plug identities;
-- current manifest format is not the J18D package and J18E contract;
-- current MCP discovery does not yet prove the full J18C pagination and catalogue
-  lifecycle contract;
-- no `.tetherplug` archive inspector or quarantine installer;
-- no semantic package digest/signature/trust-store implementation;
-- no immutable installed-Plug registry;
-- no sanitized provider environment;
-- no conformance evidence store and invalidation engine;
-- no explicit supervised-versus-isolated launch profile implementation;
-- no Windows Credential Manager profile store;
-- no credential delivery or broker, which remains outside the first
-  credential-free reference slice;
-- no durable external-event admission authority across process restarts;
-- no first-class Action/Query/Anchor machine contract for installed Plugs;
-- no File Tools or PDF Tools packaged reference provider;
-- no Plug inspection, install, enable, disable, conformance and removal user
-  workflow;
-- no arbitrary third-party hostile-code containment.
-
-If repository inspection disproves or refines a gap, record the evidence.
-
-## Compatibility and migration rule
-
-Freeze this roadmap rule:
-
-- the released 0.2 runtime path remains working;
-- Plug Kit implementation is introduced through a new host-owned path and stable
-  seam;
-- existing runtime configuration, manifests and fixtures are reused as evidence
-  and adapters where sound, not silently reinterpreted as `.tetherplug` v1;
-- no in-place mutation of user 0.2 configuration is required;
-- no legacy path is removed during the first Plug Kit;
-- any migration or dual-read format requires a separately reviewed packet;
-- the v0.2.0 tag never moves.
-
-## Required six vertical milestones
-
-Define exactly six implementation milestones. Each milestone must include:
-
-- user-visible or machine-visible result;
-- exact architectural contracts exercised;
-- existing modules reused;
-- new modules or stores anticipated, without freezing filenames unnecessarily;
-- packet breakdown;
-- owner and task colour recommendation;
-- dependencies;
-- tests and evidence;
-- stop conditions;
-- rollback boundary;
-- explicit exclusions.
-
-### Milestone 1: Socket seam and 0.2 parity
-
-Required outcome:
-
-- expose the existing host execution path behind a reusable application/library
-  seam without changing released behaviour;
-- introduce the semantic Socket boundary around retained MCP stdio sessions;
-- preserve exact lifecycle, request identity, no-batch and no-retry rules;
-- implement full J18C discovery pagination, duplicate detection, schema drift and
-  catalogue-change invalidation;
-- keep current engine, policy, outcome, replay, Result Anchor and Trail behaviour
-  passing;
-- no package installation yet.
-
-The roadmap must identify the smallest extraction from binary-owned modules and
-must forbid a broad `main.rs` rewrite.
-
-### Milestone 2: Package inspection, quarantine and installation-candidate identity
-
-Required outcome:
-
-- inspect `.tetherplug` without execution;
-- validate strict archive paths, `plug.json`, payload index and semantic digest;
-- select the exact Windows x86_64 payload;
-- extract only into quarantine;
-- create immutable host-owned installation-candidate material in quarantine;
-- keep package identity, candidate identity, provider identity and capability
-  identity distinct;
-- record candidate/quarantine evidence only, never an installed record, active
-  binding, developer trust, installation approval or operational launch;
-- no provider invocation from Downloads, source ZIP or quarantine.
-
-The roadmap must place archive-bomb, traversal, symlink/junction/reparse,
-case-collision, duplicate-entry and TOCTOU tests.
-
-### Milestone 3: Trust, launch and conformance gate
-
-Required outcome:
-
-- Ed25519 package verification and host-owned publisher trust;
-- explicit trust, developer-mode and revocation state;
-- pre-launch payload digest revalidation;
-- exact executable and argument launch with no shell or PATH lookup;
-- environment constructed from scratch;
-- retained Job Object supervision and bounded resources;
-- visible supervised-profile labelling;
-- conformance run only from quarantine using the accepted test profile, followed
-  by provider shutdown and immutable evidence review;
-- conformance evidence pinned to package, payload, manifest, provider, Socket,
-  protocol, host, platform and suite versions;
-- passing conformance leaves the candidate uninstalled and non-operational;
-- only after P7/P8/P9 may P10 review/refuse trust and conformance, explicitly
-  approve installation, atomically create immutable installed identity and exact
-  disabled bindings, and record the Plug present but disabled;
-- no invocation or event admission is allowed before explicit enablement;
-- Credential Manager work is deferred/optional; first providers are
-  credential-free and receive no credential delivery.
-
-Do not claim AppContainer or hostile-code isolation in this milestone.
-
-### Milestone 4: File Tools Action/Query vertical slice
-
-Required outcome:
-
-- one self-contained Windows reference provider packaged as `.tetherplug`;
-- no credentials and no network;
-- bounded file read and metadata Query operations;
-- bounded file move Action with exact source/destination, overwrite refusal and
-  path-scope enforcement;
-- complete path from package inspection through quarantine validation,
-  conformance, evidence review, installation approval, installed-disabled exact
-  binding, explicit enablement, discovery, policy, durable intent, one
-  invocation, canonical outcome, replay terminal, Result Anchor and Trail;
-- clear unattempted, failed and uncertain demonstrations;
-- deterministic disposable filesystem conformance fixtures;
-- first runnable Plug Kit demonstration.
-
-Capability names and machine schemas must be frozen only in dedicated
-implementation packets, not invented by J18I prose.
-
-### J18I-F1 frozen installation and conformance order
-
-The frozen lifecycle is: package received; archive inspected without execution;
-package validated; payload extracted into quarantine; manifests and compatibility
-validated; test configuration created; provider launched in the accepted test
-profile; conformance from quarantine; provider stopped; conformance evidence
-reviewed; installation approved; exact bindings created; Plug present but
-disabled; explicit enablement; operational use. Conformance success does not
-approve, install, bind or enable, and no active binding exists before approval.
-
-M2 owns only candidate/quarantine identity and registry evidence. It is not an
-installed Plug registry. M3 owns the candidate-to-installed-disabled transition:
-P7 trust/signature, P8 quarantine launch profile, P9 host-orchestrated
-conformance, then P10 installation approval. P10 depends on P6/P7/P8/P9 and
-creates the immutable installed identity with exact disabled provider/capability
-bindings. M4 owns first explicit File Tools enablement. P11-P13 depend on P10
-where installed state is required. Candidate/quarantine registry, installed
-registry, publisher trust, conformance evidence, credential metadata, replay,
-event admission and Trail remain separate authorities; the transition is atomic
-and audited. The roadmap retains exactly 20 future packets and routing totals of
-5 Luna/OpenCode, 5 DeepSeek and 10 Codex.
-
-Lifecycle ordering: conformance from quarantine; conformance evidence review; installation approval; Plug present but disabled; explicit enablement.
-
-### Milestone 5: Durable local Anchor and lifecycle completion
-
-Required outcome:
-
-- host-owned durable external-event admission authority separate from operation
-  replay, Trail and the existing per-invocation J11 gate;
-- one bounded local reference source with provider-persisted stable event identity;
-- admitted, duplicate, identity-conflict, rejected and admission-uncertain paths;
-- acknowledgement only after durable admission;
-- root Anchor generation 0 and existing generation 0 through 8 causal limits;
-- install, enable, disable, restart and removal behaviour for the source;
-- no network listener;
-- no raw unbounded stream;
-- no operation outcome created merely by event admission.
-
-The roadmap must require a separate design packet for the exact durable store and
-reference-source event identity before code.
-
-### Milestone 6: PDF Tools and first Plug Kit release gate
-
-Required outcome:
-
-- bounded PDF extraction Query provider packaged as `.tetherplug`;
-- PDF treated as hostile parser input;
-- exact input materialization, page/byte/time/memory/output limits and disposable
-  scratch;
-- no network and no credentials;
-- supervised mode labelled for bounded reference/competition use only;
-- production use refused without proven isolation;
-- user workflow for inspect, install, conformance, approve, enable, list, disable
-  and remove;
-- retained 0.2 path regression coverage;
-- complete release evidence for the first Plug Kit slice;
-- no claim of arbitrary third-party safety.
-
-The roadmap must identify the final Red review and Git publication gate but must
-not create a release or version number.
-
-## Packet map
-
-Within the six milestones, define a sequence of bounded future work packets.
-
-Every packet must record:
-
-- stable packet ID;
-- objective;
-- dependencies;
-- proposed owner;
-- Green, Amber or Red classification;
-- expected code/document/test areas;
-- exact acceptance evidence;
-- stop conditions;
-- whether it may modify schemas;
-- whether it may change public CLI;
-- rollback or revert boundary.
-
-Prefer packets that fit one focused agent run and one review.
-
-Do not authorize any packet merely by listing it.
-
-The first implementation packet after J18I acceptance must be the smallest
-Milestone 1 extraction/parity task. It must not begin package parsing, File Tools
-or security work at the same time.
-
-## Worker routing
-
-Use this default routing unless inspection gives a stronger reason:
-
-- Luna on OpenCode: bounded Green implementation, fixtures, documentation and
-  ordinary Amber work under frozen interfaces;
-- DeepSeek Pro V4: thicker middle implementation and cross-module integration
-  requiring Lucy review;
-- Codex Terra High: Red gates, Windows security/process boundaries, archive and
-  path attacks, cryptography/trust, durable storage migrations, Git surgery and
-  final release verification;
-- Lucy: architecture guard, packet design, review and final verdict;
-- Matthew: final product authority.
-
-Do not route every task to the strongest worker.
-
-## Test and evidence strategy
-
-Define the required evidence layers:
-
-1. pure unit tests;
-2. parser and duplicate-key tests;
-3. archive/path adversarial tests;
-4. real Windows child-process and Job Object tests;
-5. MCP transcript and pagination tests;
-6. package/install/trust lifecycle tests;
-7. policy/scope/approval tests;
-8. durable replay and event-admission restart tests;
-9. Result Anchor and Trail ordering tests;
-10. reference-provider conformance tests;
-11. full Rust and OCaml regression suites;
-12. end-to-end File Tools and PDF Tools demonstrations;
-13. clean-machine or isolated test-host evidence before release.
-
-For each milestone state which layers are mandatory.
-
-Do not freeze performance numbers without a measurement packet. Use bounded
-host-owned limits and require measurement before choosing final defaults.
-
-## Storage and schema sequencing
-
-Identify separate implementation authorities for:
-
-- installed Plug registry;
-- publisher trust store;
-- conformance evidence;
-- credential profile metadata;
-- operation replay;
-- external-event admission;
-- Trail.
-
-Do not merge these because they are all durable.
-
-For every new durable store require:
-
-- schema/version design packet;
-- atomicity and crash-recovery model;
-- permissions and confidentiality review;
-- migration/rollback plan;
-- corruption behaviour;
-- tests proving no automatic retry or false admission.
-
-## First-slice exclusions
-
-Keep outside the first Plug Kit implementation:
-
-- public registry or marketplace;
-- automatic download or update;
-- remote HTTP providers;
-- OAuth implementation;
-- general network egress;
-- network listeners;
-- general credential-bearing production integrations;
-- arbitrary third-party enablement;
-- AppContainer completion unless separately authorised as a security track;
-- Jobs;
-- Streams;
-- Human Tasks;
-- long-running renderers;
-- live sensors;
-- printers and MIDI;
-- smart locks;
-- industrial actuation;
-- unrestricted shell;
-- interpreter-backed production providers;
-- dependency installation;
-- plug-to-plug communication;
-- Tether language changes.
-
-## Risk register
-
-Include at least:
-
-- accidental 0.2 regression during module extraction;
-- package parser and archive extraction attack surface;
-- identity/digest conflation;
-- false trust from signing or conformance;
-- supervised mode being mistaken for isolation;
-- Windows path and reparse escape;
-- environment or credential leakage;
-- stale live discovery;
-- provider process survival;
-- outcome misclassification after invocation;
-- replay-terminal or Result Anchor publication failure;
-- external-event identity conflict;
-- durable-store corruption;
-- first-slice scope growth;
-- competition deadline pressure causing security shortcuts.
-
-For each risk give prevention, detection, containment and owner.
-
-## Architecture and status alignment
-
-Update:
-
-`docs/architecture/TETHERS_J18_PAPER_VALIDATION.md`
-
-Change only its status preamble and final-freeze wording so that it records:
-
-Status: Accepted J18H paper validation
-Accepted by Lucy: 2026-08-01
-Verdict: VALIDATED
-Architecture freeze: Final
-Implementation: Not authorised
-
-Do not alter the validated integration analysis.
-
-## Decision log
-
-Prepend to `docs/DECISIONS.md`:
-
-`## 2026-08-01: J18 architecture frozen and implementation roadmap opened`
-
-Record concisely:
-
-1. J18H is accepted with verdict `VALIDATED`.
-2. J18B through J18H form the frozen Universal Plug architecture.
-3. Tether `0.1` semantics remain unchanged.
-4. J18I is roadmap-only and authorises no implementation.
-5. The first Plug Kit remains credential-free File Tools and bounded PDF Tools.
-6. Action, Query and Anchor are first-programme classes.
-7. Job, Stream and Human Task remain reserved.
-8. The six-milestone vertical implementation route is being planned.
-9. Existing 0.2 behaviour remains supported.
-10. Only a later explicit packet may start implementation.
-
-## Current-state updates
-
-Update:
-
-- `docs/CURRENT_GOAL.md`;
-- `docs/PROJECT_DASHBOARD.md`;
-- `docs/TASK_QUEUE.md`;
-- `docs/CURRENT_CLINE_TASK.md`.
-
-Required state:
-
-- J18B through J18H accepted;
-- architecture frozen at `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`;
-- J18I active and pending Lucy roadmap review;
-- roadmap candidate status recorded;
-- implementation remains unauthorised;
-- the first implementation packet follows only after J18I acceptance;
-- v0.2.0 refs remain unchanged.
+Create one reusable Rust library application seam around the existing host
+execution machinery while preserving byte-level or semantically exact released
+0.2 behaviour.
+
+P1 ends when the library owns the shared host module graph, the binary delegates
+to it, and all parity evidence passes.
+
+Do not begin P2 Socket operations, discovery pagination, package work, File
+Tools, trust, security profiles, credentials, durable stores, new public CLI, or
+Tether changes.
+
+## Required structural result
+
+1. `lib.rs` becomes the owner of the shared host modules needed by the existing
+   application and execution path.
+2. `main.rs` no longer declares a duplicate host module graph.
+3. Shared execution-boundary helpers and types currently trapped in `main.rs`
+   move into one dedicated library-owned application module or the smallest
+   coherent set of library-owned modules.
+4. `HostExecutionService` compiles as library code and is reachable through a
+   deliberately small public application surface.
+5. Existing internal modules remain private or crate-private unless the binary
+   or an external integration test genuinely requires public access.
+6. The binary remains responsible only for process entry, argument capture,
+   calling the library dispatcher, emitting the existing envelope/output, and
+   exiting with the existing code. Legacy and debug routes may delegate through
+   the application module but must retain their behaviour.
+7. No duplicated implementation may remain compiled once in the library and
+   again in the binary.
+8. Existing file layout may be retained. Moving module declarations into the
+   library does not require moving every `.rs` file.
+
+## Authorised extraction scope
+
+Create at most one new production module under:
+
+`tethers-0.1/host-rust/src/`
+
+Recommended name:
+
+`application.rs`
+
+A different single name is allowed only when it more accurately describes the
+same boundary. Do not create an abstract framework or directory hierarchy.
+
+The new module may own or expose only the existing application-level seams
+needed for:
+
+- command dispatch;
+- prepared runtime execution;
+- host execution service construction and invocation;
+- shared execution-boundary mapping;
+- bridge projection;
+- outcome, replay, Result Anchor and Trail orchestration already implemented;
+- legacy compatibility routing;
+- existing debug probe delegation where necessary for parity.
+
+Pure helpers or types may instead move into the existing module that already
+owns their concept when that is smaller and avoids a dependency cycle.
+
+## Authorised code paths
+
+Only the minimum necessary subset of these paths may change:
+
+- `tethers-0.1/host-rust/src/lib.rs`
+- `tethers-0.1/host-rust/src/main.rs`
+- one new application module under `tethers-0.1/host-rust/src/`
+- existing Rust host modules whose imports, visibility, crate aliases or tests
+  must change solely because ownership moves from binary root to library root
+- existing Rust host integration tests solely for parity coverage
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/worker-notes/2026-08-01-j19-p1-host-application-seam.md`
+
+The potentially affected existing host modules are limited to:
+
+- `approval.rs`
+- `check_command.rs`
+- `configured_runtime.rs`
+- `dispatch.rs`
+- `event_admission.rs`
+- `event_queue.rs`
+- `executor.rs`
+- `host_execution.rs`
+- `manifest.rs`
+- `outcome.rs`
+- `policy.rs`
+- `provider.rs`
+- `replay.rs`
+- `replay_runtime.rs`
+- `replay_windows.rs`
+- `resolver.rs`
+- `result_anchor.rs`
+- `run_command.rs`
+- `run_input.rs`
+- `runtime_config.rs`
+- `stdio_provider.rs`
+- `trail_command.rs`
+- `trusted_store.rs`
+- `validation.rs`
+
+Do not edit every listed file pre-emptively. Touch only files proven necessary by
+compiler errors, dependency direction, tests, or duplicate ownership.
+
+`Cargo.toml` may change only if Rust's automatic library/binary discovery cannot
+express the accepted seam. Do not add dependencies, features, build scripts or
+workspace changes. `Cargo.lock` must not change.
+
+## Extraction laws
+
+- Move code, do not reinterpret it.
+- Preserve function bodies and data semantics unless a visibility-neutral
+  wrapper is required.
+- Preserve exact outcome classification.
+- Preserve replay admission and terminal publication.
+- Preserve Result Anchor ordering and suppression rules.
+- Preserve Trail contents and ordering.
+- Preserve policy, approval and scope decisions.
+- Preserve engine and provider lifecycle.
+- Preserve request, evaluation, action and execution identities.
+- Preserve current CLI JSON envelopes, stdout/stderr placement and exit codes.
+- Preserve current debug probes and legacy route unless a test proves they are
+  unreachable in the released build.
+- Do not make internal modules public merely to silence compiler errors.
+- Do not use global mutable state, hidden singletons, new retries or new threads.
+- Do not alter serialized schemas or version strings.
+
+## Allowed public surface
+
+Expose the smallest coherent application API.
+
+It may include:
+
+- the existing typed `HostExecutionService` boundary;
+- its existing prepared input, result and error types;
+- a library command-dispatch result carrying existing output/envelope and exit
+  status;
+- a small constructor or façade needed by the binary and future Socket seam.
+
+It must not expose:
+
+- raw replay mutation;
+- raw Trail mutation;
+- provider invocation that bypasses policy and durable intent;
+- internal trust-store mutation;
+- direct Result Anchor creation without the existing durable gates;
+- a generic callback framework;
+- package, Plug or Socket v1 types not already implemented.
+
+## Baseline evidence before editing
+
+Record the exact baseline results from the clean accepted implementation commit
+for all commands that currently pass.
+
+At minimum run:
+
+```powershell
+rustup run 1.89.0 cargo test --manifest-path tethers-0.1\host-rust\Cargo.toml --lib
+rustup run 1.89.0 cargo test --manifest-path tethers-0.1\host-rust\Cargo.toml
+rustup run 1.89.0 cargo build --locked --manifest-path tethers-0.1\host-rust\Cargo.toml
+rustup run 1.89.0 cargo build --locked --release --manifest-path tethers-0.1\host-rust\Cargo.toml
+rustup run 1.89.0 cargo fmt --manifest-path tethers-0.1\host-rust\Cargo.toml -- --check
+```
+
+Also identify the exact repository scripts for:
+
+- consolidated 0.2 verification;
+- OCaml engine tests;
+- public check/run/trail proof;
+- J14C real file-move proof;
+- MCP transcript validation.
+
+Run the strongest applicable existing entry points before and after extraction.
+Do not guess script names when repository inspection can establish them.
+
+## Required parity evidence
+
+After extraction require:
+
+1. `cargo test --lib` passes.
+2. Full Rust tests pass with no ignored new failure.
+3. Debug and release locked builds pass.
+4. Formatting passes.
+5. `Cargo.lock` hash is unchanged.
+6. Existing OCaml engine tests pass.
+7. Existing consolidated 0.2 verification passes.
+8. Existing public `check`, `run`, and `trail` behaviour passes.
+9. Existing J14C real file-move proof passes.
+10. Existing MCP transcript tests pass.
+11. Existing legacy route and debug probes pass where covered by repository
+    tests.
+12. No provider call count, Result Anchor count, Trail entry, execution identity,
+    replay state, JSON envelope field or exit code changes.
+
+Where baseline output is deterministic, compare exact normalized output before
+and after. Where paths, timestamps or UUIDs vary, compare the existing structural
+contract and explain the normalization.
+
+## Focused new tests
+
+Add only tests necessary to prove the new seam:
+
+- library compilation owns `HostExecutionService` and dependencies;
+- binary calls the library application dispatcher rather than compiling duplicate
+  host modules;
+- one representative no-action route is parity-identical;
+- one representative denied or unavailable route is parity-identical;
+- one representative successful execution route preserves intent, terminal
+  outcome, Result Anchor and Trail ordering;
+- public API cannot directly bypass the accepted execution gates.
+
+Prefer existing fixtures and helpers. Do not duplicate the whole 0.2 harness.
+
+## Forbidden work
+
+Do not:
+
+- implement Socket v1 semantic operations;
+- modify MCP protocol behaviour;
+- add discovery pagination or catalogue invalidation;
+- parse `.tetherplug`;
+- add package, candidate, installation, trust or conformance state;
+- add File Tools or PDF Tools;
+- add credentials or environment sanitation;
+- change child-process security behaviour;
+- alter replay or external event admission stores;
+- change Tether 0.1 syntax or semantics;
+- change public CLI syntax;
+- remove the legacy path;
+- move or recreate `v0.2.0`;
+- create a release;
+- begin P2.
+
+## Stop conditions
+
+Stop with `BLOCKED` when:
+
+- extracting ownership requires changing a frozen semantic boundary;
+- a helper cannot be placed without creating a circular authority dependency;
+- CLI parity cannot be retained;
+- replay, Result Anchor, Trail or outcome ordering changes;
+- a new dependency appears necessary;
+- broad unrelated rewrites become necessary;
+- two materially similar extraction attempts fail;
+- any required baseline or post-change test fails without a bounded understood
+  cause.
+
+Do not bypass a test or weaken visibility to continue.
+
+## Git and publication
+
+Use the existing branch:
+
+`codex/j19-first-plug-kit`
+
+No force-push, amend, rebase of published work, or main update.
+
+Create one bounded P1 commit or a small reported stack when compiler-safe
+checkpoints materially improve rollback.
+
+Preferred final commit message:
+
+`refactor: extract host application seam`
+
+Do not begin P2 after committing P1.
 
 ## Worker note
 
 Create:
 
-`docs/worker-notes/2026-08-01-j18i-first-plug-kit-roadmap.md`
+`docs/worker-notes/2026-08-01-j19-p1-host-application-seam.md`
 
 Use headings:
 
 - Task
-- Changes
-- Frozen architecture inspected
-- Current implementation inventory
-- Reuse and extraction findings
-- Compatibility strategy
-- Six milestones
-- Packet map
-- Worker routing
-- Test and evidence plan
-- Durable stores and schemas
-- Risks
-- Tool bootstrap
-- Evidence
+- Initial blocker
+- Ownership map before
+- Extraction design
+- Changed paths
+- Public surface
+- Ownership map after
+- Baseline evidence
+- Post-extraction evidence
+- Parity comparison
+- Frozen-boundary checks
+- Rollback
 - Discoveries
-- Remaining questions
+- Remaining risks
 - Next action
-- References
 
-Record resolved tool paths and versions, exact repository files inspected,
-current implementation gaps, milestone/packet counts, and confirmation that no
-implementation or schema changed.
-
-## Authorised changed paths
-
-Exactly eight paths relative to frozen architecture base
-`a5fd63593a9d9acd397030ecd2e27b4f318c87fd`:
-
-1. `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`
-2. `docs/architecture/TETHERS_J18_PAPER_VALIDATION.md`
-3. `docs/DECISIONS.md`
-4. `docs/CURRENT_GOAL.md`
-5. `docs/PROJECT_DASHBOARD.md`
-6. `docs/TASK_QUEUE.md`
-7. `docs/CURRENT_CLINE_TASK.md`
-8. `docs/worker-notes/2026-08-01-j18i-first-plug-kit-roadmap.md`
-
-No other path may change.
-
-## Forbidden changes
-
-Do not modify or create:
-
-- Rust;
-- OCaml;
-- Cargo;
-- Dune;
-- opam;
-- scripts;
-- tests;
-- fixtures;
-- manifests;
-- runtime configuration;
-- JSON Schema;
-- `.tetherplug` or ZIP files;
-- providers;
-- MCP transcripts;
-- credentials;
-- trust stores;
-- keys or signatures;
-- AppContainer profiles;
-- durable store files;
-- Tether specification;
-- Constitution;
-- release notes;
-- tags;
-- GitHub Releases.
-
-Do not begin implementation.
-
-## Preflight
-
-Run:
-
-```text
-git fetch origin --prune --tags
-git switch main
-git pull --ff-only origin main
-git rev-parse HEAD
-git rev-parse v0.2.0^{}
-git status --short
-```
-
-Require the worktree to be clean and the peeled release tag to remain:
-
-`b5546411661dcbcb53e1cf2538eaec594c6f76f2`
-
-Confirm the fetched `docs/CURRENT_CLINE_TASK.md` contains this J18I contract and
-the frozen architecture base.
-
-Create:
-
-```text
-git switch -c luna/j18i-first-plug-kit-roadmap
-```
-
-## Required verification
-
-Before staging:
-
-```text
-git diff --check
-git diff --name-only
-git status --short
-```
-
-Require exactly the eight authorised paths relative to the frozen architecture
-base.
-
-Stage all intended files, then run:
-
-```text
-git diff --cached --check
-git diff --cached --name-only
-```
-
-Require no whitespace errors and exactly eight staged paths.
-
-Run the task-packet checker.
-
-Required milestone search:
-
-```text
-rg -n "^## Milestone [1-6]|Socket seam|Package inspection|Trust.*conformance|File Tools|Durable.*Anchor|PDF Tools" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md
-```
-
-Require exactly six milestone headings and all six required subjects.
-
-Required reuse search:
-
-```text
-rg -n "reuse unchanged|extract behind|extend under|supersede|defer|main.rs|runtime_config|configured_runtime|stdio_provider|host_execution|replay|result_anchor|event_admission|child_process" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md
-```
-
-Required boundary search:
-
-```text
-rg -n "no automatic retry|operation outcomes|event admission|supervised.*not.*isolation|credential-free|third-party|Job|Stream|Human Task|0.1" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md
-```
-
-Required packet search:
-
-```text
-rg -n "packet ID|dependencies|owner|Green|Amber|Red|acceptance evidence|stop conditions|rollback|schema|public CLI" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md
-```
-
-Forbidden implementation claim search:
-
-```text
-rg -n "implemented in J18I|J18I adds code|Plug Kit is now implemented|third-party packages are supported|AppContainer is implemented|credentials are securely delivered|automatic retry" docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md docs/CURRENT_GOAL.md docs/PROJECT_DASHBOARD.md
-```
-
-Any positive implementation claim fails. Explicit negations are permitted.
-
-Confirm no implementation artifact changed:
-
-```text
-git diff --name-only a5fd63593a9d9acd397030ecd2e27b4f318c87fd...HEAD | rg "\.(rs|ml|mli|toml|opam|json|ps1|sh|key|pem|pfx|p12|sig|tetherplug|zip)$"
-```
-
-Require no result.
-
-Verify refs:
-
-```text
-git ls-remote origin refs/heads/main refs/tags/v0.2.0 refs/tags/v0.2.0^{}
-```
-
-## Acceptance criteria
-
-1. Exactly eight authorised Markdown paths change relative to the frozen base.
-2. J18H is marked accepted without altering its validation analysis.
-3. The architecture freeze is recorded as final.
-4. Current implementation is inventoried with evidence, not assumptions.
-5. Reuse, extraction, extension, supersession and deferral decisions are clear.
-6. Exactly six vertical milestones are defined.
-7. Every milestone has outcome, dependencies, evidence, stop and rollback gates.
-8. The packet map is bounded and worker-routed.
-9. The first implementation packet is a Milestone 1 extraction/parity task only.
-10. Existing 0.2 compatibility and tag immutability are preserved.
-11. File Tools is the first runnable reference Plug.
-12. PDF Tools remains bounded reference/competition work.
-13. Durable Anchor admission is separately sequenced.
-14. Trust, signing, conformance and supervised-mode honesty are sequenced.
-15. Credential delivery and arbitrary third-party support remain outside the
-    first credential-free slice.
-16. Jobs, Streams and Human Tasks remain reserved.
-17. No schema, CLI, code, fixture, package or provider is implemented.
-18. All checks pass, worktree is clean and branch is pushed normally.
-
-## Commit and publication boundary
-
-Create one commit:
-
-`docs: define first plug kit implementation roadmap`
-
-Push only:
-
-`luna/j18i-first-plug-kit-roadmap`
-
-Do not push `main`, tags or releases.
+Record every compiler failure that materially shaped the seam, but do not paste
+large logs.
 
 ## Completion report
 
-Begin exactly:
+On success begin exactly:
 
-`COMPLETE - READY_FOR_LUCY_ROADMAP_REVIEW`
+`P1 COMPLETE - HOST APPLICATION SEAM`
 
 Report:
 
-1. branch and commit SHA;
-2. exact control-plane base commit;
-3. tools and versions;
-4. exact eight changed paths;
-5. final architecture-freeze status;
-6. current implementation inventory and key reuse decisions;
-7. six milestones;
-8. packet count and routing distribution;
-9. first implementation packet recommendation;
-10. compatibility strategy;
-11. test/evidence strategy;
-12. durable-store/schema sequencing;
-13. first-slice exclusions;
-14. risk register highlights;
-15. unresolved questions;
-16. J18H status and decision-log updates;
-17. required and forbidden search results;
-18. diff, staged-diff and packet checks;
-19. published main and tag verification;
-20. clean worktree and ahead/behind;
-21. confirmation no implementation or schema changed;
-22. smallest next action.
+1. branch and final SHA or stack;
+2. exact control-plane commit used;
+3. exact changed paths;
+4. module ownership before and after;
+5. helpers/types moved from binary root;
+6. final public application surface;
+7. why `main.rs` is now a thin dispatcher;
+8. baseline and final Rust totals;
+9. OCaml and integration results;
+10. exact parity evidence;
+11. Cargo.lock hash result;
+12. forbidden-work confirmation;
+13. rollback commit;
+14. clean worktree;
+15. ahead/behind `origin/main`;
+16. remaining risks;
+17. explicit confirmation P2 has not begun.
 
 On failure begin exactly:
 
 `BLOCKED`
+
+Report the exact smallest compiler or parity boundary, rollback state, and one
+smallest unresolved question.
 
 Stop after the report.
