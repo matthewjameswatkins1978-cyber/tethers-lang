@@ -384,9 +384,31 @@ fn m3_malformed_and_interrupted_conformance_fail_without_retry_or_install() {
     assert_eq!(evidence.retry_count, 0);
     prepared.cleanup_scratch().unwrap();
 
-    for (name, mode, limit) in [
-        ("oversized", "oversized", Duration::from_secs(2)),
-        ("timeout", "hang", Duration::from_millis(100)),
+    for (name, mode, limit, expected_code) in [
+        (
+            "wrong-schema",
+            "wrong-schema",
+            Duration::from_secs(2),
+            "catalogue_drift",
+        ),
+        (
+            "wrong-output",
+            "wrong-output",
+            Duration::from_secs(2),
+            "fixture_valid_call",
+        ),
+        (
+            "oversized",
+            "oversized",
+            Duration::from_secs(2),
+            "conformance_protocol",
+        ),
+        (
+            "timeout",
+            "hang",
+            Duration::from_millis(100),
+            "conformance_protocol",
+        ),
     ] {
         let (candidate, quarantine) = candidate_fixture(&base.join(name), mode);
         let approval = developer_store
@@ -404,8 +426,43 @@ fn m3_malformed_and_interrupted_conformance_fail_without_retry_or_install() {
             run_host_conformance(&prepared, &candidate, &quarantine, &trust, "host-build").unwrap();
         assert_eq!(evidence.disposition, ConformanceDisposition::Failed);
         assert_eq!(evidence.retry_count, 0);
+        assert_eq!(
+            evidence
+                .cases
+                .iter()
+                .find(|case| case.case_id == "conformance_session")
+                .unwrap()
+                .safe_diagnostic_code
+                .as_deref(),
+            Some(expected_code),
+            "mode {mode} returned unexpected typed evidence: {:?}",
+            evidence.cases
+        );
         prepared.cleanup_scratch().unwrap();
     }
+
+    let (paginated, paginated_root) = candidate_fixture(&base.join("paginated"), "paginated");
+    let paginated_approval = developer_store
+        .approve_exact_digest(&paginated.semantic_package_digest, "Matthew")
+        .unwrap();
+    let paginated_trust = PackageTrustEvidence::unsigned(&paginated_approval).unwrap();
+    let prepared = PreparedSupervisedLaunch::prepare(
+        &paginated,
+        &paginated_root,
+        &base.join("scratch-paginated"),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let evidence = run_host_conformance(
+        &prepared,
+        &paginated,
+        &paginated_root,
+        &paginated_trust,
+        "host-build",
+    )
+    .unwrap();
+    assert_eq!(evidence.disposition, ConformanceDisposition::Passed);
+    prepared.cleanup_scratch().unwrap();
 
     let (interrupted, interrupted_root) = candidate_fixture(&base.join("interrupted"), "valid");
     let interrupted_approval = developer_store

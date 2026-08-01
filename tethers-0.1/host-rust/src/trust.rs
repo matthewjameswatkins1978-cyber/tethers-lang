@@ -372,6 +372,14 @@ impl PublisherTrustStore {
                     "publisher key mapping conflict",
                 ));
             }
+            if previous.trust_state == PublisherTrustState::Revoked
+                && trust_state != PublisherTrustState::Revoked
+            {
+                return Err(M3Error::new(
+                    "trust_conflict",
+                    "a revoked signing key cannot be restored",
+                ));
+            }
         }
         let mut record = PublisherKeyRecord {
             schema_version: 1,
@@ -459,11 +467,20 @@ impl DeveloperApprovalRecord {
     }
 
     fn validate(&self) -> Result<()> {
+        let semantic_digest =
+            self.semantic_package_digest
+                .strip_prefix("sha256:")
+                .filter(|digest| {
+                    digest.len() == 64
+                        && digest
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                });
         if self.schema_version != 1
             || Uuid::parse_str(&self.approval_id).is_err()
             || !self.visibly_unsigned
             || self.approving_authority.is_empty()
-            || !self.semantic_package_digest.starts_with("sha256:")
+            || semantic_digest.is_none()
             || self.record_digest != sha256(&self.covered_bytes()?)
         {
             return Err(M3Error::new(
@@ -931,6 +948,21 @@ mod tests {
                 .code,
             "trust_not_current"
         );
+        assert_eq!(
+            reopened
+                .append(
+                    &der,
+                    "publisher:host-owned",
+                    Some("tethers.".into()),
+                    PublisherTrustState::Trusted,
+                    "Matthew",
+                    None,
+                    None,
+                )
+                .unwrap_err()
+                .code,
+            "trust_conflict"
+        );
         fs::write(root.join(".torn.tmp"), b"{}").unwrap();
         assert_eq!(reopened.current().unwrap_err().code, "trust_store_invalid");
         let _ = fs::remove_dir_all(root);
@@ -948,6 +980,13 @@ mod tests {
             .find(&format!("sha256:{}", "3".repeat(64)))
             .unwrap()
             .is_none());
+        assert_eq!(
+            store
+                .approve_exact_digest("sha256:ABC", "Matthew")
+                .unwrap_err()
+                .code,
+            "developer_approval_invalid"
+        );
         let _ = fs::remove_dir_all(root);
     }
 }

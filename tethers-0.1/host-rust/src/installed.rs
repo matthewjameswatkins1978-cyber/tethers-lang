@@ -4,9 +4,12 @@
 //! invocation, credentials, policy, replay, Trail, or Anchor admission.
 
 use crate::candidate::CandidateRecord;
-use crate::conformance::{current_suite_digest, ConformanceEvidence, ConformanceDisposition};
+use crate::conformance::{current_suite_digest, ConformanceDisposition, ConformanceEvidence};
 use crate::launch_profile::{revalidate_candidate, LaunchProfileEvidence};
-use crate::m3_store::{canonical, reject_reparse, sha256, strict_json, unix_ms, verify_chain, M3Error, Result, StoreRoot};
+use crate::m3_store::{
+    canonical, reject_reparse, sha256, strict_json, unix_ms, verify_chain, M3Error, Result,
+    StoreRoot,
+};
 use crate::manifest;
 use crate::package::{CapabilityEvidence, PayloadEvidence};
 use crate::trust::{DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore};
@@ -83,18 +86,25 @@ impl InstallationApprovalRecord {
             || !self.launch_profile_limitation.contains("not isolated")
             || self.record_digest != sha256(&self.covered_bytes()?)
         {
-            return Err(M3Error::new("install_approval_invalid", "invalid installation approval"));
+            return Err(M3Error::new(
+                "install_approval_invalid",
+                "invalid installation approval",
+            ));
         }
         Ok(())
     }
 }
 
-fn reviewed_capabilities(candidate: &CandidateRecord, quarantine: &Path) -> Result<Vec<ReviewedCapability>> {
+fn reviewed_capabilities(
+    candidate: &CandidateRecord,
+    quarantine: &Path,
+) -> Result<Vec<ReviewedCapability>> {
     let mut reviewed = Vec::new();
     for capability in &candidate.capabilities {
         let path = quarantine.join(&capability.manifest_path);
         reject_reparse(&path)?;
-        let bytes = fs::read(&path).map_err(|error| M3Error::new("install_review_io", error.to_string()))?;
+        let bytes = fs::read(&path)
+            .map_err(|error| M3Error::new("install_review_io", error.to_string()))?;
         let text = std::str::from_utf8(&bytes)
             .map_err(|_| M3Error::new("install_review_invalid", "manifest is not UTF-8"))?;
         let verified = manifest::verify_manifest(text)
@@ -103,7 +113,10 @@ fn reviewed_capabilities(candidate: &CandidateRecord, quarantine: &Path) -> Resu
             || verified.capability_name() != capability.name
             || verified.capability_version() != capability.version
         {
-            return Err(M3Error::new("install_review_invalid", "manifest evidence drifted"));
+            return Err(M3Error::new(
+                "install_review_invalid",
+                "manifest evidence drifted",
+            ));
         }
         let value: Value = strict_json(&bytes)?;
         let permission_scope = value
@@ -129,7 +142,9 @@ pub struct InstallationApprovalStore {
 
 impl InstallationApprovalStore {
     pub fn open(path: &Path) -> Result<Self> {
-        Ok(Self { root: StoreRoot::open(path)? })
+        Ok(Self {
+            root: StoreRoot::open(path)?,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -153,14 +168,20 @@ impl InstallationApprovalStore {
         )?;
         conformance.require_current(candidate, trust, launch, &current_suite_digest()?)?;
         if conformance.disposition != ConformanceDisposition::Passed {
-            return Err(M3Error::new("install_approval_refused", "conformance has not passed"));
+            return Err(M3Error::new(
+                "install_approval_refused",
+                "conformance has not passed",
+            ));
         }
         if self
             .load_all()?
             .iter()
             .any(|existing| existing.candidate_id == candidate.candidate_id)
         {
-            return Err(M3Error::new("install_approval_conflict", "candidate already approved"));
+            return Err(M3Error::new(
+                "install_approval_conflict",
+                "candidate already approved",
+            ));
         }
         let mut record = InstallationApprovalRecord {
             schema_version: 1,
@@ -199,17 +220,26 @@ impl InstallationApprovalStore {
         let mut identities = BTreeSet::new();
         for path in self.root.entries()? {
             if path.extension().and_then(|value| value.to_str()) == Some("tmp") {
-                return Err(M3Error::new("install_approval_invalid", "torn approval record"));
+                return Err(M3Error::new(
+                    "install_approval_invalid",
+                    "torn approval record",
+                ));
             }
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                return Err(M3Error::new("install_approval_invalid", "unexpected approval entry"));
+                return Err(M3Error::new(
+                    "install_approval_invalid",
+                    "unexpected approval entry",
+                ));
             }
             let record: InstallationApprovalRecord = self.root.read(&path)?;
             record.validate()?;
             if path.file_stem().and_then(|value| value.to_str()) != Some(&record.approval_id)
                 || !identities.insert(record.approval_id.clone())
             {
-                return Err(M3Error::new("install_approval_invalid", "duplicate or mismatched approval identity"));
+                return Err(M3Error::new(
+                    "install_approval_invalid",
+                    "duplicate or mismatched approval identity",
+                ));
             }
             records.push(record);
         }
@@ -282,10 +312,16 @@ impl InstalledPlugRecord {
             || self.launch_profile_label != "supervised"
             || self.plug_json.path != "plug.json"
             || self.disabled_bindings.is_empty()
-            || self.disabled_bindings.iter().any(|binding| binding.state != "disabled")
+            || self
+                .disabled_bindings
+                .iter()
+                .any(|binding| binding.state != "disabled")
             || self.record_digest != sha256(&self.covered_bytes()?)
         {
-            return Err(M3Error::new("installed_record_invalid", "invalid installed Plug record"));
+            return Err(M3Error::new(
+                "installed_record_invalid",
+                "invalid installed Plug record",
+            ));
         }
         Ok(())
     }
@@ -314,9 +350,13 @@ fn mark_read_only(path: &Path) -> Result<()> {
         // SAFETY: path_w is a live nul-terminated UTF-16 buffer for both calls.
         let attributes = unsafe { GetFileAttributesW(path_w.as_ptr()) };
         if attributes == INVALID_FILE_ATTRIBUTES
-            || unsafe { SetFileAttributesW(path_w.as_ptr(), attributes | FILE_ATTRIBUTE_READONLY) } == 0
+            || unsafe { SetFileAttributesW(path_w.as_ptr(), attributes | FILE_ATTRIBUTE_READONLY) }
+                == 0
         {
-            return Err(M3Error::new("install_io", "failed to set read-only attributes"));
+            return Err(M3Error::new(
+                "install_io",
+                "failed to set read-only attributes",
+            ));
         }
     }
     if !fs::metadata(path)
@@ -324,7 +364,10 @@ fn mark_read_only(path: &Path) -> Result<()> {
         .permissions()
         .readonly()
     {
-        return Err(M3Error::new("install_io", "installed payload remained writable"));
+        return Err(M3Error::new(
+            "install_io",
+            "installed payload remained writable",
+        ));
     }
     Ok(())
 }
@@ -337,37 +380,54 @@ fn expected_files(candidate: &CandidateRecord) -> BTreeMap<String, PayloadEviden
         .collect()
 }
 
-fn copy_files(source: &Path, staging: &Path, expected: &BTreeMap<String, PayloadEvidence>) -> Result<()> {
+fn copy_files(
+    source: &Path,
+    staging: &Path,
+    expected: &BTreeMap<String, PayloadEvidence>,
+) -> Result<()> {
     for (relative, evidence) in expected {
         let source_path = source.join(relative);
         reject_reparse(&source_path)?;
         let destination = staging.join(relative);
         if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|error| M3Error::new("install_io", error.to_string()))?;
+            fs::create_dir_all(parent)
+                .map_err(|error| M3Error::new("install_io", error.to_string()))?;
             verify_chain(parent)?;
         }
-        let bytes = fs::read(&source_path).map_err(|error| M3Error::new("install_io", error.to_string()))?;
+        let bytes = fs::read(&source_path)
+            .map_err(|error| M3Error::new("install_io", error.to_string()))?;
         if bytes.len() as u64 != evidence.size_bytes || sha256(&bytes) != evidence.sha256 {
-            return Err(M3Error::new("install_drift", "source payload changed during install"));
+            return Err(M3Error::new(
+                "install_drift",
+                "source payload changed during install",
+            ));
         }
         let mut output = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&destination)
             .map_err(|error| M3Error::new("install_io", error.to_string()))?;
-        output.write_all(&bytes).map_err(|error| M3Error::new("install_io", error.to_string()))?;
-        output.sync_all().map_err(|error| M3Error::new("install_io", error.to_string()))?;
+        output
+            .write_all(&bytes)
+            .map_err(|error| M3Error::new("install_io", error.to_string()))?;
+        output
+            .sync_all()
+            .map_err(|error| M3Error::new("install_io", error.to_string()))?;
         mark_read_only(&destination)?;
     }
     Ok(())
 }
 
-fn collect_installed_files(root: &Path, directory: &Path, files: &mut BTreeSet<String>) -> Result<()> {
+fn collect_installed_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut BTreeSet<String>,
+) -> Result<()> {
     for entry in fs::read_dir(directory)
         .map_err(|error| M3Error::new("installed_record_invalid", error.to_string()))?
     {
-        let entry = entry
-            .map_err(|error| M3Error::new("installed_record_invalid", error.to_string()))?;
+        let entry =
+            entry.map_err(|error| M3Error::new("installed_record_invalid", error.to_string()))?;
         let path = entry.path();
         reject_reparse(&path)?;
         let kind = entry
@@ -378,7 +438,9 @@ fn collect_installed_files(root: &Path, directory: &Path, files: &mut BTreeSet<S
         } else if kind.is_file() {
             files.insert(
                 path.strip_prefix(root)
-                    .map_err(|_| M3Error::new("installed_record_invalid", "installed path escaped"))?
+                    .map_err(|_| {
+                        M3Error::new("installed_record_invalid", "installed path escaped")
+                    })?
                     .to_string_lossy()
                     .replace('\\', "/"),
             );
@@ -402,9 +464,15 @@ impl InstalledPlugRegistry {
         let install_root = StoreRoot::open(install_root)?;
         let record_root = StoreRoot::open(record_root)?;
         if install_root.path() == record_root.path() {
-            return Err(M3Error::new("installed_store_invalid", "install and record roots must differ"));
+            return Err(M3Error::new(
+                "installed_store_invalid",
+                "install and record roots must differ",
+            ));
         }
-        Ok(Self { install_root, record_root })
+        Ok(Self {
+            install_root,
+            record_root,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -420,7 +488,12 @@ impl InstalledPlugRegistry {
         approval: &InstallationApprovalRecord,
     ) -> Result<InstalledPlugRecord> {
         let source = revalidate_candidate(candidate, quarantine_root)?;
-        trust.revalidate_current(&candidate.package_id, publisher_trust, developer_approvals, unix_ms()?)?;
+        trust.revalidate_current(
+            &candidate.package_id,
+            publisher_trust,
+            developer_approvals,
+            unix_ms()?,
+        )?;
         conformance.require_current(candidate, trust, launch, &current_suite_digest()?)?;
         approval.validate()?;
         if approval.candidate_id != candidate.candidate_id
@@ -429,18 +502,30 @@ impl InstalledPlugRegistry {
             || approval.launch_profile_evidence_digest != launch.profile_evidence_digest
             || approval.conformance_evidence_digest != conformance.evidence_digest
         {
-            return Err(M3Error::new("install_approval_stale", "approval pins drifted"));
+            return Err(M3Error::new(
+                "install_approval_stale",
+                "approval pins drifted",
+            ));
         }
         for existing in self.load_all()? {
             if existing.package_id == candidate.package_id
                 && existing.package_version == candidate.package_version
             {
-                return Err(M3Error::new("installed_conflict", "package release already installed"));
+                return Err(M3Error::new(
+                    "installed_conflict",
+                    "package release already installed",
+                ));
             }
         }
         let installed_id = Uuid::new_v4().to_string();
-        let staging = self.install_root.path().join(format!(".staging-{installed_id}"));
-        let destination = self.install_root.path().join(format!("plug-{installed_id}"));
+        let staging = self
+            .install_root
+            .path()
+            .join(format!(".staging-{installed_id}"));
+        let destination = self
+            .install_root
+            .path()
+            .join(format!("plug-{installed_id}"));
         fs::create_dir(&staging).map_err(|error| M3Error::new("install_io", error.to_string()))?;
         verify_chain(&staging)?;
         let result = copy_files(&source, &staging, &expected_files(candidate));
@@ -466,9 +551,13 @@ impl InstalledPlugRegistry {
         verify_chain(self.install_root.path())?;
         if destination.exists() {
             let _ = fs::remove_dir_all(&staging);
-            return Err(M3Error::new("installed_conflict", "installation target exists"));
+            return Err(M3Error::new(
+                "installed_conflict",
+                "installation target exists",
+            ));
         }
-        fs::rename(&staging, &destination).map_err(|error| M3Error::new("install_io", error.to_string()))?;
+        fs::rename(&staging, &destination)
+            .map_err(|error| M3Error::new("install_io", error.to_string()))?;
         let relative = destination
             .strip_prefix(self.install_root.path())
             .map_err(|_| M3Error::new("installed_store_invalid", "installation escaped root"))?
@@ -520,7 +609,8 @@ impl InstalledPlugRegistry {
         };
         record.record_digest = sha256(&record.covered_bytes()?);
         record.validate()?;
-        self.record_root.create_json(&record.installed_id, &record)?;
+        self.record_root
+            .create_json(&record.installed_id, &record)?;
         Ok(record)
     }
 
@@ -530,23 +620,41 @@ impl InstalledPlugRegistry {
         let mut releases = BTreeMap::new();
         for path in self.record_root.entries()? {
             if path.extension().and_then(|value| value.to_str()) == Some("tmp") {
-                return Err(M3Error::new("installed_record_invalid", "torn installed record"));
+                return Err(M3Error::new(
+                    "installed_record_invalid",
+                    "torn installed record",
+                ));
             }
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                return Err(M3Error::new("installed_record_invalid", "unexpected registry entry"));
+                return Err(M3Error::new(
+                    "installed_record_invalid",
+                    "unexpected registry entry",
+                ));
             }
             let record: InstalledPlugRecord = self.record_root.read(&path)?;
             record.validate()?;
             if path.file_stem().and_then(|value| value.to_str()) != Some(&record.installed_id)
                 || !identities.insert(record.installed_id.clone())
             {
-                return Err(M3Error::new("installed_record_invalid", "duplicate or mismatched installed identity"));
+                return Err(M3Error::new(
+                    "installed_record_invalid",
+                    "duplicate or mismatched installed identity",
+                ));
             }
             let release = (record.package_id.clone(), record.package_version.clone());
-            if releases.insert(release, record.semantic_package_digest.clone()).is_some() {
-                return Err(M3Error::new("installed_conflict", "duplicate installed release"));
+            if releases
+                .insert(release, record.semantic_package_digest.clone())
+                .is_some()
+            {
+                return Err(M3Error::new(
+                    "installed_conflict",
+                    "duplicate installed release",
+                ));
             }
-            let directory = self.install_root.path().join(&record.installation_relative_path);
+            let directory = self
+                .install_root
+                .path()
+                .join(&record.installation_relative_path);
             verify_chain(&directory)?;
             let candidate_files = std::iter::once(&record.plug_json)
                 .chain(record.payloads.iter())
@@ -564,13 +672,18 @@ impl InstalledPlugRegistry {
             for (relative, evidence) in candidate_files {
                 let file = directory.join(relative);
                 reject_reparse(&file)?;
-                let metadata = fs::metadata(&file).map_err(|error| M3Error::new("installed_record_invalid", error.to_string()))?;
-                let bytes = fs::read(&file).map_err(|error| M3Error::new("installed_record_invalid", error.to_string()))?;
+                let metadata = fs::metadata(&file)
+                    .map_err(|error| M3Error::new("installed_record_invalid", error.to_string()))?;
+                let bytes = fs::read(&file)
+                    .map_err(|error| M3Error::new("installed_record_invalid", error.to_string()))?;
                 if !metadata.permissions().readonly()
                     || bytes.len() as u64 != evidence.size_bytes
                     || sha256(&bytes) != evidence.sha256
                 {
-                    return Err(M3Error::new("installed_record_invalid", "installed payload drifted"));
+                    return Err(M3Error::new(
+                        "installed_record_invalid",
+                        "installed payload drifted",
+                    ));
                 }
             }
             records.push(record);

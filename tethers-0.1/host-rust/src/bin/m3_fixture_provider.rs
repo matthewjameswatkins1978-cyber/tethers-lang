@@ -42,21 +42,48 @@ fn main() {
                     "serverInfo":{"name":"tethers-stdio-fixture","version":"0.1.0"}
                 }
             }),
-            "tools/list" => json!({
+            "tools/list" if mode == "paginated" && request.pointer("/params/cursor").is_none() => {
+                json!({
+                    "jsonrpc":"2.0","id":id,"result":{"tools":[],"nextCursor":"page-2"}
+                })
+            }
+            "tools/list" => {
+                let input_schema = if mode == "wrong-schema" {
+                    json!({"type":"object","additionalProperties":true})
+                } else {
+                    json!({
+                        "type":"object",
+                        "properties":{"message":{"type":"string"}},
+                        "required":["message"],
+                        "additionalProperties":false
+                    })
+                };
+                json!({
                 "jsonrpc":"2.0","id":id,"result":{"tools":[{
                     "name":"fixture_ping",
-                    "inputSchema":{"type":"object","additionalProperties":true}
+                    "inputSchema":input_schema
                 }]}
-            }),
+                })
+            }
             "tools/call" => {
                 let invalid = request
                     .pointer("/params/arguments/__tethers_invalid")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
+                let message = request
+                    .pointer("/params/arguments/message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let structured_content = if mode == "wrong-output" {
+                    json!({"unexpected":message})
+                } else {
+                    json!({"echo":message})
+                };
                 json!({
                     "jsonrpc":"2.0","id":id,"result":{
                         "content":[],
-                        "structuredContent":{
+                        "structuredContent":structured_content,
+                        "tethersFixtureEvidence":{
                             "ambient_secret_present":std::env::var_os("TETHERS_TEST_AMBIENT_SECRET").is_some(),
                             "arguments":arguments,
                             "working_directory":std::env::current_dir().ok().map(|path| path.to_string_lossy().into_owned()),

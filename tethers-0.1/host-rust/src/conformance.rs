@@ -1,13 +1,17 @@
 //! Host-owned M3 conformance orchestration and immutable evidence.
 
 use crate::candidate::CandidateRecord;
-use crate::launch_profile::{revalidate_candidate, LaunchProfileEvidence, PreparedSupervisedLaunch};
+use crate::launch_profile::{
+    revalidate_candidate, LaunchProfileEvidence, PreparedSupervisedLaunch,
+};
 use crate::m3_store::{canonical, sha256, strict_json, unix_ms, M3Error, Result, StoreRoot};
+use crate::manifest;
 use crate::package::{CapabilityEvidence, PayloadEvidence};
 use crate::trust::PackageTrustEvidence;
+use crate::validation;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -93,7 +97,10 @@ impl ConformanceEvidence {
             || self.cases.is_empty()
             || self.evidence_digest != sha256(&self.covered_bytes()?)
         {
-            return Err(M3Error::new("conformance_invalid", "invalid conformance evidence"));
+            return Err(M3Error::new(
+                "conformance_invalid",
+                "invalid conformance evidence",
+            ));
         }
         let case_ids = self
             .cases
@@ -101,17 +108,31 @@ impl ConformanceEvidence {
             .map(|case| case.case_id.as_str())
             .collect::<BTreeSet<_>>();
         if case_ids.len() != self.cases.len() {
-            return Err(M3Error::new("conformance_invalid", "duplicate conformance case"));
+            return Err(M3Error::new(
+                "conformance_invalid",
+                "duplicate conformance case",
+            ));
         }
-        let expected = if self.cases.iter().any(|case| case.disposition == CaseDisposition::Interrupted) {
+        let expected = if self
+            .cases
+            .iter()
+            .any(|case| case.disposition == CaseDisposition::Interrupted)
+        {
             ConformanceDisposition::Interrupted
-        } else if self.cases.iter().any(|case| case.disposition == CaseDisposition::Failed) {
+        } else if self
+            .cases
+            .iter()
+            .any(|case| case.disposition == CaseDisposition::Failed)
+        {
             ConformanceDisposition::Failed
         } else {
             ConformanceDisposition::Passed
         };
         if self.disposition != ConformanceDisposition::Invalidated && self.disposition != expected {
-            return Err(M3Error::new("conformance_invalid", "disposition does not match cases"));
+            return Err(M3Error::new(
+                "conformance_invalid",
+                "disposition does not match cases",
+            ));
         }
         Ok(())
     }
@@ -135,7 +156,10 @@ impl ConformanceEvidence {
             || self.launch_profile_evidence_digest != launch.profile_evidence_digest
             || self.suite_digest != current_suite_digest
         {
-            return Err(M3Error::new("conformance_stale", "conformance pins drifted"));
+            return Err(M3Error::new(
+                "conformance_stale",
+                "conformance pins drifted",
+            ));
         }
         Ok(())
     }
@@ -185,6 +209,46 @@ fn parse_line(line: &str) -> Result<Value> {
     strict_json(line.as_bytes())
 }
 
+fn expected_tools(
+    candidate: &CandidateRecord,
+    quarantine: &Path,
+) -> Result<BTreeMap<String, (Value, Value)>> {
+    let mut expected = BTreeMap::new();
+    for capability in &candidate.capabilities {
+        let bytes = std::fs::read(quarantine.join(&capability.manifest_path))
+            .map_err(|error| M3Error::new("conformance_manifest", error.to_string()))?;
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|_| M3Error::new("conformance_manifest", "manifest is not UTF-8"))?;
+        let verified = manifest::verify_manifest(text)
+            .map_err(|error| M3Error::new("conformance_manifest", error.message))?;
+        if verified.verified_digest() != capability.manifest_digest
+            || verified.capability_name() != capability.name
+            || verified.capability_version() != capability.version
+        {
+            return Err(M3Error::new(
+                "conformance_manifest",
+                "trusted manifest identity drifted",
+            ));
+        }
+        if expected
+            .insert(
+                capability.operation.clone(),
+                (
+                    verified.manifest().input_schema.clone(),
+                    verified.manifest().output_schema.clone(),
+                ),
+            )
+            .is_some()
+        {
+            return Err(M3Error::new(
+                "conformance_manifest",
+                "duplicate provider operation",
+            ));
+        }
+    }
+    Ok(expected)
+}
+
 fn request(
     child: &mut crate::child_process::SupervisedChild,
     value: Value,
@@ -208,15 +272,16 @@ pub fn run_host_conformance(
 ) -> Result<ConformanceEvidence> {
     let started = unix_ms()?;
     let mut cases = Vec::new();
-    revalidate_candidate(candidate, quarantine_root)?;
+    let quarantine = revalidate_candidate(candidate, quarantine_root)?;
+    let expected_tools = expected_tools(candidate, &quarantine)?;
     cases.push(passed("static_candidate_revalidation"));
     trust.validate()?;
     let mut child = prepared
         .launch()
         .map_err(|error| M3Error::new("conformance_launch", error.to_string()))?;
     cases.push(passed("exact_launch_clean_environment"));
-    let deadline = Instant::now()
-        + Duration::from_millis(prepared.evidence.wall_time_limit_ms.max(1));
+    let deadline =
+        Instant::now() + Duration::from_millis(prepared.evidence.wall_time_limit_ms.max(1));
 
     let run_result = (|| -> Result<()> {
         let initialize = request(
@@ -224,66 +289,153 @@ pub fn run_host_conformance(
             json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tethers-m3-conformance","version":"1"}}}),
             deadline.saturating_duration_since(Instant::now()),
         )?;
-        if initialize.pointer("/result/protocolVersion").and_then(Value::as_str) != Some("2025-11-25") {
-            return Err(M3Error::new("protocol_pin", "provider negotiated a different MCP version"));
+        if initialize
+            .pointer("/result/protocolVersion")
+            .and_then(Value::as_str)
+            != Some("2025-11-25")
+        {
+            return Err(M3Error::new(
+                "protocol_pin",
+                "provider negotiated a different MCP version",
+            ));
         }
         cases.push(passed("mcp_initialize_protocol_pin"));
-        if initialize.pointer("/result/serverInfo/name").and_then(Value::as_str)
+        if initialize
+            .pointer("/result/serverInfo/name")
+            .and_then(Value::as_str)
             != Some(candidate.provider_id.as_str())
-            || initialize.pointer("/result/serverInfo/version").and_then(Value::as_str)
+            || initialize
+                .pointer("/result/serverInfo/version")
+                .and_then(Value::as_str)
                 != Some(candidate.provider_version.as_str())
         {
-            return Err(M3Error::new("provider_identity", "provider identity differs"));
+            return Err(M3Error::new(
+                "provider_identity",
+                "provider identity differs",
+            ));
         }
         cases.push(passed("provider_identity"));
         child
             .write_line("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")
             .map_err(|error| M3Error::new("conformance_protocol", error.to_string()))?;
-        let discovery = request(
-            &mut child,
-            json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
-            deadline.saturating_duration_since(Instant::now()),
-        )?;
-        let discovered = discovery
-            .pointer("/result/tools")
-            .and_then(Value::as_array)
-            .ok_or_else(|| M3Error::new("catalogue_invalid", "tools/list result is absent"))?
-            .iter()
-            .filter_map(|tool| tool.get("name").and_then(Value::as_str))
-            .collect::<BTreeSet<_>>();
-        let expected = candidate
-            .capabilities
-            .iter()
-            .map(|capability| capability.operation.as_str())
-            .collect::<BTreeSet<_>>();
-        if discovered != expected {
-            return Err(M3Error::new("catalogue_drift", "discovery operations differ"));
+        let mut discovered = BTreeSet::new();
+        let mut seen_cursors = BTreeSet::new();
+        let mut cursor: Option<String> = None;
+        for page in 0..16u64 {
+            let params = cursor
+                .as_ref()
+                .map_or_else(|| json!({}), |cursor| json!({"cursor":cursor}));
+            let discovery = request(
+                &mut child,
+                json!({"jsonrpc":"2.0","id":2 + page,"method":"tools/list","params":params}),
+                deadline.saturating_duration_since(Instant::now()),
+            )?;
+            let tools = discovery
+                .pointer("/result/tools")
+                .and_then(Value::as_array)
+                .ok_or_else(|| M3Error::new("catalogue_invalid", "tools/list result is absent"))?;
+            for tool in tools {
+                let name = tool
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| M3Error::new("catalogue_invalid", "tool name is absent"))?;
+                let (expected_input, _) = expected_tools
+                    .get(name)
+                    .ok_or_else(|| M3Error::new("catalogue_drift", "unapproved tool advertised"))?;
+                if tool.get("inputSchema") != Some(expected_input)
+                    || !discovered.insert(name.to_owned())
+                {
+                    return Err(M3Error::new(
+                        "catalogue_drift",
+                        "tool schema differs or operation is duplicated",
+                    ));
+                }
+            }
+            cursor = discovery
+                .pointer("/result/nextCursor")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            match cursor.as_ref() {
+                None => break,
+                Some(cursor) if cursor.is_empty() || !seen_cursors.insert(cursor.clone()) => {
+                    return Err(M3Error::new(
+                        "catalogue_invalid",
+                        "empty or repeated discovery cursor",
+                    ));
+                }
+                Some(_) if page == 15 => {
+                    return Err(M3Error::new(
+                        "catalogue_invalid",
+                        "discovery pagination exceeded its bound",
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+        if discovered != expected_tools.keys().cloned().collect() {
+            return Err(M3Error::new(
+                "catalogue_drift",
+                "discovery operations differ",
+            ));
         }
         cases.push(passed("complete_discovery_exact_operations"));
-        if let Some(operation) = expected.iter().find(|operation| operation.starts_with("fixture")) {
+        if let Some(operation) = discovered
+            .iter()
+            .find(|operation| operation.starts_with("fixture"))
+        {
+            let (_, output_schema) = expected_tools
+                .get(operation)
+                .expect("discovered operation came from expected map");
             let valid = request(
                 &mut child,
-                json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":operation,"arguments":{}}}),
+                json!({"jsonrpc":"2.0","id":100,"method":"tools/call","params":{"name":operation,"arguments":{"message":"ping"}}}),
                 deadline.saturating_duration_since(Instant::now()),
             )?;
             if valid.pointer("/result/isError").and_then(Value::as_bool) != Some(false)
-                || valid.pointer("/result/structuredContent/ambient_secret_present").and_then(Value::as_bool) != Some(false)
-                || valid.pointer("/result/structuredContent/arguments")
-                    != Some(&serde_json::to_value(&prepared.evidence.arguments).expect("arguments serialize"))
+                || valid
+                    .pointer("/result/tethersFixtureEvidence/ambient_secret_present")
+                    .and_then(Value::as_bool)
+                    != Some(false)
+                || valid.pointer("/result/tethersFixtureEvidence/arguments")
+                    != Some(
+                        &serde_json::to_value(&prepared.evidence.arguments)
+                            .expect("arguments serialize"),
+                    )
             {
-                return Err(M3Error::new("fixture_valid_call", "valid fixture evidence failed"));
+                return Err(M3Error::new(
+                    "fixture_valid_call",
+                    "valid fixture evidence failed",
+                ));
             }
+            let structured = valid
+                .pointer("/result/structuredContent")
+                .ok_or_else(|| M3Error::new("fixture_valid_call", "structured output absent"))?;
+            validation::validate_output(output_schema, structured)
+                .map_err(|_| M3Error::new("fixture_valid_call", "trusted output schema failed"))?;
             let observed_working_directory = valid
-                .pointer("/result/structuredContent/working_directory")
+                .pointer("/result/tethersFixtureEvidence/working_directory")
                 .and_then(Value::as_str)
-                .ok_or_else(|| M3Error::new("fixture_working_directory", "working directory evidence absent"))?;
+                .ok_or_else(|| {
+                    M3Error::new(
+                        "fixture_working_directory",
+                        "working directory evidence absent",
+                    )
+                })?;
             let observed_working_directory = std::fs::canonicalize(observed_working_directory)
-                .map_err(|_| M3Error::new("fixture_working_directory", "working directory cannot be canonicalized"))?;
+                .map_err(|_| {
+                    M3Error::new(
+                        "fixture_working_directory",
+                        "working directory cannot be canonicalized",
+                    )
+                })?;
             if observed_working_directory != prepared.working_directory() {
-                return Err(M3Error::new("fixture_working_directory", "working directory differs"));
+                return Err(M3Error::new(
+                    "fixture_working_directory",
+                    "working directory differs",
+                ));
             }
             let observed_environment = valid
-                .pointer("/result/structuredContent/environment_names")
+                .pointer("/result/tethersFixtureEvidence/environment_names")
                 .and_then(Value::as_array)
                 .ok_or_else(|| M3Error::new("fixture_environment", "environment evidence absent"))?
                 .iter()
@@ -297,16 +449,22 @@ pub fn run_host_conformance(
                 .map(|name| name.to_ascii_lowercase())
                 .collect::<BTreeSet<_>>();
             if observed_environment != expected_environment {
-                return Err(M3Error::new("fixture_environment", "clean environment allow-list differs"));
+                return Err(M3Error::new(
+                    "fixture_environment",
+                    "clean environment allow-list differs",
+                ));
             }
             cases.push(passed("bounded_valid_fixture_call"));
             let invalid = request(
                 &mut child,
-                json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":operation,"arguments":{"__tethers_invalid":true}}}),
+                json!({"jsonrpc":"2.0","id":101,"method":"tools/call","params":{"name":operation,"arguments":{"__tethers_invalid":true}}}),
                 deadline.saturating_duration_since(Instant::now()),
             )?;
             if invalid.pointer("/result/isError").and_then(Value::as_bool) != Some(true) {
-                return Err(M3Error::new("fixture_invalid_call", "invalid fixture call was accepted"));
+                return Err(M3Error::new(
+                    "fixture_invalid_call",
+                    "invalid fixture call was accepted",
+                ));
             }
             cases.push(passed("invalid_fixture_call_refused"));
         }
@@ -322,9 +480,15 @@ pub fn run_host_conformance(
     }
     child.shutdown();
     cases.push(passed("bounded_shutdown_process_cleanup"));
-    let disposition = if cases.iter().any(|case| case.disposition == CaseDisposition::Interrupted) {
+    let disposition = if cases
+        .iter()
+        .any(|case| case.disposition == CaseDisposition::Interrupted)
+    {
         ConformanceDisposition::Interrupted
-    } else if cases.iter().any(|case| case.disposition == CaseDisposition::Failed) {
+    } else if cases
+        .iter()
+        .any(|case| case.disposition == CaseDisposition::Failed)
+    {
         ConformanceDisposition::Failed
     } else {
         ConformanceDisposition::Passed
@@ -372,7 +536,9 @@ pub struct ConformanceEvidenceStore {
 
 impl ConformanceEvidenceStore {
     pub fn open(path: &Path) -> Result<Self> {
-        Ok(Self { root: StoreRoot::open(path)? })
+        Ok(Self {
+            root: StoreRoot::open(path)?,
+        })
     }
 
     pub fn create(&self, evidence: &ConformanceEvidence) -> Result<()> {
@@ -389,14 +555,20 @@ impl ConformanceEvidenceStore {
                 return Err(M3Error::new("conformance_invalid", "torn evidence record"));
             }
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                return Err(M3Error::new("conformance_invalid", "unexpected evidence entry"));
+                return Err(M3Error::new(
+                    "conformance_invalid",
+                    "unexpected evidence entry",
+                ));
             }
             let record: ConformanceEvidence = self.root.read(&path)?;
             record.validate()?;
             if path.file_stem().and_then(|value| value.to_str()) != Some(&record.evidence_id)
                 || !identities.insert(record.evidence_id.clone())
             {
-                return Err(M3Error::new("conformance_invalid", "duplicate or mismatched evidence identity"));
+                return Err(M3Error::new(
+                    "conformance_invalid",
+                    "duplicate or mismatched evidence identity",
+                ));
             }
             evidence.push(record);
         }
