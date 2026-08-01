@@ -75,6 +75,8 @@ event admission, trust, approval, installation, or enablement.
 
 ## Correction pass (after `c2069974c6c9d89481a1e9b583077ebe7df45e7b`)
 
+- Correction implementation commit: `eef54c4dd4caa58193f4dd4457c19f969a3b2957`.
+
 - Replaced the invalid four-byte EOCD probe with full fixed-EOCD validation for
   multi-disk and Zip64 refusal; retained `zip` as the archive reader while
   independently enforcing the frozen TetherPlug ZIP profile.
@@ -103,6 +105,9 @@ event admission, trust, approval, installation, or enablement.
 - `cargo +1.89.0 fmt --all -- --check`; `check`; `test`; debug and release
   locked builds — PASS (789 Rust unit tests and 29 integration tests; pre-existing
   warnings unchanged, no new M2 warning).
+- Toolchain gate, OCaml `dune build` and `dune runtest`, and
+  `tethers-0.1/scripts/verify-0.2.ps1` — PASS (6/6 suites; J14C 9 rows,
+  196 assertions). Packet checker and whitespace-range check — PASS.
 
 ## Remaining risks
 
