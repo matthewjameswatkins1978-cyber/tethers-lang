@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J19-M2 - Autonomous Package Candidate Programme`
 Owner: `Codex Terra High`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `Codex, autonomous package inspection, quarantine and candidate-registry implementation`
 Base branch: `main`
