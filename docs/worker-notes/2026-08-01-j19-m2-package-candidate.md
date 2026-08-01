@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `337ab11c9cd4059402ef48d5949365c9517867a7`
 
-Implementation checkpoint: `76570b6192a29d2ac70234ef21ec4f2541276b0f`
+Implementation checkpoint: `c2069974c6c9d89481a1e9b583077ebe7df45e7b`
 
 ## Requested outcome
 
@@ -72,6 +72,37 @@ event admission, trust, approval, installation, or enablement.
   updated from the accepted baseline to
   `c72087d25475c82a13e3b57396f57e965dbeca1f76a33b738322523a54fc20a3` so the
   non-M2 legacy matrix continues to prove no unexpected lockfile mutation.
+
+## Correction pass (after `c2069974c6c9d89481a1e9b583077ebe7df45e7b`)
+
+- Replaced the invalid four-byte EOCD probe with full fixed-EOCD validation for
+  multi-disk and Zip64 refusal; retained `zip` as the archive reader while
+  independently enforcing the frozen TetherPlug ZIP profile.
+- Made the payload index an exact two-way match with archive payload files and
+  made indexed documentation absence fail during `inspect()`.
+- Added explicit Windows `FILE_ATTRIBUTE_REPARSE_POINT` checks for every
+  existing root/ancestor and revalidation before publication; junctions,
+  symlinks, mount points and reparse paths fail closed.
+- Quarantine now records and rechecks `plug.json`, signatures and every indexed
+  file, marks all accepted files read-only before publication, and records the
+  limited M2 claim: this protects against ordinary writes, not an administrator
+  or a malicious same-user process able to change attributes or ACLs.
+- Candidate v1 now preserves launch arguments, working directory, operation
+  namespace, selected Windows platform, full payload role/size/digest evidence,
+  and a distinct inspection-evidence digest. The committed golden record is
+  `tethers-0.1/host-rust/fixtures/m2/candidate-record-v1.json`.
+- Reload requires filename/ID agreement, exact file-set equality, read-only
+  files, payload size/digest agreement, strict `plug.json` semantic identity,
+  no unexpected executable-looking file, and no same-release semantic conflict.
+
+## Correction evidence
+
+- `cargo +1.89.0 test package::tests --locked` — PASS (8 tests).
+- `cargo +1.89.0 test candidate::tests --locked` — PASS (4 tests, including a
+  real Windows junction refusal).
+- `cargo +1.89.0 fmt --all -- --check`; `check`; `test`; debug and release
+  locked builds — PASS (789 Rust unit tests and 29 integration tests; pre-existing
+  warnings unchanged, no new M2 warning).
 
 ## Remaining risks
 

@@ -4,14 +4,23 @@
 //! trust, approval, binding, credential, session, policy, or launch authority.
 
 use crate::manifest;
-use crate::package::{self, InspectionReport, PackageError};
+use crate::package::{self, InspectionReport, PackageError, PayloadEvidence, PlatformEvidence};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    GetFileAttributesW, SetFileAttributesW, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
+    INVALID_FILE_ATTRIBUTES,
+};
 
 fn err(code: &'static str, text: impl Into<String>) -> PackageError {
     PackageError {
@@ -26,18 +35,60 @@ fn io<T>(result: std::io::Result<T>) -> Result<T, PackageError> {
     result.map_err(|e| err("candidate_io", e.to_string()))
 }
 
-fn reject_link(path: &Path) -> Result<(), PackageError> {
+#[cfg(windows)]
+fn wide(path: &Path) -> Vec<u16> {
+    path.as_os_str().encode_wide().chain(Some(0)).collect()
+}
+fn reject_reparse_or_link(path: &Path) -> Result<(), PackageError> {
     let metadata = io(fs::symlink_metadata(path))?;
     if metadata.file_type().is_symlink() {
         Err(err(
             "unsafe_destination",
-            "links and reparse destinations are refused",
+            "symbolic-link destinations are refused",
         ))
     } else {
+        #[cfg(windows)]
+        {
+            let path_w = wide(path);
+            // SAFETY: the nul-terminated UTF-16 path remains live for this
+            // attribute query; no handle or pointer escapes the call.
+            let attributes = unsafe { GetFileAttributesW(path_w.as_ptr()) };
+            if attributes == INVALID_FILE_ATTRIBUTES
+                || attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            {
+                return Err(err(
+                    "unsafe_destination",
+                    "Windows reparse destinations are refused",
+                ));
+            }
+        }
         Ok(())
     }
 }
+/// Check every existing component before and after directory creation. On
+/// Windows this examines FILE_ATTRIBUTE_REPARSE_POINT, covering junctions,
+/// mount points, and other reparse forms that Path::is_symlink cannot see.
+fn verify_existing_chain(path: &Path) -> Result<(), PackageError> {
+    if !path.is_absolute() {
+        return Err(err("unsafe_destination", "host roots must be absolute"));
+    }
+    for component in path.ancestors() {
+        match fs::symlink_metadata(component) {
+            Ok(_) => reject_reparse_or_link(component)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(err("candidate_io", error.to_string())),
+        }
+    }
+    Ok(())
+}
+fn create_safe_dir_all(path: &Path) -> Result<(), PackageError> {
+    verify_existing_chain(path)?;
+    io(fs::create_dir_all(path))?;
+    verify_existing_chain(path)
+}
 fn confined(root: &Path, child: &Path) -> Result<PathBuf, PackageError> {
+    verify_existing_chain(root)?;
+    verify_existing_chain(child)?;
     let root = io(fs::canonicalize(root))?;
     let child = io(fs::canonicalize(child))?;
     if child.starts_with(&root) {
@@ -67,6 +118,74 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), PackageError> {
     io(out.write_all(bytes))?;
     io(out.sync_all())
 }
+fn mark_read_only(path: &Path) -> Result<(), PackageError> {
+    let mut permissions = io(fs::metadata(path))?.permissions();
+    permissions.set_readonly(true);
+    io(fs::set_permissions(path, permissions))?;
+    #[cfg(windows)]
+    {
+        let path_w = wide(path);
+        // SAFETY: the nul-terminated UTF-16 path remains live for the call.
+        let attributes = unsafe { GetFileAttributesW(path_w.as_ptr()) };
+        if attributes == INVALID_FILE_ATTRIBUTES {
+            return Err(err("candidate_io", "could not read payload attributes"));
+        }
+        // SAFETY: the path remains live and only the restrictive READONLY bit
+        // is added to the existing host-visible attributes.
+        if unsafe { SetFileAttributesW(path_w.as_ptr(), attributes | FILE_ATTRIBUTE_READONLY) } == 0
+        {
+            return Err(err("candidate_io", "could not make payload read-only"));
+        }
+    }
+    if !io(fs::metadata(path))?.permissions().readonly() {
+        return Err(err("candidate_io", "payload remained writable"));
+    }
+    Ok(())
+}
+fn expected_files(
+    plug_json: &PayloadEvidence,
+    payloads: &[PayloadEvidence],
+    signature_files: &[PayloadEvidence],
+) -> Result<BTreeMap<String, PayloadEvidence>, PackageError> {
+    let mut expected = BTreeMap::new();
+    for evidence in std::iter::once(plug_json)
+        .chain(payloads.iter())
+        .chain(signature_files.iter())
+    {
+        if expected
+            .insert(evidence.path.clone(), evidence.clone())
+            .is_some()
+        {
+            return Err(err("record_invalid", "duplicate quarantine file evidence"));
+        }
+    }
+    Ok(expected)
+}
+fn collect_quarantine_files(
+    root: &Path,
+    directory: &Path,
+) -> Result<BTreeSet<String>, PackageError> {
+    let mut files = BTreeSet::new();
+    for entry in io(fs::read_dir(directory))? {
+        let entry = io(entry)?;
+        let path = entry.path();
+        reject_reparse_or_link(&path)?;
+        let file_type = io(entry.file_type())?;
+        if file_type.is_dir() {
+            files.extend(collect_quarantine_files(root, &path)?);
+        } else if file_type.is_file() {
+            let relative = path
+                .strip_prefix(root)
+                .map_err(|_| err("record_invalid", "quarantine path escaped root"))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            files.insert(relative);
+        } else {
+            return Err(err("record_invalid", "non-file quarantine entry"));
+        }
+    }
+    Ok(files)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuarantinedPackage {
@@ -80,13 +199,9 @@ pub fn extract_to_quarantine(
     report: &InspectionReport,
     quarantine_root: &Path,
 ) -> Result<QuarantinedPackage, PackageError> {
-    if quarantine_root.exists() {
-        reject_link(quarantine_root)?;
-    } else {
-        io(fs::create_dir_all(quarantine_root))?;
-    }
+    create_safe_dir_all(quarantine_root)?;
     let root = io(fs::canonicalize(quarantine_root))?;
-    reject_link(&root)?;
+    verify_existing_chain(&root)?;
     let renewed = package::inspect(report.archive_path())?;
     if renewed.package != report.package || renewed.raw_archive_digest != report.raw_archive_digest
     {
@@ -102,24 +217,37 @@ pub fn extract_to_quarantine(
             File::open(report.archive_path()).map_err(|e| err("archive_read", e.to_string()))?;
         let mut archive =
             zip::ZipArchive::new(source).map_err(|e| err("archive_read", e.to_string()))?;
-        let mut expected = std::collections::BTreeMap::new();
-        expected.insert("plug.json".to_owned(), None);
-        for p in &report.payloads {
-            expected.insert(p.path.clone(), Some((p.sha256.clone(), p.size_bytes)));
-        }
+        let expected = expected_files(
+            &renewed.plug_json,
+            &renewed.payloads,
+            &renewed.signature_files,
+        )?;
+        let mut written = BTreeSet::new();
         for index in 0..archive.len() {
-            let mut entry = archive
+            let entry = archive
                 .by_index(index)
                 .map_err(|e| err("archive_read", e.to_string()))?;
             let name = std::str::from_utf8(entry.name_raw())
                 .map_err(|_| err("archive_read", "non UTF-8 entry after inspection"))?
                 .to_owned();
-            let signature = name.starts_with("signatures/");
-            if !expected.contains_key(&name) && !signature {
-                continue;
+            let evidence = expected
+                .get(&name)
+                .ok_or_else(|| err("unsafe_destination", "archive changed after inspection"))?;
+            if !written.insert(name.clone()) {
+                return Err(err(
+                    "unsafe_destination",
+                    "duplicate archive entry after inspection",
+                ));
             }
             let relative = Path::new(&name);
-            if relative.components().count() == 0 || relative.is_absolute() {
+            if relative.components().count() == 0
+                || relative.is_absolute()
+                || name.contains('\\')
+                || name.contains(':')
+                || name
+                    .split('/')
+                    .any(|part| part.is_empty() || part == "." || part == "..")
+            {
                 return Err(err("unsafe_destination", "invalid destination path"));
             }
             let target = staging.join(relative);
@@ -137,36 +265,46 @@ pub fn extract_to_quarantine(
                     if !cursor.exists() {
                         create_dir(&cursor)?;
                     }
-                    reject_link(&cursor)?;
+                    verify_existing_chain(&cursor)?;
                 }
             }
             let mut bytes = Vec::new();
             entry
+                .take(evidence.size_bytes + 1)
                 .read_to_end(&mut bytes)
                 .map_err(|e| err("archive_read", e.to_string()))?;
-            if let Some(Some((digest, size))) = expected.get(&name) {
-                if bytes.len() as u64 != *size || sha(&bytes) != *digest {
-                    return Err(err(
-                        "payload_mismatch",
-                        "second payload verification failed",
-                    ));
-                }
+            if bytes.len() as u64 != evidence.size_bytes || sha(&bytes) != evidence.sha256 {
+                return Err(err(
+                    "payload_mismatch",
+                    "second payload verification failed",
+                ));
             }
             write_new(&target, &bytes)?;
         }
-        for key in expected.keys() {
-            if !staging.join(key).is_file() {
+        for (key, _) in &expected {
+            let file = staging.join(key);
+            if !file.is_file() {
                 return Err(err(
                     "payload_mismatch",
                     "accepted archive entry was not extracted",
                 ));
             }
+            mark_read_only(&file)?;
         }
         Ok(())
     })();
     if let Err(failure) = result {
         let _ = fs::remove_dir_all(&staging);
         return Err(failure);
+    }
+    verify_existing_chain(&root)?;
+    verify_existing_chain(
+        staging
+            .parent()
+            .ok_or_else(|| err("unsafe_destination", "staging parent missing"))?,
+    )?;
+    if final_dir.exists() {
+        return Err(err("already_exists", "candidate target exists"));
     }
     io(fs::rename(&staging, &final_dir))?;
     let directory = confined(&root, &final_dir)?;
@@ -191,10 +329,17 @@ pub struct CandidateRecord {
     pub provider_id: String,
     pub provider_version: String,
     pub launch_path: String,
-    pub payload_digests: Vec<(String, String)>,
-    pub capabilities: Vec<(String, u32, String, String)>,
+    pub launch_arguments: Vec<String>,
+    pub provider_working_directory: String,
+    pub capability_operation_namespace: String,
+    pub selected_platform: PlatformEvidence,
+    pub plug_json: PayloadEvidence,
+    pub payloads: Vec<PayloadEvidence>,
+    pub signature_files: Vec<PayloadEvidence>,
+    pub capabilities: Vec<crate::package::CapabilityEvidence>,
     pub signatures_present: bool,
-    pub inspection_format_version: u32,
+    pub inspection_report_format_version: u32,
+    pub inspection_evidence_digest: String,
     pub created_unix_ms: u64,
     pub record_digest: String,
 }
@@ -208,6 +353,14 @@ impl CandidateRecord {
         if self.schema_version != 1
             || self.state != "quarantined_installation_candidate"
             || self.candidate_id.is_empty()
+            || Uuid::parse_str(&self.candidate_id).is_err()
+            || self.selected_platform.os != "windows"
+            || self.selected_platform.architecture != "x86_64"
+            || self.inspection_report_format_version != 1
+            || self.inspection_evidence_digest.len() != 71
+            || self.signatures_present != !self.signature_files.is_empty()
+            || self.plug_json.path != "plug.json"
+            || self.plug_json.role != "package_descriptor"
             || self.record_digest != sha(&self.covered_bytes()?)
         {
             Err(err("record_invalid", "invalid immutable candidate record"))
@@ -229,19 +382,32 @@ impl CandidateRegistry {
                 "registry and quarantine roots must differ",
             ));
         }
-        io(fs::create_dir_all(root))?;
-        io(fs::create_dir_all(quarantine_root))?;
-        reject_link(root)?;
-        reject_link(quarantine_root)?;
+        create_safe_dir_all(root)?;
+        create_safe_dir_all(quarantine_root)?;
+        let root = io(fs::canonicalize(root))?;
+        let quarantine_root = io(fs::canonicalize(quarantine_root))?;
+        verify_existing_chain(&root)?;
+        verify_existing_chain(&quarantine_root)?;
+        if root == quarantine_root {
+            return Err(err(
+                "registry_invalid",
+                "registry and quarantine roots resolve to the same location",
+            ));
+        }
         Ok(Self {
-            root: io(fs::canonicalize(root))?,
-            quarantine_root: io(fs::canonicalize(quarantine_root))?,
+            root,
+            quarantine_root,
         })
+    }
+    fn verify_roots(&self) -> Result<(), PackageError> {
+        verify_existing_chain(&self.root)?;
+        verify_existing_chain(&self.quarantine_root)
     }
     pub fn create(
         &self,
         quarantined: &QuarantinedPackage,
     ) -> Result<CandidateRecord, PackageError> {
+        self.verify_roots()?;
         for existing in self.load_all()? {
             if existing.package_id == quarantined.report.package.package_id
                 && existing.package_version == quarantined.report.package.package_version
@@ -276,27 +442,17 @@ impl CandidateRegistry {
             provider_id: quarantined.report.provider_id.clone(),
             provider_version: quarantined.report.provider_version.clone(),
             launch_path: quarantined.report.provider_launch_path.clone(),
-            payload_digests: quarantined
-                .report
-                .payloads
-                .iter()
-                .map(|p| (p.path.clone(), p.sha256.clone()))
-                .collect(),
-            capabilities: quarantined
-                .report
-                .capabilities
-                .iter()
-                .map(|c| {
-                    (
-                        c.name.clone(),
-                        c.version,
-                        c.operation.clone(),
-                        c.manifest_digest.clone(),
-                    )
-                })
-                .collect(),
+            launch_arguments: quarantined.report.provider_launch_arguments.clone(),
+            provider_working_directory: quarantined.report.provider_working_directory.clone(),
+            capability_operation_namespace: quarantined.report.provider_operation_namespace.clone(),
+            selected_platform: quarantined.report.selected_platform.clone(),
+            plug_json: quarantined.report.plug_json.clone(),
+            payloads: quarantined.report.payloads.clone(),
+            signature_files: quarantined.report.signature_files.clone(),
+            capabilities: quarantined.report.capabilities.clone(),
             signatures_present: quarantined.report.signatures_present,
-            inspection_format_version: 1,
+            inspection_report_format_version: quarantined.report.inspection_format_version,
+            inspection_evidence_digest: quarantined.report.inspection_evidence_digest.clone(),
             created_unix_ms: now,
             record_digest: String::new(),
         };
@@ -311,18 +467,24 @@ impl CandidateRegistry {
             &serde_json_canonicalizer::to_vec(&record)
                 .map_err(|e| err("record_invalid", e.to_string()))?,
         )?;
+        self.verify_roots()?;
         io(fs::rename(&temporary, &destination))?;
         Ok(record)
     }
     pub fn load_all(&self) -> Result<Vec<CandidateRecord>, PackageError> {
+        self.verify_roots()?;
         let mut records = Vec::new();
+        let mut identities = HashSet::new();
+        let mut releases = BTreeMap::new();
         for entry in io(fs::read_dir(&self.root))? {
-            let path = io(entry)?.path();
+            let entry = io(entry)?;
+            let path = entry.path();
+            reject_reparse_or_link(&path)?;
             if path.extension().and_then(|x| x.to_str()) == Some("tmp") {
                 return Err(err("record_invalid", "torn temporary record present"));
             }
             if path.extension().and_then(|x| x.to_str()) != Some("json") {
-                continue;
+                return Err(err("record_invalid", "unexpected registry entry"));
             }
             let text = io(fs::read_to_string(&path))?;
             let value = manifest::parse_value_no_dupes(&text)
@@ -330,6 +492,26 @@ impl CandidateRegistry {
             let record: CandidateRecord =
                 serde_json::from_value(value).map_err(|e| err("record_invalid", e.to_string()))?;
             record.validate()?;
+            if path.file_stem().and_then(|stem| stem.to_str()) != Some(record.candidate_id.as_str())
+            {
+                return Err(err(
+                    "record_invalid",
+                    "record filename and candidate ID differ",
+                ));
+            }
+            if !identities.insert(record.candidate_id.clone()) {
+                return Err(err("record_invalid", "duplicate candidate identity"));
+            }
+            let release = (record.package_id.clone(), record.package_version.clone());
+            if let Some(previous) = releases.insert(release, record.semantic_package_digest.clone())
+            {
+                if previous != record.semantic_package_digest {
+                    return Err(err(
+                        "semantic_conflict",
+                        "conflicting semantic release evidence",
+                    ));
+                }
+            }
             let payload = confined(
                 &self.quarantine_root,
                 &self.quarantine_root.join(&record.quarantine_relative_path),
@@ -337,11 +519,33 @@ impl CandidateRegistry {
             if !payload.is_dir() {
                 return Err(err("record_invalid", "quarantine payload missing"));
             }
-            for (relative, expected_digest) in &record.payload_digests {
-                let bytes = io(fs::read(payload.join(relative)))?;
-                if sha(&bytes) != *expected_digest {
+            verify_existing_chain(&payload)?;
+            let expected =
+                expected_files(&record.plug_json, &record.payloads, &record.signature_files)?;
+            let actual = collect_quarantine_files(&payload, &payload)?;
+            if actual != expected.keys().cloned().collect::<BTreeSet<_>>() {
+                return Err(err(
+                    "record_invalid",
+                    "unexpected or missing quarantine file",
+                ));
+            }
+            for (relative, evidence) in expected {
+                let file = payload.join(&relative);
+                reject_reparse_or_link(&file)?;
+                let metadata = io(fs::metadata(&file))?;
+                if !metadata.is_file() || !metadata.permissions().readonly() {
+                    return Err(err("record_invalid", "quarantine payload is not immutable"));
+                }
+                let bytes = io(fs::read(&file))?;
+                if bytes.len() as u64 != evidence.size_bytes || sha(&bytes) != evidence.sha256 {
                     return Err(err("record_invalid", "quarantine payload was mutated"));
                 }
+            }
+            let descriptor = io(fs::read(payload.join("plug.json")))?;
+            if package::semantic_digest_for_plug_json(&descriptor)?
+                != record.semantic_package_digest
+            {
+                return Err(err("record_invalid", "plug.json semantic evidence changed"));
             }
             records.push(record);
         }
@@ -353,6 +557,15 @@ impl CandidateRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn candidate_record_golden_fixture_is_strict_and_covered() {
+        let value =
+            manifest::parse_value_no_dupes(include_str!("../fixtures/m2/candidate-record-v1.json"))
+                .unwrap();
+        let record: CandidateRecord = serde_json::from_value(value).unwrap();
+        record.validate().unwrap();
+    }
 
     #[test]
     fn registry_roots_must_remain_separate() {
