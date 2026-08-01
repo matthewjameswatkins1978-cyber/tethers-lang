@@ -371,4 +371,35 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(quarantine).unwrap();
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn real_windows_junction_is_refused_as_a_quarantine_root() {
+        let target = std::env::temp_dir().join(format!("tethers-target-{}", Uuid::new_v4()));
+        let junction = std::env::temp_dir().join(format!("tethers-junction-{}", Uuid::new_v4()));
+        let registry = std::env::temp_dir().join(format!("tethers-registry-{}", Uuid::new_v4()));
+        fs::create_dir(&target).unwrap();
+        let status = std::process::Command::new("cmd")
+            .args([
+                "/C",
+                "mklink",
+                "/J",
+                junction.to_str().unwrap(),
+                target.to_str().unwrap(),
+            ])
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "could not create Windows junction fixture"
+        );
+        let refusal = match CandidateRegistry::open(&registry, &junction) {
+            Err(error) => error,
+            Ok(_) => panic!("junction quarantine root was accepted"),
+        };
+        assert_eq!(refusal.code, "unsafe_destination");
+        fs::remove_dir(junction).unwrap();
+        fs::remove_dir_all(target).unwrap();
+        fs::remove_dir_all(registry).unwrap();
+    }
 }
