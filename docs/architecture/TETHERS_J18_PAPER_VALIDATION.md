@@ -32,13 +32,16 @@ architectural inferences are labelled in the worker note.
 
 ## Uniform Validation Fields
 
-Every section answers fields 1-45 in order: possibility and fit; provider/package/
+Every section answers fields 1-46 in order: possibility and fit; provider/package/
 capability identity; class; effects; scopes and resolution; policy; Socket,
 binding, transport and translation; discovery/drift; authentication,
 credentials, isolation and resource boundaries; attempt and outcomes; partial
 work, cancellation, restart, replay and event rules; required class semantics;
 Trail/conformance/invalidation/removal; implementation/refusal; revision and
-evidence basis.
+evidence basis. The final range 39-46 is explicitly: 39. Trail evidence; 40.
+conformance strategy; 41. conformance invalidation; 42. installation and
+removal; 43. first implementation status; 44. refusal boundary; 45.
+architecture revision required; 46. evidence basis.
 
 ## local file tool
 
@@ -69,7 +72,7 @@ restart creates a new session and never retries. Replay uses host execution
 identity; no automatic retry. No external event/job identity is required.
 35-38. No event or job; a later file-change Anchor would need stable source
 identity and durable admission. Current Action/Query is truthful.
-39-45. Trail records identity, resolved paths as permitted, digest/binding,
+39-46. Trail records identity, resolved paths as permitted, digest/binding,
 policy, approval, attempt, outcome, safe error and replay state. Conformance
 tests traversal, overwrite, malformed output, drift, duplicate/restart and
 redaction; any payload/binding/scope change invalidates it. Removal stops calls,
@@ -99,7 +102,7 @@ needs an explicit contract or is failed/uncertain. Cancellation and restart do
 not retry. No external identity is required.
 35-38. No Job/Stream/Anchor; raw parser progress cannot be admitted as a Stream.
 Current Query remains truthful only for bounded extraction.
-39-45. Trail records input digest, limits, parser/provider pins, outcome and safe
+39-46. Trail records input digest, limits, parser/provider pins, outcome and safe
 diagnostics. Conformance uses hostile malformed files, bombs, links, limits and
 redaction; any parser or isolation drift invalidates. Removal preserves evidence.
 First slice only as bounded reference/competition; production refusal without
@@ -132,7 +135,7 @@ remote mutation; restart never retries. REST request IDs are not universal event
 identity; webhook delivery uses provider stable identity and durable admission.
 35-38. Webhook needs Anchor identity, cursor/order/ack rules from source; it is
 not first-slice listener implementation. Query/Action are not Job or Stream.
-39-45. Trail records endpoint, repository scope, request/response validation,
+39-46. Trail records endpoint, repository scope, request/response validation,
 rate evidence, outcome and event admission. Conformance tests pagination, drift,
 auth, redaction and duplicate webhook delivery; token/scope/API drift invalidates.
 Removal disables bindings and preserves events. Deferred, provider-mediated;
@@ -158,12 +161,19 @@ accepted SMTP/server evidence; it never means mailbox placement, recipient
 delivery or human reading. Failure is trusted rejection; uncertain is loss after
 submission or mailbox ambiguity. Unattempted covers policy/connection preflight.
 Partial delivery is not inferred. Cancellation cannot retract accepted mail;
-restart never retries. Inbound Anchor requires stable source identity; folders,
-UIDs and cursors are source-specific and not interchangeable.
+restart never retries. Inbound authentication, validation and durable admission
+produce an admitted Anchor, not a canonical succeeded operation outcome. Duplicate
+delivery is duplicate admission and is not evaluated again; invalid,
+unauthenticated, out-of-scope or unstable-identity input is rejected before
+evaluation and does not create a canonical failed operation outcome. Same-ID/
+different-payload is an identity conflict; unavailable or corrupt durable
+admission authority fails closed. Admission uncertainty remains separate from
+attempted-operation uncertain. Inbound Anchor requires stable source identity;
+folders, UIDs and cursors are source-specific and not interchangeable.
 35-38. Anchor needs durable admission and explicit acknowledgement/cursor rules;
 current Query/Action cannot represent durable mail workflow. No Job/Stream needed
 for bounded operations.
-39-45. Trail records message digest, bounded recipients, server evidence and
+39-46. Trail records message digest, bounded recipients, server evidence and
 outcome without content secrets. Conformance uses test mailbox, SMTP acceptance,
 IMAP read, duplicate events and loss; credentials/server policy invalidate.
 Removal preserves Trail. Deferred; refuse claims of delivery/read or unstable
@@ -196,7 +206,7 @@ database change Anchors need an explicit stable CDC contract.
 35-38. No Job/Stream required for bounded calls; continuous change feed would be
 Stream/Anchor and is deferred. Query/Action remains truthful when statement
 class is reviewed.
-39-45. Trail records database identity, statement digest, scope, transaction
+39-46. Trail records database identity, statement digest, scope, transaction
 boundary, row/byte limits, outcome and redacted error. Conformance uses fixture
 DB, read-only enforcement, commit-loss, rollback, injection and drift; schema,
 privilege or provider changes invalidate. Removal preserves evidence. Deferred;
@@ -219,15 +229,24 @@ stales binding. Push notification is only a change hint.
 17-24. OAuth host profile (deferred), isolated provider or broker, no package
 secret, bounded local scratch and HTTPS allowlist, page/byte/rate/cost limits.
 Token leakage and broad shared-drive scope are primary risks.
-25-34. Attempt starts at API request. Success means validated file response or
-mutation evidence, not downstream sync; failure is final rejection; uncertain is
-loss around mutation. Unattempted covers policy/token/scope failure. Partial
-upload is contract-specific, otherwise failed/uncertain. Cancellation and
-restart do not retry. Change feed IDs/token positions must be kept distinct;
-acknowledgement follows durable admission.
+25-34. Query or Action outcomes remain exactly `succeeded`, `failed`, and
+`uncertain` for attempted provider operations. Inbound change admission is a
+separate state family: authentication, validation and durable admission produce
+an admitted Anchor, not a canonical succeeded operation outcome. Duplicate
+redelivery is duplicate admission and is not evaluated again. Invalid,
+unauthenticated, out-of-scope or unstable-identity input is rejected before
+evaluation and does not create a canonical failed operation outcome. Same-ID/
+different-payload is an identity conflict that quarantines or disables the
+source binding. Unavailable or corrupt durable admission authority fails closed;
+admission uncertainty is not attempted-operation uncertain. Success means
+validated file response or mutation evidence, not downstream sync; failure is
+final rejection; uncertain is loss around mutation. Unattempted covers
+policy/token/scope failure. Partial upload is contract-specific, otherwise
+failed/uncertain. Cancellation and restart do not retry. Change feed IDs/token
+positions must be kept distinct; acknowledgement follows durable admission.
 35-38. Change notification needs Anchor plus authoritative change feed; cursor
 is not event identity. No Job/Stream is required for bounded file calls.
-39-45. Trail records file ID, change token/event identity, scope, API evidence,
+39-46. Trail records file ID, change token/event identity, scope, API evidence,
 outcome and admission. Conformance tests hints versus feed, duplicates, token
 rewind, drift and redaction; OAuth/permission/API changes invalidate. Removal
 preserves history. Deferred; refuse treating push as payload or stable event
@@ -257,13 +276,15 @@ Cancellation cannot prove remote termination; restart never retries. Webhook/job
 IDs are source-specific and require explicit stable identity.
 35-38. Background and streaming shapes need reserved Job/Stream; forcing them
 into Query is false. Synchronous Query is truthful.
-39-45. Trail records model/provider pins, data classification, cost/token limits,
+39-46. Trail records model/provider pins, data classification, cost/token limits,
 probabilistic flag, output schema and outcome, never prompt secrets. Conformance
 uses non-production model/account, limits, drift and redaction; model/policy/
 credential changes invalidate. Removal preserves evidence. Deferred; refuse
 hidden AI judgement, unbounded remote transfer or Job/Stream pretence.
-Architecture revision: no. Evidence: accepted contracts and OpenAI primary
-sources; exact provider guarantees remain unresolved.
+Architecture revision: no. Evidence: accepted contracts and successfully
+inspected OpenAI Responses streaming events and Webhook events pages; the
+unavailable Developer quickstart is not evidence. Exact provider guarantees
+remain unresolved where those pages do not establish them.
 
 ## local AI model
 
@@ -288,7 +309,7 @@ Partial output is contract-specific. Cancellation/restart do not retry. No
 external event identity for Query; stream identity would require Stream.
 35-38. Streaming remains reserved Stream and cannot be ordinary Query. Loading
 or background inference is not silently a Job.
-39-45. Trail records model digest/name, resource limits, output validation and
+39-46. Trail records model digest/name, resource limits, output validation and
 outcome. Conformance tests unavailable model, output bounds, exhaustion, drift
 and redaction; model/payload changes invalidate. Removal preserves history.
 Deferred; refuse unbounded local process or stream claims. Architecture revision:
@@ -310,17 +331,25 @@ closed.
 17-24. Signature/mTLS or equivalent source authentication; host credential
 profile; isolated gateway, no package secret, restricted listener/network and
 rate/size limits. Spoofing, replay and admission overload are primary risks.
-25-34. Attempt/admission begins only after authentication and durable duplicate
-admission. Succeeded means admitted event, not downstream action; failed means
-rejected event; uncertain means admission durability/ack state is unknown.
-Unattempted covers unauthenticated or invalid event. Partial payload is invalid
-unless schema permits. Cancellation is source-specific; restart requires durable
-dedup and never retry. Acknowledgement follows admission; cursor/order are source
-contracts, not identity.
+25-34. Provider-operation outcomes remain exactly `succeeded`, `failed`, and
+`uncertain`, and apply only to an attempted host-to-provider operation. Inbound
+event admission is a separate state family: authentication, validation and
+durable admission produce an admitted Anchor, not a canonical succeeded
+operation outcome. Duplicate redelivery is duplicate admission and is not
+evaluated again. Invalid, unauthenticated, out-of-scope or unstable-identity
+input is rejected before evaluation and does not create a canonical failed
+operation outcome. Same-ID/different-payload is an identity conflict and
+quarantines or disables the source binding. Unavailable or corrupt durable
+admission authority fails closed before evaluation. Uncertainty about
+acknowledgement or durable admission is admission uncertainty or indeterminate
+admission evidence, not attempted-operation uncertain. Partial payload is
+invalid unless schema permits. Cancellation is source-specific; restart never
+retries or fabricates event identity. Acknowledgement follows durable admission;
+cursor/order are source contracts, not identity.
 35-38. Stable source event identity is mandatory; Anchor is correct. Current
 runtime has no listener implementation, and notification cannot be assumed
 Anchor without gateway admission.
-39-45. Trail records source, event ID, payload digest, authentication, admission,
+39-46. Trail records source, event ID, payload digest, authentication, admission,
 ack and evaluation linkage. Conformance tests spoof, duplicate/conflict, order,
 cursor and ack failure; source contract or auth drift invalidates. Removal stops
 admission and preserves evidence. Deferred; refuse unstable identity or ack before
@@ -350,12 +379,14 @@ creates new Job identity and never retries.
 35-38. Stable host Job ID, output identity and progress correlation are required;
 progress is not automatically Stream. Current Action cannot truthfully represent
 completion, so Job remains reserved.
-39-45. Trail records Job identity, command digest, inputs/outputs, progress as
+39-46. Trail records Job identity, command digest, inputs/outputs, progress as
 diagnostic, final evidence and outcome. Conformance uses bounded media and
 malformed inputs; executable/codec/options/isolation changes invalidate. Removal
 stops jobs and preserves evidence. Reserved/deferred; refuse claiming start means
 completed render. Architecture revision: no. Evidence: accepted contracts and
-FFmpeg primary documentation.
+architectural inference from the long-running-render scenario; the supplied
+FFmpeg documentation retrieval failed with a transport error. FFmpeg-specific
+progress, cancellation and process behaviour remain unresolved.
 
 ## live sensor stream
 
@@ -372,15 +403,23 @@ calibration and schema drift fail closed.
 17-24. Device authentication and host credential profile; isolated gateway;
 network/device/filesystem deny by default, bounded rate/storage/CPU. Spoofing,
 unbounded ingestion and unsafe control coupling are primary risks.
-25-34. Snapshot attempt is one bounded read; stream admission is continuous and
-needs Stream semantics. Snapshot success/failure/uncertain follow J18F; unattempted
-is policy/unavailable. Partial sample is not silently success. Cancellation and
-restart cannot imply continuity or retry. Stable sequence/event identity, cursor,
-ordering and ack are source-specific.
+25-34. Snapshot operation outcomes remain exactly succeeded, failed and uncertain
+for an attempted provider read. Continuous stream admission is a separate state
+family requiring Stream semantics. Authenticated, validated and durably admitted
+reduced sensor input produces an admitted Anchor, not a canonical succeeded
+operation outcome. Duplicate input is duplicate admission and is not evaluated
+again; invalid, unauthenticated, out-of-scope or unstable-identity input is
+rejected before evaluation and does not create a canonical failed operation
+outcome. Same-ID/different-payload is an identity conflict; unavailable or
+corrupt durable admission authority fails closed. Admission uncertainty is
+separate from attempted-read uncertain. Unattempted is policy/unavailable.
+Partial sample is not silently success. Cancellation and restart cannot imply
+continuity or retry. Stable sequence/event identity, cursor, ordering and ack
+are source-specific; acknowledgement follows durable admission.
 35-38. Raw continuous sensor data is reserved Stream; threshold Anchor needs a
 reviewed reduction. Ordinary Query cannot represent it. Hard-real-time is outside
 Tethers.
-39-45. Trail records snapshot identity or admitted reduced event, not unbounded
+39-46. Trail records snapshot identity or admitted reduced event, not unbounded
 raw stream. Conformance tests identity, gaps, rate, drift and reduction; device/
 gateway calibration changes invalidate. Removal stops admission and preserves
 history. Refuse raw stream, hard-real-time or unproven threshold semantics.
@@ -408,7 +447,7 @@ does not retry. Spool job ID is not physical completion identity.
 35-38. Job-shaped spool work is not currently a Tethers Job; status Query can be
 bounded, physical completion may need Anchor/device evidence. Current Action must
 not claim completion.
-39-45. Trail records printer/job identity, submitted digest, spooler evidence,
+39-46. Trail records printer/job identity, submitted digest, spooler evidence,
 status observations and outcome. Conformance tests duplicate submit, cancellation,
 connection loss, queue drift and redaction; driver/device changes invalidate.
 Removal preserves history. Deferred; refuse paper-completion claim without
@@ -435,7 +474,7 @@ success without contract. Cancellation is best effort; restart never retries.
 MIDI input identity/order/cursor are source-specific.
 35-38. Continuous input is reserved Stream; no sample-accurate or hard-real-time
 promise. Bounded Action/Query is truthful.
-39-45. Trail records device/port/message digest, limits and provider evidence.
+39-46. Trail records device/port/message digest, limits and provider evidence.
 Conformance tests exact device, drift, rate, duplicate and redaction; device/API
 changes invalidate. Removal stops provider and preserves history. Deferred;
 refuse hard-real-time or physical success claims. Architecture revision: no.
@@ -463,7 +502,7 @@ device. Partial state is uncertain. Cancellation cannot undo unlock; restart
 never retries. Device event identity must be stable and durably admitted.
 35-38. Query/Action are possible only through reviewed gateway; no general Job or
 Stream is implied. Current Action without final state proof would be false.
-39-45. Trail records exact lock identity, approval, time window, gateway evidence,
+39-46. Trail records exact lock identity, approval, time window, gateway evidence,
 state observation and outcome. Conformance is test-device only and invalidates
 on firmware, gateway, credential or state semantics drift. Removal disables
 control and preserves evidence. First slice refused; refuse absent isolation,
@@ -486,16 +525,25 @@ invalidates bindings.
 17-24. Host/gateway authentication and reviewed credential broker; isolated
 gateway, explicit network/device boundaries, finite rate/time/resource limits.
 Credential, command injection and unsafe bypass are primary risks.
-25-34. Query/Anchor attempt/admission follows J18F; Action success means only
-gateway accepted the bounded non-safety command, never safe machine operation.
-Failure is known rejection; uncertain is loss around actuation or state. Safety
-critical/unattempted refusal stays unattempted. Partial operation is uncertain.
-Cancellation/restart never retry. Alarm identity, ordering, cursor and ack must be
-plant-defined and durable.
+25-34. Query outcomes remain exactly succeeded, failed and uncertain for an
+attempted provider read. Action success means only the gateway accepted the
+bounded non-safety command, never safe machine operation; failure is known
+rejection and uncertain is loss around actuation or state. Inbound authenticated,
+validated and durably admitted alarms produce an admitted Anchor, not a canonical
+succeeded operation outcome. Duplicate alarm delivery is duplicate admission and
+is not evaluated again; invalid, unauthenticated, out-of-scope or unstable-
+identity input is rejected before evaluation and does not create a canonical
+failed operation outcome. Same-ID/different-payload is an identity conflict;
+unavailable or corrupt durable admission authority fails closed. Admission
+uncertainty remains separate from operation uncertain. Safety-critical/
+unattempted refusal stays unattempted. Partial operation is uncertain.
+Cancellation/restart never retry or fabricate identity. Alarm identity, ordering,
+cursor and ack must be plant-defined and durable; acknowledgement follows durable
+admission.
 35-38. Anchor is possible for authenticated alarms; safety control is outside
 Tethers. It must not become a safety PLC, certified controller or hard-real-time
 loop.
-39-45. Trail records plant/asset/command identity, approval, gateway and state
+39-46. Trail records plant/asset/command identity, approval, gateway and state
 evidence, outcome and admission. Conformance uses simulation/test plant and
 cannot prove safety certification; plant/gateway/namespace changes invalidate.
 Removal preserves evidence and disables gateway bindings. Refuse direct or
@@ -524,7 +572,7 @@ Cancellation/reassignment and restart require queue evidence; no retry. Stable
 task identity, ordering, acknowledgement and completion evidence are required.
 35-38. Human Task remains reserved. Immediate host `Ask` is one-shot approval,
 not a general queue, and expressing durable work as current Action would be false.
-39-45. Trail records task identity, proof binding, queue evidence, assignment and
+39-46. Trail records task identity, proof binding, queue evidence, assignment and
 completion outcome without sensitive human data. Conformance uses test queue,
 reassignment, expiry, duplicate and redaction; queue/policy changes invalidate.
 Removal stops new tasks and preserves history. Deferred/reserved; refuse claims

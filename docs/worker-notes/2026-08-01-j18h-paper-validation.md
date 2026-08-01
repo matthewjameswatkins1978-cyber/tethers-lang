@@ -13,7 +13,7 @@ task state. All sixteen required integrations are retained and classified.
 
 ## Validation method
 
-Applied one uniform 45-field analysis to every integration, then ran class,
+Applied one uniform 46-field analysis to every integration, then ran class,
 security, outcome, identity/replay, physical-safety and first-slice pressure
 reviews. Refusal and deferral were treated as valid results. The final candidate
 verdict is `VALIDATED`; Lucy acceptance remains pending.
@@ -66,6 +66,27 @@ quickstart or FFmpeg claim is based on the unavailable pages. No redirect was
 silently substituted. Provider-specific delivery, cancellation, transaction,
 ordering and safety guarantees remain unresolved unless stated by an available
 source and are not invented here.
+
+## Review correction
+
+Lucy’s review found that inbound Anchor admission was expressed using canonical
+attempted-operation outcomes. Event-admission and operation-outcome terminology
+was separated for webhook, cloud-drive, email, sensor and industrial Anchor
+passages. Admitted Anchors, duplicate admission, rejection before evaluation,
+identity conflict, admission uncertainty and durable-admission failure are now
+distinct from provider-operation `succeeded`, `failed` and `uncertain`.
+
+Lucy also found overbroad evidence claims around the failed OpenAI quickstart and
+FFmpeg retrieval. The quickstart is no longer claimed as inspected evidence;
+successfully inspected OpenAI Responses streaming events and Webhook events pages
+remain identified. FFmpeg-specific progress, cancellation and process behaviour
+are unresolved, and the renderer classification is retained as architectural
+inference. The required field count was corrected from 45 to 46, with every
+integration using fields 39-46 and field 46 explicitly being evidence basis.
+
+The verdict and revision register were reassessed. The candidate remains
+`VALIDATED` and the revision register remains empty. No implementation, schema,
+provider or Tether semantic changed.
 
 ## Integration findings
 
