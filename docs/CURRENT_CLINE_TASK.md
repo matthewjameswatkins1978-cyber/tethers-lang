@@ -2,21 +2,20 @@
 
 Control contract: `1`
 
-Task: `J18C - Tethers Socket v1 Contract and MCP Stdio Binding`
+Task: `J18D - .tetherplug Package Format v1`
 Owner: `Luna`
 Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `Luna on OpenCode, architecture transcription and consistency audit`
 Base branch: `main`
-Base commit: `2930fd4c672805b89eef566d4315a4773f6bd603`
-Branch: `luna/j18c-socket-v1-contract`
-Worker note: `docs/worker-notes/2026-08-01-j18c-socket-v1-contract.md`
+Base commit: `202abbb79d0095d2e9b4e07cd2d1d67f335f2302`
+Branch: `luna/j18d-tetherplug-package-v1`
+Worker note: `docs/worker-notes/2026-08-01-j18d-tetherplug-package-v1.md`
 
 ## Objective
 
-Create the canonical Universal Plug Architecture as a candidate architecture
-document. This defines the large boundary only; it does not implement Plug
-functionality or freeze J18C-J18I contracts.
+Define the precise first `.tetherplug` portable package format as documentation
+and contract design only.
 
 ## Required outcome
 

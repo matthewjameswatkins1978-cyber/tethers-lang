@@ -1,4 +1,21 @@
 # Decisions
+## 2026-08-01: `.tetherplug` package format v1 boundary
+
+1. `.tetherplug` v1 is a narrowly profiled ZIP archive.
+2. `plug.json` is the strict root package document.
+3. One package contains one provider and multiple related capabilities.
+4. Internal package paths use lowercase safe ASCII.
+5. Every payload file is indexed with SHA-256 and size.
+6. Semantic package digest is the JCS/SHA-256 digest of validated `plug.json`.
+7. Raw archive digest remains separate.
+8. Capability-manifest digests remain separate.
+9. Package, provider, and capability identity axes remain distinct.
+10. Packages contain no credentials, effective policy, or installed state.
+11. Signatures are detached evidence and grant no permission.
+12. Inspection performs no execution.
+13. Installation and generated runtime configuration remain host-owned.
+14. No automatic updates or dependency installation are introduced.
+
 ## 2026-08-01: Tethers Socket v1 and first MCP binding
 
 1. Socket v1 is a semantic normalization contract.

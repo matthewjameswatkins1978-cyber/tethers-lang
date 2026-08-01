@@ -1,6 +1,8 @@
 # Tethers Socket v1 MCP Stdio Binding
 
-Status: J18C candidate, pending Lucy protocol review
+Status: Accepted J18C contract
+Accepted by Lucy: 2026-08-01
+Final architecture freeze: Requires J18H paper validation
 Implementation: Not authorised
 
 ## 1. Direction and Roles
