@@ -78,6 +78,8 @@ $missing = @($probes | Where-Object { $_.result -eq 'fail' } | ForEach-Object {
         stderr_first_line = $_.stderr_first_line
     }
 })
+$rustCheckProbe = @($probes | Where-Object { $_.capability -eq 'rust.check' } | Select-Object -First 1)
+$cargoOffline = $rustCheckProbe.Count -eq 1 -and $rustCheckProbe[0].result -eq 'pass'
 
 $head = @(& git -C $repositoryRoot rev-parse HEAD)[0].Trim()
 $originMain = @(& git -C $repositoryRoot rev-parse origin/main)[0].Trim()
@@ -99,7 +101,7 @@ $result = [ordered]@{
         probe_shell = $PSVersionTable.PSEdition + '-' + $PSVersionTable.PSVersion
     }
     installation_allowed = $false
-    network = [ordered]@{ cargo_offline = $true; installation = 'denied' }
+    network = [ordered]@{ cargo_offline = $cargoOffline; installation = 'denied' }
     developer_tools_diagnostic_exit = $developerToolsExit
     probes = $probes
     missing = $missing
