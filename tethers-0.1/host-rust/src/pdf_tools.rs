@@ -7,7 +7,7 @@
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Read;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -271,7 +271,7 @@ pub fn inspect_output_schema() -> Value {
 }
 
 pub fn inspect_manifest_without_digest() -> Value {
-    json!({"manifest_format_version":"1.0","capability_name":INSPECT_CAPABILITY,"capability_version":1,"title":"Bounded PDF Inspection","description":"Read structural PDF metadata (version, page count) from one host-approved root without a PDF library.","input_schema":inspect_input_schema(),"output_schema":inspect_output_schema(),"effects":["data.read","metadata.read"],"permission_scope":{"kind":"path_prefix","allowed_prefixes":["query/"]},"reversibility":"reversible","determinism":"deterministic","idempotency":{"mechanism":"none"},"confirmation_policy":{"standing_permitted":true,"per_call_required":false},"timeout_ms":5000,"retry_policy":{"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":false},"provider":{"identity":"tethers-pdf-provider","display_name":"Tethers PDF Provider","identity_source":"host_configuration","description":"Host-owned direct PDF inspector; no external provider process."},"binding":{"kind":"mcp","server_name":"tethers-pdf-provider","tool_name":INSPECT_OPERATION,"adapter":null}})
+    json!({"manifest_format_version":"1.0","capability_name":INSPECT_CAPABILITY,"capability_version":1,"title":"Bounded PDF Inspection","description":"Read structural PDF metadata (version, page count) from one host-approved root without a PDF library.","input_schema":inspect_input_schema(),"output_schema":inspect_output_schema(),"effects":["data.read","metadata.read"],"permission_scope":{"kind":"path_prefix","allowed_prefixes":["query/"]},"reversibility":"reversible","determinism":"deterministic","idempotency":{"mechanism":"none"},"confirmation_policy":{"standing_permitted":true,"per_call_required":false},"timeout_ms":5000,"retry_policy":{"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":false},"provider":{"identity":"tethers-pdf-provider","display_name":"Tethers PDF Provider","identity_source":"host_configuration","description":"Credential-free local PDF inspection provider."},"binding":{"kind":"mcp","server_name":"tethers-pdf-provider","tool_name":INSPECT_OPERATION,"adapter":null}})
 }
 
 pub fn manifest_with_digest(mut manifest: Value) -> Result<Value, PdfToolsError> {
@@ -289,6 +289,65 @@ pub fn manifest_with_digest(mut manifest: Value) -> Result<Value, PdfToolsError>
         Value::String(format!("sha256:{:x}", Sha256::digest(bytes))),
     );
     Ok(manifest)
+}
+
+/// Build the deterministic unsigned reference package from the exact provider
+/// bytes selected by the host build. ZIP metadata is fixed and never enters
+/// semantic identity; the complete payload index does.
+///
+/// The archived manifest is the J23B-corrected `pdf.inspect@1` manifest; its
+/// digest is computed here and embedded in `capabilities[].manifest_digest`,
+/// so the package inspector's `verify_manifest` round-trip remains exact.
+pub fn build_reference_package(provider_bytes: &[u8]) -> Result<Vec<u8>, PdfToolsError> {
+    use sha2::{Digest, Sha256};
+    let manifest_value = manifest_with_digest(inspect_manifest_without_digest())
+        .map_err(|e| PdfToolsError::new("package_invalid", e.to_string()))?;
+    let manifest_bytes = serde_json::to_vec(&manifest_value)
+        .map_err(|e| PdfToolsError::new("package_invalid", e.to_string()))?;
+    let manifest_digest = manifest_value["digest"]
+        .as_str()
+        .ok_or_else(|| PdfToolsError::new("package_invalid", "manifest digest missing"))?
+        .to_owned();
+    let digest = |bytes: &[u8]| format!("sha256:{:x}", Sha256::digest(bytes));
+    let plug = json!({
+        "package_format_version":"1",
+        "package_id":"tethers.pdf-tools",
+        "package_version":"1.0.0",
+        "display_name":"Tethers PDF Tools",
+        "description":"Credential-free bounded local PDF inspection Plug",
+        "publisher":"Tethers reference material",
+        "licence":"MIT",
+        "socket_major":1,
+        "protocol_bindings":[{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],
+        "platforms":[{"os":"windows","architecture":"x86_64"}],
+        "provider":{"provider_id":"tethers-pdf-provider","provider_version":"1.0.0","launch":{"path":"provider/pdf_tools_provider.exe","arguments":["--query-root","__TETHERS_PDF_QUERY_ROOT__"]},"working_directory":"provider","capability_operation_namespace":"pdf"},
+        "capabilities":[{"capability_name":"pdf.inspect","capability_version":1,"manifest_path":"manifests/pdf-inspect-v1.json","manifest_digest":manifest_digest,"provider_operation_name":"pdf_inspect"}],
+        "payload_index":[{"path":"manifests/pdf-inspect-v1.json","sha256":digest(&manifest_bytes),"size_bytes":manifest_bytes.len(),"role":"capability_manifest"},{"path":"provider/pdf_tools_provider.exe","sha256":digest(provider_bytes),"size_bytes":provider_bytes.len(),"role":"provider_executable"}]
+    });
+    let plug_bytes = serde_json_canonicalizer::to_vec(&plug)
+        .map_err(|e| PdfToolsError::new("package_invalid", e.to_string()))?;
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = zip::write::FileOptions::<()>::default().last_modified_time(
+        zip::DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
+            .map_err(|e| PdfToolsError::new("package_invalid", e.to_string()))?,
+    );
+    for (path, bytes) in [
+        ("plug.json", plug_bytes.as_slice()),
+        ("manifests/pdf-inspect-v1.json", manifest_bytes.as_slice()),
+        ("provider/pdf_tools_provider.exe", provider_bytes),
+    ] {
+        use std::io::Write;
+        archive
+            .start_file(path, options)
+            .map_err(|e| PdfToolsError::new("package_invalid", e.to_string()))?;
+        archive
+            .write_all(bytes)
+            .map_err(|e| PdfToolsError::new("package_invalid", e.to_string()))?;
+    }
+    archive
+        .finish()
+        .map(|cursor| cursor.into_inner())
+        .map_err(|e| PdfToolsError::new("package_invalid", e.to_string()))
 }
 
 /// Host-owned direct PDF inspector that reads files locally.
@@ -529,6 +588,90 @@ mod tests {
         assert_eq!(result["is_pdf"], true);
         assert_eq!(result["pdf_version"], "1.4");
         assert_eq!(result["page_count"], 2);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn new_pdf_manifest_digest_is_stable() {
+        let built = manifest_with_digest(inspect_manifest_without_digest()).unwrap();
+        let digest = built["digest"].as_str().unwrap().to_owned();
+        let second = manifest_with_digest(inspect_manifest_without_digest()).unwrap();
+        assert_eq!(digest, second["digest"].as_str().unwrap());
+        let text = serde_json::to_string(&built).unwrap();
+        let verified = crate::manifest::verify_manifest(&text).unwrap();
+        assert_eq!(verified.capability_name(), "pdf.inspect");
+        assert_eq!(verified.capability_version(), 1);
+        assert_eq!(
+            verified.manifest().provider.identity,
+            "tethers-pdf-provider"
+        );
+        assert_eq!(verified.manifest().binding.tool_name, "pdf_inspect");
+    }
+
+    #[test]
+    fn old_pdf_manifest_digest_is_not_returned() {
+        let built = manifest_with_digest(inspect_manifest_without_digest()).unwrap();
+        assert_ne!(
+            built["digest"].as_str().unwrap(),
+            "sha256:fe8d4eb7a36f8961baea94175f0eff979364322534ca27a305486688e3b268b3"
+        );
+    }
+
+    #[test]
+    fn committed_pdf_manifest_matches_programmatic_builder() {
+        let built = manifest_with_digest(inspect_manifest_without_digest()).unwrap();
+        let file = crate::manifest::verify_manifest(include_str!(
+            "../../protocol/capability-manifests/pdf-inspect-v1.json"
+        ))
+        .unwrap();
+        assert_eq!(file.verified_digest(), built["digest"].as_str().unwrap());
+        assert_eq!(
+            file.manifest().provider.description.as_deref(),
+            Some("Credential-free local PDF inspection provider.")
+        );
+    }
+
+    #[test]
+    fn reference_package_bytes_are_deterministic_and_inspectable() {
+        let bytes = b"compiled-pdf-provider-placeholder";
+        let first = build_reference_package(bytes).unwrap();
+        let second = build_reference_package(bytes).unwrap();
+        assert_eq!(first, second);
+        let root =
+            std::env::temp_dir().join(format!("tethers-j23b-package-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let archive = root.join("pdf-tools.tetherplug");
+        fs::write(&archive, first).unwrap();
+        let report = crate::package::inspect(&archive).unwrap();
+        assert_eq!(report.package.package_id, "tethers.pdf-tools");
+        assert_eq!(report.package.package_version, "1.0.0");
+        assert_eq!(report.provider_id, "tethers-pdf-provider");
+        assert_eq!(report.provider_version, "1.0.0");
+        assert_eq!(
+            report.provider_launch_path,
+            "provider/pdf_tools_provider.exe"
+        );
+        assert_eq!(
+            report.provider_launch_arguments,
+            vec![
+                "--query-root".to_string(),
+                "__TETHERS_PDF_QUERY_ROOT__".to_string()
+            ]
+        );
+        assert_eq!(report.provider_working_directory, "provider");
+        assert_eq!(report.provider_operation_namespace, "pdf");
+        assert_eq!(report.capabilities.len(), 1);
+        assert_eq!(report.capabilities[0].name, "pdf.inspect");
+        assert_eq!(report.capabilities[0].version, 1);
+        assert_eq!(report.capabilities[0].operation, "pdf_inspect");
+        assert_eq!(
+            report.capabilities[0].manifest_path,
+            "manifests/pdf-inspect-v1.json"
+        );
+        assert_eq!(report.payloads.len(), 2);
+        assert_eq!(report.payloads[0].path, "manifests/pdf-inspect-v1.json");
+        assert_eq!(report.payloads[1].path, "provider/pdf_tools_provider.exe");
+        assert!(!report.signatures_present);
         fs::remove_dir_all(root).unwrap();
     }
 }

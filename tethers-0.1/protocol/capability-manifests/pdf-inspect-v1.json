@@ -14,7 +14,7 @@
   "confirmation_policy": {"standing_permitted":true,"per_call_required":false},
   "timeout_ms": 5000,
   "retry_policy": {"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":false},
-  "provider": {"identity":"tethers-pdf-provider","display_name":"Tethers PDF Provider","identity_source":"host_configuration","description":"Host-owned direct PDF inspector; no external provider process."},
+  "provider": {"identity":"tethers-pdf-provider","display_name":"Tethers PDF Provider","identity_source":"host_configuration","description":"Credential-free local PDF inspection provider."},
   "binding": {"kind":"mcp","server_name":"tethers-pdf-provider","tool_name":"pdf_inspect","adapter":null},
-  "digest": "sha256:fe8d4eb7a36f8961baea94175f0eff979364322534ca27a305486688e3b268b3"
+  "digest": "sha256:26da081128608859c1259da7ddd784d343241504cb47339ca54a9b5979b6297c"
 }
