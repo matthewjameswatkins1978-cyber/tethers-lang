@@ -13,6 +13,7 @@ pub mod enablement;
 pub mod engine_stdio;
 pub mod event_admission;
 mod event_queue;
+pub mod execution_environment;
 pub mod executor;
 pub mod file_tools;
 pub mod host_execution;
