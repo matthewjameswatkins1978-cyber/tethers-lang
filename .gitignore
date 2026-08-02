@@ -19,6 +19,7 @@ Tethers-0.1-Prototype.tar.gz
 *~
 .tethers-batch-evidence.json
 .tethers/handshake/
+.tethers/execution/
 
 # Editor-local files
 .vscode/

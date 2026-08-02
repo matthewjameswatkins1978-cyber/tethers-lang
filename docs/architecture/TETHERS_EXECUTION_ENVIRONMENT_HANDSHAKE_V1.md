@@ -122,3 +122,64 @@ renegotiation loop, automatic retry, or automatic installation.
 The contract is evidence about command readiness, not a safety or correctness
 certificate. Existing task packets, review, tests, Trails, and host trust
 boundaries remain authoritative.
+
+## Operational gateway (J20-H2)
+
+The handshake library defines the contract model. The operational gateway makes
+it runnable.
+
+### tethers-env CLI
+
+`tethers-env.exe` is a dedicated Rust binary under `src/bin/tethers_env.rs`
+that turns the handshake library into an operational host command.
+
+```text
+tethers-env observe  --request <request.json>  --output <observation.json>
+tethers-env issue    --request <request.json>  --observation <observation.json> --output <contract.json>
+tethers-env inspect  --contract <contract.json>
+tethers-env run      --contract <contract.json> --command-id <approved-command-id>
+```
+
+`observe` probes the live Windows environment, resolves executable paths, runs
+version checks, and writes a `HostEnvironmentObservation`. `issue` reads a
+request and observation, calls `ExecutionEnvironmentContract::issue()`, and
+writes the stored contract with all three JCS SHA-256 digests. `inspect`
+reloads through `from_stored()` and verifies the stored digest. `run` calls
+`permit_by_id()` followed by `CommandPermit::launch()` through SupervisedChild;
+it accepts only a command ID and never a replacement executable, argument, or
+shell string.
+
+All file writes are atomic (write to `.tmp`, then rename).
+
+### Distinction: probe vs contract
+
+Running `check-tethers-environment.ps1` alone is not an issued contract. The
+PowerShell diagnostic proves tool availability; it does not bind a task, a
+worker, a repository HEAD, a command array, or a scope. A contract requires
+`observe` then `issue` with an explicit task request.
+
+### OpenCode custom bash tool
+
+`.opencode/tools/bash.ts` replaces OpenCode's built-in bash tool. It accepts
+only the exact form `tethers-run <approved-command-id>` and delegates to
+`tethers-env run`. All arbitrary shell commands, pipelines, redirections, and
+executable paths are refused.
+
+### Permission configuration
+
+`opencode.json` registers the custom bash tool as a plugin and denies
+`webfetch`, `websearch`, `subagents` (`task: { "*": "deny" }`), and
+external-directory access. The custom bash tool itself blocks unsanctioned
+commands at the tool level.
+
+### Active task files
+
+Runtime contracts and evidence belong under `.tethers/execution/` (gitignored).
+Schemas and examples are committed; machine-specific absolute paths and active
+contracts are not.
+
+### Bootstrap exception
+
+J20-H2 was authorised by Matthew as a bounded bootstrap task to connect the
+already-accepted handshake library to the host and OpenCode. This exception
+expires with J20-H2 and must never be reused for ordinary tasks.
