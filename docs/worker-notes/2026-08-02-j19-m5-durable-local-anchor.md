@@ -9,7 +9,7 @@ Base commit: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
 Accepted M4 baseline: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 Control commit and starting HEAD: `11dd0ff04da20fa36bdddd19d4132833830194fe`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `9e3e1ebe21c2540be2ad30b2db7082facabd8c8e`
 
 Starting branch state: clean `opencode/j19-m5-durable-local-anchor` at the
 control commit above. `just tools` passed before implementation.
@@ -121,6 +121,8 @@ existing event/evaluation seams are documented in the accepted M4 worker note.
 No credentials, network listener, watcher, recursive crawl, provider
 notification-as-Anchor shortcut, cursor identity, automatic retry, M6 feature,
 main movement, tag, release or force-push was added. Final branch SHA:
+Final branch SHA: `9e3e1ebe21c2540be2ad30b2db7082facabd8c8e`.
+
 Correction verification reran `just verify` successfully after the source-test
 compatibility fix; one earlier parallel full-matrix run had a transient Windows
 M3 permission failure, and the isolated test plus serialized rerun passed.
