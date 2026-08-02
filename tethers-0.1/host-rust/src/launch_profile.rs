@@ -316,6 +316,7 @@ impl PreparedSupervisedLaunch {
         config.environment = self.environment.clone();
         config.max_processes = self.evidence.max_processes;
         config.process_memory_limit_bytes = self.evidence.process_memory_limit_bytes as usize;
+        config.assign_before_execution = true;
         config.max_protocol_line_bytes = self.evidence.protocol_line_limit_bytes as usize;
         config.stderr_tail_bytes = self.evidence.stderr_tail_limit_bytes as usize;
         config.graceful_close_timeout = Duration::from_secs(1);

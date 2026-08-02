@@ -11,6 +11,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(not(windows))]
 use std::process::{Child, Command, Stdio};
+#[cfg(windows)]
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
@@ -72,6 +74,10 @@ pub struct ChildConfig {
     pub environment: BTreeMap<String, String>,
     pub max_processes: u32,
     pub process_memory_limit_bytes: usize,
+    /// M3 direct-provider launches must join their Job Object while suspended,
+    /// before provider code can run. Legacy host children retain their frozen
+    /// creation path.
+    pub assign_before_execution: bool,
 }
 
 #[cfg(windows)]
@@ -166,6 +172,7 @@ impl Default for ChildConfig {
             environment: BTreeMap::new(),
             max_processes: 8,
             process_memory_limit_bytes: 256 * 1024 * 1024,
+            assign_before_execution: false,
         }
     }
 }
@@ -310,15 +317,25 @@ impl SupervisedChild {
         let job_handle =
             create_job_object(config.max_processes, config.process_memory_limit_bytes)?;
 
-        // On Windows, creation is suspended until the new process is inside
-        // the Job Object. This closes the direct-child escape window where a
-        // provider could otherwise create a descendant before assignment.
+        // M3 direct providers are created suspended until they are in the Job
+        // Object. Other pre-existing host children retain their frozen launch
+        // path and are assigned immediately after creation.
         #[cfg(windows)]
-        let (child, stdin, stdout, stderr_r) = match spawn_suspended_in_job(&config, job_handle) {
-            Ok(process) => process,
-            Err(error) => {
-                close_handle(job_handle);
-                return Err(error);
+        let (child, stdin, stdout, stderr_r) = if config.assign_before_execution {
+            match spawn_suspended_in_job(&config, job_handle) {
+                Ok(process) => process,
+                Err(error) => {
+                    close_handle(job_handle);
+                    return Err(error);
+                }
+            }
+        } else {
+            match spawn_then_assign_to_job(&config, job_handle) {
+                Ok(process) => process,
+                Err(error) => {
+                    close_handle(job_handle);
+                    return Err(error);
+                }
             }
         };
 
@@ -743,6 +760,66 @@ fn close_handle(handle: windows_sys::Win32::Foundation::HANDLE) {
 }
 
 #[cfg(windows)]
+fn spawn_then_assign_to_job(
+    config: &ChildConfig,
+    job_handle: windows_sys::Win32::Foundation::HANDLE,
+) -> Result<
+    (
+        ManagedChild,
+        Box<dyn Write + Send>,
+        Box<dyn Read + Send>,
+        Box<dyn Read + Send>,
+    ),
+    ChildError,
+> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+
+    let mut command = Command::new(&config.command);
+    command
+        .args(&config.args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if config.clear_environment {
+        command.env_clear();
+    }
+    command.envs(&config.environment);
+    if let Some(directory) = &config.current_dir {
+        command.current_dir(directory);
+    }
+    let mut process = command.spawn().map_err(|error| ChildError::LaunchFailed {
+        command: config.command.clone(),
+        message: error.to_string(),
+    })?;
+    let stdin = process.stdin.take().ok_or(ChildError::StdinUnavailable)?;
+    let stdout = process.stdout.take().ok_or(ChildError::StdoutUnavailable)?;
+    let stderr = process.stderr.take().ok_or(ChildError::StderrUnavailable)?;
+    let process_id = process.id();
+    let process_handle = process.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+    // SAFETY: the handle belongs to `process` until it is deliberately
+    // forgotten below after successful assignment, transferring ownership to
+    // ManagedChild. On failure the normal Child destructor retains ownership.
+    if unsafe { AssignProcessToJobObject(job_handle, process_handle) } == 0 {
+        let _ = process.kill();
+        let _ = process.wait();
+        return Err(ChildError::JobObjectFailed(
+            "AssignProcessToJobObject failed".to_owned(),
+        ));
+    }
+    std::mem::forget(process);
+    Ok((
+        ManagedChild {
+            process_handle,
+            process_id,
+        },
+        Box::new(stdin),
+        Box::new(stdout),
+        Box::new(stderr),
+    ))
+}
+
+#[cfg(windows)]
 fn spawn_suspended_in_job(
     config: &ChildConfig,
     job_handle: windows_sys::Win32::Foundation::HANDLE,
@@ -1001,6 +1078,21 @@ mod tests {
     #[test]
     fn j13a_child_launch_and_shutdown() {
         let child = launch_fixture("valid", 5, 2).expect("launch");
+        child.shutdown();
+    }
+
+    #[test]
+    fn j13a_named_powershell_child_preserves_piped_protocol() {
+        let mut child = launch_fixture("valid", 5, 2).expect("launch");
+        child
+            .write_line(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"test","version":"1"},"capabilities":{}}}"#,
+            )
+            .expect("write initialize");
+        let response = child
+            .read_protocol_line(Duration::from_secs(5))
+            .expect("read initialize response");
+        assert!(response.contains(r#""id":1"#), "response: {response}");
         child.shutdown();
     }
 
