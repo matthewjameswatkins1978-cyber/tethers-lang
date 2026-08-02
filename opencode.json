@@ -6,5 +6,16 @@
     "docs/CURRENT_CLINE_TASK.md",
     "docs/IMPLEMENTATION_LANGUAGE_STANDARD.md",
     "docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md"
-  ]
+  ],
+  "plugin": [
+    "./.opencode/tools/bash.ts"
+  ],
+  "permission": {
+    "webfetch": "deny",
+    "websearch": "deny",
+    "task": { "*": "deny" },
+    "external_directory": {
+      "*": "deny"
+    }
+  }
 }
