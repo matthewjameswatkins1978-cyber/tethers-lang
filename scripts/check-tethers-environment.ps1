@@ -97,7 +97,7 @@ $result = [ordered]@{
         status = $status
     }
     shell = [ordered]@{
-        recipe_shell = 'pwsh.exe -NoLogo -NoProfile -Command'
+        just_recipe_shell = 'pwsh.exe -NoLogo -NoProfile -Command'
         probe_shell = $PSVersionTable.PSEdition + '-' + $PSVersionTable.PSVersion
     }
     installation_allowed = $false

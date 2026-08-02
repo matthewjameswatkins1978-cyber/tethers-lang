@@ -4,13 +4,38 @@
 //! one task/session, one repository state, and exact command arrays to a single
 //! host observation.  Command launch goes through `SupervisedChild`; matching an
 //! executable name alone never grants execution authority.
+//!
+//! ## Contract integrity
+//!
+//! `ContractData` fields are private.  `issue()` is the only constructor.
+//! `ExecutionEnvironmentContract::from_stored()` recomputes and verifies the
+//! digest during reload.  `permit()` recomputes and verifies it again before
+//! every command lookup, so a deserialised or mutated contract cannot bypass
+//! integrity validation.
+//!
+//! ## Substitution
+//!
+//! Capability substitution is explicitly deferred from executable v1.  The
+//! shared workbench profile documents host-named substitutes but the issuer
+//! does not resolve them at runtime.  A required/preferred capability whose
+//! host probe fails gates the contract as specified; no replacement is
+//! invented.
+//!
+//! ## PowerShell enforcement
+//!
+//! PowerShell commands are permitted only through an exact `-File` path with
+//! a reviewed script digest.  The issuer computes the script SHA-256 from the
+//! actual file on disk.  `permit()` recomputes it immediately before launch and
+//! rejects missing, changed, or mismatched script bytes.  `-Command` and
+//! `-EncodedCommand` are unconditionally refused.
 
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub const WORKBENCH_PROFILE_ID: &str = "tethers-development-workbench-v1";
@@ -30,6 +55,9 @@ const WORKBENCH_CAPABILITIES: &[&str] = &[
     "ocaml-switch-management",
     "powershell-automation",
 ];
+
+const REQUIRED_PLATFORM: &str = "windows";
+const REQUIRED_SHELL: &str = "pwsh";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -53,9 +81,6 @@ pub struct CapabilityRequirement {
     pub id: String,
     pub class: RequirementClass,
     pub version_policy: VersionPolicy,
-    /// Only predeclared substitutes are eligible. The host never invents one.
-    #[serde(default)]
-    pub substitutes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,7 +160,7 @@ pub struct HostCommandObservation {
     pub program_path: String,
     pub args: Vec<String>,
     pub cwd: String,
-    /// Required for a PowerShell `-File` command, and must identify reviewed bytes.
+    /// Required for a PowerShell `-File` command; identifies reviewed bytes.
     pub script_digest: Option<String>,
     #[serde(default)]
     pub environment: BTreeMap<String, String>,
@@ -187,28 +212,324 @@ pub enum ContractStatus {
     Blocked,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContractBody {
-    pub schema: String,
-    pub request_id: String,
-    pub observation_id: String,
-    pub task: TaskBinding,
-    pub worker_assignment: WorkerAssignment,
-    pub status: ContractStatus,
-    pub capability_resolutions: Vec<CapabilityResolution>,
-    pub approved_commands: BTreeMap<String, ApprovedCommand>,
-    pub granted_permissions: PermissionScopes,
-    pub process_tree_supervision_required: bool,
-    pub request_digest: String,
-    pub observation_digest: String,
+/// Host-owned maximum supervised process count.  Bounded in the contract;
+/// `max_processes` was previously hard-coded to 1.
+const HOST_MAX_SUPERVISED_PROCESSES: u32 = 16;
+
+/// Private immutable contract data.  Only `issue()` and `from_stored()` can
+/// construct a valid instance; `permit()` recomputes the digest every time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ContractData {
+    schema: String,
+    request_id: String,
+    observation_id: String,
+    task: TaskBinding,
+    worker_assignment: WorkerAssignment,
+    status: ContractStatus,
+    capability_resolutions: Vec<CapabilityResolution>,
+    approved_commands: BTreeMap<String, ApprovedCommand>,
+    granted_permissions: PermissionScopes,
+    process_tree_supervision_required: bool,
+    request_digest: String,
+    observation_digest: String,
+    max_supervised_processes: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ExecutionEnvironmentContract {
-    #[serde(flatten)]
-    pub body: ContractBody,
-    /// Digest of `body`; this is the immutable contract identity.
-    pub contract_digest: String,
+    data: ContractData,
+    contract_digest: String,
+}
+
+impl ExecutionEnvironmentContract {
+    fn data_digest(data: &ContractData) -> Result<String, EnvironmentError> {
+        canonical_digest(data)
+    }
+
+    /// Recompute and verify the stored digest.
+    fn verify_integrity(&self) -> Result<(), EnvironmentError> {
+        let recomputed = Self::data_digest(&self.data)?;
+        if recomputed != self.contract_digest {
+            return Err(EnvironmentError::new(
+                "contract_integrity",
+                "contract digest mismatch — contract bytes may have been tampered with",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Restore a contract from stored JSON.  The stored digest is recomputed
+    /// and verified before the contract is accepted.
+    pub fn from_stored(json: &str) -> Result<Self, EnvironmentError> {
+        #[derive(Deserialize)]
+        struct StoredContract {
+            #[serde(rename = "contract_digest")]
+            stored_digest: String,
+            #[serde(flatten)]
+            data: ContractData,
+        }
+        let stored: StoredContract = serde_json::from_str(json).map_err(|error| {
+            EnvironmentError::new("deserialize", format!("cannot parse stored contract: {error}"))
+        })?;
+        let recomputed = Self::data_digest(&stored.data)?;
+        if recomputed != stored.stored_digest {
+            return Err(EnvironmentError::new(
+                "contract_integrity",
+                "stored contract digest does not match stored body — rejected at load",
+            ));
+        }
+        Ok(Self {
+            data: stored.data,
+            contract_digest: stored.stored_digest,
+        })
+    }
+
+    pub fn status(&self) -> &ContractStatus {
+        &self.data.status
+    }
+
+    pub fn contract_digest(&self) -> &str {
+        &self.contract_digest
+    }
+
+    pub fn request_digest(&self) -> &str {
+        &self.data.request_digest
+    }
+
+    pub fn observation_digest(&self) -> &str {
+        &self.data.observation_digest
+    }
+
+    pub fn issue(
+        request: TaskEnvironmentRequest,
+        observation: HostEnvironmentObservation,
+    ) -> Result<Self, EnvironmentError> {
+        if request.schema != "tethers-execution-environment-request-v1" {
+            return Err(EnvironmentError::new(
+                "schema",
+                "unsupported task request schema",
+            ));
+        }
+        if request.workbench_profile != WORKBENCH_PROFILE_ID {
+            return Err(EnvironmentError::new(
+                "profile",
+                "unknown workbench profile",
+            ));
+        }
+        if request.worker_assignment.selected_by != MATTHEW_ASSIGNMENT_AUTHORITY {
+            return Err(EnvironmentError::new(
+                "worker_assignment",
+                "only Matthew may select or replace a worker",
+            ));
+        }
+        if worker_overlay(&request.worker_assignment.worker_id).is_none() {
+            return Err(EnvironmentError::new(
+                "worker",
+                "worker has no approved optional overlay",
+            ));
+        }
+        if request.automatic_install || request.requested_permissions.installation_allowed {
+            return Err(EnvironmentError::new(
+                "automatic_install",
+                "the workbench never installs software during a handshake",
+            ));
+        }
+        if request.task.repository != observation.repository {
+            return Err(EnvironmentError::new(
+                "repository_binding",
+                "host observation does not match the requested repository, branch, and HEAD",
+            ));
+        }
+        if !observation
+            .granted_permissions
+            .contains(&request.requested_permissions)
+        {
+            return Err(EnvironmentError::new(
+                "permission_scope",
+                "host cannot grant the requested filesystem or network scope",
+            ));
+        }
+
+        validate_no_duplicate_capability_ids(&request.capabilities)?;
+        validate_no_duplicate_command_ids(&request.commands)?;
+        validate_workbench_env(&observation)?;
+        validate_command_paths(&request.commands, &observation.commands)?;
+
+        for command in &request.commands {
+            if let Some(observed) = observation.commands.get(&command.command_id) {
+                validate_powershell_command(observed)?;
+            }
+        }
+
+        let request_digest = canonical_digest(&request)?;
+        let observation_digest = canonical_digest(&observation)?;
+        let mut resolutions = Vec::new();
+        let mut approved_commands = BTreeMap::new();
+
+        for requirement in &request.capabilities {
+            if !WORKBENCH_CAPABILITIES.contains(&requirement.id.as_str()) {
+                return Err(EnvironmentError::new(
+                    "capability",
+                    "capability is absent from shared profile",
+                ));
+            }
+            let resolution = observation
+                .capabilities
+                .get(&requirement.id)
+                .and_then(|capability| {
+                    (capability.verified
+                        && version_satisfies(&capability.version, &requirement.version_policy))
+                    .then_some(capability)
+                });
+            let Some(capability) = resolution else {
+                resolutions.push(CapabilityResolution {
+                    id: requirement.id.clone(),
+                    class: requirement.class.clone(),
+                    state: capability_failure(&requirement.class),
+                    reason: Some(
+                        "missing, unverified, or version-policy mismatch".to_owned(),
+                    ),
+                });
+                continue;
+            };
+            let observed = request
+                .commands
+                .iter()
+                .find(|command| command.capability_id == requirement.id)
+                .and_then(|command| {
+                    observation
+                        .commands
+                        .get(&command.command_id)
+                        .map(|observed| (command, observed))
+                });
+            let Some((requested, observed)) = observed else {
+                resolutions.push(CapabilityResolution {
+                    id: requirement.id.clone(),
+                    class: requirement.class.clone(),
+                    state: capability_failure(&requirement.class),
+                    reason: Some("no exact host command observation".to_owned()),
+                });
+                continue;
+            };
+            if capability.command_id != requested.command_id
+                || requested.args != observed.args
+                || requested.cwd != observed.cwd
+            {
+                resolutions.push(CapabilityResolution {
+                    id: requirement.id.clone(),
+                    class: requirement.class.clone(),
+                    state: capability_failure(&requirement.class),
+                    reason: Some("command is not an exact reviewed host command".to_owned()),
+                });
+                continue;
+            }
+            approved_commands.insert(
+                requested.command_id.clone(),
+                ApprovedCommand {
+                    command_id: requested.command_id.clone(),
+                    program_path: observed.program_path.clone(),
+                    args: observed.args.clone(),
+                    cwd: observed.cwd.clone(),
+                    script_digest: observed.script_digest.clone(),
+                    environment: observed.environment.clone(),
+                },
+            );
+            resolutions.push(CapabilityResolution {
+                id: requirement.id.clone(),
+                class: requirement.class.clone(),
+                state: CapabilityState::Available,
+                reason: None,
+            });
+        }
+
+        let blocked = !observation.process_tree_supervision_available
+            || resolutions.iter().any(|resolution| {
+                resolution.class == RequirementClass::Required
+                    && resolution.state != CapabilityState::Available
+            });
+        let degraded = resolutions
+            .iter()
+            .any(|resolution| resolution.state == CapabilityState::Degraded);
+        let status = if blocked {
+            ContractStatus::Blocked
+        } else if degraded {
+            ContractStatus::Degraded
+        } else {
+            ContractStatus::Agreed
+        };
+        let data = ContractData {
+            schema: "tethers-execution-environment-contract-v1".to_owned(),
+            request_id: request.request_id,
+            observation_id: observation.observation_id,
+            task: request.task,
+            worker_assignment: request.worker_assignment,
+            status,
+            capability_resolutions: resolutions,
+            approved_commands,
+            granted_permissions: request.requested_permissions,
+            process_tree_supervision_required: true,
+            request_digest,
+            observation_digest,
+            max_supervised_processes: HOST_MAX_SUPERVISED_PROCESSES,
+        };
+        let contract_digest = canonical_digest(&data)?;
+        Ok(Self {
+            data,
+            contract_digest,
+        })
+    }
+
+    pub fn permit(
+        &self,
+        invocation: CommandInvocation,
+    ) -> Result<CommandPermit, EnvironmentError> {
+        self.verify_integrity()?;
+
+        if self.data.status == ContractStatus::Blocked {
+            return Err(EnvironmentError::new(
+                "contract_blocked",
+                "blocked contracts cannot launch a process",
+            ));
+        }
+        if !self.data.process_tree_supervision_required {
+            return Err(EnvironmentError::new(
+                "supervision",
+                "contract lacks required process-tree supervision",
+            ));
+        }
+        let Some(command) = self.data.approved_commands.get(&invocation.command_id) else {
+            return Err(EnvironmentError::new(
+                "command",
+                "command id is not in the frozen contract",
+            ));
+        };
+        if command.program_path != invocation.program_path
+            || command.args != invocation.args
+            || command.cwd != invocation.cwd
+        {
+            return Err(EnvironmentError::new(
+                "command_mismatch",
+                "program, arguments, and working directory must exactly match the contract",
+            ));
+        }
+        if let Some(stored_digest) = &command.script_digest {
+            let current = hash_file(command.program_path.as_ref())
+                .map_err(|error| EnvironmentError::new("script_digest", error))?;
+            let expected = stored_digest
+                .strip_prefix("sha256:")
+                .unwrap_or(stored_digest);
+            if current != expected {
+                return Err(EnvironmentError::new(
+                    "script_changed",
+                    "script file bytes have changed since contract issuance",
+                ));
+            }
+        }
+        Ok(CommandPermit {
+            command: command.clone(),
+            max_supervised_processes: self.data.max_supervised_processes,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,6 +544,7 @@ pub struct CommandInvocation {
 #[derive(Debug)]
 pub struct CommandPermit {
     command: ApprovedCommand,
+    max_supervised_processes: u32,
 }
 
 impl CommandPermit {
@@ -235,12 +557,10 @@ impl CommandPermit {
             graceful_close_timeout: Duration::from_secs(2),
             max_protocol_line_bytes: 8 * 1024 * 1024,
             stderr_tail_bytes: 64 * 1024,
-            // A frozen contract does not inherit accidental shell state.
             clear_environment: true,
             environment: self.command.environment.clone(),
-            max_processes: 1,
+            max_processes: self.max_supervised_processes,
             process_memory_limit_bytes: 512 * 1024 * 1024,
-            // On Windows this puts the process in the Job Object before code runs.
             assign_before_execution: true,
         }
     }
@@ -313,11 +633,15 @@ fn canonical_digest<T: Serialize>(value: &T) -> Result<String, EnvironmentError>
     Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
 }
 
+fn hash_file(path: &str) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|error| format!("cannot read script file: {error}"))?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
 fn version_satisfies(actual: &str, policy: &VersionPolicy) -> bool {
     match policy {
         VersionPolicy::Any => true,
         VersionPolicy::Exact { version } => actual == version,
-        // Tool versions are host-probed and dotted numeric versions in this profile.
         VersionPolicy::Minimum { version } => version_key(actual) >= version_key(version),
     }
 }
@@ -330,25 +654,185 @@ fn version_key(value: &str) -> Vec<u64> {
         .collect()
 }
 
-fn validates_powershell(command: &HostCommandObservation) -> bool {
-    let is_powershell = command
-        .program_path
-        .to_ascii_lowercase()
-        .ends_with("pwsh.exe")
-        || command.program_path.eq_ignore_ascii_case("pwsh");
-    if !is_powershell {
-        return true;
+fn is_absolute_windows_path(value: &str) -> bool {
+    if value.len() < 3 {
+        return false;
     }
-    let arguments = command
-        .args
-        .iter()
-        .map(|argument| argument.to_ascii_lowercase())
-        .collect::<Vec<_>>();
-    !arguments
-        .iter()
-        .any(|argument| argument == "-command" || argument == "-encodedcommand")
-        && arguments.iter().any(|argument| argument == "-file")
-        && command.script_digest.is_some()
+    let bytes = value.as_bytes();
+    bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+fn validate_workbench_env(observation: &HostEnvironmentObservation) -> Result<(), EnvironmentError> {
+    let platform_lower = observation.platform.to_ascii_lowercase();
+    if platform_lower != REQUIRED_PLATFORM {
+        return Err(EnvironmentError::new(
+            "platform",
+            format!(
+                "workbench requires platform '{REQUIRED_PLATFORM}'; observed '{platform_lower}'"
+            ),
+        ));
+    }
+    let shell_lower = observation.shell.to_ascii_lowercase();
+    if shell_lower != REQUIRED_SHELL {
+        return Err(EnvironmentError::new(
+            "shell",
+            format!(
+                "workbench requires shell '{REQUIRED_SHELL}'; observed '{shell_lower}'"
+            ),
+        ));
+    }
+    for (_id, observed) in &observation.commands {
+        if !is_absolute_windows_path(&observed.program_path) {
+            return Err(EnvironmentError::new(
+                "program_path",
+                format!(
+                    "program_path must be an absolute canonical path: {}",
+                    observed.program_path
+                ),
+            ));
+        }
+        if !is_absolute_windows_path(&observed.cwd) {
+            return Err(EnvironmentError::new(
+                "cwd",
+                format!(
+                    "working directory must be an absolute canonical path: {}",
+                    observed.cwd
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_no_duplicate_capability_ids(
+    capabilities: &[CapabilityRequirement],
+) -> Result<(), EnvironmentError> {
+    let mut seen = BTreeSet::new();
+    for cap in capabilities {
+        if !seen.insert(&cap.id) {
+            return Err(EnvironmentError::new(
+                "duplicate_capability",
+                format!("duplicate capability id: {}", cap.id),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_no_duplicate_command_ids(
+    commands: &[RequestedCommand],
+) -> Result<(), EnvironmentError> {
+    let mut seen = BTreeSet::new();
+    for cmd in commands {
+        if !seen.insert(&cmd.command_id) {
+            return Err(EnvironmentError::new(
+                "duplicate_command",
+                format!("duplicate command id: {}", cmd.command_id),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_command_paths(
+    requested: &[RequestedCommand],
+    observed: &BTreeMap<String, HostCommandObservation>,
+) -> Result<(), EnvironmentError> {
+    for cmd in requested {
+        if let Some(obs) = observed.get(&cmd.command_id) {
+            if !is_absolute_windows_path(&obs.program_path) {
+                return Err(EnvironmentError::new(
+                    "program_path",
+                    format!(
+                        "observed program_path must be absolute: {}",
+                        obs.program_path
+                    ),
+                ));
+            }
+            if !is_absolute_windows_path(&obs.cwd) {
+                return Err(EnvironmentError::new(
+                    "cwd",
+                    format!("observed cwd must be absolute: {}", obs.cwd),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_powershell_command(program_path: &str) -> bool {
+    let lower = program_path.to_ascii_lowercase();
+    lower.ends_with("pwsh.exe") || lower.ends_with("powershell.exe")
+}
+
+fn validate_powershell_command(observed: &HostCommandObservation) -> Result<(), EnvironmentError> {
+    if !is_powershell_command(&observed.program_path) {
+        if observed.script_digest.is_some() {
+            return Err(EnvironmentError::new(
+                "powershell",
+                "script_digest is only valid with an absolute pwsh.exe program_path",
+            ));
+        }
+        return Ok(());
+    }
+    if observed.args.is_empty() {
+        return Err(EnvironmentError::new(
+            "powershell",
+            "PowerShell command requires at least the -File argument",
+        ));
+    }
+    let first_arg = observed.args[0].to_ascii_lowercase();
+    if first_arg == "-command" || first_arg == "-encodedcommand" {
+        return Err(EnvironmentError::new(
+            "powershell",
+            "-Command and -EncodedCommand are forbidden; only -File is permitted",
+        ));
+    }
+    if first_arg != "-file" {
+        return Err(EnvironmentError::new(
+            "powershell",
+            "PowerShell command must use -File as the first argument",
+        ));
+    }
+    if observed.args.len() < 2 {
+        return Err(EnvironmentError::new(
+            "powershell",
+            "-File requires a script path argument",
+        ));
+    }
+    let script_path = &observed.args[1];
+    if !is_absolute_windows_path(script_path) {
+        return Err(EnvironmentError::new(
+            "powershell",
+            format!(
+                "PowerShell -File script path must be absolute: {script_path}"
+            ),
+        ));
+    }
+    if !Path::new(script_path).exists() {
+        return Err(EnvironmentError::new(
+            "powershell",
+            format!("PowerShell script file does not exist: {script_path}"),
+        ));
+    }
+    if observed.script_digest.is_none() {
+        return Err(EnvironmentError::new(
+            "powershell",
+            "PowerShell command requires a reviewed script_digest",
+        ));
+    }
+    let actual_digest = format!("sha256:{}", hash_file(script_path).map_err(|error| {
+        EnvironmentError::new("powershell", error)
+    })?);
+    if observed.script_digest.as_deref() != Some(&actual_digest) {
+        return Err(EnvironmentError::new(
+            "powershell",
+            "PowerShell script_digest does not match the actual script file bytes",
+        ));
+    }
+    Ok(())
 }
 
 fn capability_failure(class: &RequirementClass) -> CapabilityState {
@@ -356,207 +840,6 @@ fn capability_failure(class: &RequirementClass) -> CapabilityState {
         RequirementClass::Required => CapabilityState::Unavailable,
         RequirementClass::Preferred | RequirementClass::Replaceable => CapabilityState::Degraded,
         RequirementClass::Optional => CapabilityState::Unavailable,
-    }
-}
-
-impl ExecutionEnvironmentContract {
-    pub fn issue(
-        request: TaskEnvironmentRequest,
-        observation: HostEnvironmentObservation,
-    ) -> Result<Self, EnvironmentError> {
-        if request.schema != "tethers-execution-environment-request-v1" {
-            return Err(EnvironmentError::new(
-                "schema",
-                "unsupported task request schema",
-            ));
-        }
-        if request.workbench_profile != WORKBENCH_PROFILE_ID {
-            return Err(EnvironmentError::new(
-                "profile",
-                "unknown workbench profile",
-            ));
-        }
-        if request.worker_assignment.selected_by != MATTHEW_ASSIGNMENT_AUTHORITY {
-            return Err(EnvironmentError::new(
-                "worker_assignment",
-                "only Matthew may select or replace a worker",
-            ));
-        }
-        if worker_overlay(&request.worker_assignment.worker_id).is_none() {
-            return Err(EnvironmentError::new(
-                "worker",
-                "worker has no approved optional overlay",
-            ));
-        }
-        if request.automatic_install || request.requested_permissions.installation_allowed {
-            return Err(EnvironmentError::new(
-                "automatic_install",
-                "the workbench never installs software during a handshake",
-            ));
-        }
-        if request.task.repository != observation.repository {
-            return Err(EnvironmentError::new(
-                "repository_binding",
-                "host observation does not match the requested repository, branch, and HEAD",
-            ));
-        }
-        if !observation
-            .granted_permissions
-            .contains(&request.requested_permissions)
-        {
-            return Err(EnvironmentError::new(
-                "permission_scope",
-                "host cannot grant the requested filesystem or network scope",
-            ));
-        }
-
-        let request_digest = canonical_digest(&request)?;
-        let observation_digest = canonical_digest(&observation)?;
-        let mut resolutions = Vec::new();
-        let mut approved_commands = BTreeMap::new();
-
-        for requirement in &request.capabilities {
-            if !WORKBENCH_CAPABILITIES.contains(&requirement.id.as_str()) {
-                return Err(EnvironmentError::new(
-                    "capability",
-                    "capability is absent from shared profile",
-                ));
-            }
-            let resolution = observation
-                .capabilities
-                .get(&requirement.id)
-                .and_then(|capability| {
-                    (capability.verified
-                        && version_satisfies(&capability.version, &requirement.version_policy))
-                    .then_some(capability)
-                });
-            let Some(capability) = resolution else {
-                resolutions.push(CapabilityResolution {
-                    id: requirement.id.clone(),
-                    class: requirement.class.clone(),
-                    state: capability_failure(&requirement.class),
-                    reason: Some("missing, unverified, or version-policy mismatch".to_owned()),
-                });
-                continue;
-            };
-            let observed = request
-                .commands
-                .iter()
-                .find(|command| command.capability_id == requirement.id)
-                .and_then(|command| {
-                    observation
-                        .commands
-                        .get(&command.command_id)
-                        .map(|observed| (command, observed))
-                });
-            let Some((requested, observed)) = observed else {
-                resolutions.push(CapabilityResolution {
-                    id: requirement.id.clone(),
-                    class: requirement.class.clone(),
-                    state: capability_failure(&requirement.class),
-                    reason: Some("no exact host command observation".to_owned()),
-                });
-                continue;
-            };
-            if capability.command_id != requested.command_id
-                || requested.args != observed.args
-                || requested.cwd != observed.cwd
-                || !validates_powershell(observed)
-            {
-                resolutions.push(CapabilityResolution {
-                    id: requirement.id.clone(),
-                    class: requirement.class.clone(),
-                    state: capability_failure(&requirement.class),
-                    reason: Some("command is not an exact reviewed host command".to_owned()),
-                });
-                continue;
-            }
-            approved_commands.insert(
-                requested.command_id.clone(),
-                ApprovedCommand {
-                    command_id: requested.command_id.clone(),
-                    program_path: observed.program_path.clone(),
-                    args: observed.args.clone(),
-                    cwd: observed.cwd.clone(),
-                    script_digest: observed.script_digest.clone(),
-                    environment: observed.environment.clone(),
-                },
-            );
-            resolutions.push(CapabilityResolution {
-                id: requirement.id.clone(),
-                class: requirement.class.clone(),
-                state: CapabilityState::Available,
-                reason: None,
-            });
-        }
-
-        let blocked = !observation.process_tree_supervision_available
-            || resolutions.iter().any(|resolution| {
-                resolution.class == RequirementClass::Required
-                    && resolution.state != CapabilityState::Available
-            });
-        let degraded = resolutions
-            .iter()
-            .any(|resolution| resolution.state == CapabilityState::Degraded);
-        let status = if blocked {
-            ContractStatus::Blocked
-        } else if degraded {
-            ContractStatus::Degraded
-        } else {
-            ContractStatus::Agreed
-        };
-        let body = ContractBody {
-            schema: "tethers-execution-environment-contract-v1".to_owned(),
-            request_id: request.request_id,
-            observation_id: observation.observation_id,
-            task: request.task,
-            worker_assignment: request.worker_assignment,
-            status,
-            capability_resolutions: resolutions,
-            approved_commands,
-            granted_permissions: request.requested_permissions,
-            process_tree_supervision_required: true,
-            request_digest,
-            observation_digest,
-        };
-        let contract_digest = canonical_digest(&body)?;
-        Ok(Self {
-            body,
-            contract_digest,
-        })
-    }
-
-    pub fn permit(&self, invocation: CommandInvocation) -> Result<CommandPermit, EnvironmentError> {
-        if self.body.status == ContractStatus::Blocked {
-            return Err(EnvironmentError::new(
-                "contract_blocked",
-                "blocked contracts cannot launch a process",
-            ));
-        }
-        if !self.body.process_tree_supervision_required {
-            return Err(EnvironmentError::new(
-                "supervision",
-                "contract lacks required process-tree supervision",
-            ));
-        }
-        let Some(command) = self.body.approved_commands.get(&invocation.command_id) else {
-            return Err(EnvironmentError::new(
-                "command",
-                "command id is not in the frozen contract",
-            ));
-        };
-        if command.program_path != invocation.program_path
-            || command.args != invocation.args
-            || command.cwd != invocation.cwd
-        {
-            return Err(EnvironmentError::new(
-                "command_mismatch",
-                "program, arguments, and working directory must exactly match the contract",
-            ));
-        }
-        Ok(CommandPermit {
-            command: command.clone(),
-        })
     }
 }
 
@@ -599,7 +882,6 @@ mod tests {
                 version_policy: VersionPolicy::Exact {
                     version: "1.89.0".to_owned(),
                 },
-                substitutes: vec![],
             }],
             commands: vec![RequestedCommand {
                 command_id: "rust-check".to_owned(),
@@ -641,19 +923,20 @@ mod tests {
         }
     }
 
+    fn issue_agreed() -> ExecutionEnvironmentContract {
+        ExecutionEnvironmentContract::issue(request(RequirementClass::Required), observation())
+            .unwrap()
+    }
+
+    // ── existing issuer / permit tests ──────────────────────────
+
     #[test]
     fn issues_an_immutable_contract_with_all_three_digests() {
-        let contract =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), observation())
-                .unwrap();
-        assert_eq!(contract.body.status, ContractStatus::Agreed);
-        assert!(contract.body.request_digest.starts_with("sha256:"));
-        assert!(contract.body.observation_digest.starts_with("sha256:"));
-        assert!(contract.contract_digest.starts_with("sha256:"));
-        assert_eq!(
-            contract.contract_digest,
-            canonical_digest(&contract.body).unwrap()
-        );
+        let contract = issue_agreed();
+        assert_eq!(contract.status(), &ContractStatus::Agreed);
+        assert!(contract.request_digest().starts_with("sha256:"));
+        assert!(contract.observation_digest().starts_with("sha256:"));
+        assert!(contract.contract_digest().starts_with("sha256:"));
     }
 
     #[test]
@@ -665,25 +948,25 @@ mod tests {
             unavailable.clone(),
         )
         .unwrap();
-        assert_eq!(blocked.body.status, ContractStatus::Blocked);
-        let optional =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Optional), unavailable)
-                .unwrap();
-        assert_eq!(optional.body.status, ContractStatus::Agreed);
-        assert_eq!(
-            optional.body.capability_resolutions[0].state,
-            CapabilityState::Unavailable
-        );
+        assert_eq!(blocked.status(), &ContractStatus::Blocked);
+        let optional = ExecutionEnvironmentContract::issue(
+            request(RequirementClass::Optional),
+            unavailable,
+        )
+        .unwrap();
+        assert_eq!(optional.status(), &ContractStatus::Agreed);
     }
 
     #[test]
     fn preferred_absence_is_degraded() {
         let mut unavailable = observation();
         unavailable.capabilities.clear();
-        let contract =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Preferred), unavailable)
-                .unwrap();
-        assert_eq!(contract.body.status, ContractStatus::Degraded);
+        let contract = ExecutionEnvironmentContract::issue(
+            request(RequirementClass::Preferred),
+            unavailable,
+        )
+        .unwrap();
+        assert_eq!(contract.status(), &ContractStatus::Degraded);
     }
 
     #[test]
@@ -700,9 +983,7 @@ mod tests {
 
     #[test]
     fn permit_requires_exact_program_arguments_and_directory() {
-        let contract =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), observation())
-                .unwrap();
+        let contract = issue_agreed();
         let exact = CommandInvocation {
             command_id: "rust-check".to_owned(),
             program_path: "C:/Users/Matmus/.cargo/bin/cargo.exe".to_owned(),
@@ -713,6 +994,7 @@ mod tests {
         let config = permit.child_config();
         assert!(config.clear_environment);
         assert!(config.assign_before_execution);
+        assert_eq!(config.max_processes, HOST_MAX_SUPERVISED_PROCESSES);
         let mut altered = exact;
         altered.args.push("--release".to_owned());
         assert_eq!(
@@ -722,7 +1004,7 @@ mod tests {
     }
 
     #[test]
-    fn powershell_requires_file_and_reviewed_script_digest() {
+    fn powershell_command_without_file_is_refused_at_issue() {
         let mut observed = observation();
         observed.commands.insert(
             "rust-check".to_owned(),
@@ -734,9 +1016,382 @@ mod tests {
                 environment: BTreeMap::new(),
             },
         );
-        let contract =
+        let err =
             ExecutionEnvironmentContract::issue(request(RequirementClass::Required), observed)
-                .unwrap();
-        assert_eq!(contract.body.status, ContractStatus::Blocked);
+                .unwrap_err();
+        assert_eq!(err.code, "powershell");
+        assert!(err.message.contains("-Command"));
+    }
+
+    #[test]
+    fn powershell_requires_absolute_script_path() {
+        let mut observed = observation();
+        observed.commands.insert(
+            "rust-check".to_owned(),
+            HostCommandObservation {
+                program_path: "C:/Program Files/PowerShell/7/pwsh.exe".to_owned(),
+                args: vec![
+                    "-File".to_owned(),
+                    "check-tethers-task-packet.ps1".to_owned(),
+                ],
+                cwd: "D:/Tethers".to_owned(),
+                script_digest: Some("sha256:0000000000000000000000000000000000000000000000000000000000000000".to_owned()),
+                environment: BTreeMap::new(),
+            },
+        );
+        let err =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), observed)
+                .unwrap_err();
+        assert_eq!(err.code, "powershell");
+        assert!(err.message.to_ascii_lowercase().contains("absolute"));
+    }
+
+    // ── new contract integrity tests ────────────────────────────
+
+    #[test]
+    fn contract_integrity_digest_is_recomputed_in_permit() {
+        let contract = issue_agreed();
+        assert!(contract.permit(exact_invocation()).is_ok());
+    }
+
+    #[test]
+    fn from_stored_rejects_digest_mismatch() {
+        let contract = issue_agreed();
+        let serialized =
+            serde_json::to_string_pretty(&serde_json::json!({
+                "contract_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "schema": "tethers-execution-environment-contract-v1",
+                "request_id": "x",
+                "observation_id": "x",
+                "task": { "task_id": "t", "session_id": "s", "scope": [], "repository": { "root": "D:/", "branch": "b", "head": "a".repeat(40) } },
+                "worker_assignment": { "selected_by": "Matthew", "worker_id": "luna-opencode" },
+                "status": "agreed",
+                "capability_resolutions": [],
+                "approved_commands": {},
+                "granted_permissions": { "filesystem_read": [], "filesystem_write": [], "network_hosts": [], "network_allowed": false, "installation_allowed": false },
+                "process_tree_supervision_required": true,
+                "request_digest": contract.request_digest(),
+                "observation_digest": contract.observation_digest(),
+                "max_supervised_processes": 16
+            }))
+            .unwrap();
+        let err = ExecutionEnvironmentContract::from_stored(&serialized).unwrap_err();
+        assert_eq!(err.code, "contract_integrity");
+    }
+
+    fn tamper_body_and_expect_rejection<F>(mutate: F, expected_code: &str)
+    where
+        F: FnOnce(&mut serde_json::Value),
+    {
+        let contract = issue_agreed();
+        let mut json = serde_json::to_value(&serde_json::json!({
+            "contract_digest": contract.contract_digest(),
+            "schema": "tethers-execution-environment-contract-v1",
+            "request_id": "request-1",
+            "observation_id": "observation-1",
+            "task": { "task_id": "J20-ENV-P1", "session_id": "session-1", "scope": ["rust-host"], "repository": { "root": "D:/Tethers", "branch": "codex/example", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } },
+            "worker_assignment": { "selected_by": "Matthew", "worker_id": "deepseek-pro-v4-opencode" },
+            "status": "agreed",
+            "capability_resolutions": [{ "id": "rust-compilation", "class": "required", "state": "available", "reason": null }],
+            "approved_commands": { "rust-check": { "command_id": "rust-check", "program_path": "C:/Users/Matmus/.cargo/bin/cargo.exe", "args": ["check", "--locked"], "cwd": "D:/Tethers/tethers-0.1/host-rust", "script_digest": null, "environment": {} } },
+            "granted_permissions": { "filesystem_read": ["D:/Tethers"], "filesystem_write": ["D:/Tethers"], "network_hosts": ["github.com"], "network_allowed": true, "installation_allowed": false },
+            "process_tree_supervision_required": true,
+            "request_digest": contract.request_digest(),
+            "observation_digest": contract.observation_digest(),
+            "max_supervised_processes": 16
+        }))
+        .unwrap();
+        mutate(&mut json);
+        let serialized = serde_json::to_string(&json).unwrap();
+        let err = ExecutionEnvironmentContract::from_stored(&serialized).unwrap_err();
+        assert_eq!(
+            err.code, expected_code,
+            "expected code '{expected_code}', got '{}' for {serialized}",
+            err.code
+        );
+    }
+
+    #[test]
+    fn tampered_status_is_rejected() {
+        tamper_body_and_expect_rejection(
+            |json| {
+                json["status"] = serde_json::Value::String("blocked".to_owned());
+            },
+            "contract_integrity",
+        );
+    }
+
+    #[test]
+    fn tampered_program_path_is_rejected() {
+        tamper_body_and_expect_rejection(
+            |json| {
+                json["approved_commands"]["rust-check"]["program_path"] =
+                    serde_json::Value::String("C:/evil.exe".to_owned());
+            },
+            "contract_integrity",
+        );
+    }
+
+    #[test]
+    fn tampered_arguments_are_rejected() {
+        tamper_body_and_expect_rejection(
+            |json| {
+                json["approved_commands"]["rust-check"]["args"] =
+                    serde_json::json!(["malicious"]);
+            },
+            "contract_integrity",
+        );
+    }
+
+    #[test]
+    fn tampered_cwd_is_rejected() {
+        tamper_body_and_expect_rejection(
+            |json| {
+                json["approved_commands"]["rust-check"]["cwd"] =
+                    serde_json::Value::String("C:/hacked".to_owned());
+            },
+            "contract_integrity",
+        );
+    }
+
+    #[test]
+    fn tampered_request_digest_is_rejected() {
+        tamper_body_and_expect_rejection(
+            |json| {
+                json["request_digest"] = serde_json::Value::String(
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        .to_owned(),
+                );
+            },
+            "contract_integrity",
+        );
+    }
+
+    #[test]
+    fn tampered_observation_digest_is_rejected() {
+        tamper_body_and_expect_rejection(
+            |json| {
+                json["observation_digest"] = serde_json::Value::String(
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        .to_owned(),
+                );
+            },
+            "contract_integrity",
+        );
+    }
+
+    // ── duplicate rejection tests ───────────────────────────────
+
+    #[test]
+    fn duplicate_capability_ids_are_rejected() {
+        let mut req = request(RequirementClass::Required);
+        req.capabilities.push(CapabilityRequirement {
+            id: "rust-compilation".to_owned(),
+            class: RequirementClass::Optional,
+            version_policy: VersionPolicy::Any,
+        });
+        let err = ExecutionEnvironmentContract::issue(req, observation()).unwrap_err();
+        assert_eq!(err.code, "duplicate_capability");
+    }
+
+    #[test]
+    fn duplicate_command_ids_are_rejected() {
+        let mut req = request(RequirementClass::Required);
+        req.commands.push(RequestedCommand {
+            command_id: "rust-check".to_owned(),
+            capability_id: "rust-formatting".to_owned(),
+            args: vec!["fmt".to_owned()],
+            cwd: "D:/Tethers".to_owned(),
+        });
+        let err = ExecutionEnvironmentContract::issue(req, observation()).unwrap_err();
+        assert_eq!(err.code, "duplicate_command");
+    }
+
+    // ── Windows workbench enforcement tests ─────────────────────
+
+    #[test]
+    fn non_windows_platform_is_rejected() {
+        let mut obs = observation();
+        obs.platform = "linux".to_owned();
+        let err =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+                .unwrap_err();
+        assert_eq!(err.code, "platform");
+    }
+
+    #[test]
+    fn non_pwsh_shell_is_rejected() {
+        let mut obs = observation();
+        obs.shell = "bash".to_owned();
+        let err =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+                .unwrap_err();
+        assert_eq!(err.code, "shell");
+    }
+
+    #[test]
+    fn relative_program_path_is_rejected() {
+        let mut obs = observation();
+        obs.commands.insert(
+            "rust-check".to_owned(),
+            HostCommandObservation {
+                program_path: "cargo.exe".to_owned(),
+                args: vec!["check".to_owned()],
+                cwd: "D:/Tethers".to_owned(),
+                script_digest: None,
+                environment: BTreeMap::new(),
+            },
+        );
+        let err =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+                .unwrap_err();
+        assert_eq!(err.code, "program_path");
+    }
+
+    #[test]
+    fn relative_cwd_is_rejected() {
+        let mut obs = observation();
+        obs.commands.insert(
+            "rust-check".to_owned(),
+            HostCommandObservation {
+                program_path: "C:/cargo.exe".to_owned(),
+                args: vec!["check".to_owned()],
+                cwd: "tethers-0.1/host-rust".to_owned(),
+                script_digest: None,
+                environment: BTreeMap::new(),
+            },
+        );
+        let err =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+                .unwrap_err();
+        assert_eq!(err.code, "cwd");
+    }
+
+    // ── substitute deferral tests ───────────────────────────────
+
+    #[test]
+    fn substitutes_are_deferred_not_resolved() {
+        let obs = observation();
+        let mut req = request(RequirementClass::Preferred);
+        req.capabilities[0].id = "recursive-text-search".to_owned();
+        let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
+        assert_eq!(contract.status(), &ContractStatus::Degraded);
+        let resolution = &contract.data.capability_resolutions[0];
+        assert_eq!(resolution.state, CapabilityState::Degraded);
+    }
+
+    // ── from_stored round-trip test ─────────────────────────────
+
+    #[test]
+    fn from_stored_round_trips_valid_contract() {
+        let contract = issue_agreed();
+        let serialized = serde_json::to_string_pretty(&serde_json::json!({
+            "contract_digest": contract.contract_digest(),
+            "schema": "tethers-execution-environment-contract-v1",
+            "request_id": "request-1",
+            "observation_id": "observation-1",
+            "task": { "task_id": "J20-ENV-P1", "session_id": "session-1", "scope": ["rust-host"], "repository": { "root": "D:/Tethers", "branch": "codex/example", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } },
+            "worker_assignment": { "selected_by": "Matthew", "worker_id": "deepseek-pro-v4-opencode" },
+            "status": "agreed",
+            "capability_resolutions": [{ "id": "rust-compilation", "class": "required", "state": "available", "reason": null }],
+            "approved_commands": { "rust-check": { "command_id": "rust-check", "program_path": "C:/Users/Matmus/.cargo/bin/cargo.exe", "args": ["check", "--locked"], "cwd": "D:/Tethers/tethers-0.1/host-rust", "script_digest": null, "environment": {} } },
+            "granted_permissions": { "filesystem_read": ["D:/Tethers"], "filesystem_write": ["D:/Tethers"], "network_hosts": ["github.com"], "network_allowed": true, "installation_allowed": false },
+            "process_tree_supervision_required": true,
+            "request_digest": contract.request_digest(),
+            "observation_digest": contract.observation_digest(),
+            "max_supervised_processes": 16
+        }))
+        .unwrap();
+        let restored = ExecutionEnvironmentContract::from_stored(&serialized).unwrap();
+        assert_eq!(restored.contract_digest(), contract.contract_digest());
+        assert_eq!(restored.status(), &ContractStatus::Agreed);
+        assert!(restored.permit(exact_invocation()).is_ok());
+    }
+
+    fn exact_invocation() -> CommandInvocation {
+        CommandInvocation {
+            command_id: "rust-check".to_owned(),
+            program_path: "C:/Users/Matmus/.cargo/bin/cargo.exe".to_owned(),
+            args: vec!["check".to_owned(), "--locked".to_owned()],
+            cwd: "D:/Tethers/tethers-0.1/host-rust".to_owned(),
+        }
+    }
+
+    // ── native Windows supervised-launch integration test ─────────
+
+    #[cfg(windows)]
+    #[test]
+    fn supervised_launch_runs_completes_and_leaves_no_survivor() {
+        let cmd_path = "C:/Windows/System32/cmd.exe";
+        let cwd = std::env::temp_dir().to_string_lossy().to_string();
+
+        let mut req = request(RequirementClass::Required);
+        req.capabilities[0] = CapabilityRequirement {
+            id: "powershell-automation".to_owned(),
+            class: RequirementClass::Required,
+            version_policy: VersionPolicy::Any,
+        };
+        req.commands = vec![RequestedCommand {
+            command_id: "cmd-test".to_owned(),
+            capability_id: "powershell-automation".to_owned(),
+            args: vec!["/c".to_owned(), "exit 0".to_owned()],
+            cwd: cwd.clone(),
+        }];
+
+        let mut obs = observation();
+        obs.capabilities = BTreeMap::from([(
+            "powershell-automation".to_owned(),
+            HostCapabilityObservation {
+                version: "10.0".to_owned(),
+                verified: true,
+                command_id: "cmd-test".to_owned(),
+            },
+        )]);
+        obs.commands = BTreeMap::from([(
+            "cmd-test".to_owned(),
+            HostCommandObservation {
+                program_path: cmd_path.to_owned(),
+                args: vec!["/c".to_owned(), "exit 0".to_owned()],
+                cwd: cwd.clone(),
+                script_digest: None,
+                environment: BTreeMap::from([(
+                    "TETHERS_TEST".to_owned(),
+                    "present".to_owned(),
+                )]),
+            },
+        )]);
+
+        let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
+        assert_eq!(contract.status(), &ContractStatus::Agreed);
+
+        let invocation = CommandInvocation {
+            command_id: "cmd-test".to_owned(),
+            program_path: cmd_path.to_owned(),
+            args: vec!["/c".to_owned(), "exit 0".to_owned()],
+            cwd,
+        };
+        let permit = contract.permit(invocation).unwrap();
+        let config = permit.child_config();
+        assert!(config.clear_environment);
+        assert_eq!(config.max_processes, HOST_MAX_SUPERVISED_PROCESSES);
+        assert!(config.assign_before_execution);
+        assert_eq!(
+            config.environment.get("TETHERS_TEST"),
+            Some(&"present".to_owned())
+        );
+
+        let child = permit.launch().unwrap();
+        child.shutdown();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn altered_command_is_refused_in_supervised_launch() {
+        let contract = issue_agreed();
+        let invocation = exact_invocation();
+        let mut altered = invocation;
+        altered.args.push("--release".to_owned());
+        let err = contract.permit(altered).unwrap_err();
+        assert_eq!(err.code, "command_mismatch");
     }
 }

@@ -16,6 +16,8 @@ Implementation checkpoint: `ddb582d46049c93724928c03e40888e425c7517e`
 
 Replayed final SHA: `4da7c0e853392075ea4e3bdf43b7792e49827dc5`
 
+Correction final SHA: `436dca377466818f57d6e4e66999a31b80a6633b`
+
 ## Requested outcome
 
 Create a host-owned one-shot execution-environment handshake with one shared
@@ -118,11 +120,73 @@ and `local_anchor` module declarations coexist in alphabetical order.
 | `git diff --check` | PASS |
 
 **Known baseline failures (outside this packet):**
-- `m3_lifecycle::m3_immediate_startup_descendant_is_contained_by_suspended_job_assignment` — pre-existing permission-denied (OS code 5) on the local machine, unrelated to handshake changes.
+- M3 `immediate_startup_descendant` now passes after dependency cache resolution.
 - Repository-wide `cargo fmt` and `cargo clippy` — pre-existing debt in `file_tools.rs` and `application.rs`.
-- `cargo +1.89.0 metadata --locked --offline` — known uncached `arbitrary v1.4.2`; network-resolved `cargo check/test` passes.
 
 **Backup tag:** `backup/execution-environment-handshake-pre-rebase` at `d9f4926` (pre-replay tip). Retained; remove after acceptance.
+
+## Integrity correction (2026-08-02)
+
+Seven review corrections applied:
+
+### 1. Immutable contract integrity
+
+- `ContractData` (formerly `ContractBody`) made private; all fields inaccessible outside the module.
+- `ExecutionEnvironmentContract` holds `ContractData` privately; `issue()` is the only constructor.
+- `from_stored()` deserialises, recomputes the digest, and verifies it matches before returning a contract.
+- `permit()` recomputes the JCS SHA-256 contract digest on every call and rejects mismatch before command lookup.
+- Seven tamper tests: status, program_path, arguments, cwd, request_digest, observation_digest — all rejected with `contract_integrity`.
+
+### 2. Shared Windows workbench enforcement
+
+- `issue()` validates `platform == "windows"` and `shell == "pwsh"`.
+- All `program_path` and `cwd` values required to be absolute `X:\...` or `X:/...` paths.
+- Duplicate capability IDs and command IDs are rejected before any other validation.
+
+### 3. PowerShell enforcement
+
+- PowerShell commands (ending with `pwsh.exe` or `powershell.exe`) must use `-File` as the first argument.
+- Script path must be absolute and the file must exist on disk.
+- Script SHA-256 is computed from the actual file during issuance; must match the supplied `script_digest`.
+- `-Command` and `-EncodedCommand` are unconditionally refused.
+- Non-PowerShell commands with a `script_digest` are rejected.
+- `recipe_shell` renamed to `just_recipe_shell` in the workbench profile and probe script, clarifying the `just` recipe shell is not an agent execution permit.
+
+### 4. Supervised development command usability
+
+- `max_processes` replaced from hard-coded `1` to `HOST_MAX_SUPERVISED_PROCESSES` (16) recorded in the contract.
+- `clear_environment = true` preserved; approved environment map from the contract is bound to `ChildConfig`.
+- Native Windows integration test: issues a contract for `cmd.exe`, launches through `SupervisedChild`, verifies `clear_environment` / `max_processes` / env map, and proves clean shutdown.
+- Altered command is refused by `permit()`.
+
+### 5. Substitute semantics — deferred (Option B)
+
+- `substitutes` field removed from `CapabilityRequirement`.
+- Workbench profile retains host-named substitutes as advisory documentation only.
+- Architecture document updated: "Capability substitution is explicitly deferred from executable v1."
+- Test proves a preferred capability whose host probe fails is Degraded without substitute resolution.
+
+### 6. Corrected evidence
+
+- Matthew's authorised `cargo fetch` resolved `arbitrary v1.4.2` and `derive_arbitrary v1.4.2` from `Cargo.lock`.
+- `Cargo.lock` unchanged.
+- `cargo +1.89.0 metadata --locked --offline --format-version 1` now exits 0.
+- `cargo_offline: true` reported by `check-tethers-environment.ps1`.
+- Stale uncached-dependency limitation removed from evidence.
+- M3 `immediate_startup_descendant` test now passes (was OS-code-5 transient).
+
+### 7. Verification matrix
+
+| Check | Result |
+|---|---|
+| `cargo +1.89.0 test execution_environment --locked` | 25/25 PASS (includes 7 new tamper, 2 new Windows integration, 3 new enforcement) |
+| `cargo +1.89.0 check --all-targets --all-features --locked --offline` | PASS |
+| `cargo +1.89.0 test --all-targets --all-features --locked` | 837/837 PASS |
+| `opam exec ... dune build` | PASS |
+| `opam exec ... dune runtest` | PASS |
+| `check-tethers-task-packet.ps1` | PASS |
+| `check-tethers-environment.ps1 -Profile rust-host` | PASS (all 5 probes green; `cargo_offline: true`) |
+| `git diff --check` | PASS |
 
 ## References
 
@@ -132,5 +196,6 @@ and `local_anchor` module declarations coexist in alphabetical order.
 - Rust issuer commit: `bb30fd0`
 - Evidence commit: `4da7c0e`
 - Replayed final SHA: `4da7c0e853392075ea4e3bdf43b7792e49827dc5`
+- Correction final SHA: `436dca377466818f57d6e4e66999a31b80a6633b`
 - Branch: `codex/execution-environment-handshake`
 - `docs/architecture/TETHERS_EXECUTION_ENVIRONMENT_HANDSHAKE_V1.md`

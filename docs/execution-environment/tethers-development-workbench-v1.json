@@ -2,7 +2,7 @@
   "schema": "tethers-development-workbench-profile-v1",
   "profile_id": "tethers-development-workbench-v1",
   "platform": "windows",
-  "recipe_shell": ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"],
+  "just_recipe_shell": ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"],
   "invariants": [
     "no_automatic_installation",
     "no_global_toolchain_change",
