@@ -1,297 +1,246 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J19-M4 - Autonomous File Tools Plug Vertical Slice`
+Task: `J19-M5 - Autonomous Durable Local Anchor Vertical Slice`
 Owner: `Luna / OpenCode`
-Status: `COMPLETE`
+Status: `AUTHORISED`
 Task colour: `Amber`
-Route: `Luna in one continuous autonomous Milestone 4 implementation`
+Route: `Luna in one continuous autonomous Milestone 5 implementation`
 Base branch: `main`
-Base commit: `8cd8958d4880595dfff5e38ab5ec26de940944df`
-Accepted M3 baseline: `8cd8958d4880595dfff5e38ab5ec26de940944df`
+Base commit: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
+Accepted M4 baseline: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
-Branch: `opencode/j19-m4-file-tools-plug`
-Worker note: `docs/worker-notes/2026-08-02-j19-m4-file-tools-plug.md`
+Branch: `opencode/j19-m5-durable-local-anchor`
+Worker note: `docs/worker-notes/2026-08-02-j19-m5-durable-local-anchor.md`
 
 ## Start rule
 
 Use Luna in OpenCode. Fetch the remote branch above, switch to it, require a clean worktree, and record the exact branch HEAD containing this control packet in the worker note before implementation.
 
-Read `AGENTS.md`, this task, the M3 worker note, and the governing architecture documents. Run:
+Read `AGENTS.md`, this task, the accepted M4 worker note, and the governing architecture documents. Run:
 
 ```powershell
 just tools
 ```
 
-Use normal commits and normal pushes only. Do not amend or rebase published work, force-push, move `main`, move tags, create a release, or begin M5.
+Use normal commits and normal pushes only. Do not amend or rebase published work, force-push, move `main`, move tags, create a release, or begin M6.
 
 ## Mission
 
-Complete all of Milestone 4 in one coherent autonomous run:
+Complete Milestone 5 as one coherent autonomous run:
 
-1. `P11-FILE-CONTRACT`
-2. `P12-FILE-PROVIDER`
-3. `P13-FILE-END-TO-END`
-
-Continue automatically through ordinary engineering decisions. Make small coherent commits at useful checkpoints, run focused tests after each packet, and run the complete regression suite at the end.
+1. freeze one bounded local inbound event contract;
+2. implement host-owned durable event admission;
+3. convert accepted events into canonical generation-0 Anchors;
+4. prove restart-safe duplicate handling, conflict quarantine, acknowledgement ordering, evaluation, Result Anchors and Trail;
+5. complete the full regression matrix.
 
 Return only with:
 
-`M4 COMPLETE - FIRST LIVE FILE TOOLS PLUG`
+`M5 COMPLETE - DURABLE LOCAL ANCHOR`
 
 or a genuine major blocked report after two materially different evidence-based attempts.
 
-Do not stop because a module boundary, schema spelling, fixture shape, compiler error, test harness, Windows API detail, package builder, or integration seam requires thought. Luna owns those ordinary decisions within the frozen rules.
-
 ## Objective
 
-Turn one accepted M3 installed-disabled Plug into the first explicitly enabled operational Plug, then prove one bounded File Tools Query and one exact File Tools Action through the complete host path:
+Allow one enabled local reference Plug or bounded local source to report one stable event back to Tethers safely.
 
-inspect -> quarantine -> candidate -> trust -> supervised conformance -> approval -> installed-disabled -> explicit enablement -> active exact binding -> discovery -> policy -> durable intent -> invocation -> canonical outcome -> replay terminal -> Result Anchor -> Trail.
+The provider notification is never automatically an Anchor. The host must authenticate the active Plug/session, validate the exact event contract and scope, durably admit or refuse the external event, and only then create one canonical root Anchor for evaluation.
 
-The first operational Plug is credential-free, local-only, Windows x86_64, MCP 2025-11-25 over stdio, supervised but not isolated, and has no network access.
+The accepted flow is:
 
-## Relevant background and existing behaviour
-
-M1-M3 provide the Socket, package, candidate, trust, supervised launch,
-conformance, approval, and installed-disabled stores. Released 0.2 runtime
-configuration and the J14C provider remain legacy behaviour and are preserved.
+outside/local source -> provider notification -> Socket/binding -> host validation -> durable external-event admission -> canonical root Anchor generation 0 -> J11 generation checks -> Trail -> evaluation -> ordinary Action/Query path -> acknowledgement.
 
 ## Required behaviour
 
-1. Freeze one bounded File Tools Query and one exact file move Action with strict schemas and host-owned scopes.
-2. Provide deterministic package material and a credential-free native MCP provider implementing only those operations.
-3. Require explicit enablement of one exact installed identity and remove availability on durable disablement.
-4. Route operational calls through the existing policy, intent, replay, outcome, Result Anchor, and Trail boundaries without adding M5 Anchors.
-
-## Relevant components
-
-- `tethers-0.1/host-rust/src/file_tools.rs` and `src/bin/file_tools_provider.rs`.
-- `tethers-0.1/host-rust/src/enablement.rs` and existing M3 installed/conformance/trust stores.
-- Committed File Tools manifests, contract fixture, and Windows integration tests.
-
-## Frozen decisions and invariants
-
-File paths are host-resolved relative paths. Query is read-only and bounded;
-move refuses overwrite, recursion, links, reparse points, and cross-volume
-ambiguity. The provider receives no credentials or network access. Enablement
-is distinct from installation approval and policy. Attempted outcomes remain
-exactly succeeded, failed, and uncertain; unattempted work has no Result Anchor.
-
-## Acceptance criteria
-
-1. Strict File Tools manifests and scope refusal matrix pass focused tests.
-2. Deterministic package material and native MCP provider pass real Windows query/move tests.
-3. Explicit enablement and disablement preserve exact installed evidence and active availability state.
-4. Full Rust, OCaml, 0.2, process-cleanup, formatting, and packet checks pass.
-
-## Forbidden changes
-
-No credentials, network listener, shell/PATH launch, arbitrary file API, delete,
-copy, glob, overwrite, recursive operation, external Anchor, PDF feature,
-marketplace, updater, release movement, or M5 behaviour.
-
-## Stop conditions
-
-Stop only for the listed major M4 conditions after two materially different
-evidence-based attempts: path confinement or overwrite refusal cannot be proved,
-M3 trust/integrity cannot be preserved, existing dispatch ordering cannot support
-the slice, released 0.2 regresses, a security boundary must weaken, or the
-required baseline/toolchain is unavailable.
-
-## Expected pre-existing changes
-
-None.
-
-## Required final state
-
-At M4 completion:
-
-- a real `.tetherplug` File Tools package exists as committed deterministic reference material;
-- it can pass the accepted M2/M3 package, trust, conformance and installation gates;
-- explicit host authority can enable exactly one installed Plug identity;
-- enablement creates exact active capability bindings only after current trust, installation, conformance, package, payload, manifest, provider, protocol and launch evidence are revalidated;
-- disablement removes operational availability without deleting historical evidence;
-- a bounded file metadata/read Query works only inside an exact host-approved scope;
-- an exact file move Action works only inside approved source/destination scopes and refuses overwrite;
-- host policy, approval, durable intent, replay, outcome, Result Anchor and Trail ordering remain intact;
-- unattempted, succeeded, failed and uncertain paths are demonstrated without inventing a fourth attempted outcome;
-- no Anchor admission, credential delivery, network listener, PDF feature, arbitrary provider marketplace, auto-update or M5 behaviour exists.
-
-## Governing contracts
-
-Implement against:
-
-- `docs/architecture/TETHERS_SOCKET_AND_MCP_BINDING_V1.md` or the accepted equivalent;
-- `docs/architecture/TETHERPLUG_PACKAGE_V1.md`;
-- `docs/architecture/TETHERS_CAPABILITIES_EFFECTS_SCOPES_V1.md`;
-- `docs/architecture/TETHERS_LIFECYCLE_OUTCOMES_EVENTS_CONFORMANCE_V1.md`;
-- `docs/architecture/TETHERS_SECURITY_TRUST_CREDENTIALS_SANDBOX_V1.md`;
-- `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`;
-- accepted M1 Socket/application seam;
-- accepted M2 package/candidate boundary;
-- accepted M3 trust, supervised launch, conformance, approval and installed-disabled stores.
-
-Preserve released 0.2 behaviour. Do not reinterpret legacy runtime configuration or legacy manifests as installed Plug state.
+1. Freeze one small local event, preferably `file.received@1` or the smallest equivalent, with strict schema and stable provider-issued event identity.
+2. Accept events only from one exact enabled installed Plug identity, active session, provider identity, capability/event binding, and host-approved source scope.
+3. Persist admission before evaluation or acknowledgement.
+4. Treat same event ID plus same canonical digest as a duplicate: no second evaluation, no second root Anchor, return the original durable admission result.
+5. Treat same event ID plus different canonical digest as a conflict: refuse evaluation, preserve conflict evidence, quarantine the source/session where appropriate, and do not acknowledge success.
+6. Create exactly one host-owned root Anchor at generation 0 only after durable admission succeeds.
+7. Preserve J11 causal limits: generation 0 through 8 accepted; generation 9 and above rejected.
+8. Acknowledge the provider only after durable admission. A cursor, sequence, timestamp or transport offset is not event identity.
+9. Preserve Trail and evaluation ordering and all M4 operational Plug behaviour.
 
 ## Frozen architectural truths
 
-- Tethers plans; the host authorises and executes.
-- The Socket is semantic; MCP is the binding; stdio is the transport.
-- Provider code remains untrusted after signing, conformance, installation and enablement.
-- Supervision is not isolation.
-- Signature is not trust; trust is not conformance; conformance is not installation approval; installation is not enablement; enablement is not per-action permission.
-- Current trust must be checked before every operational launch.
-- Exact installed bytes and manifests must be revalidated before operational launch.
-- No shell, PATH selection, command concatenation, ambient environment inheritance or production credential delivery.
-- No automatic retry.
-- Attempted outcomes remain exactly `succeeded`, `failed`, `uncertain`.
-- Unattempted is a host execution state, not a canonical attempted outcome.
-- Durable intent precedes provider invocation.
-- Result Anchor publication occurs only after canonical outcome and replay-terminal publication.
-- Trail records what happened and why; it does not grant authority.
-- M4 owns explicit enablement and operational Action/Query only. External Anchors belong to M5.
+- Tethers coordinates; the host owns trust, admission and execution.
+- A provider notification is untrusted input, not an Anchor.
+- Admission state is separate from attempted provider-operation outcomes.
+- Stable external event ID and canonical event digest are both required.
+- Duplicate same-ID/same-digest is not a new event and must not evaluate again.
+- Same-ID/different-digest is a conflict, never last-write-wins.
+- Durable admission precedes acknowledgement and Anchor creation.
+- Root Anchors are host-created at generation 0.
+- No Result Anchor is created merely for inbound event admission.
+- Any Actions/Queries caused by evaluation retain normal intent, replay, outcome, Result Anchor and Trail semantics.
+- No automatic retry of provider operations.
+- Cursor/offset/timestamp is not event identity.
+- No network listener, credential delivery, PDF feature, marketplace, updater or M6 work.
 
-## P11 - File capability contract
+## Event contract
 
-Freeze the smallest direct v1 File Tools contract before implementation.
+Freeze the smallest direct v1 contract before implementation.
 
-Choose stable capability names under one clear namespace. At minimum provide:
+Use a strict event envelope containing at least:
 
-1. one Query for bounded file metadata and optionally bounded UTF-8 content read;
-2. one Action for exact file move.
+- event format version;
+- stable provider-issued event ID;
+- exact event name and version;
+- provider identity and installed Plug identity;
+- active session identity;
+- occurred time as presentation/audit data only;
+- canonical payload;
+- canonical payload/event digest;
+- optional source-relative path bound to host-approved scope;
+- causal generation/source metadata required by the accepted lifecycle contract.
 
-The Query must be read-only. The Action must declare filesystem effects explicitly.
+Reject duplicate JSON fields, unknown fields, malformed IDs, unsupported versions, wrong provider/session/installed identity, wrong event binding, schema drift, invalid digest, path escape, reparse/junction scope violations, oversized payloads and secret-bearing diagnostics.
 
-Freeze strict input/output JSON schemas, operation names, manifest identities, effect declarations and permission scopes in committed files and tests.
+The package or provider cannot define host admission authority. Event schemas and bindings must be part of exact installed and enabled evidence.
 
-The contract must define:
+## Durable admission store
 
-- path values as host-resolved scoped relative paths, never unrestricted arbitrary absolute paths from a Tether;
-- separate approved roots or equivalent host-owned scope identities;
-- canonical path/reparse handling on Windows;
-- bounded file size for content reads;
-- exact behaviour for missing file, wrong type, invalid UTF-8 when content is requested, destination exists, source equals destination, cross-volume move if unsupported, path escape, junction/reparse encounter, permission refusal and provider loss;
-- overwrite is always refused in M4;
-- no recursive directory operations;
-- no delete, copy, write, glob, arbitrary listing, shell or network capability;
-- deterministic output fields and safe diagnostics.
+Implement a separate host-owned durable external-event admission authority. Do not reuse Trail, replay, Result Anchor queue, enablement store or operation outcome records as the authority.
 
-Do not freeze a broader File API for hypothetical future needs. One good Query and one good move Action are enough.
+The store must preserve at least:
 
-Commit P11 separately after schema and contract tests pass. Record the final names and schema digests in the worker note.
+- stable external event ID;
+- canonical event digest;
+- exact installed Plug, provider, session and event binding identity;
+- admission state and reason;
+- durable root Anchor identity where admitted;
+- first-seen/admitted audit time;
+- schema version and record-integrity digest;
+- conflict evidence without replacing the original admitted record.
 
-## P12 - File Tools provider and package
+Required properties:
 
-Build one self-contained native Windows x86_64 reference provider with no credentials and no network use.
+- create-only or explicit append-only transitions;
+- crash-aware atomic publication;
+- strict reload and corruption refusal;
+- reparse-safe host-owned root;
+- deterministic restart reconstruction;
+- no forked authority;
+- no acknowledgement before durable publication;
+- no evaluation if publication fails;
+- no second evaluation on duplicate after restart.
 
-Package it as deterministic `.tetherplug` reference material using the accepted package format. Do not hand-edit inconsistent digest evidence. A small repository-owned deterministic packaging script or build step is acceptable when it produces reproducible exact package bytes and validates its own output.
+## Source and Socket behaviour
 
-The provider must:
+Use one bounded local source only. It may be the File Tools reference Plug or a dedicated credential-free local fixture provider.
 
-- implement MCP initialize, complete tools/list and tools/call for only the P11 operations;
-- advertise exact schemas matching committed capability manifests;
-- reject unknown operations and malformed arguments;
-- resolve only host-provided scoped roots/configuration;
-- perform real Windows reparse-safe path checks;
-- use bounded I/O;
-- refuse overwrite;
-- emit no canonical authority, policy decision, outcome, Result Anchor or Trail itself;
-- write protocol only to stdout and treat stderr as untrusted diagnostics;
-- support deterministic conformance fixtures without production user data;
-- remain stopped after conformance.
+The source must:
 
-Integrate the package through the accepted inspect, quarantine, candidate, trust, launch, conformance, approval and installed-disabled path. Do not bypass M3 stores by constructing an installed record directly in tests.
+- run through the accepted installed/enabled Plug lifecycle where applicable;
+- use the accepted Socket/MCP local stdio boundary;
+- emit only the reviewed notification/event shape;
+- have no network access or credentials;
+- use one host-approved disposable source root;
+- generate stable event IDs independent of transport cursor or process restart;
+- tolerate host duplicate responses without inventing a new event identity;
+- remain removable/disableable without affecting Tethers core.
 
-Commit P12 separately after focused provider, package and conformance evidence passes.
+Do not add general filesystem watching, arbitrary directory recursion, networking, webhook listeners or a broad event bus. One deterministic local event is enough.
 
-## P13 - Explicit enablement and end-to-end execution
+## Host admission and Anchor creation
 
-Add the smallest host-owned explicit enablement model.
+Before admission, require:
 
-Enablement must be a separate durable host authority record or state transition, distinct from installation approval and policy. It must pin the exact installed Plug identity and current evidence needed for readiness.
+- exact installed Plug and current enablement;
+- current trust/developer approval and installed-byte validity;
+- active authenticated provider session;
+- exact event name/version/schema binding;
+- exact host-approved source scope;
+- canonical digest verification;
+- payload bound and secret-safe diagnostics;
+- generation and causal checks.
 
-Before enabling and before each operational launch, require at least:
+After durable admission:
 
-- installed record is valid and `present_disabled` or the accepted enabled-state transition source;
-- exact installed file set and all digests are current;
-- current trust or exact developer approval is current;
-- installation approval and conformance evidence remain current;
-- launch profile remains the accepted credential-free supervised profile;
-- exact provider and capability bindings match committed manifests;
-- no conflicting active binding exists;
-- host-approved scope configuration is valid and reparse-safe.
+1. create one host-owned canonical root Anchor at generation 0;
+2. record admission and Anchor relationship durably;
+3. append ordered Trail evidence;
+4. submit the Anchor through the existing event/evaluation path;
+5. acknowledge the provider only after durable admission and required host publication succeed.
 
-Enablement must not silently enable every version, provider or capability. Bind only exact reviewed capabilities for one exact installed identity.
+If durable Anchor publication fails after admission, fail closed and do not acknowledge success. Recovery must resume deterministically without creating a second evaluation.
 
-Disablement must be explicit, durable and fail closed. Restart/reload must reconstruct the same enabled or disabled state without using package claims as authority.
+## Required evidence
 
-Adapt enabled installed bindings into the existing resolver/policy/dispatch path rather than creating a parallel execution engine.
+Provide a real Windows end-to-end scenario proving:
 
-Demonstrate:
+- package/install/trust/conformance/approval/enablement remains valid;
+- event source unavailable while Plug is disabled;
+- explicit enablement starts one accepted local source session;
+- one valid event is durably admitted;
+- one generation-0 root Anchor is created;
+- one evaluation occurs;
+- resulting Action/Query uses the existing M4 host path;
+- Trail ordering is correct;
+- acknowledgement happens after durable admission;
+- restart preserves admission and prevents duplicate evaluation;
+- disablement stops new event admission without affecting Tethers core.
 
-### Query success
+Also prove:
 
-A file inside an approved disposable root is queried through Tethers and returns bounded canonical metadata, and bounded content only when requested and valid.
-
-### Action success
-
-A source file inside an approved source root is moved to an approved destination path with overwrite refused. The exact action travels through evaluation, resolution, policy, intent, Socket invocation, outcome, replay terminal, Result Anchor and Trail.
-
-### Required negative and boundary cases
-
-- disabled Plug is unavailable and unattempted;
-- enablement with stale/revoked trust refuses;
-- payload or manifest drift refuses;
-- scope escape and reparse/junction paths refuse before provider effect;
-- destination exists refuses without overwrite;
-- policy deny and approval-required remain host-owned and unattempted;
-- provider-declared extra operation/schema drift invalidates readiness;
-- malformed response is failed or uncertain according to the accepted lifecycle boundary;
-- timeout/process loss after invocation is uncertain;
-- replay blocks duplicate operation execution across restart;
-- no Result Anchor for unattempted;
-- exactly one Result Anchor attempt after durable attempted outcome and replay-terminal publication;
-- Trail ordering and safe diagnostic redaction are preserved;
-- disablement removes availability;
-- no external Anchor admission occurs.
-
-Use disposable Windows fixture roots. Never operate on arbitrary user files during tests or demonstrations.
-
-Commit P13 separately after focused vertical-slice evidence and full regression pass.
+- same ID and same digest is a duplicate with no second evaluation;
+- same ID and different digest is a conflict with no evaluation;
+- malformed/unknown/schema-drift events refuse;
+- wrong Plug/provider/session/binding refuses;
+- path escape/reparse/scope mismatch refuses;
+- generation 8 accepted and generation 9 rejected where the existing causal path applies;
+- admission-store torn write/corruption refuses safely;
+- failure before durable admission produces no Anchor and no acknowledgement;
+- failure after durable admission but before evaluation recovers once without duplicate evaluation;
+- provider process loss does not corrupt admission authority;
+- no provider process survives the test;
+- M4 Query/Action behaviour remains unchanged.
 
 ## Autonomy and judgement
 
 Luna may choose:
 
-- module and type names not frozen above;
-- exact durable enablement schema and store layout;
-- provider binary layout;
-- deterministic package builder implementation;
-- capability names and schemas during P11, once frozen in committed evidence;
-- bounded constants;
-- test and fixture structure;
-- thin CLI or harness additions needed to demonstrate M4;
-- narrow `justfile` additions;
-- conservative reuse/refactoring needed to route enabled Plug bindings through the existing host execution path.
+- exact module/type/store names;
+- event name during the contract-freeze checkpoint;
+- exact strict schema spelling and committed fixture layout;
+- durable store layout and recovery representation;
+- session identity representation;
+- acknowledgement response representation;
+- deterministic local fixture/source design;
+- thin `justfile` recipes;
+- conservative refactoring needed to connect durable admission to the existing event/evaluation path.
 
-Prefer reuse over a second system. Avoid broad rewrites. Keep commits reviewable.
+Prefer reuse over a second event engine. Avoid broad rewrites. Keep commits coherent and reviewable.
 
-Do not weaken M3 security to make M4 easier. Do not bypass stores, trust checks, intent, policy, replay, outcomes, Result Anchor or Trail in the happy-path demo.
+## Forbidden changes
+
+No general event marketplace, network listener, webhook server, credentials, arbitrary filesystem watcher, recursive directory crawl, PDF support, jobs, streams, Human Tasks, auto-update, release work or M6 behaviour.
+
+Do not conflate:
+
+- notification with Anchor;
+- admission with operation outcome;
+- cursor with event identity;
+- Trail with admission authority;
+- enablement with event permission;
+- duplicate delivery with a new event.
 
 ## Major stop rule
 
 Stop only when one of these remains after two materially different evidence-based attempts:
 
-- frozen contracts contradict each other in a way that changes public semantics;
-- safe path confinement or overwrite refusal cannot be proven;
-- current trust or exact installed-byte validation cannot be preserved at operational launch;
-- the existing dispatch/outcome/replay/Result Anchor ordering cannot support the installed Plug path without architectural change;
-- a regression in released 0.2 behaviour cannot be isolated;
-- a security boundary would have to be weakened;
-- repository corruption, missing required baseline, or unavailable required toolchain makes progress impossible.
+- stable identity/deduplication cannot be guaranteed across restart;
+- durable admission and acknowledgement ordering cannot be proven;
+- the existing event/evaluation path cannot accept a host-created generation-0 Anchor without architectural contradiction;
+- same-ID/different-digest conflict cannot be contained safely;
+- current trust/session/enablement cannot be bound to admission;
+- released 0.2 or accepted M4 behaviour regresses and cannot be isolated;
+- a frozen security boundary must weaken;
+- repository corruption, missing baseline or unavailable required toolchain prevents progress.
 
-A large diff, new fixture, compiler problem, Windows API complexity, package-generation detail, or ordinary cross-module integration is not a major blocker.
+Ordinary compiler errors, fixtures, store schemas, Windows API details, test harness work and cross-module integration are not major blockers.
 
 ## Required verification
 
@@ -302,20 +251,20 @@ just tools
 just fmt
 just check
 just test-m3
+just test-m4
 just test-rust
 just verify
 ```
 
-Add and run focused M4 recipes/tests for P11, P12 and P13.
+Add and run focused M5 contract, admission, restart, conflict and Windows end-to-end tests.
 
 Also run:
 
 - complete OCaml build and tests;
 - complete `verify-0.2.ps1`;
 - locked debug and release Rust builds;
-- deterministic package rebuild comparison;
-- real Windows path, junction/reparse, overwrite and process-survivor tests;
-- replay restart evidence;
+- packet/control validation;
+- real Windows process-survivor checks;
 - `git diff --check`;
 - final clean-worktree check after the completion ledger commit.
 
@@ -325,8 +274,8 @@ Record exact counts and commands in the worker note. Local test claims are evide
 
 Return only:
 
-`M4 COMPLETE - FIRST LIVE FILE TOOLS PLUG`
+`M5 COMPLETE - DURABLE LOCAL ANCHOR`
 
 plus the branch name and final SHA if OpenCode requires additional text.
 
-Do not begin M5. Do not move `main`. Do not create a release.
+Do not begin M6. Do not move `main`. Do not create a release.
