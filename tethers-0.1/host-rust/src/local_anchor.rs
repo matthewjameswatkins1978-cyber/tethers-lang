@@ -626,4 +626,46 @@ mod tests {
         assert_eq!(anchor.generation, 0);
         let _ = fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn duplicate_envelope_field_is_rejected() {
+        let result =
+            InboundEvent::from_json(r#"{"event_format_version":"1","event_format_version":"1"}"#);
+        assert!(
+            matches!(result, Err(EventError::Invalid(message)) if message.contains("duplicate field"))
+        );
+    }
+
+    #[test]
+    fn corrupted_record_refuses_restart() {
+        let root = temp();
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("corrupt.json"), b"{}\n").unwrap();
+        assert!(matches!(
+            AdmissionStore::open(&root),
+            Err(EventError::Corrupt(_))
+        ));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn identity_mismatch_is_refused_before_admission() {
+        let root = temp();
+        let source = root.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("a.txt"), b"fixture").unwrap();
+        let _event = event("evt-wrong", serde_json::json!({"path":"in/a.txt"}));
+        let binding = AdmissionBinding {
+            installed_plug_id: "different-plug".into(),
+            provider_identity: "file-tools".into(),
+            session_id: "session-1".into(),
+            event_name: EVENT_NAME.into(),
+            source_root: source,
+        };
+        let mut coordinator =
+            LocalAnchorCoordinator::open(root.join("admission"), binding).unwrap();
+        let result = coordinator.admit_notification("{}", 1, |_| Ok(()));
+        assert!(matches!(result, Err(EventError::Invalid(_))));
+        let _ = fs::remove_dir_all(root);
+    }
 }
