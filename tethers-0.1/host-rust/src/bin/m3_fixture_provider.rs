@@ -2,6 +2,7 @@
 
 use serde_json::{json, Value};
 use std::io::{self, BufRead};
+use std::process::Command;
 
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -10,6 +11,23 @@ fn main() {
         .find(|pair| pair[0] == "--mode")
         .map(|pair| pair[1].as_str())
         .unwrap_or("valid");
+    let startup_child = if mode.starts_with("spawn-child") {
+        let child = Command::new("cmd")
+            .args(["/c", "ping", "-t", "127.0.0.1"])
+            .spawn()
+            .ok();
+        if let Some(child) = &child {
+            if let Some(scratch) = std::env::var_os("TEMP") {
+                let _ = std::fs::write(
+                    std::path::Path::new(&scratch).join("m3-startup-child.pid"),
+                    child.id().to_string(),
+                );
+            }
+        }
+        child
+    } else {
+        None
+    };
     eprintln!("fixture stderr is intentionally untrusted: M3_SECRET_CANARY");
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
@@ -30,7 +48,7 @@ fn main() {
             println!("{}", "x".repeat(2 * 1024 * 1024));
             continue;
         }
-        if mode == "malformed" && method == "tools/list" {
+        if (mode == "malformed" || mode == "spawn-child-malformed") && method == "tools/list" {
             println!("{{malformed");
             continue;
         }
@@ -85,6 +103,7 @@ fn main() {
                         "structuredContent":structured_content,
                         "tethersFixtureEvidence":{
                             "ambient_secret_present":std::env::var_os("TETHERS_TEST_AMBIENT_SECRET").is_some(),
+                            "startup_child_pid":startup_child.as_ref().map(std::process::Child::id),
                             "arguments":arguments,
                             "working_directory":std::env::current_dir().ok().map(|path| path.to_string_lossy().into_owned()),
                             "environment_names":std::env::vars_os().map(|(name, _)| name.to_string_lossy().into_owned()).collect::<Vec<_>>()

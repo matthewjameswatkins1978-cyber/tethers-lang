@@ -160,6 +160,8 @@ impl InstallationApprovalStore {
         approving_authority: &str,
     ) -> Result<InstallationApprovalRecord> {
         let quarantine = revalidate_candidate(candidate, quarantine_root)?;
+        trust.require_for_candidate(candidate)?;
+        launch.require_for_candidate(candidate)?;
         trust.revalidate_current(
             &candidate.package_id,
             publisher_trust,
@@ -488,6 +490,8 @@ impl InstalledPlugRegistry {
         approval: &InstallationApprovalRecord,
     ) -> Result<InstalledPlugRecord> {
         let source = revalidate_candidate(candidate, quarantine_root)?;
+        trust.require_for_candidate(candidate)?;
+        launch.require_for_candidate(candidate)?;
         trust.revalidate_current(
             &candidate.package_id,
             publisher_trust,
@@ -535,6 +539,8 @@ impl InstalledPlugRegistry {
         }
         let final_revalidation = (|| -> Result<()> {
             revalidate_candidate(candidate, quarantine_root)?;
+            trust.require_for_candidate(candidate)?;
+            launch.require_for_candidate(candidate)?;
             trust.revalidate_current(
                 &candidate.package_id,
                 publisher_trust,

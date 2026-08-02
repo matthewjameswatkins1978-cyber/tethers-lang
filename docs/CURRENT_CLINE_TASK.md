@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J19-M3 - Autonomous Trust, Launch, Conformance and Install Programme`
 Owner: `Codex Sol Medium`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `Codex Sol Medium, one continuous autonomous Milestone 3 implementation`
 Base branch: `main`

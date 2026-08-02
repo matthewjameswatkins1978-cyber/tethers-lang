@@ -64,6 +64,31 @@ impl LaunchProfileEvidence {
         }
         Ok(())
     }
+
+    pub fn require_for_candidate(&self, candidate: &CandidateRecord) -> Result<()> {
+        self.validate()?;
+        let executable = candidate
+            .payloads
+            .iter()
+            .find(|payload| payload.path == candidate.launch_path)
+            .ok_or_else(|| M3Error::new("launch_candidate_mismatch", "launch payload is absent"))?;
+        if self.candidate_id != candidate.candidate_id
+            || self.semantic_package_digest != candidate.semantic_package_digest
+            || self.executable_relative_path != candidate.launch_path
+            || self.executable_digest != executable.sha256
+            || self.arguments != candidate.launch_arguments
+            || self.working_directory_relative_path != candidate.provider_working_directory
+            || self.profile_label != SUPERVISED_PROFILE_LABEL
+            || self.isolated
+            || self.limitation != SUPERVISED_PROFILE_LIMITATION
+        {
+            return Err(M3Error::new(
+                "launch_candidate_mismatch",
+                "launch evidence is not bound to this exact candidate",
+            ));
+        }
+        Ok(())
+    }
 }
 
 pub struct PreparedSupervisedLaunch {
@@ -272,7 +297,16 @@ impl PreparedSupervisedLaunch {
         })
     }
 
-    pub fn launch(&self) -> std::result::Result<SupervisedChild, ChildError> {
+    pub(crate) fn launch_for_candidate(
+        &self,
+        candidate: &CandidateRecord,
+    ) -> std::result::Result<SupervisedChild, ChildError> {
+        self.evidence
+            .require_for_candidate(candidate)
+            .map_err(|error| ChildError::LaunchFailed {
+                command: self.executable.to_string_lossy().into_owned(),
+                message: format!("{}: {}", error.code, error.message),
+            })?;
         let mut config = ChildConfig::production(
             self.executable.to_string_lossy().into_owned(),
             self.evidence.arguments.clone(),
@@ -290,6 +324,10 @@ impl PreparedSupervisedLaunch {
 
     pub(crate) fn working_directory(&self) -> &Path {
         &self.working_directory
+    }
+
+    pub fn scratch_directory(&self) -> &Path {
+        &self.scratch_directory
     }
 
     pub fn cleanup_scratch(self) -> Result<()> {

@@ -145,8 +145,8 @@ impl ConformanceEvidence {
         current_suite_digest: &str,
     ) -> Result<()> {
         self.validate()?;
-        trust.validate()?;
-        launch.validate()?;
+        trust.require_for_candidate(candidate)?;
+        launch.require_for_candidate(candidate)?;
         if self.disposition != ConformanceDisposition::Passed
             || self.candidate_id != candidate.candidate_id
             || self.semantic_package_digest != candidate.semantic_package_digest
@@ -275,9 +275,10 @@ pub fn run_host_conformance(
     let quarantine = revalidate_candidate(candidate, quarantine_root)?;
     let expected_tools = expected_tools(candidate, &quarantine)?;
     cases.push(passed("static_candidate_revalidation"));
-    trust.validate()?;
+    trust.require_for_candidate(candidate)?;
+    prepared.evidence.require_for_candidate(candidate)?;
     let mut child = prepared
-        .launch()
+        .launch_for_candidate(candidate)
         .map_err(|error| M3Error::new("conformance_launch", error.to_string()))?;
     cases.push(passed("exact_launch_clean_environment"));
     let deadline =

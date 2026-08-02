@@ -522,6 +522,17 @@ pub struct PackageTrustEvidence {
 }
 
 impl PackageTrustEvidence {
+    pub fn require_for_candidate(&self, candidate: &CandidateRecord) -> Result<()> {
+        self.validate()?;
+        if self.semantic_package_digest != candidate.semantic_package_digest {
+            return Err(M3Error::new(
+                "trust_candidate_mismatch",
+                "trust evidence is not bound to this candidate semantic digest",
+            ));
+        }
+        Ok(())
+    }
+
     fn covered_bytes(&self) -> Result<Vec<u8>> {
         let mut copy = self.clone();
         copy.evidence_digest.clear();

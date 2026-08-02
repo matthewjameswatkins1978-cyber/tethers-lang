@@ -54,6 +54,21 @@ fn write_read_only(path: &Path, bytes: &[u8]) {
     fs::set_permissions(path, permissions).unwrap();
 }
 
+fn assert_process_gone(pid: u32) {
+    let state = std::process::Command::new("pwsh")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!("if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ exit 1 }}"),
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        state.success(),
+        "startup descendant {pid} survived shutdown"
+    );
+}
+
 fn fixture_manifest() -> Vec<u8> {
     fs::read(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -358,6 +373,249 @@ fn m3_candidate_to_installed_disabled_is_explicit_and_non_operational() {
 
     prepared.cleanup_scratch().unwrap();
     std::env::remove_var("TETHERS_TEST_AMBIENT_SECRET");
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn m3_trust_launch_and_conformance_evidence_cannot_cross_candidates() {
+    let base = root("cross-candidate-evidence");
+    let (candidate_a, quarantine_a) = candidate_fixture(&base.join("a"), "valid");
+    let (candidate_b, quarantine_b) = candidate_fixture(&base.join("b"), "valid-b");
+    assert_eq!(candidate_a.package_id, candidate_b.package_id);
+    assert_ne!(
+        candidate_a.semantic_package_digest,
+        candidate_b.semantic_package_digest
+    );
+
+    let developers = DeveloperApprovalStore::open(&base.join("developer-approvals")).unwrap();
+    let trust_a = PackageTrustEvidence::unsigned(
+        &developers
+            .approve_exact_digest(&candidate_a.semantic_package_digest, "Matthew")
+            .unwrap(),
+    )
+    .unwrap();
+    let trust_b = PackageTrustEvidence::unsigned(
+        &developers
+            .approve_exact_digest(&candidate_b.semantic_package_digest, "Matthew")
+            .unwrap(),
+    )
+    .unwrap();
+    let publishers = PublisherTrustStore::open(&base.join("publisher-trust")).unwrap();
+    let launch_a = PreparedSupervisedLaunch::prepare(
+        &candidate_a,
+        &quarantine_a,
+        &base.join("scratch-a"),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let launch_b = PreparedSupervisedLaunch::prepare(
+        &candidate_b,
+        &quarantine_b,
+        &base.join("scratch-b"),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+
+    assert_eq!(
+        trust_a
+            .require_for_candidate(&candidate_b)
+            .unwrap_err()
+            .code,
+        "trust_candidate_mismatch"
+    );
+    assert_eq!(
+        launch_a
+            .evidence
+            .require_for_candidate(&candidate_b)
+            .unwrap_err()
+            .code,
+        "launch_candidate_mismatch"
+    );
+    assert_eq!(
+        run_host_conformance(
+            &launch_b,
+            &candidate_b,
+            &quarantine_b,
+            &trust_a,
+            "host-build",
+        )
+        .unwrap_err()
+        .code,
+        "trust_candidate_mismatch"
+    );
+    assert_eq!(
+        run_host_conformance(
+            &launch_a,
+            &candidate_b,
+            &quarantine_b,
+            &trust_b,
+            "host-build",
+        )
+        .unwrap_err()
+        .code,
+        "launch_candidate_mismatch"
+    );
+
+    let conformance_a = run_host_conformance(
+        &launch_a,
+        &candidate_a,
+        &quarantine_a,
+        &trust_a,
+        "host-build",
+    )
+    .unwrap();
+    let conformance_b = run_host_conformance(
+        &launch_b,
+        &candidate_b,
+        &quarantine_b,
+        &trust_b,
+        "host-build",
+    )
+    .unwrap();
+    let approvals = InstallationApprovalStore::open(&base.join("approvals")).unwrap();
+    assert_eq!(
+        approvals
+            .approve(
+                &candidate_b,
+                &quarantine_b,
+                &trust_b,
+                &publishers,
+                &developers,
+                &launch_a.evidence,
+                &conformance_a,
+                "Matthew",
+            )
+            .unwrap_err()
+            .code,
+        "launch_candidate_mismatch"
+    );
+    assert_eq!(
+        approvals
+            .approve(
+                &candidate_b,
+                &quarantine_b,
+                &trust_b,
+                &publishers,
+                &developers,
+                &launch_b.evidence,
+                &conformance_a,
+                "Matthew",
+            )
+            .unwrap_err()
+            .code,
+        "conformance_stale"
+    );
+    let approval_b = approvals
+        .approve(
+            &candidate_b,
+            &quarantine_b,
+            &trust_b,
+            &publishers,
+            &developers,
+            &launch_b.evidence,
+            &conformance_b,
+            "Matthew",
+        )
+        .unwrap();
+    let installed =
+        InstalledPlugRegistry::open(&base.join("install"), &base.join("records")).unwrap();
+    assert_eq!(
+        installed
+            .install_disabled(
+                &candidate_b,
+                &quarantine_b,
+                &trust_a,
+                &publishers,
+                &developers,
+                &launch_b.evidence,
+                &conformance_b,
+                &approval_b,
+            )
+            .unwrap_err()
+            .code,
+        "trust_candidate_mismatch"
+    );
+    assert_eq!(
+        installed
+            .install_disabled(
+                &candidate_b,
+                &quarantine_b,
+                &trust_b,
+                &publishers,
+                &developers,
+                &launch_a.evidence,
+                &conformance_b,
+                &approval_b,
+            )
+            .unwrap_err()
+            .code,
+        "launch_candidate_mismatch"
+    );
+    launch_a.cleanup_scratch().unwrap();
+    launch_b.cleanup_scratch().unwrap();
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn m3_immediate_startup_descendant_is_contained_by_suspended_job_assignment() {
+    let base = root("startup-descendant");
+    let (candidate, quarantine) = candidate_fixture(&base, "spawn-child");
+    let developers = DeveloperApprovalStore::open(&base.join("developer-approvals")).unwrap();
+    let trust = PackageTrustEvidence::unsigned(
+        &developers
+            .approve_exact_digest(&candidate.semantic_package_digest, "Matthew")
+            .unwrap(),
+    )
+    .unwrap();
+    let prepared = PreparedSupervisedLaunch::prepare(
+        &candidate,
+        &quarantine,
+        &base.join("scratch"),
+        Duration::from_secs(3),
+    )
+    .unwrap();
+    let conformance =
+        run_host_conformance(&prepared, &candidate, &quarantine, &trust, "host-build").unwrap();
+    assert_eq!(conformance.disposition, ConformanceDisposition::Passed);
+    let pid = fs::read_to_string(prepared.scratch_directory().join("m3-startup-child.pid"))
+        .unwrap()
+        .trim()
+        .parse::<u32>()
+        .unwrap();
+    assert_process_gone(pid);
+    prepared.cleanup_scratch().unwrap();
+
+    let (failing_candidate, failing_quarantine) =
+        candidate_fixture(&base.join("failure"), "spawn-child-malformed");
+    let failing_trust = PackageTrustEvidence::unsigned(
+        &developers
+            .approve_exact_digest(&failing_candidate.semantic_package_digest, "Matthew")
+            .unwrap(),
+    )
+    .unwrap();
+    let failing = PreparedSupervisedLaunch::prepare(
+        &failing_candidate,
+        &failing_quarantine,
+        &base.join("scratch-failure"),
+        Duration::from_secs(3),
+    )
+    .unwrap();
+    let evidence = run_host_conformance(
+        &failing,
+        &failing_candidate,
+        &failing_quarantine,
+        &failing_trust,
+        "host-build",
+    )
+    .unwrap();
+    assert_eq!(evidence.disposition, ConformanceDisposition::Failed);
+    let failed_pid = fs::read_to_string(failing.scratch_directory().join("m3-startup-child.pid"))
+        .unwrap()
+        .trim()
+        .parse::<u32>()
+        .unwrap();
+    assert_process_gone(failed_pid);
+    failing.cleanup_scratch().unwrap();
     fs::remove_dir_all(base).unwrap();
 }
 

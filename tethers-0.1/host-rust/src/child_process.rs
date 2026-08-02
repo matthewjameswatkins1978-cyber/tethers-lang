@@ -7,10 +7,12 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+#[cfg(not(windows))]
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -72,6 +74,84 @@ pub struct ChildConfig {
     pub process_memory_limit_bytes: usize,
 }
 
+#[cfg(windows)]
+struct ManagedChild {
+    process_handle: windows_sys::Win32::Foundation::HANDLE,
+    process_id: u32,
+}
+
+#[cfg(windows)]
+impl ManagedChild {
+    fn id(&self) -> u32 {
+        self.process_id
+    }
+
+    fn try_wait(&mut self) -> std::result::Result<Option<i32>, ()> {
+        use windows_sys::Win32::Foundation::STILL_ACTIVE;
+        use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+        let mut code = 0u32;
+        // SAFETY: process_handle is owned by this object until wait/Drop.
+        if unsafe { GetExitCodeProcess(self.process_handle, &mut code) } == 0 {
+            return Err(());
+        }
+        Ok((code != STILL_ACTIVE as u32).then_some(code as i32))
+    }
+
+    fn kill(&mut self) -> std::result::Result<(), ()> {
+        use windows_sys::Win32::System::Threading::TerminateProcess;
+        // SAFETY: process_handle is an owned valid process handle.
+        (unsafe { TerminateProcess(self.process_handle, 1) } != 0)
+            .then_some(())
+            .ok_or(())
+    }
+
+    fn wait(&mut self) -> std::result::Result<i32, ()> {
+        use windows_sys::Win32::System::Threading::{
+            GetExitCodeProcess, WaitForSingleObject, INFINITE,
+        };
+        // SAFETY: process_handle is owned and WaitForSingleObject accepts it.
+        unsafe { WaitForSingleObject(self.process_handle, INFINITE) };
+        let mut code = 0u32;
+        // SAFETY: process_handle remains valid until SupervisedChild cleanup.
+        if unsafe { GetExitCodeProcess(self.process_handle, &mut code) } == 0 {
+            return Err(());
+        }
+        Ok(code as i32)
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ManagedChild {
+    fn drop(&mut self) {
+        close_handle(self.process_handle);
+    }
+}
+
+#[cfg(not(windows))]
+struct ManagedChild(Child);
+
+#[cfg(not(windows))]
+impl ManagedChild {
+    fn id(&self) -> u32 {
+        self.0.id()
+    }
+    fn try_wait(&mut self) -> std::result::Result<Option<i32>, ()> {
+        self.0
+            .try_wait()
+            .map(|status| status.map(|status| status.code().unwrap_or(-1)))
+            .map_err(|_| ())
+    }
+    fn kill(&mut self) -> std::result::Result<(), ()> {
+        self.0.kill().map_err(|_| ())
+    }
+    fn wait(&mut self) -> std::result::Result<i32, ()> {
+        self.0
+            .wait()
+            .map(|status| status.code().unwrap_or(-1))
+            .map_err(|_| ())
+    }
+}
+
 impl Default for ChildConfig {
     fn default() -> Self {
         Self {
@@ -119,8 +199,8 @@ type LineResult = Result<String, ChildError>;
 
 /// Owned handle to a supervised child process.
 pub struct SupervisedChild {
-    child: Child,
-    stdin: Option<ChildStdin>,
+    child: ManagedChild,
+    stdin: Option<Box<dyn Write + Send>>,
     #[cfg(windows)]
     job_handle: windows_sys::Win32::Foundation::HANDLE,
     graceful_close_timeout: Duration,
@@ -230,51 +310,47 @@ impl SupervisedChild {
         let job_handle =
             create_job_object(config.max_processes, config.process_memory_limit_bytes)?;
 
-        let mut cmd = Command::new(&config.command);
-        cmd.args(&config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if config.clear_environment {
-            cmd.env_clear();
-        }
-        cmd.envs(&config.environment);
-        if let Some(ref dir) = config.current_dir {
-            cmd.current_dir(dir);
-        }
-
-        let mut child = cmd.spawn().map_err(|e| ChildError::LaunchFailed {
-            command: config.command.clone(),
-            message: e.to_string(),
-        })?;
-
-        // Assign to Job Object (fatal on failure).
+        // On Windows, creation is suspended until the new process is inside
+        // the Job Object. This closes the direct-child escape window where a
+        // provider could otherwise create a descendant before assignment.
         #[cfg(windows)]
-        {
-            use std::os::windows::io::AsRawHandle;
-            use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
-            let success = unsafe {
-                AssignProcessToJobObject(
-                    job_handle,
-                    child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE,
-                )
-            };
-            if success == 0 {
-                let _ = child.kill();
-                let _ = child.wait();
-                unsafe {
-                    use windows_sys::Win32::Foundation::CloseHandle;
-                    CloseHandle(job_handle);
-                }
-                return Err(ChildError::JobObjectFailed(
-                    "AssignProcessToJobObject failed".to_owned(),
-                ));
+        let (child, stdin, stdout, stderr_r) = match spawn_suspended_in_job(&config, job_handle) {
+            Ok(process) => process,
+            Err(error) => {
+                close_handle(job_handle);
+                return Err(error);
             }
-        }
+        };
 
-        let stdin = child.stdin.take().ok_or(ChildError::StdinUnavailable)?;
-        let stdout = child.stdout.take().ok_or(ChildError::StdoutUnavailable)?;
-        let stderr_r = child.stderr.take().ok_or(ChildError::StderrUnavailable)?;
+        #[cfg(not(windows))]
+        let (child, stdin, stdout, stderr_r) = {
+            let mut cmd = Command::new(&config.command);
+            cmd.args(&config.args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            if config.clear_environment {
+                cmd.env_clear();
+            }
+            cmd.envs(&config.environment);
+            if let Some(ref dir) = config.current_dir {
+                cmd.current_dir(dir);
+            }
+
+            let mut child = cmd.spawn().map_err(|e| ChildError::LaunchFailed {
+                command: config.command.clone(),
+                message: e.to_string(),
+            })?;
+            let stdin = child.stdin.take().ok_or(ChildError::StdinUnavailable)?;
+            let stdout = child.stdout.take().ok_or(ChildError::StdoutUnavailable)?;
+            let stderr_r = child.stderr.take().ok_or(ChildError::StderrUnavailable)?;
+            (
+                ManagedChild(child),
+                Box::new(stdin) as Box<dyn Write + Send>,
+                Box::new(stdout) as Box<dyn Read + Send>,
+                Box::new(stderr_r) as Box<dyn Read + Send>,
+            )
+        };
 
         // Spawn stdout reader thread.
         let max_line = config.max_protocol_line_bytes;
@@ -384,7 +460,7 @@ impl SupervisedChild {
                     // host handler publishes INTERRUPTED. Preserve interruption
                     // precedence through this small bounded observation window.
                     let ordinary_error = match self.child.try_wait() {
-                        Ok(Some(status)) => ChildError::ProcessExited(status.code().unwrap_or(-1)),
+                        Ok(Some(status)) => ChildError::ProcessExited(status),
                         _ => ChildError::ProtocolError(
                             "stdout reader disconnected unexpectedly".to_owned(),
                         ),
@@ -408,7 +484,7 @@ impl SupervisedChild {
             Err(mpsc::TryRecvError::Empty) => Ok(None),
             Err(mpsc::TryRecvError::Disconnected) => {
                 let ordinary_error = match self.child.try_wait() {
-                    Ok(Some(status)) => ChildError::ProcessExited(status.code().unwrap_or(-1)),
+                    Ok(Some(status)) => ChildError::ProcessExited(status),
                     _ => ChildError::ProtocolError(
                         "stdout reader disconnected unexpectedly".to_owned(),
                     ),
@@ -504,8 +580,8 @@ impl Drop for SupervisedChild {
 /// Read bytes from reader until newline or EOF, enforcing max size.
 /// Returns Ok(Some(line_bytes_without_newline)) on success,
 /// Ok(None) on EOF without data, or Err on error/overflow.
-fn read_until_newline(
-    reader: &mut BufReader<ChildStdout>,
+fn read_until_newline<R: BufRead>(
+    reader: &mut R,
     buf: &mut Vec<u8>,
     max_bytes: usize,
 ) -> Result<Option<Vec<u8>>, ChildError> {
@@ -585,6 +661,252 @@ fn read_until_newline(
             let _ = data_len;
         }
     }
+}
+
+#[cfg(windows)]
+fn quoted_windows_argument(value: &str) -> String {
+    if !value.is_empty()
+        && !value
+            .bytes()
+            .any(|byte| byte == b' ' || byte == b'\t' || byte == b'"')
+    {
+        return value.to_owned();
+    }
+    let mut quoted = String::from("\"");
+    let mut slashes = 0usize;
+    for character in value.chars() {
+        match character {
+            '\\' => slashes += 1,
+            '"' => {
+                quoted.push_str(&"\\".repeat(slashes.saturating_mul(2).saturating_add(1)));
+                quoted.push('"');
+                slashes = 0;
+            }
+            _ => {
+                quoted.push_str(&"\\".repeat(slashes));
+                quoted.push(character);
+                slashes = 0;
+            }
+        }
+    }
+    quoted.push_str(&"\\".repeat(slashes.saturating_mul(2)));
+    quoted.push('"');
+    quoted
+}
+
+#[cfg(windows)]
+fn nul_terminated_wide(value: &str, field: &str) -> Result<Vec<u16>, ChildError> {
+    if value.contains('\0') {
+        return Err(ChildError::LaunchFailed {
+            command: field.to_owned(),
+            message: "embedded NUL is not permitted".to_owned(),
+        });
+    }
+    Ok(value.encode_utf16().chain(std::iter::once(0)).collect())
+}
+
+#[cfg(windows)]
+fn windows_environment_block(config: &ChildConfig) -> Result<Option<Vec<u16>>, ChildError> {
+    if !config.clear_environment && config.environment.is_empty() {
+        return Ok(None);
+    }
+    let mut values = BTreeMap::<String, (String, String)>::new();
+    if !config.clear_environment {
+        for (name, value) in std::env::vars() {
+            values.insert(name.to_ascii_uppercase(), (name, value));
+        }
+    }
+    for (name, value) in &config.environment {
+        if name.is_empty() || name.contains('=') || name.contains('\0') || value.contains('\0') {
+            return Err(ChildError::LaunchFailed {
+                command: config.command.clone(),
+                message: "invalid environment entry".to_owned(),
+            });
+        }
+        values.insert(name.to_ascii_uppercase(), (name.clone(), value.clone()));
+    }
+    let mut block = Vec::new();
+    for (_, (name, value)) in values {
+        block.extend(format!("{name}={value}").encode_utf16());
+        block.push(0);
+    }
+    block.push(0);
+    Ok(Some(block))
+}
+
+#[cfg(windows)]
+fn close_handle(handle: windows_sys::Win32::Foundation::HANDLE) {
+    if !handle.is_null() && handle != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        // SAFETY: this helper is called only for owned Win32 handles and never twice.
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
+    }
+}
+
+#[cfg(windows)]
+fn spawn_suspended_in_job(
+    config: &ChildConfig,
+    job_handle: windows_sys::Win32::Foundation::HANDLE,
+) -> Result<
+    (
+        ManagedChild,
+        Box<dyn Write + Send>,
+        Box<dyn Read + Send>,
+        Box<dyn Read + Send>,
+    ),
+    ChildError,
+> {
+    use std::os::windows::io::FromRawHandle;
+    use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT};
+    use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+    use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, TerminateJobObject};
+    use windows_sys::Win32::System::Pipes::CreatePipe;
+    use windows_sys::Win32::System::Threading::{
+        CreateProcessW, ResumeThread, TerminateProcess, CREATE_SUSPENDED,
+        CREATE_UNICODE_ENVIRONMENT, PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOW,
+    };
+
+    let failure = |message: &str| ChildError::LaunchFailed {
+        command: config.command.clone(),
+        message: message.to_owned(),
+    };
+    let security = SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: std::ptr::null_mut(),
+        bInheritHandle: 1,
+    };
+    let (mut stdin_read, mut stdin_write) = (std::ptr::null_mut(), std::ptr::null_mut());
+    let (mut stdout_read, mut stdout_write) = (std::ptr::null_mut(), std::ptr::null_mut());
+    let (mut stderr_read, mut stderr_write) = (std::ptr::null_mut(), std::ptr::null_mut());
+    // SAFETY: the output pointers are valid owned local storage and the security
+    // descriptor remains live for each call.
+    let pipes_ready = unsafe {
+        CreatePipe(&mut stdin_read, &mut stdin_write, &security, 0) != 0
+            && CreatePipe(&mut stdout_read, &mut stdout_write, &security, 0) != 0
+            && CreatePipe(&mut stderr_read, &mut stderr_write, &security, 0) != 0
+    };
+    if !pipes_ready {
+        close_handle(stdin_read);
+        close_handle(stdin_write);
+        close_handle(stdout_read);
+        close_handle(stdout_write);
+        close_handle(stderr_read);
+        close_handle(stderr_write);
+        return Err(failure("CreatePipe failed"));
+    }
+    // SAFETY: the parent ends are valid handles. Clearing inheritance ensures
+    // only the three child ends cross the process boundary.
+    let parent_ends_private = unsafe {
+        SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0) != 0
+            && SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0) != 0
+            && SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0) != 0
+    };
+    if !parent_ends_private {
+        close_handle(stdin_read);
+        close_handle(stdin_write);
+        close_handle(stdout_read);
+        close_handle(stdout_write);
+        close_handle(stderr_read);
+        close_handle(stderr_write);
+        return Err(failure("SetHandleInformation failed"));
+    }
+    let application = nul_terminated_wide(&config.command, &config.command)?;
+    let command_line = std::iter::once(quoted_windows_argument(&config.command))
+        .chain(
+            config
+                .args
+                .iter()
+                .map(|argument| quoted_windows_argument(argument)),
+        )
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut command_line = nul_terminated_wide(&command_line, &config.command)?;
+    let current_directory = config
+        .current_dir
+        .as_ref()
+        .map(|path| nul_terminated_wide(&path.to_string_lossy(), &config.command))
+        .transpose()?;
+    let environment = windows_environment_block(config)?;
+    let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
+    startup.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = stdin_read;
+    startup.hStdOutput = stdout_write;
+    startup.hStdError = stderr_write;
+    let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: all UTF-16 buffers are NUL-terminated and live for this call;
+    // startup and process storage are correctly initialised; only child pipe
+    // endpoints are inheritable; CREATE_SUSPENDED prevents provider code from
+    // running until Job Object assignment succeeds.
+    let created = unsafe {
+        CreateProcessW(
+            application.as_ptr(),
+            command_line.as_mut_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            1,
+            CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+            environment
+                .as_ref()
+                .map_or(std::ptr::null(), |block| block.as_ptr() as *const _),
+            current_directory
+                .as_ref()
+                .map_or(std::ptr::null(), |path| path.as_ptr()),
+            &startup,
+            &mut process,
+        )
+    };
+    close_handle(stdin_read);
+    close_handle(stdout_write);
+    close_handle(stderr_write);
+    if created == 0 {
+        close_handle(stdin_write);
+        close_handle(stdout_read);
+        close_handle(stderr_read);
+        return Err(failure("CreateProcessW failed"));
+    }
+    // SAFETY: CreateProcessW returned owned process/thread handles. The process
+    // is still suspended, so no provider instruction has executed.
+    let assigned = unsafe { AssignProcessToJobObject(job_handle, process.hProcess) };
+    if assigned == 0 {
+        unsafe { TerminateProcess(process.hProcess, 1) };
+        close_handle(process.hThread);
+        close_handle(process.hProcess);
+        close_handle(stdin_write);
+        close_handle(stdout_read);
+        close_handle(stderr_read);
+        return Err(ChildError::JobObjectFailed(
+            "AssignProcessToJobObject failed".to_owned(),
+        ));
+    }
+    // SAFETY: the primary thread is suspended by CreateProcessW and belongs to
+    // the Job Object before this call. A u32::MAX return reports failure.
+    let resumed = unsafe { ResumeThread(process.hThread) };
+    close_handle(process.hThread);
+    if resumed == u32::MAX {
+        unsafe { TerminateJobObject(job_handle, 1) };
+        close_handle(process.hProcess);
+        close_handle(stdin_write);
+        close_handle(stdout_read);
+        close_handle(stderr_read);
+        return Err(ChildError::JobObjectFailed(
+            "ResumeThread failed".to_owned(),
+        ));
+    }
+    // SAFETY: ownership of these parent handles transfers exactly once to the
+    // standard-library process/pipe wrappers; child endpoints were closed above.
+    let child = ManagedChild {
+        process_handle: process.hProcess,
+        process_id: process.dwProcessId,
+    };
+    let stdin = unsafe { File::from_raw_handle(stdin_write as _) };
+    let stdout = unsafe { File::from_raw_handle(stdout_read as _) };
+    let stderr = unsafe { File::from_raw_handle(stderr_read as _) };
+    Ok((
+        child,
+        Box::new(stdin) as Box<dyn Write + Send>,
+        Box::new(stdout) as Box<dyn Read + Send>,
+        Box::new(stderr) as Box<dyn Read + Send>,
+    ))
 }
 
 #[cfg(windows)]
