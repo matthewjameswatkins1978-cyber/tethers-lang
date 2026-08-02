@@ -759,6 +759,97 @@ fn close_handle(handle: windows_sys::Win32::Foundation::HANDLE) {
     }
 }
 
+/// Owns the extended-startup handle allow-list for an M3 direct-provider launch.
+/// The value buffer must remain live through `CreateProcessW`; its destructor
+/// also guarantees `DeleteProcThreadAttributeList` on every return path.
+#[cfg(windows)]
+struct InheritedHandleList {
+    storage: Vec<usize>,
+    handles: Vec<windows_sys::Win32::Foundation::HANDLE>,
+    initialized: bool,
+}
+
+#[cfg(windows)]
+impl InheritedHandleList {
+    fn new(
+        handles: [windows_sys::Win32::Foundation::HANDLE; 3],
+        command: &str,
+    ) -> Result<Self, ChildError> {
+        use windows_sys::Win32::System::Threading::{
+            InitializeProcThreadAttributeList, UpdateProcThreadAttribute,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+        };
+
+        let mut bytes = 0usize;
+        // SAFETY: this sizing call deliberately has a null list pointer.
+        unsafe {
+            InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut bytes);
+        }
+        if bytes == 0 {
+            return Err(ChildError::LaunchFailed {
+                command: command.to_owned(),
+                message: "InitializeProcThreadAttributeList sizing failed".to_owned(),
+            });
+        }
+        let words = bytes.div_ceil(std::mem::size_of::<usize>());
+        let mut list = Self {
+            storage: vec![0; words],
+            handles: handles.to_vec(),
+            initialized: false,
+        };
+        let pointer = list.storage.as_mut_ptr()
+            as windows_sys::Win32::System::Threading::LPPROC_THREAD_ATTRIBUTE_LIST;
+        // SAFETY: the aligned storage is at least the size reported by Windows.
+        if unsafe { InitializeProcThreadAttributeList(pointer, 1, 0, &mut bytes) } == 0 {
+            return Err(ChildError::LaunchFailed {
+                command: command.to_owned(),
+                message: "InitializeProcThreadAttributeList failed".to_owned(),
+            });
+        }
+        list.initialized = true;
+        // SAFETY: the three handles are valid inheritable child pipe endpoints;
+        // the handle vector and attribute list outlive CreateProcessW.
+        if unsafe {
+            UpdateProcThreadAttribute(
+                pointer,
+                0,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+                list.handles.as_ptr() as *const std::ffi::c_void,
+                std::mem::size_of_val(list.handles.as_slice()),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            )
+        } == 0
+        {
+            return Err(ChildError::LaunchFailed {
+                command: command.to_owned(),
+                message: "UpdateProcThreadAttribute handle allow-list failed".to_owned(),
+            });
+        }
+        Ok(list)
+    }
+
+    fn pointer(&mut self) -> windows_sys::Win32::System::Threading::LPPROC_THREAD_ATTRIBUTE_LIST {
+        self.storage.as_mut_ptr()
+            as windows_sys::Win32::System::Threading::LPPROC_THREAD_ATTRIBUTE_LIST
+    }
+}
+
+#[cfg(windows)]
+impl Drop for InheritedHandleList {
+    fn drop(&mut self) {
+        if self.initialized {
+            // SAFETY: this is the one matching destructor call after successful
+            // InitializeProcThreadAttributeList for the owned storage.
+            unsafe {
+                windows_sys::Win32::System::Threading::DeleteProcThreadAttributeList(
+                    self.pointer(),
+                );
+            }
+        }
+    }
+}
+
 #[cfg(windows)]
 fn spawn_then_assign_to_job(
     config: &ChildConfig,
@@ -839,7 +930,8 @@ fn spawn_suspended_in_job(
     use windows_sys::Win32::System::Pipes::CreatePipe;
     use windows_sys::Win32::System::Threading::{
         CreateProcessW, ResumeThread, TerminateProcess, CREATE_SUSPENDED,
-        CREATE_UNICODE_ENVIRONMENT, PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOW,
+        CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
+        STARTF_USESTDHANDLES, STARTUPINFOEXW,
     };
 
     let failure = |message: &str| ChildError::LaunchFailed {
@@ -906,12 +998,26 @@ fn spawn_suspended_in_job(
         .map(|path| nul_terminated_wide(&path.to_string_lossy(), &config.command))
         .transpose()?;
     let environment = windows_environment_block(config)?;
-    let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
-    startup.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = stdin_read;
-    startup.hStdOutput = stdout_write;
-    startup.hStdError = stderr_write;
+    let mut inherited_handles =
+        match InheritedHandleList::new([stdin_read, stdout_write, stderr_write], &config.command) {
+            Ok(list) => list,
+            Err(error) => {
+                close_handle(stdin_read);
+                close_handle(stdin_write);
+                close_handle(stdout_read);
+                close_handle(stdout_write);
+                close_handle(stderr_read);
+                close_handle(stderr_write);
+                return Err(error);
+            }
+        };
+    let mut startup: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
+    startup.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = stdin_read;
+    startup.StartupInfo.hStdOutput = stdout_write;
+    startup.StartupInfo.hStdError = stderr_write;
+    startup.lpAttributeList = inherited_handles.pointer();
     let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
     // SAFETY: all UTF-16 buffers are NUL-terminated and live for this call;
     // startup and process storage are correctly initialised; only child pipe
@@ -926,14 +1032,14 @@ fn spawn_suspended_in_job(
             std::ptr::null(),
             std::ptr::null(),
             1,
-            CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+            CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
             environment
                 .as_ref()
                 .map_or(std::ptr::null(), |block| block.as_ptr() as *const _),
             current_directory
                 .as_ref()
                 .map_or(std::ptr::null(), |path| path.as_ptr()),
-            &startup,
+            &startup.StartupInfo,
             &mut process,
         )
     };

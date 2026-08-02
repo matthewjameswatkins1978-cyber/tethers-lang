@@ -27,6 +27,9 @@ use tethers_reference_host::trust::{
     PublisherTrustState, PublisherTrustStore, SignatureEnvelope,
 };
 use uuid::Uuid;
+use windows_sys::Win32::Foundation::CloseHandle;
+use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+use windows_sys::Win32::System::Threading::CreateEventW;
 
 fn make_writable(path: &Path) {
     let mut permissions = fs::metadata(path).unwrap().permissions();
@@ -78,6 +81,14 @@ fn fixture_manifest() -> Vec<u8> {
 }
 
 fn candidate_fixture(base: &Path, mode: &str) -> (CandidateRecord, PathBuf) {
+    candidate_fixture_with_extra_arguments(base, mode, Vec::new())
+}
+
+fn candidate_fixture_with_extra_arguments(
+    base: &Path,
+    mode: &str,
+    extra_arguments: Vec<String>,
+) -> (CandidateRecord, PathBuf) {
     let quarantine_root = base.join("quarantine");
     let candidate_relative = format!("candidate-{}", Uuid::new_v4());
     let candidate_dir = quarantine_root.join(&candidate_relative);
@@ -87,13 +98,14 @@ fn candidate_fixture(base: &Path, mode: &str) -> (CandidateRecord, PathBuf) {
     let executable = fs::read(env!("CARGO_BIN_EXE_m3_fixture_provider")).unwrap();
     let manifest = fixture_manifest();
     let manifest_digest = "sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b";
-    let arguments = vec![
+    let mut arguments = vec![
         "--mode".to_string(),
         mode.to_string(),
         "--ordered".to_string(),
         "first".to_string(),
         "second".to_string(),
     ];
+    arguments.extend(extra_arguments);
     let plug_value = serde_json::json!({
         "package_format_version":"1",
         "package_id":"tethers.fixture",
@@ -237,6 +249,8 @@ fn m3_candidate_to_installed_disabled_is_explicit_and_non_operational() {
         &candidate,
         &quarantine_root,
         &trust,
+        &trust_store,
+        &developer_store,
         "tethers-reference-host@0.2.0+m3",
     )
     .unwrap();
@@ -437,6 +451,8 @@ fn m3_trust_launch_and_conformance_evidence_cannot_cross_candidates() {
             &candidate_b,
             &quarantine_b,
             &trust_a,
+            &publishers,
+            &developers,
             "host-build",
         )
         .unwrap_err()
@@ -449,6 +465,8 @@ fn m3_trust_launch_and_conformance_evidence_cannot_cross_candidates() {
             &candidate_b,
             &quarantine_b,
             &trust_b,
+            &publishers,
+            &developers,
             "host-build",
         )
         .unwrap_err()
@@ -461,6 +479,8 @@ fn m3_trust_launch_and_conformance_evidence_cannot_cross_candidates() {
         &candidate_a,
         &quarantine_a,
         &trust_a,
+        &publishers,
+        &developers,
         "host-build",
     )
     .unwrap();
@@ -469,6 +489,8 @@ fn m3_trust_launch_and_conformance_evidence_cannot_cross_candidates() {
         &candidate_b,
         &quarantine_b,
         &trust_b,
+        &publishers,
+        &developers,
         "host-build",
     )
     .unwrap();
@@ -561,6 +583,7 @@ fn m3_immediate_startup_descendant_is_contained_by_suspended_job_assignment() {
     let base = root("startup-descendant");
     let (candidate, quarantine) = candidate_fixture(&base, "spawn-child");
     let developers = DeveloperApprovalStore::open(&base.join("developer-approvals")).unwrap();
+    let publishers = PublisherTrustStore::open(&base.join("publisher-trust")).unwrap();
     let trust = PackageTrustEvidence::unsigned(
         &developers
             .approve_exact_digest(&candidate.semantic_package_digest, "Matthew")
@@ -574,8 +597,16 @@ fn m3_immediate_startup_descendant_is_contained_by_suspended_job_assignment() {
         Duration::from_secs(3),
     )
     .unwrap();
-    let conformance =
-        run_host_conformance(&prepared, &candidate, &quarantine, &trust, "host-build").unwrap();
+    let conformance = run_host_conformance(
+        &prepared,
+        &candidate,
+        &quarantine,
+        &trust,
+        &publishers,
+        &developers,
+        "host-build",
+    )
+    .unwrap();
     assert_eq!(conformance.disposition, ConformanceDisposition::Passed);
     let pid = fs::read_to_string(prepared.scratch_directory().join("m3-startup-child.pid"))
         .unwrap()
@@ -605,6 +636,8 @@ fn m3_immediate_startup_descendant_is_contained_by_suspended_job_assignment() {
         &failing_candidate,
         &failing_quarantine,
         &failing_trust,
+        &publishers,
+        &developers,
         "host-build",
     )
     .unwrap();
@@ -620,9 +653,214 @@ fn m3_immediate_startup_descendant_is_contained_by_suspended_job_assignment() {
 }
 
 #[test]
+fn m3_current_signed_trust_is_revalidated_before_conformance_process_creation() {
+    let base = root("revoked-before-conformance");
+    let marker = base.join("provider-created.marker");
+    let (candidate, quarantine_root) = candidate_fixture_with_extra_arguments(
+        &base,
+        "valid",
+        vec![
+            "--provider-marker".into(),
+            marker.to_string_lossy().into_owned(),
+        ],
+    );
+    let signing_key = SigningKey::from_bytes(&[29u8; 32]);
+    let der = signing_key
+        .verifying_key()
+        .to_public_key_der()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let envelope = SignatureEnvelope {
+        signature_format_version: "1".into(),
+        algorithm: "ed25519".into(),
+        key_id: key_id_from_spki(&der).unwrap(),
+        semantic_package_digest: candidate.semantic_package_digest.clone(),
+        signature: URL_SAFE_NO_PAD.encode(
+            signing_key
+                .sign(&signing_input(&candidate.semantic_package_digest))
+                .to_bytes(),
+        ),
+    };
+    let verified = verify_signature_envelope(
+        &serde_json::to_vec(&envelope).unwrap(),
+        &candidate.semantic_package_digest,
+        &der,
+    )
+    .unwrap();
+    let publishers = PublisherTrustStore::open(&base.join("publisher-trust")).unwrap();
+    let trusted = publishers
+        .append(
+            &der,
+            "publisher:host-owned",
+            Some("tethers.".into()),
+            PublisherTrustState::Trusted,
+            "Matthew",
+            None,
+            None,
+        )
+        .unwrap();
+    let trust = PackageTrustEvidence::signed(&verified, &trusted).unwrap();
+    let developers = DeveloperApprovalStore::open(&base.join("developer-approvals")).unwrap();
+    let prepared = PreparedSupervisedLaunch::prepare(
+        &candidate,
+        &quarantine_root,
+        &base.join("scratch"),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+
+    publishers
+        .append(
+            &der,
+            "publisher:host-owned",
+            Some("tethers.".into()),
+            PublisherTrustState::Revoked,
+            "Matthew",
+            None,
+            Some("revoked before conformance".into()),
+        )
+        .unwrap();
+    assert_eq!(
+        run_host_conformance(
+            &prepared,
+            &candidate,
+            &quarantine_root,
+            &trust,
+            &publishers,
+            &developers,
+            "host-build",
+        )
+        .unwrap_err()
+        .code,
+        "trust_not_current"
+    );
+    assert!(
+        !marker.exists(),
+        "revoked trust must refuse before provider process or protocol traffic"
+    );
+    prepared.cleanup_scratch().unwrap();
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn m3_removed_or_corrupt_developer_approval_refuses_before_conformance_process_creation() {
+    for corruption in ["removed", "corrupt"] {
+        let base = root(&format!("developer-approval-{corruption}"));
+        let marker = base.join("provider-created.marker");
+        let (candidate, quarantine_root) = candidate_fixture_with_extra_arguments(
+            &base,
+            "valid",
+            vec![
+                "--provider-marker".into(),
+                marker.to_string_lossy().into_owned(),
+            ],
+        );
+        let publishers = PublisherTrustStore::open(&base.join("publisher-trust")).unwrap();
+        let developers = DeveloperApprovalStore::open(&base.join("developer-approvals")).unwrap();
+        let approval = developers
+            .approve_exact_digest(&candidate.semantic_package_digest, "Matthew")
+            .unwrap();
+        let trust = PackageTrustEvidence::unsigned(&approval).unwrap();
+        let prepared = PreparedSupervisedLaunch::prepare(
+            &candidate,
+            &quarantine_root,
+            &base.join("scratch"),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let approval_path = fs::read_dir(base.join("developer-approvals"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        if corruption == "removed" {
+            fs::remove_file(&approval_path).unwrap();
+        } else {
+            make_writable(&approval_path);
+            fs::write(&approval_path, b"corrupt developer approval").unwrap();
+        }
+        assert!(
+            run_host_conformance(
+                &prepared,
+                &candidate,
+                &quarantine_root,
+                &trust,
+                &publishers,
+                &developers,
+                "host-build",
+            )
+            .is_err(),
+            "{corruption} approval must refuse"
+        );
+        assert!(
+            !marker.exists(),
+            "{corruption} approval must refuse before provider process or protocol traffic"
+        );
+        prepared.cleanup_scratch().unwrap();
+        fs::remove_dir_all(base).unwrap();
+    }
+}
+
+#[test]
+fn m3_windows_handle_allow_list_excludes_unrelated_inheritable_handle() {
+    let base = root("handle-allow-list");
+    let security = SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: std::ptr::null_mut(),
+        bInheritHandle: 1,
+    };
+    // SAFETY: the test owns and closes this unnamed event handle after the
+    // fixture has attempted to inspect it inside the supervised child.
+    let canary = unsafe { CreateEventW(&security, 1, 0, std::ptr::null()) };
+    assert!(!canary.is_null(), "test canary event must be created");
+    let (candidate, quarantine_root) = candidate_fixture_with_extra_arguments(
+        &base,
+        "valid",
+        vec![
+            "--unrelated-inheritable-handle".into(),
+            (canary as isize).to_string(),
+        ],
+    );
+    let publishers = PublisherTrustStore::open(&base.join("publisher-trust")).unwrap();
+    let developers = DeveloperApprovalStore::open(&base.join("developer-approvals")).unwrap();
+    let trust = PackageTrustEvidence::unsigned(
+        &developers
+            .approve_exact_digest(&candidate.semantic_package_digest, "Matthew")
+            .unwrap(),
+    )
+    .unwrap();
+    let prepared = PreparedSupervisedLaunch::prepare(
+        &candidate,
+        &quarantine_root,
+        &base.join("scratch"),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let conformance = run_host_conformance(
+        &prepared,
+        &candidate,
+        &quarantine_root,
+        &trust,
+        &publishers,
+        &developers,
+        "host-build",
+    )
+    .unwrap();
+    assert_eq!(conformance.disposition, ConformanceDisposition::Passed);
+    // SAFETY: this process still owns the canary event and no child endpoint
+    // aliases it after the CreateProcessW allow-list launch has returned.
+    unsafe { CloseHandle(canary) };
+    prepared.cleanup_scratch().unwrap();
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
 fn m3_malformed_and_interrupted_conformance_fail_without_retry_or_install() {
     let base = root("conformance-refusal");
     let developer_store = DeveloperApprovalStore::open(&base.join("developer-approvals")).unwrap();
+    let publisher_store = PublisherTrustStore::open(&base.join("publisher-trust")).unwrap();
 
     let (malformed, malformed_root) = candidate_fixture(&base.join("malformed"), "malformed");
     let approval = developer_store
@@ -636,8 +874,16 @@ fn m3_malformed_and_interrupted_conformance_fail_without_retry_or_install() {
         Duration::from_secs(2),
     )
     .unwrap();
-    let evidence =
-        run_host_conformance(&prepared, &malformed, &malformed_root, &trust, "host-build").unwrap();
+    let evidence = run_host_conformance(
+        &prepared,
+        &malformed,
+        &malformed_root,
+        &trust,
+        &publisher_store,
+        &developer_store,
+        "host-build",
+    )
+    .unwrap();
     assert_eq!(evidence.disposition, ConformanceDisposition::Failed);
     assert_eq!(evidence.retry_count, 0);
     prepared.cleanup_scratch().unwrap();
@@ -680,8 +926,16 @@ fn m3_malformed_and_interrupted_conformance_fail_without_retry_or_install() {
             limit,
         )
         .unwrap();
-        let evidence =
-            run_host_conformance(&prepared, &candidate, &quarantine, &trust, "host-build").unwrap();
+        let evidence = run_host_conformance(
+            &prepared,
+            &candidate,
+            &quarantine,
+            &trust,
+            &publisher_store,
+            &developer_store,
+            "host-build",
+        )
+        .unwrap();
         assert_eq!(evidence.disposition, ConformanceDisposition::Failed);
         assert_eq!(evidence.retry_count, 0);
         assert_eq!(
@@ -716,6 +970,8 @@ fn m3_malformed_and_interrupted_conformance_fail_without_retry_or_install() {
         &paginated,
         &paginated_root,
         &paginated_trust,
+        &publisher_store,
+        &developer_store,
         "host-build",
     )
     .unwrap();
@@ -740,6 +996,8 @@ fn m3_malformed_and_interrupted_conformance_fail_without_retry_or_install() {
         &interrupted,
         &interrupted_root,
         &interrupted_trust,
+        &publisher_store,
+        &developer_store,
         "host-build",
     )
     .unwrap();
@@ -878,6 +1136,8 @@ fn m3_trust_revocation_after_approval_refuses_publication() {
         &candidate,
         &quarantine_root,
         &trust,
+        &trust_store,
+        &developer_store,
         "host-build",
     )
     .unwrap();

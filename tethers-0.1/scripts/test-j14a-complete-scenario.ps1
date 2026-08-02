@@ -78,6 +78,16 @@ function Get-FileHash-SHA256 {
     (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLower()
 }
 
+function Get-CargoLockHash {
+    param([string]$Path)
+    # Cargo.lock is tracked with LF. Normalize only its checkout conversion so
+    # this content-integrity sentinel remains stable under Windows core.autocrlf.
+    $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($Path))
+    $canonical = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($canonical)
+    ([System.Security.Cryptography.SHA256]::HashData($bytes) | ForEach-Object { $_.ToString("x2") }) -join ""
+}
+
 function Write-Text {
     param([string]$Path, [string]$Text)
     [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
@@ -148,7 +158,7 @@ if (-not (Test-Path -LiteralPath $FixtureProvider -PathType Leaf)) {
 
 # Verify Cargo.lock hash
 $cargoLockPath = Join-Path $HostDir "Cargo.lock"
-$cargoLockActual = (Get-FileHash -Path $cargoLockPath -Algorithm SHA256).Hash.ToLower()
+$cargoLockActual = Get-CargoLockHash $cargoLockPath
 if ($cargoLockActual -ne $CargoLockHash) {
     throw "Cargo.lock hash mismatch: expected $CargoLockHash, got $cargoLockActual"
 }
@@ -405,7 +415,7 @@ try {
         Assert-Equal (Get-FileHash-SHA256 $CommittedTemplate) $hashTemplateStart "runtime.template.json hash unchanged"
         Assert-Equal (Get-FileHash-SHA256 $CommittedReadme) $hashReadmeStart "README.md hash unchanged"
 
-        $cargoLockNow = (Get-FileHash -Path $cargoLockPath -Algorithm SHA256).Hash.ToLower()
+        $cargoLockNow = Get-CargoLockHash $cargoLockPath
         Assert-Equal $cargoLockNow $CargoLockHash "Cargo.lock hash unchanged"
 
         $gitStatusNow = Get-RepoGitStatus

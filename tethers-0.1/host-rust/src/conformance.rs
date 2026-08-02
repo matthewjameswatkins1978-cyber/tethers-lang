@@ -7,7 +7,7 @@ use crate::launch_profile::{
 use crate::m3_store::{canonical, sha256, strict_json, unix_ms, M3Error, Result, StoreRoot};
 use crate::manifest;
 use crate::package::{CapabilityEvidence, PayloadEvidence};
-use crate::trust::PackageTrustEvidence;
+use crate::trust::{DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore};
 use crate::validation;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -268,6 +268,8 @@ pub fn run_host_conformance(
     candidate: &CandidateRecord,
     quarantine_root: &Path,
     trust: &PackageTrustEvidence,
+    publisher_trust: &PublisherTrustStore,
+    developer_approvals: &DeveloperApprovalStore,
     host_build_identity: &str,
 ) -> Result<ConformanceEvidence> {
     let started = unix_ms()?;
@@ -277,8 +279,12 @@ pub fn run_host_conformance(
     cases.push(passed("static_candidate_revalidation"));
     trust.require_for_candidate(candidate)?;
     prepared.evidence.require_for_candidate(candidate)?;
+    // This deliberately reopens host-owned authority after candidate
+    // revalidation and immediately before the process boundary. Historical
+    // PackageTrustEvidence is never current launch authority.
+    prepared.revalidate_current_trust(candidate, trust, publisher_trust, developer_approvals)?;
     let mut child = prepared
-        .launch_for_candidate(candidate)
+        .launch_for_candidate(candidate, trust, publisher_trust, developer_approvals)
         .map_err(|error| M3Error::new("conformance_launch", error.to_string()))?;
     cases.push(passed("exact_launch_clean_environment"));
     let deadline =
@@ -453,6 +459,24 @@ pub fn run_host_conformance(
                 return Err(M3Error::new(
                     "fixture_environment",
                     "clean environment allow-list differs",
+                ));
+            }
+            if valid
+                .pointer(
+                    "/result/tethersFixtureEvidence/unrelated_inheritable_handle_canary_requested",
+                )
+                .and_then(Value::as_bool)
+                == Some(true)
+                && valid
+                    .pointer(
+                        "/result/tethersFixtureEvidence/unrelated_inheritable_handle_accessible",
+                    )
+                    .and_then(Value::as_bool)
+                    != Some(false)
+            {
+                return Err(M3Error::new(
+                    "launch_handle_leak",
+                    "provider accessed an unrelated inheritable host handle",
                 ));
             }
             cases.push(passed("bounded_valid_fixture_call"));

@@ -49,7 +49,13 @@ function Get-RepoGitStatus {
 }
 
 function Get-CargoLockHash {
-    (Get-FileHash -Path (Join-Path $HostDir "Cargo.lock") -Algorithm SHA256).Hash.ToLower()
+    # Cargo.lock is tracked with LF. Normalize only its checkout conversion so
+    # this content-integrity sentinel remains stable under Windows core.autocrlf.
+    $path = Join-Path $HostDir "Cargo.lock"
+    $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($path))
+    $canonical = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($canonical)
+    ([System.Security.Cryptography.SHA256]::HashData($bytes) | ForEach-Object { $_.ToString("x2") }) -join ""
 }
 
 function Assert-RepositoryIntegrity {

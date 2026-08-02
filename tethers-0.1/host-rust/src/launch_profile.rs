@@ -9,6 +9,7 @@ use crate::m3_store::{
     canonical, reject_reparse, sha256, verify_chain, M3Error, Result, StoreRoot,
 };
 use crate::package::PayloadEvidence;
+use crate::trust::{DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -221,6 +222,23 @@ fn approved_environment(scratch: &Path) -> Result<BTreeMap<String, String>> {
 }
 
 impl PreparedSupervisedLaunch {
+    pub(crate) fn revalidate_current_trust(
+        &self,
+        candidate: &CandidateRecord,
+        trust: &PackageTrustEvidence,
+        publisher_trust: &PublisherTrustStore,
+        developer_approvals: &DeveloperApprovalStore,
+    ) -> Result<()> {
+        self.evidence.require_for_candidate(candidate)?;
+        trust.require_for_candidate(candidate)?;
+        trust.revalidate_current(
+            &candidate.package_id,
+            publisher_trust,
+            developer_approvals,
+            crate::m3_store::unix_ms()?,
+        )
+    }
+
     pub fn prepare(
         record: &CandidateRecord,
         quarantine_root: &Path,
@@ -300,9 +318,11 @@ impl PreparedSupervisedLaunch {
     pub(crate) fn launch_for_candidate(
         &self,
         candidate: &CandidateRecord,
+        trust: &PackageTrustEvidence,
+        publisher_trust: &PublisherTrustStore,
+        developer_approvals: &DeveloperApprovalStore,
     ) -> std::result::Result<SupervisedChild, ChildError> {
-        self.evidence
-            .require_for_candidate(candidate)
+        self.revalidate_current_trust(candidate, trust, publisher_trust, developer_approvals)
             .map_err(|error| ChildError::LaunchFailed {
                 command: self.executable.to_string_lossy().into_owned(),
                 message: format!("{}: {}", error.code, error.message),

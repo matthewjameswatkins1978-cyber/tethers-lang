@@ -56,6 +56,15 @@ function Get-FileHash-SHA256 {
     param([string]$Path)
     (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLower()
 }
+function Get-CargoLockHash {
+    param([string]$Path)
+    # Cargo.lock is tracked with LF. Normalize only its checkout conversion so
+    # this content-integrity sentinel remains stable under Windows core.autocrlf.
+    $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($Path))
+    $canonical = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($canonical)
+    ([System.Security.Cryptography.SHA256]::HashData($bytes) | ForEach-Object { $_.ToString("x2") }) -join ""
+}
 function Write-Utf8NoBom {
     param([string]$Path, [string]$Text)
     [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
@@ -129,7 +138,7 @@ if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) { throw "Manifes
 if (-not (Test-Path -LiteralPath $ProviderScript -PathType Leaf)) { throw "Provider script missing: $ProviderScript" }
 
 $cargoLockPath = Join-Path $RepoRoot "host-rust\Cargo.lock"
-$cargoLockHash = (Get-FileHash -Path $cargoLockPath -Algorithm SHA256).Hash.ToLower()
+$cargoLockHash = Get-CargoLockHash $cargoLockPath
 $ExpectedCargoLockHash = "4238151009218547ce20e9686c2a8cf12d321e31998b35e1d087b10d0ce674d7"
 if ($cargoLockHash -ne $ExpectedCargoLockHash) { throw "Cargo.lock hash mismatch: $cargoLockHash" }
 
@@ -518,7 +527,7 @@ try {
     Assert-Equal (Get-FileHash-SHA256 $CommittedTether) $hashTetherStart "$nonMutationPrefix tether hash unchanged"
     Assert-Equal (Get-FileHash-SHA256 $CommittedInput) $hashInputStart "$nonMutationPrefix input hash unchanged"
     Assert-Equal (Get-FileHash-SHA256 $CommittedTemplate) $hashTemplateStart "$nonMutationPrefix template hash unchanged"
-    $cargoLockNow = (Get-FileHash -Path $cargoLockPath -Algorithm SHA256).Hash.ToLower()
+    $cargoLockNow = Get-CargoLockHash $cargoLockPath
     Assert-Equal $cargoLockNow $ExpectedCargoLockHash "$nonMutationPrefix Cargo.lock hash unchanged"
 
     # ------------------------------------------------------------------

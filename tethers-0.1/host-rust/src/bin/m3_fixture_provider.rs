@@ -4,6 +4,34 @@ use serde_json::{json, Value};
 use std::io::{self, BufRead};
 use std::process::Command;
 
+fn argument_value<'a>(arguments: &'a [String], name: &str) -> Option<&'a str> {
+    arguments
+        .windows(2)
+        .find(|pair| pair[0] == name)
+        .map(|pair| pair[1].as_str())
+}
+
+fn unrelated_inheritable_handle_accessible(arguments: &[String]) -> Option<bool> {
+    let raw = argument_value(arguments, "--unrelated-inheritable-handle")?;
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::GetHandleInformation;
+        use windows_sys::Win32::Foundation::HANDLE;
+        let Ok(raw) = raw.parse::<isize>() else {
+            return Some(false);
+        };
+        let mut flags = 0u32;
+        // SAFETY: the fixture only asks Windows whether the supplied numeric
+        // value names an inherited handle in this provider process.
+        return Some(unsafe { GetHandleInformation(raw as HANDLE, &mut flags) != 0 });
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = raw;
+        Some(false)
+    }
+}
+
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
     let mode = arguments
@@ -11,6 +39,10 @@ fn main() {
         .find(|pair| pair[0] == "--mode")
         .map(|pair| pair[1].as_str())
         .unwrap_or("valid");
+    if let Some(marker) = argument_value(&arguments, "--provider-marker") {
+        let _ = std::fs::write(marker, b"provider process created");
+    }
+    let handle_canary_accessible = unrelated_inheritable_handle_accessible(&arguments);
     let startup_child = if mode.starts_with("spawn-child") {
         let child = Command::new("cmd")
             .args(["/c", "ping", "-t", "127.0.0.1"])
@@ -106,7 +138,9 @@ fn main() {
                             "startup_child_pid":startup_child.as_ref().map(std::process::Child::id),
                             "arguments":arguments,
                             "working_directory":std::env::current_dir().ok().map(|path| path.to_string_lossy().into_owned()),
-                            "environment_names":std::env::vars_os().map(|(name, _)| name.to_string_lossy().into_owned()).collect::<Vec<_>>()
+                            "environment_names":std::env::vars_os().map(|(name, _)| name.to_string_lossy().into_owned()).collect::<Vec<_>>(),
+                            "unrelated_inheritable_handle_canary_requested":handle_canary_accessible.is_some(),
+                            "unrelated_inheritable_handle_accessible":handle_canary_accessible
                         },
                         "isError":invalid
                     }
