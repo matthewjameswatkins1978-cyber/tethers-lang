@@ -6,7 +6,7 @@
 
 use serde_json::{json, Map, Value};
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ pub const METADATA_CAPABILITY: &str = "file.metadata";
 pub const MOVE_CAPABILITY: &str = "file.move";
 pub const METADATA_OPERATION: &str = "file_metadata";
 pub const MOVE_OPERATION: &str = "file_move";
+pub const METADATA_V2_OPERATION: &str = "file_metadata_v2";
 pub const MAX_CONTENT_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -55,11 +56,18 @@ impl OperationalScopeBinding {
             authority: authority.into(),
             integrity_digest: String::new(),
         };
-        let roots = [&binding.query_root, &binding.move_source_root, &binding.move_destination_root];
+        let roots = [
+            &binding.query_root,
+            &binding.move_source_root,
+            &binding.move_destination_root,
+        ];
         for (index, root) in roots.iter().enumerate() {
             for other in roots.iter().skip(index + 1) {
                 if root == other || root.starts_with(other) || other.starts_with(root) {
-                    return Err(FileToolsError::new("scope_invalid", "operational roots must be distinct and non-nested"));
+                    return Err(FileToolsError::new(
+                        "scope_invalid",
+                        "operational roots must be distinct and non-nested",
+                    ));
                 }
             }
         }
@@ -388,6 +396,123 @@ pub fn move_file(scope: &FileScope, arguments: &Value) -> Result<Value, FileTool
     )
 }
 
+pub fn metadata_v2(scope: &FileScope, arguments: &Value) -> Result<Value, FileToolsError> {
+    let object = arguments
+        .as_object()
+        .ok_or_else(|| FileToolsError::new("arguments_invalid", "arguments must be an object"))?;
+    let allowed: &[&str] = &["path", "compute_hash"];
+    if object.iter().any(|(k, _)| !allowed.contains(&k.as_str())) || !object.contains_key("path") {
+        return Err(FileToolsError::new(
+            "arguments_invalid",
+            "unknown or missing file.metadata argument",
+        ));
+    }
+    let compute_hash = object
+        .get("compute_hash")
+        .map(|v| {
+            v.as_bool().ok_or_else(|| {
+                FileToolsError::new("arguments_invalid", "compute_hash must be boolean")
+            })
+        })
+        .transpose()?
+        .unwrap_or(false);
+    let (relative, path) = scoped_path(&scope.query_root, object.get("path").unwrap(), "path")?;
+    let file_meta =
+        fs::metadata(&path).map_err(|e| FileToolsError::new("file_unavailable", e.to_string()))?;
+    let file_type = file_meta.file_type();
+    let kind = if file_type.is_file() {
+        "file"
+    } else if file_type.is_dir() {
+        "directory"
+    } else {
+        "other"
+    };
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| FileToolsError::new("path_invalid", "unable to extract filename"))?;
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+    let size_bytes: Option<u64> = if file_type.is_file() {
+        Some(file_meta.len())
+    } else {
+        None
+    };
+    let modified_unix_ms = file_meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+    let created_unix_ms = file_meta
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+    let read_only = file_meta.permissions().readonly();
+    let hidden = is_hidden(&path);
+    let sha256: Option<String> = if compute_hash && file_type.is_file() {
+        Some(compute_sha256_string(&path)?)
+    } else if compute_hash && !file_type.is_file() {
+        return Err(FileToolsError::new(
+            "wrong_type",
+            "hashing requires a regular file",
+        ));
+    } else {
+        None
+    };
+    Ok(json!({
+        "path": relative,
+        "name": name,
+        "extension": extension,
+        "kind": kind,
+        "size_bytes": size_bytes,
+        "modified_unix_ms": modified_unix_ms,
+        "created_unix_ms": created_unix_ms,
+        "read_only": read_only,
+        "hidden": hidden,
+        "sha256": sha256
+    }))
+}
+
+#[cfg(windows)]
+fn is_hidden(path: &std::path::Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileAttributesW, FILE_ATTRIBUTE_HIDDEN, INVALID_FILE_ATTRIBUTES,
+    };
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let attributes = unsafe { GetFileAttributesW(wide.as_ptr()) };
+    attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_HIDDEN) != 0
+}
+
+#[cfg(not(windows))]
+fn is_hidden(path: &std::path::Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.starts_with('.'))
+        .unwrap_or(false)
+}
+
+fn compute_sha256_string(path: &std::path::Path) -> Result<String, FileToolsError> {
+    use sha2::{Digest, Sha256};
+    let mut file =
+        fs::File::open(path).map_err(|e| FileToolsError::new("file_read_failed", e.to_string()))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| FileToolsError::new("file_read_failed", e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
 pub fn metadata_input_schema() -> Value {
     json!({"type":"object","properties":{"path":{"type":"string"},"include_content":{"type":"boolean"}},"required":["path","include_content"],"additionalProperties":false})
 }
@@ -415,6 +540,21 @@ pub fn move_manifest_without_digest() -> Value {
     json!({"manifest_format_version":"1.0","capability_name":MOVE_CAPABILITY,"capability_version":1,"title":"Exact File Move","description":"Move one regular file between two host-approved roots without overwrite.","input_schema":move_input_schema(),"output_schema":move_output_schema(),"effects":["data.read","data.move"],"permission_scope":{"kind":"path_prefix","allowed_prefixes":["source/","destination/"]},"reversibility":"compensatable","determinism":"deterministic","idempotency":{"mechanism":"none"},"confirmation_policy":{"standing_permitted":true,"per_call_required":false},"timeout_ms":5000,"retry_policy":{"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":true},"provider":{"identity":"tethers-file-tools","display_name":"Tethers File Tools","identity_source":"host_configuration","description":"Credential-free local reference provider."},"binding":{"kind":"mcp","server_name":"tethers-file-tools","tool_name":MOVE_OPERATION,"adapter":null}})
 }
 
+pub fn metadata_v2_input_schema() -> Value {
+    json!({"type":"object","properties":{"path":{"type":"string"},"compute_hash":{"type":"boolean"}},"required":["path"],"additionalProperties":false})
+}
+
+pub fn metadata_v2_output_schema() -> Value {
+    json!({"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string"},"extension":{"type":["string","null"]},"kind":{"type":"string","enum":["file","directory","other"]},"size_bytes":{"type":["integer","null"],"minimum":0},"modified_unix_ms":{"type":["integer","null"]},"created_unix_ms":{"type":["integer","null"]},"read_only":{"type":"boolean"},"hidden":{"type":"boolean"},"sha256":{"type":["string","null"],"pattern":"^sha256:[a-f0-9]{64}$"}},"required":["path","name","extension","kind","size_bytes","modified_unix_ms","created_unix_ms","read_only","hidden","sha256"],"additionalProperties":false})
+}
+
+/// Machine-readable contract projection for file.metadata version 2.
+/// The returned value deliberately omits `digest`; callers compute and insert the
+/// JCS digest after all authoritative fields are frozen.
+pub fn metadata_v2_manifest_without_digest() -> Value {
+    json!({"manifest_format_version":"1.0","capability_name":METADATA_CAPABILITY,"capability_version":2,"title":"File Properties Reception Desk","description":"Fast filesystem object identification and cheap property inspection without reading file contents unless a hash is explicitly requested.","input_schema":metadata_v2_input_schema(),"output_schema":metadata_v2_output_schema(),"effects":["metadata.read"],"permission_scope":{"kind":"path_prefix","allowed_prefixes":["query/"]},"reversibility":"reversible","determinism":"deterministic","idempotency":{"mechanism":"none"},"confirmation_policy":{"standing_permitted":true,"per_call_required":false},"timeout_ms":5000,"retry_policy":{"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":false},"provider":{"identity":"tethers-file-tools","display_name":"Tethers File Tools","identity_source":"host_configuration","description":"Credential-free local reference provider."},"binding":{"kind":"mcp","server_name":"tethers-file-tools","tool_name":METADATA_V2_OPERATION,"adapter":null}})
+}
+
 pub fn manifest_with_digest(mut manifest: Value) -> Result<Value, FileToolsError> {
     let mut covered = manifest.clone();
     let covered_object = covered
@@ -440,15 +580,19 @@ pub fn build_reference_package(provider_bytes: &[u8]) -> Result<Vec<u8>, FileToo
     use sha2::{Digest, Sha256};
     let metadata = serde_json::to_vec(&manifest_with_digest(metadata_manifest_without_digest())?)
         .map_err(|e| FileToolsError::new("package_invalid", e.to_string()))?;
+    let metadata_v2 =
+        serde_json::to_vec(&manifest_with_digest(metadata_v2_manifest_without_digest())?)
+            .map_err(|e| FileToolsError::new("package_invalid", e.to_string()))?;
     let movement = serde_json::to_vec(&manifest_with_digest(move_manifest_without_digest())?)
         .map_err(|e| FileToolsError::new("package_invalid", e.to_string()))?;
     let digest = |bytes: &[u8]| format!("sha256:{:x}", Sha256::digest(bytes));
+    let v2_manifest = manifest_with_digest(metadata_v2_manifest_without_digest())?;
     let plug = json!({
         "package_format_version":"1","package_id":"tethers.file-tools","package_version":"1.0.0","display_name":"Tethers File Tools","description":"Credential-free bounded local File Tools reference Plug","publisher":"Tethers reference material","licence":"MIT","socket_major":1,
         "protocol_bindings":[{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],"platforms":[{"os":"windows","architecture":"x86_64"}],
         "provider":{"provider_id":"tethers-file-tools","provider_version":"1.0.0","launch":{"path":"provider/file_tools_provider.exe","arguments":["--query-root","__TETHERS_FILE_QUERY_ROOT__","--source-root","__TETHERS_FILE_SOURCE_ROOT__","--destination-root","__TETHERS_FILE_DESTINATION_ROOT__"]},"working_directory":"provider","capability_operation_namespace":"file"},
-        "capabilities":[{"capability_name":"file.metadata","capability_version":1,"manifest_path":"manifests/file-metadata-local.json","manifest_digest":"sha256:369f4034f702847bb82d1ef82e93f2c5661cad4ad2d7496c3685b406747db09a","provider_operation_name":"file_metadata"},{"capability_name":"file.move","capability_version":1,"manifest_path":"manifests/file-move-m4.json","manifest_digest":"sha256:2ac3793d4b61725fd130dac531d9690b93881341245f0c2f7c3aca2fd2dd2311","provider_operation_name":"file_move"}],
-        "payload_index":[{"path":"manifests/file-metadata-local.json","sha256":digest(&metadata),"size_bytes":metadata.len(),"role":"capability_manifest"},{"path":"manifests/file-move-m4.json","sha256":digest(&movement),"size_bytes":movement.len(),"role":"capability_manifest"},{"path":"provider/file_tools_provider.exe","sha256":digest(provider_bytes),"size_bytes":provider_bytes.len(),"role":"provider_executable"}]
+        "capabilities":[{"capability_name":"file.metadata","capability_version":1,"manifest_path":"manifests/file-metadata-local.json","manifest_digest":"sha256:369f4034f702847bb82d1ef82e93f2c5661cad4ad2d7496c3685b406747db09a","provider_operation_name":"file_metadata"},{"capability_name":"file.metadata","capability_version":2,"manifest_path":"manifests/file-metadata-v2.json","manifest_digest":v2_manifest["digest"].as_str().unwrap(),"provider_operation_name":"file_metadata_v2"},{"capability_name":"file.move","capability_version":1,"manifest_path":"manifests/file-move-m4.json","manifest_digest":"sha256:2ac3793d4b61725fd130dac531d9690b93881341245f0c2f7c3aca2fd2dd2311","provider_operation_name":"file_move"}],
+        "payload_index":[{"path":"manifests/file-metadata-local.json","sha256":digest(&metadata),"size_bytes":metadata.len(),"role":"capability_manifest"},{"path":"manifests/file-metadata-v2.json","sha256":digest(&metadata_v2),"size_bytes":metadata_v2.len(),"role":"capability_manifest"},{"path":"manifests/file-move-m4.json","sha256":digest(&movement),"size_bytes":movement.len(),"role":"capability_manifest"},{"path":"provider/file_tools_provider.exe","sha256":digest(provider_bytes),"size_bytes":provider_bytes.len(),"role":"provider_executable"}]
     });
     let plug_bytes = serde_json_canonicalizer::to_vec(&plug)
         .map_err(|e| FileToolsError::new("package_invalid", e.to_string()))?;
@@ -460,6 +604,7 @@ pub fn build_reference_package(provider_bytes: &[u8]) -> Result<Vec<u8>, FileToo
     for (path, bytes) in [
         ("plug.json", plug_bytes.as_slice()),
         ("manifests/file-metadata-local.json", metadata.as_slice()),
+        ("manifests/file-metadata-v2.json", metadata_v2.as_slice()),
         ("manifests/file-move-m4.json", movement.as_slice()),
         ("provider/file_tools_provider.exe", provider_bytes),
     ] {
@@ -543,8 +688,9 @@ impl FileToolsExecutor {
             .iter()
             .filter_map(|tool| tool.get("name").and_then(Value::as_str))
             .collect::<std::collections::BTreeSet<_>>();
-        if names.len() != 2
+        if names.len() != 3
             || !names.contains(METADATA_OPERATION)
+            || !names.contains(METADATA_V2_OPERATION)
             || !names.contains(MOVE_OPERATION)
         {
             provider.shutdown();
@@ -577,7 +723,10 @@ impl FileToolsExecutor {
     }
 
     pub fn call(&mut self, operation: &str, arguments: &Value) -> Result<Value, FileToolsError> {
-        if operation != METADATA_OPERATION && operation != MOVE_OPERATION {
+        if operation != METADATA_OPERATION
+            && operation != METADATA_V2_OPERATION
+            && operation != MOVE_OPERATION
+        {
             return Err(FileToolsError::new(
                 "provider_drift",
                 "operation is not reviewed",
@@ -710,19 +859,25 @@ mod tests {
     fn committed_contract_projections_are_valid_manifests() {
         for manifest in [
             metadata_manifest_without_digest(),
+            metadata_v2_manifest_without_digest(),
             move_manifest_without_digest(),
         ] {
             let manifest = manifest_with_digest(manifest).unwrap();
             let text = serde_json::to_string(&manifest).unwrap();
             let verified = crate::manifest::verify_manifest(&text).unwrap();
             println!(
-                "{} {}",
+                "{}@{} {}",
                 verified.capability_name(),
+                verified.capability_version(),
                 verified.verified_digest()
             );
         }
         let metadata = crate::manifest::verify_manifest(include_str!(
             "../../protocol/capability-manifests/file-metadata-local.json"
+        ))
+        .unwrap();
+        let metadata_v2 = crate::manifest::verify_manifest(include_str!(
+            "../../protocol/capability-manifests/file-metadata-v2.json"
         ))
         .unwrap();
         let movement = crate::manifest::verify_manifest(include_str!(
@@ -733,6 +888,8 @@ mod tests {
             metadata.verified_digest(),
             "sha256:369f4034f702847bb82d1ef82e93f2c5661cad4ad2d7496c3685b406747db09a"
         );
+        assert_eq!(metadata_v2.capability_name(), METADATA_CAPABILITY);
+        assert_eq!(metadata_v2.capability_version(), 2);
         assert_eq!(
             movement.verified_digest(),
             "sha256:2ac3793d4b61725fd130dac531d9690b93881341245f0c2f7c3aca2fd2dd2311"
@@ -751,7 +908,253 @@ mod tests {
         fs::write(&archive, first).unwrap();
         let report = crate::package::inspect(&archive).unwrap();
         assert_eq!(report.package.package_id, "tethers.file-tools");
-        assert_eq!(report.capabilities.len(), 2);
+        assert_eq!(report.capabilities.len(), 3);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_reports_kind_file() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("data.txt"), b"content").unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"data.txt"})).unwrap();
+        assert_eq!(result["kind"], "file");
+        assert_eq!(result["name"], "data.txt");
+        assert_eq!(result["extension"], "txt");
+        assert!(result["size_bytes"].as_u64().is_some());
+        assert!(result["modified_unix_ms"].as_i64().is_some());
+        assert!(result["sha256"].is_null());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_reports_kind_directory() {
+        let (root, scope) = scope();
+        let dir = scope.query_root.join("subdir");
+        fs::create_dir(&dir).unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"subdir"})).unwrap();
+        assert_eq!(result["kind"], "directory");
+        assert_eq!(result["name"], "subdir");
+        assert!(result["extension"].is_null());
+        assert!(result["size_bytes"].is_null());
+        assert!(result["sha256"].is_null());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_extension_lowercase_no_dot() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("Readme.MD"), b"hello").unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"Readme.MD"})).unwrap();
+        assert_eq!(result["extension"], "md");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_no_extension_returns_null() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("Makefile"), b"all:").unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"Makefile"})).unwrap();
+        assert!(result["extension"].is_null());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_size_null_for_directory() {
+        let (root, scope) = scope();
+        let dir = scope.query_root.join("emptydir");
+        fs::create_dir(&dir).unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"emptydir"})).unwrap();
+        assert!(result["size_bytes"].is_null());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_size_exact_for_file() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("exact.bin"), b"1234567890").unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"exact.bin"})).unwrap();
+        assert_eq!(result["size_bytes"], 10);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_modified_time_present() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("mod.txt"), b"x").unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"mod.txt"})).unwrap();
+        let ms = result["modified_unix_ms"].as_i64().unwrap();
+        assert!(ms > 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_created_time_valid_or_null() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("created.txt"), b"x").unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"created.txt"})).unwrap();
+        if let Some(ms) = result["created_unix_ms"].as_i64() {
+            assert!(ms > 0);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_compute_hash_omitted_defaults_false() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("default.txt"), b"hello").unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"default.txt"})).unwrap();
+        assert!(result["sha256"].is_null());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_compute_hash_false_returns_null() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("nohash.txt"), b"world").unwrap();
+        let result =
+            metadata_v2(&scope, &json!({"path":"nohash.txt","compute_hash":false})).unwrap();
+        assert!(result["sha256"].is_null());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_compute_hash_true_returns_deterministic_sha256() {
+        let (root, scope) = scope();
+        fs::write(scope.query_root.join("hashme.txt"), b"deterministic").unwrap();
+        let result =
+            metadata_v2(&scope, &json!({"path":"hashme.txt","compute_hash":true})).unwrap();
+        let sha = result["sha256"].as_str().unwrap();
+        assert!(sha.starts_with("sha256:"));
+        assert_eq!(sha.len(), 71);
+        assert_eq!(
+            sha,
+            "sha256:0badac3c6df445ad3aea62da1350683923aba37c685978afed96a515d12921a3"
+        );
+        let second =
+            metadata_v2(&scope, &json!({"path":"hashme.txt","compute_hash":true})).unwrap();
+        assert_eq!(result["sha256"], second["sha256"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_hash_directory_refused() {
+        let (root, scope) = scope();
+        let dir = scope.query_root.join("hashdir");
+        fs::create_dir(&dir).unwrap();
+        let err = metadata_v2(&scope, &json!({"path":"hashdir","compute_hash":true})).unwrap_err();
+        assert_eq!(err.code, "wrong_type");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_missing_path_refused() {
+        let (root, scope) = scope();
+        let err = metadata_v2(&scope, &json!({"path":"noexist.txt"})).unwrap_err();
+        assert_eq!(err.code, "path_unavailable");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_scope_violation_refused() {
+        let (root, scope) = scope();
+        let err = metadata_v2(&scope, &json!({"path":"../escape.txt"})).unwrap_err();
+        assert_eq!(err.code, "path_invalid");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_traversal_refused() {
+        let (root, scope) = scope();
+        let err = metadata_v2(&scope, &json!({"path":"a/../../escape.txt"})).unwrap_err();
+        assert_eq!(err.code, "path_invalid");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_unknown_field_refused() {
+        let (root, scope) = scope();
+        let err = metadata_v2(&scope, &json!({"path":"test.txt","extra":"nope"})).unwrap_err();
+        assert_eq!(err.code, "arguments_invalid");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_missing_path_refused_in_validation() {
+        let (root, scope) = scope();
+        let err = metadata_v2(&scope, &json!({"compute_hash":true})).unwrap_err();
+        assert_eq!(err.code, "arguments_invalid");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_manifest_digest_is_stable() {
+        let manifest = manifest_with_digest(metadata_v2_manifest_without_digest()).unwrap();
+        let first = manifest["digest"].as_str().unwrap().to_owned();
+        let second_manifest = manifest_with_digest(metadata_v2_manifest_without_digest()).unwrap();
+        assert_eq!(first, second_manifest["digest"]);
+        let text = serde_json::to_string(&manifest).unwrap();
+        let verified = crate::manifest::verify_manifest(&text).unwrap();
+        assert_eq!(verified.capability_name(), METADATA_CAPABILITY);
+        assert_eq!(verified.capability_version(), 2);
+        assert_eq!(verified.manifest().binding.tool_name, METADATA_V2_OPERATION);
+    }
+
+    #[test]
+    fn metadata_v2_committed_frozen_manifest_matches_builder() {
+        let built = manifest_with_digest(metadata_v2_manifest_without_digest()).unwrap();
+        let file = crate::manifest::verify_manifest(include_str!(
+            "../../protocol/capability-manifests/file-metadata-v2.json"
+        ))
+        .unwrap();
+        assert_eq!(file.verified_digest(), built["digest"].as_str().unwrap());
+    }
+
+    #[test]
+    fn metadata_v2_read_only_reported() {
+        let (root, scope) = scope();
+        let file_path = scope.query_root.join("ro.txt");
+        fs::write(&file_path, b"readonly").unwrap();
+        let mut perms = fs::metadata(&file_path).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&file_path, perms).unwrap();
+        let result = metadata_v2(&scope, &json!({"path":"ro.txt"})).unwrap();
+        assert_eq!(result["read_only"], true);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_file_tools_v1_unchanged() {
+        let (root, scope) = scope();
+        let path = scope.query_root.join("legacy.txt");
+        fs::write(&path, b"v1-data").unwrap();
+        let result = metadata(
+            &scope,
+            &json!({"path":"legacy.txt","include_content":false}),
+        )
+        .unwrap();
+        assert_eq!(result["path"], "legacy.txt");
+        assert_eq!(result["is_file"], true);
+        assert_eq!(result["size_bytes"], 7);
+        assert!(result.get("content").is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_v2_move_file_not_regressed() {
+        let (root, scope) = scope();
+        let source = scope.source_root.join("x.txt");
+        fs::File::create(&source)
+            .unwrap()
+            .write_all(b"move-me")
+            .unwrap();
+        let result = move_file(
+            &scope,
+            &json!({"source_path":"x.txt","destination_path":"y.txt"}),
+        )
+        .unwrap();
+        assert_eq!(result["moved"], true);
+        assert!(!source.exists());
+        assert!(scope.destination_root.join("y.txt").exists());
         fs::remove_dir_all(root).unwrap();
     }
 }
