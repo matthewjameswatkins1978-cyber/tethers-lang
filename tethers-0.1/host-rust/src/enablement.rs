@@ -352,7 +352,7 @@ mod tests {
             installed_id: Uuid::new_v4().to_string(),
             state: "present_disabled".into(),
             package_id: "tethers.file-tools".into(),
-            package_version: "1.0.0".into(),
+            package_version: "1.1.0".into(),
             semantic_package_digest: digest.into(),
             source_candidate_id: "candidate".into(),
             installation_relative_path: "plug".into(),
