@@ -20,7 +20,7 @@ pub mod host_execution;
 pub mod installed;
 pub mod launch_profile;
 pub mod local_anchor;
-pub mod m3_store;
+mod m3_store;
 pub mod manifest;
 pub mod operational_scope;
 mod outcome;

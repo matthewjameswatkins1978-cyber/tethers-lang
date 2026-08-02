@@ -5,6 +5,15 @@ use tethers_reference_host::operational_scope::OperationalScope;
 use tethers_reference_host::trust::{PackageTrustEvidence, TrustModeEvidence};
 use uuid::Uuid;
 
+fn local_sha256(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("sha256:{:x}", Sha256::digest(data))
+}
+
+fn local_canonical<T: serde::Serialize>(value: &T) -> Vec<u8> {
+    serde_json_canonicalizer::to_vec(value).expect("canonical serialization")
+}
+
 fn digest() -> String {
     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()
 }
@@ -22,9 +31,7 @@ fn trust_evidence(digest: &str) -> PackageTrustEvidence {
     };
     let mut covered = trust.clone();
     covered.evidence_digest.clear();
-    trust.evidence_digest = tethers_reference_host::m3_store::sha256(
-        &tethers_reference_host::m3_store::canonical(&covered).unwrap(),
-    );
+    trust.evidence_digest = local_sha256(&local_canonical(&covered));
     trust
 }
 
@@ -76,9 +83,7 @@ fn pdf_installed_plug() -> InstalledPlugRecord {
     };
     let mut covered = installed.clone();
     covered.record_digest.clear();
-    installed.record_digest = tethers_reference_host::m3_store::sha256(
-        &tethers_reference_host::m3_store::canonical(&covered).unwrap(),
-    );
+    installed.record_digest = local_sha256(&local_canonical(&covered));
     installed
 }
 
@@ -347,9 +352,7 @@ fn enable_accepts_file_tools_binding_directly() {
     };
     let mut covered = trust.clone();
     covered.evidence_digest.clear();
-    trust.evidence_digest = tethers_reference_host::m3_store::sha256(
-        &tethers_reference_host::m3_store::canonical(&covered).unwrap(),
-    );
+    trust.evidence_digest = local_sha256(&local_canonical(&covered));
     let installed_id = Uuid::new_v4().to_string();
     let mut installed = InstalledPlugRecord {
         schema_version: 1,
@@ -397,9 +400,7 @@ fn enable_accepts_file_tools_binding_directly() {
     };
     let mut cov = installed.clone();
     cov.record_digest.clear();
-    installed.record_digest = tethers_reference_host::m3_store::sha256(
-        &tethers_reference_host::m3_store::canonical(&cov).unwrap(),
-    );
+    installed.record_digest = local_sha256(&local_canonical(&cov));
     let scope = tethers_reference_host::file_tools::OperationalScopeBinding::create(
         &installed_id,
         "file.move",
@@ -503,9 +504,7 @@ fn capability_not_in_bindings_is_refused() {
     }];
     let mut cov = installed.clone();
     cov.record_digest.clear();
-    installed.record_digest = tethers_reference_host::m3_store::sha256(
-        &tethers_reference_host::m3_store::canonical(&cov).unwrap(),
-    );
+    installed.record_digest = local_sha256(&local_canonical(&cov));
     let binding = pdf_scope(&installed.installed_id, &scope_root);
     let store = EnablementStore::open(&enablement_root).unwrap();
     let result = store.enable(&installed, binding, "Matthew");
@@ -561,9 +560,7 @@ fn disablement_works_for_file_tools() {
     };
     let mut covered = trust.clone();
     covered.evidence_digest.clear();
-    trust.evidence_digest = tethers_reference_host::m3_store::sha256(
-        &tethers_reference_host::m3_store::canonical(&covered).unwrap(),
-    );
+    trust.evidence_digest = local_sha256(&local_canonical(&covered));
     let mut installed = InstalledPlugRecord {
         schema_version: 1,
         installed_id: installed_id.clone(),
@@ -610,9 +607,7 @@ fn disablement_works_for_file_tools() {
     };
     let mut cov = installed.clone();
     cov.record_digest.clear();
-    installed.record_digest = tethers_reference_host::m3_store::sha256(
-        &tethers_reference_host::m3_store::canonical(&cov).unwrap(),
-    );
+    installed.record_digest = local_sha256(&local_canonical(&cov));
     let scope = tethers_reference_host::file_tools::OperationalScopeBinding::create(
         &installed_id,
         "file.move",
@@ -630,4 +625,34 @@ fn disablement_works_for_file_tools() {
     store.disable(&installed, "Matthew").unwrap();
     assert!(!store.is_available(&installed_id).unwrap());
     fs::remove_dir_all(temp).unwrap();
+}
+
+// Non-canonical query_root is refused even with a correct integrity digest.
+#[test]
+fn noncanonical_query_root_is_refused() {
+    let root = std::env::temp_dir().join(format!("tethers-j23c1-noncanon-{}", Uuid::new_v4()));
+    fs::create_dir_all(&root).unwrap();
+    let mut binding = tethers_reference_host::pdf_tools::PdfOperationalScopeBinding::create(
+        "nc-inst",
+        &root,
+        64 * 1024,
+        "Matthew",
+    )
+    .unwrap();
+    let expected_canonical = binding.query_root.clone();
+    let forward_slash = expected_canonical.to_str().unwrap().replace('\\', "/");
+    binding.query_root = std::path::PathBuf::from(&forward_slash);
+    assert!(binding.query_root.is_absolute());
+    let mut covered = binding.clone();
+    covered.integrity_digest.clear();
+    binding.integrity_digest = local_sha256(&local_canonical(&covered));
+    assert_ne!(binding.query_root, expected_canonical);
+    let result = binding.validate();
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("canonical"),
+        "expected canonical error, got: {msg}"
+    );
+    fs::remove_dir_all(root).unwrap();
 }

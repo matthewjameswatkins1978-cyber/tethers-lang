@@ -329,7 +329,13 @@ impl PdfOperationalScopeBinding {
                 "invalid operational scope binding",
             ));
         }
-        let _root = canonical_directory(&self.query_root, "query_root")?;
+        let canonical = canonical_directory(&self.query_root, "query_root")?;
+        if canonical != self.query_root {
+            return Err(PdfToolsError::new(
+                "scope_invalid",
+                "query_root must be canonical",
+            ));
+        }
         if self.max_bytes == 0 || self.max_bytes > MAX_PDF_BYTES {
             return Err(PdfToolsError::new(
                 "scope_invalid",
