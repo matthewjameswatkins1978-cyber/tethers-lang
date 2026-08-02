@@ -28,9 +28,9 @@
 //! pwsh.exe -NoLogo -NoProfile -NonInteractive -File <absolute-script> [args]
 //!
 //! `-Command` and `-EncodedCommand` are unconditionally refused.  The issuer
-//! hashes the canonical script file; `permit()` rehashes it; `CommandPermit::launch()`
-//! rehashes a third time immediately before `SupervisedChild::launch` to close
-//! the permit-to-launch race.
+//! hashes the canonical script file; `permit()` rehashes and re-canonicalises
+//! the path; `CommandPermit::launch()` canonicalises and rehashes immediately
+//! before `SupervisedChild::launch` to close the permit-to-launch race.
 
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use serde::{Deserialize, Serialize};
@@ -140,7 +140,11 @@ impl PermissionScopes {
     }
 
     fn contains_path(&self, canonical: &str) -> bool {
-        for root in self.filesystem_write.iter().chain(self.filesystem_read.iter()) {
+        for root in self
+            .filesystem_write
+            .iter()
+            .chain(self.filesystem_read.iter())
+        {
             if canonical_as_prefix(root, canonical) {
                 return true;
             }
@@ -151,9 +155,7 @@ impl PermissionScopes {
 
 fn canonical_as_prefix(scope: &str, path: &str) -> bool {
     fn normalise(s: &str) -> String {
-        let stripped = s
-            .strip_prefix("\\\\?\\")
-            .unwrap_or(s);
+        let stripped = s.strip_prefix("\\\\?\\").unwrap_or(s);
         stripped.replace('/', "\\").to_ascii_lowercase()
     }
     let scope_norm = normalise(scope);
@@ -310,7 +312,10 @@ impl ExecutionEnvironmentContract {
             data: ContractData,
         }
         let stored: StoredContract = serde_json::from_str(json).map_err(|error| {
-            EnvironmentError::new("deserialize", format!("cannot parse stored contract: {error}"))
+            EnvironmentError::new(
+                "deserialize",
+                format!("cannot parse stored contract: {error}"),
+            )
         })?;
         let recomputed = Self::data_digest(&stored.data)?;
         if recomputed != stored.stored_digest {
@@ -431,9 +436,7 @@ impl ExecutionEnvironmentContract {
                     id: requirement.id.clone(),
                     class: requirement.class.clone(),
                     state: capability_failure(&requirement.class),
-                    reason: Some(
-                        "missing, unverified, or version-policy mismatch".to_owned(),
-                    ),
+                    reason: Some("missing, unverified, or version-policy mismatch".to_owned()),
                 });
                 continue;
             };
@@ -468,23 +471,21 @@ impl ExecutionEnvironmentContract {
                 });
                 continue;
             }
-            let script_path = extract_script_path(observed);
-            let mut approved_args = observed.args.clone();
-            let canonical_script = if let Some(ref sp) = &script_path {
-                let canonical = canonicalize_path(sp)?;
-                if let Some(script_idx) = extract_file_arg_index(&observed.args) {
-                    approved_args[script_idx] = canonical.clone();
-                }
-                Some(canonical)
-            } else {
-                None
-            };
+            let canonical_script = extract_script_path(observed)
+                .as_deref()
+                .map(canonicalize_path)
+                .transpose()?;
             approved_commands.insert(
                 requested.command_id.clone(),
                 ApprovedCommand {
                     command_id: requested.command_id.clone(),
                     program_path: observed.program_path.clone(),
-                    args: approved_args,
+                    // Preserve the exact reviewed argument array.  For a
+                    // PowerShell -File invocation this may intentionally
+                    // contain a junction path; script_path records its
+                    // canonical target for permit and launch-time identity
+                    // checks.
+                    args: observed.args.clone(),
                     cwd: observed.cwd.clone(),
                     script_digest: observed.script_digest.clone(),
                     script_path: canonical_script,
@@ -536,10 +537,7 @@ impl ExecutionEnvironmentContract {
         })
     }
 
-    pub fn permit(
-        &self,
-        invocation: CommandInvocation,
-    ) -> Result<CommandPermit, EnvironmentError> {
+    pub fn permit(&self, invocation: CommandInvocation) -> Result<CommandPermit, EnvironmentError> {
         self.verify_integrity()?;
 
         if self.data.status == ContractStatus::Blocked {
@@ -560,35 +558,39 @@ impl ExecutionEnvironmentContract {
                 "command id is not in the frozen contract",
             ));
         };
-        if command.program_path != invocation.program_path
-            || command.cwd != invocation.cwd
-        {
+        if command.program_path != invocation.program_path || command.cwd != invocation.cwd {
             return Err(EnvironmentError::new(
                 "command_mismatch",
                 "program, arguments, and working directory must exactly match the contract",
             ));
         }
-        // Canonicalise -File script path in the invocation before comparing args.
-        let invocation_args = canonicalize_invocation_script_arg(&invocation.args)?;
-        if command.args != invocation_args {
+        // Check canonical script-path identity before generic argument comparison
+        // so a changed target returns script_redirected rather than command_mismatch.
+        if let Some(script) = &command.script_path {
+            let invocation_script_idx =
+                extract_file_arg_index(&invocation.args).ok_or_else(|| {
+                    EnvironmentError::new(
+                        "script_redirected",
+                        "PowerShell -File argument is missing from the invocation",
+                    )
+                })?;
+            let inv_canonical = canonicalize_path(&invocation.args[invocation_script_idx])?;
+            if &inv_canonical != script {
+                return Err(EnvironmentError::new(
+                    "script_redirected",
+                    "PowerShell script path was redirected after contract issuance",
+                ));
+            }
+        }
+        if command.args != invocation.args {
             return Err(EnvironmentError::new(
                 "command_mismatch",
                 "arguments must exactly match the approved contract command",
             ));
         }
         if let Some(script) = &command.script_path {
-            // Verify the canonical script path has not been redirected.
-            if let Some(invocation_script_idx) = extract_file_arg_index(&invocation.args) {
-                let inv_canonical = canonicalize_path(&invocation.args[invocation_script_idx])?;
-                if &inv_canonical != script {
-                    return Err(EnvironmentError::new(
-                        "script_redirected",
-                        "PowerShell script path was redirected after contract issuance",
-                    ));
-                }
-            }
-            let current = hash_file(script)
-                .map_err(|error| EnvironmentError::new("script_digest", error))?;
+            let current =
+                hash_file(script).map_err(|error| EnvironmentError::new("script_digest", error))?;
             let expected = command
                 .script_digest
                 .as_deref()
@@ -621,7 +623,7 @@ pub struct CommandInvocation {
 ///
 /// `child_config()` is private to prevent callers from altering the approved
 /// configuration and launching it separately.  `launch()` is the only launch
-/// path; it rehashes the PowerShell script a third time immediately before
+/// path; it canonicalises and rehashes the script path immediately before
 /// `SupervisedChild::launch` to close the permit-to-launch race.
 #[derive(Debug)]
 pub struct CommandPermit {
@@ -649,24 +651,48 @@ impl CommandPermit {
 
     pub fn launch(self) -> Result<SupervisedChild, ChildError> {
         if let Some(script) = &self.command.script_path {
-            if let Ok(current) = hash_file(script) {
-                let expected = self
-                    .command
-                    .script_digest
-                    .as_deref()
-                    .and_then(|d| d.strip_prefix("sha256:"))
-                    .unwrap_or("");
-                if current != expected {
-                    return Err(ChildError::LaunchFailed {
-                        command: self.command.program_path.clone(),
-                        message: "script hash changed between permit and launch".into(),
-                    });
+            // Canonicalise the -File argument immediately before launch and
+            // require exact equality with the stored script path to close
+            // the permit-to-launch race.
+            let file_idx = extract_file_arg_index(&self.command.args).ok_or_else(|| {
+                ChildError::LaunchFailed {
+                    command: self.command.program_path.clone(),
+                    message: "script -File argument missing at launch".into(),
                 }
-            } else {
+            })?;
+            let canonical_now = canonicalize_path(&self.command.args[file_idx]).map_err(|e| {
+                ChildError::LaunchFailed {
+                    command: self.command.program_path.clone(),
+                    message: format!("cannot canonicalize script path at launch: {}", e.message),
+                }
+            })?;
+            if &canonical_now != script {
                 return Err(ChildError::LaunchFailed {
                     command: self.command.program_path.clone(),
-                    message: "script file missing at launch time".into(),
+                    message: "script path redirected between permit and launch".into(),
                 });
+            }
+            match hash_file(&canonical_now) {
+                Ok(current) => {
+                    let expected = self
+                        .command
+                        .script_digest
+                        .as_deref()
+                        .and_then(|d| d.strip_prefix("sha256:"))
+                        .unwrap_or("");
+                    if current != expected {
+                        return Err(ChildError::LaunchFailed {
+                            command: self.command.program_path.clone(),
+                            message: "script hash changed between permit and launch".into(),
+                        });
+                    }
+                }
+                Err(_) => {
+                    return Err(ChildError::LaunchFailed {
+                        command: self.command.program_path.clone(),
+                        message: "script file missing at launch time".into(),
+                    });
+                }
             }
         }
         SupervisedChild::launch(self.child_config())
@@ -762,9 +788,7 @@ fn is_absolute_windows_path(value: &str) -> bool {
         return false;
     }
     let bytes = value.as_bytes();
-    bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && (bytes[2] == b'\\' || bytes[2] == b'/')
+    bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/')
 }
 
 fn canonicalize_path(raw: &str) -> Result<String, EnvironmentError> {
@@ -791,7 +815,7 @@ fn canonicalize_path(raw: &str) -> Result<String, EnvironmentError> {
 
 fn resolve_path_segments(raw: &str) -> Result<String, EnvironmentError> {
     let normalised = raw.replace('/', "\\");
-    let mut components: Vec<&str> = normalised
+    let components: Vec<&str> = normalised
         .split('\\')
         .filter(|c| !c.is_empty() && *c != ".")
         .collect();
@@ -834,9 +858,7 @@ fn validate_workbench_env(
     if shell_lower != REQUIRED_SHELL {
         return Err(EnvironmentError::new(
             "shell",
-            format!(
-                "workbench requires shell '{REQUIRED_SHELL}'; observed '{shell_lower}'"
-            ),
+            format!("workbench requires shell '{REQUIRED_SHELL}'; observed '{shell_lower}'"),
         ));
     }
     for (_id, observed) in &observation.commands {
@@ -902,7 +924,10 @@ fn validate_command_paths_and_scope(
             if !is_absolute_windows_path(&obs.program_path) {
                 return Err(EnvironmentError::new(
                     "program_path",
-                    format!("observed program_path must be absolute: {}", obs.program_path),
+                    format!(
+                        "observed program_path must be absolute: {}",
+                        obs.program_path
+                    ),
                 ));
             }
             if !is_absolute_windows_path(&obs.cwd) {
@@ -915,9 +940,7 @@ fn validate_command_paths_and_scope(
             if !permissions.contains_path(&canonical_cwd) {
                 return Err(EnvironmentError::new(
                     "scope",
-                    format!(
-                        "cwd '{canonical_cwd}' is outside the granted filesystem scope"
-                    ),
+                    format!("cwd '{canonical_cwd}' is outside the granted filesystem scope"),
                 ));
             }
             if is_powershell_command(&obs.program_path) {
@@ -943,16 +966,6 @@ fn validate_command_paths_and_scope(
 fn is_powershell_command(program_path: &str) -> bool {
     let lower = program_path.to_ascii_lowercase();
     lower.ends_with("pwsh.exe") || lower.ends_with("powershell.exe")
-}
-
-fn canonicalize_invocation_script_arg(
-    args: &[String],
-) -> Result<Vec<String>, EnvironmentError> {
-    let mut canonical = args.to_vec();
-    if let Some(script_idx) = extract_file_arg_index(args) {
-        canonical[script_idx] = canonicalize_path(&args[script_idx])?;
-    }
-    Ok(canonical)
 }
 
 fn extract_file_arg_index(args: &[String]) -> Option<usize> {
@@ -989,7 +1002,11 @@ fn validate_powershell_command(observed: &HostCommandObservation) -> Result<(), 
             "PowerShell command requires at least a -File argument",
         ));
     }
-    let lower_args: Vec<String> = observed.args.iter().map(|a| a.to_ascii_lowercase()).collect();
+    let lower_args: Vec<String> = observed
+        .args
+        .iter()
+        .map(|a| a.to_ascii_lowercase())
+        .collect();
 
     // Reject -Command and -EncodedCommand unconditionally.
     for arg in &lower_args {
@@ -1072,6 +1089,25 @@ fn capability_failure(class: &RequirementClass) -> CapabilityState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    fn create_junction(link: &Path, target: &Path) -> Result<(), String> {
+        let output = std::process::Command::new("cmd")
+            .args([
+                "/c",
+                "mklink",
+                "/J",
+                &link.to_string_lossy(),
+                &target.to_string_lossy(),
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
+    }
 
     fn permissions() -> PermissionScopes {
         PermissionScopes {
@@ -1193,11 +1229,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(blocked.status(), &ContractStatus::Blocked);
-        let optional = ExecutionEnvironmentContract::issue(
-            request(RequirementClass::Optional),
-            unavailable,
-        )
-        .unwrap();
+        let optional =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Optional), unavailable)
+                .unwrap();
         assert_eq!(optional.status(), &ContractStatus::Agreed);
     }
 
@@ -1205,11 +1239,9 @@ mod tests {
     fn preferred_absence_is_degraded() {
         let mut unavailable = observation();
         unavailable.capabilities.clear();
-        let contract = ExecutionEnvironmentContract::issue(
-            request(RequirementClass::Preferred),
-            unavailable,
-        )
-        .unwrap();
+        let contract =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Preferred), unavailable)
+                .unwrap();
         assert_eq!(contract.status(), &ContractStatus::Degraded);
     }
 
@@ -1386,8 +1418,7 @@ mod tests {
     fn tampered_arguments_are_rejected() {
         tamper_body_and_expect_rejection(
             |json| {
-                json["approved_commands"]["rust-check"]["args"] =
-                    serde_json::json!(["malicious"]);
+                json["approved_commands"]["rust-check"]["args"] = serde_json::json!(["malicious"]);
             },
             "contract_integrity",
         );
@@ -1463,9 +1494,8 @@ mod tests {
     fn non_windows_platform_is_rejected() {
         let mut obs = observation();
         obs.platform = "linux".to_owned();
-        let err =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
-                .unwrap_err();
+        let err = ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+            .unwrap_err();
         assert_eq!(err.code, "platform");
     }
 
@@ -1473,9 +1503,8 @@ mod tests {
     fn non_pwsh_shell_is_rejected() {
         let mut obs = observation();
         obs.shell = "bash".to_owned();
-        let err =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
-                .unwrap_err();
+        let err = ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+            .unwrap_err();
         assert_eq!(err.code, "shell");
     }
 
@@ -1492,9 +1521,8 @@ mod tests {
                 environment: BTreeMap::new(),
             },
         );
-        let err =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
-                .unwrap_err();
+        let err = ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+            .unwrap_err();
         assert_eq!(err.code, "program_path");
     }
 
@@ -1511,9 +1539,8 @@ mod tests {
                 environment: BTreeMap::new(),
             },
         );
-        let err =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
-                .unwrap_err();
+        let err = ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+            .unwrap_err();
         assert_eq!(err.code, "cwd");
     }
 
@@ -1532,9 +1559,8 @@ mod tests {
                 environment: BTreeMap::new(),
             },
         );
-        let err =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
-                .unwrap_err();
+        let err = ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+            .unwrap_err();
         assert_eq!(err.code, "scope");
         assert!(err.message.to_ascii_lowercase().contains("outside"));
     }
@@ -1552,9 +1578,8 @@ mod tests {
                 environment: BTreeMap::new(),
             },
         );
-        let err =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
-                .unwrap_err();
+        let err = ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+            .unwrap_err();
         assert_eq!(err.code, "scope");
     }
 
@@ -1618,10 +1643,7 @@ mod tests {
         let cwd = temp.clone();
 
         // The command spawns a descendant: cmd /c start /b /wait cmd /c exit 0
-        let args = vec![
-            "/c".to_owned(),
-            "start /b /wait cmd /c exit 0".to_owned(),
-        ];
+        let args = vec!["/c".to_owned(), "start /b /wait cmd /c exit 0".to_owned()];
 
         let mut req = request(RequirementClass::Required);
         req.capabilities[0] = CapabilityRequirement {
@@ -1654,10 +1676,7 @@ mod tests {
                 args: args.clone(),
                 cwd: cwd.clone(),
                 script_digest: None,
-                environment: BTreeMap::from([(
-                    "TETHERS_TEST".to_owned(),
-                    "present".to_owned(),
-                )]),
+                environment: BTreeMap::from([("TETHERS_TEST".to_owned(), "present".to_owned())]),
             },
         )]);
 
@@ -1699,10 +1718,9 @@ mod tests {
     fn powershell_file_permit_and_launch_succeeds() {
         use std::io::Write;
 
-        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
-        if !Path::new(pwsh).exists() {
-            return;
-        }
+        let Some(pwsh) = resolve_pwsh() else {
+            panic!("pwsh.exe not found — integration test unavailable");
+        };
         let temp = std::env::temp_dir();
         let script_path = temp.join("tethers-test-script.ps1");
         let script_content = "exit 0";
@@ -1750,11 +1768,11 @@ mod tests {
         obs.commands = BTreeMap::from([(
             "pwsh-test".to_owned(),
             HostCommandObservation {
-                program_path: pwsh.to_owned(),
+                program_path: pwsh.clone(),
                 args: args.clone(),
                 cwd: cwd.clone(),
                 script_digest: Some(script_hash),
-                environment: BTreeMap::new(),
+                environment: powershell_launch_environment(),
             },
         )]);
 
@@ -1763,7 +1781,7 @@ mod tests {
 
         let invocation = CommandInvocation {
             command_id: "pwsh-test".to_owned(),
-            program_path: pwsh.to_owned(),
+            program_path: pwsh,
             args,
             cwd,
         };
@@ -1780,9 +1798,6 @@ mod tests {
         use std::io::Write;
 
         let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
-        if !Path::new(pwsh).exists() {
-            return;
-        }
         let temp = std::env::temp_dir();
         let script_path = temp.join("tethers-test-refused.ps1");
         let script_content = "exit 0";
@@ -1864,9 +1879,6 @@ mod tests {
         use std::io::Write;
 
         let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
-        if !Path::new(pwsh).exists() {
-            return;
-        }
         let temp = std::env::temp_dir();
         let script_path = temp.join("tethers-test-missing.ps1");
         let script_content = "exit 0";
@@ -1942,18 +1954,12 @@ mod tests {
     #[test]
     fn powershell_without_noprofile_is_refused() {
         let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
-        if !Path::new(pwsh).exists() {
-            return;
-        }
         let mut obs = observation();
         obs.commands.insert(
             "rust-check".to_owned(),
             HostCommandObservation {
                 program_path: pwsh.to_owned(),
-                args: vec![
-                    "-File".to_owned(),
-                    "C:/Temp/exists.ps1".to_owned(),
-                ],
+                args: vec!["-File".to_owned(), "D:/Tethers/script.ps1".to_owned()],
                 cwd: "D:/Tethers".to_owned(),
                 script_digest: Some(
                     "sha256:0000000000000000000000000000000000000000000000000000000000000000"
@@ -1962,24 +1968,47 @@ mod tests {
                 environment: BTreeMap::new(),
             },
         );
-        let err =
-            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
-                .unwrap_err();
+        let err = ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+            .unwrap_err();
         assert_eq!(err.code, "powershell");
         assert!(err.message.contains("-NoLogo"));
     }
 
     // ── canonical script-path tests ──────────────────────────────
 
+    fn resolve_pwsh() -> Option<String> {
+        // Use the same PATH-resolved executable that the local environment
+        // probe reaches, rather than assuming a fixed PowerShell installation.
+        let output = std::process::Command::new("where.exe")
+            .arg("pwsh.exe")
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        for candidate in String::from_utf8_lossy(&output.stdout).lines() {
+            let p = Path::new(candidate);
+            if p.exists() && p.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+                return Some(p.to_string_lossy().replace('/', "\\"));
+            }
+        }
+        None
+    }
+
+    fn powershell_launch_environment() -> BTreeMap<String, String> {
+        let system_root = std::env::var("SystemRoot")
+            .expect("SystemRoot is required for the verified local PowerShell launch");
+        BTreeMap::from([("SystemRoot".to_owned(), system_root)])
+    }
+
     #[cfg(windows)]
     #[test]
-    fn stored_script_path_is_canonical_and_args_contain_it() {
+    fn stored_script_path_is_canonical_while_args_remain_exact() {
         use std::io::Write;
 
-        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
-        if !Path::new(pwsh).exists() {
-            return;
-        }
+        let Some(pwsh) = resolve_pwsh() else {
+            panic!("pwsh.exe not found — integration test unavailable");
+        };
         let temp = std::env::temp_dir();
         let script_path = temp.join("tethers-canonical.ps1");
         {
@@ -1989,10 +2018,7 @@ mod tests {
         let script_str = script_path.to_string_lossy().replace('/', "\\");
         let cwd = temp.to_string_lossy().replace('/', "\\");
         let canonical_str = canonicalize_path(&script_str).unwrap();
-        let script_hash = format!(
-            "sha256:{}",
-            hash_file(&canonical_str).unwrap()
-        );
+        let script_hash = format!("sha256:{}", hash_file(&canonical_str).unwrap());
 
         let args = vec![
             "-NoLogo".to_owned(),
@@ -2029,9 +2055,9 @@ mod tests {
         obs.commands = BTreeMap::from([(
             "pwsh-canon".to_owned(),
             HostCommandObservation {
-                program_path: pwsh.to_owned(),
-                args,
-                cwd,
+                program_path: pwsh,
+                args: args.clone(),
+                cwd: cwd.clone(),
                 script_digest: Some(script_hash),
                 environment: BTreeMap::new(),
             },
@@ -2042,22 +2068,19 @@ mod tests {
         let stored = approved.script_path.as_ref().unwrap();
         assert_eq!(stored, &canonical_str);
 
-        // The approved args must contain the canonical script path, not the original.
-        let file_idx = extract_file_arg_index(&approved.args).unwrap();
-        assert_eq!(&approved.args[file_idx], &canonical_str);
+        assert_eq!(approved.args, args);
 
         let _ = fs::remove_file(&script_path);
     }
 
     #[cfg(windows)]
     #[test]
-    fn redirected_script_path_is_refused_by_permit() {
+    fn script_redirected_is_refused_by_permit() {
         use std::io::Write;
 
-        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
-        if !Path::new(pwsh).exists() {
-            return;
-        }
+        let Some(pwsh) = resolve_pwsh() else {
+            panic!("pwsh.exe not found — integration test unavailable");
+        };
         let temp = std::env::temp_dir();
         let script_a = temp.join("tethers-redirect-a.ps1");
         let script_b = temp.join("tethers-redirect-b.ps1");
@@ -2072,6 +2095,7 @@ mod tests {
         let canonical_a = canonicalize_path(&script_a.to_string_lossy()).unwrap();
         let canonical_b = canonicalize_path(&script_b.to_string_lossy()).unwrap();
         let script_hash = format!("sha256:{}", hash_file(&canonical_a).unwrap());
+        let cwd = temp.to_string_lossy().replace('/', "\\");
 
         let args_with_a = vec![
             "-NoLogo".to_owned(),
@@ -2087,7 +2111,6 @@ mod tests {
             "-File".to_owned(),
             canonical_b.clone(),
         ];
-        let cwd = temp.to_string_lossy().replace('/', "\\");
 
         let mut req = request(RequirementClass::Required);
         req.capabilities[0] = CapabilityRequirement {
@@ -2116,20 +2139,18 @@ mod tests {
         obs.commands = BTreeMap::from([(
             "pwsh-redir".to_owned(),
             HostCommandObservation {
-                program_path: pwsh.to_owned(),
+                program_path: pwsh.clone(),
                 args: args_with_a,
                 cwd: cwd.clone(),
                 script_digest: Some(script_hash),
-                environment: BTreeMap::new(),
+                environment: powershell_launch_environment(),
             },
         )]);
 
         let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
-
-        // Invoke with script B instead of A — different canonical path.
         let invocation = CommandInvocation {
             command_id: "pwsh-redir".to_owned(),
-            program_path: pwsh.to_owned(),
+            program_path: pwsh,
             args: args_with_b,
             cwd,
         };
@@ -2142,13 +2163,140 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn script_path_redirect_between_permit_and_launch_is_refused() {
+        use std::io::Write;
+
+        let Some(pwsh) = resolve_pwsh() else {
+            panic!("pwsh.exe not found — integration test unavailable");
+        };
+        let temp = std::env::temp_dir();
+        let unique = format!(
+            "{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+
+        // Directories with identical script files at different canonical paths.
+        let dir_a = temp.join(format!("tethers-junction-race-a-{unique}"));
+        let dir_b = temp.join(format!("tethers-junction-race-b-{unique}"));
+        let junction = temp.join(format!("tethers-junction-race-link-{unique}"));
+        fs::create_dir_all(&dir_a).unwrap();
+        fs::create_dir_all(&dir_b).unwrap();
+        {
+            let mut f = fs::File::create(dir_a.join("script.ps1")).unwrap();
+            f.write_all(b"exit 0").unwrap();
+        }
+        {
+            let mut f = fs::File::create(dir_b.join("script.ps1")).unwrap();
+            f.write_all(b"exit 0").unwrap();
+        }
+
+        // Junction points to dir_a — canonicalise resolves to dir_a.
+        create_junction(&junction, &dir_a).unwrap();
+
+        let script_via_junction = junction
+            .join("script.ps1")
+            .to_string_lossy()
+            .replace('/', "\\");
+        let canonical_real = canonicalize_path(&script_via_junction).unwrap();
+        // The canonical path must reflect the real target directory.
+        assert!(
+            canonical_real.contains("tethers-junction-race-a-"),
+            "expected canonical to resolve to dir_a, got {canonical_real}"
+        );
+
+        let script_hash = format!("sha256:{}", hash_file(&canonical_real).unwrap());
+        let cwd = temp.to_string_lossy().replace('/', "\\");
+
+        let args = vec![
+            "-NoLogo".to_owned(),
+            "-NoProfile".to_owned(),
+            "-NonInteractive".to_owned(),
+            "-File".to_owned(),
+            script_via_junction,
+        ];
+
+        let mut req = request(RequirementClass::Required);
+        req.capabilities[0] = CapabilityRequirement {
+            id: "powershell-automation".to_owned(),
+            class: RequirementClass::Required,
+            version_policy: VersionPolicy::Any,
+        };
+        req.commands = vec![RequestedCommand {
+            command_id: "pwsh-junction-race".to_owned(),
+            capability_id: "powershell-automation".to_owned(),
+            args: args.clone(),
+            cwd: cwd.clone(),
+        }];
+        req.requested_permissions = broad_permissions();
+
+        let mut obs = observation();
+        obs.granted_permissions = broad_permissions();
+        obs.capabilities = BTreeMap::from([(
+            "powershell-automation".to_owned(),
+            HostCapabilityObservation {
+                version: "7.6.4".to_owned(),
+                verified: true,
+                command_id: "pwsh-junction-race".to_owned(),
+            },
+        )]);
+        obs.commands = BTreeMap::from([(
+            "pwsh-junction-race".to_owned(),
+            HostCommandObservation {
+                program_path: pwsh.clone(),
+                args: args.clone(),
+                cwd: cwd.clone(),
+                script_digest: Some(script_hash),
+                environment: powershell_launch_environment(),
+            },
+        )]);
+
+        let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
+        assert_eq!(
+            contract.data.approved_commands["pwsh-junction-race"].args, args,
+            "the frozen command must retain the reviewed junction path"
+        );
+        let invocation = CommandInvocation {
+            command_id: "pwsh-junction-race".to_owned(),
+            program_path: pwsh,
+            args: contract.data.approved_commands["pwsh-junction-race"]
+                .args
+                .clone(),
+            cwd,
+        };
+        let permit = contract.permit(invocation).unwrap();
+
+        // Retarget the junction to dir_b between permit and launch.
+        let _ = fs::remove_dir(&junction);
+        create_junction(&junction, &dir_b).unwrap();
+
+        let err = permit.launch().unwrap_err();
+        match err {
+            ChildError::LaunchFailed { message, .. } => {
+                assert!(
+                    message.contains("script path redirected"),
+                    "expected path-redirect error, got: {message}"
+                );
+            }
+            other => panic!("expected LaunchFailed, got: {other:?}"),
+        }
+
+        let _ = fs::remove_dir(&junction);
+        let _ = fs::remove_dir_all(&dir_a);
+        let _ = fs::remove_dir_all(&dir_b);
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn valid_canonical_powershell_launch_succeeds() {
         use std::io::Write;
 
-        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
-        if !Path::new(pwsh).exists() {
-            return;
-        }
+        let Some(pwsh) = resolve_pwsh() else {
+            panic!("pwsh.exe not found — integration test unavailable");
+        };
         let temp = std::env::temp_dir();
         let script_path = temp.join("tethers-canonical-launch.ps1");
         {
@@ -2194,11 +2342,11 @@ mod tests {
         obs.commands = BTreeMap::from([(
             "pwsh-canon-launch".to_owned(),
             HostCommandObservation {
-                program_path: pwsh.to_owned(),
+                program_path: pwsh.clone(),
                 args,
                 cwd,
                 script_digest: Some(script_hash),
-                environment: BTreeMap::new(),
+                environment: powershell_launch_environment(),
             },
         )]);
 
@@ -2208,7 +2356,7 @@ mod tests {
         let approved = &contract.data.approved_commands["pwsh-canon-launch"];
         let invocation = CommandInvocation {
             command_id: "pwsh-canon-launch".to_owned(),
-            program_path: pwsh.to_owned(),
+            program_path: pwsh,
             args: approved.args.clone(),
             cwd: approved.cwd.clone(),
         };
