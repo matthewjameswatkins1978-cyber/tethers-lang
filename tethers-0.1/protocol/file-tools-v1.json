@@ -1,0 +1,63 @@
+{
+  "contract_version": "1",
+  "namespace": "file",
+  "provider_identity": "tethers-file-tools",
+  "protocol": "MCP",
+  "protocol_version": "2025-11-25",
+  "transport": "stdio",
+  "capabilities": [
+    {
+      "name": "file.metadata",
+      "version": 1,
+      "class": "Query",
+      "operation": "file_metadata",
+      "effects": ["data.read", "metadata.read"],
+      "scope": "host-approved query root",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "include_content": {"type": "boolean"}
+        },
+        "required": ["path", "include_content"],
+        "additionalProperties": false
+      },
+      "limits": {"max_content_bytes": 65536}
+    },
+    {
+      "name": "file.move",
+      "version": 1,
+      "class": "Action",
+      "operation": "file_move",
+      "effects": ["data.read", "data.move"],
+      "scope": "separate host-approved source and destination roots",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source_path": {"type": "string"},
+          "destination_path": {"type": "string"}
+        },
+        "required": ["source_path", "destination_path"],
+        "additionalProperties": false
+      },
+      "overwrite": false,
+      "recursive": false
+    }
+  ],
+  "refusals": [
+    "absolute paths",
+    "path traversal",
+    "Windows reparse points",
+    "missing files",
+    "directories",
+    "invalid UTF-8 content",
+    "destination overwrite",
+    "cross-volume move",
+    "delete",
+    "copy",
+    "glob",
+    "network",
+    "credentials",
+    "shell"
+  ]
+}
