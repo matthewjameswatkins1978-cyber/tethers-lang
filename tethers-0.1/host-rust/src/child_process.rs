@@ -809,7 +809,10 @@ fn spawn_suspended_in_job(
         close_handle(stderr_write);
         return Err(failure("SetHandleInformation failed"));
     }
-    let application = nul_terminated_wide(&config.command, &config.command)?;
+    let application = std::path::Path::new(&config.command)
+        .is_absolute()
+        .then(|| nul_terminated_wide(&config.command, &config.command))
+        .transpose()?;
     let command_line = std::iter::once(quoted_windows_argument(&config.command))
         .chain(
             config
@@ -839,7 +842,9 @@ fn spawn_suspended_in_job(
     // running until Job Object assignment succeeds.
     let created = unsafe {
         CreateProcessW(
-            application.as_ptr(),
+            application
+                .as_ref()
+                .map_or(std::ptr::null(), |path| path.as_ptr()),
             command_line.as_mut_ptr(),
             std::ptr::null(),
             std::ptr::null(),
