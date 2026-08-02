@@ -1,0 +1,130 @@
+//! Credential-free native stdio provider for the M6A PDF inspection capability.
+//!
+//! The binary is a thin MCP transport around `pdf_tools::inspect`. All PDF
+//! semantics, scope enforcement, and bounds live in the library so the provider
+//! process cannot drift from the reviewed capability contract.
+
+use serde_json::{json, Value};
+use std::io::{self, BufRead, Write};
+use std::path::PathBuf;
+use tethers_reference_host::pdf_tools::{self, PdfScope};
+
+const PROVIDER_IDENTITY: &str = "tethers-pdf-provider";
+const PROVIDER_VERSION: &str = "1.0.0";
+const PROTOCOL_VERSION: &str = "2025-11-25";
+
+fn argument(name: &str) -> Option<String> {
+    let mut args = std::env::args().skip(1);
+    while let Some(value) = args.next() {
+        if value == name {
+            return args.next();
+        }
+    }
+    None
+}
+
+fn response(id: &Value, result: Value) -> Value {
+    json!({"jsonrpc":"2.0","id":id,"result":result})
+}
+
+fn error(id: &Value, code: i32, message: &str) -> Value {
+    json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+}
+
+fn main() {
+    // The query root is host configuration, never provider-inferred: an absent
+    // or unusable root must refuse the session rather than widen scope.
+    let Some(root) = argument("--query-root").map(PathBuf::from) else {
+        eprintln!(
+            "pdf provider configuration refused: --query-root <absolute directory> is required"
+        );
+        std::process::exit(2);
+    };
+    let scope = match PdfScope::new(&root, pdf_tools::MAX_PDF_BYTES) {
+        Ok(scope) => scope,
+        Err(failure) => {
+            eprintln!("pdf provider configuration refused: {failure}");
+            std::process::exit(2);
+        }
+    };
+
+    let stdin = io::stdin();
+    let mut initialized = false;
+    let mut client_initialized = false;
+    for line in stdin.lock().lines() {
+        let Ok(line) = line else { break };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let request: Value = match serde_json::from_str(&line) {
+            Ok(value) => value,
+            Err(_) => {
+                eprintln!("malformed JSON request");
+                continue;
+            }
+        };
+        let id = request.get("id").cloned().unwrap_or(Value::Null);
+        let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+        let result = match method {
+            "initialize" => {
+                initialized = true;
+                Ok(json!({
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": PROVIDER_IDENTITY, "version": PROVIDER_VERSION}
+                }))
+            }
+            "notifications/initialized" => {
+                if initialized {
+                    client_initialized = true;
+                }
+                Ok(Value::Null)
+            }
+            "tools/list" if client_initialized => Ok(json!({"tools":[{
+                "name": pdf_tools::INSPECT_OPERATION,
+                "inputSchema": pdf_tools::inspect_input_schema(),
+                "outputSchema": pdf_tools::inspect_output_schema()
+            }]})),
+            "tools/call" if client_initialized => {
+                let params = request.get("params").cloned().unwrap_or(Value::Null);
+                let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+                let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
+                match name {
+                    pdf_tools::INSPECT_OPERATION => pdf_tools::inspect(&scope, &arguments),
+                    _ => Err(pdf_tools::PdfToolsError {
+                        code: "unknown_operation",
+                        message: "operation is not part of the reviewed PDF contract".into(),
+                    }),
+                }
+            }
+            "tools/list" | "tools/call" => Err(pdf_tools::PdfToolsError {
+                code: "not_initialized",
+                message: "MCP session is not initialized".into(),
+            }),
+            _ => Err(pdf_tools::PdfToolsError {
+                code: "method_not_found",
+                message: "unsupported MCP method".into(),
+            }),
+        };
+        if method == "notifications/initialized" {
+            continue;
+        }
+        let output = match result {
+            Ok(value) => response(&id, if value.is_null() { json!({}) } else { value }),
+            Err(failure) => error(
+                &id,
+                if failure.code == "unknown_operation" || failure.code == "method_not_found" {
+                    -32601
+                } else {
+                    -32602
+                },
+                &failure.message,
+            ),
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&output).expect("provider response is serializable")
+        );
+        io::stdout().flush().ok();
+    }
+}
