@@ -23,11 +23,14 @@
 //!
 //! ## PowerShell enforcement
 //!
-//! PowerShell commands are permitted only through an exact `-File` path with
-//! a reviewed script digest.  The issuer computes the script SHA-256 from the
-//! actual file on disk.  `permit()` recomputes it immediately before launch and
-//! rejects missing, changed, or mismatched script bytes.  `-Command` and
-//! `-EncodedCommand` are unconditionally refused.
+//! One exact approved form is permitted:
+//!
+//! pwsh.exe -NoLogo -NoProfile -NonInteractive -File <absolute-script> [args]
+//!
+//! `-Command` and `-EncodedCommand` are unconditionally refused.  The issuer
+//! hashes the canonical script file; `permit()` rehashes it; `CommandPermit::launch()`
+//! rehashes a third time immediately before `SupervisedChild::launch` to close
+//! the permit-to-launch race.
 
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use serde::{Deserialize, Serialize};
@@ -58,6 +61,9 @@ const WORKBENCH_CAPABILITIES: &[&str] = &[
 
 const REQUIRED_PLATFORM: &str = "windows";
 const REQUIRED_SHELL: &str = "pwsh";
+
+/// One exact approved PowerShell argument sequence prefix.
+const POWERSHELL_PREFIX: &[&str] = &["-nologo", "-noprofile", "-noninteractive"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -132,6 +138,38 @@ impl PermissionScopes {
             && requested.filesystem_write.is_subset(&self.filesystem_write)
             && requested.network_hosts.is_subset(&self.network_hosts)
     }
+
+    fn contains_path(&self, canonical: &str) -> bool {
+        for root in self.filesystem_write.iter().chain(self.filesystem_read.iter()) {
+            if canonical_as_prefix(root, canonical) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+fn canonical_as_prefix(scope: &str, path: &str) -> bool {
+    fn normalise(s: &str) -> String {
+        let stripped = s
+            .strip_prefix("\\\\?\\")
+            .unwrap_or(s);
+        stripped.replace('/', "\\").to_ascii_lowercase()
+    }
+    let scope_norm = normalise(scope);
+    let path_norm = normalise(path);
+    if !path_norm.starts_with(&scope_norm) {
+        return false;
+    }
+    if path_norm.len() == scope_norm.len() {
+        return true;
+    }
+    // After the scope prefix the next byte must be a separator,
+    // unless the scope itself ends with one (e.g. drive root C:\).
+    if scope_norm.ends_with('\\') {
+        return true;
+    }
+    path_norm.as_bytes()[scope_norm.len()] == b'\\'
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,6 +239,10 @@ pub struct ApprovedCommand {
     pub args: Vec<String>,
     pub cwd: String,
     pub script_digest: Option<String>,
+    /// Canonical path of the PowerShell script file, present only for
+    /// commands whose `program_path` is pwsh.exe with `-File`.
+    #[serde(default)]
+    pub script_path: Option<String>,
     pub environment: BTreeMap<String, String>,
 }
 
@@ -212,8 +254,7 @@ pub enum ContractStatus {
     Blocked,
 }
 
-/// Host-owned maximum supervised process count.  Bounded in the contract;
-/// `max_processes` was previously hard-coded to 1.
+/// Host-owned maximum supervised process count.  Bounded in the contract.
 const HOST_MAX_SUPERVISED_PROCESSES: u32 = 16;
 
 /// Private immutable contract data.  Only `issue()` and `from_stored()` can
@@ -353,7 +394,11 @@ impl ExecutionEnvironmentContract {
         validate_no_duplicate_capability_ids(&request.capabilities)?;
         validate_no_duplicate_command_ids(&request.commands)?;
         validate_workbench_env(&observation)?;
-        validate_command_paths(&request.commands, &observation.commands)?;
+        validate_command_paths_and_scope(
+            &request.commands,
+            &observation.commands,
+            &observation.granted_permissions,
+        )?;
 
         for command in &request.commands {
             if let Some(observed) = observation.commands.get(&command.command_id) {
@@ -423,6 +468,7 @@ impl ExecutionEnvironmentContract {
                 });
                 continue;
             }
+            let script_path = extract_script_path(observed);
             approved_commands.insert(
                 requested.command_id.clone(),
                 ApprovedCommand {
@@ -431,6 +477,7 @@ impl ExecutionEnvironmentContract {
                     args: observed.args.clone(),
                     cwd: observed.cwd.clone(),
                     script_digest: observed.script_digest.clone(),
+                    script_path,
                     environment: observed.environment.clone(),
                 },
             );
@@ -512,12 +559,14 @@ impl ExecutionEnvironmentContract {
                 "program, arguments, and working directory must exactly match the contract",
             ));
         }
-        if let Some(stored_digest) = &command.script_digest {
-            let current = hash_file(command.program_path.as_ref())
+        if let Some(script) = &command.script_path {
+            let current = hash_file(script)
                 .map_err(|error| EnvironmentError::new("script_digest", error))?;
-            let expected = stored_digest
-                .strip_prefix("sha256:")
-                .unwrap_or(stored_digest);
+            let expected = command
+                .script_digest
+                .as_deref()
+                .and_then(|d| d.strip_prefix("sha256:"))
+                .unwrap_or("");
             if current != expected {
                 return Err(EnvironmentError::new(
                     "script_changed",
@@ -525,9 +574,10 @@ impl ExecutionEnvironmentContract {
                 ));
             }
         }
+        let max_supervised_processes = self.data.max_supervised_processes;
         Ok(CommandPermit {
             command: command.clone(),
-            max_supervised_processes: self.data.max_supervised_processes,
+            max_supervised_processes,
         })
     }
 }
@@ -541,6 +591,11 @@ pub struct CommandInvocation {
 }
 
 /// A non-cloneable permission to launch exactly one contract-approved process.
+///
+/// `child_config()` is private to prevent callers from altering the approved
+/// configuration and launching it separately.  `launch()` is the only launch
+/// path; it rehashes the PowerShell script a third time immediately before
+/// `SupervisedChild::launch` to close the permit-to-launch race.
 #[derive(Debug)]
 pub struct CommandPermit {
     command: ApprovedCommand,
@@ -548,7 +603,7 @@ pub struct CommandPermit {
 }
 
 impl CommandPermit {
-    pub fn child_config(&self) -> ChildConfig {
+    fn child_config(&self) -> ChildConfig {
         ChildConfig {
             command: self.command.program_path.clone(),
             args: self.command.args.clone(),
@@ -566,6 +621,27 @@ impl CommandPermit {
     }
 
     pub fn launch(self) -> Result<SupervisedChild, ChildError> {
+        if let Some(script) = &self.command.script_path {
+            if let Ok(current) = hash_file(script) {
+                let expected = self
+                    .command
+                    .script_digest
+                    .as_deref()
+                    .and_then(|d| d.strip_prefix("sha256:"))
+                    .unwrap_or("");
+                if current != expected {
+                    return Err(ChildError::LaunchFailed {
+                        command: self.command.program_path.clone(),
+                        message: "script hash changed between permit and launch".into(),
+                    });
+                }
+            } else {
+                return Err(ChildError::LaunchFailed {
+                    command: self.command.program_path.clone(),
+                    message: "script file missing at launch time".into(),
+                });
+            }
+        }
         SupervisedChild::launch(self.child_config())
     }
 }
@@ -634,7 +710,7 @@ fn canonical_digest<T: Serialize>(value: &T) -> Result<String, EnvironmentError>
 }
 
 fn hash_file(path: &str) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|error| format!("cannot read script file: {error}"))?;
+    let bytes = fs::read(path).map_err(|error| format!("cannot read file: {error}"))?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
@@ -664,7 +740,60 @@ fn is_absolute_windows_path(value: &str) -> bool {
         && (bytes[2] == b'\\' || bytes[2] == b'/')
 }
 
-fn validate_workbench_env(observation: &HostEnvironmentObservation) -> Result<(), EnvironmentError> {
+fn canonicalize_path(raw: &str) -> Result<String, EnvironmentError> {
+    let p = Path::new(raw);
+    if !is_absolute_windows_path(raw) {
+        return Err(EnvironmentError::new(
+            "path",
+            format!("path is not absolute: {raw}"),
+        ));
+    }
+    if p.exists() {
+        p.canonicalize()
+            .map(|cp| {
+                let s = cp.to_string_lossy().replace('/', "\\");
+                s.strip_prefix("\\\\?\\").unwrap_or(&s).to_owned()
+            })
+            .map_err(|error| {
+                EnvironmentError::new("canonical", format!("cannot canonicalize '{raw}': {error}"))
+            })
+    } else {
+        resolve_path_segments(raw)
+    }
+}
+
+fn resolve_path_segments(raw: &str) -> Result<String, EnvironmentError> {
+    let normalised = raw.replace('/', "\\");
+    let mut components: Vec<&str> = normalised
+        .split('\\')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect();
+    let mut resolved: Vec<&str> = Vec::new();
+    for comp in components {
+        if comp == ".." {
+            if resolved.pop().is_none() {
+                return Err(EnvironmentError::new(
+                    "scope",
+                    format!("path '{raw}' escapes beyond the root"),
+                ));
+            }
+        } else {
+            resolved.push(comp);
+        }
+    }
+    let result = resolved.join("\\");
+    if result.len() < 2 || !result.contains('\\') {
+        return Err(EnvironmentError::new(
+            "scope",
+            format!("path '{raw}' resolves outside any granted root"),
+        ));
+    }
+    Ok(result)
+}
+
+fn validate_workbench_env(
+    observation: &HostEnvironmentObservation,
+) -> Result<(), EnvironmentError> {
     let platform_lower = observation.platform.to_ascii_lowercase();
     if platform_lower != REQUIRED_PLATFORM {
         return Err(EnvironmentError::new(
@@ -736,19 +865,17 @@ fn validate_no_duplicate_command_ids(
     Ok(())
 }
 
-fn validate_command_paths(
+fn validate_command_paths_and_scope(
     requested: &[RequestedCommand],
     observed: &BTreeMap<String, HostCommandObservation>,
+    permissions: &PermissionScopes,
 ) -> Result<(), EnvironmentError> {
     for cmd in requested {
         if let Some(obs) = observed.get(&cmd.command_id) {
             if !is_absolute_windows_path(&obs.program_path) {
                 return Err(EnvironmentError::new(
                     "program_path",
-                    format!(
-                        "observed program_path must be absolute: {}",
-                        obs.program_path
-                    ),
+                    format!("observed program_path must be absolute: {}", obs.program_path),
                 ));
             }
             if !is_absolute_windows_path(&obs.cwd) {
@@ -756,6 +883,30 @@ fn validate_command_paths(
                     "cwd",
                     format!("observed cwd must be absolute: {}", obs.cwd),
                 ));
+            }
+            let canonical_cwd = canonicalize_path(&obs.cwd)?;
+            if !permissions.contains_path(&canonical_cwd) {
+                return Err(EnvironmentError::new(
+                    "scope",
+                    format!(
+                        "cwd '{canonical_cwd}' is outside the granted filesystem scope"
+                    ),
+                ));
+            }
+            if is_powershell_command(&obs.program_path) {
+                if let Some(script) = extract_script_path(obs) {
+                    if is_absolute_windows_path(&script) {
+                        let canonical_script = canonicalize_path(&script)?;
+                        if !permissions.contains_path(&canonical_script) {
+                            return Err(EnvironmentError::new(
+                                "scope",
+                                format!(
+                                    "PowerShell script '{canonical_script}' is outside the granted filesystem scope"
+                                ),
+                            ));
+                        }
+                    }
+                }
             }
         }
     }
@@ -765,6 +916,24 @@ fn validate_command_paths(
 fn is_powershell_command(program_path: &str) -> bool {
     let lower = program_path.to_ascii_lowercase();
     lower.ends_with("pwsh.exe") || lower.ends_with("powershell.exe")
+}
+
+fn extract_script_path(observed: &HostCommandObservation) -> Option<String> {
+    if !is_powershell_command(&observed.program_path) {
+        return None;
+    }
+    // Find the -File argument in the array; the script path immediately follows.
+    let mut i = 0;
+    while i < observed.args.len() {
+        if observed.args[i].to_ascii_lowercase() == "-file" {
+            if i + 1 < observed.args.len() {
+                return Some(observed.args[i + 1].clone());
+            }
+            return None;
+        }
+        i += 1;
+    }
+    None
 }
 
 fn validate_powershell_command(observed: &HostCommandObservation) -> Result<(), EnvironmentError> {
@@ -780,35 +949,54 @@ fn validate_powershell_command(observed: &HostCommandObservation) -> Result<(), 
     if observed.args.is_empty() {
         return Err(EnvironmentError::new(
             "powershell",
-            "PowerShell command requires at least the -File argument",
+            "PowerShell command requires at least a -File argument",
         ));
     }
-    let first_arg = observed.args[0].to_ascii_lowercase();
-    if first_arg == "-command" || first_arg == "-encodedcommand" {
+    let lower_args: Vec<String> = observed.args.iter().map(|a| a.to_ascii_lowercase()).collect();
+
+    // Reject -Command and -EncodedCommand unconditionally.
+    for arg in &lower_args {
+        if arg == "-command" || arg == "-encodedcommand" {
+            return Err(EnvironmentError::new(
+                "powershell",
+                "-Command and -EncodedCommand are forbidden; only -File is permitted",
+            ));
+        }
+    }
+
+    // The exact approved prefix is -NoLogo -NoProfile -NonInteractive.
+    if lower_args.len() < POWERSHELL_PREFIX.len() + 2 {
         return Err(EnvironmentError::new(
             "powershell",
-            "-Command and -EncodedCommand are forbidden; only -File is permitted",
+            "PowerShell command must start with -NoLogo -NoProfile -NonInteractive, then -File <script>",
         ));
     }
-    if first_arg != "-file" {
-        return Err(EnvironmentError::new(
-            "powershell",
-            "PowerShell command must use -File as the first argument",
-        ));
+    for (i, expected) in POWERSHELL_PREFIX.iter().enumerate() {
+        if &lower_args[i] != expected {
+            return Err(EnvironmentError::new(
+                "powershell",
+                format!(
+                    "PowerShell command must start with -NoLogo -NoProfile -NonInteractive; at position {i} expected '{expected}' but got '{}'",
+                    lower_args[i]
+                ),
+            ));
+        }
     }
-    if observed.args.len() < 2 {
-        return Err(EnvironmentError::new(
-            "powershell",
-            "-File requires a script path argument",
-        ));
-    }
-    let script_path = &observed.args[1];
-    if !is_absolute_windows_path(script_path) {
+    if lower_args[POWERSHELL_PREFIX.len()] != "-file" {
         return Err(EnvironmentError::new(
             "powershell",
             format!(
-                "PowerShell -File script path must be absolute: {script_path}"
+                "PowerShell command must use -File after -NoLogo -NoProfile -NonInteractive; got '{}'",
+                lower_args[POWERSHELL_PREFIX.len()]
             ),
+        ));
+    }
+
+    let script_path = &observed.args[POWERSHELL_PREFIX.len() + 1];
+    if !is_absolute_windows_path(script_path) {
+        return Err(EnvironmentError::new(
+            "powershell",
+            format!("PowerShell -File script path must be absolute: {script_path}"),
         ));
     }
     if !Path::new(script_path).exists() {
@@ -823,9 +1011,10 @@ fn validate_powershell_command(observed: &HostCommandObservation) -> Result<(), 
             "PowerShell command requires a reviewed script_digest",
         ));
     }
-    let actual_digest = format!("sha256:{}", hash_file(script_path).map_err(|error| {
-        EnvironmentError::new("powershell", error)
-    })?);
+    let actual_digest = format!(
+        "sha256:{}",
+        hash_file(script_path).map_err(|error| EnvironmentError::new("powershell", error))?
+    );
     if observed.script_digest.as_deref() != Some(&actual_digest) {
         return Err(EnvironmentError::new(
             "powershell",
@@ -853,6 +1042,24 @@ mod tests {
             filesystem_write: BTreeSet::from(["D:/Tethers".to_owned()]),
             network_hosts: BTreeSet::from(["github.com".to_owned()]),
             network_allowed: true,
+            installation_allowed: false,
+        }
+    }
+
+    fn broad_permissions() -> PermissionScopes {
+        let temp = std::env::temp_dir();
+        let temp_str = temp.to_string_lossy().replace('/', "\\");
+        let scope_root = if let Some(drive) = temp_str.get(..3) {
+            drive.to_owned()
+        } else {
+            temp_str
+        };
+        let system = "C:/Windows".to_owned();
+        PermissionScopes {
+            filesystem_read: BTreeSet::from([scope_root.clone(), system.clone()]),
+            filesystem_write: BTreeSet::from([scope_root, system]),
+            network_hosts: BTreeSet::new(),
+            network_allowed: false,
             installation_allowed: false,
         }
     }
@@ -1004,7 +1211,7 @@ mod tests {
     }
 
     #[test]
-    fn powershell_command_without_file_is_refused_at_issue() {
+    fn powershell_command_is_refused_at_issue() {
         let mut observed = observation();
         observed.commands.insert(
             "rust-check".to_owned(),
@@ -1031,11 +1238,17 @@ mod tests {
             HostCommandObservation {
                 program_path: "C:/Program Files/PowerShell/7/pwsh.exe".to_owned(),
                 args: vec![
+                    "-NoLogo".to_owned(),
+                    "-NoProfile".to_owned(),
+                    "-NonInteractive".to_owned(),
                     "-File".to_owned(),
                     "check-tethers-task-packet.ps1".to_owned(),
                 ],
                 cwd: "D:/Tethers".to_owned(),
-                script_digest: Some("sha256:0000000000000000000000000000000000000000000000000000000000000000".to_owned()),
+                script_digest: Some(
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        .to_owned(),
+                ),
                 environment: BTreeMap::new(),
             },
         );
@@ -1093,7 +1306,7 @@ mod tests {
             "worker_assignment": { "selected_by": "Matthew", "worker_id": "deepseek-pro-v4-opencode" },
             "status": "agreed",
             "capability_resolutions": [{ "id": "rust-compilation", "class": "required", "state": "available", "reason": null }],
-            "approved_commands": { "rust-check": { "command_id": "rust-check", "program_path": "C:/Users/Matmus/.cargo/bin/cargo.exe", "args": ["check", "--locked"], "cwd": "D:/Tethers/tethers-0.1/host-rust", "script_digest": null, "environment": {} } },
+            "approved_commands": { "rust-check": { "command_id": "rust-check", "program_path": "C:/Users/Matmus/.cargo/bin/cargo.exe", "args": ["check", "--locked"], "cwd": "D:/Tethers/tethers-0.1/host-rust", "script_digest": null, "script_path": null, "environment": {} } },
             "granted_permissions": { "filesystem_read": ["D:/Tethers"], "filesystem_write": ["D:/Tethers"], "network_hosts": ["github.com"], "network_allowed": true, "installation_allowed": false },
             "process_tree_supervision_required": true,
             "request_digest": contract.request_digest(),
@@ -1267,6 +1480,47 @@ mod tests {
         assert_eq!(err.code, "cwd");
     }
 
+    // ── canonical scope enforcement tests ────────────────────────
+
+    #[test]
+    fn cwd_outside_granted_scope_is_rejected() {
+        let mut obs = observation();
+        obs.commands.insert(
+            "rust-check".to_owned(),
+            HostCommandObservation {
+                program_path: "C:/Users/Matmus/.cargo/bin/cargo.exe".to_owned(),
+                args: vec!["check".to_owned()],
+                cwd: "C:/Elsewhere".to_owned(),
+                script_digest: None,
+                environment: BTreeMap::new(),
+            },
+        );
+        let err =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+                .unwrap_err();
+        assert_eq!(err.code, "scope");
+        assert!(err.message.to_ascii_lowercase().contains("outside"));
+    }
+
+    #[test]
+    fn dot_dot_traversal_outside_scope_is_rejected() {
+        let mut obs = observation();
+        obs.commands.insert(
+            "rust-check".to_owned(),
+            HostCommandObservation {
+                program_path: "C:/Users/Matmus/.cargo/bin/cargo.exe".to_owned(),
+                args: vec!["check".to_owned()],
+                cwd: "D:/Tethers/../Evil".to_owned(),
+                script_digest: None,
+                environment: BTreeMap::new(),
+            },
+        );
+        let err =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+                .unwrap_err();
+        assert_eq!(err.code, "scope");
+    }
+
     // ── substitute deferral tests ───────────────────────────────
 
     #[test]
@@ -1294,7 +1548,7 @@ mod tests {
             "worker_assignment": { "selected_by": "Matthew", "worker_id": "deepseek-pro-v4-opencode" },
             "status": "agreed",
             "capability_resolutions": [{ "id": "rust-compilation", "class": "required", "state": "available", "reason": null }],
-            "approved_commands": { "rust-check": { "command_id": "rust-check", "program_path": "C:/Users/Matmus/.cargo/bin/cargo.exe", "args": ["check", "--locked"], "cwd": "D:/Tethers/tethers-0.1/host-rust", "script_digest": null, "environment": {} } },
+            "approved_commands": { "rust-check": { "command_id": "rust-check", "program_path": "C:/Users/Matmus/.cargo/bin/cargo.exe", "args": ["check", "--locked"], "cwd": "D:/Tethers/tethers-0.1/host-rust", "script_digest": null, "script_path": null, "environment": {} } },
             "granted_permissions": { "filesystem_read": ["D:/Tethers"], "filesystem_write": ["D:/Tethers"], "network_hosts": ["github.com"], "network_allowed": true, "installation_allowed": false },
             "process_tree_supervision_required": true,
             "request_digest": contract.request_digest(),
@@ -1317,13 +1571,20 @@ mod tests {
         }
     }
 
-    // ── native Windows supervised-launch integration test ─────────
+    // ── native Windows supervised-launch tests ───────────────────
 
     #[cfg(windows)]
     #[test]
-    fn supervised_launch_runs_completes_and_leaves_no_survivor() {
+    fn supervised_launch_runs_descendant_completes_and_leaves_no_survivor() {
         let cmd_path = "C:/Windows/System32/cmd.exe";
-        let cwd = std::env::temp_dir().to_string_lossy().to_string();
+        let temp = std::env::temp_dir().to_string_lossy().replace('/', "\\");
+        let cwd = temp.clone();
+
+        // The command spawns a descendant: cmd /c start /b /wait cmd /c exit 0
+        let args = vec![
+            "/c".to_owned(),
+            "start /b /wait cmd /c exit 0".to_owned(),
+        ];
 
         let mut req = request(RequirementClass::Required);
         req.capabilities[0] = CapabilityRequirement {
@@ -1332,26 +1593,28 @@ mod tests {
             version_policy: VersionPolicy::Any,
         };
         req.commands = vec![RequestedCommand {
-            command_id: "cmd-test".to_owned(),
+            command_id: "cmd-descendant".to_owned(),
             capability_id: "powershell-automation".to_owned(),
-            args: vec!["/c".to_owned(), "exit 0".to_owned()],
+            args: args.clone(),
             cwd: cwd.clone(),
         }];
+        req.requested_permissions = broad_permissions();
 
         let mut obs = observation();
+        obs.granted_permissions = broad_permissions();
         obs.capabilities = BTreeMap::from([(
             "powershell-automation".to_owned(),
             HostCapabilityObservation {
                 version: "10.0".to_owned(),
                 verified: true,
-                command_id: "cmd-test".to_owned(),
+                command_id: "cmd-descendant".to_owned(),
             },
         )]);
         obs.commands = BTreeMap::from([(
-            "cmd-test".to_owned(),
+            "cmd-descendant".to_owned(),
             HostCommandObservation {
                 program_path: cmd_path.to_owned(),
-                args: vec!["/c".to_owned(), "exit 0".to_owned()],
+                args: args.clone(),
                 cwd: cwd.clone(),
                 script_digest: None,
                 environment: BTreeMap::from([(
@@ -1365,9 +1628,9 @@ mod tests {
         assert_eq!(contract.status(), &ContractStatus::Agreed);
 
         let invocation = CommandInvocation {
-            command_id: "cmd-test".to_owned(),
+            command_id: "cmd-descendant".to_owned(),
             program_path: cmd_path.to_owned(),
-            args: vec!["/c".to_owned(), "exit 0".to_owned()],
+            args,
             cwd,
         };
         let permit = contract.permit(invocation).unwrap();
@@ -1388,10 +1651,284 @@ mod tests {
     #[test]
     fn altered_command_is_refused_in_supervised_launch() {
         let contract = issue_agreed();
-        let invocation = exact_invocation();
-        let mut altered = invocation;
+        let mut altered = exact_invocation();
         altered.args.push("--release".to_owned());
         let err = contract.permit(altered).unwrap_err();
         assert_eq!(err.code, "command_mismatch");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_file_permit_and_launch_succeeds() {
+        use std::io::Write;
+
+        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
+        if !Path::new(pwsh).exists() {
+            return;
+        }
+        let temp = std::env::temp_dir();
+        let script_path = temp.join("tethers-test-script.ps1");
+        let script_content = "exit 0";
+        {
+            let mut file = fs::File::create(&script_path).unwrap();
+            file.write_all(script_content.as_bytes()).unwrap();
+        }
+        let script_str = script_path.to_string_lossy().replace('/', "\\");
+        let cwd = temp.to_string_lossy().replace('/', "\\");
+
+        let script_hash = format!("sha256:{}", hash_file(&script_str).unwrap());
+
+        let args = vec![
+            "-NoLogo".to_owned(),
+            "-NoProfile".to_owned(),
+            "-NonInteractive".to_owned(),
+            "-File".to_owned(),
+            script_str.clone(),
+        ];
+
+        let mut req = request(RequirementClass::Required);
+        req.capabilities[0] = CapabilityRequirement {
+            id: "powershell-automation".to_owned(),
+            class: RequirementClass::Required,
+            version_policy: VersionPolicy::Any,
+        };
+        req.commands = vec![RequestedCommand {
+            command_id: "pwsh-test".to_owned(),
+            capability_id: "powershell-automation".to_owned(),
+            args: args.clone(),
+            cwd: cwd.clone(),
+        }];
+        req.requested_permissions = broad_permissions();
+
+        let mut obs = observation();
+        obs.granted_permissions = broad_permissions();
+        obs.capabilities = BTreeMap::from([(
+            "powershell-automation".to_owned(),
+            HostCapabilityObservation {
+                version: "7.6.4".to_owned(),
+                verified: true,
+                command_id: "pwsh-test".to_owned(),
+            },
+        )]);
+        obs.commands = BTreeMap::from([(
+            "pwsh-test".to_owned(),
+            HostCommandObservation {
+                program_path: pwsh.to_owned(),
+                args: args.clone(),
+                cwd: cwd.clone(),
+                script_digest: Some(script_hash),
+                environment: BTreeMap::new(),
+            },
+        )]);
+
+        let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
+        assert_eq!(contract.status(), &ContractStatus::Agreed);
+
+        let invocation = CommandInvocation {
+            command_id: "pwsh-test".to_owned(),
+            program_path: pwsh.to_owned(),
+            args,
+            cwd,
+        };
+        let permit = contract.permit(invocation).unwrap();
+        let child = permit.launch().unwrap();
+        child.shutdown();
+
+        let _ = fs::remove_file(&script_path);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn changed_powershell_script_is_refused_by_permit() {
+        use std::io::Write;
+
+        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
+        if !Path::new(pwsh).exists() {
+            return;
+        }
+        let temp = std::env::temp_dir();
+        let script_path = temp.join("tethers-test-refused.ps1");
+        let script_content = "exit 0";
+        {
+            let mut file = fs::File::create(&script_path).unwrap();
+            file.write_all(script_content.as_bytes()).unwrap();
+        }
+        let script_str = script_path.to_string_lossy().replace('/', "\\");
+        let cwd = temp.to_string_lossy().replace('/', "\\");
+        let script_hash = format!("sha256:{}", hash_file(&script_str).unwrap());
+
+        let args = vec![
+            "-NoLogo".to_owned(),
+            "-NoProfile".to_owned(),
+            "-NonInteractive".to_owned(),
+            "-File".to_owned(),
+            script_str.clone(),
+        ];
+
+        let mut req = request(RequirementClass::Required);
+        req.capabilities[0] = CapabilityRequirement {
+            id: "powershell-automation".to_owned(),
+            class: RequirementClass::Required,
+            version_policy: VersionPolicy::Any,
+        };
+        req.commands = vec![RequestedCommand {
+            command_id: "pwsh-refuse".to_owned(),
+            capability_id: "powershell-automation".to_owned(),
+            args: args.clone(),
+            cwd: cwd.clone(),
+        }];
+        req.requested_permissions = broad_permissions();
+
+        let mut obs = observation();
+        obs.granted_permissions = broad_permissions();
+        obs.capabilities = BTreeMap::from([(
+            "powershell-automation".to_owned(),
+            HostCapabilityObservation {
+                version: "7.6.4".to_owned(),
+                verified: true,
+                command_id: "pwsh-refuse".to_owned(),
+            },
+        )]);
+        obs.commands = BTreeMap::from([(
+            "pwsh-refuse".to_owned(),
+            HostCommandObservation {
+                program_path: pwsh.to_owned(),
+                args: args.clone(),
+                cwd: cwd.clone(),
+                script_digest: Some(script_hash),
+                environment: BTreeMap::new(),
+            },
+        )]);
+
+        let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
+        assert_eq!(contract.status(), &ContractStatus::Agreed);
+
+        // Mutate the script before permit.
+        {
+            let mut file = fs::File::create(&script_path).unwrap();
+            file.write_all(b"exit 1").unwrap();
+        }
+
+        let invocation = CommandInvocation {
+            command_id: "pwsh-refuse".to_owned(),
+            program_path: pwsh.to_owned(),
+            args,
+            cwd,
+        };
+        let err = contract.permit(invocation).unwrap_err();
+        assert_eq!(err.code, "script_changed");
+
+        let _ = fs::remove_file(&script_path);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn missing_powershell_script_is_refused_by_permit() {
+        use std::io::Write;
+
+        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
+        if !Path::new(pwsh).exists() {
+            return;
+        }
+        let temp = std::env::temp_dir();
+        let script_path = temp.join("tethers-test-missing.ps1");
+        let script_content = "exit 0";
+        {
+            // Create, hash, then delete before permit.
+            let mut file = fs::File::create(&script_path).unwrap();
+            file.write_all(script_content.as_bytes()).unwrap();
+        }
+        let script_str = script_path.to_string_lossy().replace('/', "\\");
+        let cwd = temp.to_string_lossy().replace('/', "\\");
+        let script_hash = format!("sha256:{}", hash_file(&script_str).unwrap());
+
+        let args = vec![
+            "-NoLogo".to_owned(),
+            "-NoProfile".to_owned(),
+            "-NonInteractive".to_owned(),
+            "-File".to_owned(),
+            script_str.clone(),
+        ];
+
+        let mut req = request(RequirementClass::Required);
+        req.capabilities[0] = CapabilityRequirement {
+            id: "powershell-automation".to_owned(),
+            class: RequirementClass::Required,
+            version_policy: VersionPolicy::Any,
+        };
+        req.commands = vec![RequestedCommand {
+            command_id: "pwsh-missing".to_owned(),
+            capability_id: "powershell-automation".to_owned(),
+            args: args.clone(),
+            cwd: cwd.clone(),
+        }];
+        req.requested_permissions = broad_permissions();
+
+        let mut obs = observation();
+        obs.granted_permissions = broad_permissions();
+        obs.capabilities = BTreeMap::from([(
+            "powershell-automation".to_owned(),
+            HostCapabilityObservation {
+                version: "7.6.4".to_owned(),
+                verified: true,
+                command_id: "pwsh-missing".to_owned(),
+            },
+        )]);
+        obs.commands = BTreeMap::from([(
+            "pwsh-missing".to_owned(),
+            HostCommandObservation {
+                program_path: pwsh.to_owned(),
+                args: args.clone(),
+                cwd: cwd.clone(),
+                script_digest: Some(script_hash),
+                environment: BTreeMap::new(),
+            },
+        )]);
+
+        let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
+        assert_eq!(contract.status(), &ContractStatus::Agreed);
+
+        // Delete the script before permit.
+        let _ = fs::remove_file(&script_path);
+
+        let invocation = CommandInvocation {
+            command_id: "pwsh-missing".to_owned(),
+            program_path: pwsh.to_owned(),
+            args,
+            cwd,
+        };
+        let err = contract.permit(invocation).unwrap_err();
+        assert_eq!(err.code, "script_digest");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_without_noprofile_is_refused() {
+        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
+        if !Path::new(pwsh).exists() {
+            return;
+        }
+        let mut obs = observation();
+        obs.commands.insert(
+            "rust-check".to_owned(),
+            HostCommandObservation {
+                program_path: pwsh.to_owned(),
+                args: vec![
+                    "-File".to_owned(),
+                    "C:/Temp/exists.ps1".to_owned(),
+                ],
+                cwd: "D:/Tethers".to_owned(),
+                script_digest: Some(
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        .to_owned(),
+                ),
+                environment: BTreeMap::new(),
+            },
+        );
+        let err =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), obs)
+                .unwrap_err();
+        assert_eq!(err.code, "powershell");
+        assert!(err.message.contains("-NoLogo"));
     }
 }

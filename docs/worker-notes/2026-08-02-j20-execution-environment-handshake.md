@@ -18,6 +18,8 @@ Replayed final SHA: `4da7c0e853392075ea4e3bdf43b7792e49827dc5`
 
 Correction final SHA: `436dca377466818f57d6e4e66999a31b80a6633b`
 
+Correction implementation checkpoint: `436dca377466818f57d6e4e66999a31b80a6633b`
+
 ## Requested outcome
 
 Create a host-owned one-shot execution-environment handshake with one shared
@@ -197,5 +199,54 @@ Seven review corrections applied:
 - Evidence commit: `4da7c0e`
 - Replayed final SHA: `4da7c0e853392075ea4e3bdf43b7792e49827dc5`
 - Correction final SHA: `436dca377466818f57d6e4e66999a31b80a6633b`
+- Correction implementation checkpoint: `436dca377466818f57d6e4e66999a31b80a6633b`
+- Final execution-correction SHA: `272cfc675a700a389c2e7a90055edf51cc05229e`
 - Branch: `codex/execution-environment-handshake`
 - `docs/architecture/TETHERS_EXECUTION_ENVIRONMENT_HANDSHAKE_V1.md`
+
+## Final execution correction (2026-08-02)
+
+Six targeted repairs after review:
+
+### 1. Script identity fix
+- `ApprovedCommand` now stores `script_path: Option<String>` with the canonical script path.
+- `permit()` hashes `command.script_path` (the `.ps1` file), not `command.program_path` (pwsh.exe).
+- `CommandPermit::launch()` rehashes the script a third time immediately before `SupervisedChild::launch`.
+- Rejects changed, missing, or redirected script paths.
+
+### 2. PowerShell command shape
+- Only one form permitted: `pwsh.exe -NoLogo -NoProfile -NonInteractive -File <absolute-path> [args]`.
+- `-Command` and `-EncodedCommand` remain unconditionally refused.
+- Successful real PowerShell 7 permit-and-launch test; changed-script and missing-script refusal tests.
+
+### 3. Canonical scope enforcement
+- `canonicalize_path()` resolves existing paths via `fs::canonicalize` and non-existent paths via component resolution.
+- `canonical_as_prefix()` handles `\\?\` NT prefix stripping, slash normalization, and drive-root boundary.
+- `validate_command_paths_and_scope()` confirms cwd and PowerShell script paths are within granted filesystem roots.
+- Tests: `..` traversal, junction escape, cwd outside scope.
+
+### 4. Descendant-process proof
+- Native Windows test: `cmd.exe /c "start /b /wait cmd /c exit 0"` — parent launches descendant, both complete, `shutdown()` succeeds.
+- `max_processes` (16) from contract permits bounded process tree; `clear_environment` with explicit env map.
+
+### 5. Bypass closure
+- `child_config()` made private — no external caller can alter the config and launch separately.
+- `CommandPermit::launch()` is the only launch path; rehashes before `SupervisedChild::launch`.
+
+### 6. Evidence and schema alignment
+- `max_supervised_processes` added to the public contract schema (required field, integer 1-256).
+- `script_path` field added to schema command definition.
+- SHA `436dca3` noted as correction implementation checkpoint.
+
+### Verification matrix
+
+| Check | Result |
+|---|---|
+| `cargo +1.89.0 test execution_environment --locked` | 31/31 PASS |
+| `cargo +1.89.0 check --all-targets --all-features --locked --offline` | PASS |
+| `cargo +1.89.0 test --all-targets --all-features --locked` | 843/843 PASS |
+| `opam exec ... dune build` | PASS |
+| `opam exec ... dune runtest` | PASS |
+| `check-tethers-task-packet.ps1` | PASS |
+| `check-tethers-environment.ps1 -Profile rust-host` | PASS (5/5 probes, `cargo_offline: true`) |
+| `git diff --check` | PASS |
