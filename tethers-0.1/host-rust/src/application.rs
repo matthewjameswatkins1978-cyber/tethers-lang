@@ -1742,7 +1742,7 @@ pub(crate) fn submit_local_root_anchor(
     });
     request["facts"] = json!({});
     let context = InputEventContext::for_initial(&anchor.event_id);
-    process_one_event(request, context, runtime, queue)
+    (process_one_event)(request, context, runtime, queue)
 }
 
 fn short_event_digest(event_id: &str) -> String {
