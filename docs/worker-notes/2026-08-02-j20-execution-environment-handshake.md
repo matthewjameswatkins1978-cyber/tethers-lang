@@ -8,9 +8,13 @@ Owner: `Codex`
 
 Status: `COMPLETE`
 
-Base commit: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
+Base commit: `777026be2945895c86e36ce997ba8e15d4f8b0f6`
+
+Original base (pre-replay): `e57bf536fe3d7fb074c00ddac867b5720a15116e`
 
 Implementation checkpoint: `ddb582d46049c93724928c03e40888e425c7517e`
+
+Replayed final SHA: `4da7c0e853392075ea4e3bdf43b7792e49827dc5`
 
 ## Requested outcome
 
@@ -78,10 +82,55 @@ enforcement. Repository-wide formatting and Clippy debt predate this task.
 Route one real bounded implementation task through the probe script and Rust
 issuer, then attach its contract digest to that task's worker note.
 
+## Replay evidence (2026-08-02)
+
+**Method:** `git rebase --onto origin/main e57bf53 HEAD`. Clean, unpublished branch;
+rewriting is permitted by explicit task authority.
+
+**Pre-replay state:** `HEAD` = `d9f4926` on `codex/execution-environment-handshake`,
+3 commits ahead of old merge-base `e57bf53`. Worktree clean. Backup tag:
+`backup/execution-environment-handshake-pre-rebase`.
+
+**Target:** `origin/main` = `777026be2945895c86e36ce997ba8e15d4f8b0f6` (M5 durable
+local anchor COMPLETE, 14 new commits since old merge-base).
+
+**Conflicts:** One conflict in `docs/CURRENT_CLINE_TASK.md` on the third commit
+(d9f4926). Main carried the M5 task packet; the branch carried the J20-ENV-P1
+handshake task. Resolved by taking the branch's version (theirs), since the
+handshake branch owns this task and M5 is preserved in main's history.
+`tethers-0.1/host-rust/src/lib.rs` merged cleanly — both `execution_environment`
+and `local_anchor` module declarations coexist in alphabetical order.
+
+**Post-replay verification:**
+
+| Check | Result |
+|---|---|
+| `git diff --check origin/main...HEAD` | PASS |
+| `git diff --stat` (branch vs main) | 11 files, +1242/-293 |
+| `merge-base HEAD origin/main` | `777026b` (exact) |
+| `pwsh -NoProfile -File scripts/check-tethers-environment.ps1 -Profile rust-host` | PASS; `rust.check` offline fail is known `arbitrary v1.4.2` |
+| `cargo +1.89.0 test execution_environment --locked` | PASS (6/6) |
+| `cargo +1.89.0 check --all-targets --all-features --locked` | PASS |
+| `cargo +1.89.0 test --all-targets --all-features --locked` | 818 passed, 1 FAIL |
+| `opam exec ... dune build` | PASS |
+| `opam exec ... dune runtest` | PASS |
+| `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | PASS |
+| `git diff --check` | PASS |
+
+**Known baseline failures (outside this packet):**
+- `m3_lifecycle::m3_immediate_startup_descendant_is_contained_by_suspended_job_assignment` — pre-existing permission-denied (OS code 5) on the local machine, unrelated to handshake changes.
+- Repository-wide `cargo fmt` and `cargo clippy` — pre-existing debt in `file_tools.rs` and `application.rs`.
+- `cargo +1.89.0 metadata --locked --offline` — known uncached `arbitrary v1.4.2`; network-resolved `cargo check/test` passes.
+
+**Backup tag:** `backup/execution-environment-handshake-pre-rebase` at `d9f4926` (pre-replay tip). Retained; remove after acceptance.
+
 ## References
 
-- Base: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
-- Architecture/probe commit: `83e1130`
-- Rust issuer commit: `ddb582d`
+- Original base: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
+- New M5 baseline: `777026be2945895c86e36ce997ba8e15d4f8b0f6`
+- Architecture/probe commit: `a4a297c`
+- Rust issuer commit: `bb30fd0`
+- Evidence commit: `4da7c0e`
+- Replayed final SHA: `4da7c0e853392075ea4e3bdf43b7792e49827dc5`
 - Branch: `codex/execution-environment-handshake`
 - `docs/architecture/TETHERS_EXECUTION_ENVIRONMENT_HANDSHAKE_V1.md`

@@ -5,9 +5,11 @@ Task: `J20-ENV-P1 - Execution Environment Handshake`
 Owner: `Codex`
 Status: `COMPLETE`
 Task colour: `Red`
-Route: `Codex host-bound implementation under Matthew's explicit authority`
+Route: `Codex host-bound implementation under Matthew's explicit authority; replayed onto M5 baseline 2026-08-02`
 Base branch: `main`
-Base commit: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
+Base commit: `777026be2945895c86e36ce997ba8e15d4f8b0f6`
+Original base (pre-replay): `e57bf536fe3d7fb074c00ddac867b5720a15116e`
+Replayed final SHA: `4da7c0e853392075ea4e3bdf43b7792e49827dc5`
 Worker note: `docs/worker-notes/2026-08-02-j20-execution-environment-handshake.md`
 
 ## Objective
