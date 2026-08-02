@@ -1,705 +1,279 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J19-M3 - Autonomous Trust, Launch, Conformance and Install Programme`
-Owner: `Codex Sol Medium`
-Status: `COMPLETE`
-Task colour: `Red`
-Route: `Codex Sol Medium, one continuous autonomous Milestone 3 implementation`
+Task: `J19-M4 - Autonomous File Tools Plug Vertical Slice`
+Owner: `Luna / OpenCode`
+Status: `IN_PROGRESS`
+Task colour: `Amber`
+Route: `Luna in one continuous autonomous Milestone 4 implementation`
 Base branch: `main`
-Base commit: `17d2a17468a9d7395d31d4b66b5f6e828f82102c`
-Accepted M2 baseline: `17d2a17468a9d7395d31d4b66b5f6e828f82102c`
+Accepted M3 baseline: `8cd8958d4880595dfff5e38ab5ec26de940944df`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
-Branch: `codex/j19-m3-trust-launch-conformance`
-Worker note: `docs/worker-notes/2026-08-01-j19-m3-trust-launch-conformance.md`
+Branch: `opencode/j19-m4-file-tools-plug`
+Worker note: `docs/worker-notes/2026-08-02-j19-m4-file-tools-plug.md`
 
-## Control-plane starting rule
+## Start rule
 
-Start a fresh Codex Sol Medium session.
+Use Luna in OpenCode. Fetch the remote branch above, switch to it, require a clean worktree, and record the exact branch HEAD containing this control packet in the worker note before implementation.
 
-Fetch `origin/main`, create or reset only the milestone branch named above from the commit containing this control packet, and record that exact control commit in the worker note.
-
-The accepted implementation baseline is M2 at:
-
-`17d2a17468a9d7395d31d4b66b5f6e828f82102c`
-
-The control-only commit containing this packet authorises Milestone 3 but changes no runtime semantics by itself.
-
-Use normal commits and normal pushes only. Do not amend or rebase published work, force-push, move `main`, move tags, create a release, or begin Milestone 4.
-
-## Tooling preflight
-
-Read `AGENTS.md` and run the repository-owned diagnostic before implementation:
+Read `AGENTS.md`, this task, the M3 worker note, and the governing architecture documents. Run:
 
 ```powershell
 just tools
 ```
 
-Use the installed workshop tools where they reduce friction:
-
-- `rg` for repository and symbol search;
-- `fd` for file discovery;
-- `jq` and `yq` for structured fixture inspection;
-- `gh` for GitHub inspection;
-- `pwsh` for Windows verification;
-- `just` for the existing repeatable project commands.
-
-The root `justfile` and `scripts/check-dev-tools.ps1` are accepted project infrastructure. Extend the `justfile` only when a thin recipe genuinely reduces repeated command noise. Do not create a second build system, broad wrapper framework, generator layer, or parallel task authority.
+Use normal commits and normal pushes only. Do not amend or rebase published work, force-push, move `main`, move tags, create a release, or begin M5.
 
 ## Mission
 
-Complete all of Milestone 3 in one continuous implementation run:
+Complete all of Milestone 4 in one coherent autonomous run:
 
-1. `P7-TRUST-SIGNATURE`;
-2. `P8-LAUNCH-PROFILE`;
-3. `P9-CONFORMANCE-GATE`;
-4. `P10-INSTALL-APPROVAL`.
+1. `P11-FILE-CONTRACT`
+2. `P12-FILE-PROVIDER`
+3. `P13-FILE-END-TO-END`
 
-Continue automatically from P7 through P10. Make bounded commits at coherent checkpoints, run focused evidence after each checkpoint, and finish with the complete regression matrix.
+Continue automatically through ordinary engineering decisions. Make small coherent commits at useful checkpoints, run focused tests after each packet, and run the complete regression suite at the end.
 
-Return only at:
+Return only with:
 
-`M3 COMPLETE - INSTALLED DISABLED PLUG`
+`M4 COMPLETE - FIRST LIVE FILE TOOLS PLUG`
 
-or at a genuine major stop condition defined in this packet.
+or a genuine major blocked report after two materially different evidence-based attempts.
 
-Do not pause merely because a decision is difficult, a diff is larger than expected, a test needs a fixture, a store needs a schema, or ordinary compiler-guided untangling is required. Use engineering judgement within the frozen contracts.
+Do not stop because a module boundary, schema spelling, fixture shape, compiler error, test harness, Windows API detail, package builder, or integration seam requires thought. Luna owns those ordinary decisions within the frozen rules.
 
 ## Objective
 
-Transition one accepted M2 candidate through the complete authorised M3 trust,
-supervised-conformance, explicit-installation-approval, and immutable
-installed-disabled lifecycle without adding operational enablement.
+Turn one accepted M3 installed-disabled Plug into the first explicitly enabled operational Plug, then prove one bounded File Tools Query and one exact File Tools Action through the complete host path:
 
-## Relevant background and existing behaviour
+inspect -> quarantine -> candidate -> trust -> supervised conformance -> approval -> installed-disabled -> explicit enablement -> active exact binding -> discovery -> policy -> durable intent -> invocation -> canonical outcome -> replay terminal -> Result Anchor -> Trail.
 
-M1 provides the accepted Socket/application and supervised-child foundations.
-M2 provides strict package inspection, reparse-safe quarantine extraction, and
-immutable candidate records. The released 0.2 path remains separate and must
-continue to behave exactly as before.
-
-## Required behaviour
-
-1. Verify detached Ed25519 evidence against a separate host-owned trust or exact unsigned-developer approval path.
-2. Revalidate and launch accepted candidate material only through the honestly labelled supervised profile with a clean bounded environment.
-3. Run host-owned conformance and persist immutable exact-pinned evidence without granting installation authority.
-4. Require explicit installation approval, publish immutable installed material, and record exact disabled bindings with no active availability.
-
-## Relevant components
-
-- M2 `package.rs` and `candidate.rs` inspection, quarantine and candidate evidence.
-- Existing `child_process.rs`, `stdio_provider.rs`, Socket and provider foundations.
-- Existing strict JSON, JCS/SHA-256, reparse-safe publication and immutable-store patterns.
-- New M3 trust, launch, conformance, approval and installed-state modules, schemas, fixtures and focused tests.
-
-## Frozen decisions and invariants
-
-Signature validity is not publisher trust; publisher trust is not conformance;
-conformance is not installation approval; installation is not enablement.
-Supervision is not isolation. No shell, PATH selection, ambient secret
-inheritance, production credential, automatic retry, active binding, provider
-operation, Anchor admission, or M4 behaviour is authorised.
-
-## Acceptance criteria
-
-1. P7 cryptographic, trust/revocation and exact unsigned-developer evidence passes its focused positive and negative matrix.
-2. P8 real Windows evidence proves exact no-shell launch, clean environment, bounded supervision, drift refusal and process cleanup.
-3. P9 pass/fail/interrupted and invalidation evidence is immutable, exact-pinned, secret-safe and non-authorising.
-4. P10 explicit approval and atomic publication produce only immutable installed-disabled records and bindings absent from active runtime availability.
-
-## Stop conditions
-
-Only the major conditions and two-materially-different-attempt rule in the
-`Major stop rule` section qualify. Ordinary design, dependency, compiler,
-fixture, Windows API, test-layout, schema and coherent scope decisions do not.
-
-## Expected pre-existing changes
-
-None. The milestone branch starts clean at the M3 control commit.
+The first operational Plug is credential-free, local-only, Windows x86_64, MCP 2025-11-25 over stdio, supervised but not isolated, and has no network access.
 
 ## Required final state
 
-Milestone 3 alone may transition one accepted M2 installation candidate through these separate gates:
+At M4 completion:
 
-1. exact package and payload evidence revalidated;
-2. detached Ed25519 signature evidence verified;
-3. signing key resolved through host-owned trust or explicit unsigned developer-mode approval;
-4. exact supervised conformance launch prepared from accepted host-owned candidate material;
-5. host-orchestrated conformance run under bounded test conditions;
-6. provider stopped;
-7. immutable conformance evidence reviewed;
-8. explicit installation approval recorded;
-9. accepted bytes published into a host-owned immutable installation location;
-10. immutable installed-Plug record and exact provider/capability bindings created;
-11. Plug remains present but disabled.
-
-At M3 completion the Plug is:
-
-- installed as host-owned immutable material;
-- explicitly approved for installation;
-- bound to exact package, payload, manifest, provider, protocol and conformance evidence;
-- present but disabled;
-- absent from active runtime availability;
-- incapable of operational invocation;
-- incapable of Anchor admission;
-- incapable of receiving production credentials;
-- incapable of silently enabling itself.
-
-M3 does not implement operational enablement. The first enablement and real capability invocation belong to M4.
+- a real `.tetherplug` File Tools package exists as committed deterministic reference material;
+- it can pass the accepted M2/M3 package, trust, conformance and installation gates;
+- explicit host authority can enable exactly one installed Plug identity;
+- enablement creates exact active capability bindings only after current trust, installation, conformance, package, payload, manifest, provider, protocol and launch evidence are revalidated;
+- disablement removes operational availability without deleting historical evidence;
+- a bounded file metadata/read Query works only inside an exact host-approved scope;
+- an exact file move Action works only inside approved source/destination scopes and refuses overwrite;
+- host policy, approval, durable intent, replay, outcome, Result Anchor and Trail ordering remain intact;
+- unattempted, succeeded, failed and uncertain paths are demonstrated without inventing a fourth attempted outcome;
+- no Anchor admission, credential delivery, network listener, PDF feature, arbitrary provider marketplace, auto-update or M5 behaviour exists.
 
 ## Governing contracts
 
-Implement against the accepted repository documents and accepted M1-M2 code:
+Implement against:
 
+- `docs/architecture/TETHERS_SOCKET_AND_MCP_BINDING_V1.md` or the accepted equivalent;
 - `docs/architecture/TETHERPLUG_PACKAGE_V1.md`;
-- `docs/architecture/TETHERS_SOCKET_AND_MCP_BINDING_V1.md` or the accepted Socket/MCP contract present in the repository;
 - `docs/architecture/TETHERS_CAPABILITIES_EFFECTS_SCOPES_V1.md`;
 - `docs/architecture/TETHERS_LIFECYCLE_OUTCOMES_EVENTS_CONFORMANCE_V1.md`;
 - `docs/architecture/TETHERS_SECURITY_TRUST_CREDENTIALS_SANDBOX_V1.md`;
 - `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`;
-- the accepted M1 Socket/application seam;
-- the accepted M2 package inspector, quarantine boundary and candidate registry.
+- accepted M1 Socket/application seam;
+- accepted M2 package/candidate boundary;
+- accepted M3 trust, supervised launch, conformance, approval and installed-disabled stores.
 
-Where a frozen document names a conceptual record but does not freeze exact Rust field spelling or nesting, Sol may choose and freeze the smallest direct v1 machine representation consistent with every named distinction, refusal rule and lifecycle gate. Freeze each durable schema in Rust types, committed golden fixtures and the worker note before relying on it.
+Preserve released 0.2 behaviour. Do not reinterpret legacy runtime configuration or legacy manifests as installed Plug state.
 
-Do not silently reinterpret legacy 0.2 manifests, runtime configuration, trust stores or fixtures as Plug installation state. The released 0.2 path remains intact.
+## Frozen architectural truths
 
-## Autonomy and decision authority
+- Tethers plans; the host authorises and executes.
+- The Socket is semantic; MCP is the binding; stdio is the transport.
+- Provider code remains untrusted after signing, conformance, installation and enablement.
+- Supervision is not isolation.
+- Signature is not trust; trust is not conformance; conformance is not installation approval; installation is not enablement; enablement is not per-action permission.
+- Current trust must be checked before every operational launch.
+- Exact installed bytes and manifests must be revalidated before operational launch.
+- No shell, PATH selection, command concatenation, ambient environment inheritance or production credential delivery.
+- No automatic retry.
+- Attempted outcomes remain exactly `succeeded`, `failed`, `uncertain`.
+- Unattempted is a host execution state, not a canonical attempted outcome.
+- Durable intent precedes provider invocation.
+- Result Anchor publication occurs only after canonical outcome and replay-terminal publication.
+- Trail records what happened and why; it does not grant authority.
+- M4 owns explicit enablement and operational Action/Query only. External Anchors belong to M5.
 
-Sol owns ordinary engineering decisions needed to complete M3, including:
+## P11 - File capability contract
 
-- module names and source boundaries;
-- public versus crate-private visibility;
-- value types and error enums;
-- durable record field spelling and nesting;
-- store layout beneath host-supplied roots;
-- fixture and test layout;
-- Windows API details needed by the accepted contract;
-- exact bounded resource constants;
-- clean-environment allow-list details for a self-contained native provider;
-- launch-profile representation;
-- conformance suite representation;
-- atomic publication and crash-recovery mechanics;
-- commit count and intermediate layout;
-- narrow updates to scripts or `justfile` recipes whose assumptions legitimately move;
-- mature Rust dependencies needed for accepted cryptography, strict base64url, DER SPKI parsing or Windows process controls.
+Freeze the smallest direct v1 File Tools contract before implementation.
 
-These are not blockers. Sol should inspect existing patterns, choose a conservative solution, implement it, test it and record the decision.
+Choose stable capability names under one clear namespace. At minimum provide:
 
-Do not write custom cryptographic primitives. Use a mature, maintained Ed25519 implementation compatible with Rust 1.89. Pin dependencies through `Cargo.lock`, minimise feature sets, and document each new direct dependency and purpose in the worker note.
+1. one Query for bounded file metadata and optionally bounded UTF-8 content read;
+2. one Action for exact file move.
 
-## Absolute security truths
+The Query must be read-only. The Action must declare filesystem effects explicitly.
 
-These are frozen and must remain visible in code, types, tests and documentation:
+Freeze strict input/output JSON schemas, operation names, manifest identities, effect declarations and permission scopes in committed files and tests.
 
-- host policy and operating-system containment are separate;
-- a provider remains untrusted after signing, conformance, installation or health checks;
-- a valid signature proves possession of one key over one exact semantic digest, not safety or publisher identity;
-- publisher identity is host-owned trust-store data, never package presentation text;
-- no trust on first use;
-- conformance is evidence, not trust, permission, installation approval or enablement;
-- supervision is not hostile-code isolation;
-- the M3 supervised profile is only for explicitly trusted reference/development providers;
-- no production credential delivery is authorised;
-- no shell, PATH lookup, command concatenation, profile script or launch download;
-- no automatic retry;
-- no active binding before explicit installation approval;
-- no operational binding or invocation before M4 enablement;
-- drift invalidates readiness and relevant evidence;
-- raw provider stderr is never trusted or copied into durable canonical evidence.
+The contract must define:
 
-## P7 required result: trust, signature and revocation
+- path values as host-resolved scoped relative paths, never unrestricted arbitrary absolute paths from a Tether;
+- separate approved roots or equivalent host-owned scope identities;
+- canonical path/reparse handling on Windows;
+- bounded file size for content reads;
+- exact behaviour for missing file, wrong type, invalid UTF-8 when content is requested, destination exists, source equals destination, cross-volume move if unsupported, path escape, junction/reparse encounter, permission refusal and provider loss;
+- overwrite is always refused in M4;
+- no recursive directory operations;
+- no delete, copy, write, glob, arbitrary listing, shell or network capability;
+- deterministic output fields and safe diagnostics.
 
-### Signature verification
+Do not freeze a broader File API for hypothetical future needs. One good Query and one good move Action are enough.
 
-Implement the accepted package-signature v1 contract exactly:
+Commit P11 separately after schema and contract tests pass. Record the final names and schema digests in the worker note.
 
-- algorithm is Ed25519 only, as defined by RFC 8032;
-- trusted public keys are exact RFC 8410 DER SubjectPublicKeyInfo bytes;
-- `key_id` is `sha256:<lowercase hex SHA-256 of the exact DER SPKI bytes>`;
-- the exact UTF-8 signing input is:
+## P12 - File Tools provider and package
 
-```text
-tethers.tetherplug.signature.v1
-<semantic-package-digest>
-```
+Build one self-contained native Windows x86_64 reference provider with no credentials and no network use.
 
-The final newline is mandatory.
+Package it as deterministic `.tetherplug` reference material using the accepted package format. Do not hand-edit inconsistent digest evidence. A small repository-owned deterministic packaging script or build step is acceptable when it produces reproducible exact package bytes and validates its own output.
 
-The strict signature envelope contains only:
+The provider must:
 
-- `signature_format_version` equal to `"1"`;
-- `algorithm` equal to `"ed25519"`;
-- `key_id`;
-- `semantic_package_digest`;
-- unpadded base64url `signature`.
+- implement MCP initialize, complete tools/list and tools/call for only the P11 operations;
+- advertise exact schemas matching committed capability manifests;
+- reject unknown operations and malformed arguments;
+- resolve only host-provided scoped roots/configuration;
+- perform real Windows reparse-safe path checks;
+- use bounded I/O;
+- refuse overwrite;
+- emit no canonical authority, policy decision, outcome, Result Anchor or Trail itself;
+- write protocol only to stdout and treat stderr as untrusted diagnostics;
+- support deterministic conformance fixtures without production user data;
+- remain stopped after conformance.
 
-Reject duplicate or unknown fields, padded or malformed base64url, signatures not exactly 64 bytes after decoding, wrong key IDs, wrong digest, wrong signing input, unsupported algorithm, duplicate authority from one key and malformed signature filenames.
+Integrate the package through the accepted inspect, quarantine, candidate, trust, launch, conformance, approval and installed-disabled path. Do not bypass M3 stores by constructing an installed record directly in tests.
 
-Signature files remain detached evidence under `signatures/`. They are excluded from semantic package identity and never alter package or manifest authority.
+Commit P12 separately after focused provider, package and conformance evidence passes.
 
-### Host trust store
+## P13 - Explicit enablement and end-to-end execution
 
-Create a separate host-owned publisher trust store. It must not share state with packages, candidates, installed records, capability manifests, policy, credentials, Trail or replay.
+Add the smallest host-owned explicit enablement model.
 
-A v1 key record must preserve at least:
+Enablement must be a separate durable host authority record or state transition, distinct from installation approval and policy. It must pin the exact installed Plug identity and current evidence needed for readiness.
 
-- exact key ID;
-- exact DER SPKI bytes or an exact stable encoding of them;
-- host-assigned publisher identity;
-- trust state: trusted, disabled or revoked;
-- optional namespace restriction where implemented;
-- creation/update times;
-- approving authority evidence;
-- optional expiry;
-- revocation reason and time where relevant;
-- schema version and record-integrity evidence.
+Before enabling and before each operational launch, require at least:
 
-Trust changes require explicit host authority. Packages cannot add keys, map publishers or choose trust state. No TOFU exists.
+- installed record is valid and `present_disabled` or the accepted enabled-state transition source;
+- exact installed file set and all digests are current;
+- current trust or exact developer approval is current;
+- installation approval and conformance evidence remain current;
+- launch profile remains the accepted credential-free supervised profile;
+- exact provider and capability bindings match committed manifests;
+- no conflicting active binding exists;
+- host-approved scope configuration is valid and reparse-safe.
 
-Rotation is explicit. Revoked keys preserve historical evidence but are not currently trusted. Install and later launch re-evaluate current trust. Do not invent trusted timestamps or proof of pre-compromise signing.
+Enablement must not silently enable every version, provider or capability. Bind only exact reviewed capabilities for one exact installed identity.
 
-Use create-only or explicit state-transition records with crash-aware publication, duplicate/conflict refusal, reparse-safe roots, strict reload and corruption refusal.
+Disablement must be explicit, durable and fail closed. Restart/reload must reconstruct the same enabled or disabled state without using package claims as authority.
 
-### Unsigned developer mode
+Adapt enabled installed bindings into the existing resolver/policy/dispatch path rather than creating a parallel execution engine.
 
-Implement explicit unsigned developer-mode evidence as a separate host-owned approval path:
+Demonstrate:
 
-- off by default;
-- exact semantic digest approval only;
-- visibly unsigned;
-- no publisher-trust claim;
-- no inheritance to another digest or version;
-- no automatic enablement;
-- no silent conversion to production trust.
+### Query success
 
-Developer mode does not make arbitrary third-party code safe and may only feed the visibly supervised, non-isolated M3 path.
+A file inside an approved disposable root is queried through Tethers and returns bounded canonical metadata, and bounded content only when requested and valid.
 
-### P7 evidence
+### Action success
 
-Include deterministic evidence for:
+A source file inside an approved source root is moved to an approved destination path with overwrite refused. The exact action travels through evaluation, resolution, policy, intent, Socket invocation, outcome, replay terminal, Result Anchor and Trail.
 
-- accepted RFC 8032 vectors;
-- wrong message, digest, key and signature;
-- strict 64-byte unpadded base64url handling;
-- exact mandatory final newline;
-- RFC 8410 SPKI parsing and key-ID derivation;
-- duplicate/unknown envelope fields;
-- unknown, disabled, expired and revoked keys;
-- host publisher mapping distinct from package `publisher` text;
-- trust-store restart, corruption, torn write, duplicate and conflict handling;
-- developer mode exact-digest binding and non-inheritance;
-- no package-driven trust mutation.
+### Required negative and boundary cases
 
-Commit P7 separately after focused and regression evidence passes, then continue directly to P8.
+- disabled Plug is unavailable and unattempted;
+- enablement with stale/revoked trust refuses;
+- payload or manifest drift refuses;
+- scope escape and reparse/junction paths refuse before provider effect;
+- destination exists refuses without overwrite;
+- policy deny and approval-required remain host-owned and unattempted;
+- provider-declared extra operation/schema drift invalidates readiness;
+- malformed response is failed or uncertain according to the accepted lifecycle boundary;
+- timeout/process loss after invocation is uncertain;
+- replay blocks duplicate operation execution across restart;
+- no Result Anchor for unattempted;
+- exactly one Result Anchor attempt after durable attempted outcome and replay-terminal publication;
+- Trail ordering and safe diagnostic redaction are preserved;
+- disablement removes availability;
+- no external Anchor admission occurs.
 
-## P8 required result: supervised conformance launch profile
+Use disposable Windows fixture roots. Never operate on arbitrary user files during tests or demonstrations.
 
-P8 extends the existing Windows child-process and Socket foundations behind an explicit launch-profile boundary. Preserve existing Job Object ownership and released behaviour.
+Commit P13 separately after focused vertical-slice evidence and full regression pass.
 
-### Honest profile model
+## Autonomy and judgement
 
-Implement and visibly label a `supervised` profile. It provides bounded process ownership and launch hygiene only. It must never be named or reported as isolated, sandboxed, hostile-code-safe or production credential-safe.
+Luna may choose:
 
-AppContainer or another strong isolated profile remains deferred. Do not simulate isolation with a restricted token or Job Object label.
+- module and type names not frozen above;
+- exact durable enablement schema and store layout;
+- provider binary layout;
+- deterministic package builder implementation;
+- capability names and schemas during P11, once frozen in committed evidence;
+- bounded constants;
+- test and fixture structure;
+- thin CLI or harness additions needed to demonstrate M4;
+- narrow `justfile` additions;
+- conservative reuse/refactoring needed to route enabled Plug bindings through the existing host execution path.
 
-### Exact launch
+Prefer reuse over a second system. Avoid broad rewrites. Keep commits reviewable.
 
-For an accepted candidate test launch:
-
-- revalidate candidate record, package semantic digest, every payload digest, manifest digest, launch path and exact file set immediately before launch;
-- launch only an exact absolute executable resolved from host-owned accepted candidate material;
-- never launch from the source archive, Downloads, repository checkout, arbitrary current directory or incomplete staging directory;
-- use no shell, `cmd /c`, PowerShell command, PATH lookup, file association, interpreter discovery or command-string concatenation;
-- preserve ordered package arguments exactly after host validation;
-- use an exact host-approved working directory;
-- use explicit stdio handles;
-- retain process-tree ownership and kill-on-close semantics;
-- bound child count, memory, CPU or wall time where the accepted Windows API can prove it;
-- bound protocol line/message sizes, queues and stderr tail;
-- require bounded graceful shutdown followed by forced tree termination when necessary;
-- prove no unnoticed surviving process.
-
-### Environment from scratch
-
-Construct the provider environment from scratch. Do not inherit the ambient process environment wholesale.
-
-Include only variables required for a self-contained native Windows provider, such as accepted Windows system location values and host-owned disposable temp/scratch paths. Exclude ambient API, cloud, Git, SSH, editor, proxy, repository and unrelated PATH secrets.
-
-PATH must not select the executable or interpreter. No production credential variables are authorised. The conformance fixture should prove representative ambient secret variables are absent from the child.
-
-Use a fresh host-owned bounded scratch directory separate from package payload, installation, candidate registry, trust, conformance evidence, Trail, replay and user resources. Clean it after the test session where safe; preserve only bounded host-owned evidence.
-
-### P8 evidence
-
-Include real Windows tests for:
-
-- exact executable and argument delivery;
-- no shell or PATH selection;
-- clean environment and absent ambient test secrets;
-- exact working directory;
-- payload mutation, missing file, additional file and reparse refusal before launch;
-- Job Object process-tree termination;
-- child/process/resource limits where supported;
-- timeout and forced shutdown;
-- bounded stdout/protocol and stderr behaviour;
-- no surviving child;
-- no credential delivery;
-- profile labelled supervised and explicitly not isolated.
-
-Commit P8 separately after focused and regression evidence passes, then continue directly to P9.
-
-## P9 required result: host-owned conformance gate
-
-Conformance is host-orchestrated test evidence for one exact package/provider/capability combination. Package tests are untrusted data and cannot certify themselves.
-
-### Conformance execution
-
-Run only after inspection and candidate creation, before installation approval and before active bindings.
-
-Use:
-
-- the accepted supervised profile or a stricter profile if one genuinely exists;
-- exact candidate and launch evidence;
-- test-only configuration;
-- disposable fixture data and scratch;
-- no production Tether Sets or effective policy;
-- no production credentials;
-- no production filesystem or network effects;
-- no active provider/capability bindings.
-
-The host owns the suite, test orchestration, pass/fail criteria, deadlines, output validation and evidence publication. Package-provided conformance material may be bounded declarative input only. Do not execute a package-supplied test runner or script.
-
-The provider must be stopped at the end of pass, fail or interruption. A passing run leaves the candidate uninstalled and non-operational until separate review and approval.
-
-### Required conformance categories
-
-Implement the smallest coherent M3 suite covering the generic first envelope:
-
-- static package and candidate revalidation;
-- exact launch and clean environment;
-- MCP initialize and protocol pin;
-- provider identity;
-- complete discovery and exact operation/schema agreement;
-- catalogue drift/staleness behaviour;
-- bounded valid and invalid fixture calls where an accepted fixture provider permits them;
-- trusted output/schema validation;
-- no hidden retry;
-- timeout, malformed response and process-loss observation;
-- bounded stderr and redaction/non-persistence;
-- shutdown and process cleanup;
-- trust, revocation and payload-drift refusal.
-
-Do not implement M4 File Tools capability contracts merely to satisfy P9. Reuse accepted fixture providers and test-owned deterministic operations.
-
-### Conformance evidence store
-
-Freeze a separate immutable v1 conformance-evidence schema. It must pin at least:
-
-- candidate and exact package identity;
-- semantic package digest;
-- every relevant payload and capability-manifest digest;
-- signature/key/publisher or unsigned-developer evidence used;
-- launch profile and exact launch identity;
-- provider identity and version;
-- Socket major, MCP protocol and binding versions;
-- host build identity;
-- platform and architecture;
-- suite version and digest;
-- test-configuration digest;
-- start/end times;
-- each case identity and result;
-- bounded safe diagnostics only;
-- final disposition: passed, failed or interrupted;
-- schema and evidence digest.
-
-Evidence is immutable historical evidence. It grants no permission.
-
-Invalidate or mark stale when package, payload, manifest, capability, launch, Socket, protocol/binding, tested platform, suite or material security boundary changes. Trust revocation must prevent later approval/readiness even when historical conformance remains preserved.
-
-Store states such as not-run, running, passed, failed, interrupted and invalidated as separate conformance state, not package trust or installation state.
-
-### P9 evidence
-
-Prove:
-
-- pass, fail and interrupted paths;
-- exact pinning and deterministic evidence digest;
-- provider always stopped;
-- no installation, approval, binding or enablement after pass alone;
-- stale/invalidation after payload, manifest, launch, suite or security-boundary drift;
-- trust revocation prevents use of historical pass;
-- malformed/corrupt/torn evidence fails closed;
-- raw stderr and secrets are absent from durable evidence;
-- conformance performs no automatic retry.
-
-Commit P9 separately after focused and regression evidence passes, then continue directly to P10.
-
-## P10 required result: review, installation approval and installed-disabled state
-
-P10 is the only M3 packet allowed to create installed Plug state. It does not enable it.
-
-### Explicit review and approval
-
-Create a host-owned installation-review and approval boundary separate from operational Ask approval.
-
-The review must bind the exact:
-
-- candidate identity;
-- package ID, version and semantic digest;
-- raw archive and payload evidence;
-- signature, key and host publisher evidence, or explicit unsigned developer-mode evidence;
-- current trust/revocation state;
-- provider identity/version and launch declaration;
-- capability identities, manifest digests, effects and scopes;
-- supervised profile label and its explicit limitations;
-- complete current conformance evidence;
-- approval authority, time, schema and evidence digest.
-
-Approval is explicit and create-only. It cannot be inferred from a signature, trust state, successful conformance, package metadata, existing 0.2 configuration or previous version.
-
-Any material drift before publication invalidates the approval attempt.
-
-### Host-owned installation publication
-
-After explicit approval:
-
-- revalidate current trust and all exact candidate/package/payload/manifest/conformance pins;
-- copy only accepted files into a new host-owned same-volume installation staging directory;
-- use create-new/no-overwrite semantics;
-- independently revalidate destination paths and existing ancestors;
-- refuse links, junctions, mount points and other reparse points;
-- verify sizes and digests during or immediately after copy;
-- publish by one atomic rename into a unique immutable installation location;
-- mark package payload read-only and keep future mutable provider state/scratch separate;
-- never execute during the installation transaction;
-- preserve candidate, trust, conformance and approval history in their separate stores.
-
-Execution integrity must be rechecked again before any later launch. M3 does not perform an operational launch from the installed location.
-
-### Installed Plug registry and disabled bindings
-
-Freeze a separate immutable installed-Plug v1 schema. It must preserve at least:
-
-- host-generated installed identity;
-- fixed present-but-disabled state;
-- package lineage, version and exact semantic digest;
-- source candidate identity;
-- installation location beneath the configured install root;
-- raw archive, payload and manifest identities/digests;
-- signature/key/publisher or unsigned developer evidence;
-- installation approval identity;
-- conformance evidence identity;
-- provider identity, version, exact launch path/arguments/working directory;
-- supervised profile label;
-- exact Socket, MCP and platform pins;
-- exact capability identities and provider operations;
-- exact disabled binding records;
-- creation time, schema version and record digest.
-
-The installed record must not contain:
-
-- enabled state;
-- operational policy grant;
-- production credentials or credential references;
-- active provider session;
-- active resolver availability;
-- runtime Ask approval;
-- operation replay state;
-- Anchor admission authority;
-- fabricated isolation claim.
-
-Create exact provider/capability binding records only in a disabled state. Do not insert them into active resolver/provider availability, do not create runtime configuration that makes them invocable, and do not create a public enable command.
-
-### P10 evidence
-
-Prove:
-
-- conformance pass alone creates no install or binding;
-- explicit approval is required and is bound to exact evidence;
-- trust revocation, payload drift, manifest drift or conformance invalidation before publication refuses installation;
-- atomic installation and restart/reload;
-- torn writes, corruption, duplicate IDs, same-release conflicts, path escapes and reparse destinations fail closed;
-- installed bytes and record are immutable and exact;
-- installed Plug is present but disabled;
-- disabled bindings are absent from active runtime availability;
-- no provider launch, Socket invocation, policy availability, replay admission, Result Anchor, external Anchor admission or Trail operation effect occurs;
-- no credentials are stored or delivered;
-- M4 enablement remains impossible without a new authoritative packet.
-
-Commit P10 separately after all M3 evidence passes.
-
-## Durable-store rules
-
-Publisher trust, unsigned developer approval, conformance evidence, installation approval and installed Plug state are separate stores and state families. They may share a small audited persistence utility but must not collapse into one generic status file or one authority-bearing record.
-
-For every durable store:
-
-- freeze schema first in Rust types and committed golden fixtures;
-- use strict JSON without duplicate or unknown fields;
-- use canonical covered bytes and a record digest where appropriate;
-- use host-generated IDs;
-- use create-only or explicit immutable state-transition records;
-- use same-volume temporary publication and atomic rename;
-- flush file data and directory metadata where the host can prove it;
-- refuse torn temporary files, malformed records, unexpected files and duplicate/conflicting identities;
-- revalidate root confinement and Windows reparse safety on open and before publication;
-- reload strictly across process restart;
-- preserve historical evidence without making it current authority.
-
-## Required source boundaries
-
-Keep these concerns distinct even when implementation utilities are shared:
-
-- signature envelope and cryptographic verification;
-- publisher trust and revocation;
-- unsigned developer approval;
-- launch profile/environment construction;
-- conformance orchestration;
-- conformance evidence and invalidation;
-- installation review/approval;
-- immutable installation publication;
-- installed Plug registry;
-- disabled binding representation.
-
-Do not put trust, installation or conformance authority in Core, Socket, provider output, package metadata, capability manifests, Trail, replay or result Anchors.
-
-Do not alter the three canonical attempted outcomes. M3 is pre-operational and should not need to create a normal provider operation outcome or Result Anchor.
-
-## Forbidden changes
-
-Do not implement:
-
-- M4 File Tools capability contracts or provider package;
-- operational enablement;
-- active Plug invocation;
-- external Anchor delivery or durable event admission;
-- AppContainer or claims of hostile-code isolation unless a separately reviewed contract is first required and approved;
-- production credential storage or delivery;
-- OAuth, network providers, listeners or remote transport;
-- marketplace, registry, updater or automatic download;
-- interpreter-backed provider launch;
-- shell execution;
-- automatic retry;
-- changes to Tether syntax or OCaml Core semantics;
-- movement of `v0.2.0`, release tags or release objects;
-- silent migration of legacy 0.2 configuration.
+Do not weaken M3 security to make M4 easier. Do not bypass stores, trust checks, intent, policy, replay, outcomes, Result Anchor or Trail in the happy-path demo.
 
 ## Major stop rule
 
-Sol must continue through ordinary engineering problems and use its own reasoning to resolve them conservatively.
+Stop only when one of these remains after two materially different evidence-based attempts:
 
-A stop is permitted only for a major issue that cannot be resolved within the frozen contracts after at least two materially different, evidence-based attempts.
+- frozen contracts contradict each other in a way that changes public semantics;
+- safe path confinement or overwrite refusal cannot be proven;
+- current trust or exact installed-byte validation cannot be preserved at operational launch;
+- the existing dispatch/outcome/replay/Result Anchor ordering cannot support the installed Plug path without architectural change;
+- a regression in released 0.2 behaviour cannot be isolated;
+- a security boundary would have to be weakened;
+- repository corruption, missing required baseline, or unavailable required toolchain makes progress impossible.
 
-Major stop conditions are limited to:
+A large diff, new fixture, compiler problem, Windows API complexity, package-generation detail, or ordinary cross-module integration is not a major blocker.
 
-- a direct contradiction between accepted J18 contracts that changes a security or lifecycle outcome and cannot be reconciled without architecture authority;
-- inability to implement or honestly test a required cryptographic boundary using a mature Rust 1.89-compatible library;
-- inability to enforce the exact Windows launch/no-shell/clean-environment boundary without weakening the accepted security promise;
-- evidence that the accepted supervised profile would be falsely represented as isolation;
-- a discovered secret-leak path that cannot be safely closed within M3;
-- an unavoidable regression in released 0.2 or accepted M1-M2 semantics after two materially different repairs;
-- a required new external service, administrator privilege, kernel component, network dependency or production credential;
-- a need to enter M4, alter frozen Tether/Core semantics, move release refs, force-push or rewrite published history.
+## Required verification
 
-The following are explicitly not blockers:
-
-- choosing module names or file counts;
-- designing the named v1 schemas;
-- adding golden fixtures;
-- selecting mature authorised dependencies;
-- ordinary compiler errors;
-- Windows API friction;
-- moving tests to sensible units or integration files;
-- creating deterministic fixture executables;
-- a coherent larger diff;
-- test runtime;
-- an unfinished later packet;
-- a dirty worktree while actively working;
-- uncertainty that can be resolved by inspecting accepted documents and code.
-
-A genuine `BLOCKED` report must include:
-
-- the exact frozen-contract conflict or failing security boundary;
-- exact command and smallest evidence;
-- two materially different attempts;
-- observed external effects;
-- safe rollback/current clean checkpoint;
-- one concrete architecture decision that only Lucy or Matthew can make.
-
-Do not report `BLOCKED` merely to ask permission for an ordinary engineering choice.
-
-## Commit and continuation discipline
-
-Use bounded normal commits. A suitable map is:
-
-- P7 trust/signature;
-- P8 supervised launch profile;
-- P9 conformance gate;
-- P10 installation approval and installed-disabled registry;
-- narrow compatibility or evidence commits when genuinely required;
-- final worker-note ledger.
-
-Commit names and count may vary. Continue automatically after each successful checkpoint.
-
-Do not amend or rebase commits once pushed. Push normal checkpoints to:
-
-`codex/j19-m3-trust-launch-conformance`
-
-## Required full verification
-
-At final handoff run, at minimum:
+Run at minimum:
 
 ```powershell
 just tools
 just fmt
 just check
+just test-m3
 just test-rust
 just verify
 ```
 
-Run all focused P7-P10 tests, locked debug and release builds, all Rust targets/features, the established OCaml toolchain gate, `dune build`, `dune runtest`, the complete `verify-0.2.ps1` matrix, packet checker, whitespace check and process-cleanup proof.
+Add and run focused M4 recipes/tests for P11, P12 and P13.
 
-Add or extend a thin `just test-m3` or `just verify-m3` recipe only when it directly exposes the real underlying commands and remains readable.
+Also run:
 
-Do not suppress failing tests or warnings newly introduced by M3. Distinguish pre-existing warnings in the worker note.
+- complete OCaml build and tests;
+- complete `verify-0.2.ps1`;
+- locked debug and release Rust builds;
+- deterministic package rebuild comparison;
+- real Windows path, junction/reparse, overwrite and process-survivor tests;
+- replay restart evidence;
+- `git diff --check`;
+- final clean-worktree check after the completion ledger commit.
 
-## Required verification
+Record exact counts and commands in the worker note. Local test claims are evidence, not CI; state that honestly.
 
-Run the complete focused P7-P10 evidence and full verification matrix stated in
-`Required full verification`, including tools, format, check, all Rust
-targets/features and builds, OCaml build/tests, the complete 0.2 matrix, packet
-checker, whitespace check, and process-cleanup proof.
-
-## Worker note
-
-Create and maintain:
-
-`docs/worker-notes/2026-08-01-j19-m3-trust-launch-conformance.md`
-
-Record:
-
-- exact control commit and branch starting point;
-- commit map for P7-P10;
-- every schema and golden fixture;
-- direct dependencies added and why;
-- exact cryptographic and Windows API decisions;
-- clean-environment allow-list and exclusions;
-- supervised-profile limitations;
-- conformance categories, suite identity and invalidation rules;
-- installation and disabled-binding transaction;
-- focused and full verification commands and counts;
-- externally visible effects;
-- remaining risks and deferred isolation/credentials;
-- final branch SHA;
-- confirmation that no M4 behaviour was added.
-
-## Completion report
+## Completion response
 
 Return only:
 
-`M3 COMPLETE - INSTALLED DISABLED PLUG`
+`M4 COMPLETE - FIRST LIVE FILE TOOLS PLUG`
 
-Include no progress essay in the completion message. The worker note is the evidence ledger.
+plus the branch name and final SHA if OpenCode requires additional text.
 
-Do not begin M4.
+Do not begin M5. Do not move `main`. Do not create a release.
