@@ -55,9 +55,10 @@ Anchor, external Anchor admission, or M4 behaviour.
 
 ## Decisions and assumptions
 
-- The signature contract is Ed25519 over
-  `TETHERS-PACKAGE-SIGNATURE-V1\n<semantic-digest>\n`; signature validity and
-  publisher trust remain separate evidence. `ed25519-dalek` 2.2.0, `base64`
+- The signature contract is Ed25519 over the exact UTF-8 input
+  `tethers.tetherplug.signature.v1\n<semantic-package-digest>\n`, including
+  the mandatory final newline; signature validity and publisher trust remain
+  separate evidence. `ed25519-dalek` 2.2.0, `base64`
   0.22.1, and their mature locked transitive dependencies implement the narrow
   cryptographic primitive; host code enforces the Tethers envelope and trust
   rules.
@@ -129,6 +130,48 @@ Anchor, external Anchor admission, or M4 behaviour.
   reference-host, OCaml engine, or provider process beneath the repository.
 - `git diff --check` - PASS before completion ledger creation.
 
+### Final security correction (2026-08-02)
+
+- The task and this note were returned to `IN_PROGRESS` for this correction;
+  the completion transition is recorded with this ledger update.
+- Central `PackageTrustEvidence::require_for_candidate` now rejects a semantic
+  package-digest mismatch (`trust_candidate_mismatch`) before conformance,
+  approval, and installed-disabled publication. The adversarial lifecycle
+  case proves trusted evidence for candidate A cannot authorize B even when
+  both use the same package ID and trusted namespace.
+- Central `LaunchProfileEvidence::require_for_candidate` rejects candidate ID,
+  semantic digest, executable path/digest, ordered arguments, working
+  directory, profile identity, isolation label, or limitation mismatch
+  (`launch_candidate_mismatch`) at launch, conformance, approval, and
+  publication boundaries. The same lifecycle case proves mismatched prepared
+  launch or conformance evidence cannot be approved or installed.
+- M3 direct providers use `CreateProcessW(CREATE_SUSPENDED)`, Job Object
+  assignment, then `ResumeThread`; all pipe, process, thread, and Job handles
+  are cleaned on failure. The `spawn-child` and `spawn-child-malformed`
+  fixture modes create a child immediately at startup; both success shutdown
+  and failed-conformance paths prove no descendant survives. This closes the
+  Job-assignment race only; the supervised profile remains non-isolated and
+  not hostile-code-safe.
+- Existing J13A engine/provider children retain their pre-existing creation
+  compatibility path, while M3 direct providers are explicitly marked to use
+  suspended-before-execution assignment. Focused protocol evidence confirms a
+  named PowerShell child retains piped MCP I/O.
+- Correction commits: `df156f995889cdc1ed0370b1bc6d64a28336e4bf`
+  (candidate evidence binding and suspended provider creation),
+  `a2a505f42bc9cf1b044db00084f1a57637867166` (named Windows executable
+  compatibility), and `705ad70b91d28a133bec3ce29cfb030b2c6c0cda`
+  (legacy-host compatibility plus focused piped-protocol test).
+- Focused counts: `just test-m3` passed six trust and ten M3 lifecycle tests;
+  `just test-rust` passed 799 unit, 29 J13A CLI, and ten M3 lifecycle tests
+  (838 total). `just tools`, `just fmt`, `just check`, `just verify`, the
+  complete OCaml build/tests, debug/release locked builds, and
+  `verify-0.2.ps1` all passed. `verify-0.2.ps1` passed J13A 25/25, J13B
+  10/10, J13C 19/19, J14A 5/5 (95 assertions), J14B 11/11 (243 assertions),
+  and J14C 9/9 (196 assertions).
+- Final `git diff --check` and process-survivor checks passed: no M3 fixture,
+  host, engine, or provider process remained beneath the repository. No M4
+  behaviour was added.
+
 ## Discoveries
 
 - The branch remote exists but this checkout's configured fetch refspec tracks
@@ -170,6 +213,8 @@ authorising any M4 packet.
 - P10 installed-disabled: `2d8e66e7b96b824707d880ea6fdc94fb84fe82e1`
 - Final M3 implementation/test correction: `4e27e8c05eb1148127cda221df0573b8099aff1e`
 - Regression-harness evidence commit: `16c173f60a4ca8c6ad7a3500379ab22969032f79`
+- Final security correction implementation/test commit:
+  `705ad70b91d28a133bec3ce29cfb030b2c6c0cda`
 - Golden schema fixture:
   `tethers-0.1/host-rust/fixtures/m3/m3-schema-golden-v1.json`
 - Focused lifecycle evidence: `tethers-0.1/host-rust/tests/m3_lifecycle.rs`
