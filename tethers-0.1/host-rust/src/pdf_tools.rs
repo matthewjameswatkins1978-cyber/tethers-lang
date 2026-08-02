@@ -5,6 +5,7 @@
 //! host bounds; this is a deterministic inspection capability, not a parser.
 
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -136,6 +137,7 @@ fn require_exact_object<'a>(
 struct InspectResult {
     path: String,
     size_bytes: u64,
+    sha256: String,
     is_pdf: bool,
     pdf_version: Option<String>,
     page_count: Option<u32>,
@@ -177,6 +179,8 @@ pub fn inspect(scope: &PdfScope, arguments: &Value) -> Result<Value, PdfToolsErr
     file.read_to_end(&mut buf)
         .map_err(|e| PdfToolsError::new("file_read_failed", e.to_string()))?;
 
+    let sha256_digest = format!("sha256:{:x}", Sha256::digest(&buf));
+
     let pdf_version = extract_pdf_version(&buf);
     let is_pdf = pdf_version.is_some();
 
@@ -185,6 +189,7 @@ pub fn inspect(scope: &PdfScope, arguments: &Value) -> Result<Value, PdfToolsErr
     let result = InspectResult {
         path: relative,
         size_bytes,
+        sha256: sha256_digest,
         is_pdf,
         pdf_version,
         page_count,
@@ -193,13 +198,18 @@ pub fn inspect(scope: &PdfScope, arguments: &Value) -> Result<Value, PdfToolsErr
 }
 
 fn extract_pdf_version(bytes: &[u8]) -> Option<String> {
-    let header = std::str::from_utf8(bytes).ok()?;
-    let header = header.lines().next()?;
-    if !header.starts_with("%PDF-") {
+    let prefix = b"%PDF-";
+    if bytes.len() < prefix.len() + 1 || &bytes[..prefix.len()] != prefix {
         return None;
     }
-    let version = header.strip_prefix("%PDF-")?;
-    let version = version.split(|c: char| c.is_whitespace()).next()?;
+    let version_start = prefix.len();
+    let version_end = bytes[version_start..]
+        .iter()
+        .position(|&b| b == b'\n' || b == b'\r' || b == b' ' || b == b'\t')
+        .map(|p| version_start + p)
+        .unwrap_or_else(|| (version_start + 1).min(bytes.len()));
+    let version_bytes = &bytes[version_start..version_end];
+    let version = std::str::from_utf8(version_bytes).ok()?;
     if version.len() > 8 || version.is_empty() {
         return None;
     }
@@ -214,22 +224,34 @@ fn count_pages(bytes: &[u8]) -> Option<u32> {
     if bytes.len() > MAX_PAGE_SCAN {
         return None;
     }
-    let text = std::str::from_utf8(bytes).ok()?;
     let mut count: u32 = 0;
     let mut pos = 0usize;
-    while let Some(idx) = text[pos..].find("/Type") {
-        pos += idx + "/Type".len();
-        let after = text[pos..].trim_start();
-        if after.starts_with("/Page") {
-            let next_char = after.chars().nth("/Page".len());
-            match next_char {
-                None | Some(' ') | Some('\n') | Some('\r') | Some('\t') | Some('/') | Some('>')
-                | Some('<') => {
+    let slash_type = b"/Type";
+    let slash_page = b"/Page";
+    while let Some(idx) = bytes[pos..]
+        .windows(slash_type.len())
+        .position(|w| w == slash_type)
+    {
+        pos += idx + slash_type.len();
+        let after = &bytes[pos..];
+        let mut ws = 0;
+        while ws < after.len()
+            && (after[ws] == b' ' || after[ws] == b'\t' || after[ws] == b'\n' || after[ws] == b'\r')
+        {
+            ws += 1;
+        }
+        let after_ws = &after[ws..];
+        if after_ws.len() >= slash_page.len() && &after_ws[..slash_page.len()] == slash_page {
+            let next_byte = after_ws.get(slash_page.len());
+            match next_byte {
+                None | Some(b' ') | Some(b'\n') | Some(b'\r') | Some(b'\t') | Some(b'/')
+                | Some(b'>') | Some(b'<') => {
                     count = count.saturating_add(1);
                 }
                 _ => {}
             }
         }
+        pos += 1;
     }
     if count == 0 {
         None
@@ -245,7 +267,7 @@ pub fn inspect_input_schema() -> Value {
 }
 
 pub fn inspect_output_schema() -> Value {
-    json!({"type":"object","properties":{"path":{"type":"string"},"size_bytes":{"type":"integer","minimum":0},"is_pdf":{"type":"boolean"},"pdf_version":{"type":"string"},"page_count":{"type":"integer","minimum":0}},"required":["path","size_bytes","is_pdf"],"additionalProperties":false})
+    json!({"type":"object","properties":{"path":{"type":"string"},"size_bytes":{"type":"integer","minimum":0},"sha256":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},"is_pdf":{"type":"boolean"},"pdf_version":{"type":"string"},"page_count":{"type":"integer","minimum":0}},"required":["path","size_bytes","sha256","is_pdf"],"additionalProperties":false})
 }
 
 pub fn inspect_manifest_without_digest() -> Value {
@@ -262,7 +284,6 @@ pub fn manifest_with_digest(mut manifest: Value) -> Result<Value, PdfToolsError>
     covered_object.remove("description");
     let bytes = serde_json_canonicalizer::to_vec(&covered)
         .map_err(|e| PdfToolsError::new("manifest_invalid", e.to_string()))?;
-    use sha2::{Digest, Sha256};
     manifest.as_object_mut().unwrap().insert(
         "digest".into(),
         Value::String(format!("sha256:{:x}", Sha256::digest(bytes))),
@@ -462,5 +483,52 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(file.verified_digest(), built["digest"].as_str().unwrap());
+    }
+
+    #[test]
+    fn binary_pdf_with_non_utf8_bytes_is_recognized() {
+        let (root, scope) = scope();
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        pdf.extend((0x80u8..0xFFu8).cycle().take(4096));
+        pdf.extend(b"\nxref\n0 0\ntrailer\n<< >>\nstartxref\n0\n%%EOF\n");
+        let path = scope.query_root.join("binary.pdf");
+        fs::write(&path, &pdf).unwrap();
+        let result = inspect(&scope, &json!({"path":"binary.pdf"})).unwrap();
+        assert_eq!(result["is_pdf"], true);
+        assert_eq!(result["pdf_version"], "1.7");
+        assert!(result.get("sha256").unwrap().is_string());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn sha256_is_deterministic() {
+        let (root, scope) = scope();
+        let pdf = minimal_pdf_bytes(2);
+        let path = scope.query_root.join("hash.pdf");
+        fs::write(&path, &pdf).unwrap();
+        let first = inspect(&scope, &json!({"path":"hash.pdf"})).unwrap();
+        let second = inspect(&scope, &json!({"path":"hash.pdf"})).unwrap();
+        assert_eq!(first["sha256"], second["sha256"]);
+        assert_eq!(first["sha256"].as_str().unwrap().len(), 71);
+        assert!(first["sha256"].as_str().unwrap().starts_with("sha256:"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn page_marker_scanning_works_with_binary_bytes() {
+        let (root, scope) = scope();
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        pdf.extend((0x90u8..0xAFu8).cycle().take(1024));
+        pdf.extend(b"\n/Type /Page\n");
+        pdf.extend((0xB0u8..0xCFu8).cycle().take(2048));
+        pdf.extend(b"\n/Type /Page\n");
+        pdf.extend(b"%%EOF\n");
+        let path = scope.query_root.join("binary_pages.pdf");
+        fs::write(&path, &pdf).unwrap();
+        let result = inspect(&scope, &json!({"path":"binary_pages.pdf"})).unwrap();
+        assert_eq!(result["is_pdf"], true);
+        assert_eq!(result["pdf_version"], "1.4");
+        assert_eq!(result["page_count"], 2);
+        fs::remove_dir_all(root).unwrap();
     }
 }
