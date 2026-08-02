@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tethers execution environment contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "request_id", "observation_id", "task", "worker_assignment", "status", "capability_resolutions", "approved_commands", "granted_permissions", "process_tree_supervision_required", "request_digest", "observation_digest", "contract_digest"],
+  "properties": {
+    "schema": { "const": "tethers-execution-environment-contract-v1" },
+    "request_id": { "type": "string", "minLength": 1 },
+    "observation_id": { "type": "string", "minLength": 1 },
+    "task": { "$ref": "#/$defs/task" },
+    "worker_assignment": { "$ref": "#/$defs/worker" },
+    "status": { "enum": ["agreed", "degraded", "blocked"] },
+    "capability_resolutions": { "type": "array", "items": { "$ref": "#/$defs/resolution" } },
+    "approved_commands": { "type": "object", "additionalProperties": { "$ref": "#/$defs/command" } },
+    "granted_permissions": { "$ref": "#/$defs/permissions" },
+    "process_tree_supervision_required": { "const": true },
+    "request_digest": { "$ref": "#/$defs/digest" },
+    "observation_digest": { "$ref": "#/$defs/digest" },
+    "contract_digest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "task": { "type": "object", "additionalProperties": false, "required": ["task_id", "session_id", "scope", "repository"], "properties": { "task_id": { "type": "string" }, "session_id": { "type": "string" }, "scope": { "type": "array", "items": { "type": "string" } }, "repository": { "type": "object", "additionalProperties": false, "required": ["root", "branch", "head"], "properties": { "root": { "type": "string" }, "branch": { "type": "string" }, "head": { "type": "string", "pattern": "^[0-9a-f]{40}$" } } } } },
+    "worker": { "type": "object", "additionalProperties": false, "required": ["selected_by", "worker_id"], "properties": { "selected_by": { "const": "Matthew" }, "worker_id": { "enum": ["lucy-codex", "luna-opencode", "deepseek-pro-v4-opencode", "hy3-opencode"] } } },
+    "resolution": { "type": "object", "additionalProperties": false, "required": ["id", "class", "state"], "properties": { "id": { "type": "string" }, "class": { "enum": ["required", "preferred", "replaceable", "optional"] }, "state": { "enum": ["available", "degraded", "unavailable"] }, "reason": { "type": ["string", "null"] } } },
+    "command": { "type": "object", "additionalProperties": false, "required": ["command_id", "program_path", "args", "cwd", "environment"], "properties": { "command_id": { "type": "string" }, "program_path": { "type": "string" }, "args": { "type": "array", "items": { "type": "string" } }, "cwd": { "type": "string" }, "script_digest": { "anyOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] }, "environment": { "type": "object", "additionalProperties": { "type": "string" } } } },
+    "permissions": { "type": "object", "additionalProperties": false, "required": ["filesystem_read", "filesystem_write", "network_hosts", "network_allowed", "installation_allowed"], "properties": { "filesystem_read": { "type": "array", "items": { "type": "string" } }, "filesystem_write": { "type": "array", "items": { "type": "string" } }, "network_hosts": { "type": "array", "items": { "type": "string" } }, "network_allowed": { "type": "boolean" }, "installation_allowed": { "const": false } } }
+  }
+}

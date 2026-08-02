@@ -1,0 +1,22 @@
+{
+  "schema": "tethers-worker-overlays-v1",
+  "assignment_authority": "Matthew",
+  "overlays": {
+    "lucy-codex": {
+      "role": "architecture-review-and-difficult-integration",
+      "constraints": ["may_recommend_only", "independent_red_signoff"]
+    },
+    "luna-opencode": {
+      "role": "autonomous-implementation-within-frozen-architecture",
+      "constraints": ["frozen_scope", "required_matrix"]
+    },
+    "deepseek-pro-v4-opencode": {
+      "role": "bounded-implementation-correction-and-documentation",
+      "constraints": ["no_architecture_change_without_review"]
+    },
+    "hy3-opencode": {
+      "role": "narrow-mechanical-implementation",
+      "constraints": ["report_uncertainty", "no_architecture_or_security_decisions"]
+    }
+  }
+}

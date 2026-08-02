@@ -1,0 +1,27 @@
+{
+  "schema": "tethers-development-workbench-profile-v1",
+  "profile_id": "tethers-development-workbench-v1",
+  "platform": "windows",
+  "recipe_shell": ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"],
+  "invariants": [
+    "no_automatic_installation",
+    "no_global_toolchain_change",
+    "no_shell_switching",
+    "no_force_push",
+    "host_issues_one_frozen_contract"
+  ],
+  "capabilities": {
+    "git-inspection": { "default_class": "required", "tool": "git" },
+    "recursive-text-search": { "default_class": "replaceable", "tool": "rg", "substitutes": ["pwsh-select-string"] },
+    "structured-json-query": { "default_class": "replaceable", "tool": "jq", "substitutes": ["pwsh-convertfrom-json"] },
+    "github-api-inspection": { "default_class": "optional", "tool": "gh" },
+    "task-automation-runner": { "default_class": "preferred", "tool": "just" },
+    "rust-compilation": { "default_class": "required", "tool": "cargo" },
+    "rust-formatting": { "default_class": "required", "tool": "rustfmt" },
+    "rust-linting": { "default_class": "required", "tool": "clippy" },
+    "ocaml-compilation": { "default_class": "required", "tool": "dune" },
+    "ocaml-formatting": { "default_class": "required", "tool": "ocamlformat" },
+    "ocaml-switch-management": { "default_class": "required", "tool": "opam" },
+    "powershell-automation": { "default_class": "required", "tool": "pwsh" }
+  }
+}

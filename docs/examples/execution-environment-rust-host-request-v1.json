@@ -1,0 +1,35 @@
+{
+  "schema": "tethers-execution-environment-request-v1",
+  "request_id": "environment-j20-p1-example",
+  "workbench_profile": "tethers-development-workbench-v1",
+  "task": {
+    "task_id": "J20-ENV-P1",
+    "session_id": "example-session",
+    "scope": ["rust-host", "execution-environment"],
+    "repository": {
+      "root": "D:/The Next Thing/Tethers Lang - Environment Handshake",
+      "branch": "codex/execution-environment-handshake",
+      "head": "e57bf536fe3d7fb074c00ddac867b5720a15116e"
+    }
+  },
+  "worker_assignment": {
+    "selected_by": "Matthew",
+    "worker_id": "lucy-codex"
+  },
+  "capabilities": [
+    { "id": "rust-compilation", "class": "required", "version_policy": { "kind": "exact", "version": "1.89.0" }, "substitutes": [] },
+    { "id": "task-automation-runner", "class": "preferred", "version_policy": { "kind": "any" }, "substitutes": [] },
+    { "id": "recursive-text-search", "class": "replaceable", "version_policy": { "kind": "any" }, "substitutes": ["pwsh-select-string"] }
+  ],
+  "commands": [
+    { "command_id": "rust-check", "capability_id": "rust-compilation", "args": ["check", "--all-targets", "--all-features", "--locked"], "cwd": "D:/The Next Thing/Tethers Lang - Environment Handshake/tethers-0.1/host-rust" }
+  ],
+  "requested_permissions": {
+    "filesystem_read": ["D:/The Next Thing/Tethers Lang - Environment Handshake"],
+    "filesystem_write": ["D:/The Next Thing/Tethers Lang - Environment Handshake"],
+    "network_hosts": [],
+    "network_allowed": false,
+    "installation_allowed": false
+  },
+  "automatic_install": false
+}
