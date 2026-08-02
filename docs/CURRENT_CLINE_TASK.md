@@ -3,10 +3,11 @@
 Control contract: `1`
 Task: `J19-M4 - Autonomous File Tools Plug Vertical Slice`
 Owner: `Luna / OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `Luna in one continuous autonomous Milestone 4 implementation`
 Base branch: `main`
+Base commit: `8cd8958d4880595dfff5e38ab5ec26de940944df`
 Accepted M3 baseline: `8cd8958d4880595dfff5e38ab5ec26de940944df`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 Branch: `opencode/j19-m4-file-tools-plug`
@@ -49,6 +50,58 @@ Turn one accepted M3 installed-disabled Plug into the first explicitly enabled o
 inspect -> quarantine -> candidate -> trust -> supervised conformance -> approval -> installed-disabled -> explicit enablement -> active exact binding -> discovery -> policy -> durable intent -> invocation -> canonical outcome -> replay terminal -> Result Anchor -> Trail.
 
 The first operational Plug is credential-free, local-only, Windows x86_64, MCP 2025-11-25 over stdio, supervised but not isolated, and has no network access.
+
+## Relevant background and existing behaviour
+
+M1-M3 provide the Socket, package, candidate, trust, supervised launch,
+conformance, approval, and installed-disabled stores. Released 0.2 runtime
+configuration and the J14C provider remain legacy behaviour and are preserved.
+
+## Required behaviour
+
+1. Freeze one bounded File Tools Query and one exact file move Action with strict schemas and host-owned scopes.
+2. Provide deterministic package material and a credential-free native MCP provider implementing only those operations.
+3. Require explicit enablement of one exact installed identity and remove availability on durable disablement.
+4. Route operational calls through the existing policy, intent, replay, outcome, Result Anchor, and Trail boundaries without adding M5 Anchors.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/file_tools.rs` and `src/bin/file_tools_provider.rs`.
+- `tethers-0.1/host-rust/src/enablement.rs` and existing M3 installed/conformance/trust stores.
+- Committed File Tools manifests, contract fixture, and Windows integration tests.
+
+## Frozen decisions and invariants
+
+File paths are host-resolved relative paths. Query is read-only and bounded;
+move refuses overwrite, recursion, links, reparse points, and cross-volume
+ambiguity. The provider receives no credentials or network access. Enablement
+is distinct from installation approval and policy. Attempted outcomes remain
+exactly succeeded, failed, and uncertain; unattempted work has no Result Anchor.
+
+## Acceptance criteria
+
+1. Strict File Tools manifests and scope refusal matrix pass focused tests.
+2. Deterministic package material and native MCP provider pass real Windows query/move tests.
+3. Explicit enablement and disablement preserve exact installed evidence and active availability state.
+4. Full Rust, OCaml, 0.2, process-cleanup, formatting, and packet checks pass.
+
+## Forbidden changes
+
+No credentials, network listener, shell/PATH launch, arbitrary file API, delete,
+copy, glob, overwrite, recursive operation, external Anchor, PDF feature,
+marketplace, updater, release movement, or M5 behaviour.
+
+## Stop conditions
+
+Stop only for the listed major M4 conditions after two materially different
+evidence-based attempts: path confinement or overwrite refusal cannot be proved,
+M3 trust/integrity cannot be preserved, existing dispatch ordering cannot support
+the slice, released 0.2 regresses, a security boundary must weaken, or the
+required baseline/toolchain is unavailable.
+
+## Expected pre-existing changes
+
+None.
 
 ## Required final state
 
