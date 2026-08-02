@@ -7,7 +7,7 @@ Owner: `Luna / OpenCode`
 Branch: `opencode/j19-m4-file-tools-plug`
 Control commit: `61cba8c76e7b013dd4b93b0a121ab31621067a96`
 Base commit: `8cd8958d4880595dfff5e38ab5ec26de940944df`
-Implementation checkpoint: `ee1a6182612128879b1558760a2a0129b0b507cb`
+Implementation checkpoint: `ab720b4ccab16438e5ec2ae8c38d7b90bdfb83be`
 Accepted M3 baseline: `8cd8958d4880595dfff5e38ab5ec26de940944df`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 
@@ -101,3 +101,39 @@ Ledger. Governing contracts are the M4 packet's named J18C-J18G documents.
 No credentials, network listener, shell, PATH selection, arbitrary listing, delete, copy, glob, overwrite, recursive operation, external Anchor, PDF feature, marketplace, updater, or M5 behavior was added. Supervision remains distinct from isolation. The native executor adapter is only dispatchable after the existing resolver, policy, durable intent, replay, outcome, Result Anchor, and Trail boundaries.
 
 Implementation branch SHA at completion checkpoint: `ee1a618`.
+
+## Integration Correction
+
+- Correction commit: `ab720b4ccab16438e5ec8c38d7b90bdfb83be`.
+- Operational launch no longer accepts arbitrary command, arguments, or working
+  directory. `FileToolsExecutor::launch_from_installed` derives the executable,
+  payload set, working directory, provider identity, trust, approval,
+  conformance, enablement, and exact enabled operation from installed state.
+- Installed launch rehashes the exact file set, rejects reparse/drift, uses the
+  M3 suspended-before-execution Job Object path, clean allow-listed environment,
+  explicit stdio handles, bounded limits, and host-owned scope placeholders.
+- `OperationalScopeBinding` pins separate canonical query/source/destination
+  roots, a read bound, exact installed/capability identity, authority, and an
+  integrity digest. Package arguments contain reviewed placeholders only; the
+  host materialises them immediately before launch.
+- Enablement now uses sequence/predecessor chains with genesis validation,
+  fork/duplicate/conflict refusal, exact scope binding, and deterministic
+  current-state selection. Disablement appends a transition and removes the
+  resolver availability snapshot.
+- `execute_enabled_file_tools_action` routes the installed binding through the
+  existing policy, durable intent, replay, canonical outcome, Result Anchor,
+  and Trail boundary. Provider JSON-RPC refusals classify as definite failed;
+  transport timeout/process loss remains uncertain.
+- The real Windows M4 integration now builds the native provider, creates and
+  inspects the deterministic package, runs M3 candidate/trust/conformance/
+  approval/install gates, proves unavailable-before-enable, launches from the
+  installed payload, resolves exact enabled capability, performs Query and
+  move, proves shared-path replay blocking and Result Anchor/Trail evidence,
+  then disables and proves unavailable-after-disable.
+
+Correction verification: `just test-m4` passed 4 integration tests, `just
+test-m3` passed 6 trust and 13 lifecycle tests, serialized full Rust passed 805
+unit + 29 J13A + 13 M3 + 4 M4 tests, `just verify` passed, toolchain/OCaml
+gates passed sequentially, and `verify-0.2.ps1` passed all 6 suites. A native
+M3 handle test showed one parallel-run race; isolated and serialized reruns
+passed. No M5 behavior was added.
