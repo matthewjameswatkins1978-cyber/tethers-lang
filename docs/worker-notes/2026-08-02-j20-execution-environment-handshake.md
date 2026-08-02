@@ -121,6 +121,61 @@ and `local_anchor` module declarations coexist in alphabetical order.
 | `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | PASS |
 | `git diff --check` | PASS |
 
+## Final permit-to-launch identity correction (2026-08-02)
+
+**Final implementation SHA:** `2b3b8af91ae37f0ed8ee42f8aa5076e545348da3`
+
+The correction preserves the frozen handshake: Matthew remains the only worker
+selector; the shared workbench and role overlays remain unchanged; a contract
+remains one-shot with no installation or renegotiation; exact program,
+argument-array and cwd binding remains enforced; launch remains inside the
+existing supervised process-tree boundary; and no Tethers language semantics
+changed.
+
+### Behavioural result
+
+- `ApprovedCommand.args` now retains the exact reviewed PowerShell `-File`
+  array, including an approved junction path when one was reviewed.
+- `ApprovedCommand.script_path` separately stores the canonical reviewed
+  script identity.
+- `permit()` canonicalises the invocation's `-File` path before generic
+  argument comparison, so a redirected target reports `script_redirected`.
+- `CommandPermit::launch()` canonicalises the frozen `-File` argument
+  immediately before launch, requires exact equality with `script_path`, then
+  hashes that canonical file before it calls `SupervisedChild::launch`.
+- The native Windows race test issues through a junction, obtains a permit,
+  retargets the junction to an identical script at another canonical path, and
+  proves that launch is refused. It resolves `pwsh.exe` through the verified
+  local PATH (`where.exe`) and has no early-return pass path. The two actual
+  PowerShell launch tests bind only `SystemRoot` in their intentionally cleared
+  environment and passed through the supervised launcher.
+
+### Exact evidence
+
+| Check | Result |
+|---|---|
+| `rustfmt +1.89.0 --check src/execution_environment.rs` | PASS |
+| `cargo +1.89.0 test execution_environment --locked` | 35/35 PASS; 0 ignored |
+| `cargo +1.89.0 check --all-targets --all-features --locked --offline` | PASS |
+| `cargo +1.89.0 test --all-targets --all-features --locked` | PASS; 847 library tests plus 47 integration/binary tests |
+| `opam exec --switch=D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\engine-ocaml -- dune build` | PASS |
+| `opam exec --switch=D:\The Next Thing\Tethers Lang - J16 Clean\tethers-0.1\engine-ocaml -- dune runtest` | PASS |
+| `jq empty` on all four execution-environment JSON files | PASS |
+| `pwsh -NoProfile -File scripts/check-tethers-environment.ps1 -Profile rust-host` | PASS; 5/5 probes and `cargo_offline: true` |
+| `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | PASS |
+| `git diff --check` | PASS |
+
+### Files modified for this correction
+
+- `tethers-0.1/host-rust/src/execution_environment.rs`
+- `docs/worker-notes/2026-08-02-j20-execution-environment-handshake.md`
+
+### Remaining risks
+
+No known remaining risk within this correction's path-identity boundary. The
+existing repository-wide warnings in unrelated modules remain pre-existing and
+were not changed.
+
 **Known baseline failures (outside this packet):**
 - M3 `immediate_startup_descendant` now passes after dependency cache resolution.
 - Repository-wide `cargo fmt` and `cargo clippy` — pre-existing debt in `file_tools.rs` and `application.rs`.
