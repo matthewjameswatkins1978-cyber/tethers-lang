@@ -172,6 +172,48 @@ Anchor, external Anchor admission, or M4 behaviour.
   host, engine, or provider process remained beneath the repository. No M4
   behaviour was added.
 
+### Final pre-launch security patch (2026-08-02)
+
+- Implementation commit: `e3465b32b84d6428a00264d620f130e7fe6e5aa5`
+  (`fix: harden M3 conformance launch trust`).
+- Conformance now revalidates host-owned trust immediately after candidate
+  revalidation and immediately before crossing the provider process boundary.
+  `launch_for_candidate` repeats that current-trust check as its final
+  defence-in-depth boundary. Historical `PackageTrustEvidence` is therefore
+  insufficient on its own. Revoked signed publisher trust and removed or
+  corrupted exact-digest developer approval refuse before the fixture can
+  create its provider marker, child process, or protocol traffic.
+- The suspended Windows launch now builds a `STARTUPINFOEXW` attribute list
+  with `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. The only inherited handles are
+  `stdin_read`, `stdout_write`, and `stderr_write`; the list is destroyed by
+  RAII on every success and failure path. The existing suspended launch, exact
+  executable and working directory, clean environment, Job Object assignment,
+  limits, bounded I/O, and cleanup remain in force.
+- The real Windows canary creates an unrelated inheritable event handle. The
+  fixture reports that it cannot access that handle while the successful
+  conformance exchange proves all three intended standard handles still work.
+  Existing immediate-child containment and survivor coverage remains present.
+- Verification evidence:
+  - `just tools`, `just fmt`, `just check`, `just test-m3`, `just test-rust`,
+    and `just verify`: PASS.
+  - `just test-m3`: 6 trust-store tests and 13 M3 lifecycle tests: PASS.
+  - `just test-rust`: 799 Rust unit tests, 29 J13A CLI tests, and 13 M3
+    lifecycle tests (841 total): PASS.
+  - Complete OCaml `dune build` and `dune runtest` using the packet-authorised
+    switch: PASS.
+  - Locked Rust debug and release builds: PASS.
+  - Complete `verify-0.2.ps1`: 6 suites passed, 0 failed (J13A 25; J13B 10;
+    J13C 19; J14A 5/95 assertions; J14B 11/243 assertions; J14C 9/196
+    assertions): PASS.
+  - `git diff --check`, PowerShell parser checks for the three J14 scripts,
+    and the final provider-process survivor check: PASS.
+- The J14 lockfile sentinels now hash Cargo.lock after normalising only checkout
+  line endings. This preserves the pinned content hash under the repository's
+  active `core.autocrlf=true` checkout without changing Cargo.lock or
+  weakening dependency integrity.
+- M4 behaviour remains absent. Approval and installation retain their existing
+  independent current-trust revalidation.
+
 ## Discoveries
 
 - The branch remote exists but this checkout's configured fetch refspec tracks
