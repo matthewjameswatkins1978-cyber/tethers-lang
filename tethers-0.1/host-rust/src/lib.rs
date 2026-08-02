@@ -16,6 +16,7 @@ mod event_queue;
 pub mod execution_environment;
 pub mod executor;
 pub mod file_tools;
+pub mod pdf_tools;
 pub mod host_execution;
 pub mod installed;
 pub mod launch_profile;
