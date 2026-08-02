@@ -120,7 +120,7 @@ existing event/evaluation seams are documented in the accepted M4 worker note.
 
 No credentials, network listener, watcher, recursive crawl, provider
 notification-as-Anchor shortcut, cursor identity, automatic retry, M6 feature,
-main movement, tag, release or force-push was added. Final branch SHA:
+main movement, tag, release or force-push was added.
 Final branch SHA: `9e3e1ebe21c2540be2ad30b2db7082facabd8c8e`.
 
 Correction verification reran `just verify` successfully after the source-test
