@@ -4,9 +4,9 @@
 //! make one exact installed identity available, and it never creates policy or
 //! per-call approval.  Disablement is a durable tombstone-like transition.
 
-use crate::file_tools::OperationalScopeBinding;
 use crate::installed::InstalledPlugRecord;
 use crate::m3_store::{canonical, sha256, unix_ms, M3Error, Result, StoreRoot};
+use crate::operational_scope::OperationalScope;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -26,7 +26,7 @@ pub struct EnablementRecord {
     pub provider_version: String,
     pub conformance_evidence_digest: String,
     pub installation_approval_id: String,
-    pub operational_scope: OperationalScopeBinding,
+    pub operational_scope: OperationalScope,
     pub operational_scope_digest: String,
     pub capabilities: Vec<EnabledCapability>,
     pub state: EnablementState,
@@ -69,8 +69,8 @@ impl EnablementRecord {
             || self.sequence == 0
             || self.conformance_evidence_digest.len() != 71
             || self.installation_approval_id.is_empty()
-            || self.operational_scope_digest != self.operational_scope.integrity_digest
-            || self.operational_scope.installed_id != self.installed_id
+            || self.operational_scope_digest != self.operational_scope.integrity_digest()
+            || self.operational_scope.installed_id() != self.installed_id
             || self.capabilities.is_empty()
             || self.authority.is_empty()
             || self.record_digest != sha256(&self.covered_bytes()?)
@@ -78,6 +78,16 @@ impl EnablementRecord {
             return Err(M3Error::new(
                 "enablement_invalid",
                 "invalid enablement record",
+            ));
+        }
+        self.operational_scope.validate()?;
+        if !self.capabilities.iter().any(|cap| {
+            cap.name == self.operational_scope.capability_name()
+                && cap.version == self.operational_scope.capability_version()
+        }) {
+            return Err(M3Error::new(
+                "enablement_invalid",
+                "operational scope capability not found in enabled bindings",
             ));
         }
         let mut identities = BTreeSet::new();
@@ -130,12 +140,15 @@ impl EnablementStore {
         })
     }
 
-    pub fn enable(
+    pub fn enable<S>(
         &self,
         installed: &InstalledPlugRecord,
-        scope: OperationalScopeBinding,
+        scope: S,
         authority: &str,
-    ) -> Result<EnablementRecord> {
+    ) -> Result<EnablementRecord>
+    where
+        S: Into<OperationalScope>,
+    {
         installed.validate()?;
         if installed.state != "present_disabled" || authority.is_empty() {
             return Err(M3Error::new(
@@ -149,7 +162,8 @@ impl EnablementStore {
                 "installed Plug is already enabled",
             ));
         }
-        if scope.installed_id != installed.installed_id || scope.capability_name.is_empty() {
+        let scope = scope.into();
+        if scope.installed_id() != installed.installed_id || scope.capability_name().is_empty() {
             return Err(M3Error::new(
                 "enablement_refused",
                 "scope binding does not match installed Plug",
@@ -168,7 +182,7 @@ impl EnablementStore {
             provider_version: installed.provider_version.clone(),
             conformance_evidence_digest: installed.conformance_evidence_digest.clone(),
             installation_approval_id: installed.installation_approval_id.clone(),
-            operational_scope_digest: scope.integrity_digest.clone(),
+            operational_scope_digest: scope.integrity_digest().to_owned(),
             operational_scope: scope,
             capabilities: installed
                 .disabled_bindings

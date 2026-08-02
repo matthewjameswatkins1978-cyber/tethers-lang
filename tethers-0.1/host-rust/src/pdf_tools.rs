@@ -260,6 +260,106 @@ fn count_pages(bytes: &[u8]) -> Option<u32> {
     }
 }
 
+// -- Operational-scope evidence --
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PdfOperationalScopeBinding {
+    pub installed_id: String,
+    pub capability_name: String,
+    pub capability_version: u32,
+    pub query_root: PathBuf,
+    pub max_bytes: u64,
+    pub authority: String,
+    pub integrity_digest: String,
+}
+
+impl PdfOperationalScopeBinding {
+    pub fn create(
+        installed_id: &str,
+        query_root: &Path,
+        max_bytes: u64,
+        authority: &str,
+    ) -> Result<Self, PdfToolsError> {
+        if installed_id.is_empty() {
+            return Err(PdfToolsError::new(
+                "scope_invalid",
+                "installed_id must not be empty",
+            ));
+        }
+        if authority.is_empty() {
+            return Err(PdfToolsError::new(
+                "scope_invalid",
+                "authority must not be empty",
+            ));
+        }
+        if max_bytes == 0 || max_bytes > MAX_PDF_BYTES {
+            return Err(PdfToolsError::new(
+                "scope_invalid",
+                format!("max_bytes {max_bytes} is outside [1, {MAX_PDF_BYTES}]"),
+            ));
+        }
+        let mut binding = Self {
+            installed_id: installed_id.into(),
+            capability_name: INSPECT_CAPABILITY.into(),
+            capability_version: 1,
+            query_root: canonical_directory(query_root, "query_root")?,
+            max_bytes,
+            authority: authority.into(),
+            integrity_digest: String::new(),
+        };
+        let mut covered = binding.clone();
+        covered.integrity_digest.clear();
+        let bytes = serde_json_canonicalizer::to_vec(&covered)
+            .map_err(|e| PdfToolsError::new("scope_invalid", e.to_string()))?;
+        use sha2::{Digest, Sha256};
+        binding.integrity_digest = format!("sha256:{:x}", Sha256::digest(bytes));
+        binding.validate()?;
+        Ok(binding)
+    }
+
+    pub fn validate(&self) -> Result<(), PdfToolsError> {
+        if self.installed_id.is_empty()
+            || self.capability_name != INSPECT_CAPABILITY
+            || self.capability_version != 1
+            || self.authority.is_empty()
+        {
+            return Err(PdfToolsError::new(
+                "scope_invalid",
+                "invalid operational scope binding",
+            ));
+        }
+        let _root = canonical_directory(&self.query_root, "query_root")?;
+        if self.max_bytes == 0 || self.max_bytes > MAX_PDF_BYTES {
+            return Err(PdfToolsError::new(
+                "scope_invalid",
+                format!(
+                    "max_bytes {} is outside [1, {MAX_PDF_BYTES}]",
+                    self.max_bytes
+                ),
+            ));
+        }
+        let mut covered = self.clone();
+        let digest = covered.integrity_digest.clone();
+        covered.integrity_digest.clear();
+        let bytes = serde_json_canonicalizer::to_vec(&covered)
+            .map_err(|e| PdfToolsError::new("scope_invalid", e.to_string()))?;
+        use sha2::{Digest, Sha256};
+        if digest != format!("sha256:{:x}", Sha256::digest(bytes)) {
+            return Err(PdfToolsError::new(
+                "scope_invalid",
+                "scope integrity evidence is invalid",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn scope(&self) -> Result<PdfScope, PdfToolsError> {
+        self.validate()?;
+        PdfScope::new(&self.query_root, self.max_bytes)
+    }
+}
+
 // -- Manifest builders --
 
 pub fn inspect_input_schema() -> Value {
