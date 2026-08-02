@@ -499,6 +499,20 @@ impl LocalAnchorCoordinator {
     where
         A: FnOnce(&str) -> Result<(), EventError>,
     {
+        self.admit_notification_with_trail(event_json, now_unix_ms, |_, _| Ok(()), acknowledge)
+    }
+
+    pub fn admit_notification_with_trail<T, A>(
+        &mut self,
+        event_json: &str,
+        now_unix_ms: u64,
+        append_trail: T,
+        acknowledge: A,
+    ) -> Result<(AdmissionResult, RootAnchor), EventError>
+    where
+        T: FnOnce(&AdmissionResult, &RootAnchor) -> Result<(), EventError>,
+        A: FnOnce(&str) -> Result<(), EventError>,
+    {
         let event = InboundEvent::from_json(event_json)?;
         let admission = self
             .store
@@ -510,8 +524,10 @@ impl LocalAnchorCoordinator {
                 return Err(EventError::Invalid("conflicting event identity".into()))
             }
         };
+        let anchor = root_anchor(&event, &anchor_id);
+        append_trail(&admission, &anchor)?;
         acknowledge(&anchor_id)?;
-        Ok((admission, root_anchor(&event, &anchor_id)))
+        Ok((admission, anchor))
     }
 }
 
@@ -609,17 +625,27 @@ mod tests {
         };
         let mut coordinator =
             LocalAnchorCoordinator::open(root.join("admission"), binding).unwrap();
+        let trail_seen = std::cell::Cell::new(false);
         let mut acked = false;
         let (result, anchor) = coordinator
-            .admit_notification(&json.to_string(), 2, |id| {
-                assert!(root
-                    .join("admission")
-                    .join(format!("{}.json", safe_filename("evt-ack")))
-                    .exists());
-                assert_eq!(id, "anchor/evt-ack/0");
-                acked = true;
-                Ok(())
-            })
+            .admit_notification_with_trail(
+                &json.to_string(),
+                2,
+                |_, _| {
+                    trail_seen.set(true);
+                    Ok(())
+                },
+                |id| {
+                    assert!(root
+                        .join("admission")
+                        .join(format!("{}.json", safe_filename("evt-ack")))
+                        .exists());
+                    assert_eq!(id, "anchor/evt-ack/0");
+                    assert!(trail_seen.get());
+                    acked = true;
+                    Ok(())
+                },
+            )
             .unwrap();
         assert!(acked);
         assert!(matches!(result, AdmissionResult::Admitted { .. }));
