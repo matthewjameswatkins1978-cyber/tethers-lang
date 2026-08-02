@@ -16,6 +16,109 @@ pub const METADATA_OPERATION: &str = "file_metadata";
 pub const MOVE_OPERATION: &str = "file_move";
 pub const MAX_CONTENT_BYTES: u64 = 64 * 1024;
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationalScopeBinding {
+    pub installed_id: String,
+    pub capability_name: String,
+    pub capability_version: u32,
+    pub query_root: PathBuf,
+    pub move_source_root: PathBuf,
+    pub move_destination_root: PathBuf,
+    pub max_content_bytes: u64,
+    pub authority: String,
+    pub integrity_digest: String,
+}
+
+impl OperationalScopeBinding {
+    pub fn create(
+        installed_id: &str,
+        capability_name: &str,
+        capability_version: u32,
+        query_root: &Path,
+        move_source_root: &Path,
+        move_destination_root: &Path,
+        max_content_bytes: u64,
+        authority: &str,
+    ) -> Result<Self, FileToolsError> {
+        let mut binding = Self {
+            installed_id: installed_id.into(),
+            capability_name: capability_name.into(),
+            capability_version,
+            query_root: canonical_directory(query_root, "query_root")?,
+            move_source_root: canonical_directory(move_source_root, "move_source_root")?,
+            move_destination_root: canonical_directory(
+                move_destination_root,
+                "move_destination_root",
+            )?,
+            max_content_bytes,
+            authority: authority.into(),
+            integrity_digest: String::new(),
+        };
+        let roots = [&binding.query_root, &binding.move_source_root, &binding.move_destination_root];
+        for (index, root) in roots.iter().enumerate() {
+            for other in roots.iter().skip(index + 1) {
+                if root == other || root.starts_with(other) || other.starts_with(root) {
+                    return Err(FileToolsError::new("scope_invalid", "operational roots must be distinct and non-nested"));
+                }
+            }
+        }
+        let mut covered = binding.clone();
+        covered.integrity_digest.clear();
+        let bytes = serde_json_canonicalizer::to_vec(&covered)
+            .map_err(|e| FileToolsError::new("scope_invalid", e.to_string()))?;
+        use sha2::{Digest, Sha256};
+        binding.integrity_digest = format!("sha256:{:x}", Sha256::digest(bytes));
+        binding.validate()?;
+        Ok(binding)
+    }
+
+    pub fn validate(&self) -> Result<(), FileToolsError> {
+        if self.installed_id.is_empty()
+            || self.capability_name.is_empty()
+            || self.capability_version == 0
+            || self.authority.is_empty()
+            || self.max_content_bytes == 0
+            || self.max_content_bytes > MAX_CONTENT_BYTES
+        {
+            return Err(FileToolsError::new(
+                "scope_invalid",
+                "invalid operational scope binding",
+            ));
+        }
+        let mut covered = self.clone();
+        let digest = covered.integrity_digest.clone();
+        covered.integrity_digest.clear();
+        let bytes = serde_json_canonicalizer::to_vec(&covered)
+            .map_err(|e| FileToolsError::new("scope_invalid", e.to_string()))?;
+        use sha2::{Digest, Sha256};
+        if digest != format!("sha256:{:x}", Sha256::digest(bytes)) {
+            return Err(FileToolsError::new(
+                "scope_invalid",
+                "scope integrity evidence is invalid",
+            ));
+        }
+        for root in [
+            &self.query_root,
+            &self.move_source_root,
+            &self.move_destination_root,
+        ] {
+            reject_reparse_chain(root)?;
+        }
+        Ok(())
+    }
+
+    pub fn scope(&self) -> Result<FileScope, FileToolsError> {
+        self.validate()?;
+        FileScope::new(
+            &self.query_root,
+            &self.move_source_root,
+            &self.move_destination_root,
+        )?
+        .with_max_content_bytes(self.max_content_bytes)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileToolsError {
     pub code: &'static str,
@@ -343,7 +446,7 @@ pub fn build_reference_package(provider_bytes: &[u8]) -> Result<Vec<u8>, FileToo
     let plug = json!({
         "package_format_version":"1","package_id":"tethers.file-tools","package_version":"1.0.0","display_name":"Tethers File Tools","description":"Credential-free bounded local File Tools reference Plug","publisher":"Tethers reference material","licence":"MIT","socket_major":1,
         "protocol_bindings":[{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],"platforms":[{"os":"windows","architecture":"x86_64"}],
-        "provider":{"provider_id":"tethers-file-tools","provider_version":"1.0.0","launch":{"path":"provider/file_tools_provider.exe","arguments":["--query-root","query","--source-root","source","--destination-root","destination"]},"working_directory":"provider","capability_operation_namespace":"file"},
+        "provider":{"provider_id":"tethers-file-tools","provider_version":"1.0.0","launch":{"path":"provider/file_tools_provider.exe","arguments":["--query-root","__TETHERS_FILE_QUERY_ROOT__","--source-root","__TETHERS_FILE_SOURCE_ROOT__","--destination-root","__TETHERS_FILE_DESTINATION_ROOT__"]},"working_directory":"provider","capability_operation_namespace":"file"},
         "capabilities":[{"capability_name":"file.metadata","capability_version":1,"manifest_path":"manifests/file-metadata-local.json","manifest_digest":"sha256:369f4034f702847bb82d1ef82e93f2c5661cad4ad2d7496c3685b406747db09a","provider_operation_name":"file_metadata"},{"capability_name":"file.move","capability_version":1,"manifest_path":"manifests/file-move-m4.json","manifest_digest":"sha256:2ac3793d4b61725fd130dac531d9690b93881341245f0c2f7c3aca2fd2dd2311","provider_operation_name":"file_move"}],
         "payload_index":[{"path":"manifests/file-metadata-local.json","sha256":digest(&metadata),"size_bytes":metadata.len(),"role":"capability_manifest"},{"path":"manifests/file-move-m4.json","sha256":digest(&movement),"size_bytes":movement.len(),"role":"capability_manifest"},{"path":"provider/file_tools_provider.exe","sha256":digest(provider_bytes),"size_bytes":provider_bytes.len(),"role":"provider_executable"}]
     });
@@ -378,31 +481,64 @@ pub fn build_reference_package(provider_bytes: &[u8]) -> Result<Vec<u8>, FileToo
 /// produced a `DispatchReadyAction`. It does not classify permission or write
 /// Trail records; those remain owned by the shared host execution boundary.
 pub struct FileToolsExecutor {
-    provider: crate::stdio_provider::ManagedProvider,
+    provider: crate::child_process::SupervisedChild,
     next_request_id: u64,
 }
 
 impl FileToolsExecutor {
-    pub fn launch(
-        command: &str,
-        args: &[String],
-        working_directory: &Path,
+    pub fn launch_from_installed(
+        record: &crate::installed::InstalledPlugRecord,
+        installed_directory: &Path,
+        trust: &crate::trust::PackageTrustEvidence,
+        publisher_trust: &crate::trust::PublisherTrustStore,
+        developer_approvals: &crate::trust::DeveloperApprovalStore,
+        conformance: &crate::conformance::ConformanceEvidence,
+        approval: &crate::installed::InstallationApprovalRecord,
+        enablement: &crate::enablement::EnablementRecord,
+        scope: &OperationalScopeBinding,
     ) -> Result<Self, FileToolsError> {
-        let working_directory = working_directory.to_path_buf();
-        let mut provider = crate::stdio_provider::ManagedProvider::launch(
-            command,
-            args,
-            &working_directory,
-            Some(Duration::from_secs(10)),
-            Some(Duration::from_secs(2)),
+        let mut provider = crate::launch_profile::launch_installed_provider(
+            record,
+            installed_directory,
+            trust,
+            publisher_trust,
+            developer_approvals,
+            conformance,
+            approval,
+            enablement,
+            scope,
         )
         .map_err(|e| FileToolsError::new("provider_launch", e.to_string()))?;
+        let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tethers-reference-host","version":"0.2.0"}}});
+        let initialized = Self::request_child(&mut provider, &initialize)?;
+        if initialized
+            .pointer("/result/protocolVersion")
+            .and_then(Value::as_str)
+            != Some("2025-11-25")
+            || initialized
+                .pointer("/result/serverInfo/name")
+                .and_then(Value::as_str)
+                != Some("tethers-file-tools")
+        {
+            provider.shutdown();
+            return Err(FileToolsError::new(
+                "provider_protocol",
+                "installed provider identity or protocol drifted",
+            ));
+        }
         provider
-            .initialize("2025-11-25", "tethers-file-tools")
+            .write_line("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")
             .map_err(|e| FileToolsError::new("provider_protocol", e.to_string()))?;
-        let tools = provider
-            .list_tools()
-            .map_err(|e| FileToolsError::new("provider_discovery", e.to_string()))?;
+        let tools = Self::request_child(
+            &mut provider,
+            &json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
+        )?;
+        let tools = tools
+            .pointer("/result/tools")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                FileToolsError::new("provider_discovery", "tools/list result missing")
+            })?;
         let names = tools
             .iter()
             .filter_map(|tool| tool.get("name").and_then(Value::as_str))
@@ -411,7 +547,7 @@ impl FileToolsExecutor {
             || !names.contains(METADATA_OPERATION)
             || !names.contains(MOVE_OPERATION)
         {
-            provider.close();
+            provider.shutdown();
             return Err(FileToolsError::new(
                 "provider_drift",
                 "provider advertised an operation outside the reviewed File Tools contract",
@@ -421,6 +557,23 @@ impl FileToolsExecutor {
             provider,
             next_request_id: 10,
         })
+    }
+
+    fn request_child(
+        child: &mut crate::child_process::SupervisedChild,
+        request: &Value,
+    ) -> Result<Value, FileToolsError> {
+        child
+            .write_line(
+                &serde_json::to_string(request)
+                    .map_err(|e| FileToolsError::new("provider_protocol", e.to_string()))?,
+            )
+            .map_err(|e| FileToolsError::new("provider_protocol", e.to_string()))?;
+        let line = child
+            .read_protocol_line(Duration::from_secs(5))
+            .map_err(|e| FileToolsError::new("provider_protocol", e.to_string()))?;
+        serde_json::from_str(&line)
+            .map_err(|e| FileToolsError::new("provider_protocol", e.to_string()))
     }
 
     pub fn call(&mut self, operation: &str, arguments: &Value) -> Result<Value, FileToolsError> {
@@ -435,15 +588,10 @@ impl FileToolsExecutor {
             .next_request_id
             .checked_add(1)
             .ok_or_else(|| FileToolsError::new("provider_protocol", "request id exhausted"))?;
-        self.provider
-            .tools_call_with_timeout(id, operation, arguments, Duration::from_secs(5))
-            .map_err(|e| FileToolsError::new("provider_call", e.to_string()))
-    }
-}
-
-impl Drop for FileToolsExecutor {
-    fn drop(&mut self) {
-        self.provider.close();
+        Self::request_child(
+            &mut self.provider,
+            &json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":operation,"arguments":arguments}}),
+        )
     }
 }
 
@@ -466,8 +614,13 @@ impl crate::executor::CapabilityExecutor for FileToolsExecutor {
         ready: &crate::dispatch::DispatchReadyAction,
         _remaining: Duration,
     ) -> Result<Value, crate::outcome::ProviderDiagnostic> {
-        self.execute(ready)
-            .map_err(|_| crate::outcome::ProviderDiagnostic::NoFinalResponse)
+        match self.execute(ready) {
+            Ok(value) if value.get("error").is_some() => {
+                Err(crate::outcome::ProviderDiagnostic::ExplicitProviderError)
+            }
+            Ok(value) => Ok(value.get("result").cloned().unwrap_or(value)),
+            Err(_) => Err(crate::outcome::ProviderDiagnostic::NoFinalResponse),
+        }
     }
 }
 

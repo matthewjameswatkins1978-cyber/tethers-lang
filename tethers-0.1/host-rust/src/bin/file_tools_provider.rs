@@ -23,13 +23,20 @@ fn error(id: &Value, code: i32, message: &str) -> Value {
 }
 
 fn main() {
-    let root = match argument("--query-root").or_else(|| argument("--provider-root")) {
-        Some(v) => PathBuf::from(v),
-        None => std::process::exit(2),
-    };
-    let source = argument("--source-root").unwrap_or_else(|| root.to_string_lossy().into_owned());
-    let destination =
-        argument("--destination-root").unwrap_or_else(|| root.to_string_lossy().into_owned());
+    let fallback = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let root = argument("--query-root")
+        .or_else(|| argument("--provider-root"))
+        .filter(|value| !value.starts_with("__TETHERS_FILE_"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| fallback.clone());
+    let source = argument("--source-root")
+        .filter(|value| !value.starts_with("__TETHERS_FILE_"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.clone());
+    let destination = argument("--destination-root")
+        .filter(|value| !value.starts_with("__TETHERS_FILE_"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.clone());
     let scope = match FileScope::new(&root, &PathBuf::from(source), &PathBuf::from(destination)) {
         Ok(scope) => scope,
         Err(error) => {

@@ -19,13 +19,13 @@ pub mod host_execution;
 pub mod installed;
 pub mod launch_profile;
 mod m3_store;
-mod manifest;
+pub mod manifest;
 mod outcome;
 pub mod package;
 pub mod policy;
 pub mod provider;
 pub mod replay;
-mod replay_runtime;
+pub mod replay_runtime;
 #[cfg(windows)]
 pub mod replay_windows;
 pub mod resolver;
@@ -42,5 +42,6 @@ mod validation;
 pub(crate) use application::{
     build_event_admission_entry, execute_shared_boundary, extract_proposed_action,
     inject_bridge_projection_into_request, now_unix_ms, request_exact_approval, InputEventContext,
-    ResponseResultAnchorWriter, SharedExecutionOutcome, SharedExecutionResult,
+    ResponseResultAnchorWriter,
 };
+pub use application::{SharedExecutionOutcome, SharedExecutionResult};

@@ -5,6 +5,10 @@
 
 use crate::candidate::CandidateRecord;
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
+use crate::conformance::{ConformanceDisposition, ConformanceEvidence};
+use crate::enablement::EnablementRecord;
+use crate::file_tools::OperationalScopeBinding;
+use crate::installed::{InstallationApprovalRecord, InstalledPlugRecord};
 use crate::m3_store::{
     canonical, reject_reparse, sha256, verify_chain, M3Error, Result, StoreRoot,
 };
@@ -98,6 +102,210 @@ pub struct PreparedSupervisedLaunch {
     working_directory: PathBuf,
     environment: BTreeMap<String, String>,
     scratch_directory: PathBuf,
+}
+
+/// Launch an already-installed provider. Package launch arguments are treated
+/// as a declaration: only the reviewed scope placeholders may be materialised
+/// from the current host-owned operational binding.
+pub fn launch_installed_provider(
+    record: &InstalledPlugRecord,
+    installed_directory: &Path,
+    trust: &PackageTrustEvidence,
+    publisher_trust: &PublisherTrustStore,
+    developer_approvals: &DeveloperApprovalStore,
+    conformance: &ConformanceEvidence,
+    approval: &InstallationApprovalRecord,
+    enablement: &EnablementRecord,
+    scope: &OperationalScopeBinding,
+) -> std::result::Result<SupervisedChild, ChildError> {
+    record.validate().map_err(map_installed_error)?;
+    trust
+        .revalidate_current(
+            &record.package_id,
+            publisher_trust,
+            developer_approvals,
+            crate::m3_store::unix_ms().map_err(map_installed_error)?,
+        )
+        .map_err(map_installed_error)?;
+    conformance.validate().map_err(map_installed_error)?;
+    if conformance.disposition != ConformanceDisposition::Passed
+        || conformance.evidence_digest != record.conformance_evidence_digest
+        || conformance.semantic_package_digest != record.semantic_package_digest
+        || conformance.capabilities != record.capability_manifests
+    {
+        return Err(ChildError::LaunchFailed {
+            command: record.launch_path.clone(),
+            message: "current conformance evidence is not pinned to installed state".into(),
+        });
+    }
+    approval.validate().map_err(map_installed_error)?;
+    if approval.candidate_id.is_empty()
+        || approval.package_id != record.package_id
+        || approval.semantic_package_digest != record.semantic_package_digest
+        || approval.conformance_evidence_digest != conformance.evidence_digest
+        || approval.trust_evidence.evidence_digest != trust.evidence_digest
+    {
+        return Err(ChildError::LaunchFailed {
+            command: record.launch_path.clone(),
+            message: "installation approval pins are stale".into(),
+        });
+    }
+    if enablement.installed_id != record.installed_id
+        || enablement.state != crate::enablement::EnablementState::Enabled
+        || enablement.semantic_package_digest != record.semantic_package_digest
+        || enablement.conformance_evidence_digest != conformance.evidence_digest
+        || enablement.operational_scope_digest != scope.integrity_digest
+    {
+        return Err(ChildError::LaunchFailed {
+            command: record.launch_path.clone(),
+            message: "enablement pins are stale".into(),
+        });
+    }
+    if scope.installed_id != record.installed_id
+        || !enablement.capabilities.iter().any(|binding| {
+            binding.name == scope.capability_name && binding.version == scope.capability_version
+        })
+    {
+        return Err(ChildError::LaunchFailed {
+            command: record.launch_path.clone(),
+            message: "enabled capability binding does not match scope".into(),
+        });
+    }
+    scope.validate().map_err(map_file_error)?;
+    if !installed_directory.is_absolute() {
+        return Err(ChildError::LaunchFailed {
+            command: record.launch_path.clone(),
+            message: "installed directory must be absolute".into(),
+        });
+    }
+    verify_chain(installed_directory).map_err(map_installed_error)?;
+    let executable = installed_directory.join(&record.launch_path);
+    let working_directory = installed_directory.join(&record.provider_working_directory);
+    revalidate_installed_files(record, installed_directory).map_err(map_installed_error)?;
+    let executable = fs::canonicalize(&executable).map_err(|error| ChildError::LaunchFailed {
+        command: record.launch_path.clone(),
+        message: error.to_string(),
+    })?;
+    let working_directory =
+        fs::canonicalize(&working_directory).map_err(|error| ChildError::LaunchFailed {
+            command: record.launch_path.clone(),
+            message: error.to_string(),
+        })?;
+    if !working_directory.starts_with(installed_directory) || !working_directory.is_dir() {
+        return Err(ChildError::LaunchFailed {
+            command: record.launch_path.clone(),
+            message: "installed working directory escaped".into(),
+        });
+    }
+    let mut args = record.launch_arguments.clone();
+    let replacements = [
+        (
+            "__TETHERS_FILE_QUERY_ROOT__",
+            scope.query_root.to_string_lossy().into_owned(),
+        ),
+        (
+            "__TETHERS_FILE_SOURCE_ROOT__",
+            scope.move_source_root.to_string_lossy().into_owned(),
+        ),
+        (
+            "__TETHERS_FILE_DESTINATION_ROOT__",
+            scope.move_destination_root.to_string_lossy().into_owned(),
+        ),
+    ];
+    for arg in &mut args {
+        for (placeholder, value) in &replacements {
+            if arg == placeholder {
+                *arg = value.clone();
+            }
+        }
+    }
+    if args.iter().any(|arg| arg.contains("__TETHERS_FILE_")) {
+        return Err(ChildError::LaunchFailed {
+            command: executable.to_string_lossy().into_owned(),
+            message: "unreviewed launch placeholder".into(),
+        });
+    }
+    let system_root = std::env::var("SystemRoot").map_err(|_| ChildError::LaunchFailed {
+        command: executable.to_string_lossy().into_owned(),
+        message: "SystemRoot unavailable".into(),
+    })?;
+    let scratch = installed_directory.join(".operational-scratch");
+    fs::create_dir_all(&scratch).map_err(|error| ChildError::LaunchFailed {
+        command: executable.to_string_lossy().into_owned(),
+        message: error.to_string(),
+    })?;
+    let mut environment = BTreeMap::new();
+    environment.insert("SystemRoot".into(), system_root.clone());
+    environment.insert("WINDIR".into(), system_root);
+    environment.insert("TEMP".into(), scratch.to_string_lossy().into_owned());
+    environment.insert("TMP".into(), scratch.to_string_lossy().into_owned());
+    environment.insert("TETHERS_CONFORMANCE".into(), "0".into());
+    environment.insert(
+        "TETHERS_FILE_QUERY_ROOT".into(),
+        scope.query_root.to_string_lossy().into_owned(),
+    );
+    environment.insert(
+        "TETHERS_FILE_SOURCE_ROOT".into(),
+        scope.move_source_root.to_string_lossy().into_owned(),
+    );
+    environment.insert(
+        "TETHERS_FILE_DESTINATION_ROOT".into(),
+        scope.move_destination_root.to_string_lossy().into_owned(),
+    );
+    let mut config = ChildConfig::production(executable.to_string_lossy().into_owned(), args);
+    config.current_dir = Some(working_directory);
+    config.clear_environment = true;
+    config.environment = environment;
+    config.assign_before_execution = true;
+    config.max_processes = 8;
+    config.process_memory_limit_bytes = 256 * 1024 * 1024;
+    config.max_protocol_line_bytes = 1024 * 1024;
+    config.stderr_tail_bytes = 16 * 1024;
+    config.graceful_close_timeout = Duration::from_secs(1);
+    SupervisedChild::launch(config)
+}
+
+fn map_installed_error(error: M3Error) -> ChildError {
+    ChildError::LaunchFailed {
+        command: "installed-provider".into(),
+        message: format!("{}: {}", error.code, error.message),
+    }
+}
+fn map_file_error(error: crate::file_tools::FileToolsError) -> ChildError {
+    ChildError::LaunchFailed {
+        command: "installed-provider".into(),
+        message: format!("{}: {}", error.code, error.message),
+    }
+}
+fn revalidate_installed_files(record: &InstalledPlugRecord, directory: &Path) -> Result<()> {
+    let expected = std::iter::once(&record.plug_json)
+        .chain(record.payloads.iter())
+        .chain(record.signature_files.iter())
+        .map(|e| e.path.clone())
+        .collect::<BTreeSet<_>>();
+    let mut actual = BTreeSet::new();
+    collect_files(directory, directory, &mut actual)?;
+    if actual != expected {
+        return Err(M3Error::new(
+            "installed_drift",
+            "installed file set changed",
+        ));
+    }
+    for evidence in std::iter::once(&record.plug_json)
+        .chain(record.payloads.iter())
+        .chain(record.signature_files.iter())
+    {
+        let path = directory.join(&evidence.path);
+        reject_reparse(&path)?;
+        let bytes = fs::read(&path).map_err(|e| M3Error::new("installed_drift", e.to_string()))?;
+        if sha256(&bytes) != evidence.sha256 || bytes.len() as u64 != evidence.size_bytes {
+            return Err(M3Error::new(
+                "installed_drift",
+                "installed payload digest changed",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn map_candidate_error(error: crate::package::PackageError) -> M3Error {

@@ -696,4 +696,25 @@ impl InstalledPlugRegistry {
         }
         Ok(records)
     }
+
+    pub fn installation_directory(
+        &self,
+        record: &InstalledPlugRecord,
+    ) -> Result<std::path::PathBuf> {
+        record.validate()?;
+        let directory = self
+            .install_root
+            .path()
+            .join(&record.installation_relative_path);
+        verify_chain(&directory)?;
+        let directory = fs::canonicalize(&directory)
+            .map_err(|error| M3Error::new("installed_record_invalid", error.to_string()))?;
+        if !directory.starts_with(self.install_root.path()) {
+            return Err(M3Error::new(
+                "installed_record_invalid",
+                "installation escaped root",
+            ));
+        }
+        Ok(directory)
+    }
 }

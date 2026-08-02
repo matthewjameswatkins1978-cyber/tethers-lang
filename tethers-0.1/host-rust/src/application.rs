@@ -2013,7 +2013,7 @@ fn present_non_dispatchable_response(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SharedExecutionResult {
+pub struct SharedExecutionResult {
     pub outcome: SharedExecutionOutcome,
     /// Host-issued opaque execution identity from replay admission.
     /// Present only when a trusted identity was established.
@@ -2021,7 +2021,7 @@ pub(crate) struct SharedExecutionResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SharedExecutionOutcome {
+pub enum SharedExecutionOutcome {
     Completed,
     Failed,
     Uncertain,

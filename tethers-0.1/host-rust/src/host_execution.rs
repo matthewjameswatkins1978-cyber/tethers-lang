@@ -292,6 +292,52 @@ pub struct HostExecutionService<'a> {
     host_data_root: Option<&'a Path>,
 }
 
+/// Execute one already-planned Action through the existing host boundary using
+/// an exact enabled installed binding. This is an adapter seam, not a second
+/// dispatcher: policy, intent, replay, outcome, Result Anchor, and Trail all
+/// remain in `execute_shared_boundary`.
+pub fn execute_enabled_file_tools_action(
+    response: &mut Value,
+    requirements: &[policy::CapabilityRequirement],
+    resolved: &ResolvedCapability,
+    enabled: &crate::enablement::EnabledBindingSnapshot,
+    executor: &mut dyn CapabilityExecutor,
+    trail_path: &Path,
+    replay_root: &Path,
+    event_id: &str,
+) -> Result<crate::SharedExecutionResult, Box<dyn std::error::Error>> {
+    let action = crate::extract_proposed_action(response)?;
+    if !enabled.contains(
+        resolved.capability_name(),
+        resolved.capability_version(),
+        &resolved.manifest().manifest().binding.tool_name,
+        resolved.manifest_digest(),
+    ) || action.capability_name != resolved.capability_name()
+    {
+        return Err("enabled installed binding does not match planned capability".into());
+    }
+    let policy = policy::HostLocalPolicy::new(policy::PolicyRule::Allow);
+    let decision = policy::evaluate_permission_resolved(requirements, resolved, &policy);
+    let mut trail = dispatch::FileTrail::open(trail_path)?;
+    let clock = ProductionMonotonicClock::new();
+    let mut replay_authority = FileReplayAuthority::new(Some(replay_root));
+    let mut anchor_writer = crate::ResponseResultAnchorWriter;
+    let context = crate::InputEventContext::for_initial(event_id);
+    Ok(crate::execute_shared_boundary(
+        response,
+        decision,
+        resolved,
+        &mut trail,
+        executor,
+        &context,
+        true,
+        &clock,
+        &mut replay_authority,
+        None,
+        &mut anchor_writer,
+    )?)
+}
+
 impl<'a> HostExecutionService<'a> {
     /// Create a new service with the given immutable runtime, engine, trail,
     /// and host-data-root references.
