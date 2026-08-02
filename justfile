@@ -22,5 +22,8 @@ test-m3:
 test-m4:
     Push-Location tethers-0.1/host-rust; cargo +1.89.0 test file_tools --all-features --locked; cargo +1.89.0 test --test m4_file_tools --all-features --locked
 
+test-m5:
+    Push-Location tethers-0.1/host-rust; cargo +1.89.0 test local_anchor --all-features --locked; cargo +1.89.0 test --test m5_local_anchor --all-features --locked
+
 verify:
     pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1; just fmt; just check; just test-rust

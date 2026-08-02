@@ -61,6 +61,9 @@ fn durable_local_anchor_restart_duplicate_conflict_and_scope() {
         .unwrap();
     assert!(matches!(admitted, AdmissionResult::Admitted { .. }));
     assert_eq!(anchor.generation, 0);
+    coordinator
+        .complete_evaluation("provider-event-1", "sha256:terminal")
+        .unwrap();
 
     drop(coordinator);
     let mut restarted = LocalAnchorCoordinator::open(root.join("admission"), binding).unwrap();
@@ -71,7 +74,13 @@ fn durable_local_anchor_restart_duplicate_conflict_and_scope() {
             Ok(())
         })
         .unwrap();
-    assert!(matches!(duplicate, AdmissionResult::Duplicate { .. }));
+    assert!(matches!(
+        duplicate,
+        AdmissionResult::DuplicateCompleted {
+            result_digest,
+            ..
+        } if result_digest == "sha256:terminal"
+    ));
     assert_eq!(duplicate_anchor.event_id, anchor.event_id);
     assert_eq!(acknowledgements, 1);
 

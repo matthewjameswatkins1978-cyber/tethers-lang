@@ -243,10 +243,27 @@ struct AdmissionRecord {
     record_digest: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EvaluationRecord {
+    schema: String,
+    event_id: String,
+    state: String,
+    result_digest: String,
+    record_digest: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdmissionResult {
-    Admitted { root_anchor_id: String },
-    Duplicate { root_anchor_id: String },
+    Admitted {
+        root_anchor_id: String,
+    },
+    DuplicatePending {
+        root_anchor_id: String,
+    },
+    DuplicateCompleted {
+        root_anchor_id: String,
+        result_digest: String,
+    },
     Conflict,
 }
 
@@ -262,6 +279,7 @@ pub struct AdmissionBinding {
 pub struct AdmissionStore {
     root: PathBuf,
     records: HashMap<String, AdmissionRecord>,
+    completed: HashMap<String, String>,
 }
 
 impl AdmissionStore {
@@ -269,6 +287,7 @@ impl AdmissionStore {
         let root = root.into();
         fs::create_dir_all(&root).map_err(io_error)?;
         let mut records = HashMap::new();
+        let mut completed = HashMap::new();
         for entry in fs::read_dir(&root).map_err(io_error)? {
             let entry = entry.map_err(io_error)?;
             if !entry.file_type().map_err(io_error)?.is_file() {
@@ -279,6 +298,27 @@ impl AdmissionStore {
                 .map_err(io_error)?
                 .read_to_end(&mut bytes)
                 .map_err(io_error)?;
+            if entry.file_name().to_string_lossy().contains(".evaluation-") {
+                let evaluation: EvaluationRecord = serde_json::from_slice(&bytes)
+                    .map_err(|e| EventError::Corrupt(format!("evaluation JSON: {e}")))?;
+                if evaluation.schema != "tethers.local-event-evaluation.v1"
+                    || evaluation.state != "completed"
+                    || evaluation.record_digest != digest_evaluation(&evaluation)?
+                {
+                    return Err(EventError::Corrupt(
+                        "evaluation record integrity failure".into(),
+                    ));
+                }
+                if completed
+                    .insert(evaluation.event_id, evaluation.result_digest)
+                    .is_some()
+                {
+                    return Err(EventError::Corrupt(
+                        "duplicate evaluation completion".into(),
+                    ));
+                }
+                continue;
+            }
             let record: AdmissionRecord = serde_json::from_slice(&bytes)
                 .map_err(|e| EventError::Corrupt(format!("record JSON: {e}")))?;
             if record.schema != RECORD_SCHEMA || record.record_digest != digest_record(&record)? {
@@ -293,7 +333,11 @@ impl AdmissionStore {
                 return Err(EventError::Corrupt("duplicate event record".into()));
             }
         }
-        Ok(Self { root, records })
+        Ok(Self {
+            root,
+            records,
+            completed,
+        })
     }
 
     pub fn admit(
@@ -304,10 +348,15 @@ impl AdmissionStore {
         let digest = event.canonical_digest()?;
         if let Some(existing) = self.records.get(&event.event_id) {
             if existing.canonical_event_digest == digest {
-                return Ok(AdmissionResult::Duplicate {
-                    root_anchor_id: existing.root_anchor_id.clone().ok_or_else(|| {
-                        EventError::Corrupt("admitted record lacks root Anchor".into())
-                    })?,
+                let root_anchor_id = existing.root_anchor_id.clone().ok_or_else(|| {
+                    EventError::Corrupt("admitted record lacks root Anchor".into())
+                })?;
+                return Ok(match self.completed.get(&event.event_id) {
+                    Some(result_digest) => AdmissionResult::DuplicateCompleted {
+                        root_anchor_id,
+                        result_digest: result_digest.clone(),
+                    },
+                    None => AdmissionResult::DuplicatePending { root_anchor_id },
                 });
             }
             self.write_record(&record_for(
@@ -331,6 +380,38 @@ impl AdmissionStore {
         )?;
         self.write_record(&record)?;
         Ok(AdmissionResult::Admitted { root_anchor_id })
+    }
+
+    pub fn mark_evaluation_completed(
+        &mut self,
+        event_id: &str,
+        result_digest: &str,
+    ) -> Result<(), EventError> {
+        if !self.records.contains_key(event_id) {
+            return Err(EventError::Invalid("event was not durably admitted".into()));
+        }
+        if let Some(existing) = self.completed.get(event_id) {
+            if existing == result_digest {
+                return Ok(());
+            }
+            return Err(EventError::Corrupt("evaluation completion conflict".into()));
+        }
+        let mut evaluation = EvaluationRecord {
+            schema: "tethers.local-event-evaluation.v1".into(),
+            event_id: event_id.into(),
+            state: "completed".into(),
+            result_digest: result_digest.into(),
+            record_digest: String::new(),
+        };
+        evaluation.record_digest = digest_evaluation(&evaluation)?;
+        let path = self.root.join(format!(
+            "{}.evaluation-{}.json",
+            safe_filename(event_id),
+            safe_filename(result_digest)
+        ));
+        atomic_create_bytes(&path, &evaluation)?;
+        self.completed.insert(event_id.into(), result_digest.into());
+        Ok(())
     }
 
     pub fn admit_verified(
@@ -420,9 +501,34 @@ fn digest_record(record: &AdmissionRecord) -> Result<String, EventError> {
     Ok(sha256_digest(&bytes))
 }
 
+fn digest_evaluation(record: &EvaluationRecord) -> Result<String, EventError> {
+    let mut value = serde_json::to_value(record).map_err(|e| EventError::Corrupt(e.to_string()))?;
+    value
+        .as_object_mut()
+        .ok_or_else(|| EventError::Corrupt("evaluation not object".into()))?
+        .remove("record_digest");
+    let bytes = serde_json_canonicalizer::to_vec(&value)
+        .map_err(|e| EventError::Corrupt(format!("evaluation canonicalization: {e}")))?;
+    Ok(sha256_digest(&bytes))
+}
+
 fn atomic_create(path: &Path, record: &AdmissionRecord) -> Result<(), EventError> {
     let temp = path.with_extension("tmp");
     let bytes = serde_json::to_vec(record).map_err(|e| EventError::Io(e.to_string()))?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)
+        .map_err(io_error)?;
+    file.write_all(&bytes).map_err(io_error)?;
+    file.sync_all().map_err(io_error)?;
+    drop(file);
+    fs::rename(&temp, path).map_err(io_error)
+}
+
+fn atomic_create_bytes<T: Serialize>(path: &Path, value: &T) -> Result<(), EventError> {
+    let temp = path.with_extension("tmp");
+    let bytes = serde_json::to_vec(value).map_err(|e| EventError::Io(e.to_string()))?;
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -519,7 +625,8 @@ impl LocalAnchorCoordinator {
             .admit_verified(&event, &self.binding, now_unix_ms)?;
         let anchor_id = match &admission {
             AdmissionResult::Admitted { root_anchor_id }
-            | AdmissionResult::Duplicate { root_anchor_id } => root_anchor_id.clone(),
+            | AdmissionResult::DuplicatePending { root_anchor_id }
+            | AdmissionResult::DuplicateCompleted { root_anchor_id, .. } => root_anchor_id.clone(),
             AdmissionResult::Conflict => {
                 return Err(EventError::Invalid("conflicting event identity".into()))
             }
@@ -528,6 +635,55 @@ impl LocalAnchorCoordinator {
         append_trail(&admission, &anchor)?;
         acknowledge(&anchor_id)?;
         Ok((admission, anchor))
+    }
+
+    /// Full host ordering for a source that is wired to the existing
+    /// evaluation coordinator.  The evaluator returns the digest of its
+    /// durable terminal result; this module records that terminal transition
+    /// before allowing acknowledgement.
+    pub fn admit_notification_with_evaluation<T, E, A>(
+        &mut self,
+        event_json: &str,
+        now_unix_ms: u64,
+        append_trail: T,
+        evaluate: E,
+        acknowledge: A,
+    ) -> Result<(AdmissionResult, RootAnchor), EventError>
+    where
+        T: FnOnce(&AdmissionResult, &RootAnchor) -> Result<(), EventError>,
+        E: FnOnce(&RootAnchor) -> Result<String, EventError>,
+        A: FnOnce(&str) -> Result<(), EventError>,
+    {
+        let event = InboundEvent::from_json(event_json)?;
+        let admission = self
+            .store
+            .admit_verified(&event, &self.binding, now_unix_ms)?;
+        let anchor_id = match &admission {
+            AdmissionResult::Admitted { root_anchor_id }
+            | AdmissionResult::DuplicatePending { root_anchor_id }
+            | AdmissionResult::DuplicateCompleted { root_anchor_id, .. } => root_anchor_id.clone(),
+            AdmissionResult::Conflict => {
+                return Err(EventError::Invalid("conflicting event identity".into()))
+            }
+        };
+        let anchor = root_anchor(&event, &anchor_id);
+        append_trail(&admission, &anchor)?;
+        if !matches!(admission, AdmissionResult::DuplicateCompleted { .. }) {
+            let result_digest = evaluate(&anchor)?;
+            self.store
+                .mark_evaluation_completed(&event.event_id, &result_digest)?;
+        }
+        acknowledge(&anchor_id)?;
+        Ok((admission, anchor))
+    }
+
+    pub fn complete_evaluation(
+        &mut self,
+        event_id: &str,
+        result_digest: &str,
+    ) -> Result<(), EventError> {
+        self.store
+            .mark_evaluation_completed(event_id, result_digest)
     }
 }
 
@@ -571,11 +727,17 @@ mod tests {
             store.admit(&e, 1).unwrap(),
             AdmissionResult::Admitted { .. }
         ));
+        store
+            .mark_evaluation_completed("evt-1", "sha256:result")
+            .unwrap();
         drop(store);
         let mut reloaded = AdmissionStore::open(&root).unwrap();
         assert!(matches!(
             reloaded.admit(&e, 2).unwrap(),
-            AdmissionResult::Duplicate { .. }
+            AdmissionResult::DuplicateCompleted {
+                result_digest,
+                ..
+            } if result_digest == "sha256:result"
         ));
         let _ = fs::remove_dir_all(root);
     }
