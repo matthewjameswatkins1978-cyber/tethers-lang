@@ -346,6 +346,17 @@ impl ExecutionEnvironmentContract {
         &self.data.observation_digest
     }
 
+    pub fn to_stored_json(&self) -> Result<String, serde_json::Error> {
+        let mut value = serde_json::to_value(&self.data)?;
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert(
+                "contract_digest".to_owned(),
+                serde_json::Value::String(self.contract_digest.clone()),
+            );
+        }
+        serde_json::to_string_pretty(&value)
+    }
+
     pub fn issue(
         request: TaskEnvironmentRequest,
         observation: HostEnvironmentObservation,
@@ -588,6 +599,34 @@ impl ExecutionEnvironmentContract {
                 "arguments must exactly match the approved contract command",
             ));
         }
+        Ok(self.finish_permit(command)?)
+    }
+
+    pub fn permit_by_id(&self, command_id: &str) -> Result<CommandPermit, EnvironmentError> {
+        self.verify_integrity()?;
+
+        if self.data.status == ContractStatus::Blocked {
+            return Err(EnvironmentError::new(
+                "contract_blocked",
+                "blocked contracts cannot launch a process",
+            ));
+        }
+        if !self.data.process_tree_supervision_required {
+            return Err(EnvironmentError::new(
+                "supervision",
+                "contract lacks required process-tree supervision",
+            ));
+        }
+        let Some(command) = self.data.approved_commands.get(command_id) else {
+            return Err(EnvironmentError::new(
+                "command",
+                "command id is not in the frozen contract",
+            ));
+        };
+        self.finish_permit(command)
+    }
+
+    fn finish_permit(&self, command: &ApprovedCommand) -> Result<CommandPermit, EnvironmentError> {
         if let Some(script) = &command.script_path {
             let current =
                 hash_file(script).map_err(|error| EnvironmentError::new("script_digest", error))?;
@@ -2365,5 +2404,216 @@ mod tests {
         child.shutdown();
 
         let _ = fs::remove_file(&script_path);
+    }
+
+    // ── permit_by_id tests ──────────────────────────────────────
+
+    #[test]
+    fn permit_by_id_succeeds_for_approved_command() {
+        let contract = issue_agreed();
+        let permit = contract.permit_by_id("rust-check").unwrap();
+        let config = permit.child_config();
+        assert_eq!(config.command, "C:/Users/Matmus/.cargo/bin/cargo.exe");
+        assert!(config.assign_before_execution);
+    }
+
+    #[test]
+    fn permit_by_id_refuses_unknown_command_id() {
+        let contract = issue_agreed();
+        let err = contract.permit_by_id("nonexistent").unwrap_err();
+        assert_eq!(err.code, "command");
+    }
+
+    #[test]
+    fn permit_by_id_refuses_blocked_contract() {
+        let mut unavailable = observation();
+        unavailable.capabilities.clear();
+        let contract =
+            ExecutionEnvironmentContract::issue(request(RequirementClass::Required), unavailable)
+                .unwrap();
+        assert_eq!(contract.status(), &ContractStatus::Blocked);
+        let err = contract.permit_by_id("rust-check").unwrap_err();
+        assert_eq!(err.code, "contract_blocked");
+    }
+
+    // ── to_stored_json round-trip tests ─────────────────────────
+
+    #[test]
+    fn to_stored_json_round_trips_through_from_stored() {
+        let contract = issue_agreed();
+        let json = contract.to_stored_json().unwrap();
+        let restored = ExecutionEnvironmentContract::from_stored(&json).unwrap();
+        assert_eq!(restored.contract_digest(), contract.contract_digest());
+        assert_eq!(restored.status(), &ContractStatus::Agreed);
+        assert_eq!(restored.request_digest(), contract.request_digest());
+        assert_eq!(restored.observation_digest(), contract.observation_digest());
+    }
+
+    #[test]
+    fn to_stored_json_produces_valid_json_with_contract_digest_field() {
+        let contract = issue_agreed();
+        let json = contract.to_stored_json().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed["contract_digest"].as_str().unwrap(),
+            contract.contract_digest()
+        );
+        assert_eq!(
+            parsed["schema"].as_str().unwrap(),
+            "tethers-execution-environment-contract-v1"
+        );
+    }
+
+    #[test]
+    fn to_stored_json_is_stable_across_calls() {
+        let contract = issue_agreed();
+        let json1 = contract.to_stored_json().unwrap();
+        let json2 = contract.to_stored_json().unwrap();
+        assert_eq!(json1, json2);
+    }
+
+    #[test]
+    fn permit_by_id_verifies_script_integrity() {
+        use std::io::Write;
+
+        let pwsh = "C:/Program Files/PowerShell/7/pwsh.exe";
+        let temp = std::env::temp_dir();
+        let script_path = temp.join("tethers-permit-by-id.ps1");
+        let script_content = "exit 0";
+        {
+            let mut file = fs::File::create(&script_path).unwrap();
+            file.write_all(script_content.as_bytes()).unwrap();
+        }
+        let script_str = script_path.to_string_lossy().replace('/', "\\");
+        let cwd = temp.to_string_lossy().replace('/', "\\");
+        let script_hash = format!("sha256:{}", hash_file(&script_str).unwrap());
+
+        let args = vec![
+            "-NoLogo".to_owned(),
+            "-NoProfile".to_owned(),
+            "-NonInteractive".to_owned(),
+            "-File".to_owned(),
+            script_str.clone(),
+        ];
+
+        let mut req = request(RequirementClass::Required);
+        req.capabilities[0] = CapabilityRequirement {
+            id: "powershell-automation".to_owned(),
+            class: RequirementClass::Required,
+            version_policy: VersionPolicy::Any,
+        };
+        req.commands = vec![RequestedCommand {
+            command_id: "pwsh-by-id".to_owned(),
+            capability_id: "powershell-automation".to_owned(),
+            args: args.clone(),
+            cwd: cwd.clone(),
+        }];
+        req.requested_permissions = broad_permissions();
+
+        let mut obs = observation();
+        obs.granted_permissions = broad_permissions();
+        obs.capabilities = BTreeMap::from([(
+            "powershell-automation".to_owned(),
+            HostCapabilityObservation {
+                version: "7.6.4".to_owned(),
+                verified: true,
+                command_id: "pwsh-by-id".to_owned(),
+            },
+        )]);
+        obs.commands = BTreeMap::from([(
+            "pwsh-by-id".to_owned(),
+            HostCommandObservation {
+                program_path: pwsh.to_owned(),
+                args: args.clone(),
+                cwd: cwd.clone(),
+                script_digest: Some(script_hash),
+                environment: BTreeMap::new(),
+            },
+        )]);
+
+        let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
+        assert!(contract.permit_by_id("pwsh-by-id").is_ok());
+
+        // Tamper the script file
+        {
+            let mut file = fs::File::create(&script_path).unwrap();
+            file.write_all(b"exit 1").unwrap();
+        }
+        let err = contract.permit_by_id("pwsh-by-id").unwrap_err();
+        assert_eq!(err.code, "script_changed");
+
+        let _ = fs::remove_file(&script_path);
+    }
+
+    // ── permit and permit_by_id consistency tests ──────────────
+
+    #[test]
+    fn permit_and_permit_by_id_produce_same_config_for_exact_invocation() {
+        let contract = issue_agreed();
+        let permit1 = contract.permit(exact_invocation()).unwrap();
+        let permit2 = contract.permit_by_id("rust-check").unwrap();
+        assert_eq!(
+            permit1.child_config().command,
+            permit2.child_config().command
+        );
+        assert_eq!(permit1.child_config().args, permit2.child_config().args);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn permit_by_id_launches_supervised_child() {
+        let cmd_path = "C:/Windows/System32/cmd.exe";
+        let temp = std::env::temp_dir().to_string_lossy().replace('/', "\\");
+        let cwd = temp.clone();
+        let args = vec!["/c".to_owned(), "echo ok".to_owned()];
+
+        let mut req = request(RequirementClass::Required);
+        req.capabilities[0] = CapabilityRequirement {
+            id: "powershell-automation".to_owned(),
+            class: RequirementClass::Required,
+            version_policy: VersionPolicy::Any,
+        };
+        req.commands = vec![RequestedCommand {
+            command_id: "cmd-echo".to_owned(),
+            capability_id: "powershell-automation".to_owned(),
+            args: args.clone(),
+            cwd: cwd.clone(),
+        }];
+        req.requested_permissions = broad_permissions();
+
+        let mut obs = observation();
+        obs.granted_permissions = broad_permissions();
+        obs.capabilities = BTreeMap::from([(
+            "powershell-automation".to_owned(),
+            HostCapabilityObservation {
+                version: "10.0".to_owned(),
+                verified: true,
+                command_id: "cmd-echo".to_owned(),
+            },
+        )]);
+        obs.commands = BTreeMap::from([(
+            "cmd-echo".to_owned(),
+            HostCommandObservation {
+                program_path: cmd_path.to_owned(),
+                args: args.clone(),
+                cwd: cwd.clone(),
+                script_digest: None,
+                environment: BTreeMap::from([("TETHERS_BY_ID".to_owned(), "1".to_owned())]),
+            },
+        )]);
+
+        let contract = ExecutionEnvironmentContract::issue(req, obs).unwrap();
+        let permit = contract.permit_by_id("cmd-echo").unwrap();
+
+        let config = permit.child_config();
+        assert_eq!(
+            config.environment.get("TETHERS_BY_ID"),
+            Some(&"1".to_owned())
+        );
+
+        let child = permit.launch().unwrap();
+        let stderr = child.stderr_tail();
+        child.shutdown();
+        assert!(stderr.is_empty());
     }
 }
