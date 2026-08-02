@@ -76,7 +76,7 @@ fn native_file_tools_provider_performs_query_and_non_overwriting_move() {
         &mut child,
         serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
     );
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 2);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 3);
     let metadata = request(
         &mut child,
         serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"file_metadata","arguments":{"path":"hello.txt","include_content":true}}}),

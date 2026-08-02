@@ -76,6 +76,7 @@ fn main() {
             }
             "tools/list" if client_initialized => Ok(json!({"tools":[
                 {"name":file_tools::METADATA_OPERATION,"inputSchema":file_tools::metadata_input_schema(),"outputSchema":file_tools::metadata_output_schema()},
+                {"name":file_tools::METADATA_V2_OPERATION,"inputSchema":file_tools::metadata_v2_input_schema(),"outputSchema":file_tools::metadata_v2_output_schema()},
                 {"name":file_tools::MOVE_OPERATION,"inputSchema":file_tools::move_input_schema(),"outputSchema":file_tools::move_output_schema()}
             ]})),
             "tools/call" if client_initialized => {
@@ -84,6 +85,9 @@ fn main() {
                 let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
                 match name {
                     file_tools::METADATA_OPERATION => file_tools::metadata(&scope, &arguments),
+                    file_tools::METADATA_V2_OPERATION => {
+                        file_tools::metadata_v2(&scope, &arguments)
+                    }
                     file_tools::MOVE_OPERATION => file_tools::move_file(&scope, &arguments),
                     _ => Err(file_tools::FileToolsError {
                         code: "unknown_operation",
