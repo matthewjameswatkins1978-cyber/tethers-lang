@@ -66,9 +66,12 @@ script digest, never `-Command` or `-EncodedCommand`.
 | `replaceable` | Contract records the host-named substitute or unavailability; it does not block. |
 | `optional` | Recorded as unavailable without degradation. |
 
-Substitution is closed: a worker cannot derive `Select-String`, direct Cargo,
-or any other replacement after the contract is issued. Version policies are
-`exact`, `minimum`, or `any`; a toolchain pin is never represented as a hint.
+Capability substitution is explicitly deferred from executable v1. The shared
+workbench profile documents host-named substitutes as advisory, but the issuer
+does not resolve them at runtime. A preferred or replaceable capability whose
+host probe fails gates the contract as specified above; no replacement is
+invented by the agent. Substitution resolution will be addressed in a future
+version.
 
 ## Frozen contract and digests
 
