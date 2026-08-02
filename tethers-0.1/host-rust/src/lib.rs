@@ -18,6 +18,7 @@ pub mod file_tools;
 pub mod host_execution;
 pub mod installed;
 pub mod launch_profile;
+pub mod local_anchor;
 mod m3_store;
 pub mod manifest;
 mod outcome;

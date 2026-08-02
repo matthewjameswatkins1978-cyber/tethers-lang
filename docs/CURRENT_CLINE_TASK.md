@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J19-M5 - Autonomous Durable Local Anchor Vertical Slice`
 Owner: `Luna / OpenCode`
-Status: `AUTHORISED`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `Luna in one continuous autonomous Milestone 5 implementation`
 Base branch: `main`
@@ -51,6 +51,16 @@ The accepted flow is:
 
 outside/local source -> provider notification -> Socket/binding -> host validation -> durable external-event admission -> canonical root Anchor generation 0 -> J11 generation checks -> Trail -> evaluation -> ordinary Action/Query path -> acknowledgement.
 
+## Relevant background and existing behaviour
+
+M4 provides the enabled local File Tools Plug, supervised Windows launch,
+host-owned scope binding, policy, durable intent, replay, canonical outcomes,
+Result Anchors and Trail ordering. Existing event admission only covers
+process-local causal checks and the existing follow-up queue handles generated
+Result Anchors. M5 must add a separate durable external-event authority and
+host-created generation-0 root Anchor without replacing those M4 seams or the
+released 0.2 runtime.
+
 ## Required behaviour
 
 1. Freeze one small local event, preferably `file.received@1` or the smallest equivalent, with strict schema and stable provider-issued event identity.
@@ -62,6 +72,26 @@ outside/local source -> provider notification -> Socket/binding -> host validati
 7. Preserve J11 causal limits: generation 0 through 8 accepted; generation 9 and above rejected.
 8. Acknowledge the provider only after durable admission. A cursor, sequence, timestamp or transport offset is not event identity.
 9. Preserve Trail and evaluation ordering and all M4 operational Plug behaviour.
+
+## Relevant components
+
+- Existing `event_admission.rs`, `event_queue.rs`, `dispatch.rs`, `application.rs`,
+  `result_anchor.rs`, and Trail implementations.
+- M4 installed/enablement/session and File Tools host boundaries.
+- New strict inbound event contract, durable admission store, host Anchor
+  creation path, local source fixture, and Windows integration evidence.
+
+## Acceptance criteria
+
+1. One strict stable local event contract and binding passes positive and negative validation tests.
+2. Durable admission survives restart, corruption refuses safely, and acknowledgement follows durable publication.
+3. Same-ID/same-digest delivery is a duplicate without reevaluation; same-ID/different-digest is quarantined conflict evidence.
+4. Accepted admission creates exactly one generation-0 host root Anchor and preserves generation 8/9 boundaries.
+5. Real Windows end-to-end evidence proves enablement, admission, evaluation, Trail ordering, restart deduplication, conflict refusal, and disablement.
+6. M3, M4, Rust, OCaml, 0.2, formatting, process-cleanup, and packet checks pass.
+7. Invalid identity, binding, schema, digest, scope, reparse, payload, and generation inputs are refused without evaluation or success acknowledgement.
+8. Admission publication failure creates no Anchor and no acknowledgement; recovery after admission does not duplicate evaluation.
+9. No provider notification is treated as an Anchor, no cursor/timestamp substitutes for identity, and no M6 or external Anchor behaviour is added.
 
 ## Frozen architectural truths
 
@@ -78,6 +108,11 @@ outside/local source -> provider notification -> Socket/binding -> host validati
 - No automatic retry of provider operations.
 - Cursor/offset/timestamp is not event identity.
 - No network listener, credential delivery, PDF feature, marketplace, updater or M6 work.
+
+## Frozen decisions and invariants
+
+The frozen architectural truths, event contract, durable admission rules, source
+boundary, and host Anchor ordering above are binding implementation invariants.
 
 ## Event contract
 
@@ -241,6 +276,17 @@ Stop only when one of these remains after two materially different evidence-base
 - repository corruption, missing baseline or unavailable required toolchain prevents progress.
 
 Ordinary compiler errors, fixtures, store schemas, Windows API details, test harness work and cross-module integration are not major blockers.
+
+## Stop conditions
+
+The major stop rule above is exhaustive for this task. Stop only when one of
+those conditions remains after two materially different evidence-based
+attempts.
+
+## Expected pre-existing changes
+
+None beyond the accepted M4 baseline and the authorized M5 control/ledger
+commits.
 
 ## Required verification
 
