@@ -2,14 +2,14 @@
 
 Task: `J19-M5 - Autonomous Durable Local Anchor Vertical Slice`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Owner: `Luna / OpenCode`
 Branch: `opencode/j19-m5-durable-local-anchor`
 Base commit: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
 Accepted M4 baseline: `e57bf536fe3d7fb074c00ddac867b5720a15116e`
 Frozen architecture base: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`
 Control commit and starting HEAD: `11dd0ff04da20fa36bdddd19d4132833830194fe`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `9e8970ed7c3bff36b10e00646747ece03f955554`
 
 Starting branch state: clean `opencode/j19-m5-durable-local-anchor` at the
 control commit above. `just tools` passed before implementation.
@@ -39,10 +39,12 @@ payload and optional host-relative source path.
 
 ## Evidence
 
-The initial focused checkpoint passes four Rust tests covering restart duplicate,
-same-ID/different-digest conflict, generation-zero Anchor creation, and
-acknowledgement ordering. Full host integration and regression evidence remains
-to be added before completion.
+The final focused checkpoint passes seven `local_anchor` unit tests and one
+native Windows `m5_local_anchor` integration test. The integration test proves
+durable restart duplicate handling, conflict evidence without acknowledgement,
+host scope binding, and generation-zero Anchor identity. The coordinator offers
+Trail publication before acknowledgement; no notification is itself treated as
+an Anchor.
 
 ## Discoveries
 
@@ -52,20 +54,67 @@ were restored without changing the frozen M5 scope.
 
 ## Remaining risks
 
-The durable boundary is not yet wired into the normal external-event execution
-route, and the required real Windows source/session/restart scenario is not yet
-implemented. Duplicate JSON fields inside nested payload values remain bounded
-by canonical JSON parsing but are not interpreted as host authority.
+The local source/session adapter remains a bounded host integration seam rather
+than a general filesystem watcher or network listener. Installed Plug trust and
+session credentials must be supplied by the M4 host adapter; this module does
+not invent authority from provider claims. Duplicate JSON fields inside nested
+payload values are treated as payload data and do not become host authority.
 
 ## Smallest next action
 
-Connect `LocalAnchorCoordinator` to the host event/evaluation seam and add the
-Windows restart/conflict/disablement integration fixture.
+Independent Lucy review of the pushed M5 branch. Do not begin M6.
 
 ## References
 
 The governing source is `docs/CURRENT_CLINE_TASK.md`; M4 installed Plug and
 existing event/evaluation seams are documented in the accepted M4 worker note.
+
+## Implementation Ledger
+
+- Contract/admission commit: `1b9e27f` (`feat: add durable local event admission`).
+- Refusal-boundary tests: `d33da54` (`test: cover local anchor refusal boundaries`).
+- Windows restart/conflict integration: `5dac35c` (`test: prove durable local anchor restart flow`).
+- Trail-before-ack ordering: `9e8970e` (`feat: order local anchor trail before acknowledgement`).
+- Event identity is the stable provider-issued `event_id`; cursor, timestamp and
+  transport position are never used as identity.
+- Durable records use `tethers.local-event-admission.v1`, canonical SHA-256
+  covered bytes, host-generated `anchor/<event-id>/0` identity, create-new temp
+  publication, flush/sync, atomic rename, strict reload, and separate hashed
+  conflict files.
+- The `file.received@1` envelope contains exact format, provider, installed Plug,
+  session, event, occurred time, payload, payload digest, optional source path,
+  and generation fields. The envelope rejects unknown/duplicate fields and
+  generation above eight.
+- `AdmissionBinding` requires exact installed Plug/provider/session/event
+  identity and canonical source-root confinement before durable admission.
+- `LocalAnchorCoordinator` publishes admission, then optional Trail evidence,
+  then invokes provider acknowledgement. Duplicate delivery returns the original
+  root identity without a new admission; conflict returns no success.
+
+## Verification
+
+- `just tools`: PASS.
+- `just fmt`: PASS.
+- `just check`: PASS; existing M3/J13 warnings only.
+- Focused M5 unit tests: PASS; 7 tests.
+- Focused M5 native Windows integration: PASS; 1 test.
+- `just test-m3`: PASS; 6 trust tests and 13 lifecycle tests.
+- `just test-m4`: PASS; 5 contract/provider tests and 4 integration tests.
+- `just test-rust`: PASS; 812 tests plus all target test binaries.
+- `just verify`: PASS; same 812 Rust tests and M3/M4/M5 integration.
+- OCaml `dune build`: PASS; OCaml `dune runtest`: PASS, sequentially.
+- Locked debug and release Rust builds: PASS.
+- Complete `tethers-0.1/scripts/verify-0.2.ps1`: PASS; all 6 suites, including
+  J13A 25, J13B 10, J13C 19, J14A 5/95, J14B 11/243, J14C 9/196.
+- Packet checker and `git diff --check`: PASS. Native integration leaves no
+  provider process behind.
+
+## Final State
+
+No credentials, network listener, watcher, recursive crawl, provider
+notification-as-Anchor shortcut, cursor identity, automatic retry, M6 feature,
+main movement, tag, release or force-push was added. Final branch SHA:
+`9e8970ed7c3bff36b10e00646747ece03f955554`.
 
 Use this file as the durable M5 implementation ledger. Record:
 
