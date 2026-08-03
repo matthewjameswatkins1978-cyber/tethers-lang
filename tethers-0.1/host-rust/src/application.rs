@@ -584,6 +584,20 @@ pub fn run() {
         }
         Ok(Cli {
             command:
+                Some(CliCommand::Plug {
+                    command:
+                        crate::cli::PlugCommand::Enable {
+                            host_data_root,
+                            installed_id,
+                            scope,
+                        },
+                }),
+        }) => {
+            let result = plug_command::run_enable(&host_data_root, &installed_id, &scope);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
                 Some(CliCommand::Run {
                     config,
                     engine,

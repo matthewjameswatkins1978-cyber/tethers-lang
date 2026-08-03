@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24D - Permission-file Plug enable CLI`
 Owner: `OpenCode`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for permission parsing and bounded lifecycle mutation; Lucy performs final review`
 Base branch: `main`

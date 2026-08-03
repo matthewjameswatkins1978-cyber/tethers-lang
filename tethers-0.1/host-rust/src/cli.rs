@@ -108,6 +108,15 @@ pub enum PlugCommand {
         #[arg(long = "installed-id", value_name = "UUID")]
         installed_id: String,
     },
+    /// Enable one installed Plug with a permission scope file.
+    Enable {
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+        #[arg(long = "installed-id", value_name = "UUID")]
+        installed_id: String,
+        #[arg(long = "scope", value_name = "ABSOLUTE_JSON_PATH")]
+        scope: PathBuf,
+    },
 }
 
 /// Outcome status vocabulary with exit codes.
@@ -656,6 +665,120 @@ mod tests {
             "C:\\host",
             "--installed-id",
             "00000000-0000-4000-8000-000000000000",
+            "--unknown"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn j24d_plug_enable_syntax_is_strict() {
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000",
+            "--scope",
+            "C:\\scope.json"
+        ])
+        .is_ok());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root=C:\\host",
+            "--installed-id=00000000-0000-4000-8000-000000000000",
+            "--scope=C:\\scope.json"
+        ])
+        .is_ok());
+        assert!(parse_cli(&["plug", "enable"]).is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root",
+            "C:\\host",
+            "--scope",
+            "C:\\scope.json"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000",
+            "--scope",
+            "C:\\scope.json"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root",
+            "a",
+            "--host-data-root",
+            "b",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000",
+            "--scope",
+            "C:\\scope.json"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "a",
+            "--installed-id",
+            "b",
+            "--scope",
+            "C:\\scope.json"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000",
+            "--scope",
+            "a",
+            "--scope",
+            "b"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000",
+            "--scope",
+            "C:\\scope.json",
+            "extra"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "enable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000",
+            "--scope",
+            "C:\\scope.json",
             "--unknown"
         ])
         .is_err());
