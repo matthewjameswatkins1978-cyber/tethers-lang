@@ -9,7 +9,7 @@ Route: `OpenCode using HY3 for bounded CLI integration; Lucy performs final revi
 Base branch: `main`
 Base commit: `f6454e64bde98d1c9d137fc395f287ba25bbe65a`
 Implementation branch: `opencode/j24a-plug-inspect-cli`
-Implementation checkpoint: `4924bbc`
+Implementation checkpoint: `4c0a0dfa51580c870d13c5f6934afded039181e2`
 Worker note: `docs/worker-notes/2026-08-03-j24a-plug-inspect-cli.md`
 
 ## Objective
