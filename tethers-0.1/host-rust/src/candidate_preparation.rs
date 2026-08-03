@@ -23,10 +23,10 @@ fn failure(code: &'static str, message: impl Into<String>) -> PackageError {
     }
 }
 
-fn is_empty_dir(path: &Path) -> bool {
+fn is_empty_dir(path: &Path) -> Result<bool, PackageError> {
     fs::read_dir(path)
         .map(|mut dir| dir.next().is_none())
-        .unwrap_or(false)
+        .map_err(|e| failure("candidate_rollback_failed", e.to_string()))
 }
 
 fn cleanup_new_empty_roots(
@@ -35,11 +35,11 @@ fn cleanup_new_empty_roots(
     candidate_root_existed: bool,
     quarantine_root_existed: bool,
 ) -> Result<(), PackageError> {
-    if !candidate_root_existed && candidate_root.exists() && is_empty_dir(candidate_root) {
+    if !candidate_root_existed && candidate_root.exists() && is_empty_dir(candidate_root)? {
         fs::remove_dir(candidate_root)
             .map_err(|e| failure("candidate_rollback_failed", e.to_string()))?;
     }
-    if !quarantine_root_existed && quarantine_root.exists() && is_empty_dir(quarantine_root) {
+    if !quarantine_root_existed && quarantine_root.exists() && is_empty_dir(quarantine_root)? {
         fs::remove_dir(quarantine_root)
             .map_err(|e| failure("candidate_rollback_failed", e.to_string()))?;
     }
@@ -47,6 +47,20 @@ fn cleanup_new_empty_roots(
 }
 
 fn rollback_new_quarantine(quarantine_root: &Path, directory: &Path) -> Result<(), PackageError> {
+    verify_existing_chain(quarantine_root)
+        .map_err(|e| failure("candidate_rollback_failed", e.to_string()))?;
+    verify_existing_chain(directory)
+        .map_err(|e| failure("candidate_rollback_failed", e.to_string()))?;
+    if !fs::symlink_metadata(directory)
+        .map_err(|e| failure("candidate_rollback_failed", e.to_string()))?
+        .file_type()
+        .is_dir()
+    {
+        return Err(failure(
+            "candidate_rollback_failed",
+            "expected a quarantine directory",
+        ));
+    }
     let root = fs::canonicalize(quarantine_root)
         .map_err(|e| failure("candidate_rollback_failed", e.to_string()))?;
     let dir = fs::canonicalize(directory)
@@ -61,11 +75,14 @@ fn rollback_new_quarantine(quarantine_root: &Path, directory: &Path) -> Result<(
     Ok(())
 }
 
-fn require_absolute_existing_file(path: &Path) -> Result<(), PackageError> {
+fn require_ordinary_absolute_file(path: &Path) -> Result<(), PackageError> {
     if !path.is_absolute() {
         return Err(failure("invalid_archive", "package path must be absolute"));
     }
-    if !path.is_file() {
+    verify_existing_chain(path)?;
+    let metadata =
+        fs::symlink_metadata(path).map_err(|e| failure("archive_read", e.to_string()))?;
+    if !metadata.is_file() {
         return Err(failure("archive_read", "package file not found"));
     }
     Ok(())
@@ -151,11 +168,169 @@ fn refuse_semantic_conflict(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("tethers-j24e-unit-{}-{}", Uuid::new_v4(), name))
+    }
+
+    #[test]
+    fn rollback_removes_quarantine_directory_preserves_everything_else() {
+        let root = temp_dir("rollback-preserve");
+        let quarantine_root = root.join("quarantine");
+        fs::create_dir_all(&quarantine_root).unwrap();
+
+        let kept_sibling = quarantine_root.join("candidate-kept");
+        let removed_candidate = quarantine_root.join("candidate-removed");
+        fs::create_dir(&kept_sibling).unwrap();
+        fs::create_dir(&removed_candidate).unwrap();
+
+        let unrelated_file = quarantine_root.join("unrelated.txt");
+        fs::write(&unrelated_file, b"keep me").unwrap();
+
+        rollback_new_quarantine(&quarantine_root, &removed_candidate).unwrap();
+
+        assert!(quarantine_root.is_dir(), "quarantine root must survive");
+        assert!(kept_sibling.is_dir(), "sibling candidate must survive");
+        assert!(unrelated_file.is_file(), "unrelated file must survive");
+        assert!(
+            !removed_candidate.exists(),
+            "target quarantine must be removed"
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rollback_refuses_quarantine_root_itself() {
+        let root = temp_dir("rollback-root");
+        let quarantine_root = root.join("quarantine");
+        fs::create_dir_all(&quarantine_root).unwrap();
+
+        let err = rollback_new_quarantine(&quarantine_root, &quarantine_root).unwrap_err();
+        assert_eq!(err.code, "candidate_rollback_failed");
+        assert!(quarantine_root.is_dir());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rollback_refuses_directory_outside_quarantine_root() {
+        let root = temp_dir("rollback-outside");
+        let quarantine_root = root.join("quarantine");
+        let outside = root.join("outside");
+        fs::create_dir_all(&quarantine_root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+
+        let err = rollback_new_quarantine(&quarantine_root, &outside).unwrap_err();
+        assert_eq!(err.code, "candidate_rollback_failed");
+        assert!(quarantine_root.is_dir());
+        assert!(outside.is_dir());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cleanup_removes_newly_created_empty_roots() {
+        let root = temp_dir("cleanup-new");
+        let candidate_root = root.join("candidates");
+        let quarantine_root = root.join("quarantine");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&candidate_root).unwrap();
+        fs::create_dir(&quarantine_root).unwrap();
+
+        cleanup_new_empty_roots(&candidate_root, &quarantine_root, false, false).unwrap();
+
+        assert!(
+            !candidate_root.exists(),
+            "new empty candidate root must be removed"
+        );
+        assert!(
+            !quarantine_root.exists(),
+            "new empty quarantine root must be removed"
+        );
+        assert!(root.is_dir(), "host root must survive");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cleanup_preserves_pre_existing_roots() {
+        let root = temp_dir("cleanup-pre-existing");
+        let candidate_root = root.join("candidates");
+        let quarantine_root = root.join("quarantine");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&candidate_root).unwrap();
+        fs::create_dir(&quarantine_root).unwrap();
+
+        cleanup_new_empty_roots(&candidate_root, &quarantine_root, true, true).unwrap();
+
+        assert!(candidate_root.is_dir(), "pre-existing root must survive");
+        assert!(quarantine_root.is_dir(), "pre-existing root must survive");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cleanup_preserves_non_empty_roots() {
+        let root = temp_dir("cleanup-non-empty");
+        let candidate_root = root.join("candidates");
+        let quarantine_root = root.join("quarantine");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&candidate_root).unwrap();
+        fs::create_dir(&quarantine_root).unwrap();
+        fs::write(candidate_root.join("record.json"), b"data").unwrap();
+
+        cleanup_new_empty_roots(&candidate_root, &quarantine_root, false, false).unwrap();
+
+        assert!(candidate_root.is_dir(), "non-empty root must survive");
+        assert!(
+            !quarantine_root.exists(),
+            "empty new quarantine root removed"
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn is_empty_dir_fails_on_unreadable_path() {
+        let nonexistent = temp_dir("unreadable").join("no-such-dir");
+        let result = is_empty_dir(&nonexistent);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "candidate_rollback_failed");
+    }
+
+    #[test]
+    fn ordinary_file_validation_rejects_relative_path() {
+        let path = Path::new("relative.tetherplug");
+        let err = require_ordinary_absolute_file(path).unwrap_err();
+        assert_eq!(err.code, "invalid_archive");
+    }
+
+    #[test]
+    fn ordinary_file_validation_rejects_missing_file() {
+        let missing = temp_dir("missing").join("nonexistent.tetherplug");
+        let err = require_ordinary_absolute_file(&missing).unwrap_err();
+        assert_eq!(err.code, "archive_read");
+    }
+
+    #[test]
+    fn host_data_root_validation_rejects_relative_path() {
+        let path = Path::new("relative-root");
+        let err = require_absolute_existing_safe_directory(path).unwrap_err();
+        assert_eq!(err.code, "unsafe_destination");
+    }
+}
+
 pub fn prepare_installation_candidate(
     host_data_root: &Path,
     package_path: &Path,
 ) -> Result<CandidatePreparation, PackageError> {
-    require_absolute_existing_file(package_path)?;
+    require_ordinary_absolute_file(package_path)?;
     require_absolute_existing_safe_directory(host_data_root)?;
 
     let report = package::inspect(package_path)?;

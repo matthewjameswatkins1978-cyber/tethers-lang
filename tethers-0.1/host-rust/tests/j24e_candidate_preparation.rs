@@ -442,3 +442,102 @@ fn host_root_with_file_where_candidates_should_go_fails_store_io() {
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[cfg(windows)]
+#[test]
+fn junction_backed_package_path_fails_unsafe_destination() {
+    use std::process::Command;
+
+    let root = temp_dir("junction-pkg");
+    let target = root.join("target");
+    let junction = root.join("junction");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&target).unwrap();
+
+    let package_bytes = pdf_tools::build_reference_package(b"junction-provider-bytes").unwrap();
+    fs::write(target.join("pdf-tools.tetherplug"), &package_bytes).unwrap();
+
+    let status = Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            junction.to_str().unwrap(),
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "could not create Windows junction fixture"
+    );
+
+    let package = junction.join("pdf-tools.tetherplug");
+    assert!(
+        package.is_file(),
+        "package should be accessible via junction"
+    );
+
+    let err = prepare_installation_candidate(&root, &package).unwrap_err();
+    assert_eq!(
+        err.code, "unsafe_destination",
+        "junction-backed package path must be refused"
+    );
+
+    assert!(
+        !root.join("candidates").exists(),
+        "candidates/ must not be created"
+    );
+    assert!(
+        !root.join("quarantine").exists(),
+        "quarantine/ must not be created"
+    );
+
+    let _ = fs::remove_dir(junction);
+    let _ = fs::remove_dir_all(target);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn junction_host_root_fails_unsafe_destination() {
+    use std::process::Command;
+
+    let root = temp_dir("junction-root");
+    let target = root.join("target");
+    let junction = root.join("junction");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&target).unwrap();
+
+    let status = Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            junction.to_str().unwrap(),
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "could not create Windows junction fixture"
+    );
+
+    let package_bytes = pdf_tools::build_reference_package(b"junction-root-bytes").unwrap();
+    fs::write(junction.join("pdf-tools.tetherplug"), &package_bytes).unwrap();
+    let package = junction
+        .join("pdf-tools.tetherplug")
+        .canonicalize()
+        .unwrap();
+
+    let err = prepare_installation_candidate(&junction, &package).unwrap_err();
+    assert_eq!(
+        err.code, "unsafe_destination",
+        "junction host root must be refused"
+    );
+
+    let _ = fs::remove_dir(junction);
+    let _ = fs::remove_dir_all(target);
+    fs::remove_dir_all(root).unwrap();
+}

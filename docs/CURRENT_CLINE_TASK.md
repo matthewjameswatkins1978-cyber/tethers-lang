@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24E - Idempotent candidate preparation seam`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for bounded cross-module candidate orchestration; Lucy performs final review`
 Base branch: `main`
