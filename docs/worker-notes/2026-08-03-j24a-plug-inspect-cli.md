@@ -8,7 +8,7 @@ Owner: `OpenCode`
 
 Status: `COMPLETE`
 
-Base commit: `25457daad490acc8b5b9bb5f9c31958b0c046c24`
+Base commit: `f6454e64bde98d1c9d137fc395f287ba25bbe65a`
 
 Implementation checkpoint: `4924bbc`
 
