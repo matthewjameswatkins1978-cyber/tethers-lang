@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `726c6aa780c6809fce32de39427200217cbad12f`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `aac395a522e9d90573870a7f53e00b4fb075a4d7`
 
 ## Requested outcome
 
@@ -81,6 +81,6 @@ Lucy reviews the pushed branch and accepts or rejects J24C.
 
 - Branch: `opencode/j24c-plug-disable-cli`
 - Base: `726c6aa780c6809fce32de39427200217cbad12f`
-- Final: `<pending commit>`
+- Final: `aac395a522e9d90573870a7f53e00b4fb075a4d7`
 - Tests: `tethers-0.1/host-rust/tests/j24c_plug_disable_cli.rs`
 - J24B: `tethers-0.1/host-rust/tests/j24b_plug_list_cli.rs`
