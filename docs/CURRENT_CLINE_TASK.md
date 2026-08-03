@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24E - Idempotent candidate preparation seam`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for bounded cross-module candidate orchestration; Lucy performs final review`
 Base branch: `main`
@@ -11,7 +11,7 @@ Base commit: `f8c63b907efca1e0f9f1839d542f79221c7298f2`
 Implementation branch: `opencode/j24e-candidate-preparation-seam`
 Worker note: `docs/worker-notes/2026-08-03-j24e-candidate-preparation-seam.md`
 Implementation blueprint: `docs/architecture/J24E_CANDIDATE_PREPARATION_BLUEPRINT.md`
-Implementation checkpoint: `94134eb2b65243074ecf31e937fd52dc88123d3c`
+Implementation checkpoint: `fbb5535a6626c985606c76a94218b1b6df518504`
 
 ## Objective
 
