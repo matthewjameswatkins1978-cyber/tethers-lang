@@ -121,6 +121,19 @@ impl StoreRoot {
         Ok(Self(root))
     }
 
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        verify_chain(path)?;
+        let metadata = fs::symlink_metadata(path)
+            .map_err(|error| M3Error::new("store_io", error.to_string()))?;
+        if !metadata.is_dir() {
+            return Err(M3Error::new("store_io", "store root is not a directory"));
+        }
+        let root =
+            fs::canonicalize(path).map_err(|error| M3Error::new("store_io", error.to_string()))?;
+        reject_reparse(&root)?;
+        Ok(Self(root))
+    }
+
     pub fn path(&self) -> &Path {
         &self.0
     }

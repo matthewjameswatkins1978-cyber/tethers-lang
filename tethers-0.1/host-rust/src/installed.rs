@@ -477,6 +477,21 @@ impl InstalledPlugRegistry {
         })
     }
 
+    pub fn open_existing(install_root: &Path, record_root: &Path) -> Result<Self> {
+        let install_root = StoreRoot::open_existing(install_root)?;
+        let record_root = StoreRoot::open_existing(record_root)?;
+        if install_root.path() == record_root.path() {
+            return Err(M3Error::new(
+                "installed_store_invalid",
+                "install and record roots must differ",
+            ));
+        }
+        Ok(Self {
+            install_root,
+            record_root,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn install_disabled(
         &self,

@@ -140,6 +140,12 @@ impl EnablementStore {
         })
     }
 
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        Ok(Self {
+            root: StoreRoot::open_existing(path)?,
+        })
+    }
+
     pub fn enable<S>(
         &self,
         installed: &InstalledPlugRecord,

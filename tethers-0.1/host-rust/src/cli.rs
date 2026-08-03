@@ -96,6 +96,11 @@ pub enum PlugCommand {
         #[arg(long = "package", value_name = "PATH")]
         package: PathBuf,
     },
+    /// List installed Plug identities without changing lifecycle state.
+    List {
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+    },
 }
 
 /// Outcome status vocabulary with exit codes.
@@ -559,5 +564,22 @@ mod tests {
         assert!(parse_cli(&["plug", "inspect", "--package", "a", "--package", "b"]).is_err());
         assert!(parse_cli(&["plug", "inspect", "--unknown", "a"]).is_err());
         assert!(parse_cli(&["plug", "inspect", "--package", "a", "extra"]).is_err());
+    }
+
+    #[test]
+    fn j24b_plug_list_syntax_is_strict() {
+        assert!(parse_cli(&["plug", "list", "--host-data-root", "C:\\host"]).is_ok());
+        assert!(parse_cli(&["plug", "list", "--host-data-root=C:\\host"]).is_ok());
+        assert!(parse_cli(&["plug", "list"]).is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "list",
+            "--host-data-root",
+            "a",
+            "--host-data-root",
+            "b"
+        ])
+        .is_err());
+        assert!(parse_cli(&["plug", "list", "--host-data-root", "a", "extra"]).is_err());
     }
 }

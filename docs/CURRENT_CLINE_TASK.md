@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24B - Read-only Plug list CLI`
 Owner: `OpenCode`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for cross-store read-only CLI integration; Lucy performs final review`
 Base branch: `main`
