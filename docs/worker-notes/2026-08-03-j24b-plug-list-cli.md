@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `OpenCode`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Base commit: `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`
 
-Implementation checkpoint: `77e6aba5f50d9b84b93c80f925316bd115ef3aa4`
+Implementation checkpoint: `pending final integration commit`
 
 ## Requested outcome
 
@@ -24,8 +24,10 @@ derives current state, and never mutates lifecycle state.
   `EnablementStore` opening seams.
 - Added the public `plug list` clap route, application routing, stable envelope,
   fail-closed layout and cross-record validation, and deterministic ordering.
-- Added `tests/j24b_plug_list_cli.rs` for empty, missing, partial, process exit,
-  and filesystem non-mutation evidence.
+- Added `tests/j24b_plug_list_cli.rs` for empty, missing, partial, real PDF
+  install/enable/disable lifecycle state, sequence ordering, unknown identity,
+  cross-record mismatch, output filtering, stable ordering, process exit parity,
+  and recursive filesystem non-mutation evidence.
 
 ## Decisions and assumptions
 
@@ -39,10 +41,10 @@ derives current state, and never mutates lifecycle state.
 - Branch created from current `origin/main`; base commit is an ancestor.
 - `cargo +1.89.0 fmt --all -- --check` passed.
 - `cargo +1.89.0 test cli --locked` passed: 33 tests.
-- `cargo +1.89.0 test plug_command --locked` passed: 2 tests.
+- `cargo +1.89.0 test plug_command --locked` passed: 3 tests.
 - `cargo +1.89.0 test --test j24a_plug_inspect_cli --locked` passed: 3 tests.
-- `cargo +1.89.0 test --test j24b_plug_list_cli --locked` passed: 2 tests.
-- Full suite passed 903 tests with five documented `pwsh.exe not found`
+- `cargo +1.89.0 test --test j24b_plug_list_cli --locked` passed: 4 tests.
+- Full suite passed 904 tests with five documented `pwsh.exe not found`
   execution-environment baseline failures.
 - `git diff --check` passed before completion.
 
@@ -54,17 +56,34 @@ Correction evidence:
   regression test.
 - `cargo +1.89.0 test --test j24b_plug_list_cli --locked` passed.
 
+Integration evidence:
+
+- The compiled binary lists the real `tethers.pdf-tools` Plug as disabled,
+  enabled after a valid transition, and disabled after a valid disable
+  transition.
+- Enablement UUID filenames are deliberately ordered opposite to transition
+  sequence; the compiled command still selects the sequence-two disablement.
+- Re-signed structurally valid unknown-identity and provider-version mismatch
+  records fail closed as `invalid_data` with exit code 3.
+- Every invocation snapshots all lifecycle entries and file SHA-256 digests;
+  before and after snapshots are equal, and process exit equals envelope exit.
+- Output-key and forbidden-field assertions cover paths, scope, authority,
+  trust, approval, conformance, transition history, and internal paths.
+- A compiled-binary ordering fixture proves Plug and capability ordering.
+
 ## Discoveries
 
 None.
 
 ## Remaining risks
 
-None known within packet scope.
+The full suite retains five documented environment failures because `pwsh.exe`
+is unavailable. No J24B-specific failure remains.
 
 ## Smallest next action
 
-Lucy performs final review of the pushed branch.
+After the final integration commit, return the packet to `COMPLETE`, record its
+full SHA, and push the branch for Lucy's final review.
 
 ## References
 
