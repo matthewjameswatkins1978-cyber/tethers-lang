@@ -10,7 +10,7 @@ Base branch: `main`
 Base commit: `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`
 Implementation branch: `opencode/j24b-plug-list-cli`
 Worker note: `docs/worker-notes/2026-08-03-j24b-plug-list-cli.md`
-Implementation checkpoint: `77e6aba5f50d9b84b93c80f925316bd115ef3aa4`
+Implementation checkpoint: `aa3abc2d0a1d3a649fe640415d3ed616bb477133`
 
 ## Objective
 

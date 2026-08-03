@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `OpenCode`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`
 
-Implementation checkpoint: `pending final integration commit`
+Implementation checkpoint: `aa3abc2d0a1d3a649fe640415d3ed616bb477133`
 
 ## Requested outcome
 
@@ -82,8 +82,7 @@ is unavailable. No J24B-specific failure remains.
 
 ## Smallest next action
 
-After the final integration commit, return the packet to `COMPLETE`, record its
-full SHA, and push the branch for Lucy's final review.
+Lucy performs final review of the pushed branch.
 
 ## References
 
