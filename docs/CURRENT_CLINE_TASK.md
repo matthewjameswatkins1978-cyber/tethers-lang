@@ -3,13 +3,14 @@
 Control contract: `1`
 Task: `J24B - Read-only Plug list CLI`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for cross-store read-only CLI integration; Lucy performs final review`
 Base branch: `main`
 Base commit: `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`
 Implementation branch: `opencode/j24b-plug-list-cli`
 Worker note: `docs/worker-notes/2026-08-03-j24b-plug-list-cli.md`
+Implementation checkpoint: `d464f623a8a2c8d2bb2b1d18143770d92c8758e0`
 
 ## Objective
 
