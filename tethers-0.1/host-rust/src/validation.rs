@@ -19,6 +19,7 @@
 //! rather than silently ignored.
 
 use serde_json::Value;
+use std::cmp::Ordering;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -176,12 +177,10 @@ fn validate_against_object_schema(
                 json_type_name(value)
             )));
         }
-        let min = min_val.as_f64().unwrap();
-        let val = value.as_f64().unwrap();
-        if val < min {
+        if compare_numbers(min_val, value)? == Ordering::Greater {
             return Err(ValidationError::new(format!(
-                "{}: value {} is below minimum {}",
-                path, val, min
+                "{}: value is below minimum",
+                path
             )));
         }
     }
@@ -200,12 +199,10 @@ fn validate_against_object_schema(
                 json_type_name(value)
             )));
         }
-        let max = max_val.as_f64().unwrap();
-        let val = value.as_f64().unwrap();
-        if val > max {
+        if compare_numbers(value, max_val)? == Ordering::Greater {
             return Err(ValidationError::new(format!(
-                "{}: value {} is above maximum {}",
-                path, val, max
+                "{}: value is above maximum",
+                path
             )));
         }
     }
@@ -259,6 +256,87 @@ fn validate_against_object_schema(
     }
 
     Ok(())
+}
+
+enum Numeric {
+    Signed(i64),
+    Unsigned(u64),
+    Float(f64),
+}
+
+fn compare_numbers(left: &Value, right: &Value) -> Result<Ordering, ValidationError> {
+    let left = numeric_value(left)?;
+    let right = numeric_value(right)?;
+    match (left, right) {
+        (Numeric::Signed(a), Numeric::Signed(b)) => Ok(a.cmp(&b)),
+        (Numeric::Unsigned(a), Numeric::Unsigned(b)) => Ok(a.cmp(&b)),
+        (Numeric::Signed(a), Numeric::Unsigned(b)) => {
+            if a < 0 {
+                Ok(Ordering::Less)
+            } else {
+                Ok((a as u64).cmp(&b))
+            }
+        }
+        (Numeric::Unsigned(a), Numeric::Signed(b)) => {
+            if b < 0 {
+                Ok(Ordering::Greater)
+            } else {
+                Ok(a.cmp(&(b as u64)))
+            }
+        }
+        (Numeric::Float(a), Numeric::Float(b)) => a
+            .partial_cmp(&b)
+            .ok_or_else(|| ValidationError::new("numeric comparison is not finite")),
+        (integer, Numeric::Float(float)) => compare_integer_float(integer, float),
+        (Numeric::Float(float), integer) => {
+            compare_integer_float(integer, float).map(Ordering::reverse)
+        }
+    }
+}
+
+fn numeric_value(value: &Value) -> Result<Numeric, ValidationError> {
+    let number = value
+        .as_number()
+        .ok_or_else(|| ValidationError::new("numeric comparison requires a JSON number"))?;
+    if let Some(value) = number.as_i64() {
+        Ok(Numeric::Signed(value))
+    } else if let Some(value) = number.as_u64() {
+        Ok(Numeric::Unsigned(value))
+    } else if let Some(value) = number.as_f64() {
+        Ok(Numeric::Float(value))
+    } else {
+        Err(ValidationError::new(
+            "numeric comparison cannot represent this JSON number safely",
+        ))
+    }
+}
+
+fn compare_integer_float(integer: Numeric, float: f64) -> Result<Ordering, ValidationError> {
+    if !float.is_finite() {
+        return Err(ValidationError::new("numeric comparison is not finite"));
+    }
+    let integer = match integer {
+        Numeric::Signed(value) => {
+            if value.unsigned_abs() > (1_u64 << 53) {
+                return Err(ValidationError::new(
+                    "numeric comparison would lose integer precision",
+                ));
+            }
+            value as f64
+        }
+        Numeric::Unsigned(value) => {
+            if value > (1_u64 << 53) {
+                return Err(ValidationError::new(
+                    "numeric comparison would lose integer precision",
+                ));
+            }
+            value as f64
+        }
+        Numeric::Float(_) => unreachable!("integer/float comparison received a float integer"),
+    };
+    integer
+        .partial_cmp(&float)
+        .ok_or_else(|| ValidationError::new("numeric comparison is not finite"))
 }
 
 fn check_type(type_name: &str, value: &Value, path: &str) -> Result<(), ValidationError> {
@@ -782,6 +860,45 @@ mod tests {
         let err = validate_output(&schema, &json!("abc")).unwrap_err();
         assert!(err.message.contains("unsupported pattern expression"));
         assert!(err.message.contains("^sha256:[a-f0-9]{64}$"));
+    }
+
+    #[test]
+    fn maximum_rejects_distinct_large_integer() {
+        let schema = json!({"type": "integer", "maximum": 9007199254740992_u64});
+        let err = validate_output(&schema, &json!(9007199254740993_u64)).unwrap_err();
+        assert!(err.message.contains("above maximum"));
+    }
+
+    #[test]
+    fn minimum_rejects_distinct_large_integer() {
+        let schema = json!({"type": "integer", "minimum": 9007199254740993_u64});
+        let err = validate_output(&schema, &json!(9007199254740992_u64)).unwrap_err();
+        assert!(err.message.contains("below minimum"));
+    }
+
+    #[test]
+    fn exact_large_integer_boundaries_are_accepted() {
+        let maximum = json!({"type": "integer", "maximum": 9007199254740992_u64});
+        let minimum = json!({"type": "integer", "minimum": 9007199254740993_u64});
+        assert!(validate_output(&maximum, &json!(9007199254740992_u64)).is_ok());
+        assert!(validate_output(&minimum, &json!(9007199254740993_u64)).is_ok());
+    }
+
+    #[test]
+    fn signed_and_unsigned_integer_comparisons_are_exact() {
+        let minimum = json!({"minimum": 1_u64});
+        let maximum = json!({"maximum": -1_i64});
+        assert!(validate_output(&minimum, &json!(2_u64)).is_ok());
+        assert!(validate_output(&minimum, &json!(-1_i64)).is_err());
+        assert!(validate_output(&maximum, &json!(-2_i64)).is_ok());
+        assert!(validate_output(&maximum, &json!(1_u64)).is_err());
+    }
+
+    #[test]
+    fn unsafe_integer_decimal_comparison_fails_closed() {
+        let schema = json!({"minimum": 9007199254740993_u64});
+        let err = validate_output(&schema, &json!(9007199254740992.5_f64)).unwrap_err();
+        assert!(err.message.contains("lose integer precision"));
     }
 
     // -----------------------------------------------------------------------

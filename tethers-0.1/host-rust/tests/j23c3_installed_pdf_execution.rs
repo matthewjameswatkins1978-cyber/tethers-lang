@@ -217,14 +217,9 @@ fn installed_pdf_plug_lifecycle() {
     assert!(alt_launch.is_err());
 
     // -- Mismatched operational scope refused --
-    let mismatched_scope = PdfOperationalScopeBinding::create(
-        &installed.installed_id,
-        &query_dir,
-        operational_max + 1,
-        "Matthew",
-    )
-    .unwrap();
-    assert_ne!(mismatched_scope.integrity_digest, scope.integrity_digest);
+    let mut mismatched_scope = scope.clone();
+    mismatched_scope.max_bytes = operational_max + 1;
+    assert_eq!(mismatched_scope.integrity_digest, scope.integrity_digest);
     let mismatched_launch = InstalledPdfToolsExecutor::launch_from_installed(
         &installed,
         &installation_dir,
@@ -236,7 +231,11 @@ fn installed_pdf_plug_lifecycle() {
         &enabled,
         &mismatched_scope,
     );
-    assert!(mismatched_launch.is_err());
+    let mismatched_error = match mismatched_launch {
+        Ok(_) => panic!("mismatched operational scope was accepted"),
+        Err(error) => error.to_string(),
+    };
+    assert!(mismatched_error.contains("enablement scope does not match supplied scope"));
 
     // -- Successful installed launch --
     let mut executor = InstalledPdfToolsExecutor::launch_from_installed(
