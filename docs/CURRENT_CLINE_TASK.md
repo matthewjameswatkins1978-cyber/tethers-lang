@@ -1,297 +1,330 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24A - Read-only Plug inspection CLI`
+Task: `J24B - Read-only Plug list CLI`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `READY`
 Task colour: `Amber`
-Route: `OpenCode using HY3 for bounded CLI integration; Lucy performs final review`
+Route: `OpenCode using DeepSeek Pro for cross-store read-only CLI integration; Lucy performs final review`
 Base branch: `main`
-Base commit: `f6454e64bde98d1c9d137fc395f287ba25bbe65a`
-Implementation branch: `opencode/j24a-plug-inspect-cli`
-Implementation checkpoint: `4c0a0dfa51580c870d13c5f6934afded039181e2`
-Worker note: `docs/worker-notes/2026-08-03-j24a-plug-inspect-cli.md`
+Base commit: `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`
+Implementation branch: `opencode/j24b-plug-list-cli`
+Worker note: `docs/worker-notes/2026-08-03-j24b-plug-list-cli.md`
 
 ## Objective
 
-Expose the existing host-owned, non-executing `.tetherplug` package inspector
-through one public CLI command:
+Add one public, strictly read-only Plug lifecycle command:
 
 ```text
-tethers-reference-host plug inspect --package <PATH>
+tethers-reference-host plug list --host-data-root <ABSOLUTE_PATH>
 ```
 
-This packet authorises inspection only. It does not authorise installation,
-extraction, quarantine, trust, approval, enablement, provider launch, execution,
-disablement, removal, release work, or architecture changes.
+The command reports the host's validated installed Plug identities and their
+current enabled or disabled state. It combines existing installed-registry and
+enablement authority without creating, repairing, installing, approving,
+enabling, disabling, launching or removing anything.
 
-This packet also reconciles a control-ordering race. OpenCode created and pushed
-checkpoint `25457daad490acc8b5b9bb5f9c31958b0c046c24` from the correct original
-code base before the J24A authority commit reached `main`. Preserve that commit.
-Do not amend, overwrite, reset, rebase, or force-push it.
+This is the second bounded P19 CLI slice after J24A inspection. It does not
+authorise any lifecycle mutation.
 
 ## Relevant background and existing behaviour
 
-`package::inspect(path)` is already the sole package-inspection authority. It
-reads a `.tetherplug` as hostile data, validates the fixed archive and package
-profile, verifies payload and manifest evidence, and returns an
-`InspectionReport`. Its contract explicitly forbids writing, extraction,
-launch, binding, or runtime mutation.
+J24A is accepted and merged at the base commit above. The public CLI now exposes
+`plug inspect` through `plug_command.rs` and the existing `tethers.cli/1`
+envelope boundary.
 
-The public CLI previously exposed `check`, `run`, and `trail` plus hidden
-administrative and debug routes. `application::run` owns command routing,
-envelope emission, and process exit. Command modules return a `CliEnvelope` and
-matching exit code rather than exiting directly.
+`InstalledPlugRegistry::load_all` already validates installed records, exact
+payload sets, payload hashes, read-only attributes, release uniqueness and
+installation-root containment. `EnablementStore::load_all` already validates
+immutable transition records and complete predecessor chains. Installed records
+remain `present_disabled`; only the latest valid enablement transition determines
+whether one exact installed identity is operationally enabled.
 
-The existing pushed J24A checkpoint is unreviewed evidence, not an accepted
-result. It changes the CLI route, application routing, library exports, report
-serialisation, and adds `plug_command.rs`. It does not yet contain the required
-integration test or worker note. OpenCode must reconcile the authority commit,
-review the existing checkpoint against this packet, and finish only the missing
-or incorrect work.
+The existing mutable constructors use `StoreRoot::open`, which creates missing
+directories. A list command must not use that behaviour. J24B may add an
+explicit existing-only constructor that verifies and opens an already-present
+store without calling `create_dir_all` or performing any write.
+
+The first public lifecycle layout under `--host-data-root` is:
+
+```text
+install/
+installed-records/
+enablements/
+```
+
+These names match the accepted J23C3 lifecycle fixture. J24B freezes only these
+three first-slice paths for public lifecycle commands. It does not reorganise
+other host data or replay storage.
 
 ## Required behaviour
 
-1. Reconcile repository control state before further implementation:
+1. Start from current `origin/main` after this task packet is merged:
 
    - run `git fetch origin`;
-   - verify the worktree is clean, the branch is
-     `opencode/j24a-plug-inspect-cli`, and HEAD is exactly
-     `25457daad490acc8b5b9bb5f9c31958b0c046c24`;
-   - merge `origin/main` into the implementation branch using one ordinary
-     merge commit;
-   - do not rebase, amend, reset, cherry-pick, or force-push;
-   - if the merge reports any conflict, stop and report it without resolving;
-   - after the merge, verify this packet names J24A, OpenCode, and
-     `IN_PROGRESS`.
+   - verify the worktree is clean;
+   - verify base commit `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`
+     is an ancestor of `origin/main`;
+   - verify `docs/CURRENT_CLINE_TASK.md` names J24B, OpenCode and `READY`;
+   - create `opencode/j24b-plug-list-cli` from current `origin/main`;
+   - do not require branch HEAD to equal the base commit, because the authorised
+     task-packet commit is an expected planning descendant;
+   - if the implementation branch already exists locally or remotely, stop and
+     report it rather than resetting or overwriting it.
 
-2. Treat checkpoint `25457daad490acc8b5b9bb5f9c31958b0c046c24` as existing,
-   unreviewed implementation. Inspect it against every requirement below. Keep
-   correct work, add missing evidence, and correct only packet-specific defects.
-   Do not recreate the branch or rewrite that commit.
-
-3. Expose one public nested clap route exactly shaped as:
+2. Add one nested public command exactly shaped as:
 
    ```text
-   plug inspect --package <PATH>
+   plug list --host-data-root <ABSOLUTE_PATH>
    ```
 
-   Accept `--package=<PATH>`. Reject a missing or duplicate `--package`, unknown
-   options, extra positional arguments, and `plug` without a subcommand. Preserve
-   all existing command behaviour.
+   Accept `--host-data-root=<PATH>`. Reject a missing or duplicate option,
+   unknown options, extra positional arguments, and non-absolute paths. Preserve
+   `plug inspect` and every existing public and hidden CLI route.
 
-4. Use one small command adapter, preferably
-   `tethers-0.1/host-rust/src/plug_command.rs`, following the existing
-   `check_command` and `run_command` pattern. It must expose a callable function
-   equivalent to:
+3. Open lifecycle state without mutation:
 
-   ```rust
-   run_inspect(package_path: &Path) -> PlugCommandResult
-   ```
+   - keep existing mutable `StoreRoot::open` behaviour unchanged;
+   - add a narrowly named existing-only StoreRoot constructor that requires an
+     existing absolute directory, verifies the complete non-reparse path chain,
+     canonicalises it, and never creates a directory or file;
+   - expose matching existing-only constructors for `InstalledPlugRegistry` and
+     `EnablementStore`, or an equally narrow adapter that reuses their existing
+     validation and loading authority;
+   - do not add a second JSON parser, record validator, chain validator, payload
+     verifier or registry implementation.
 
-   The result contains one `CliEnvelope` and the matching process exit code. The
-   command module must not call `std::process::exit`.
+4. Resolve the three lifecycle children below the supplied host root:
 
-5. Call `package::inspect` exactly once. Do not create a second parser, ZIP
-   reader, validator, report builder, or package-format interpretation.
+   - `install`
+   - `installed-records`
+   - `enablements`
 
-6. On success, emit the existing `tethers.cli/1` envelope with command
-   `plug inspect`, status `ok`, exit code `0`, no error, and
-   `data.inspection` containing the complete public `InspectionReport` evidence:
+   Behaviour is exact:
 
-   - `inspection_format_version`
-   - `inspection_evidence_digest`
-   - `package`
-   - `raw_archive_digest`
-   - `raw_archive_size`
+   - if none of the three paths exists, return a successful empty list and
+     create nothing;
+   - if all three exist as ordinary directories, validate and load them;
+   - if only some exist, or any is not an ordinary directory, fail closed as
+     invalid data;
+   - symbolic links and Windows reparse points are refused;
+   - a missing or non-directory host root is unavailable and is never created.
+
+5. Derive current lifecycle truth from validated records:
+
+   - load installed records once;
+   - load and chain-validate enablement records once;
+   - choose the highest sequence record for each installed identity;
+   - no enablement record means `disabled`;
+   - latest `EnablementState::Enabled` means `enabled`;
+   - latest `EnablementState::Disabled` means `disabled`;
+   - an enablement record for an unknown installed identity fails closed;
+   - the latest transition's package ID, semantic package digest, provider ID,
+     provider version, conformance digest, installation approval ID and exact
+     capability set must agree with the installed record, otherwise fail closed;
+   - do not infer, repair or discard conflicting evidence.
+
+6. Emit one stable `tethers.cli/1` envelope:
+
+   - command: `plug list`
+   - status: `ok`
+   - exit code: `0`
+   - error absent
+   - data contains `count` and `plugs`
+
+   Each item contains only:
+
+   - `installed_id`
+   - `package_id`
+   - `package_version`
+   - `semantic_package_digest`
    - `provider_id`
    - `provider_version`
-   - `provider_launch_path`
-   - `provider_launch_arguments`
-   - `provider_working_directory`
-   - `provider_operation_namespace`
-   - `selected_platform`
-   - `plug_json`
-   - `payloads`
-   - `capabilities`
-   - `signature_files`
-   - `signatures_present`
+   - `state`, exactly `enabled` or `disabled`
+   - `capabilities`, each containing `name`, `version`, `manifest_digest` and
+     `provider_operation_name`
+   - `created_unix_ms`
 
-   The private filesystem `archive_path` must not appear in serialised output.
-   Prefer deriving or implementing `Serialize` for `InspectionReport` and
-   skipping only that private field. Preserve the existing `archive_path()`
-   accessor.
+   Sort Plug items by package ID, package version, then installed ID. Sort each
+   capability list by name then version. Do not expose installation paths,
+   operational scope paths, trust records, authorities, approval evidence,
+   conformance records, transition history or internal store paths.
 
-7. Map failures without changing their meaning:
+7. Map failures consistently:
 
-   - `PackageError.code == "archive_read"` -> status `unavailable`, exit code `4`;
-   - every other `PackageError` -> status `invalid_data`, exit code `3`.
+   - non-absolute `--host-data-root`: `invalid_cli_usage`, exit `2`, field
+     `/host-data-root`;
+   - missing or unreadable host root and ordinary store I/O failures:
+     `unavailable`, exit `4`;
+   - partial layout, unsafe path, corrupt record, chain conflict, unknown
+     installed identity or cross-record mismatch: `invalid_data`, exit `3`;
+   - preserve the underlying stable store error code where one exists;
+   - use stable J24B codes `plug_data_root_unavailable` and
+     `plug_store_incomplete` for the two command-owned cases above;
+   - never emit debug formatting, a stack, raw record contents or a newly
+     disclosed absolute path.
 
-   Preserve the existing package error code in `error.code` and use the package
-   error message in `error.message`. Do not emit Rust debug formatting, stack
-   information, or a newly canonicalised absolute path.
+8. Keep the command strictly observational:
 
-8. Route the command through `application::run` and the existing
-   `emit_envelope_and_exit` boundary. The command remains strictly read-only and
-   must not create directories, extract files, create scratch space, write Trail
-   records, create candidates, access trust stores, create approvals, create
-   installed or enablement records, launch providers, or mutate runtime
-   configuration.
+   - no `create_dir_all`, file creation, temporary file, repair, migration or
+     normalisation;
+   - no package inspection or extraction;
+   - no candidate, trust, conformance, approval, installation, enablement,
+     disablement or removal write;
+   - no provider launch, discovery, policy, dispatch, replay, Trail or Anchor;
+   - no update of access-independent application state;
+   - the filesystem entry set and file bytes beneath the supplied host root must
+     be identical before and after the command.
 
 ## Relevant components
 
 - `tethers-0.1/host-rust/src/cli.rs`
 - `tethers-0.1/host-rust/src/application.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/package.rs`
 - `tethers-0.1/host-rust/src/plug_command.rs`
-- `tethers-0.1/host-rust/src/check_command.rs`
-- `tethers-0.1/host-rust/src/run_command.rs`
-- existing deterministic PDF `.tetherplug` package builder and fixtures
+- `tethers-0.1/host-rust/src/m3_store.rs`
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/enablement.rs`
+- `tethers-0.1/host-rust/tests/j23c3_installed_pdf_execution.rs`
+- existing deterministic PDF package and lifecycle builders
 
 ## Frozen decisions and invariants
 
-- `package::inspect` remains the only inspection authority.
-- Checkpoint `25457daad490acc8b5b9bb5f9c31958b0c046c24` is preserved as
-  immutable history but is not accepted merely because it exists.
-- This is a read-only CLI adapter, not a lifecycle implementation.
-- The envelope schema remains `tethers.cli/1`.
-- Existing package validation rules, archive limits, identities, versions,
-  digests, manifests, and capability contracts do not change.
-- Existing CLI routes and exit-code vocabulary remain unchanged.
-- Tethers Core and OCaml semantics remain untouched.
-- No dependency or lockfile change is authorised.
-- Do not add lifecycle placeholders or speculative abstractions.
-- The only authorised merge is the one ordinary merge of `origin/main` into
-  this implementation branch for control reconciliation. Do not merge this
-  branch into `main`.
+- J24A inspection remains unchanged.
+- Installed registry validation remains owned by `InstalledPlugRegistry`.
+- Enablement record and chain validation remain owned by `EnablementStore`.
+- Existing mutable store constructors retain their behaviour for authorised
+  lifecycle writes.
+- J24B introduces no generic repair, migration, optional validation or lenient
+  loading mode.
+- Installed material alone is disabled. Only the latest exact valid enablement
+  transition can report enabled.
+- Listing does not establish readiness, policy permission or provider health.
+- Empty state is successful only when all three lifecycle child paths are absent.
+- Partial state is never presented as an empty or partially trusted result.
+- The CLI envelope remains `tethers.cli/1` with matching embedded/process exit.
+- Tethers Core and OCaml syntax or semantics remain untouched.
+- No dependency, package format, manifest, capability identity, archive limit,
+  trust, conformance, approval, installation, enablement or security contract
+  changes are authorised.
 
 ## Acceptance criteria
 
-1. The implementation branch contains the original checkpoint and the current
-   `main` control commits, with no history rewrite and no unresolved merge.
-2. The packet checker recognises J24A as owned by OpenCode and no longer reports
-   the stale J20 packet.
-3. Exact clap syntax succeeds, including `--package=<PATH>`, and malformed command
-   shapes are rejected.
-4. A valid deterministic PDF `.tetherplug` returns exit code `0` and one valid
-   JSON envelope.
-5. Success evidence reports package ID `tethers.pdf-tools`, package version
-   `1.0.0`, provider ID `tethers-pdf-provider`, and capability `pdf.inspect`
-   version `1`.
-6. `inspection_evidence_digest` is a 71-character lowercase SHA-256 value.
-7. `archive_path` is absent from serialised output.
-8. An invalid extension returns status `invalid_data`, exit code `3`, and error
-   code `invalid_archive`.
-9. A missing package returns status `unavailable`, exit code `4`, and error code
-   `archive_read`.
-10. Inspection leaves the source bytes unchanged and creates no additional
-    filesystem entries.
-11. The compiled binary's real process exit code matches the embedded envelope
-    exit code.
-12. Existing CLI parsing and regression tests remain green apart from the five
-    documented `execution_environment` PowerShell failures when `pwsh.exe` is
+1. The branch starts from current `origin/main`, retains the accepted J24A
+   history, and contains no unrelated or rewritten commits.
+2. Exact `plug list --host-data-root <ABSOLUTE_PATH>` syntax and equals syntax
+   succeed; malformed forms and non-absolute roots are rejected correctly.
+3. An existing empty host root with none of the three lifecycle children returns
+   status `ok`, exit `0`, `count: 0`, `plugs: []`, and creates no child paths.
+4. A partial lifecycle layout returns status `invalid_data`, exit `3`, and error
+   code `plug_store_incomplete` without changing the layout.
+5. A missing host root returns status `unavailable`, exit `4`, and error code
+   `plug_data_root_unavailable` without creating it.
+6. Existing-only store opening performs no directory or file creation and
+   refuses symlink/reparse paths.
+7. A real installed PDF Plug with no enablement is listed as `disabled` with the
+   exact package, provider and capability identity.
+8. The same Plug with a current enabled transition is listed as `enabled`; after
+   a valid disable transition it is listed as `disabled`.
+9. Unknown-installed enablement evidence and any required cross-record mismatch
+   fail closed as invalid data rather than being omitted or repaired.
+10. Output contains only the authorised fields, has stable Plug and capability
+    ordering, and contains no absolute path, operational scope, authority, trust,
+    approval, conformance or transition-history field.
+11. The compiled binary emits one valid JSON envelope and the real process exit
+    code matches the embedded exit code for success and failure cases.
+12. Snapshot evidence proves filesystem entries and file bytes below the host
+    root are unchanged by every list invocation.
+13. Existing J24A CLI tests and all prior Rust tests remain green apart from the
+    five documented `execution_environment` failures when `pwsh.exe` is
     unavailable.
-13. The worker note exists at the exact authorised path and records the actual
-    branch, merge checkpoint, implementation commits, files, tests, and any
-    baseline failures.
-14. After all checks pass, OpenCode changes only the packet status from
-    `IN_PROGRESS` to `COMPLETE` and records the final full implementation
-    checkpoint. This status change is part of the completion commit, not a new
-    task redesign.
+14. The task packet checker passes and the worker note records the exact branch,
+    final full SHA, files, focused/full test evidence and baseline failures.
 
 ## Required verification
 
 ```powershell
-git fetch origin
-git branch --show-current
-git rev-parse HEAD
-git status --short
-git merge --no-edit origin/main
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 cargo +1.89.0 fmt --all -- --check
 cargo +1.89.0 test cli --locked
 cargo +1.89.0 test plug_command --locked
 cargo +1.89.0 test --test j24a_plug_inspect_cli --locked
+cargo +1.89.0 test --test j24b_plug_list_cli --locked
 cargo +1.89.0 test --all-targets --all-features --locked
 git diff --check
 ```
 
-Use the existing deterministic PDF package builder rather than inventing another
-package format or fixture model.
+Use the existing deterministic PDF package builder and lifecycle stores for
+integration evidence. Test setup may create disposable lifecycle state; the
+`plug list` command itself may not mutate it.
 
 ## Permitted changes
 
-Expected implementation files are limited to:
+Expected files are limited to:
 
 - `tethers-0.1/host-rust/src/cli.rs`
 - `tethers-0.1/host-rust/src/application.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/package.rs`
 - `tethers-0.1/host-rust/src/plug_command.rs`
-- `tethers-0.1/host-rust/tests/j24a_plug_inspect_cli.rs`
-- `docs/worker-notes/2026-08-03-j24a-plug-inspect-cli.md`
-- `docs/CURRENT_CLINE_TASK.md` only for the authorised final state transition
-  from `IN_PROGRESS` to `COMPLETE` and final implementation checkpoint
+- `tethers-0.1/host-rust/src/m3_store.rs`
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/enablement.rs`
+- `tethers-0.1/host-rust/tests/j24b_plug_list_cli.rs`
+- `docs/worker-notes/2026-08-03-j24b-plug-list-cli.md`
+- `docs/CURRENT_CLINE_TASK.md` only for the authorised final transition from
+  `READY` or `IN_PROGRESS` to `COMPLETE` and the final full implementation
+  checkpoint
 
 Not every listed file must change. Stop and report before changing any other
 file.
 
 ## Forbidden changes
 
-No OCaml or Tether syntax/semantic change; no manifest, package identity,
-provider identity, capability version, package-validation, archive-limit,
-trust, conformance, installation, approval, enablement, launch, dispatch,
-policy, replay, Trail, runtime-configuration, dependency, `Cargo.toml`,
-`Cargo.lock`, architecture, project-control redesign, release, tag, or version
-change.
+No OCaml or Tether syntax/semantic change; no package parser or format change;
+no manifest, capability, provider or package identity/version change; no archive
+limit change; no trust, conformance, approval, installation, enablement,
+disablement, scope, policy, dispatch, replay, Trail, Anchor or provider-launch
+behaviour change; no dependency, `Cargo.toml`, `Cargo.lock`, architecture,
+project-control redesign, release, tag or version change.
 
-Do not add install, list, approve, enable, disable, remove, or lifecycle stubs.
-Do not refactor unrelated CLI code. Do not amend, rebase, reset, cherry-pick,
-force-push, merge into `main`, tag, or release.
+Do not add `plug install`, `plug conformance`, `plug approve`, `plug enable`,
+`plug disable`, `plug remove` or placeholders for them. Do not refactor unrelated
+CLI or store code. Do not amend, rebase, reset, cherry-pick, force-push, merge
+into `main`, tag or release.
 
 ## Stop conditions
 
 Stop cleanly and report one smallest unresolved question if:
 
-- current branch or HEAD does not match the reconciliation checkpoint before the
-  authorised merge;
-- the authorised merge reports any conflict;
-- the command cannot be implemented as a thin adapter around `package::inspect`;
-- serialising the public report requires exposing `archive_path` or duplicating
-  package semantics;
-- the required binary test needs package or lifecycle mutation;
-- an existing CLI contract must change;
-- a dependency, lockfile, manifest, package identity, or architecture change
+- the implementation branch already exists;
+- current `origin/main` does not contain the named base commit or J24B packet;
+- read-only listing requires use of a constructor that may create or rewrite
+  state and an existing-only seam cannot be added narrowly;
+- installed and enablement truth cannot be reconciled without changing their
+  frozen record contracts;
+- a required output field would expose an absolute path, operational scope,
+  credential, trust authority or unreviewed record content;
+- a dependency, lockfile, package, manifest, capability or architecture change
   appears necessary;
 - branch-specific failures remain after two materially different attempts.
 
 ## Git and return contract
 
-Preserve existing commit
-`25457daad490acc8b5b9bb5f9c31958b0c046c24`. First perform the authorised normal
-merge of `origin/main` into `opencode/j24a-plug-inspect-cli`. Push that merge
-normally. Then finish missing tests, worker note, any packet-specific correction,
-and the authorised status transition in one normal completion commit.
+After this packet is merged to `main`, create
+`opencode/j24b-plug-list-cli` from current `origin/main`. The packet's Base
+commit is the accepted J24A product checkpoint; the later task-packet commit is
+an expected planning descendant and must remain in branch history.
 
-Do not amend, rebase, reset, cherry-pick, or force-push. Do not merge into
-`main`.
+Make ordinary commits and push normally. Do not amend, rebase, reset,
+cherry-pick or force-push. Do not merge into `main`.
 
-Return the branch name, full merge checkpoint SHA, final full commit SHA, exact
-files changed after the original checkpoint, concise implementation summary,
-focused test results, complete-suite result, rustfmt and `git diff --check`
-results, worker-note path, confirmation that checkpoint `25457...` was preserved,
-and explicit confirmation that no package, lifecycle, or runtime mutation was
-introduced.
+After all required checks pass, change the packet status to `COMPLETE`, add one
+full 40-character `Implementation checkpoint`, create the authorised worker note
+and push the final branch.
+
+Return the branch name, final full commit SHA, exact files changed, concise
+implementation summary, focused test results, complete-suite result, rustfmt,
+packet-checker and `git diff --check` results, worker-note path, and explicit
+confirmation that listing created, changed or repaired no lifecycle state.
 
 ## Expected pre-existing changes
 
-The following committed changes already exist at checkpoint
-`25457daad490acc8b5b9bb5f9c31958b0c046c24` and must be reviewed rather than
-recreated:
-
-- `tethers-0.1/host-rust/src/application.rs`
-- `tethers-0.1/host-rust/src/cli.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/package.rs`
-- `tethers-0.1/host-rust/src/plug_command.rs`
+None.
