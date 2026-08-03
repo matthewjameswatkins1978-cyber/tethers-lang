@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`
 
-Implementation checkpoint: `d464f623a8a2c8d2bb2b1d18143770d92c8758e0`
+Implementation checkpoint: `pending correction commit`
 
 ## Requested outcome
 
@@ -45,6 +45,14 @@ derives current state, and never mutates lifecycle state.
 - Full suite passed 903 tests with five documented `pwsh.exe not found`
   execution-environment baseline failures.
 - `git diff --check` passed before completion.
+
+Correction evidence:
+
+- Transition selection now explicitly retains the greatest `sequence`,
+  independent of UUID filename order.
+- `cargo +1.89.0 test plug_command --locked` passed with the sequence-order
+  regression test.
+- `cargo +1.89.0 test --test j24b_plug_list_cli --locked` passed.
 
 ## Discoveries
 

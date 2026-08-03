@@ -13,6 +13,10 @@ pub struct PlugCommandResult {
     pub exit_code: i32,
 }
 
+fn candidate_is_newer(current: Option<u64>, candidate: u64) -> bool {
+    current.is_none_or(|sequence| candidate > sequence)
+}
+
 pub fn run_inspect(package_path: &Path) -> PlugCommandResult {
     match package::inspect(package_path) {
         Ok(report) => {
@@ -126,7 +130,7 @@ pub fn run_list(host_data_root: &Path) -> PlugCommandResult {
         .iter()
         .map(|record| (record.installed_id.clone(), record))
         .collect();
-    let mut latest = BTreeMap::new();
+    let mut latest: BTreeMap<String, crate::enablement::EnablementRecord> = BTreeMap::new();
     for transition in enablements {
         if !installed_ids.contains_key(&transition.installed_id) {
             return list_error(
@@ -137,7 +141,14 @@ pub fn run_list(host_data_root: &Path) -> PlugCommandResult {
                 OutcomeStatus::InvalidData,
             );
         }
-        latest.insert(transition.installed_id.clone(), transition);
+        latest
+            .entry(transition.installed_id.clone())
+            .and_modify(|current| {
+                if candidate_is_newer(Some(current.sequence), transition.sequence) {
+                    *current = transition.clone();
+                }
+            })
+            .or_insert(transition);
     }
     let mut plugs = Vec::new();
     for record in installed {
@@ -254,5 +265,25 @@ mod tests {
         assert_eq!(result.exit_code, 4);
         assert_eq!(result.envelope.status, OutcomeStatus::Unavailable);
         assert_eq!(result.envelope.error.as_ref().unwrap().code, "archive_read");
+    }
+
+    #[test]
+    fn j24b_latest_transition_selection_uses_sequence_not_filename_order() {
+        let mut selected = None;
+        for (filename_order, sequence) in [("z.json", 2), ("a.json", 1)] {
+            let _ = filename_order;
+            if candidate_is_newer(selected, sequence) {
+                selected = Some(sequence);
+            }
+        }
+        assert_eq!(selected, Some(2));
+        selected = None;
+        for (filename_order, sequence) in [("a.json", 1), ("z.json", 2)] {
+            let _ = filename_order;
+            if candidate_is_newer(selected, sequence) {
+                selected = Some(sequence);
+            }
+        }
+        assert_eq!(selected, Some(2));
     }
 }
