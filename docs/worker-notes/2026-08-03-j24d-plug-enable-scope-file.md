@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `fb354dea734e7a2d37254a9cfbca4fd0daad5939`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `f8c63b907efca1e0f9f1839d542f79221c7298f2`
 
 ## Requested outcome
 
@@ -62,6 +62,6 @@ Lucy reviews the pushed branch and accepts or rejects J24D.
 
 - Branch: `opencode/j24d-plug-enable-scope-file`
 - Base: `fb354dea734e7a2d37254a9cfbca4fd0daad5939`
-- Final: `<pending commit>`
+- Final: `f8c63b907efca1e0f9f1839d542f79221c7298f2`
 - Tests: `tethers-0.1/host-rust/tests/j24d_plug_enable_scope_file.rs`
 - J24C: `tethers-0.1/host-rust/tests/j24c_plug_disable_cli.rs`

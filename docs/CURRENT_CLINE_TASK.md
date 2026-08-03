@@ -3,13 +3,14 @@
 Control contract: `1`
 Task: `J24D - Permission-file Plug enable CLI`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for permission parsing and bounded lifecycle mutation; Lucy performs final review`
 Base branch: `main`
 Base commit: `fb354dea734e7a2d37254a9cfbca4fd0daad5939`
 Implementation branch: `opencode/j24d-plug-enable-scope-file`
 Worker note: `docs/worker-notes/2026-08-03-j24d-plug-enable-scope-file.md`
+Implementation checkpoint: `f8c63b907efca1e0f9f1839d542f79221c7298f2`
 
 ## Objective
 
