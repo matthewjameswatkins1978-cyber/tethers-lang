@@ -13,6 +13,11 @@ const PROVIDER_IDENTITY: &str = "tethers-pdf-provider";
 const PROVIDER_VERSION: &str = "1.0.0";
 const PROTOCOL_VERSION: &str = "2025-11-25";
 
+/// Package-declared query root. The installed launcher replaces it with the
+/// exact operational root; during host conformance the provider resolves it
+/// from the host-owned TEMP scratch directory.
+const PDF_QUERY_ROOT_PLACEHOLDER: &str = "__TETHERS_PDF_QUERY_ROOT__";
+
 fn argument(name: &str) -> Option<String> {
     let mut args = std::env::args().skip(1);
     while let Some(value) = args.next() {
@@ -31,15 +36,61 @@ fn error(id: &Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
 }
 
+fn resolve_query_root(arg: &str) -> PathBuf {
+    if arg == PDF_QUERY_ROOT_PLACEHOLDER {
+        return conformance_query_root();
+    }
+    // Any other reviewed placeholder is unsupported and must not silently widen
+    // scope to the current directory, profile, repository, or arbitrary env.
+    if arg.starts_with("__TETHERS_PDF_") {
+        eprintln!("pdf provider configuration refused: unsupported query-root placeholder {arg}");
+        std::process::exit(2);
+    }
+    PathBuf::from(arg)
+}
+
+/// Resolve the reviewed placeholder only during host conformance. The host
+/// conformance launcher supplies TETHERS_CONFORMANCE=1 and a clean TEMP scratch
+/// directory; outside that contract the placeholder is refused.
+fn conformance_query_root() -> PathBuf {
+    let conformance = std::env::var("TETHERS_CONFORMANCE").unwrap_or_default();
+    if conformance != "1" {
+        eprintln!(
+            "pdf provider configuration refused: query-root placeholder is only valid during host conformance (TETHERS_CONFORMANCE=1)"
+        );
+        std::process::exit(2);
+    }
+    let temp = match std::env::var("TEMP") {
+        Ok(value) if !value.is_empty() => value,
+        _ => {
+            eprintln!(
+                "pdf provider configuration refused: TEMP is not set during host conformance"
+            );
+            std::process::exit(2);
+        }
+    };
+    let path = PathBuf::from(temp);
+    match PdfScope::new(&path, pdf_tools::MAX_PDF_BYTES) {
+        Ok(scope) => scope.query_root,
+        Err(failure) => {
+            eprintln!(
+                "pdf provider configuration refused: TEMP is not a valid query root: {failure}"
+            );
+            std::process::exit(2);
+        }
+    }
+}
+
 fn main() {
     // The query root is host configuration, never provider-inferred: an absent
     // or unusable root must refuse the session rather than widen scope.
-    let Some(root) = argument("--query-root").map(PathBuf::from) else {
+    let Some(root_arg) = argument("--query-root") else {
         eprintln!(
             "pdf provider configuration refused: --query-root <absolute directory> is required"
         );
         std::process::exit(2);
     };
+    let root = resolve_query_root(&root_arg);
     let scope = match PdfScope::new(&root, pdf_tools::MAX_PDF_BYTES) {
         Ok(scope) => scope,
         Err(failure) => {
