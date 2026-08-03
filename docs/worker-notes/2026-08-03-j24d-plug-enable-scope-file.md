@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `fb354dea734e7a2d37254a9cfbca4fd0daad5939`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `f8c63b907efca1e0f9f1839d542f79221c7298f2`
 
 ## Requested outcome
 
@@ -22,20 +22,20 @@ Add `plug enable --host-data-root <ABSOLUTE_PATH> --installed-id <UUID> --scope 
 - `tethers-0.1/host-rust/src/application.rs` — routed `PlugCommand::Enable` to `plug_command::run_enable`.
 - `tethers-0.1/host-rust/src/plug_command.rs` — added `PlugScopeRequest`, `CapabilityRequest`, `PermissionRequest` types with custom `Deserialize` implementations for exact duplicate-key rejection via `visit_map` key tracking; added `parse_scope_file` for hostile input parsing (16 KiB limit, BOM rejection, UTF-8 check, trailing content rejection, strict schema/capability/max_bytes/query_root validation); added `run_enable` with full validate-before-mutate logic (lifecycle layout, installed registry, enablement chain, cross-record consistency, already-enabled rejection, scope construction, enablement authority).
 - `tethers-0.1/host-rust/tests/j24d_plug_enable_scope_file.rs` — 16 integration tests covering success (never-enabled, re-enable after disable), envelope shape, already-enabled failure, unknown ID, malformed/oversized/duplicate-key/wrong-schema/wrong-capability/missing-field scope files, missing scope file, missing root, partial layout, and CLI validation.
-- `docs/CURRENT_CLINE_TASK.md` — status set to `IN_PROGRESS`.
+- `docs/CURRENT_CLINE_TASK.md` — status and implementation checkpoint updated.
 - `docs/worker-notes/2026-08-03-j24d-plug-enable-scope-file.md` — this note.
 
 ## Decisions and assumptions
 
 - Implemented duplicate JSON key rejection through custom `Deserialize` implementations on `PlugScopeRequest`, `CapabilityRequest`, and `PermissionRequest`. Each uses a `visit_map` with a `BTreeSet<String>` to track seen keys, rejecting duplicates at every nesting level. No new dependencies required.
-- Used `serde_json::Deserializer::from_slice` with explicit `de.end()` call to reject trailing content after valid JSON (serde_json normally ignores trailing bytes).
-- The `parse_scope_file` function returns `M3Error` with code `"store_io"` for file read failures so the upstream `run_enable` maps it to `OutcomeStatus::Unavailable` (exit 4) as required by the packet. All validation errors use `"scope_request_invalid"`.
-- Chose to place the permission request types and `run_enable` in `plug_command.rs` rather than a separate `plug_scope.rs` module, since the types are tightly coupled to the enable command and a separate module did not add enforcement value.
+- Used `serde_json::Deserializer::from_slice` with explicit `de.end()` call to reject trailing content after valid JSON.
+- The `parse_scope_file` function returns `M3Error` with code `store_io` for file read failures so the upstream `run_enable` maps it to `OutcomeStatus::Unavailable` (exit 4). All validation errors use `scope_request_invalid`.
+- Kept the permission request types and `run_enable` in `plug_command.rs` because a separate module added no enforcement value.
 - Reused `select_latest_transition`, `EnablementRecord::consistent_with`, `PdfOperationalScopeBinding::create`, and `EnablementStore::enable` unchanged.
 
 ## Evidence
 
-- `cargo +1.89.0 fmt --all -- --check` — PASS (no diff)
+- `cargo +1.89.0 fmt --all -- --check` — PASS
 - `cargo +1.89.0 test cli --locked` — 35 passed
 - `cargo +1.89.0 test plug_command --locked` — 3 passed
 - `cargo +1.89.0 test --test j24a_plug_inspect_cli --locked` — 3 passed
@@ -56,12 +56,12 @@ None known within packet scope.
 
 ## Smallest next action
 
-Lucy reviews the pushed branch and accepts or rejects J24D.
+J24D was accepted and merged. J24E begins candidate preparation behind an internal application seam.
 
 ## References
 
 - Branch: `opencode/j24d-plug-enable-scope-file`
 - Base: `fb354dea734e7a2d37254a9cfbca4fd0daad5939`
-- Final: `<pending commit>`
+- Final implementation checkpoint: `f8c63b907efca1e0f9f1839d542f79221c7298f2`
 - Tests: `tethers-0.1/host-rust/tests/j24d_plug_enable_scope_file.rs`
 - J24C: `tethers-0.1/host-rust/tests/j24c_plug_disable_cli.rs`
