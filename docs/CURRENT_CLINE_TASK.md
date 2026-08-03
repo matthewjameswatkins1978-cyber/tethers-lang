@@ -3,13 +3,13 @@
 Control contract: `1`
 Task: `J24A - Read-only Plug inspection CLI`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using HY3 for bounded CLI integration; Lucy performs final review`
 Base branch: `main`
 Base commit: `f6454e64bde98d1c9d137fc395f287ba25bbe65a`
 Implementation branch: `opencode/j24a-plug-inspect-cli`
-Implementation checkpoint: `25457daad490acc8b5b9bb5f9c31958b0c046c24`
+Implementation checkpoint: `4924bbc`
 Worker note: `docs/worker-notes/2026-08-03-j24a-plug-inspect-cli.md`
 
 ## Objective
