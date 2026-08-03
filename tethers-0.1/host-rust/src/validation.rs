@@ -1,18 +1,22 @@
-// validation.rs - Executor output validation against the capability's output_schema.
-//
-// Validates that an executor result conforms to the output_schema declared
-// in the action's VerifiedManifest.  Only the subset of JSON Schema needed
-// for 0.1 runtime validation is supported:
-//
-//   - type          (string or array of strings)
-//   - enum / const
-//   - properties    (object of per-property schemas)
-//   - required      (array of required property names)
-//   - additionalProperties (boolean or schema)
-//   - items         (one schema applied to every array element)
-//
-// Unsupported schema forms that reach this function are rejected explicitly
-// rather than silently ignored.
+//! validation.rs - Executor output validation against the capability's output_schema.
+//!
+//! Validates that an executor result conforms to the output_schema declared
+//! in the action's VerifiedManifest.  Only the subset of JSON Schema needed
+//! for 0.1 runtime validation is supported:
+//!
+//!   - type          (string or array of strings)
+//!   - enum / const
+//!   - properties    (object of per-property schemas)
+//!   - required      (array of required property names)
+//!   - additionalProperties (boolean or schema)
+//!   - items         (one schema applied to every array element)
+//!   - minimum       (numeric lower bound; rejects non-numeric instances)
+//!   - maximum       (numeric upper bound; rejects non-numeric instances)
+//!   - pattern       (only the exact SHA-256 pattern "sha256:[a-f0-9]{64}";
+//!                     all other pattern expressions are rejected explicitly)
+//!
+//! Unsupported schema forms that reach this function are rejected explicitly
+//! rather than silently ignored.
 
 use serde_json::Value;
 
@@ -153,6 +157,89 @@ fn validate_against_object_schema(
         }
         None => {
             // No type constraint declared; accept anything.
+        }
+    }
+
+    // --- numeric constraints: minimum / maximum ---
+
+    if let Some(min_val) = schema.get("minimum") {
+        if !min_val.is_number() {
+            return Err(ValidationError::new(format!(
+                "{}: minimum must be a number",
+                path
+            )));
+        }
+        if !value.is_number() {
+            return Err(ValidationError::new(format!(
+                "{}: minimum requires a numeric value, got {}",
+                path,
+                json_type_name(value)
+            )));
+        }
+        let min = min_val.as_f64().unwrap();
+        let val = value.as_f64().unwrap();
+        if val < min {
+            return Err(ValidationError::new(format!(
+                "{}: value {} is below minimum {}",
+                path, val, min
+            )));
+        }
+    }
+
+    if let Some(max_val) = schema.get("maximum") {
+        if !max_val.is_number() {
+            return Err(ValidationError::new(format!(
+                "{}: maximum must be a number",
+                path
+            )));
+        }
+        if !value.is_number() {
+            return Err(ValidationError::new(format!(
+                "{}: maximum requires a numeric value, got {}",
+                path,
+                json_type_name(value)
+            )));
+        }
+        let max = max_val.as_f64().unwrap();
+        let val = value.as_f64().unwrap();
+        if val > max {
+            return Err(ValidationError::new(format!(
+                "{}: value {} is above maximum {}",
+                path, val, max
+            )));
+        }
+    }
+
+    // --- string constraint: pattern ---
+
+    if let Some(pattern_val) = schema.get("pattern") {
+        let pattern_str = pattern_val
+            .as_str()
+            .ok_or_else(|| ValidationError::new(format!("{}: pattern must be a string", path)))?;
+        const SHA256_PATTERN: &str = "^sha256:[a-f0-9]{64}$";
+        if pattern_str != SHA256_PATTERN {
+            return Err(ValidationError::new(format!(
+                "{}: unsupported pattern expression '{}'; only '{}' is supported",
+                path, pattern_str, SHA256_PATTERN
+            )));
+        }
+        let value_str = value.as_str().ok_or_else(|| {
+            ValidationError::new(format!(
+                "{}: pattern requires a string value, got {}",
+                path,
+                json_type_name(value)
+            ))
+        })?;
+        if value_str.len() != 71
+            || !value_str.starts_with("sha256:")
+            || !value_str[7..]
+                .chars()
+                .all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+        {
+            return Err(ValidationError::new(format!(
+                "{}: value does not match pattern '{}'",
+                path, SHA256_PATTERN
+            )));
         }
     }
 
@@ -612,6 +699,89 @@ mod tests {
             .message
             .contains("unsupported output_schema keyword 'minLength'"));
         assert!(err.message.contains("refusing partial validation"));
+    }
+
+    // -------------------------------------------------------------------
+    // minimum / maximum / pattern enforcement
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn minimum_accepts_boundary() {
+        let schema = json!({"type": "integer", "minimum": 0});
+        assert!(validate_output(&schema, &json!(0)).is_ok());
+    }
+
+    #[test]
+    fn minimum_rejects_below_boundary() {
+        let schema = json!({"type": "integer", "minimum": 0});
+        let err = validate_output(&schema, &json!(-1)).unwrap_err();
+        assert!(err.message.contains("below minimum"));
+    }
+
+    #[test]
+    fn maximum_accepts_boundary() {
+        let schema = json!({"type": "integer", "maximum": 100});
+        assert!(validate_output(&schema, &json!(100)).is_ok());
+    }
+
+    #[test]
+    fn maximum_rejects_above_boundary() {
+        let schema = json!({"type": "integer", "maximum": 100});
+        let err = validate_output(&schema, &json!(101)).unwrap_err();
+        assert!(err.message.contains("above maximum"));
+    }
+
+    #[test]
+    fn malformed_minimum_schema_rejected() {
+        let schema = json!({"type": "integer", "minimum": "not-a-number"});
+        let err = validate_output(&schema, &json!(1)).unwrap_err();
+        assert!(err.message.contains("minimum must be a number"));
+    }
+
+    #[test]
+    fn malformed_maximum_schema_rejected() {
+        let schema = json!({"type": "integer", "maximum": false});
+        let err = validate_output(&schema, &json!(1)).unwrap_err();
+        assert!(err.message.contains("maximum must be a number"));
+    }
+
+    #[test]
+    fn sha256_pattern_accepts_correct_value() {
+        let schema = json!({"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"});
+        let hex = "a".repeat(64);
+        let value = format!("sha256:{}", hex);
+        assert!(validate_output(&schema, &json!(value)).is_ok());
+    }
+
+    #[test]
+    fn sha256_pattern_rejects_wrong_prefix() {
+        let schema = json!({"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"});
+        let hex = "a".repeat(64);
+        let err = validate_output(&schema, &json!(format!("md5:{}", hex))).unwrap_err();
+        assert!(err.message.contains("does not match pattern"));
+    }
+
+    #[test]
+    fn sha256_pattern_rejects_uppercase() {
+        let schema = json!({"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"});
+        let hex = "A".repeat(64);
+        let err = validate_output(&schema, &json!(format!("sha256:{}", hex))).unwrap_err();
+        assert!(err.message.contains("does not match pattern"));
+    }
+
+    #[test]
+    fn sha256_pattern_rejects_wrong_length() {
+        let schema = json!({"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"});
+        let err = validate_output(&schema, &json!("sha256:abc")).unwrap_err();
+        assert!(err.message.contains("does not match pattern"));
+    }
+
+    #[test]
+    fn unsupported_pattern_expression_rejected() {
+        let schema = json!({"type": "string", "pattern": "^[a-z]+$"});
+        let err = validate_output(&schema, &json!("abc")).unwrap_err();
+        assert!(err.message.contains("unsupported pattern expression"));
+        assert!(err.message.contains("^sha256:[a-f0-9]{64}$"));
     }
 
     // -----------------------------------------------------------------------

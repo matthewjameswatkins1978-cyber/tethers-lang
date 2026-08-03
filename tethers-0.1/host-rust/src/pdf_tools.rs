@@ -6,7 +6,6 @@
 
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
@@ -562,22 +561,22 @@ impl InstalledPdfToolsExecutor {
             .pointer("/result/tools")
             .and_then(Value::as_array)
             .ok_or_else(|| PdfToolsError::new("provider_discovery", "tools/list result missing"))?;
-        let names = tools_array
-            .iter()
-            .filter_map(|tool| tool.get("name").and_then(Value::as_str))
-            .collect::<BTreeSet<_>>();
-        if names.len() != 1 || !names.contains(INSPECT_OPERATION) {
+        if tools_array.len() != 1 {
             provider.shutdown();
             return Err(PdfToolsError::new(
                 "provider_drift",
-                "provider advertised an operation outside the reviewed PDF contract",
+                "provider must advertise exactly one tool",
             ));
         }
-        let inspected = tools_array
-            .iter()
-            .find(|tool| tool.get("name").and_then(Value::as_str) == Some(INSPECT_OPERATION))
-            .ok_or_else(|| PdfToolsError::new("provider_discovery", "pdf_inspect not found"))?;
-        if inspected.get("inputSchema") != Some(&inspect_input_schema()) {
+        let sole = &tools_array[0];
+        if sole.get("name").and_then(Value::as_str) != Some(INSPECT_OPERATION) {
+            provider.shutdown();
+            return Err(PdfToolsError::new(
+                "provider_drift",
+                "provider advertised a tool other than pdf_inspect",
+            ));
+        }
+        if sole.get("inputSchema") != Some(&inspect_input_schema()) {
             provider.shutdown();
             return Err(PdfToolsError::new(
                 "provider_drift",

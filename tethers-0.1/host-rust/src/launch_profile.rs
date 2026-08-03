@@ -161,6 +161,13 @@ pub fn launch_installed_provider(
             message: "enablement pins are stale".into(),
         });
     }
+    enablement.validate().map_err(map_installed_error)?;
+    if enablement.operational_scope != *scope {
+        return Err(ChildError::LaunchFailed {
+            command: record.launch_path.clone(),
+            message: "enablement scope does not match supplied scope".into(),
+        });
+    }
     if scope.installed_id() != record.installed_id
         || !enablement.capabilities.iter().any(|binding| {
             binding.name == scope.capability_name() && binding.version == scope.capability_version()
