@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24C - Explicit Plug disable CLI`
 Owner: `OpenCode`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for bounded lifecycle mutation; Lucy performs final review`
 Base branch: `main`
@@ -30,7 +30,7 @@ This packet does not authorise installation, conformance, approval, enablement,
 removal, provider launch, policy, replay, Trail, Anchor, package or language
 changes.
 
-## Relevant accepted behaviour
+## Relevant background and existing behaviour
 
 J24A and J24B are accepted on `main`. `plug list` already validates the lifecycle
 layout, installed records, enablement chains, latest-by-sequence state and exact
@@ -123,11 +123,44 @@ enablements/
    - every pre-existing path and byte must remain unchanged;
    - no file may change under `install/` or `installed-records/`;
    - failed commands create no path and change no byte;
-   - no provider is launched or stopped because this host currently has no
-     persistent provider-session registry; durable availability removal is the
-     complete bounded J24C effect;
-   - no package, candidate, trust, conformance, approval, policy, replay, Trail
-     or Anchor access.
+- no provider is launched or stopped because this host currently has no
+  persistent provider-session registry; durable availability removal is the
+  complete bounded J24C effect;
+- no package, candidate, trust, conformance, approval, policy, replay, Trail
+  or Anchor access.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/cli.rs`
+- `tethers-0.1/host-rust/src/application.rs`
+- `tethers-0.1/host-rust/src/plug_command.rs`
+- `tethers-0.1/host-rust/src/enablement.rs`
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/m3_store.rs`
+- `tethers-0.1/host-rust/tests/j24c_plug_disable_cli.rs`
+- existing deterministic PDF package and lifecycle builders
+
+## Frozen decisions and invariants
+
+- J24A inspection and J24B listing remain unchanged.
+- Installed registry validation remains owned by `InstalledPlugRegistry`.
+- Enablement record and chain validation remain owned by `EnablementStore`.
+- `EnablementStore::disable` is the only authorised disablement authority and
+  appends an immutable disabled transition.
+- Existing mutable store constructors retain their behaviour for authorised
+  lifecycle writes.
+- J24C introduces no generic repair, migration, optional validation or lenient
+  loading mode.
+- Disablement requires the target to be exactly installed, cross-record
+  consistent and currently enabled.
+- The CLI authority is `tethers-reference-host-cli` and is not caller-supplied.
+- Failed commands create and change nothing; success creates exactly one new
+  enablement JSON record.
+- The CLI envelope remains `tethers.cli/1` with matching embedded/process exit.
+- Tethers Core and OCaml syntax or semantics remain untouched.
+- No dependency, package format, manifest, capability identity, archive limit,
+  trust, conformance, approval, installation, enablement or security contract
+  changes are authorised.
 
 ## Acceptance criteria
 

@@ -101,6 +101,13 @@ pub enum PlugCommand {
         #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
         host_data_root: PathBuf,
     },
+    /// Disable one exact currently-enabled installed Plug.
+    Disable {
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+        #[arg(long = "installed-id", value_name = "UUID")]
+        installed_id: String,
+    },
 }
 
 /// Outcome status vocabulary with exit codes.
@@ -581,5 +588,76 @@ mod tests {
         ])
         .is_err());
         assert!(parse_cli(&["plug", "list", "--host-data-root", "a", "extra"]).is_err());
+    }
+
+    #[test]
+    fn j24c_plug_disable_syntax_is_strict() {
+        assert!(parse_cli(&[
+            "plug",
+            "disable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000"
+        ])
+        .is_ok());
+        assert!(parse_cli(&[
+            "plug",
+            "disable",
+            "--host-data-root=C:\\host",
+            "--installed-id=00000000-0000-4000-8000-000000000000"
+        ])
+        .is_ok());
+        assert!(parse_cli(&["plug", "disable"]).is_err());
+        assert!(parse_cli(&["plug", "disable", "--host-data-root", "C:\\host"]).is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "disable",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "disable",
+            "--host-data-root",
+            "a",
+            "--host-data-root",
+            "b",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "disable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "a",
+            "--installed-id",
+            "b"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "disable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000",
+            "extra"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "disable",
+            "--host-data-root",
+            "C:\\host",
+            "--installed-id",
+            "00000000-0000-4000-8000-000000000000",
+            "--unknown"
+        ])
+        .is_err());
     }
 }

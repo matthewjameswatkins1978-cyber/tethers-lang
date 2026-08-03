@@ -8,7 +8,7 @@ use crate::installed::InstalledPlugRecord;
 use crate::m3_store::{canonical, sha256, unix_ms, M3Error, Result, StoreRoot};
 use crate::operational_scope::OperationalScope;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -99,6 +99,49 @@ impl EnablementRecord {
             return Err(M3Error::new(
                 "enablement_invalid",
                 "duplicate or invalid capability binding",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn consistent_with(&self, installed: &InstalledPlugRecord) -> Result<()> {
+        let expected: BTreeMap<_, _> = installed
+            .disabled_bindings
+            .iter()
+            .map(|binding| {
+                (
+                    (binding.capability_name.clone(), binding.capability_version),
+                    (
+                        binding.manifest_digest.clone(),
+                        binding.provider_operation_name.clone(),
+                    ),
+                )
+            })
+            .collect();
+        let actual: BTreeMap<_, _> = self
+            .capabilities
+            .iter()
+            .map(|binding| {
+                (
+                    (binding.name.clone(), binding.version),
+                    (
+                        binding.manifest_digest.clone(),
+                        binding.provider_operation_name.clone(),
+                    ),
+                )
+            })
+            .collect();
+        if self.package_id != installed.package_id
+            || self.semantic_package_digest != installed.semantic_package_digest
+            || self.provider_id != installed.provider_id
+            || self.provider_version != installed.provider_version
+            || self.conformance_evidence_digest != installed.conformance_evidence_digest
+            || self.installation_approval_id != installed.installation_approval_id
+            || expected != actual
+        {
+            return Err(M3Error::new(
+                "enablement_invalid",
+                "enablement evidence does not match installed Plug",
             ));
         }
         Ok(())
