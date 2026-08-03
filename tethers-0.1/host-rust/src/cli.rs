@@ -19,6 +19,11 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Inspect a Plug package without extracting, installing, or executing it.
+    Plug {
+        #[command(subcommand)]
+        command: PlugCommand,
+    },
     /// Validate Tether source, engine, and provider availability.
     Check {
         #[arg(long = "config", value_name = "PATH")]
@@ -81,6 +86,15 @@ pub enum Command {
         trail: PathBuf,
         #[arg(long = "execution-id", value_name = "exec_UUID")]
         execution_id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PlugCommand {
+    /// Inspect one .tetherplug package as hostile, read-only data.
+    Inspect {
+        #[arg(long = "package", value_name = "PATH")]
+        package: PathBuf,
     },
 }
 
@@ -528,5 +542,22 @@ mod tests {
             "--unknown"
         ])
         .is_err());
+    }
+
+    #[test]
+    fn j24a_plug_inspect_syntax_is_strict() {
+        let cli = parse_cli(&["plug", "inspect", "--package", "package.tetherplug"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Plug {
+                command: PlugCommand::Inspect { package }
+            }) if package == PathBuf::from("package.tetherplug")
+        ));
+        assert!(parse_cli(&["plug", "inspect", "--package=package.tetherplug"]).is_ok());
+        assert!(parse_cli(&["plug"]).is_err());
+        assert!(parse_cli(&["plug", "inspect"]).is_err());
+        assert!(parse_cli(&["plug", "inspect", "--package", "a", "--package", "b"]).is_err());
+        assert!(parse_cli(&["plug", "inspect", "--unknown", "a"]).is_err());
+        assert!(parse_cli(&["plug", "inspect", "--package", "a", "extra"]).is_err());
     }
 }

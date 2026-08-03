@@ -67,7 +67,7 @@ pub struct PlatformEvidence {
     pub os: String,
     pub architecture: String,
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InspectionReport {
     pub inspection_format_version: u32,
     pub inspection_evidence_digest: String,
@@ -86,6 +86,7 @@ pub struct InspectionReport {
     pub capabilities: Vec<CapabilityEvidence>,
     pub signature_files: Vec<PayloadEvidence>,
     pub signatures_present: bool,
+    #[serde(skip)]
     archive_path: PathBuf,
 }
 impl InspectionReport {

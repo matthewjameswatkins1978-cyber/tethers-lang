@@ -26,6 +26,7 @@ pub mod operational_scope;
 mod outcome;
 pub mod package;
 pub mod pdf_tools;
+pub mod plug_command;
 pub mod policy;
 pub mod provider;
 pub mod replay;
