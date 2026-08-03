@@ -314,10 +314,13 @@ fn real_pdf_lifecycle_list_is_deterministic_read_only_and_fail_closed() {
     )
     .unwrap();
 
-    let mut mismatch = disabled_fixture;
+    let mut mismatch = disabled_fixture.clone();
     mismatch.enablement_id = "22222222-2222-4222-8222-222222222222".into();
+    mismatch.sequence = 3;
+    mismatch.previous_record_digest = Some(disabled_fixture.record_digest.clone());
     mismatch.provider_version.push_str("-mismatch");
     resign(&mut mismatch);
+    mismatch.validate().unwrap();
     write_record(&root, &mismatch);
     let before = snapshot(&root);
     let (code, envelope) = run(&root);

@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `OpenCode`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Base commit: `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`
 
-Implementation checkpoint: `bfd0c220fd2e05978a3c380d0c714421a423d08a`
+Implementation checkpoint: `pending correction commit`
 
 ## Requested outcome
 
@@ -70,6 +70,10 @@ Integration evidence:
 - Output-key and forbidden-field assertions cover paths, scope, authority,
   trust, approval, conformance, transition history, and internal paths.
 - A compiled-binary ordering fixture proves Plug and capability ordering.
+- The provider-version mismatch is now a structurally valid sequence-3
+  transition whose predecessor is the valid sequence-2 disabled record; its
+  record validates before writing and reaches the installed-versus-enablement
+  cross-record boundary.
 
 ## Discoveries
 
