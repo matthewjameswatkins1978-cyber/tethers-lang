@@ -1,12 +1,12 @@
 # Worker Note
 
-Task: J24A - Read-only Plug inspection CLI
+Task: `J24A - Read-only Plug inspection CLI`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
-Owner: OpenCode
+Owner: `OpenCode`
 
-Status: COMPLETE
+Status: `COMPLETE`
 
 Base commit: `25457daad490acc8b5b9bb5f9c31958b0c046c24`
 
