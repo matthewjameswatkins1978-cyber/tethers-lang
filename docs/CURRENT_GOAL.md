@@ -22,7 +22,7 @@ trust and supervised-launch evidence, conformance, installation approval,
 installed-disabled publication, enablement histories, operational scopes,
 installed PDF execution and durable host lifecycle authorities.
 
-The accepted public Plug surface now includes:
+The accepted public Plug surface includes:
 
 - J24A `plug inspect` at
   `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`;
@@ -33,24 +33,42 @@ The accepted public Plug surface now includes:
 - J24D permission-file `plug enable` at
   `f8c63b907efca1e0f9f1839d542f79221c7298f2`.
 
-Together these commands provide inspection, validated state reporting and an
-explicit immutable enable/disable loop. J24D established
-`tethers.plug-scope/1` as the first human/automation-facing permission request
-format while keeping host-generated integrity evidence internal.
+J24E is accepted on `main` at
+`9ceb7b2711bc387365b9a5382b84af1bb285384b`. It adds one host-owned,
+idempotent and rollback-aware candidate-preparation service over the existing
+package inspector, quarantine extractor and candidate registry. Exact archive
+replay returns the same candidate without mutation; unsafe paths, semantic
+conflict and corrupt evidence fail closed. J24E adds no public command and grants
+no trust, approval, installation or permission.
 
 ## Active Increment
 
-J24E adds one internal candidate-preparation application service. It composes the
-accepted package inspector, quarantine extractor and candidate registry behind
-one narrow, idempotent, rollback-aware seam.
+J24F exposes the accepted J24E service through one deliberately thin public
+command:
 
-J24E deliberately adds no CLI. J24F will later expose a thin `plug stage`
-command that calls the J24E service rather than reimplementing archive,
-quarantine or candidate rules.
+```text
+tethers-reference-host plug stage \
+  --host-data-root <ABSOLUTE_PATH> \
+  --package <ABSOLUTE_TETHERPLUG_PATH>
+```
 
-A J24E candidate remains untrusted, unapproved, uninstalled, disabled and
-non-operational. It creates no active capability binding, provider session,
-policy permission, event, Anchor or Trail.
+The command stages a validated package into immutable quarantine and publishes
+or reuses one installation-candidate identity. It reports only a bounded public
+candidate summary.
+
+J24F does not inspect archives itself, open candidate stores, calculate digests,
+launch providers, grant trust, run conformance, approve installation, publish an
+installed Plug or enable a capability.
+
+After J24F, the public intake path will be:
+
+```text
+plug inspect   # read-only package evidence
+plug stage     # immutable quarantine + candidate identity
+```
+
+Installation remains a later, separately reviewed sequence over trust,
+conformance, explicit installation approval and installed-disabled publication.
 
 ## Frozen Boundaries
 
@@ -58,14 +76,17 @@ policy permission, event, Anchor or Trail.
 - Plugs remain outside the language Core.
 - Package inspection never executes payloads.
 - Candidate/quarantine identity is not installed identity.
-- Candidate preparation grants no trust, approval, installation or permission.
+- Candidate preparation and staging grant no trust, approval, installation or
+  permission.
 - Package, candidate, installed, provider and capability identities remain
   distinct.
 - Exact archive replay may reuse one validated candidate but may not rewrite it.
 - Same package release with different semantic evidence fails closed before
   extraction.
 - Low-level package, quarantine and candidate validation remain owned by their
-  existing modules; the application seam only composes them.
+  existing modules; the public CLI only calls the accepted J24E service.
+- Public staging output excludes absolute paths, quarantine locations, launch
+  details, payload evidence and internal record digests.
 - Installation approval remains distinct from runtime Ask approval.
 - Installed state remains `present_disabled`; only an exact current enablement
   record creates operational availability.
@@ -102,6 +123,8 @@ Current operating mode: **Gorilla Coding**.
   `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`
 - J24E implementation blueprint:
   `docs/architecture/J24E_CANDIDATE_PREPARATION_BLUEPRINT.md`
+- J24F implementation blueprint:
+  `docs/architecture/J24F_PLUG_STAGE_CLI_BLUEPRINT.md`
 - Lifecycle contract:
   `docs/architecture/TETHERS_LIFECYCLE_OUTCOMES_EVENTS_CONFORMANCE_V1.md`
 - Capability bridge and host trust contract: `docs/CAPABILITY_BRIDGE.md`
