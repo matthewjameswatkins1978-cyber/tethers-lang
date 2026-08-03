@@ -68,7 +68,7 @@ fn reject_reparse_or_link(path: &Path) -> Result<(), PackageError> {
 /// Check every existing component before and after directory creation. On
 /// Windows this examines FILE_ATTRIBUTE_REPARSE_POINT, covering junctions,
 /// mount points, and other reparse forms that Path::is_symlink cannot see.
-fn verify_existing_chain(path: &Path) -> Result<(), PackageError> {
+pub(crate) fn verify_existing_chain(path: &Path) -> Result<(), PackageError> {
     if !path.is_absolute() {
         return Err(err("unsafe_destination", "host roots must be absolute"));
     }
