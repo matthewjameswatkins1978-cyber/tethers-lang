@@ -642,6 +642,8 @@ impl FileToolsExecutor {
         enablement: &crate::enablement::EnablementRecord,
         scope: &OperationalScopeBinding,
     ) -> Result<Self, FileToolsError> {
+        let operational_scope: crate::operational_scope::OperationalScope =
+            OperationalScopeBinding::clone(scope).into();
         let mut provider = crate::launch_profile::launch_installed_provider(
             record,
             installed_directory,
@@ -651,7 +653,7 @@ impl FileToolsExecutor {
             conformance,
             approval,
             enablement,
-            scope,
+            &operational_scope,
         )
         .map_err(|e| FileToolsError::new("provider_launch", e.to_string()))?;
         let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tethers-reference-host","version":"0.2.0"}}});

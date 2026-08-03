@@ -18,6 +18,10 @@ const PROTOCOL_VERSION: &str = "2025-11-25";
 /// from the host-owned TEMP scratch directory.
 const PDF_QUERY_ROOT_PLACEHOLDER: &str = "__TETHERS_PDF_QUERY_ROOT__";
 
+/// Installed-operational size cap supplied by the host launcher when the
+/// provider is launched through an enabled installed binding.
+const PDF_MAX_BYTES_ENV: &str = "TETHERS_PDF_MAX_BYTES";
+
 fn argument(name: &str) -> Option<String> {
     let mut args = std::env::args().skip(1);
     while let Some(value) = args.next() {
@@ -81,6 +85,33 @@ fn conformance_query_root() -> PathBuf {
     }
 }
 
+fn resolve_max_bytes() -> u64 {
+    match std::env::var("TETHERS_CONFORMANCE").as_deref() {
+        Ok("0") => {
+            let raw = match std::env::var(PDF_MAX_BYTES_ENV) {
+                Ok(v) if !v.is_empty() => v,
+                _ => {
+                    eprintln!(
+                        "pdf provider configuration refused: TETHERS_PDF_MAX_BYTES is required in installed operational mode"
+                    );
+                    std::process::exit(2);
+                }
+            };
+            match raw.parse::<u64>() {
+                Ok(n) if n >= 1 && n <= pdf_tools::MAX_PDF_BYTES => n,
+                _ => {
+                    eprintln!(
+                        "pdf provider configuration refused: TETHERS_PDF_MAX_BYTES must be 1..{}",
+                        pdf_tools::MAX_PDF_BYTES
+                    );
+                    std::process::exit(2);
+                }
+            }
+        }
+        _ => pdf_tools::MAX_PDF_BYTES,
+    }
+}
+
 fn main() {
     // The query root is host configuration, never provider-inferred: an absent
     // or unusable root must refuse the session rather than widen scope.
@@ -91,7 +122,8 @@ fn main() {
         std::process::exit(2);
     };
     let root = resolve_query_root(&root_arg);
-    let scope = match PdfScope::new(&root, pdf_tools::MAX_PDF_BYTES) {
+    let max_bytes = resolve_max_bytes();
+    let scope = match PdfScope::new(&root, max_bytes) {
         Ok(scope) => scope,
         Err(failure) => {
             eprintln!("pdf provider configuration refused: {failure}");

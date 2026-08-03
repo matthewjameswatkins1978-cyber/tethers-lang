@@ -306,6 +306,31 @@ pub fn execute_enabled_file_tools_action(
     replay_root: &Path,
     event_id: &str,
 ) -> Result<crate::SharedExecutionResult, Box<dyn std::error::Error>> {
+    execute_enabled_installed_action(
+        response,
+        requirements,
+        resolved,
+        enabled,
+        executor,
+        trail_path,
+        replay_root,
+        event_id,
+    )
+}
+
+/// Generic installed-provider execution entry point. The body is the same as the
+/// historical file-tools-only adapter; it accepts any `CapabilityExecutor` and
+/// `EnabledBindingSnapshot` without assuming a specific Plug.
+pub fn execute_enabled_installed_action(
+    response: &mut Value,
+    requirements: &[policy::CapabilityRequirement],
+    resolved: &ResolvedCapability,
+    enabled: &crate::enablement::EnabledBindingSnapshot,
+    executor: &mut dyn CapabilityExecutor,
+    trail_path: &Path,
+    replay_root: &Path,
+    event_id: &str,
+) -> Result<crate::SharedExecutionResult, Box<dyn std::error::Error>> {
     let action = crate::extract_proposed_action(response)?;
     if !enabled.contains(
         resolved.capability_name(),

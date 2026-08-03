@@ -6,10 +6,13 @@
 
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+use crate::operational_scope::OperationalScope;
 
 pub const INSPECT_CAPABILITY: &str = "pdf.inspect";
 pub const INSPECT_OPERATION: &str = "pdf_inspect";
@@ -260,6 +263,9 @@ fn count_pages(bytes: &[u8]) -> Option<u32> {
     }
 }
 
+const PROVIDER_IDENTITY: &str = "tethers-pdf-provider";
+const PROVIDER_VERSION: &str = "1.0.0";
+
 // -- Operational-scope evidence --
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -485,6 +491,165 @@ impl crate::executor::CapabilityExecutor for PdfToolsExecutor {
     ) -> Result<Value, crate::outcome::ProviderDiagnostic> {
         match inspect(&self.scope, ready.arguments()) {
             Ok(value) => Ok(value),
+            Err(_) => Err(crate::outcome::ProviderDiagnostic::NoFinalResponse),
+        }
+    }
+}
+
+/// Installed PDF provider executor launched through the generic installed-provider
+/// boundary.  It owns the supervised child, revalidates the exact pinned provider
+/// identity and advertised operations, and implements `CapabilityExecutor` so
+/// the existing dispatch path works without a second execution seam.
+pub struct InstalledPdfToolsExecutor {
+    provider: crate::child_process::SupervisedChild,
+    next_request_id: u64,
+}
+
+impl InstalledPdfToolsExecutor {
+    pub fn launch_from_installed(
+        record: &crate::installed::InstalledPlugRecord,
+        installed_directory: &Path,
+        trust: &crate::trust::PackageTrustEvidence,
+        publisher_trust: &crate::trust::PublisherTrustStore,
+        developer_approvals: &crate::trust::DeveloperApprovalStore,
+        conformance: &crate::conformance::ConformanceEvidence,
+        approval: &crate::installed::InstallationApprovalRecord,
+        enablement: &crate::enablement::EnablementRecord,
+        scope: &PdfOperationalScopeBinding,
+    ) -> Result<Self, PdfToolsError> {
+        let operational_scope = OperationalScope::Pdf(scope.clone());
+        let mut provider = crate::launch_profile::launch_installed_provider(
+            record,
+            installed_directory,
+            trust,
+            publisher_trust,
+            developer_approvals,
+            conformance,
+            approval,
+            enablement,
+            &operational_scope,
+        )
+        .map_err(|e| PdfToolsError::new("provider_launch", e.to_string()))?;
+        let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tethers-reference-host","version":"0.2.0"}}});
+        let initialized = Self::request_child(&mut provider, &initialize)?;
+        if initialized
+            .pointer("/result/protocolVersion")
+            .and_then(Value::as_str)
+            != Some("2025-11-25")
+            || initialized
+                .pointer("/result/serverInfo/name")
+                .and_then(Value::as_str)
+                != Some(PROVIDER_IDENTITY)
+            || initialized
+                .pointer("/result/serverInfo/version")
+                .and_then(Value::as_str)
+                != Some(PROVIDER_VERSION)
+        {
+            provider.shutdown();
+            return Err(PdfToolsError::new(
+                "provider_protocol",
+                "installed provider identity or protocol drifted",
+            ));
+        }
+        provider
+            .write_line("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")
+            .map_err(|e| PdfToolsError::new("provider_protocol", e.to_string()))?;
+        let tools = Self::request_child(
+            &mut provider,
+            &json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
+        )?;
+        let tools_array = tools
+            .pointer("/result/tools")
+            .and_then(Value::as_array)
+            .ok_or_else(|| PdfToolsError::new("provider_discovery", "tools/list result missing"))?;
+        let names = tools_array
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+            .collect::<BTreeSet<_>>();
+        if names.len() != 1 || !names.contains(INSPECT_OPERATION) {
+            provider.shutdown();
+            return Err(PdfToolsError::new(
+                "provider_drift",
+                "provider advertised an operation outside the reviewed PDF contract",
+            ));
+        }
+        let inspected = tools_array
+            .iter()
+            .find(|tool| tool.get("name").and_then(Value::as_str) == Some(INSPECT_OPERATION))
+            .ok_or_else(|| PdfToolsError::new("provider_discovery", "pdf_inspect not found"))?;
+        if inspected.get("inputSchema") != Some(&inspect_input_schema()) {
+            provider.shutdown();
+            return Err(PdfToolsError::new(
+                "provider_drift",
+                "pdf_inspect input schema drifted",
+            ));
+        }
+        Ok(Self {
+            provider,
+            next_request_id: 10,
+        })
+    }
+
+    fn request_child(
+        child: &mut crate::child_process::SupervisedChild,
+        request: &Value,
+    ) -> Result<Value, PdfToolsError> {
+        child
+            .write_line(
+                &serde_json::to_string(request)
+                    .map_err(|e| PdfToolsError::new("provider_protocol", e.to_string()))?,
+            )
+            .map_err(|e| PdfToolsError::new("provider_protocol", e.to_string()))?;
+        let line = child
+            .read_protocol_line(Duration::from_secs(5))
+            .map_err(|e| PdfToolsError::new("provider_protocol", e.to_string()))?;
+        serde_json::from_str(&line)
+            .map_err(|e| PdfToolsError::new("provider_protocol", e.to_string()))
+    }
+
+    pub fn call(&mut self, operation: &str, arguments: &Value) -> Result<Value, PdfToolsError> {
+        if operation != INSPECT_OPERATION {
+            return Err(PdfToolsError::new(
+                "provider_drift",
+                "operation is not reviewed",
+            ));
+        }
+        let id = self.next_request_id;
+        self.next_request_id = self
+            .next_request_id
+            .checked_add(1)
+            .ok_or_else(|| PdfToolsError::new("provider_protocol", "request id exhausted"))?;
+        Self::request_child(
+            &mut self.provider,
+            &json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":operation,"arguments":arguments}}),
+        )
+    }
+}
+
+impl crate::executor::CapabilityExecutor for InstalledPdfToolsExecutor {
+    fn provider_identity(&self) -> &str {
+        PROVIDER_IDENTITY
+    }
+    fn execute(&mut self, ready: &crate::dispatch::DispatchReadyAction) -> Result<Value, String> {
+        let operation = ready
+            .verified_manifest()
+            .manifest()
+            .binding
+            .tool_name
+            .as_str();
+        self.call(operation, ready.arguments())
+            .map_err(|e| e.to_string())
+    }
+    fn execute_classified(
+        &mut self,
+        ready: &crate::dispatch::DispatchReadyAction,
+        _remaining: Duration,
+    ) -> Result<Value, crate::outcome::ProviderDiagnostic> {
+        match self.execute(ready) {
+            Ok(value) if value.get("error").is_some() => {
+                Err(crate::outcome::ProviderDiagnostic::ExplicitProviderError)
+            }
+            Ok(value) => Ok(value.get("result").cloned().unwrap_or(value)),
             Err(_) => Err(crate::outcome::ProviderDiagnostic::NoFinalResponse),
         }
     }
