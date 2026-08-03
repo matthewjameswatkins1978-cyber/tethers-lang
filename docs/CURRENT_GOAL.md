@@ -1,58 +1,89 @@
-# Tethers Project Dashboard
+# Current Goal
 
-Updated: 2026-08-01
+Updated: 2026-08-03
 
-## Current Milestone
+## Goal
 
-J18I: First Plug Kit Implementation Roadmap, documentation-only and pending Lucy
-roadmap review. Architecture freeze: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`.
-Implementation remains unauthorised.
+Complete the first public Tethers Plug lifecycle command surface over the
+accepted Plug Kit backend without changing Tethers 0.1 language semantics,
+putting Plugs into Tethers Core, or weakening host-owned trust, permissions,
+conformance, enablement, outcome, replay, Anchor, and Trail boundaries.
 
-## Published Baseline
+## Accepted Baseline
 
-- Release: Tethers 0.2.0
-- SHA: `b5546411661dcbcb53e1cf2538eaec594c6f76f2`
-- Tag: `v0.2.0`
-- Language semantics: 0.1
+Tethers 0.2.0 remains the accepted and published baseline. The annotated
+`v0.2.0` tag remains at
+`b5546411661dcbcb53e1cf2538eaec594c6f76f2`; language semantics remain 0.1.
 
-## Accepted 0.2 Verification
+The Universal Plug architecture remains frozen at
+`a5fd63593a9d9acd397030ecd2e27b4f318c87fd`. The implementation now on `main`
+includes the reusable Socket/application seam, package inspection and
+quarantine candidate identity, trust and supervised launch evidence,
+conformance and installed-disabled state, File Tools, durable local Anchor
+admission, the bounded PDF contract/provider/package, operational scope,
+conformance, and installed PDF execution.
 
-- Rust: 797 passed, 0 failed, 0 ignored.
-- MCP transcript suite: 15/15.
-- J14C: 9/9 rows, 196 assertions.
-- Consolidated matrix: 6/6 suites, 79 accepted cases/rows.
-- Runner contract: 6/6 rows, 49 assertions.
-- Clean native Windows checkout, build, restart, and replay proof complete.
+J24A is accepted at `13f6a3caffa00904f6357c7975a8a0937a6c2d5c`. It exposes the
+existing hostile-data package inspector through the strictly read-only public
+command `plug inspect --package <PATH>`.
 
-J17 independently verified all 17 ROAD_TO_0_2 acceptance claims and signed off
-the release.
+## Active Increment
 
-## Active Task
+J24B adds the next smallest public lifecycle surface: a strictly read-only
+`plug list --state-root <ABSOLUTE_PATH>` command. It reports validated installed
+identity and current enablement state without creating directories, changing
+records, launching providers, or granting availability.
 
-J18I - First Plug Kit Implementation Roadmap
+Mutating lifecycle commands remain unauthorised until their own reviewed
+packets: candidate creation/quarantine, conformance, approval,
+installed-disabled publication, enablement, disablement, and removal.
 
-## Next Route
+## Frozen Boundaries
 
-J18B through J18H are accepted; architecture freeze is final. J18I is active and
-pending Lucy roadmap review. The first implementation packet follows only after
-J18I acceptance.
+- Tethers Core remains deterministic and application-agnostic.
+- Plugs remain outside the language Core.
+- Capability schemas describe; host policy authorises; hosts enforce; Trails
+  record.
+- Package inspection, installed records, and enablement histories retain their
+  existing sole authorities; CLI adapters must not duplicate their parsers or
+  validation rules.
+- Installation approval is distinct from runtime Ask approval.
+- Installed state remains `present_disabled`; only an exact current enablement
+  record can create operational availability.
+- Structured scope without a host/binding-owned assessment fails closed.
+- No hidden AI judgement enters deterministic Condition evaluation.
+- No automatic retry exists without end-to-end idempotency proof.
+- Supervised provider execution remains explicitly non-isolated and must not be
+  described as hostile-code safe.
+- No public registry, download/update path, network listener, OAuth, arbitrary
+  third-party enablement, or Tether language change is part of the first Plug
+  Kit.
 
-Plug implementation remains unauthorised. Plugs remain outside Tethers Core;
-host-owned permissions, credentials, canonical outcomes, and Trails remain
-unchanged.
+## Active Development Posture
 
-## Operating Mode
+Current operating mode: **Gorilla Coding**.
 
 - Lucy: architecture, task compilation, and independent review.
-- Luna on OpenCode: bounded Green and ordinary Amber implementation.
-- DeepSeek Pro V4: thicker middle implementation requiring review.
-- Codex Terra High: Red work, machine failures, and release gates.
+- OpenCode: bounded Green and ordinary Amber implementation.
+- Codex: Red work, machine failures, recovery, and release gates.
 - Matthew: product authority and report-routing bridge.
+- Active prototype tree: `tethers-0.1/`.
+- Required Rust toolchain: 1.89.0 with `--locked`.
+- Required automation shell where applicable: PowerShell 7 (`pwsh.exe`).
 
-## Where Details Live
+## Authoritative References
 
-- Present goal and boundaries: `docs/CURRENT_GOAL.md`
-- Active task contract: `docs/CURRENT_CLINE_TASK.md`
-- Release programme: `docs/ROAD_TO_0_2.md`
-- Detailed queue and completed milestones: `docs/TASK_QUEUE.md`
+- Enduring design principles: `docs/CONSTITUTION.md`
+- Current 0.1 language and protocol semantics: `tethers-0.1/SPEC.md`
+- Universal Plug architecture:
+  `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`
+- First Plug Kit roadmap:
+  `docs/architecture/TETHERS_J18_IMPLEMENTATION_ROADMAP.md`
+- Lifecycle contract:
+  `docs/architecture/TETHERS_LIFECYCLE_OUTCOMES_EVENTS_CONFORMANCE_V1.md`
+- Capability bridge and host trust contract: `docs/CAPABILITY_BRIDGE.md`
+- Accepted design decisions: `docs/DECISIONS.md`
+- Current task state: `docs/CURRENT_CLINE_TASK.md`
+- Short Matthew-facing status: `docs/PROJECT_DASHBOARD.md`
+- Detailed queue: `docs/TASK_QUEUE.md`
 - Evidence and reviews: `docs/worker-notes/`
