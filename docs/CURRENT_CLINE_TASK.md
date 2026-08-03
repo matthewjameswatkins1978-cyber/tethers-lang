@@ -3,13 +3,14 @@
 Control contract: `1`
 Task: `J24C - Explicit Plug disable CLI`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for bounded lifecycle mutation; Lucy performs final review`
 Base branch: `main`
 Base commit: `726c6aa780c6809fce32de39427200217cbad12f`
 Implementation branch: `opencode/j24c-plug-disable-cli`
 Worker note: `docs/worker-notes/2026-08-03-j24c-plug-disable-cli.md`
+Implementation checkpoint: `aac395a522e9d90573870a7f53e00b4fb075a4d7`
 
 ## Objective
 
@@ -123,11 +124,11 @@ enablements/
    - every pre-existing path and byte must remain unchanged;
    - no file may change under `install/` or `installed-records/`;
    - failed commands create no path and change no byte;
-- no provider is launched or stopped because this host currently has no
-  persistent provider-session registry; durable availability removal is the
-  complete bounded J24C effect;
-- no package, candidate, trust, conformance, approval, policy, replay, Trail
-  or Anchor access.
+   - no provider is launched or stopped because this host currently has no
+     persistent provider-session registry; durable availability removal is the
+     complete bounded J24C effect;
+   - no package, candidate, trust, conformance, approval, policy, replay, Trail
+     or Anchor access.
 
 ## Relevant components
 
