@@ -1,315 +1,268 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24E - Idempotent candidate preparation seam`
+Task: `J24F - Public Plug stage CLI`
 Owner: `OpenCode`
-Status: `COMPLETE`
-Task colour: `Amber`
-Route: `OpenCode using DeepSeek Pro V4 for bounded cross-module candidate orchestration; Lucy performs final review`
+Status: `READY`
+Task colour: `Green`
+Route: `OpenCode using Luna for a thin public CLI adapter over the accepted J24E service; Lucy performs final review`
 Base branch: `main`
-Base commit: `f8c63b907efca1e0f9f1839d542f79221c7298f2`
-Implementation branch: `opencode/j24e-candidate-preparation-seam`
-Worker note: `docs/worker-notes/2026-08-03-j24e-candidate-preparation-seam.md`
-Implementation blueprint: `docs/architecture/J24E_CANDIDATE_PREPARATION_BLUEPRINT.md`
-Implementation checkpoint: `fbb5535a6626c985606c76a94218b1b6df518504`
+Base commit: `9ceb7b2711bc387365b9a5382b84af1bb285384b`
+Implementation branch: `opencode/j24f-plug-stage-cli`
+Worker note: `docs/worker-notes/2026-08-03-j24f-plug-stage-cli.md`
+Implementation blueprint: `docs/architecture/J24F_PLUG_STAGE_CLI_BLUEPRINT.md`
 
 ## Objective
 
-Add one internal host-owned candidate-preparation application seam that composes
-existing package inspection, quarantine extraction and candidate registry
-authorities:
+Expose the accepted J24E candidate-preparation service through one public
+command:
 
-```rust
-pub fn prepare_installation_candidate(
-    host_data_root: &Path,
-    package_path: &Path,
-) -> Result<CandidatePreparation, PackageError>
+```text
+tethers-reference-host plug stage \
+  --host-data-root <ABSOLUTE_PATH> \
+  --package <ABSOLUTE_TETHERPLUG_PATH>
 ```
 
-J24E adds no CLI. Its purpose is to make J24F a thin `plug stage` adapter that
-cannot accidentally reopen archive, quarantine, replay or candidate-identity
-design.
+J24F is deliberately a thin adapter. It owns strict Clap syntax, two
+absolute-path CLI checks, stable `tethers.cli/1` envelope mapping and public
+candidate formatting. All package inspection, quarantine, candidate identity,
+exact replay, semantic conflict and rollback behaviour remains solely inside
+`candidate_preparation::prepare_installation_candidate`.
 
-The prepared object remains an untrusted, unapproved, uninstalled, disabled and
-non-operational installation candidate.
+Read the implementation blueprint in full before editing. It freezes the exact
+output allowlist, error mapping and compiled-binary evidence.
 
-## Relevant background and existing behaviour
+## Startup procedure
 
-J24A through J24D are accepted. The public Plug surface can inspect packages,
-list installed state, enable from a permission file and disable through immutable
-transitions.
+The current worktree may still be on an older implementation branch. Do not read
+that branch's packet as current authority.
 
-The low-level candidate path is already accepted:
+1. Confirm the worktree is clean. Stop if it is not.
+2. Run `git fetch origin`.
+3. Verify checkpoint `9ceb7b2711bc387365b9a5382b84af1bb285384b` is an ancestor of `origin/main`.
+4. Inspect the first lines of the packet directly from `origin/main`:
 
-- `package::inspect` performs strict, non-executing `.tetherplug` inspection;
-- `candidate::extract_to_quarantine` repeats inspection, verifies bytes and
-  publishes one immutable quarantine directory;
-- `CandidateRegistry::open`, `load_all` and `create` own candidate storage,
-  validation and immutable identity.
+   ```powershell
+   git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 16
+   ```
 
-These functions are deliberately separate. J24E may compose them but must not
-replace their parsers, path checks, digest verification, record validation or
-publication rules.
+   Require J24F, OpenCode and `READY`.
+5. Verify the blueprint directly from `origin/main`:
 
-Read the implementation blueprint in full before editing. It supplies the exact
-service shape, ordering, replay comparison, rollback boundary and fixture recipe.
+   ```powershell
+   git cat-file -e origin/main:docs/architecture/J24F_PLUG_STAGE_CLI_BLUEPRINT.md
+   ```
+
+6. Check that `opencode/j24f-plug-stage-cli` does not exist locally or remotely.
+   If it exists, stop without resetting or overwriting it.
+7. Create and switch to it from current `origin/main`:
+
+   ```powershell
+   git switch --create opencode/j24f-plug-stage-cli origin/main
+   ```
+
+8. Read the checked-out packet and blueprint completely before editing.
 
 ## Required behaviour
 
-1. Start from current `origin/main` after this packet is merged:
-
-   - run `git fetch origin`;
-   - verify the worktree is clean;
-   - verify base commit `f8c63b907efca1e0f9f1839d542f79221c7298f2`
-     is an ancestor of `origin/main`;
-   - verify the packet names J24E, OpenCode and `READY`;
-   - verify the blueprint exists;
-   - create `opencode/j24e-candidate-preparation-seam` from current
-     `origin/main`;
-   - if that branch already exists locally or remotely, stop and report rather
-     than resetting or overwriting it.
-
-2. Add `src/candidate_preparation.rs` with exactly these public value types:
+1. Add exactly this `PlugCommand` variant:
 
    ```rust
-   #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-   pub enum CandidatePreparationDisposition {
-       Created,
-       Existing,
-   }
-
-   #[derive(Debug, Clone, PartialEq, Eq)]
-   pub struct CandidatePreparation {
-       pub candidate: CandidateRecord,
-       pub disposition: CandidatePreparationDisposition,
+   Stage {
+       #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+       host_data_root: PathBuf,
+       #[arg(long = "package", value_name = "ABSOLUTE_TETHERPLUG_PATH")]
+       package: PathBuf,
    }
    ```
 
-   Add the exact public function named in the Objective. Export the module from
-   `src/lib.rs`. Do not expose internal matching or cleanup helpers.
+2. Add one application route that calls:
 
-3. The service owns this first public host layout beneath one supplied existing
-   host data root:
-
-   ```text
-   candidates/
-   quarantine/
+   ```rust
+   plug_command::run_stage(&host_data_root, &package)
    ```
 
-   Require `host_data_root` and `package_path` to be absolute. Require the host
-   root to already exist as an ordinary directory with a safe non-reparse path
-   chain. Never create the host root. Require the package path to identify an
-   existing ordinary file.
+3. Add one public adapter:
 
-4. Inspect before mutation:
+   ```rust
+   pub fn run_stage(host_data_root: &Path, package_path: &Path) -> PlugCommandResult
+   ```
 
-   - call `package::inspect(package_path)` before creating either child root;
-   - preserve every package inspector error code;
-   - malformed, unreadable, unsupported or unsafe packages create no candidate
-     or quarantine path;
-   - never launch or execute any package payload.
+4. Before calling J24E, perform only these CLI checks:
 
-5. Open and validate candidate state only through existing authorities:
+   - relative `host_data_root` returns `invalid_cli_usage`, exit `2`, code
+     `invalid_cli_usage`, field `/host-data-root`;
+   - relative `package_path` returns `invalid_cli_usage`, exit `2`, code
+     `invalid_cli_usage`, field `/package`.
 
-   - derive `candidates` and `quarantine` below the host root;
-   - record whether each child existed before the call;
-   - call `CandidateRegistry::open` once;
-   - call `CandidateRegistry::load_all` once;
-   - do not add a second record parser, quarantine verifier, semantic digest
-     calculator or registry implementation.
+5. After those checks, call
+   `candidate_preparation::prepare_installation_candidate` exactly once.
 
-6. Exact replay is idempotent:
+6. On success, emit command `plug stage`, status `ok`, exit `0` and exactly the
+   public data shape frozen in the blueprint.
 
-   - find candidates with the same raw archive digest;
-   - zero matches continues preparation;
-   - more than one match fails `candidate_conflict`;
-   - exactly one match is reusable only when every report-pinned field listed in
-     the blueprint agrees;
-   - agreeing evidence returns that same candidate ID with disposition
-     `Existing` and performs no write;
-   - disagreeing evidence fails `record_invalid` and performs no write.
+7. Map dispositions exactly:
 
-7. Refuse semantic conflict before extraction:
+   - `Created` to `created`;
+   - `Existing` to `existing`.
 
-   - same package ID and package version with a different semantic package
-     digest returns the existing `semantic_conflict` code;
-   - the candidate and quarantine trees remain byte-for-byte unchanged;
-   - different raw archives with the same semantic package digest are not
-     automatically treated as exact replay because signature evidence may differ.
+8. Sort capabilities by `(name, version, operation)` before serialising them.
 
-8. New preparation follows the accepted authorities in this order:
+9. Preserve the J24E service's exact error code and message. Map status only by
+   code:
 
-   - call `candidate::extract_to_quarantine` once;
-   - call `CandidateRegistry::create` once;
-   - return the created record with disposition `Created`;
-   - do not hand-build a candidate record, quarantine directory or package
-     evidence value.
+   - `archive_read` or `candidate_io` to `unavailable`, exit `4`;
+   - `candidate_rollback_failed` or `clock` to `failed`, exit `6`;
+   - every other service code to `invalid_data`, exit `3`.
 
-9. Rollback is narrow and honest:
+10. Emit exactly one JSON line for every parsed command. Process exit and
+    envelope exit must agree.
 
-   - incomplete extractor staging remains owned by the existing extractor;
-   - if record publication fails after final quarantine publication, remove only
-     that newly returned quarantine directory;
-   - prefer one narrowly scoped `pub(crate)` helper in `candidate.rs` if needed
-     to reuse its existing confinement authority rather than duplicating path
-     safety in the new module;
-   - remove a child root created by this call only when it is empty;
-   - never remove a pre-existing root or the host data root;
-   - cleanup failure returns `candidate_rollback_failed` and must not claim a
-     clean refusal;
-   - error messages disclose no absolute path.
+11. Do not call package, candidate, registry or quarantine authorities directly.
+    The production route must reach candidate preparation only through J24E.
 
-10. Keep the boundary non-operational:
+12. Preserve J24A through J24E behaviour and tests.
 
-   - no trust, developer approval, publisher trust or revocation access;
-   - no launch-profile preparation or provider process;
-   - no conformance run or evidence;
-   - no installation approval or installed record;
-   - no enablement transition, policy, dispatch, replay, event, Anchor or Trail;
-   - do not create `install`, `installed-records`, `enablements`, trust,
-     conformance or approval paths.
+## Public output allowlist
 
-11. Keep J24A through J24D behaviour unchanged. No CLI variant, route, envelope
-    or public command is authorised in J24E.
+The success `data` object contains exactly one key, `candidate`.
 
-## Relevant components
+The candidate object contains exactly:
 
-- `docs/architecture/J24E_CANDIDATE_PREPARATION_BLUEPRINT.md`
-- `tethers-0.1/host-rust/src/package.rs`
-- `tethers-0.1/host-rust/src/candidate.rs`
-- `tethers-0.1/host-rust/src/m3_store.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/tests/j23c2_pdf_conformance.rs`
-- `tethers-0.1/host-rust/tests/j23c3_installed_pdf_execution.rs`
-- `tethers-0.1/host-rust/src/pdf_tools.rs`
+```text
+candidate_id
+disposition
+state
+package_id
+package_version
+semantic_package_digest
+raw_archive_digest
+provider_id
+provider_version
+platform
+capabilities
+created_unix_ms
+```
 
-## Frozen decisions and invariants
+`platform` contains exactly `os` and `architecture`.
 
-- Candidate identity is not installed identity.
-- Candidate preparation grants no trust, approval, installation, permission or
-  operational availability.
-- Package inspection and quarantine perform no execution.
-- Existing package and candidate record schemas remain unchanged.
-- Existing low-level authorities remain sole validators.
-- Exact replay may return a validated existing candidate but may not mutate it.
-- Same release with different semantic evidence fails before extraction.
-- Different raw archives may carry different detached signature evidence even
-  when semantic package identity agrees.
-- The host data root is caller-owned and pre-existing; J24E may create only its
-  two named children.
-- Supervision, conformance and installed publication are later boundaries.
-- Tethers Core, OCaml semantics and public CLI remain untouched.
-- No dependency, package format, manifest, capability identity, limit, trust,
-  conformance, approval, installation or enablement contract change is
-  authorised.
+Each capability contains exactly:
+
+```text
+name
+version
+manifest_digest
+operation
+```
+
+Do not expose any absolute or quarantine path, payload evidence, launch details,
+internal record digest, inspection digest, trust, approval, conformance,
+installed or enablement evidence.
 
 ## Acceptance criteria
 
-1. The new module exposes only the frozen service and result types and is
-   exported through `lib.rs`.
-2. A real deterministic PDF `.tetherplug` prepared with deliberately
-   non-executable provider bytes succeeds, proving no provider launch is needed.
-3. First preparation returns `Created`, publishes exactly one candidate JSON
-   record and one immutable quarantine subtree, and creates no other lifecycle
-   path.
-4. Exact archive replay returns `Existing` with the same candidate ID and leaves
-   every relative path and SHA-256 file digest unchanged.
-5. Same PDF package release built from different provider bytes fails
-   `semantic_conflict` before extraction and leaves the tree unchanged.
-6. Malformed package input fails before `candidates/` or `quarantine/` is
-   created.
-7. Relative or missing package path and relative, missing, non-directory or
-   unsafe host root fail closed without creating the host root or child paths.
-8. Corrupt existing candidate evidence fails before extraction and changes
-   nothing.
-9. Rollback helpers remove only newly created confined candidate material and
-   never delete pre-existing roots or the host root.
-10. No install, installed-record, enablement, trust, conformance, approval,
-    provider, policy, replay, event, Anchor or Trail state is created or touched.
-11. Existing J24A, J24B, J24C and J24D tests remain green.
-12. Full suite remains green apart from the five documented `pwsh.exe not found`
+1. Strict CLI syntax accepts both split and `--name=value` forms and rejects
+   missing, duplicate, unknown and positional extras.
+2. A real deterministic PDF package made with non-executable provider bytes
+   stages through the compiled binary and returns `created`.
+3. The success envelope has the exact public allowlist and no forbidden field.
+4. The output pins the exact PDF package/provider/platform and
+   `pdf.inspect@1` capability.
+5. First success creates exactly one candidate record and one immutable
+   quarantine subtree, and no other lifecycle path.
+6. Exact replay returns `existing`, the same candidate ID and changes no byte.
+7. Malformed package returns exit `3`, `invalid_data` and its exact inspector
+   code without creating candidate state.
+8. Missing package returns exit `4`, `unavailable`, code `archive_read` and
+   creates no candidate state.
+9. Semantic conflict returns exit `3`, code `semantic_conflict` and changes no
+   byte.
+10. Corrupt candidate evidence returns exit `3`, code `record_invalid` and
+    changes no byte.
+11. Relative CLI paths return exit `2` with the exact field pointer before
+    service mutation.
+12. On Windows, a junction-backed package path maps to exit `3`, code
+    `unsafe_destination` and creates no candidate state.
+13. Every integration scenario proves process/envelope exit parity.
+14. J24A through J24E focused tests remain green.
+15. Full suite remains green apart from the five documented `pwsh.exe not found`
     environment failures.
-13. Rustfmt, packet checker and `git diff --check` pass.
+16. Rustfmt, packet checker and `git diff --check` pass.
 
 ## Required verification
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 cargo +1.89.0 fmt --all -- --check
-cargo +1.89.0 test candidate_preparation --locked
-cargo +1.89.0 test --test j24e_candidate_preparation --locked
+cargo +1.89.0 test cli --locked
+cargo +1.89.0 test plug_command --locked
+cargo +1.89.0 test --test j24f_plug_stage_cli --locked
 cargo +1.89.0 test --test j24a_plug_inspect_cli --locked
 cargo +1.89.0 test --test j24b_plug_list_cli --locked
 cargo +1.89.0 test --test j24c_plug_disable_cli --locked
 cargo +1.89.0 test --test j24d_plug_enable_scope_file --locked
+cargo +1.89.0 test candidate_preparation --locked
+cargo +1.89.0 test --test j24e_candidate_preparation --locked
 cargo +1.89.0 test --all-targets --all-features --locked
 git diff --check
 ```
-
-Use `pdf_tools::build_reference_package` with two different non-executable
-provider byte strings for the successful and semantic-conflict fixtures. Use
-relative-path and SHA-256 snapshots of the complete host tree.
 
 ## Permitted changes
 
 Expected files are limited to:
 
-- `tethers-0.1/host-rust/src/candidate_preparation.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/candidate.rs` only for one narrow `pub(crate)`
-  confinement/rollback helper if required; do not change schemas or accepted
-  extraction/registry behaviour
-- `tethers-0.1/host-rust/tests/j24e_candidate_preparation.rs`
-- `docs/worker-notes/2026-08-03-j24e-candidate-preparation-seam.md`
-- `docs/CURRENT_CLINE_TASK.md` only for the authorised status transitions and
-  final full implementation checkpoint
+- `tethers-0.1/host-rust/src/cli.rs`
+- `tethers-0.1/host-rust/src/application.rs`
+- `tethers-0.1/host-rust/src/plug_command.rs`
+- `tethers-0.1/host-rust/tests/j24f_plug_stage_cli.rs`
+- `docs/worker-notes/2026-08-03-j24f-plug-stage-cli.md`
+- `docs/CURRENT_CLINE_TASK.md` only for status transitions and the final full
+  implementation checkpoint
 
-Not every permitted file must change. Stop before changing any other file.
+Stop before changing any other file.
 
 ## Forbidden changes
 
-No CLI, `application.rs` or `plug_command.rs` change. No OCaml/Tether semantic
-change. No dependency or lockfile change. No package format, manifest,
-capability, provider, platform or archive-limit change. No trust, signature,
-revocation, developer approval, launch profile, conformance, installation
-approval, installed registry, enablement, removal, policy, dispatch, replay,
-Trail, Anchor, release, tag or version change.
+Do not modify `candidate_preparation.rs`, `candidate.rs`, `package.rs`, package
+schemas, candidate schemas, dependencies or lockfiles.
 
-Do not add `plug stage`, `plug install`, `plug approve`, `plug conformance`,
-`plug remove` or placeholders in J24E. Do not amend, rebase, reset, cherry-pick,
-force-push or merge into `main`.
+No trust, signature, revocation, developer approval, launch, conformance,
+installation approval, installed publication, enablement, removal, update,
+download, registry, policy, replay, event, Anchor, Trail, OCaml, Tether syntax,
+release, tag or version work.
+
+Do not add `plug install`, `plug approve`, `plug conformance`, `plug remove` or
+placeholders.
+
+Do not amend, reset, rebase, cherry-pick, force-push or merge into `main`.
 
 ## Stop conditions
 
 Stop cleanly and report the smallest unresolved question if:
 
 - the implementation branch already exists;
-- current `origin/main` lacks the accepted J24D checkpoint or J24E packet;
-- composing the existing authorities requires weakening or duplicating package,
-  quarantine or candidate validation;
-- exact replay cannot be decided from existing immutable evidence;
-- cleanup would require deleting a pre-existing path or recursively removing the
-  host data root;
-- candidate preparation would need trust, launch, conformance, installation or
-  enablement access;
-- a forbidden file, schema, dependency or architecture change appears necessary;
+- current `origin/main` lacks J24E or the J24F packet/blueprint;
+- the CLI cannot remain a thin one-call adapter over J24E;
+- a new package/candidate parser, registry read or filesystem mutation appears
+  necessary;
+- a forbidden file or architecture change appears necessary;
 - branch-specific failures remain after two materially different attempts.
 
 ## Git and return contract
 
-Create `opencode/j24e-candidate-preparation-seam` from current `origin/main`.
-Use ordinary commits and normal push only. Do not rewrite history or merge into
-`main`.
+Use ordinary commits and normal push only.
 
-After all required checks pass, change the packet status to `COMPLETE`, record
-one full 40-character implementation checkpoint, create the authorised worker
-note and push normally.
+After all required checks pass:
 
-Return the branch, final full SHA, exact changed files, concise implementation
-summary, focused and complete test evidence, rustfmt, packet-checker and
-`git diff --check` results, worker-note path, and explicit proof that candidate
-preparation launched nothing, installed nothing, enabled nothing and exact
-replay changed no byte.
+- create the authorised worker note;
+- set the packet to `COMPLETE`;
+- record the full 40-character implementation checkpoint;
+- push normally.
+
+Return the branch, remote final SHA, implementation checkpoint, exact changed
+files, focused and full test evidence, packet/rustfmt/diff results, worker-note
+path, first-stage and exact-replay evidence, and explicit confirmation that the
+CLI itself launched nothing, installed nothing and enabled nothing.
 
 ## Expected pre-existing changes
 
