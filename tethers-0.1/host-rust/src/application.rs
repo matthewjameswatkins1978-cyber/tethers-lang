@@ -598,6 +598,19 @@ pub fn run() {
         }
         Ok(Cli {
             command:
+                Some(CliCommand::Plug {
+                    command:
+                        crate::cli::PlugCommand::Stage {
+                            host_data_root,
+                            package,
+                        },
+                }),
+        }) => {
+            let result = plug_command::run_stage(&host_data_root, &package);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
                 Some(CliCommand::Run {
                     config,
                     engine,

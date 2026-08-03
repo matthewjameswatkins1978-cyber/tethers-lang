@@ -1,9 +1,12 @@
+use crate::candidate_preparation::{
+    prepare_installation_candidate, CandidatePreparation, CandidatePreparationDisposition,
+};
 use crate::cli::{CliEnvelope, OutcomeStatus};
 use crate::enablement::{EnablementRecord, EnablementState, EnablementStore};
 use crate::installed::InstalledPlugRegistry;
 use crate::m3_store::M3Error;
 use crate::operational_scope::OperationalScope;
-use crate::package;
+use crate::package::{self, CapabilityEvidence, PackageError};
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::json;
@@ -61,6 +64,111 @@ pub fn run_inspect(package_path: &Path) -> PlugCommandResult {
                 envelope,
             }
         }
+    }
+}
+
+fn stage_error(error: PackageError) -> PlugCommandResult {
+    let status = match error.code {
+        "archive_read" | "candidate_io" => OutcomeStatus::Unavailable,
+        "candidate_rollback_failed" | "clock" => OutcomeStatus::Failed,
+        _ => OutcomeStatus::InvalidData,
+    };
+    let envelope = CliEnvelope::error("plug stage", status, error.code, error.message, None);
+    PlugCommandResult {
+        exit_code: envelope.exit_code,
+        envelope,
+    }
+}
+
+fn public_capabilities(capabilities: &[CapabilityEvidence]) -> serde_json::Value {
+    let mut sorted = capabilities.to_vec();
+    sorted.sort_by(|left, right| {
+        (left.name.as_str(), left.version, left.operation.as_str()).cmp(&(
+            right.name.as_str(),
+            right.version,
+            right.operation.as_str(),
+        ))
+    });
+    serde_json::Value::Array(
+        sorted
+            .into_iter()
+            .map(|capability| {
+                json!({
+                    "name": capability.name,
+                    "version": capability.version,
+                    "manifest_digest": capability.manifest_digest,
+                    "operation": capability.operation,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn public_candidate(prepared: CandidatePreparation) -> serde_json::Value {
+    let disposition = match prepared.disposition {
+        CandidatePreparationDisposition::Created => "created",
+        CandidatePreparationDisposition::Existing => "existing",
+    };
+    let candidate = prepared.candidate;
+    json!({
+        "candidate_id": candidate.candidate_id,
+        "disposition": disposition,
+        "state": candidate.state,
+        "package_id": candidate.package_id,
+        "package_version": candidate.package_version,
+        "semantic_package_digest": candidate.semantic_package_digest,
+        "raw_archive_digest": candidate.raw_archive_digest,
+        "provider_id": candidate.provider_id,
+        "provider_version": candidate.provider_version,
+        "platform": {
+            "os": candidate.selected_platform.os,
+            "architecture": candidate.selected_platform.architecture,
+        },
+        "capabilities": public_capabilities(&candidate.capabilities),
+        "created_unix_ms": candidate.created_unix_ms,
+    })
+}
+
+pub fn run_stage(host_data_root: &Path, package_path: &Path) -> PlugCommandResult {
+    if !host_data_root.is_absolute() {
+        let envelope = CliEnvelope::error(
+            "plug stage",
+            OutcomeStatus::InvalidCliUsage,
+            "invalid_cli_usage",
+            "--host-data-root must be absolute",
+            Some("/host-data-root".into()),
+        );
+        return PlugCommandResult {
+            exit_code: envelope.exit_code,
+            envelope,
+        };
+    }
+    if !package_path.is_absolute() {
+        let envelope = CliEnvelope::error(
+            "plug stage",
+            OutcomeStatus::InvalidCliUsage,
+            "invalid_cli_usage",
+            "--package must be absolute",
+            Some("/package".into()),
+        );
+        return PlugCommandResult {
+            exit_code: envelope.exit_code,
+            envelope,
+        };
+    }
+
+    match prepare_installation_candidate(host_data_root, package_path) {
+        Ok(prepared) => {
+            let envelope = CliEnvelope::ok(
+                "plug stage",
+                json!({ "candidate": public_candidate(prepared) }),
+            );
+            PlugCommandResult {
+                exit_code: envelope.exit_code,
+                envelope,
+            }
+        }
+        Err(error) => stage_error(error),
     }
 }
 
@@ -906,5 +1014,46 @@ mod tests {
             }
         }
         assert_eq!(selected, Some(2));
+    }
+
+    #[test]
+    fn j24f_stage_error_mapping_uses_only_error_code() {
+        for (code, status, exit_code) in [
+            ("archive_read", OutcomeStatus::Unavailable, 4),
+            ("candidate_io", OutcomeStatus::Unavailable, 4),
+            ("candidate_rollback_failed", OutcomeStatus::Failed, 6),
+            ("clock", OutcomeStatus::Failed, 6),
+            ("semantic_conflict", OutcomeStatus::InvalidData, 3),
+        ] {
+            let result = stage_error(PackageError {
+                code,
+                message: "stable message".into(),
+            });
+            assert_eq!(result.envelope.status, status);
+            assert_eq!(result.exit_code, exit_code);
+            assert_eq!(result.envelope.exit_code, exit_code);
+            assert_eq!(result.envelope.error.as_ref().unwrap().code, code);
+            assert_eq!(
+                result.envelope.error.as_ref().unwrap().message,
+                "stable message"
+            );
+        }
+    }
+
+    #[test]
+    fn j24f_relative_stage_paths_are_rejected_before_service_call() {
+        let host = run_stage(Path::new("relative-host"), Path::new("relative-package"));
+        assert_eq!(host.exit_code, 2);
+        assert_eq!(
+            host.envelope.error.as_ref().unwrap().field.as_deref(),
+            Some("/host-data-root")
+        );
+
+        let package = run_stage(Path::new("C:\\host"), Path::new("relative-package"));
+        assert_eq!(package.exit_code, 2);
+        assert_eq!(
+            package.envelope.error.as_ref().unwrap().field.as_deref(),
+            Some("/package")
+        );
     }
 }

@@ -117,6 +117,13 @@ pub enum PlugCommand {
         #[arg(long = "scope", value_name = "ABSOLUTE_JSON_PATH")]
         scope: PathBuf,
     },
+    /// Prepare or reuse an installation candidate without installing or enabling it.
+    Stage {
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+        #[arg(long = "package", value_name = "ABSOLUTE_TETHERPLUG_PATH")]
+        package: PathBuf,
+    },
 }
 
 /// Outcome status vocabulary with exit codes.
@@ -779,6 +786,81 @@ mod tests {
             "00000000-0000-4000-8000-000000000000",
             "--scope",
             "C:\\scope.json",
+            "--unknown"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn j24f_plug_stage_syntax_is_strict() {
+        assert!(matches!(
+            parse_cli(&[
+                "plug",
+                "stage",
+                "--host-data-root",
+                "C:\\host",
+                "--package",
+                "C:\\package.tetherplug"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Plug {
+                command: PlugCommand::Stage {
+                    host_data_root,
+                    package
+                }
+            }) if host_data_root == PathBuf::from("C:\\host")
+                && package == PathBuf::from("C:\\package.tetherplug")
+        ));
+        assert!(parse_cli(&[
+            "plug",
+            "stage",
+            "--host-data-root=C:\\host",
+            "--package=C:\\package.tetherplug"
+        ])
+        .is_ok());
+        assert!(parse_cli(&["plug", "stage"]).is_err());
+        assert!(parse_cli(&["plug", "stage", "--host-data-root", "C:\\host"]).is_err());
+        assert!(parse_cli(&["plug", "stage", "--package", "C:\\package.tetherplug"]).is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "stage",
+            "--host-data-root",
+            "a",
+            "--host-data-root",
+            "b",
+            "--package",
+            "C:\\package.tetherplug"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "stage",
+            "--host-data-root",
+            "C:\\host",
+            "--package",
+            "a",
+            "--package",
+            "b"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "stage",
+            "--host-data-root",
+            "C:\\host",
+            "--package",
+            "C:\\package.tetherplug",
+            "extra"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "stage",
+            "--host-data-root",
+            "C:\\host",
+            "--package",
+            "C:\\package.tetherplug",
             "--unknown"
         ])
         .is_err());
