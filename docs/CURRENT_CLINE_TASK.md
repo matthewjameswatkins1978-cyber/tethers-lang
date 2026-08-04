@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24F - Public Plug stage CLI`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode using Luna for a thin public CLI adapter over the accepted J24E service; Lucy performs final review`
 Base branch: `main`
@@ -11,6 +11,7 @@ Base commit: `9ceb7b2711bc387365b9a5382b84af1bb285384b`
 Implementation branch: `opencode/j24f-plug-stage-cli`
 Worker note: `docs/worker-notes/2026-08-03-j24f-plug-stage-cli.md`
 Implementation blueprint: `docs/architecture/J24F_PLUG_STAGE_CLI_BLUEPRINT.md`
+Implementation checkpoint: `191273ff5297c1d93f64c6c491c87fc5961e6ce1`
 
 ## Objective
 
@@ -31,6 +32,30 @@ exact replay, semantic conflict and rollback behaviour remains solely inside
 
 Read the implementation blueprint in full before editing. It freezes the exact
 output allowlist, error mapping and compiled-binary evidence.
+
+## Relevant background and existing behaviour
+
+J24E is accepted at
+`9ceb7b2711bc387365b9a5382b84af1bb285384b`.
+
+It provides
+`candidate_preparation::prepare_installation_candidate`, which already owns:
+
+- hostile package inspection;
+- ordinary-file and safe-path validation;
+- immutable quarantine extraction;
+- candidate registry validation and publication;
+- exact archive replay;
+- semantic-conflict refusal;
+- bounded rollback and cleanup.
+
+J24F must remain a public CLI adapter over that accepted service. It must not
+reimplement or weaken any J24E package, candidate, replay, quarantine or rollback
+behaviour.
+
+The existing public Plug commands are `inspect`, `list`, `enable` and `disable`.
+They use strict Clap parsing, one-line `tethers.cli/1` envelopes and matching
+process/envelope exit codes.
 
 ## Startup procedure
 
@@ -122,6 +147,33 @@ that branch's packet as current authority.
     The production route must reach candidate preparation only through J24E.
 
 12. Preserve J24A through J24E behaviour and tests.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/cli.rs`
+- `tethers-0.1/host-rust/src/application.rs`
+- `tethers-0.1/host-rust/src/plug_command.rs`
+- `tethers-0.1/host-rust/src/candidate_preparation.rs`
+- `tethers-0.1/host-rust/tests/j24f_plug_stage_cli.rs`
+- `docs/architecture/J24F_PLUG_STAGE_CLI_BLUEPRINT.md`
+- `docs/CURRENT_CLINE_TASK.md`
+
+## Frozen decisions and invariants
+
+- J24E remains the sole candidate-preparation application authority.
+- J24F performs only absolute-path CLI checks, one J24E call, public formatting
+  and stable envelope mapping.
+- Candidate identity remains distinct from installed identity.
+- Staging grants no trust, approval, installation, permission or operational
+  availability.
+- Exact archive replay returns the same candidate identity and performs no
+  mutation.
+- Public output exposes only the blueprint allowlist.
+- Absolute paths, quarantine locations, launch details, payload evidence,
+  inspection evidence and internal record digests remain private.
+- Package, candidate and quarantine schemas remain unchanged.
+- Process exit code and envelope exit code must always agree.
+- Tethers Core and OCaml language semantics remain untouched.
 
 ## Public output allowlist
 
@@ -248,6 +300,10 @@ Stop cleanly and report the smallest unresolved question if:
 - a forbidden file or architecture change appears necessary;
 - branch-specific failures remain after two materially different attempts.
 
+## Expected pre-existing changes
+
+None.
+
 ## Git and return contract
 
 Use ordinary commits and normal push only.
@@ -263,7 +319,3 @@ Return the branch, remote final SHA, implementation checkpoint, exact changed
 files, focused and full test evidence, packet/rustfmt/diff results, worker-note
 path, first-stage and exact-replay evidence, and explicit confirmation that the
 CLI itself launched nothing, installed nothing and enabled nothing.
-
-## Expected pre-existing changes
-
-None.
