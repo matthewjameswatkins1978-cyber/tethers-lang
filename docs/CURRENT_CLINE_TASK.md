@@ -3,8 +3,8 @@
 Control contract: `1`
 Task: `M01B - Rust agent tooling foundation`
 Owner: `OpenCode`
-Status: `BLOCKED`
-Task colour: `Amber`
+Status: `COMPLETE`
+Task colour: `Green`
 Route: `OpenCode using DeepSeek Pro V4 for pinned Rust tooling, PowerShell verification, and OpenCode LSP configuration; Lucy performs independent review`
 Base branch: `main`
 Base commit: `57e709f7c3fd0a85fdf52d5f027bbd4bdf9af5bf`

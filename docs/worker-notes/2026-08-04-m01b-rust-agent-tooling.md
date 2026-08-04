@@ -1,7 +1,7 @@
 Task: `M01B - Rust agent tooling foundation`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `BLOCKED`
+Status: `COMPLETE`
 Base commit: `57e709f7c3fd0a85fdf52d5f027bbd4bdf9af5bf`
 Implementation checkpoint: `27caeae7c0513603a53b4ceaebc99f9fe11628f8`
 
@@ -24,6 +24,9 @@ graphs pass, retain one explicit Nextest configuration, and preserve Cargo.lock.
   Just recipes.
 - Serialized Nextest because its parallel Windows processes race the inherited
   handle-isolation regression; retries remain zero.
+- Verified the console OpenCode CLI installed by the user at
+  `C:\Users\Matmus\AppData\Roaming\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64\bin\opencode.exe`
+  (1.18.12) through both the checker and the LSP launcher.
 
 ## Decisions and assumptions
 
@@ -31,7 +34,8 @@ The observed local PowerShell directory was prepended only to verification
 processes, never to user or machine PATH. The desktop OpenCode executable was
 accepted as a discovered candidate only after it was required to execute CLI
 commands; its GUI-only behaviour is treated as a failure rather than a proxy for
-`debug config` proof.
+`debug config` proof. The user-installed console CLI is supplied explicitly (or
+via `OPENCODE_BIN`), so the running shell does not need a refreshed global PATH.
 
 ## Evidence
 
@@ -44,30 +48,38 @@ commands; its GUI-only behaviour is treated as a failure rather than a proxy for
 - Focused checker tests: 10 passed, 0 failed; missing and invalid OpenCode
   paths fail closed, and an explicit test executable proves effective LSP
   configuration handling.
+- Real CLI proof: checker and `just agent-tools` each reported 15 passed,
+  including OpenCode 1.18.12 and effective configuration with `lsp: true` and
+  `permission.lsp: "allow"`; the launcher produced the same `debug config`
+  result and returned successfully.
+- `just verify-agent` completed successfully with the real console CLI: 926
+  ordinary Cargo tests and 1133 Nextest tests passed, followed by locked
+  Cargo-deny licence/source/ban/advisory gates.
 - Cargo.lock SHA-256 remained
   `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 
 ## Discoveries
 
-The only locally discoverable OpenCode executable is
-`C:\Users\Matmus\AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`,
-version 1.18.12. It starts the desktop UI for `debug config`; it does not expose
-the required console command or a child exit code. No separate `opencode` CLI
-was found in PATH, the running process, the desktop data directory, or the
-local npm locations inspected.
+The desktop executable at
+`C:\Users\Matmus\AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`
+remains GUI-only for `debug config`. The separately installed npm console CLI at
+the explicit path above is version 1.18.12 and exposes the required command.
+Repository-local explicit resolution and `OPENCODE_BIN` work immediately; a
+pre-existing process may still need a new shell before its PATH sees the npm
+shim.
 
 ## Remaining risks
 
-M01B cannot claim OpenCode LSP acceptance until a console-capable OpenCode CLI
-is supplied or installed under separate authority. The repository configuration
-and wrapper are ready, but the real `debug config` command cannot be proved on
-this machine without that executable.
+No M01B acceptance blocker remains. During repeated diagnostics, the pre-existing
+Windows inherited-handle isolation test was intermittent; no source, test, retry,
+or exception change was made. The required final unmodified aggregate completed
+with 926 Cargo and 1133 Nextest tests passing.
 
 ## Smallest next action
 
-Provide the installed console OpenCode CLI path (or explicitly authorise its
-installation), then rerun the checker and LSP launcher with `-OpenCodePath` and
-change the packet state only if their real effective configuration proof passes.
+Review and merge the completed branch normally. Supply `-OpenCodePath` or
+`OPENCODE_BIN` in a process that predates the npm installation until a new shell
+inherits the updated PATH.
 
 ## References
 
