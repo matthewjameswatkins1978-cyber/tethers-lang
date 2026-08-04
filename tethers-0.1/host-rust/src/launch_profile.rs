@@ -96,6 +96,89 @@ impl LaunchProfileEvidence {
     }
 }
 
+pub struct LaunchProfileEvidenceStore {
+    root: StoreRoot,
+}
+
+impl LaunchProfileEvidenceStore {
+    pub fn open(path: &Path) -> Result<Self> {
+        Ok(Self {
+            root: StoreRoot::open(path)?,
+        })
+    }
+
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        Ok(Self {
+            root: StoreRoot::open_existing(path)?,
+        })
+    }
+
+    fn record_identity(evidence: &LaunchProfileEvidence) -> Result<String> {
+        let digest = &evidence.profile_evidence_digest;
+        let suffix = digest.strip_prefix("sha256:").ok_or_else(|| {
+            M3Error::new(
+                "launch_profile_store_invalid",
+                "invalid profile evidence digest",
+            )
+        })?;
+        if suffix.len() != 64
+            || !suffix
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return Err(M3Error::new(
+                "launch_profile_store_invalid",
+                "invalid profile evidence digest",
+            ));
+        }
+        Ok(suffix.to_owned())
+    }
+
+    pub fn create(&self, evidence: &LaunchProfileEvidence) -> Result<()> {
+        evidence.validate()?;
+        let id = Self::record_identity(evidence)?;
+        self.root.create_json(&id, evidence)?;
+        Ok(())
+    }
+
+    pub fn load_all(&self) -> Result<Vec<LaunchProfileEvidence>> {
+        let mut records = Vec::new();
+        let mut seen = BTreeSet::new();
+        for path in self.root.entries()? {
+            if path.extension().and_then(|value| value.to_str()) == Some("tmp") {
+                return Err(M3Error::new(
+                    "launch_profile_store_invalid",
+                    "torn launch-profile evidence",
+                ));
+            }
+            if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                return Err(M3Error::new(
+                    "launch_profile_store_invalid",
+                    "unexpected launch-profile store entry",
+                ));
+            }
+            let record: LaunchProfileEvidence = self.root.read(&path)?;
+            record.validate()?;
+            let id = Self::record_identity(&record)?;
+            if path.file_stem().and_then(|value| value.to_str()) != Some(&id) {
+                return Err(M3Error::new(
+                    "launch_profile_store_invalid",
+                    "launch-profile filename mismatch",
+                ));
+            }
+            if !seen.insert(record.profile_evidence_digest.clone()) {
+                return Err(M3Error::new(
+                    "launch_profile_store_invalid",
+                    "duplicate launch-profile evidence",
+                ));
+            }
+            records.push(record);
+        }
+        records.sort_by(|a, b| a.profile_evidence_digest.cmp(&b.profile_evidence_digest));
+        Ok(records)
+    }
+}
+
 pub struct PreparedSupervisedLaunch {
     pub evidence: LaunchProfileEvidence,
     executable: PathBuf,

@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24H - Installation evidence access foundation`
 Owner: `OpenCode`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for narrow security-sensitive store seams; Lucy performs final review`
 Base branch: `main`
@@ -169,6 +169,9 @@ branch's packet as current authority.
 - Store corruption is never treated as an empty store.
 - Temporary and unexpected entries fail closed.
 - Launch-profile filenames are content identities, not new lifecycle IDs.
+- Digest-derived filenames make two validly named duplicate-digest records
+  structurally impossible in one flat directory; duplicate creation is
+  prevented by `StoreRoot::create_json` returning `record_conflict`.
 - No evidence record is rewritten or replaced.
 - J24H launches no process and changes no lifecycle state.
 - Tethers Core, OCaml semantics, package schemas, candidate schemas, and all
@@ -193,17 +196,22 @@ branch's packet as current authority.
 9. Opening and loading the launch-profile store changes no byte or path.
 10. A second create of identical evidence returns `record_conflict` and changes
     no byte.
-11. Torn `.tmp`, non-JSON, filename mismatch, malformed evidence, and duplicate
-    digest conditions fail closed with the frozen code/message.
-12. `load_all` returns multiple valid records sorted by digest.
-13. Missing launch-profile and every other new existing-store root return the
+11. Torn `.tmp`, non-JSON, filename mismatch, and malformed evidence conditions
+     fail closed with the frozen code/message. A copied duplicate under a
+     different filename is rejected as a filename mismatch; two validly named
+     duplicate-digest records are structurally impossible in one flat directory
+     with digest-derived filenames.
+12. Duplicate creation is prevented by `StoreRoot::create_json` returning
+    `record_conflict`, proved by the duplicate-create test.
+13. `load_all` returns multiple valid records sorted by digest.
+14. Missing launch-profile and every other new existing-store root return the
     expected existing store error and remain absent.
-14. Existing candidate, trust, conformance, launch-profile, and approval unit
+15. Existing candidate, trust, conformance, launch-profile, and approval unit
     tests remain green.
-15. J24E, J24F, and J24G focused tests remain green.
-16. Full suite remains green apart from the five documented `pwsh.exe not found`
+16. J24E, J24F, and J24G focused tests remain green.
+17. Full suite remains green apart from the five documented `pwsh.exe not found`
     environment failures.
-17. Packet checker, Rustfmt, and `git diff --check` pass.
+18. Packet checker, Rustfmt, and `git diff --check` pass.
 
 ## Required verification
 

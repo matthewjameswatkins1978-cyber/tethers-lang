@@ -274,6 +274,12 @@ impl PublisherTrustStore {
         })
     }
 
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        Ok(Self {
+            root: StoreRoot::open_existing(path)?,
+        })
+    }
+
     pub fn current(&self) -> Result<BTreeMap<String, PublisherKeyRecord>> {
         let mut all = BTreeMap::<String, PublisherKeyRecord>::new();
         for path in self.root.entries()? {
@@ -646,6 +652,12 @@ impl DeveloperApprovalStore {
     pub fn open(path: &Path) -> Result<Self> {
         Ok(Self {
             root: StoreRoot::open(path)?,
+        })
+    }
+
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        Ok(Self {
+            root: StoreRoot::open_existing(path)?,
         })
     }
 

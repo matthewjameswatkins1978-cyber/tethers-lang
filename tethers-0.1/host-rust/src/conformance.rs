@@ -566,6 +566,12 @@ impl ConformanceEvidenceStore {
         })
     }
 
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        Ok(Self {
+            root: StoreRoot::open_existing(path)?,
+        })
+    }
+
     pub fn create(&self, evidence: &ConformanceEvidence) -> Result<()> {
         evidence.validate()?;
         self.root.create_json(&evidence.evidence_id, evidence)?;

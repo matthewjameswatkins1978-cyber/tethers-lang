@@ -399,6 +399,39 @@ impl CandidateRegistry {
             quarantine_root,
         })
     }
+
+    pub fn open_existing(root: &Path, quarantine_root: &Path) -> Result<Self, PackageError> {
+        if root == quarantine_root {
+            return Err(err(
+                "registry_invalid",
+                "registry and quarantine roots must differ",
+            ));
+        }
+        verify_existing_chain(root)?;
+        verify_existing_chain(quarantine_root)?;
+        let root_metadata = io(fs::symlink_metadata(root))?;
+        let quarantine_metadata = io(fs::symlink_metadata(quarantine_root))?;
+        if !root_metadata.is_dir() || !quarantine_metadata.is_dir() {
+            return Err(err(
+                "registry_invalid",
+                "registry and quarantine roots must be directories",
+            ));
+        }
+        let root = io(fs::canonicalize(root))?;
+        let quarantine_root = io(fs::canonicalize(quarantine_root))?;
+        verify_existing_chain(&root)?;
+        verify_existing_chain(&quarantine_root)?;
+        if root == quarantine_root {
+            return Err(err(
+                "registry_invalid",
+                "registry and quarantine roots resolve to the same location",
+            ));
+        }
+        Ok(Self {
+            root,
+            quarantine_root,
+        })
+    }
     fn verify_roots(&self) -> Result<(), PackageError> {
         verify_existing_chain(&self.root)?;
         verify_existing_chain(&self.quarantine_root)

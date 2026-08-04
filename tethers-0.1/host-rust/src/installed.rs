@@ -147,6 +147,12 @@ impl InstallationApprovalStore {
         })
     }
 
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        Ok(Self {
+            root: StoreRoot::open_existing(path)?,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn approve(
         &self,
