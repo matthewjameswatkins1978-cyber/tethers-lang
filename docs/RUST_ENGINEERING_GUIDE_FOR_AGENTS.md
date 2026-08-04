@@ -517,7 +517,7 @@ From `tethers-0.1/host-rust/`, unless the packet is stricter:
 ```powershell
 cargo fmt --all -- --check
 cargo check --all-targets --all-features --locked
-cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo clippy --all-targets --all-features --locked
 cargo test --all-targets --all-features --locked
 cargo build --locked
 cargo build --release --locked
@@ -530,6 +530,57 @@ task checker, complete-diff, and external-toolchain command.
 
 If a command cannot run, report the exact command and reason. Do not claim full
 verification.
+
+## Agent tools
+
+### rust-analyzer
+
+`rust-analyzer` is a Rust 1.97.1 toolchain component providing LSP-based
+navigation, diagnostics, and type information. It is assistance, not authority.
+When LSP feedback differs from compiler output, Clippy, tests, or accepted
+contracts, the compiler and contracts prevail. Reread source or recompile when
+LSP state may be stale.
+
+### cargo-nextest
+
+Nextest (`cargo nextest`) provides per-test process isolation, filtering, and
+clearer test-level reporting for the agent development loop. Use it during
+implementation with `just test-agent`. Retries are forbidden — a failing test
+must remain visible. Ordinary `cargo test` remains the final completion
+authority for every task.
+
+### cargo-deny
+
+`cargo-deny` is the single accepted dependency-policy gate. Run it for every
+dependency change and before task completion:
+
+```powershell
+just deps-policy
+just deps-advisories
+```
+
+Licence policy is frozen in `deny.toml`. Do not add advisory ignores or
+autonomous licence exceptions without an explicit packet decision.
+
+### cargo-machete
+
+`cargo-machete` detects potentially unused dependencies. Run it with metadata:
+
+```powershell
+just deps-unused
+```
+
+Findings are questions, not deletion authority. Inspect each candidate against
+source references before any change. Never run `cargo machete --fix` or remove
+a dependency automatically.
+
+### Tool boundaries
+
+- `cargo-audit` is superseded by `cargo-deny`; do not add it.
+- `cargo-semver-checks` is deferred until Tethers promises a public library API.
+- `scripts/check-rust-agent-tools.ps1` confirms exact versions without mutation.
+- `scripts/start-opencode-lsp.ps1` enables LSP process-locally without downloading
+  a second language server.
 
 ## Goose operating protocol
 

@@ -249,6 +249,26 @@ unless the current task explicitly authorises it.
   message broker merely for convenience.
 - Do not install software without Matthew's explicit permission.
 
+## Agent toolset
+
+- `rust-analyzer` is a Rust 1.97.1 toolchain component for navigation and LSP
+  feedback. Compiler, Clippy, tests, and contracts remain authority when LSP
+  feedback differs or becomes stale. Reread or compile when LSP state may be
+  out of date.
+- `cargo-nextest` provides an alternative test loop for agents. Retries are
+  forbidden. Ordinary `cargo test` remains the final completion authority.
+- `cargo-deny` is the single accepted dependency-policy gate for licences,
+  bans, sources, and advisories. Do not add `cargo-audit`.
+- `cargo-machete` is an advisory unused-dependency detector. Treat findings as
+  questions, never deletion authority. Never run `cargo machete --fix`.
+- Do not add `cargo-semver-checks` without a later decision.
+- `scripts/install-rust-agent-tools.ps1` installs the exact frozen toolset.
+  `scripts/check-rust-agent-tools.ps1` is a read-only non-mutating checker.
+- `scripts/start-opencode-lsp.ps1` is an opt-in launcher for the next OpenCode
+  process. It sets `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` and
+  `OPENCODE_DISABLE_LSP_DOWNLOAD=true` process-locally and restores previous
+  values on exit.
+
 ## Control Check
 
 Run before handoff and before claiming completion:

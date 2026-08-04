@@ -36,3 +36,20 @@ verify:
     cargo fmt --manifest-path {{_manifest}} --all -- --check
     cargo check --manifest-path {{_manifest}} --all-targets --all-features --locked
     cargo test --manifest-path {{_manifest}} --all-targets --all-features --locked
+
+agent-tools:
+    pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1
+
+test-agent:
+    cargo nextest run --manifest-path {{_manifest}} --all-targets --all-features
+
+deps-policy:
+    cargo deny --manifest-path {{_manifest}} check licenses bans sources
+
+deps-advisories:
+    cargo deny --manifest-path {{_manifest}} check advisories
+
+deps-unused:
+    cargo machete --with-metadata tethers-0.1/host-rust
+
+verify-agent: verify agent-tools deps-policy test-agent

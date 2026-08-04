@@ -7,13 +7,15 @@ Status: `READY`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for pinned Rust tooling, PowerShell verification, and OpenCode LSP configuration; Lucy performs independent review`
 Base branch: `main`
-Base commit: `05d0fbc6fe3cc8e05d3670cad4056f093c1c63d4`
+Base commit: `57e709f7c3fd0a85fdf52d5f027bbd4bdf9af5bf`
 Implementation branch: `opencode/m01b-rust-agent-tooling`
 Worker note: `docs/worker-notes/2026-08-04-m01b-rust-agent-tooling.md`
 Implementation blueprint: `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md`
 Rust toolchain: exact `1.97.1` from root pin; plain Cargo; `--locked` mandatory
 OCaml switch path: `N/A`
 Tool installation: exact M01B tools explicitly authorised
+Status: `COMPLETE`
+Implementation checkpoint: `TBD`
 
 ## Objective
 

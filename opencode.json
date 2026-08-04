@@ -6,5 +6,9 @@
     "docs/CURRENT_CLINE_TASK.md",
     "docs/IMPLEMENTATION_LANGUAGE_STANDARD.md",
     "docs/GIT_WORKTREES_AND_LINE_ENDINGS_FOR_AGENTS.md"
-  ]
+  ],
+  "lsp": true,
+  "permission": {
+    "lsp": "allow"
+  }
 }

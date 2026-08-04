@@ -52,3 +52,23 @@ version.
 No automatic background upgrade or floating compiler channel is permitted. No
 global default toolchain, PATH, or Cargo configuration change is made during a
 repository toolchain update without explicit separate authorisation.
+
+## Agent tooling
+
+The repository owns an accepted frozen agent toolset declared in
+`tools/rust-agent-tools.json`:
+
+- `rust-analyzer` is a Rust 1.97.1 toolchain component installed by
+  `scripts/install-rust-agent-tools.ps1`. It is navigation assistance, not
+  build authority.
+- `cargo-nextest` 0.9.140 is an alternative test loop. Retries are zero.
+  Ordinary `cargo test` remains the final completion authority.
+- `cargo-deny` 0.19.7 provides the single dependency-policy gate for licences,
+  bans, sources, and advisories. Advisory ignores require explicit packet
+  authority.
+- `cargo-machete` 0.9.2 is an advisory unused-dependency detector. Its
+  findings are questions for independent review, never automatic deletion
+  authority.
+
+`cargo-audit` and `cargo-semver-checks` are not part of the accepted toolset.
+Installation is exact and idempotent. Verification is read-only.
