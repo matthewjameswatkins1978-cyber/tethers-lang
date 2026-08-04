@@ -21,6 +21,9 @@ pub mod execution_environment;
 pub mod executor;
 pub mod file_tools;
 pub mod host_execution;
+pub mod installation_execution;
+#[cfg(test)]
+mod installation_execution_tests;
 pub mod installation_plan;
 pub mod installation_request;
 pub mod installation_trust;

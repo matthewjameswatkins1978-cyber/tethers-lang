@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K2 - Non-inheritable RAII lock and single-step executor`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro V4 for bounded security-sensitive Rust implementation; Lucy performs independent review and routine safe merge`
 Base branch: `main`
