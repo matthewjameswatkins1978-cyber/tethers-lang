@@ -613,6 +613,7 @@ impl PackageTrustEvidence {
     }
 
     pub fn exact_candidate(record: &ExactCandidateTrustRecord) -> Result<Self> {
+        record.validate()?;
         let mut evidence = Self {
             evidence_format_version: 1,
             semantic_package_digest: record.semantic_package_digest.clone(),
@@ -625,6 +626,7 @@ impl PackageTrustEvidence {
             evidence_digest: String::new(),
         };
         evidence.evidence_digest = sha256(&evidence.covered_bytes()?);
+        evidence.validate()?;
         Ok(evidence)
     }
 
@@ -643,6 +645,25 @@ impl PackageTrustEvidence {
                 "trust_evidence_invalid",
                 "invalid trust evidence",
             ));
+        }
+        if let TrustModeEvidence::ExactCandidate {
+            candidate_id,
+            candidate_record_digest,
+            installation_trust_record_digest,
+            approving_authority,
+        } = &self.mode
+        {
+            if !is_valid_candidate_id(candidate_id)
+                || !is_sha256_digest(candidate_record_digest)
+                || !is_sha256_digest(installation_trust_record_digest)
+                || approving_authority.is_empty()
+                || !is_sha256_digest(&self.semantic_package_digest)
+            {
+                return Err(M3Error::new(
+                    "trust_evidence_invalid",
+                    "invalid trust evidence",
+                ));
+            }
         }
         Ok(())
     }
@@ -693,6 +714,24 @@ impl PackageTrustEvidence {
         }
         Ok(())
     }
+}
+
+fn is_valid_candidate_id(value: &str) -> bool {
+    Uuid::parse_str(value)
+        .map(|parsed| parsed.hyphenated().to_string() == value)
+        .unwrap_or(false)
+}
+
+fn is_sha256_digest(value: &str) -> bool {
+    value
+        .strip_prefix("sha256:")
+        .map(|hex| {
+            hex.len() == 64
+                && hex
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+        .unwrap_or(false)
 }
 
 impl DeveloperApprovalStore {

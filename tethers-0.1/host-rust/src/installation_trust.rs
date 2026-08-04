@@ -14,6 +14,7 @@ use crate::m3_store::{canonical, sha256, unix_ms, M3Error, Result, StoreRoot};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +42,7 @@ impl ExactCandidateTrustRecord {
         canonical(&copy)
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         let valid_digest = |d: &str| {
             d.strip_prefix("sha256:")
                 .map(|hex| {
@@ -52,9 +53,11 @@ impl ExactCandidateTrustRecord {
                 })
                 .unwrap_or(false)
         };
+        let valid_candidate_id = Uuid::parse_str(&self.candidate_id)
+            .map(|value| value.hyphenated().to_string() == self.candidate_id)
+            .unwrap_or(false);
         if self.schema_version != 1
-            || self.candidate_id.is_empty()
-            || self.candidate_id != self.candidate_id.to_lowercase()
+            || !valid_candidate_id
             || !valid_digest(&self.candidate_record_digest)
             || !valid_digest(&self.semantic_package_digest)
             || !valid_digest(&self.raw_archive_digest)
@@ -77,6 +80,7 @@ impl ExactCandidateTrustRecord {
     }
 
     pub fn require_for_candidate(&self, candidate: &CandidateRecord) -> Result<()> {
+        self.validate()?;
         candidate
             .validate()
             .map_err(|error| M3Error::new("candidate_invalid", error.message))?;

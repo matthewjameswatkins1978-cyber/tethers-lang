@@ -3,8 +3,8 @@
 Control contract: `1`
 Task: `J24I - Exact-candidate installation trust`
 Owner: `OpenCode`
-Status: `COMPLETE`
-Implementation checkpoint: `5ae1aa775def2db67deb3004b71eea39e4c33298`
+Status: `IN_PROGRESS`
+Implementation checkpoint: `TBD`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for a security-sensitive but bounded trust record and evidence extension; Lucy performs final review`
 Base branch: `main`

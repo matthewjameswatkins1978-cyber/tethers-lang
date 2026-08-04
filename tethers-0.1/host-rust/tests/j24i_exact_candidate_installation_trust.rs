@@ -471,10 +471,225 @@ fn exact_trust_evidence_rejects_altered_record() {
     let mut altered = record.clone();
     altered.candidate_record_digest =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned();
-    let evidence = PackageTrustEvidence::exact_candidate(&altered).unwrap();
+    let error = PackageTrustEvidence::exact_candidate(&altered).unwrap_err();
+    assert_eq!(error.code, "installation_trust_invalid");
+    let _ = fs::remove_dir_all(root);
+}
+
+fn evidence_digest_for(evidence: &PackageTrustEvidence) -> String {
+    let mut covered = evidence.clone();
+    covered.evidence_digest.clear();
+    let bytes = serde_json_canonicalizer::to_vec(&covered).unwrap();
+    sha256(&bytes)
+}
+
+fn exact_evidence_with(
+    _record: &ExactCandidateTrustRecord,
+    candidate_id: &str,
+    candidate_record_digest: &str,
+    installation_trust_record_digest: &str,
+    approving_authority: &str,
+    semantic_package_digest: &str,
+) -> PackageTrustEvidence {
+    let mut evidence = PackageTrustEvidence {
+        evidence_format_version: 1,
+        semantic_package_digest: semantic_package_digest.to_owned(),
+        mode: TrustModeEvidence::ExactCandidate {
+            candidate_id: candidate_id.to_owned(),
+            candidate_record_digest: candidate_record_digest.to_owned(),
+            installation_trust_record_digest: installation_trust_record_digest.to_owned(),
+            approving_authority: approving_authority.to_owned(),
+        },
+        evidence_digest: String::new(),
+    };
+    evidence.evidence_digest = evidence_digest_for(&evidence);
+    evidence
+}
+
+#[test]
+fn record_rejects_non_uuid_candidate_id_after_digest_recompute() {
+    let root = temp_dir("non-uuid-rec");
+    let store = ExactCandidateTrustStore::open(&root).unwrap();
+    let candidate = golden_candidate();
+    let request = valid_request(&candidate.candidate_id);
+    let record = store
+        .create(&candidate, &request, "test-authority")
+        .unwrap();
+
+    let mut malformed = record.clone();
+    malformed.candidate_id = "abc".to_owned();
+    malformed.record_digest = String::new();
+    let covered = serde_json_canonicalizer::to_vec(&malformed).unwrap();
+    malformed.record_digest = sha256(&covered);
+
+    let error = PackageTrustEvidence::exact_candidate(&malformed).unwrap_err();
+    assert_eq!(error.code, "installation_trust_invalid");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn record_rejects_uppercase_uuid_after_digest_recompute() {
+    let root = temp_dir("upper-uuid-rec");
+    let store = ExactCandidateTrustStore::open(&root).unwrap();
+    let candidate = golden_candidate();
+    let request = valid_request(&candidate.candidate_id);
+    let record = store
+        .create(&candidate, &request, "test-authority")
+        .unwrap();
+
+    let mut malformed = record.clone();
+    malformed.candidate_id = "D9A8BA8A-4543-4D9C-9E05-E4DE90249D71".to_owned();
+    malformed.record_digest = String::new();
+    let covered = serde_json_canonicalizer::to_vec(&malformed).unwrap();
+    malformed.record_digest = sha256(&covered);
+
+    let error = PackageTrustEvidence::exact_candidate(&malformed).unwrap_err();
+    assert_eq!(error.code, "installation_trust_invalid");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn require_for_candidate_rejects_invalid_record() {
+    let root = temp_dir("require-invalid");
+    let store = ExactCandidateTrustStore::open(&root).unwrap();
+    let candidate = golden_candidate();
+    let request = valid_request(&candidate.candidate_id);
+    let record = store
+        .create(&candidate, &request, "test-authority")
+        .unwrap();
+
+    let evidence = exact_evidence_with(
+        &record,
+        &record.candidate_id,
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        &record.record_digest,
+        &record.approving_authority,
+        &record.semantic_package_digest,
+    );
+    evidence.validate().unwrap();
 
     let error = evidence.require_for_candidate(&candidate).unwrap_err();
     assert_eq!(error.code, "trust_candidate_mismatch");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn evidence_rejects_invalid_candidate_id_with_recomputed_digest() {
+    let root = temp_dir("ev-invalid-id");
+    let store = ExactCandidateTrustStore::open(&root).unwrap();
+    let candidate = golden_candidate();
+    let request = valid_request(&candidate.candidate_id);
+    let record = store
+        .create(&candidate, &request, "test-authority")
+        .unwrap();
+
+    let evidence = exact_evidence_with(
+        &record,
+        "not-a-uuid",
+        &record.candidate_record_digest,
+        &record.record_digest,
+        &record.approving_authority,
+        &record.semantic_package_digest,
+    );
+
+    let error = evidence.validate().unwrap_err();
+    assert_eq!(error.code, "trust_evidence_invalid");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn evidence_rejects_invalid_candidate_record_digest_with_recomputed_digest() {
+    let root = temp_dir("ev-invalid-cr-digest");
+    let store = ExactCandidateTrustStore::open(&root).unwrap();
+    let candidate = golden_candidate();
+    let request = valid_request(&candidate.candidate_id);
+    let record = store
+        .create(&candidate, &request, "test-authority")
+        .unwrap();
+
+    let evidence = exact_evidence_with(
+        &record,
+        &record.candidate_id,
+        "not-a-valid-digest",
+        &record.record_digest,
+        &record.approving_authority,
+        &record.semantic_package_digest,
+    );
+
+    let error = evidence.validate().unwrap_err();
+    assert_eq!(error.code, "trust_evidence_invalid");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn evidence_rejects_invalid_installation_trust_digest_with_recomputed_digest() {
+    let root = temp_dir("ev-invalid-it-digest");
+    let store = ExactCandidateTrustStore::open(&root).unwrap();
+    let candidate = golden_candidate();
+    let request = valid_request(&candidate.candidate_id);
+    let record = store
+        .create(&candidate, &request, "test-authority")
+        .unwrap();
+
+    let evidence = exact_evidence_with(
+        &record,
+        &record.candidate_id,
+        &record.candidate_record_digest,
+        "sha256:TOO_SHORT",
+        &record.approving_authority,
+        &record.semantic_package_digest,
+    );
+
+    let error = evidence.validate().unwrap_err();
+    assert_eq!(error.code, "trust_evidence_invalid");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn evidence_rejects_empty_approving_authority_with_recomputed_digest() {
+    let root = temp_dir("ev-empty-auth");
+    let store = ExactCandidateTrustStore::open(&root).unwrap();
+    let candidate = golden_candidate();
+    let request = valid_request(&candidate.candidate_id);
+    let record = store
+        .create(&candidate, &request, "test-authority")
+        .unwrap();
+
+    let evidence = exact_evidence_with(
+        &record,
+        &record.candidate_id,
+        &record.candidate_record_digest,
+        &record.record_digest,
+        "",
+        &record.semantic_package_digest,
+    );
+
+    let error = evidence.validate().unwrap_err();
+    assert_eq!(error.code, "trust_evidence_invalid");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn evidence_rejects_invalid_semantic_digest_with_recomputed_digest() {
+    let root = temp_dir("ev-invalid-sem-digest");
+    let store = ExactCandidateTrustStore::open(&root).unwrap();
+    let candidate = golden_candidate();
+    let request = valid_request(&candidate.candidate_id);
+    let record = store
+        .create(&candidate, &request, "test-authority")
+        .unwrap();
+
+    let evidence = exact_evidence_with(
+        &record,
+        &record.candidate_id,
+        &record.candidate_record_digest,
+        &record.record_digest,
+        &record.approving_authority,
+        "sha256:BAD_DIGEST_123",
+    );
+
+    let error = evidence.validate().unwrap_err();
+    assert_eq!(error.code, "trust_evidence_invalid");
     let _ = fs::remove_dir_all(root);
 }
 
