@@ -8,7 +8,49 @@ Status: `COMPLETE`
 
 Base commit: `712ae4d27a969375e7b2b8980b2e17c5d26e3377`
 
-Implementation checkpoint: `5ae1aa775def2db67deb3004b71eea39e4c33298`
+Implementation checkpoint: `bd16b01349d3db2bec4cf2406d02d8567a4a079c`
+
+## Correction (J24I review)
+
+Independent review found three connected validation gaps, corrected in
+`bd16b01`:
+
+### 1. Canonical candidate UUID validation
+
+`ExactCandidateTrustRecord::validate` now uses `Uuid::parse_str` with a
+canonical hyphenated form check. Non-UUID, uppercase, and non-canonical
+UUID values are rejected.
+
+### 2. Record validation before evidence construction
+
+`PackageTrustEvidence::exact_candidate()` begins with `record.validate()?;`
+and ends with `evidence.validate()?;` before returning. An invalid or
+altered trust record cannot produce package-trust evidence.
+
+### 3. Self-validation in require_for_candidate
+
+`ExactCandidateTrustRecord::require_for_candidate` begins with
+`self.validate()?;` so a manually constructed record with matching visible
+fields but invalid record digest cannot pass candidate matching.
+
+### 4. ExactCandidate evidence field validation
+
+`PackageTrustEvidence::validate` now checks the ExactCandidate mode:
+canonical UUID candidate_id, lowercase sha256: candidate_record_digest,
+installation_trust_record_digest, semantic_package_digest, and non-empty
+approving_authority.
+
+`is_valid_candidate_id` and `is_sha256_digest` helpers added to `trust.rs`.
+
+### 5. Corrected and added tests
+
+The altered-record test now expects failure at construction with
+`installation_trust_invalid`. Eight new tests prove rejection of:
+non-UUID candidate ID with recomputed digest, uppercase UUID with
+recomputed digest, mismatched evidence via require_for_candidate, and
+fabricated evidence with invalid candidate ID / candidate-record digest /
+installation-trust digest / empty authority / invalid semantic digest, each
+with recomputed outer digest.
 
 ## Requested outcome
 
