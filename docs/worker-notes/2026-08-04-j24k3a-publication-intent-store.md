@@ -55,7 +55,7 @@ Exact evidence:
 - `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`: passed at correction handoff.
 - `git diff --check`: passed.
 - Cargo.lock SHA-256: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
-- Final remote tip at evidence commit: `72ba4756fab4bf79437382a442947acfdac0e704`.
+- Final remote tip at evidence commit: `a45366c96ee17174b555c9d52623d27e5582a0bc`.
 
 ## Discoveries
 
