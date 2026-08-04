@@ -14,7 +14,7 @@ Implementation blueprint: `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCI
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
 Agent tools: bounded `rg`, compiler diagnostics, rustfmt, focused Nextest, and ordinary Cargo through `just verify`; LSP is optional and never a gate
 OCaml switch path: `N/A`
-Implementation checkpoint: `e1a35e7a56e0ee916ac06fc948d64b27ac30750a`
+Implementation checkpoint: `b3fa3e757b1d2e926ae7e142e730f521cbe30ac0`
 
 ## Objective
 
