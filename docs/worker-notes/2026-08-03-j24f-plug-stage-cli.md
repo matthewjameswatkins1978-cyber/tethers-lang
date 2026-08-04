@@ -60,10 +60,8 @@ public candidate shape.
 - `cargo +1.89.0 test --all-targets --all-features --locked` — 919 passed,
   5 documented `pwsh.exe not found` baseline failures
 - `git diff --check` — PASS
-- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` — BLOCKED:
-  the authoritative J24F packet is missing the checker-required section
-  `Relevant background and existing behaviour` (and also omits the checker’s
-  `Relevant components` and `Frozen decisions and invariants` sections).
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` — PASS
+  (`control-v1/COMPLETE`).
 
 Compiled-binary evidence proves:
 
