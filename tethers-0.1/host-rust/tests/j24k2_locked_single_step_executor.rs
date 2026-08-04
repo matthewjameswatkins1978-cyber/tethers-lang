@@ -7,6 +7,7 @@ use std::io::{Cursor, Write};
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 use tethers_reference_host::candidate::CandidateRecord;
 use tethers_reference_host::candidate::{extract_to_quarantine, CandidateRegistry};
@@ -162,6 +163,12 @@ fn setup_m3_candidate(
 
 struct InterruptionReset(bool);
 
+static TEST_SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn test_serial() -> MutexGuard<'static, ()> {
+    TEST_SERIAL.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
+
 impl InterruptionReset {
     fn set() -> Self {
         let previous =
@@ -226,6 +233,7 @@ fn valid_options() -> InstallationExecutionOptions<'static> {
 
 #[test]
 fn j24k2_create_exact_candidate_trust_advances_once() {
+    let _serial = test_serial();
     let base = temp_dir("create-trust");
     fs::create_dir_all(&base).unwrap();
 
@@ -282,6 +290,7 @@ fn j24k2_create_exact_candidate_trust_advances_once() {
 
 #[test]
 fn j24k2_lock_busy_before_planning() {
+    let _serial = test_serial();
     let base = temp_dir("lock-busy");
     fs::create_dir_all(&base).unwrap();
 
@@ -334,6 +343,7 @@ fn j24k2_lock_busy_before_planning() {
 
 #[test]
 fn j24k2_lock_releases_after_error() {
+    let _serial = test_serial();
     let base = temp_dir("lock-error");
     fs::create_dir_all(&base).unwrap();
 
@@ -388,6 +398,7 @@ fn j24k2_lock_releases_after_error() {
 
 #[test]
 fn j24k2_options_invalid_rejected_before_mutation() {
+    let _serial = test_serial();
     let base = temp_dir("opts-invalid");
     fs::create_dir_all(&base).unwrap();
 
@@ -441,6 +452,7 @@ fn j24k2_options_invalid_rejected_before_mutation() {
 
 #[test]
 fn j24k2_full_passed_conformance_and_approval_chain() {
+    let _serial = test_serial();
     let base = temp_dir("full-chain");
     fs::create_dir_all(&base).unwrap();
 
@@ -714,16 +726,19 @@ fn assert_failed_or_interrupted_executor_step(
 
 #[test]
 fn j24k2_failed_conformance_records_once_without_advance_or_retry() {
+    let _serial = test_serial();
     assert_failed_or_interrupted_executor_step("malformed", ConformanceDisposition::Failed, false);
 }
 
 #[test]
 fn j24k2_interrupted_conformance_records_once_without_advance_or_retry() {
+    let _serial = test_serial();
     assert_failed_or_interrupted_executor_step("valid", ConformanceDisposition::Interrupted, true);
 }
 
 #[test]
 fn j24k2_candidate_tampering_after_prepare_refuses_before_provider_marker() {
+    let _serial = test_serial();
     let base = temp_dir("tamper-after-prepare");
     fs::create_dir_all(&base).unwrap();
     let marker = base.join("provider-created.marker");
@@ -777,6 +792,7 @@ fn j24k2_candidate_tampering_after_prepare_refuses_before_provider_marker() {
 
 #[test]
 fn j24k2_postplan_failure_resumable() {
+    let _serial = test_serial();
     let base = temp_dir("postplan-fail");
     fs::create_dir_all(&base).unwrap();
 
