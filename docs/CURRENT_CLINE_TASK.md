@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `M01C1 - Engine-session warning cleanup pilot`
 Owner: `OpenCode`
 Status: `COMPLETE`
-Task colour: `Amber`
+Task colour: `Green`
 Route: `OpenCode using DeepSeek Pro V4 for a small language-aware Rust warning repair; Lucy performs independent review`
 Base branch: `main`
 Base commit: `d557d01ab41ddc881b08976de5822c2ccec53f24`
@@ -26,7 +26,7 @@ The pilot must prove that OpenCode can use rust-analyzer for real reference disc
 
 Read `docs/architecture/M01C1_ENGINE_SESSION_WARNING_PILOT.md` completely before any edit. It is authoritative.
 
-## Background
+## Relevant background and existing behaviour
 
 M01B is accepted at:
 
@@ -43,6 +43,32 @@ Cargo.lock       D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818C
 ```
 
 The target module retains a ten-second engine read timeout but currently stores timeout state that is not used by later reads. Accepted Clippy may also report path-reference linting around `EngineSession::launch`. Diagnostics captured under Rust 1.97.1 decide the exact target set.
+
+The existing implementation checkpoint is `1083e7be5bef5fca78ec9d33fe725b6709f46636`. Its source repair is provisionally sound: it makes the retained timeout authoritative and replaces unnecessary `&PathBuf` parameters without changing the MCP interaction. The correction is limited to missing packet-format, LSP, and environment-backed verification evidence unless a required verification exposes a defect.
+
+## Required behaviour
+
+1. Preserve the existing checkpoint’s behaviour-preserving source repair unless a required verification exposes a real defect.
+2. Record the completed fresh OpenCode LSP trial for `EngineSession::launch`, `EngineSession::read_timeout`, and `read_json` honestly: the operation was exposed but returned no usable results, so it is a failed tooling trial and must not be retried.
+3. Use the existing verified `rg` reference counts as the fallback discovery evidence, clearly distinguished from the ineffective LSP trial.
+4. Restore `pwsh.exe` for verification process-locally by prepending `$PSHOME`; do not change user or machine PATH.
+5. Run every required packet, tool, Rust, policy, Just, lock-hash, diff, and status check with the stated zero-failure and zero-retry floors.
+6. Retain the warning result: three target-source warnings before the repair and zero after it, no added suppression, and no changed warning outside the target.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/engine_stdio.rs` — retained engine session, default read timeout, and private JSON reader.
+- `tethers-0.1/host-rust/src/host_execution.rs` — direct `EngineSession::launch` call site.
+- `scripts/start-opencode-lsp.ps1` — process-local OpenCode LSP launcher.
+- `.github/scripts/check-tethers-task-packet.ps1` — control-v1 structure and state check.
+- `scripts/check-rust-agent-tools.ps1`, `.config/nextest.toml`, and `justfile` — accepted tool and verification path.
+
+## Frozen decisions and invariants
+
+- The MCP protocol remains `2025-11-25`; initialize and initialized messages, `tethers.validate`, `tethers.evaluate`, request IDs, response validation, error strings, shutdown, and stderr-tail behaviour remain unchanged.
+- The effective default engine read timeout remains exactly ten seconds for initialize, validation, and evaluation.
+- No suppression attributes, dummy uses, retries, sleeps, dependency, lockfile, tool, configuration, test, or protocol changes are permitted.
+- The implementation checkpoint stays `1083e7be5bef5fca78ec9d33fe725b6709f46636` after successful correction evidence.
 
 ## Startup procedure
 
@@ -125,19 +151,11 @@ The target module retains a ten-second engine read timeout but currently stores 
 
    Use the accepted real OpenCode CLI through `OPENCODE_BIN` or `-OpenCodePath` if the current shell does not resolve it. Do not change global PATH.
 
-## Mandatory LSP gate
+## LSP discovery record
 
-Before any source edit, use OpenCode's LSP tool to obtain:
+The required fresh wrapped OpenCode 1.18.12 LSP trial was completed before this correction: it exposed the operation but returned no definitions, references, symbols, or hover data, and a targeted second session timed out. This is recorded as ineffective tooling, not an acceptance blocker; do not retry it or alter configuration.
 
-1. definition and all references for `EngineSession::launch`;
-2. definition and all references for `EngineSession::read_timeout`;
-3. all call sites of private helper `read_json`.
-
-Record the exact files and reference counts in the worker note.
-
-Text search may confirm the result but does not replace the LSP gate.
-
-If the current process does not expose the LSP tool, start a fresh OpenCode process through `scripts/start-opencode-lsp.ps1` and continue the task there. Do not proceed with text search alone.
+Use the already verified `rg` fallback in the worker note: `EngineSession::launch` has one definition and seven references (two non-test call sites and five test calls); `read_json` has one definition and three call sites; `read_timeout` is traced from its declaration through its initialization and retained-session uses.
 
 ## Baseline warning capture
 
@@ -214,6 +232,16 @@ Stop before changing another path.
 ## Forbidden changes
 
 Do not modify Cargo.toml, Cargo.lock, dependencies, features, edition, rust-version, `publish`, Rust pins, tool versions, tool configuration, Just recipes, OpenCode configuration, PowerShell tooling, deny policy, Nextest policy, OCaml, fixtures, production modules outside the permitted list, event-queue Send semantics, Plug installation, J24J, CLI contracts, Trail, Anchor, provider policy, release, tag or publication state.
+
+## Stop conditions
+
+- Stop as `BLOCKED` if either full Rust graph has any failure or retry after the specified process-local `pwsh.exe` restoration.
+- Stop if verification requires an out-of-scope source, test, dependency, policy, configuration, or protocol change.
+- After two materially similar failed attempts, stop with the exact evidence and one smallest unresolved question.
+
+## Expected pre-existing changes
+
+None.
 
 ## Edit recovery
 
@@ -323,7 +351,7 @@ If an intentionally added focused test increases a total, record and explain the
 
 ## Acceptance criteria
 
-1. LSP evidence precedes editing and is recorded.
+1. The attempted LSP trial, its ineffective result, and the verified `rg` fallback are recorded without retrying LSP.
 2. Exact before/after warning inventories are recorded.
 3. `src/engine_stdio.rs` emits no warning.
 4. No warning outside the target file is added or altered unexpectedly.
@@ -352,7 +380,7 @@ After every acceptance condition passes:
    - Remaining risks
    - Smallest next action
    - References
-2. Set the single packet status field to `COMPLETE` and checkpoint to `TBD`.
+2. Set the single packet status field to `COMPLETE`, task colour to `Green`, and retain the implementation checkpoint.
 3. Make one normal implementation commit.
 4. Obtain and verify its real SHA:
 

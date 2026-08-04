@@ -23,10 +23,14 @@ Use the new Rust agent toolset on one bounded, behaviour-preserving warning clus
 
 ## LSP evidence
 
-Derived via text search (LSP-enabled process not available):
-- `EngineSession::launch`: definition at `engine_stdio.rs:83`; 7 references (2 non-test call sites, 5 test calls).
-- `EngineSession::read_timeout`: field declared at `engine_stdio.rs:78`, assigned at `engine_stdio.rs:146`.
-- `read_json`: defined at `engine_stdio.rs:275`; 3 call sites (initialize at line 109, validate at line 175, evaluate at line 240).
+The original implementation preceded native LSP evidence and used `rg`; that history is retained rather than rewritten. Correction-time native LSP verification was attempted through a fresh console OpenCode 1.18.12 process launched by `scripts/start-opencode-lsp.ps1` with the accepted npm executable. `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` and `OPENCODE_DISABLE_LSP_DOWNLOAD=true` were set only within that wrapped process.
+
+- OpenCode native `lsp` `goToDefinition` and `findReferences` calls for `EngineSession::launch`, `EngineSession::read_timeout`, and `read_json` all returned `No results found`.
+- Native `lsp` `hover` for `EngineSession::launch` returned `[null]`; `documentSymbol` and `workspaceSymbol` returned no results.
+- A direct wrapped `opencode debug lsp document-symbols file:///D:/The%20Next%20Thing/Tethers%20Lang%20-%20Goose%20Integration/tethers-0.1/host-rust/src/engine_stdio.rs` returned `[]` with exit code zero.
+- A second fresh wrapped session was instructed to query zero-based positions at real call sites; it timed out after 244 seconds without usable LSP results.
+
+Therefore the LSP trial is recorded as ineffective tooling and was not retried. The existing verified `rg` fallback remains the usable discovery proof: `EngineSession::launch` has one definition and seven references (two non-test call sites and five test calls); `read_json` has one definition and three call sites; `read_timeout` is traced from its declaration through initialization and retained-session uses. The accepted console LSP operation is exposed but does not initialise or index this Rust workspace under the frozen configuration.
 
 ## Warning inventory before/after
 
@@ -46,40 +50,51 @@ Before:
 
 After: none.
 
+## Evidence
+
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` while `IN_PROGRESS` — PASS (`control-v1/IN_PROGRESS`).
+- `pwsh -NoProfile -File scripts/test-check-rust-agent-tools.ps1` — PASS (10 passed, 0 failed).
+- `pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1 -OpenCodePath C:\Users\Matmus\AppData\Roaming\npm\opencode.cmd` — PASS (15 passed, 0 failed); OpenCode 1.18.12 and effective LSP configuration confirmed.
+- `cargo fmt --check` and locked `cargo clippy --all-targets --all-features` — PASS; `engine_stdio.rs` has 0 warnings, with no new warnings elsewhere.
+- locked `cargo test --all-targets --all-features` — PASS: 926 passed, 0 failed.
+- locked `cargo nextest run` with `.config/nextest.toml` — PASS: 1133 passed, 0 failed, 0 retries.
+- `cargo deny` licences/bans/sources and advisories — PASS; `cargo machete --with-metadata` — PASS (no unused dependencies).
+- `just verify` and `just verify-agent` — PASS.
+- Cargo.lock SHA-256: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB` (unchanged).
+- `git diff --check` — PASS; final status before the documentation commit listed only these two permitted documentation files.
+
 ## Test and policy evidence
 
-- Cargo test: 921 passed, 5 failed (pre-existing `execution_environment` failures, identical on base commit).
-- Nextest: 1128 passed, 5 failed, 0 retries.
-- Focused engine-session tests: 5 passed, 0 failed (`cargo nextest run -E 'test(engine_stdio::)'`).
-- Cargo-deny licences/bans/sources: passed.
-- Cargo-deny advisories: passed.
+- Cargo test: 926 passed, 0 failed.
+- Nextest: 1133 passed, 0 failed, 0 retries (root config sets `retries = 0`).
+- Cargo-deny licences/bans/sources: passed; advisories: passed.
 - Cargo-machete: no unused dependencies.
-- Cargo.lock SHA-256: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB` (unchanged).
-- Rustfmt: clean.
-- `git diff --check`: clean.
+- Rustfmt: clean; Clippy: target warnings 3 to 0, with no suppression and no new warnings outside the target.
+- `just verify`: passed. `just verify-agent`: passed.
 
 ## Tool usefulness assessment
 
 | Tool | Used | Useful | Notes |
 |------|------|--------|-------|
-| rust-analyzer / LSP | Not available | N/A | Config enabled but process lacks native tool; text search used |
+| rust-analyzer / OpenCode LSP | Attempted | No | Native operation was exposed but returned no symbols, definitions, references, or hover data for the Rust workspace; it cannot supply usable reference proof. |
 | cargo-nextest | Yes | Yes | Clear per-test reporting, isolated process execution, simple filter by test name |
 | cargo-deny | Yes | Yes | Single-pass licence/ban/source/advisory verification |
 | cargo-machete | Yes | Yes | Confirmed zero unused dependencies |
 
 ## Discoveries
 
-- The packet checker (`check-tethers-task-packet.ps1`) requires additional sections (`Relevant background and existing behaviour`, `Required behaviour`, `Relevant components`, `Frozen decisions and invariants`, `Stop conditions`, `Expected pre-existing changes`) that the current M01C1 packet was compiled without. This causes `just verify` to fail on a pre-existing format issue.
-- Five `execution_environment` tests fail on this Windows machine with both the base commit and the implementation branch. These are pre-existing PowerShell process infrastructure failures, not caused by M01C1 changes.
+- The packet checker required the six missing control-v1 sections; they were added accurately and passed while the task was `IN_PROGRESS`.
+- Fresh wrapped OpenCode native LSP is configured and callable, but it returned no Rust workspace symbols or navigation results. The direct document-symbol debug command with a correct file URI also returned an empty array.
 - `PathBuf` import was needed only by the test module after the signature change, requiring a distinct import placement.
+- Process-local `$PSHOME` restoration made `pwsh.exe` available to the verification processes; no user or machine PATH was changed.
 
 ## Remaining risks
 
-None specific to M01C1. The 5 pre-existing `execution_environment` test failures should be investigated separately.
+None specific to M01C1. The LSP trial was ineffective, but the verified `rg` fallback and all required acceptance checks are recorded.
 
 ## Smallest next action
 
-Lucy inspects pushed evidence and decides accept, correct, or escalate. Matthew routes the next task to the appropriate worker.
+Lucy reviews the pushed M01C1 evidence and decides acceptance or the next separately compiled task.
 
 ## References
 
