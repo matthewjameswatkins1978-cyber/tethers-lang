@@ -4,17 +4,92 @@ Updated: 2026-08-04
 
 ## Goal
 
-Pause the Plug-installation sequence after accepted J24I and complete a bounded
-repository spring clean before J24J begins.
+Complete the repository spring clean in bounded maintenance increments before
+resuming the Plug-installation sequence at J24J.
 
-The first maintenance increment, M01A, refreshes the repository-owned Rust
-compiler from 1.89.0 to exact Rust 1.97.1 and removes stale live version
-duplication from build commands, toolchain checks, task templates, and Rust
-engineering guidance.
+```text
+M01A  accepted Rust 1.97.1 toolchain refresh
+M01B  Rust agent tooling foundation
+M01C  warning cleanup and evidence-backed repository pruning
+J24J  read-only installation reconciliation planner
+```
 
-The second maintenance increment, M01B, will separately review inactive agent
-configuration, duplicated guidance, optional developer utilities, warning debt,
-one-off scripts, and files that may be safely removed.
+## Accepted maintenance baseline
+
+M01A is accepted at
+`d561b8400a1398c3d5bdde2cf670eebe661a5cc4`.
+
+The active repository baseline is now:
+
+```text
+Rust             1.97.1 exact root pin
+Rust edition     2021
+rust-version     1.97
+OCaml            5.5.0
+Dune             3.24.0
+Yojson           2.2.2
+Cargo.lock       committed and unchanged by M01A
+```
+
+Plain Cargo commands inherit the root pin. Just recipes fail on their first
+failed command. The toolchain checker derives Rust and Cargo truth from
+repository files instead of carrying copied version constants.
+
+## Active maintenance increment
+
+M01B adds and proves the small Rust toolset chosen to improve OpenCode
+implementation and review:
+
+```text
+rust-analyzer   Rust 1.97.1 component
+cargo-nextest   0.9.137
+cargo-deny      0.19.7
+cargo-machete   0.9.2
+```
+
+Their roles remain separate:
+
+- rust-analyzer assists navigation and diagnostics;
+- nextest provides an alternative no-retry agent test loop;
+- cargo-deny owns dependency licence, source, duplicate, and advisory policy;
+- cargo-machete suggests possible unused dependencies but has no deletion
+  authority.
+
+Cargo-audit is not added because cargo-deny supplies the accepted advisory gate.
+Cargo-semver-checks remains deferred until Tethers promises compatibility for a
+public Rust library API.
+
+## M01B boundaries
+
+- Exact tool versions are repository-owned and checked.
+- Rust-analyzer belongs to the exact Rust 1.97.1 toolchain.
+- OpenCode LSP is explicitly enabled and its direct query tool is opt-in and
+  process-local.
+- OpenCode may not download a second language server when using the repository
+  launcher.
+- Nextest retries remain zero and ordinary `cargo test` remains final authority.
+- Native Windows nextest performance is measured rather than assumed.
+- Cargo-deny receives no hidden advisory ignore or autonomous licence expansion.
+- Cargo-machete never runs with `--fix`.
+- Installation is exact, bounded, idempotent, and separate from verification.
+- Cargo.toml, Cargo.lock, dependencies, production source/tests, OCaml, edition,
+  Rust channel, and Tethers behaviour remain unchanged.
+- M01B records cleanup evidence but deletes nothing.
+
+## Next maintenance increment
+
+M01C will use accepted M01B evidence to review:
+
+- existing Rust warnings;
+- cargo-machete findings;
+- inactive `.clinerules` and `.clineignore` configuration;
+- duplicated environment/tool checks;
+- stale active guidance;
+- obsolete one-off scripts and roadmaps;
+- files that can be removed with direct reference evidence.
+
+Historical worker notes, completed packets, releases, and architectural evidence
+remain historical records and are not rewritten to appear current.
 
 ## Accepted product baseline
 
@@ -23,7 +98,7 @@ Tethers 0.2.0 remains the accepted and published baseline. The annotated
 `b5546411661dcbcb53e1cf2538eaec594c6f76f2`; Tethers language semantics remain
 0.1.
 
-The accepted public Plug surface contains:
+The accepted public Plug surface remains:
 
 - `plug inspect`;
 - `plug list`;
@@ -31,35 +106,10 @@ The accepted public Plug surface contains:
 - permission-file `plug enable`;
 - `plug stage`.
 
-The accepted package-intake sequence is:
-
-```text
-plug inspect
-→ plug stage
-→ immutable quarantine
-→ reusable candidate identity
-```
-
-Staging grants no trust, approval, installation, permission, or operational
-availability.
-
-## Accepted installation foundations
-
-J24G provides the strict installation-request contract for one canonical
-candidate, exact-candidate trust, explicit non-isolated supervised execution,
-and disabled installation.
-
-J24H provides durable launch-profile evidence and non-creating read-only store
-openings.
-
-J24I is accepted at
-`88d8ab2e5c65052401b3860d8a7d68f3ccb06265`. It adds exact-candidate
-installation trust pinned to candidate ID, candidate-record digest, package and
-provider identity, semantic and raw archive digests, and approving authority.
-
-Exact-candidate `PackageTrustEvidence` validates its complete mode fields and
-refuses current-authority execution revalidation until the later locked executor
-supplies the exact installation-trust authority.
+J24G provides the strict installation request. J24H provides durable launch
+profile evidence and non-creating store openings. J24I provides exact-candidate
+trust and is accepted at
+`88d8ab2e5c65052401b3860d8a7d68f3ccb06265`.
 
 After maintenance, the reviewed installation sequence resumes as:
 
@@ -69,46 +119,9 @@ J24K  host installation lock and gate executor
 J24L  thin public plug install CLI
 ```
 
-## Active maintenance increment
-
-M01A is:
-
-```text
-Rust 1.89.0
-→ exact Rust 1.97.1
-→ live build commands follow root pin
-→ toolchain checker derives repository truth
-→ Just recipes fail fast
-→ active Rust guidance is current
-```
-
-Frozen M01A boundaries:
-
-- exact Rust point release is pinned, never floating `stable`;
-- Rust edition remains 2021;
-- declared `rust-version` becomes 1.97;
-- compiler refresh is separate from dependency updates and edition migration;
-- Cargo.lock remains byte-identical;
-- OCaml 5.5.0, Dune 3.24.0, and Yojson 2.2.2 remain unchanged;
-- no production source, production test, Tethers behaviour, Plug lifecycle, or
-  runtime change is allowed;
-- historical worker notes and release evidence retain their original versions;
-- M01A records deletion candidates but removes nothing;
-- M01B performs the evidence-backed pruning pass.
-
-## Toolchain maintenance posture
-
-- Exact compiler pins are repository authority.
-- Stable toolchains are reviewed after meaningful milestones and at least
-  monthly during active development.
-- Security, soundness, and miscompilation point releases are prioritised.
-- Compiler, dependency, warning-cleanup, and edition changes remain separate.
-- Ordinary Cargo verification uses the committed lock with `--locked`.
-- No floating toolchain channel or automatic background upgrade is permitted.
-
 ## Frozen installation shape
 
-The installation design remains unchanged during maintenance:
+Maintenance does not alter the installation design:
 
 ```text
 validated installation request
@@ -120,9 +133,6 @@ validated installation request
 → atomic installed publication
 → present_disabled
 ```
-
-A failed installation may leave completed immutable gate evidence, but it must
-never leave a Plug falsely or partially installed.
 
 ## Active development posture
 
@@ -137,8 +147,7 @@ Current operating mode: **Gorilla Coding**.
 - Matthew: product authority, ideas, priorities, and human judgement.
 - Cline and Goose are not used.
 - Active prototype tree: `tethers-0.1/`.
-- Current accepted Rust toolchain before M01A: 1.89.0.
-- M01A target Rust toolchain: exact 1.97.1.
+- Current accepted Rust toolchain: exact 1.97.1.
 - Required automation shell where applicable: PowerShell 7.
 
 DeepSeek editing rule: after an exact `oldString` replacement failure, reread
@@ -149,18 +158,16 @@ rewriting a file wholesale.
 ## Authoritative references
 
 - Current maintenance task: `docs/CURRENT_CLINE_TASK.md`
-- M01A blueprint: `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`
+- M01B blueprint:
+  `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md`
+- Toolchain policy: `docs/TOOLCHAIN_POLICY.md`
 - Current root Rust pin: `rust-toolchain.toml`
-- Rust package metadata: `tethers-0.1/host-rust/Cargo.toml`
-- Toolchain checker: `.github/scripts/check-tethers-toolchains.ps1`
+- OpenCode project configuration: `opencode.json`
+- Rust engineering guidance: `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
 - Enduring principles: `docs/CONSTITUTION.md`
 - Language semantics: `tethers-0.1/SPEC.md`
 - Universal Plug architecture:
   `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`
-- J24G request contract:
-  `docs/architecture/J24G_INSTALLATION_REQUEST_CONTRACT.md`
-- J24H evidence access:
-  `docs/architecture/J24H_INSTALLATION_EVIDENCE_ACCESS_FOUNDATION.md`
 - J24I exact-candidate trust:
   `docs/architecture/J24I_EXACT_CANDIDATE_INSTALLATION_TRUST.md`
 - Accepted decisions: `docs/DECISIONS.md`
