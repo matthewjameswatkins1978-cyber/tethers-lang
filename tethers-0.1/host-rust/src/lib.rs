@@ -28,6 +28,9 @@ pub mod installation_plan;
 mod installation_publication_intent;
 #[cfg(test)]
 mod installation_publication_intent_tests;
+mod installation_recovery;
+#[cfg(test)]
+mod installation_recovery_tests;
 pub mod installation_request;
 pub mod installation_trust;
 pub mod installed;
