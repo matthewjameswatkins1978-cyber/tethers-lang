@@ -19,6 +19,7 @@ pub mod executor;
 pub mod file_tools;
 pub mod host_execution;
 pub mod installation_request;
+pub mod installation_trust;
 pub mod installed;
 pub mod launch_profile;
 pub mod local_anchor;

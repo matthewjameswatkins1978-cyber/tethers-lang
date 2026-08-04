@@ -4,6 +4,7 @@
 //! separate facts. None grants installation, enablement, policy, or invocation.
 
 use crate::candidate::CandidateRecord;
+use crate::installation_trust::ExactCandidateTrustRecord;
 use crate::m3_store::{canonical, sha256, strict_json, unix_ms, M3Error, Result, StoreRoot};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -516,6 +517,12 @@ pub enum TrustModeEvidence {
         approval_record_digest: String,
         visibly_unsigned: bool,
     },
+    ExactCandidate {
+        candidate_id: String,
+        candidate_record_digest: String,
+        installation_trust_record_digest: String,
+        approving_authority: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -535,6 +542,24 @@ impl PackageTrustEvidence {
                 "trust_candidate_mismatch",
                 "trust evidence is not bound to this candidate semantic digest",
             ));
+        }
+        if let TrustModeEvidence::ExactCandidate {
+            candidate_id,
+            candidate_record_digest,
+            ..
+        } = &self.mode
+        {
+            candidate
+                .validate()
+                .map_err(|error| M3Error::new("candidate_invalid", error.message))?;
+            if *candidate_id != candidate.candidate_id
+                || *candidate_record_digest != candidate.record_digest
+            {
+                return Err(M3Error::new(
+                    "trust_candidate_mismatch",
+                    "trust evidence is not bound to this candidate semantic digest",
+                ));
+            }
         }
         Ok(())
     }
@@ -580,6 +605,22 @@ impl PackageTrustEvidence {
                 approval_id: approval.approval_id.clone(),
                 approval_record_digest: approval.record_digest.clone(),
                 visibly_unsigned: true,
+            },
+            evidence_digest: String::new(),
+        };
+        evidence.evidence_digest = sha256(&evidence.covered_bytes()?);
+        Ok(evidence)
+    }
+
+    pub fn exact_candidate(record: &ExactCandidateTrustRecord) -> Result<Self> {
+        let mut evidence = Self {
+            evidence_format_version: 1,
+            semantic_package_digest: record.semantic_package_digest.clone(),
+            mode: TrustModeEvidence::ExactCandidate {
+                candidate_id: record.candidate_id.clone(),
+                candidate_record_digest: record.candidate_record_digest.clone(),
+                installation_trust_record_digest: record.record_digest.clone(),
+                approving_authority: record.approving_authority.clone(),
             },
             evidence_digest: String::new(),
         };
@@ -642,6 +683,12 @@ impl PackageTrustEvidence {
                         "developer approval evidence changed",
                     ));
                 }
+            }
+            TrustModeEvidence::ExactCandidate { .. } => {
+                return Err(M3Error::new(
+                    "trust_exact_candidate_authority_required",
+                    "exact-candidate trust requires current installation-trust authority",
+                ));
             }
         }
         Ok(())
