@@ -3,12 +3,13 @@
 Control contract: `1`
 Task: `J24G - Strict Plug installation request contract`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode using Luna for a bounded JSON contract and parser; Lucy performs final review`
 Base branch: `main`
 Base commit: `f5e621bee4338a496888daaf78e2f029e4ab0914`
 Implementation branch: `opencode/j24g-installation-request-contract`
+Implementation checkpoint: `fa3ffcf4f7c8e96c0a7f5e2b3f8d7a9c6b1e4d2f`
 Worker note: `docs/worker-notes/2026-08-04-j24g-installation-request-contract.md`
 Implementation blueprint: `docs/architecture/J24G_INSTALLATION_REQUEST_CONTRACT.md`
 
