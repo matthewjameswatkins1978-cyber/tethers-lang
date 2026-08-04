@@ -307,6 +307,32 @@ fn j24k3b_same_installed_id_different_fields_still_conflicts() {
 }
 
 #[test]
+fn j24k3b_invalid_record_without_destination_conflicts() {
+    let (record, intent) = valid_intent();
+    let mut invalid_record = record.clone();
+    invalid_record.schema_version = 0;
+    let obs = valid_observation(&intent, false, false, Some(&invalid_record));
+    assert_eq!(
+        classify_installation_recovery(obs).unwrap_err().code,
+        "installation_recovery_conflict"
+    );
+    drop(record);
+}
+
+#[test]
+fn j24k3b_staging_plus_destination_plus_invalid_record_conflicts() {
+    let (record, intent) = valid_intent();
+    let mut invalid_record = record.clone();
+    invalid_record.schema_version = 0;
+    let obs = valid_observation(&intent, true, true, Some(&invalid_record));
+    assert_eq!(
+        classify_installation_recovery(obs).unwrap_err().code,
+        "installation_recovery_conflict"
+    );
+    drop(record);
+}
+
+#[test]
 fn j24k3b_classification_does_not_alter_supplied_intent_or_record() {
     let (record, intent) = valid_intent();
     let intent_clone = intent.clone();

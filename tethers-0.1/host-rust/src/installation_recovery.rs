@@ -40,6 +40,10 @@ pub(crate) fn classify_installation_recovery(
         .validate()
         .map_err(|_| intent_invalid())?;
 
+    if let Some(record) = observation.installed_record {
+        record.validate().map_err(|_| recovery_conflict())?;
+    }
+
     if observation.staging_present && observation.destination_present {
         return Err(recovery_conflict());
     }
@@ -55,7 +59,6 @@ pub(crate) fn classify_installation_recovery(
             Ok(InstallationRecoveryDisposition::RevalidateDestinationThenPublishRecord)
         }
         (false, true, Some(record)) => {
-            record.validate().map_err(|_| recovery_conflict())?;
             if record == &observation.intent.installed_record {
                 Ok(InstallationRecoveryDisposition::VerifyCompletedPublicationThenRemoveIntent)
             } else {
