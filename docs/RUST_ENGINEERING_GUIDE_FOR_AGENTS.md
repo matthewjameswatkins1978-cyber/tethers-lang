@@ -3,7 +3,7 @@
 **Status:** required operational guidance for Rust implementation<br>
 **Primary audience:** Goose, Cline, Codex, and other AI coding agents<br>
 **Secondary audience:** senior Rust engineers and reviewers<br>
-**Baseline:** Rust 1.89.0, edition 2021<br>
+**Baseline:** Rust 1.97.1, edition 2021<br>
 **Scope:** `tethers-0.1/host-rust/` and Rust capability-provider work
 
 This guide does not replace the current task packet, Tethers 0.1 specification,
@@ -27,7 +27,7 @@ Before every edit, stop and reassess when any answer is yes:
 6. Am I turning timeout, EOF, malformed framing, or transport loss into known
    provider failure when the request may have crossed the call boundary?
 7. Am I refactoring adjacent code merely because it does not meet this guide?
-8. Am I using an API without checking Rust 1.89 and the exact locked crate
+8. Am I using an API without checking Rust 1.97 and the exact locked crate
    version?
 
 A stop item is a design boundary, not necessarily a permanent prohibition.
@@ -88,7 +88,7 @@ Rust must not become a second planner or reinterpret Tether source.
 
 ## Toolchain and dependency truth
 
-The Tethers host uses Rust 1.89.0 with edition 2021, MSRV 1.89, and a root
+The Tethers host uses Rust 1.97.1 with edition 2021, MSRV 1.97, and a root
 `rust-toolchain.toml` that selects the verified toolchain with rustfmt and
 Clippy. All verification commands use `--locked` against the committed
 `Cargo.lock`.
@@ -101,14 +101,14 @@ value.
 
 Do not add or change `rust-version`, the toolchain pin, or `Cargo.lock`
 during unrelated work. Toolchain upgrades require a separate decision.
-Use local Rust 1.89 documentation and the locked crate versions. Never code
+Use local Rust 1.97 documentation and the locked crate versions. Never code
 against “latest” documentation without proving the versions match.
 
 Every new dependency requires:
 
 - a task-authorised requirement;
 - a reason existing dependencies and `std` are insufficient;
-- Rust 1.89 compatibility;
+- Rust 1.97 compatibility;
 - justified feature flags;
 - compatible licence and maintenance posture;
 - boundary tests;
@@ -381,7 +381,7 @@ Do not replace that proof with:
 - best-effort cleanup;
 - standard-library locking alone.
 
-Rust 1.89 standard file locking does not automatically prove the complete J09
+Rust 1.97 standard file locking does not automatically prove the complete J09
 contract.
 
 Keep Win32 `unsafe` inside the smallest target-specific module behind safe
@@ -515,12 +515,12 @@ fail-closed branches. Do not automatically bless fixtures because code changed.
 From `tethers-0.1/host-rust/`, unless the packet is stricter:
 
 ```powershell
-cargo +1.89.0 fmt --all -- --check
-cargo +1.89.0 check --all-targets --all-features --locked
-cargo +1.89.0 clippy --all-targets --all-features --locked -- -D warnings
-cargo +1.89.0 test --all-targets --all-features --locked
-cargo +1.89.0 build --locked
-cargo +1.89.0 build --release --locked
+cargo fmt --all -- --check
+cargo check --all-targets --all-features --locked
+cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo test --all-targets --all-features --locked
+cargo build --locked
+cargo build --release --locked
 git diff --check
 git status --short --branch
 ```
@@ -635,7 +635,7 @@ A reviewer must establish:
 - Windows and subprocess proof boundaries remain intact.
 - Secrets and raw payloads are redacted.
 - Every required failure path has direct evidence.
-- Rust 1.89 and the lockfile were honoured.
+- Rust 1.97 and the lockfile were honoured.
 - The worker note reports actual commands and repository state.
 
 ## Definition of done
@@ -643,7 +643,7 @@ A reviewer must establish:
 A Rust task is complete only when the requested behaviour exists, accepted
 ordering and trust boundaries remain intact, invalid states are prevented or
 rejected explicitly, required negative branches have focused evidence, no
-unrelated semantic/dependency change is hidden, Rust 1.89 verification passes,
+unrelated semantic/dependency change is hidden, Rust 1.97 verification passes,
 the complete diff and Git state were inspected, and the worker note is
 reproducible and honest.
 

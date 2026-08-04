@@ -54,9 +54,9 @@ $engineOcaml = Join-Path $repositoryRoot 'tethers-0.1/engine-ocaml'
 $probes = [System.Collections.Generic.List[object]]::new()
 
 if ($Profile -in @('rust-host', 'cross-language')) {
-    [void]$probes.Add((Invoke-Probe -Capability 'rust.check' -WorkingDirectory $hostRust -Program 'cargo' -Arguments @('+1.89.0', 'metadata', '--locked', '--offline', '--format-version', '1')))
-    [void]$probes.Add((Invoke-Probe -Capability 'rust.fmt' -WorkingDirectory $hostRust -Program 'cargo' -Arguments @('+1.89.0', 'fmt', '--version')))
-    [void]$probes.Add((Invoke-Probe -Capability 'rust.test' -WorkingDirectory $hostRust -Program 'cargo' -Arguments @('+1.89.0', 'test', '--no-run', '--locked')))
+    [void]$probes.Add((Invoke-Probe -Capability 'rust.check' -WorkingDirectory $hostRust -Program 'cargo' -Arguments @('metadata', '--locked', '--offline', '--format-version', '1')))
+    [void]$probes.Add((Invoke-Probe -Capability 'rust.fmt' -WorkingDirectory $hostRust -Program 'cargo' -Arguments @('fmt', '--version')))
+    [void]$probes.Add((Invoke-Probe -Capability 'rust.test' -WorkingDirectory $hostRust -Program 'cargo' -Arguments @('test', '--no-run', '--locked')))
 }
 
 if ($Profile -in @('ocaml-core', 'cross-language')) {

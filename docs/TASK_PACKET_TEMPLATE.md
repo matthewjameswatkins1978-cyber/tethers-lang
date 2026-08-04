@@ -18,7 +18,7 @@ Base commit: `<40-character implementation checkpoint>`
 
 OCaml switch path: `<absolute directory-switch root or N/A>`
 
-Rust toolchain: `1.89.0` (use `rustup run 1.89.0`; `--locked` mandatory)
+Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 
 Toolchain preflight: `<required or N/A>`
 

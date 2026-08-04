@@ -3,11 +3,12 @@
 Control contract: `1`
 Task: `M01A - Rust toolchain refresh and verification cleanup`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
+Implementation checkpoint: `TBD`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for a cross-file toolchain and PowerShell maintenance change; Lucy performs independent review`
 Base branch: `main`
-Base commit: `c9b24b3987b92092aa7800f28e1147e719c70b57`
+Base commit: `fe3a635646f62ed2e718dfb45e9f5e6bc3c6f333`
 Implementation branch: `opencode/m01a-rust-toolchain-refresh`
 Worker note: `docs/worker-notes/2026-08-04-m01a-rust-toolchain-refresh.md`
 Implementation blueprint: `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`

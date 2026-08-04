@@ -5,6 +5,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Read-TomlString {
+    param([string]$Content, [string]$Key)
+    if ($Content -match "$Key\s*=\s*`"([^`"]+)`"") {
+        return $Matches[1]
+    }
+    return $null
+}
+
 function Invoke-TethersToolchainCheck {
     param(
         [string]$SwitchPath
@@ -29,6 +37,35 @@ function Invoke-TethersToolchainCheck {
         Write-Host $msg
         [void]$Script:CheckOutput.Add($msg)
     }
+
+    # --- Read repository authority ---
+    $repoRoot = $PSScriptRoot | Split-Path -Parent | Split-Path -Parent
+
+    $rtFile = Join-Path $repoRoot "rust-toolchain.toml"
+    if (-not (Test-Path $rtFile)) { Fail "rust-toolchain.toml missing"; return $Script:ExitCode }
+    $rtContent = Get-Content $rtFile -Raw
+    $derivedChannel = Read-TomlString -Content $rtContent -Key "channel"
+    if (-not $derivedChannel) { Fail "rust-toolchain.toml: could not read channel"; return $Script:ExitCode }
+    Pass "rust-toolchain.toml: channel $derivedChannel"
+    if ($rtContent -match 'components\s*=.*"rustfmt"' -and $rtContent -match 'components\s*=.*"clippy"') {
+        Pass "rust-toolchain.toml: rustfmt + clippy"
+    } else {
+        Fail "rust-toolchain.toml: missing components"
+    }
+
+    $cargoToml = Join-Path $repoRoot "tethers-0.1/host-rust/Cargo.toml"
+    $cargoContent = Get-Content $cargoToml -Raw
+    $derivedEdition = Read-TomlString -Content $cargoContent -Key "edition"
+    $derivedRustVersion = Read-TomlString -Content $cargoContent -Key "rust-version"
+    if ($derivedEdition -eq "2021") { Pass "Cargo.toml: edition 2021" } else { Fail "Cargo.toml: expected edition 2021, got $derivedEdition" }
+    if ($derivedRustVersion -eq "$($derivedChannel -replace '\.\d+$','')") {
+        Pass "Cargo.toml: rust-version $derivedRustVersion"
+    } else {
+        Fail "Cargo.toml: rust-version $derivedRustVersion does not match toolchain channel $derivedChannel"
+    }
+
+    $cargoLock = Join-Path $repoRoot "tethers-0.1/host-rust/Cargo.lock"
+    if (Test-Path $cargoLock) { Pass "Cargo.lock present" } else { Fail "Cargo.lock missing" }
 
     # --- OcamlSwitchPath validation ---
     if ([string]::IsNullOrWhiteSpace($OcamlSwitchPath)) {
@@ -68,44 +105,44 @@ function Invoke-TethersToolchainCheck {
         $env:RUSTUP_AUTO_INSTALL = "0"
 
         # --- Rust toolchain verification ---
+        $chMajorMinor = $derivedChannel -replace '\.\d+$', ''
         $toolchains = @(& rustup toolchain list 2>&1 | ForEach-Object { "$_" })
         if ($LASTEXITCODE -ne 0) {
             Fail "rustup toolchain list failed"
-        } elseif (($toolchains -join "`n") -notmatch "1\.89\.0-x86_64-pc-windows-msvc") {
-            Fail "Rust toolchain 1.89.0-x86_64-pc-windows-msvc not found"
+        } elseif (($toolchains -join "`n") -notmatch [regex]::Escape($derivedChannel)) {
+            Fail "Rust toolchain $derivedChannel not found"
         } else {
-            Pass "Rust toolchain 1.89.0-x86_64-pc-windows-msvc installed"
+            Pass "Rust toolchain $derivedChannel installed"
         }
 
-        $components = @(& rustup component list --toolchain 1.89.0 --installed 2>&1 | ForEach-Object { "$_" })
+        $components = @(& rustup component list --toolchain $derivedChannel --installed 2>&1 | ForEach-Object { "$_" })
         if ($LASTEXITCODE -ne 0) {
             Fail "rustup component list failed"
         } else {
             if (($components -join "`n") -notmatch "rustfmt") {
-                Fail "rustfmt not installed for 1.89.0"
+                Fail "rustfmt not installed for $derivedChannel"
             } else {
-                Pass "rustfmt installed for 1.89.0"
+                Pass "rustfmt installed for $derivedChannel"
             }
             if (($components -join "`n") -notmatch "clippy") {
-                Fail "clippy not installed for 1.89.0"
+                Fail "clippy not installed for $derivedChannel"
             } else {
-                Pass "clippy installed for 1.89.0"
+                Pass "clippy installed for $derivedChannel"
             }
         }
 
-        # Version checks (only if components present)
         if ($Script:ExitCode -eq 0) {
-            $rustcVer = & rustup run 1.89.0 rustc --version 2>&1
-            if ($rustcVer -match "1\.89\.0") { Pass "rustc: $rustcVer" } else { Fail "rustc version: $rustcVer" }
+            $rustcVer = & rustup run $derivedChannel rustc --version 2>&1
+            if ($rustcVer -match "^rustc $($derivedChannel)\s") { Pass "rustc: $rustcVer" } else { Fail "rustc version: $rustcVer" }
 
-            $cargoVer = & rustup run 1.89.0 cargo --version 2>&1
-            if ($cargoVer -match "1\.89\.0") { Pass "cargo: $cargoVer" } else { Fail "cargo version: $cargoVer" }
+            $cargoVer = & rustup run $derivedChannel cargo --version 2>&1
+            if ($cargoVer -match "cargo $($chMajorMinor)\.") { Pass "cargo: $cargoVer" } else { Fail "cargo version: $cargoVer" }
 
-            $rustfmtVer = & rustup run 1.89.0 rustfmt --version 2>&1
-            if ($rustfmtVer -match "1\.8") { Pass "rustfmt: $rustfmtVer" } else { Fail "rustfmt version: $rustfmtVer" }
+            $rustfmtVer = & rustup run $derivedChannel rustfmt --version 2>&1
+            if ($LASTEXITCODE -eq 0 -and $rustfmtVer -match "rustfmt") { Pass "rustfmt: $rustfmtVer" } else { Fail "rustfmt version: $rustfmtVer" }
 
-            $clippyVer = & rustup run 1.89.0 cargo clippy --version 2>&1
-            if ($clippyVer -match "0\.1\.89") { Pass "clippy: $clippyVer" } else { Fail "clippy version: $clippyVer" }
+            $clippyVer = & rustup run $derivedChannel cargo clippy --version 2>&1
+            if ($LASTEXITCODE -eq 0 -and $clippyVer -match "clippy") { Pass "clippy: $clippyVer" } else { Fail "clippy version: $clippyVer" }
         }
 
     } finally {
@@ -163,23 +200,7 @@ function Invoke-TethersToolchainCheck {
     if ($LASTEXITCODE -ne 0) { Fail "opam list failed"; return $Script:ExitCode }
     if ($pkgList -match "yojson\s+2\.2\.2") { Pass "Yojson 2.2.2" } else { Fail "Yojson 2.2.2 not found in installed packages" }
 
-    # --- Repository baseline checks ---
-    $repoRoot = $PSScriptRoot | Split-Path -Parent | Split-Path -Parent
-
-    $rtFile = Join-Path $repoRoot "rust-toolchain.toml"
-    if (-not (Test-Path $rtFile)) { Fail "rust-toolchain.toml missing"; return $Script:ExitCode }
-    $rt = Get-Content $rtFile -Raw
-    if ($rt -match 'channel\s*=\s*"1\.89\.0"') { Pass "rust-toolchain.toml: channel 1.89.0" } else { Fail "rust-toolchain.toml: wrong channel" }
-    if ($rt -match 'components\s*=.*"rustfmt"' -and $rt -match 'components\s*=.*"clippy"') { Pass "rust-toolchain.toml: rustfmt + clippy" } else { Fail "rust-toolchain.toml: missing components" }
-
-    $cargoToml = Join-Path $repoRoot "tethers-0.1/host-rust/Cargo.toml"
-    $cargo = Get-Content $cargoToml -Raw
-    if ($cargo -match 'edition\s*=\s*"2021"') { Pass "Cargo.toml: edition 2021" } else { Fail "Cargo.toml: wrong edition" }
-    if ($cargo -match 'rust-version\s*=\s*"1\.89"') { Pass "Cargo.toml: rust-version 1.89" } else { Fail "Cargo.toml: missing rust-version" }
-
-    $cargoLock = Join-Path $repoRoot "tethers-0.1/host-rust/Cargo.lock"
-    if (Test-Path $cargoLock) { Pass "Cargo.lock present" } else { Fail "Cargo.lock missing" }
-
+    # --- Repository OCaml checks ---
     $opamFile = Join-Path $repoRoot "tethers-0.1/engine-ocaml/tethers_engine.opam"
     $opamContent = Get-Content $opamFile -Raw
     if ($opamContent -match '"ocaml"\s*\{>=\s*"5\.5\.0"\s*&\s*<\s*"5\.6\.0"\s*\}') { Pass "OCaml range: >= 5.5.0 & < 5.6.0" } else { Fail "OCaml range does not match tightened constraint" }
