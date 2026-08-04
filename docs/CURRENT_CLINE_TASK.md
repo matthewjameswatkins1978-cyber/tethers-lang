@@ -14,7 +14,7 @@ Implementation blueprint: `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
 Agent tools: cargo-nextest 0.9.140 and accepted Rust tool checker; do not retry ineffective OpenCode LSP
 OCaml switch path: `N/A`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `b3fdc1cd6f34874e95c0ebc413d8d99a4343c4e4`
 
 ## Objective
 

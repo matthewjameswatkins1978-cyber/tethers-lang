@@ -3,7 +3,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `2bbbe3c84d65d5610dd417b00e0a8c711904ecf7`
-Implementation checkpoint: TBD
+Implementation checkpoint: `b3fdc1cd6f34874e95c0ebc413d8d99a4343c4e4`
 
 ## Requested outcome
 
@@ -142,5 +142,5 @@ touching production queue code.
 - Blueprint: `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_CLEANUP.md`
 - J10 queue contract: `docs/worker-notes/2026-07-27-j10-result-event-queue.md`
 - M01C1 worker note: `docs/worker-notes/2026-08-04-m01c1-engine-session-warning-pilot.md`
-- Implementation commit: TBD (recorded after commit)
+- Implementation commit: `b3fdc1cd6f34874e95c0ebc413d8d99a4343c4e4`
 - Branch: `opencode/m01c2-event-queue-contract-warning`
