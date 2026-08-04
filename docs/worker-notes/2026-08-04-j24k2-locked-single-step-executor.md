@@ -6,7 +6,7 @@ Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `9dc4498b644317e99851879cd40f2874eb611298`
 Implementation checkpoint: `330eefd85900e911420cba80fdcb74698b7a5ae0`
-Final remote tip: control-document correction commit follows
+Final remote tip at implementation evidence capture: `daaaefcaa8efddf7d98f3446d3029cfbc9f2100e`
 
 ## Requested outcome
 
