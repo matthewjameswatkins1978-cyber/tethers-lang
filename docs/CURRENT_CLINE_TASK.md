@@ -1,32 +1,32 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `M01C2 - Event-queue contract warning cleanup`
+Task: `M01C3 - Event-queue dead API cleanup`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `READY`
 Task colour: `Green`
-Route: `OpenCode using HY3 for a narrow Rust test-and-comment correction; Lucy performs independent review`
+Route: `OpenCode using HY3 for a narrow Rust internal-API cleanup; Lucy performs independent review`
 Base branch: `main`
-Base commit: `2bbbe3c84d65d5610dd417b00e0a8c711904ecf7`
-Implementation branch: `opencode/m01c2-event-queue-contract-warning`
-Worker note: `docs/worker-notes/2026-08-04-m01c2-event-queue-contract-warning.md`
-Implementation blueprint: `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_CLEANUP.md`
+Base commit: `01990bd1a4054f618e8add480884e3819d5e45f0`
+Implementation branch: `opencode/m01c3-event-queue-dead-api`
+Worker note: `docs/worker-notes/2026-08-04-m01c3-event-queue-dead-api-cleanup.md`
+Implementation blueprint: `docs/architecture/M01C3_EVENT_QUEUE_DEAD_API_CLEANUP.md`
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
-Agent tools: cargo-nextest 0.9.140 and accepted Rust tool checker; do not retry ineffective OpenCode LSP
+Agent tools: Clippy JSON and cargo-nextest 0.9.140; do not retry ineffective OpenCode LSP
 OCaml switch path: `N/A`
-Implementation checkpoint: `b3fdc1cd6f34874e95c0ebc413d8d99a4343c4e4`
+Implementation checkpoint: `TBD`
 
 ## Objective
 
-Remove the warning in `tethers-0.1/host-rust/src/event_queue.rs` by replacing a misleading non-proving `!Send` test with a truthful compile-time assertion, while preserving the actual J10 contract: FIFO, coordinator-driven serial evaluation, no recursion, no retry, and no parallel worker.
+Remove the remaining `dead_code` warning in `tethers-0.1/host-rust/src/event_queue.rs` by deleting the unused `ResultEventQueue::is_empty` and `ResultEventQueue::len` methods and rewriting their test-only assertions through `pop_front`.
 
-Read `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_CLEANUP.md` completely before editing. It is authoritative.
+Read `docs/architecture/M01C3_EVENT_QUEUE_DEAD_API_CLEANUP.md` completely before editing. It is authoritative.
 
 ## Relevant background and existing behaviour
 
-M01C1 is accepted on `main` at:
+M01C2 is accepted on `main` at:
 
-`2fbebfc14c8e2c55990f2bdfc8e85830da339b65`
+`21671b06365f28923d7375005d9b14d9559b71a4`
 
 Accepted baseline:
 
@@ -35,214 +35,143 @@ Rust             1.97.1
 Cargo tests      926 passing
 Nextest tests    1133 passing
 Nextest retries  0
+Clippy emitted   119 warnings
 Cargo.lock       D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
-J10 established serial follow-up evaluation through an explicit FIFO queue and coordinator drain. It did not establish a type-level `!Send` guarantee. The current `queue_cannot_be_moved_across_threads` test defines an `assert_send<T: Send>()` helper but does not call it, and its comments claim a guarantee the type does not enforce.
+M01C2 established that `ResultEventQueue` is truthfully `Send` under its current representation and that serial processing is enforced by coordinator structure, not a fake type marker.
 
-OpenCode LSP has already been tested and found ineffective for this Rust workspace. Do not retry it. This job uses exact Clippy diagnostics and `rg` only where textual confirmation is useful.
+The remaining warning covers two methods that production does not call:
+
+- `ResultEventQueue::is_empty`;
+- `ResultEventQueue::len`.
+
+Production creates, enqueues, and drains through `new`, `enqueue`, and `pop_front`. The two warned methods are test conveniences only.
 
 ## Required behaviour
 
-1. Capture the actual Rust 1.97.1 Clippy warning baseline before editing.
-2. Identify every warning whose primary span is `src/event_queue.rs`.
-3. Replace the false/non-proving `queue_cannot_be_moved_across_threads` test with a truthful compile-time `Send` assertion for the current representation.
-4. State clearly that `Send` means the value may be moved between threads, while Tethers seriality remains a coordinator policy and execution design.
-5. Keep the event-queue test count unchanged.
-6. Remove every warning whose primary span is `src/event_queue.rs` when caused by this test.
-7. Preserve production queue code and all runtime behaviour exactly.
-8. Use focused Nextest during the edit loop and ordinary Cargo through `just verify` as final authority.
-9. Skip irrelevant dependency scans because dependency and policy files are forbidden from changing.
+1. Keep FIFO ordering exactly unchanged.
+2. Keep coordinator-driven one-at-a-time draining exactly unchanged.
+3. Delete the two dead methods rather than manufacturing production callers or hiding them behind test configuration.
+4. Rewrite affected queue tests through `pop_front().is_none()` only when the queue is expected to be exhausted.
+5. Keep exactly nine event-queue tests.
+6. Preserve the compile-time `ResultEventQueue: Send` assertion added by M01C2.
+7. Finish with zero warnings whose primary span is `src/event_queue.rs`.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/event_queue.rs` — target queue and colocated tests.
-- `tethers-0.1/host-rust/src/result_anchor.rs` — queue payload definition, read-only for understanding only.
-- `docs/worker-notes/2026-07-27-j10-result-event-queue.md` — accepted serial queue contract.
-- `.config/nextest.toml` — committed zero-retry focused test configuration.
-- `.github/scripts/check-tethers-task-packet.ps1` — control-v1 checker.
-- `scripts/check-rust-agent-tools.ps1` — accepted tool presence/configuration checker.
-- `justfile` — final ordinary Cargo verification route.
+- `tethers-0.1/host-rust/src/event_queue.rs` — queue type, dead methods, and colocated tests.
+- `tethers-0.1/host-rust/src/application.rs` — production coordinator drain using `while let Some(anchor) = queue.pop_front()`; inspection only.
+- `.config/nextest.toml` — accepted zero-retry focused test configuration; inspection only.
+- `justfile` — final Cargo verification route; inspection only.
 
 ## Frozen decisions and invariants
 
-- FIFO remains `push_back` and `pop_front`.
+- `ResultEventQueue` continues to wrap private `VecDeque<ResultAnchor>` storage.
+- `enqueue` remains `push_back`; `pop_front` remains `pop_front`.
 - The queue remains process-local and in-memory.
-- Follow-up events remain coordinator-driven and one-at-a-time.
-- No recursion, retry, thread, async runtime, channel, lock, worker pool, parallel evaluation, persistence, or scheduler is added.
-- Do not force `ResultEventQueue` to become `!Send` with marker fields or non-`Send` payloads.
-- Result Anchor identity, causation, correlation, generation, admission and serialization remain unchanged.
-- No public CLI, language, Plug, Trail, capability, protocol, dependency, tool or configuration behaviour changes.
+- No recursion, retry, worker thread, async runtime, channel, lock, scheduling policy, or persistence is added.
+- Result Anchor identity, correlation, causation, generation, admission, replay, dispatch, and serialization remain unchanged.
+- No CLI, language, Plug, Trail, capability, protocol, dependency, lockfile, or tool-policy change is permitted.
 
 ## Startup procedure
 
-1. Require a clean worktree:
+1. Require a clean worktree.
+2. Fetch `origin`.
+3. Verify M01C2 is an ancestor of `origin/main`:
 
    ```powershell
-   git status --short
+   git merge-base --is-ancestor 21671b06365f28923d7375005d9b14d9559b71a4 origin/main
    ```
 
-   Stop if it is not clean.
-
-2. Fetch remote state:
-
-   ```powershell
-   git fetch origin
-   ```
-
-3. Verify the M01C2 blueprint is on remote main:
-
-   ```powershell
-   git merge-base --is-ancestor 09ee5ab32f3f34c237b247a3bafbbb573325dadc origin/main
-   ```
-
-   Require exit code 0.
-
-4. Verify accepted M01C1 is on remote main:
-
-   ```powershell
-   git merge-base --is-ancestor 2fbebfc14c8e2c55990f2bdfc8e85830da339b65 origin/main
-   ```
-
-   Require exit code 0.
-
-5. Inspect the packet directly from remote main:
-
-   ```powershell
-   git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 20
-   ```
-
-   Require M01C2, owner OpenCode, status READY, colour Green, and branch `opencode/m01c2-event-queue-contract-warning`.
-
-6. Confirm the implementation branch does not exist:
-
-   ```powershell
-   git branch --list opencode/m01c2-event-queue-contract-warning
-   git branch --remotes --list origin/opencode/m01c2-event-queue-contract-warning
-   ```
-
-   Stop without overwriting it if either command reports the branch.
-
-7. Create it from current remote main:
-
-   ```powershell
-   git switch --create opencode/m01c2-event-queue-contract-warning origin/main
-   ```
-
-8. Update the packet Base commit to the exact current `origin/main` before the implementation commit. Record the same value in the worker note.
-
-9. Read completely before editing:
-
+4. Read the packet and blueprint directly from current `origin/main`.
+5. Confirm the implementation branch does not already exist locally or remotely.
+6. Create `opencode/m01c3-event-queue-dead-api` from current `origin/main`.
+7. Update this packet's Base commit to the exact branch base before the implementation commit. Record the same base in the worker note.
+8. Read completely before editing:
    - `AGENTS.md`;
-   - `docs/CURRENT_CLINE_TASK.md`;
-   - `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_CLEANUP.md`;
-   - `docs/worker-notes/2026-07-27-j10-result-event-queue.md`;
-   - `docs/worker-notes/2026-08-04-m01c1-engine-session-warning-pilot.md`;
+   - this packet;
+   - the M01C3 blueprint;
    - `tethers-0.1/host-rust/src/event_queue.rs`;
-   - `tethers-0.1/host-rust/src/result_anchor.rs`;
+   - the production drain in `tethers-0.1/host-rust/src/application.rs`;
+   - the M01C2 worker note;
    - `.config/nextest.toml`;
    - `justfile`.
+9. Record the Cargo.lock SHA-256.
+10. Run the task-packet checker.
 
-10. Restore PowerShell resolution process-locally if required:
+## Reference proof
 
-   ```powershell
-   $pwshExe = Join-Path $PSHOME 'pwsh.exe'
-   if (-not (Test-Path -LiteralPath $pwshExe -PathType Leaf)) {
-       throw "pwsh.exe not found under PSHOME: $PSHOME"
-   }
-   $env:PATH = "$PSHOME;$env:PATH"
-   Get-Command pwsh.exe -CommandType Application -ErrorAction Stop
-   ```
+Do not retry OpenCode LSP.
 
-   Do not change user or machine PATH.
+Run one bounded exact text-reference pass before editing. Confirm that `is_empty` and `len` have no non-test `ResultEventQueue` callers in `tethers-0.1/host-rust/src`. Distinguish unrelated collection methods from the queue methods.
 
-11. Run startup checks:
+Useful searches include:
 
-   ```powershell
-   pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-   pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1
-   Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
-   ```
+```powershell
+rg -n "ResultEventQueue|queue\.is_empty\(\)|queue\.len\(\)" tethers-0.1/host-rust/src
+```
+
+Record the exact result in the worker note. Do not broaden into repository archaeology.
 
 ## Baseline warning capture
 
-Before editing:
+Before editing, run ordinary Clippy once and capture machine-readable output once:
 
 ```powershell
-$beforeJson = Join-Path $env:TEMP 'm01c2-clippy-before.jsonl'
-$beforeErr = Join-Path $env:TEMP 'm01c2-clippy-before.stderr.txt'
+cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
 
-cargo clippy `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked
-
-cargo clippy `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked `
-  --message-format=json `
-  1> $beforeJson `
-  2> $beforeErr
+cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked --message-format=json 1> $env:TEMP\m01c3-clippy-before.jsonl 2> $env:TEMP\m01c3-clippy-before.stderr.txt
 ```
 
-Require exit code 0. Record:
+Actual diagnostics are authoritative. Expected from M01C2:
 
-- total emitted warnings;
-- warning counts by lint code;
-- unique warnings whose primary span is `src/event_queue.rs`;
-- warnings outside the target file.
+- 119 emitted warning messages in total;
+- one unique source warning in `src/event_queue.rs` covering unused `is_empty` and `len` methods.
 
-Trust the captured diagnostics. If `event_queue.rs` has no warning, stop as `BLOCKED` with the exact evidence rather than inventing work.
+Record emitted totals, unique source warnings, lint codes, targets, and every warning outside the target for comparison.
 
 ## Required implementation
 
-In `event_queue.rs` only:
+Change only `tethers-0.1/host-rust/src/event_queue.rs` production/test content as follows:
 
-1. Replace `queue_cannot_be_moved_across_threads` with a truthfully named test.
-2. Use a real compile-time assertion:
-
-   ```rust
-   fn assert_send<T: Send>() {}
-   assert_send::<ResultEventQueue>();
-   ```
-
-3. Explain in the test comments that current `Send` capability does not create parallel evaluation. Seriality is enforced by the coordinator and explicit mutable queue drain.
-4. Keep the number of event-queue tests unchanged.
-5. Remove misleading claims that `ResultAnchor` or `ResultEventQueue` is intentionally `!Send`.
-6. Do not modify production queue fields, methods, visibility, or implementation.
+1. Delete the `is_empty` method and its documentation comment.
+2. Delete the `len` method and its documentation comment.
+3. In existing tests, replace assertions that use those methods with assertions through the real queue operation:
+   - an untouched new queue must return `None` from `pop_front`;
+   - after expected items are drained, one additional `pop_front` must return `None`.
+4. Preserve every existing ordering assertion.
+5. Preserve the existing nine test functions, permitting only names or assertion bodies needed for this cleanup.
+6. Do not expose or inspect the private `pending` field.
 
 ## Permitted files
 
 Only:
 
 - `tethers-0.1/host-rust/src/event_queue.rs`;
-- `docs/CURRENT_CLINE_TASK.md` for state and checkpoint;
-- `docs/worker-notes/2026-08-04-m01c2-event-queue-contract-warning.md`.
+- `docs/CURRENT_CLINE_TASK.md` for base, state, and checkpoint;
+- `docs/worker-notes/2026-08-04-m01c3-event-queue-dead-api-cleanup.md`.
 
 Stop before changing another path.
 
 ## Forbidden changes
 
-Do not modify production queue code, `ResultAnchor`, application/coordinator code, dispatch, replay, admission, Cargo.toml, Cargo.lock, dependencies, features, Rust pins, tool versions, tool configuration, deny policy, Nextest policy, Just recipes, OpenCode configuration, PowerShell tooling, OCaml, fixtures, Plug installation, J24J, CLI contracts, Trail, Anchor, release, tag or publication state.
-
-Do not add:
-
-- `PhantomData`, `Rc`, `Cell`, raw pointers or another artificial non-`Send` marker;
-- `#[allow(...)]` or `#[expect(...)]`;
-- underscore renaming, dummy use, unreachable use or `black_box`;
-- threads, async code, channels, locks, workers, retries or sleeps;
-- source-text tests pretending to prove type behaviour.
+- No `#[allow(...)]`, `#[expect(...)]`, underscore concealment, dummy call, `black_box`, unreachable use, or source-text test.
+- No `#[cfg(test)]` versions of the deleted methods.
+- No coordinator change merely to call the dead methods.
+- No queue field, storage type, visibility, `enqueue`, `pop_front`, or `Default` change.
+- No dependency, Cargo.lock, policy, configuration, tool, OCaml, protocol, CLI, replay, admission, dispatch, concurrency, or scheduling change.
 
 ## Stop conditions
 
-- Stop if the captured warning is not in `event_queue.rs` or is unrelated to the false test.
-- Stop if the compile-time `Send` assertion does not compile.
-- Stop if fixing the warning would require production source or an out-of-scope file.
-- Stop if focused Nextest or final `just verify` has any failure.
-- After two materially different failed edits, stop with exact evidence rather than rewriting the file wholesale.
+Stop only if:
+
+- either warned method has a genuine non-test source caller;
+- the baseline warning is already absent;
+- the repair requires an out-of-scope behavioural change;
+- an evidence-bearing verification reveals a real defect that cannot be corrected within the three permitted files.
+
+Do not stop for ineffective LSP, warning duplication across targets, line-number drift, or intentionally skipped dependency scans.
 
 ## Expected pre-existing changes
 
@@ -250,83 +179,47 @@ None.
 
 ## Edit recovery
 
-After an exact replacement reports `oldString` was not found:
+If an exact replacement fails:
 
-1. do not repeat the same edit;
-2. reread the current file;
-3. create a smaller patch against stable surrounding text;
-4. stop after two materially different failures.
+1. reread the current file;
+2. make a smaller patch against current content;
+3. do not repeat the same failed edit;
+4. after two materially different failed edits, use a precise local rewrite of the affected block rather than abandoning the task.
 
 ## Focused feedback loop
 
-After the single coherent edit:
+After the coherent edit:
 
-```powershell
-cargo fmt `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all -- --check
+1. run Rustfmt;
+2. run the focused event-queue Nextest filter once;
+3. run Clippy once and inspect target warnings;
+4. correct any in-scope defect on the same branch.
 
-cargo nextest list `
-  --config-file .config/nextest.toml `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked `
-  -E 'test(event_queue::)'
-
-cargo nextest run `
-  --config-file .config/nextest.toml `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked `
-  -E 'test(event_queue::)'
-```
-
-Require zero failures and zero retries. Record the exact listed and passed test counts.
+Expected focused result: 9 passed, 0 failed, 0 retries.
 
 ## Final warning accounting
 
-```powershell
-$afterJson = Join-Path $env:TEMP 'm01c2-clippy-after.jsonl'
-$afterErr = Join-Path $env:TEMP 'm01c2-clippy-after.stderr.txt'
-
-cargo clippy `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked `
-  --message-format=json `
-  1> $afterJson `
-  2> $afterErr
-```
-
-Require:
+Capture final Clippy JSON once. Require:
 
 - zero warnings whose primary span is `src/event_queue.rs`;
+- total emitted warnings lower than before;
 - no new or changed warning outside the target;
-- no suppression attribute;
-- lower total emitted warning count if the expected warning was present.
+- no suppression attribute or fake production use.
 
-Explain duplicate emitted messages when the same unique source warning is compiled for multiple targets.
+Report both emitted-message totals and unique source-warning totals.
 
 ## Required verification
 
-Run only these evidence-bearing checks:
+Run only:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1
 
-cargo fmt `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all -- --check
+cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
 
-cargo clippy `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked
+cargo nextest run --config-file .config/nextest.toml --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked -E 'test(event_queue::)'
+
+cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
 
 just verify
 
@@ -335,69 +228,51 @@ git diff --check
 git status --short
 ```
 
-Required final Cargo floor:
+Do not run full Nextest, cargo-deny, cargo-machete, `just verify-agent`, OCaml tests, or unrelated scripts. Confirm dependency and tool-policy paths are absent from the diff instead.
 
-```text
-926 passed
-0 failed
-```
+Expected floors:
 
-Do not run full Nextest, cargo-deny, cargo-machete, `just verify-agent`, OCaml tests, or unrelated scripts. They cannot add relevant evidence to a permitted test-and-comment-only diff. If an unexpected dependency, policy, configuration or runtime file changes, stop instead of broadening verification.
+- focused Nextest: 9 passed, 0 failed, 0 retries;
+- full Cargo through `just verify`: at least 926 passed, 0 failed;
+- no event-queue test disappears;
+- Cargo.lock hash unchanged.
 
 ## Acceptance criteria
 
-1. The exact `event_queue.rs` warning is captured before editing.
-2. The misleading non-proving `!Send` test is replaced by a real current-representation `Send` assertion.
-3. Comments correctly separate type mobility from serial coordinator policy.
-4. Event-queue test count is unchanged.
-5. Focused Nextest passes with zero retries.
-6. `event_queue.rs` has zero warnings afterward.
-7. No warning outside the target changes.
-8. No suppression or fake use is added.
-9. `just verify` passes with 926 Cargo tests and zero failures.
-10. Cargo.lock hash is unchanged.
-11. Only the three permitted files change.
-12. No runtime, dependency, protocol, CLI, language, Plug, Trail, replay, admission or concurrency behaviour changes.
+1. Exact reference proof confirms both deleted methods lacked non-test callers.
+2. `is_empty` and `len` are removed, not hidden or artificially used.
+3. Tests assert empty/exhausted state through `pop_front` without inspecting storage.
+4. Nine event-queue tests pass with zero retries.
+5. Full Cargo passes with zero failures and no missing test.
+6. `event_queue.rs` emits zero warning.
+7. Total warnings decrease and no outside warning changes.
+8. Cargo.lock is unchanged.
+9. No runtime queue, coordinator, dependency, protocol, CLI, concurrency, admission, replay, or dispatch behaviour changes.
 
 ## Completion contract
 
 After every acceptance condition passes:
 
-1. Create `docs/worker-notes/2026-08-04-m01c2-event-queue-contract-warning.md` with the control-v1 header and sections:
+1. Create the worker note with these control-v1 sections:
    - Requested outcome
    - Changes made
    - Decisions and assumptions
-   - Warning evidence before and after
-   - Focused Nextest evidence
-   - Final Cargo evidence
-   - Tool usefulness
+   - Evidence
    - Discoveries
    - Remaining risks
    - Smallest next action
    - References
-2. Set the single packet status to `COMPLETE`, colour to `Green`, and checkpoint to `TBD`.
-3. Make one normal implementation commit.
-4. Verify its real SHA:
-
-   ```powershell
-   git cat-file -e <REAL_SHA>^{commit}
-   ```
-
-5. Record that exact SHA in the packet and worker note.
-6. Make completion documentation a separate normal commit.
-7. Push normally.
-
-Do not amend, reset, rebase, cherry-pick, force-push, merge into main, tag or publish.
-
-Return:
-
-- branch and remote tip;
-- implementation checkpoint;
-- exact changed files;
-- unique warning and emitted-message counts before and after;
-- focused Nextest listed/passed totals and zero retries;
-- final Cargo total;
-- Cargo.lock hashes;
-- confirmation that dependency scans were intentionally skipped because no dependency or policy path changed;
-- worker-note path;
-- confirmation that no production source or runtime behaviour changed.
+2. Record the exact implementation checkpoint after the source/test commit.
+3. Set this packet to `COMPLETE` and task colour `Green`.
+4. Commit documentation normally and push the implementation branch normally.
+5. Return only:
+   - outcome;
+   - branch and remote tip;
+   - implementation checkpoint;
+   - exact changed files;
+   - reference proof;
+   - warning before/after table;
+   - focused Nextest result;
+   - final Cargo result;
+   - Cargo.lock hash;
+   - confirmation that forbidden scans were intentionally skipped.
