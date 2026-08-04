@@ -75,15 +75,15 @@ Introduce the crate-private current-trust authority foundation required by the f
 
 ## Remaining risks
 
-- Independent Lucy review remains required because the packet is Red security-sensitive
-  trust refactoring and now carries behavioural propagation proofs.
+- Independent Lucy review was required because the packet is Red security-sensitive
+  trust refactoring. That review accepted the production routing and the corrected
+  behavioural propagation evidence.
 - The `RecordingAuthority` and `FailOnNthAuthority` types are crate-test-only and have
   no production footprint.
 
 ## Smallest next action
 
-Lucy should independently review both the initial implementation and this correction
-before acceptance.
+Proceed to the next bounded J24K package after this branch is accepted and merged.
 
 ## Final Git Evidence
 - Implementation commit: `f82af8b595889a65b2003d425cb0ab18d4f20a7b`.
@@ -96,8 +96,9 @@ before acceptance.
   `0d6f2e7fe5364c6c742ad2d18845e0564b86409a`,
   `45048d81bdb1ce9475be13dafaa4dd00f2e27024`,
   `4ede589884dc653c6e859e4908e39b2526161c92`.
-- Final branch push is the requested `opencode/j24k1-current-trust-authority` branch.
-- Remote tip: `4ede589884dc653c6e859e4908e39b2526161c92`.
+- OpenCode correction handoff tip before Lucy's documentation-only acceptance normalisation:
+  `8f293321155e90980de09a0d646871ca40f24ebf`.
+- Final branch remains `opencode/j24k1-current-trust-authority`.
 
 ## References
 
