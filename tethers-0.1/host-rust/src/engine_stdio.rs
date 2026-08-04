@@ -6,11 +6,12 @@
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use serde_json::Value;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::Duration;
 
 const ENGINE_INITIALIZE_ID: u64 = 1;
 const VALIDATION_REQUEST_BASE_ID: u64 = 100;
+const DEFAULT_ENGINE_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Errors from engine session operations.
 #[derive(Debug)]
@@ -80,11 +81,11 @@ pub struct EngineSession {
 
 impl EngineSession {
     /// Launch the engine and perform MCP initialize handshake.
-    pub fn launch(engine_path: &PathBuf, working_dir: &PathBuf) -> Result<Self, EngineError> {
+    pub fn launch(engine_path: &Path, working_dir: &Path) -> Result<Self, EngineError> {
         let config = ChildConfig {
             command: engine_path.to_string_lossy().into_owned(),
             args: Vec::new(),
-            current_dir: Some(working_dir.clone()),
+            current_dir: Some(working_dir.to_path_buf()),
             ..ChildConfig::default()
         };
 
@@ -106,7 +107,12 @@ impl EngineSession {
         });
 
         Self::write_json(&mut child, &init_request)?;
-        let init_response = Self::read_json(&mut child, ENGINE_INITIALIZE_ID, "initialize")?;
+        let init_response = Self::read_json(
+            &mut child,
+            ENGINE_INITIALIZE_ID,
+            "initialize",
+            DEFAULT_ENGINE_READ_TIMEOUT,
+        )?;
 
         let version = init_response
             .get("protocolVersion")
@@ -172,7 +178,7 @@ impl EngineSession {
         });
 
         Self::write_json(&mut self.child, &request)?;
-        let result = Self::read_json(&mut self.child, request_id, "tools/call")?;
+        let result = Self::read_json(&mut self.child, request_id, "tools/call", self.read_timeout)?;
 
         // Parse result.structuredContent.valid.
         let structured = result.get("structuredContent").ok_or_else(|| {
@@ -237,7 +243,7 @@ impl EngineSession {
         });
 
         Self::write_json(&mut self.child, &request)?;
-        let result = Self::read_json(&mut self.child, request_id, "tools/call")?;
+        let result = Self::read_json(&mut self.child, request_id, "tools/call", self.read_timeout)?;
 
         // Extract structuredContent.  The Tethers planner response lives here.
         // A `status: "error"` inside structuredContent is planner data, not an
@@ -276,8 +282,9 @@ impl EngineSession {
         child: &mut SupervisedChild,
         expected_id: u64,
         method: &str,
+        timeout: Duration,
     ) -> Result<Value, EngineError> {
-        let line = child.read_protocol_line(Duration::from_secs(10))?;
+        let line = child.read_protocol_line(timeout)?;
         let line = line.trim();
         if line.is_empty() {
             return Err(EngineError::ProtocolError(
@@ -332,6 +339,7 @@ impl EngineSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     const VALID_TETHER: &str = "tether \"Test tether\"\n\nanchor\n    coding.task_completed\n\nwhen\n    project.type is \"software\"\n\ndo\n    lantern.task.record\n        project: anchor.project\n";
 

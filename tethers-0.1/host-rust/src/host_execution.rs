@@ -427,8 +427,7 @@ impl<'a> HostExecutionService<'a> {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."));
-        let mut engine =
-            EngineSession::launch(&self.engine_path.to_path_buf(), &engine_working_dir)?;
+        let mut engine = EngineSession::launch(self.engine_path, &engine_working_dir)?;
 
         // --- 2. Validate the requested configured Tethers ---
         for &i in tether_indexes {

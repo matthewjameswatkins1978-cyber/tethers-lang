@@ -3,11 +3,11 @@
 Control contract: `1`
 Task: `M01C1 - Engine-session warning cleanup pilot`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for a small language-aware Rust warning repair; Lucy performs independent review`
 Base branch: `main`
-Base commit: `ffb34707c6b57b708dc329061fdadd593153f650`
+Base commit: `d557d01ab41ddc881b08976de5822c2ccec53f24`
 Implementation branch: `opencode/m01c1-engine-session-warning-pilot`
 Worker note: `docs/worker-notes/2026-08-04-m01c1-engine-session-warning-pilot.md`
 Implementation blueprint: `docs/architecture/M01C1_ENGINE_SESSION_WARNING_PILOT.md`
