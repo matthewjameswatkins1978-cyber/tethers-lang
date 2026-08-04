@@ -14,7 +14,7 @@ Implementation blueprint: `docs/architecture/M01C1_ENGINE_SESSION_WARNING_PILOT.
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
 Agent tools: rust-analyzer, cargo-nextest 0.9.140, cargo-deny 0.19.7, cargo-machete 0.9.2
 OCaml switch path: `N/A`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `1083e7be5bef5fca78ec9d33fe725b6709f46636`
 
 ## Objective
 

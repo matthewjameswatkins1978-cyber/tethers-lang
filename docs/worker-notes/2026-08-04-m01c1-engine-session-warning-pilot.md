@@ -3,7 +3,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `d557d01ab41ddc881b08976de5822c2ccec53f24`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `1083e7be5bef5fca78ec9d33fe725b6709f46636`
 
 ## Requested outcome
 
@@ -85,5 +85,5 @@ Lucy inspects pushed evidence and decides accept, correct, or escalate. Matthew 
 
 - Packet: `docs/CURRENT_CLINE_TASK.md`
 - Blueprint: `docs/architecture/M01C1_ENGINE_SESSION_WARNING_PILOT.md`
-- Implementation commit: TBD (will be recorded after commit)
+- Implementation commit: `1083e7be5bef5fca78ec9d33fe725b6709f46636`
 - M01B worker note: `docs/worker-notes/2026-08-04-m01b-rust-agent-tooling.md`
