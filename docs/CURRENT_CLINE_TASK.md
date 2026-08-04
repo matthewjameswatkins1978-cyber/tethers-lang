@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K3b - Pure publication recovery-state classifier`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro V4 for one bounded security-sensitive Rust state-machine package; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3b-recovery-classifier`
