@@ -107,6 +107,13 @@ launch-profiles/
 Do not introduce a second UUID or timestamp. The evidence already has a stable
 content identity.
 
+Because the digest is also the filename, two validly named records carrying the
+same digest cannot coexist in one flat directory. Exact duplicate publication
+is refused by `StoreRoot::create_json` with `record_conflict`. A copied record
+placed under any other filename is a filename mismatch. A defensive repeated-
+digest check may remain in `load_all`, but no reachable duplicate-digest fixture
+is required.
+
 ## Launch-profile store behaviour
 
 ### `open`
@@ -147,13 +154,18 @@ For every entry:
 5. require the filename stem to equal the validated digest suffix, otherwise:
    - code: `launch_profile_store_invalid`
    - message: `launch-profile filename mismatch`
-6. reject a repeated `profile_evidence_digest` with:
+6. retain a defensive repeated-`profile_evidence_digest` refusal using:
    - code: `launch_profile_store_invalid`
    - message: `duplicate launch-profile evidence`
 7. sort the returned records by `profile_evidence_digest`.
 
-Do not silently ignore temporary, unknown, malformed, mismatched, or duplicate
-evidence.
+The defensive duplicate check is structurally unreachable through the normal
+flat digest-addressed store. Duplicate creation is proved through
+`record_conflict`; copied evidence under another filename is proved through the
+filename-mismatch refusal. Do not reorder filename validation to manufacture a
+duplicate-digest test case.
+
+Do not silently ignore temporary, unknown, malformed, or mismatched evidence.
 
 ## CandidateRegistry read-only opening
 
@@ -216,8 +228,10 @@ The tests must prove:
 3. `open_existing` and `load_all` change no byte or path.
 4. A second `create` of identical evidence fails with `record_conflict` and
    changes no byte.
-5. A `.tmp` entry, non-JSON entry, mismatched filename, malformed evidence, and
-   duplicate digest evidence each fail closed with the frozen code/message.
+5. A `.tmp` entry, non-JSON entry, mismatched filename, and malformed evidence
+   each fail closed. A copied duplicate under another filename must fail as
+   `launch-profile filename mismatch`; no impossible duplicate-digest fixture is
+   required.
 6. Missing launch-profile, publisher-trust, developer-approval, conformance, and
    installation-approval roots fail through `store_io` and remain absent.
 7. Existing empty roots opened through every new M3 `open_existing` constructor
