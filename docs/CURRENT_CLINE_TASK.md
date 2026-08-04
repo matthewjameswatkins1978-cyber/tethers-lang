@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `M01A - Rust toolchain refresh and verification cleanup`
 Owner: `OpenCode`
 Status: `COMPLETE`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `8ba365c0e0108440d09b0fd19c43942db4ddfbd9`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for a cross-file toolchain and PowerShell maintenance change; Lucy performs independent review`
 Base branch: `main`
