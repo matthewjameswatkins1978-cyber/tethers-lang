@@ -3,7 +3,8 @@
 Control contract: `1`
 Task: `J24H - Installation evidence access foundation`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
+Implementation checkpoint: `ea1252895c3b34172eb34800ced5dd4bd9b1e749`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for narrow security-sensitive store seams; Lucy performs final review`
 Base branch: `main`
