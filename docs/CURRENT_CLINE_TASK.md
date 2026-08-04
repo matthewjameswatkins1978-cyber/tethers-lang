@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `M01B - Rust agent tooling foundation`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `BLOCKED`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for pinned Rust tooling, PowerShell verification, and OpenCode LSP configuration; Lucy performs independent review`
 Base branch: `main`
@@ -14,7 +14,7 @@ Implementation blueprint: `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.
 Rust toolchain: exact `1.97.1` from root pin; plain Cargo; `--locked` mandatory
 OCaml switch path: `N/A`
 Tool installation: exact M01B tools explicitly authorised
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `27caeae7c0513603a53b4ceaebc99f9fe11628f8`
 
 ## Objective
 
