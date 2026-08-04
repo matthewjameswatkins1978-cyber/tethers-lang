@@ -59,6 +59,8 @@ Added `src/installation_recovery_tests.rs` with 14 direct production-seam tests 
 - Test helper `valid_record()` mirrors the pattern from `installation_publication_intent_tests.rs`; same-ID-different-fields record uses identical installed_id with a different package_version and a separately recomputed digest to prove full-record equality (not ID-only or digest-field-only).
 - The packet checker structural constraint (23 required vs 18 acceptance) is a pre-existing authoring issue. The task was `READY` when taken, and Lucy compiled it. All implementation acceptance criteria are satisfied against the evidence.
 
+- Final remote tip at evidence commit: `6bffa9ab5421b9f834fb7d4110d4546850481aa7`.
+
 ## Remaining risks
 
 - The classifier must not accidentally imply that destination verification or evidence revalidation has already succeeded. Its output names the next required recovery path; it does not authorise or perform that path.
