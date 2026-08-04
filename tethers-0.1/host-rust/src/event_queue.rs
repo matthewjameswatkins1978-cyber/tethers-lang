@@ -37,16 +37,6 @@ impl ResultEventQueue {
     pub fn pop_front(&mut self) -> Option<ResultAnchor> {
         self.pending.pop_front()
     }
-
-    /// Return `true` when no Result Anchors are waiting.
-    pub fn is_empty(&self) -> bool {
-        self.pending.is_empty()
-    }
-
-    /// Return the number of waiting Result Anchors.
-    pub fn len(&self) -> usize {
-        self.pending.len()
-    }
 }
 
 impl Default for ResultEventQueue {
@@ -85,8 +75,6 @@ mod tests {
     #[test]
     fn empty_queue_is_empty_and_pops_nothing() {
         let mut queue = ResultEventQueue::new();
-        assert!(queue.is_empty());
-        assert_eq!(queue.len(), 0);
         assert!(queue.pop_front().is_none());
     }
 
@@ -96,11 +84,10 @@ mod tests {
         queue.enqueue(sample_anchor("a/result"));
         queue.enqueue(sample_anchor("b/result"));
         queue.enqueue(sample_anchor("c/result"));
-        assert_eq!(queue.len(), 3);
         assert_eq!(queue.pop_front().unwrap().event_id, "a/result");
         assert_eq!(queue.pop_front().unwrap().event_id, "b/result");
         assert_eq!(queue.pop_front().unwrap().event_id, "c/result");
-        assert!(queue.is_empty());
+        assert!(queue.pop_front().is_none());
     }
 
     #[test]
@@ -115,7 +102,7 @@ mod tests {
 
         assert_eq!(queue.pop_front().unwrap().event_id, "second/result");
         assert_eq!(queue.pop_front().unwrap().event_id, "third/result");
-        assert!(queue.is_empty());
+        assert!(queue.pop_front().is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -141,7 +128,7 @@ mod tests {
             "sibling must still be ahead of the head's child"
         );
         assert_eq!(queue.pop_front().unwrap().event_id, "head-child/result");
-        assert!(queue.is_empty());
+        assert!(queue.pop_front().is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -241,7 +228,7 @@ mod tests {
         // a valid response: no requeue, no retry.
         let next = queue.pop_front();
         assert!(next.is_none(), "drainer must not silently retry");
-        assert!(queue.is_empty());
+        assert!(queue.pop_front().is_none());
     }
 
     // -----------------------------------------------------------------------

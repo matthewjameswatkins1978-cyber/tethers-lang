@@ -7147,9 +7147,11 @@ mod tests {
         }
         assert!(loop_error);
         // Failed item consumed by pop_front and NOT reinserted.
-        assert!(
-            queue.is_empty() || matches!(queue.pop_front(), Some(a) if a.event_id != "boom/result")
-        );
+        let remaining = queue
+            .pop_front()
+            .expect("one anchor must remain after break");
+        assert_eq!(remaining.event_id, "never/result");
+        assert!(queue.pop_front().is_none());
         assert_eq!(processed, vec!["ok/result".to_string()]);
     }
 
@@ -7160,7 +7162,7 @@ mod tests {
         queue.enqueue(j10_sample_anchor().with_event_id("boom/result"));
         let _ = queue.pop_front();
         // Nothing reinserted; queue stays empty.
-        assert!(queue.is_empty());
+        assert!(queue.pop_front().is_none());
     }
 
     // 19. process_one_event must not recursively invoke itself and must not
@@ -7233,8 +7235,9 @@ mod tests {
         }
         assert!(errored);
         assert_eq!(processed, vec!["a/result".to_string()]);
-        assert_eq!(queue.len(), 1);
-        assert!(matches!(queue.pop_front(), Some(a) if a.event_id == "c/result"));
+        let remaining = queue.pop_front().expect("c/result must remain");
+        assert_eq!(remaining.event_id, "c/result");
+        assert!(queue.pop_front().is_none());
     }
 
     // 22. production-binary regression: TETHERS-J10-SMOKE-SCOPE must not
@@ -7403,14 +7406,11 @@ mod tests {
         }
 
         // Initial dispatch must have enqueued exactly one Anchor (A).
-        assert_eq!(
-            shared_queue.len(),
-            1,
-            "initial dispatch must enqueue Anchor A"
-        );
-
-        // ---- Pop and verify Anchor A ----
         let a_anchor = shared_queue.pop_front().expect("A must be in queue");
+        assert!(
+            shared_queue.pop_front().is_none(),
+            "initial dispatch must enqueue exactly one Anchor"
+        );
         assert_eq!(a_anchor.generation, 1);
         assert_eq!(a_anchor.correlation_id, root_event_id);
         assert_eq!(a_anchor.causation_id, root_event_id);
@@ -7445,16 +7445,16 @@ mod tests {
         }
 
         // Processing A must have enqueued exactly one Anchor (B).
-        assert_eq!(shared_queue.len(), 1, "processing A must enqueue Anchor B");
-
-        // ---- Pop and verify Anchor B ----
         let b_anchor = shared_queue.pop_front().expect("B must be in queue");
+        assert!(
+            shared_queue.pop_front().is_none(),
+            "processing A must enqueue exactly one Anchor"
+        );
         assert_eq!(b_anchor.generation, 2);
         assert_eq!(b_anchor.correlation_id, root_event_id);
         assert_eq!(b_anchor.causation_id, a_anchor.event_id);
 
-        // Queue is now empty.
-        assert!(shared_queue.is_empty());
+        // Queue is now empty (verified by the preceding pop_front().is_none()).
 
         // ---- Provider call assertions ----
         let calls_vec = calls.borrow();
@@ -7602,7 +7602,8 @@ mod tests {
                 1,
             ))
         );
-        assert_eq!(queue.len(), 1);
+        assert!(queue.pop_front().is_some());
+        assert!(queue.pop_front().is_none());
     }
 
     // 5. Generation-8 queued event evaluated.
@@ -7831,8 +7832,9 @@ mod tests {
             outcome.event_admission_rejection.as_ref().unwrap()["kind"],
             Value::String(ref s) if s == "causal_depth_exceeded"
         ));
-        assert_eq!(queue.len(), 1);
-        assert_eq!(queue.pop_front().unwrap().event_id, "evt/c");
+        let remaining = queue.pop_front().expect("evt/c must remain");
+        assert_eq!(remaining.event_id, "evt/c");
+        assert!(queue.pop_front().is_none());
     }
 
     // 11. Completed follow-ups preserved before rejection.
@@ -7960,7 +7962,7 @@ mod tests {
 
         assert!(outcome.event_admission_rejection.is_none());
         assert_eq!(evaluated.len(), 3);
-        assert!(queue.is_empty());
+        assert!(queue.pop_front().is_none());
     }
 
     // 15. Rejection never enters the evaluation callback.
@@ -8022,8 +8024,9 @@ mod tests {
 
         assert!(outcome.event_admission_rejection.is_some());
         assert!(evaluated.is_empty());
-        assert_eq!(queue.len(), 1);
-        assert_eq!(queue.pop_front().unwrap().event_id, "evt/legit");
+        let remaining = queue.pop_front().expect("evt/legit must remain");
+        assert_eq!(remaining.event_id, "evt/legit");
+        assert!(queue.pop_front().is_none());
     }
 
     // 17. Admission persists when later evaluation fails.
@@ -8157,7 +8160,7 @@ mod tests {
             outcome.follow_up_evaluations[2]["input_event_id"],
             "evt/child-a1"
         );
-        assert!(queue.is_empty());
+        assert!(queue.pop_front().is_none());
     }
     // -------------------------------------------------------------------
     // J11 Packet 3: compiled host rejection verification
@@ -8482,8 +8485,9 @@ mod tests {
         );
         assert_eq!(evaluated, vec!["evt/dup"]);
         assert!(outcome.event_admission_rejection.is_some());
-        assert_eq!(queue.len(), 1);
-        assert_eq!(queue.pop_front().unwrap().event_id, "evt/later");
+        let remaining = queue.pop_front().expect("evt/later must remain");
+        assert_eq!(remaining.event_id, "evt/later");
+        assert!(queue.pop_front().is_none());
     }
 
     // 8. Depth rejection is recorded and generation 9 is never evaluated.
