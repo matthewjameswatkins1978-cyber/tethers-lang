@@ -15,7 +15,7 @@ Rust toolchain: exact `1.97.1` from root pin; plain Cargo; `--locked` mandatory
 OCaml switch path: `N/A`
 Tool installation: exact M01B tools explicitly authorised
 Status: `COMPLETE`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `bb859ae753eaf2433b213800d69185b93e5ff21d`
 
 ## Objective
 
