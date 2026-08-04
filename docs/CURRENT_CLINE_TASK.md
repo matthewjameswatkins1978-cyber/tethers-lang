@@ -1,342 +1,399 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24I - Exact-candidate installation trust`
+Task: `M01A - Rust toolchain refresh and verification cleanup`
 Owner: `OpenCode`
-Status: `COMPLETE`
-Implementation checkpoint: `bd16b01349d3db2bec4cf2406d02d8567a4a079c`
+Status: `READY`
 Task colour: `Amber`
-Route: `OpenCode using DeepSeek Pro V4 for a security-sensitive but bounded trust record and evidence extension; Lucy performs final review`
+Route: `OpenCode using DeepSeek Pro V4 for a cross-file toolchain and PowerShell maintenance change; Lucy performs independent review`
 Base branch: `main`
-Base commit: `712ae4d27a969375e7b2b8980b2e17c5d26e3377`
-Implementation branch: `opencode/j24i-exact-candidate-installation-trust`
-Worker note: `docs/worker-notes/2026-08-04-j24i-exact-candidate-installation-trust.md`
-Implementation blueprint: `docs/architecture/J24I_EXACT_CANDIDATE_INSTALLATION_TRUST.md`
+Base commit: `c9b24b3987b92092aa7800f28e1147e719c70b57`
+Implementation branch: `opencode/m01a-rust-toolchain-refresh`
+Worker note: `docs/worker-notes/2026-08-04-m01a-rust-toolchain-refresh.md`
+Implementation blueprint: `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`
+OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
+Rust toolchain: current `1.89.0`; target exact `1.97.1`; plain Cargo after root pin; `--locked` mandatory
+Toolchain preflight: required
 
 ## Objective
 
-Implement the missing exact-candidate trust authority required by the frozen
-installation request.
+Upgrade the repository-owned Rust toolchain to exact stable Rust 1.97.1 and
+clean the live verification plumbing so future commands derive compiler truth
+from repository pins instead of repeating `1.89.0` throughout scripts and
+instructions.
 
-J24I must:
+M01A is deliberately separate from dependency updates, edition migration,
+production refactoring, warning removal, file deletion, and the Plug installation
+sequence.
 
-- add one immutable trust record pinned to candidate ID and candidate-record
-  digest;
-- persist it through the existing audited `StoreRoot` authority;
-- extend `PackageTrustEvidence` with one exact-candidate mode;
-- make that mode usable for read-only planning and exact candidate matching;
-- deliberately refuse current-authority revalidation until the future locked
-  executor supplies the exact trust store.
-
-J24I performs no installation planning, provider launch, conformance, approval,
-payload copying, installed publication, enablement, lock, or CLI work.
-
-Read `docs/architecture/J24I_EXACT_CANDIDATE_INSTALLATION_TRUST.md` completely
-before editing.
+Read `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md` completely before any
+edit. It is authoritative for version semantics, allowed machine installation,
+required files, and verification.
 
 ## Relevant background and existing behaviour
 
-J24G provides the strict typed installation request for one candidate, exact
-trust, explicit non-isolated supervised execution, and disabled installation.
+J24I is accepted on `main` at
+`88d8ab2e5c65052401b3860d8a7d68f3ccb06265`. The installation sequence pauses
+before J24J while this maintenance milestone refreshes the build floor.
 
-J24H is accepted on `main` at
-`b3d4b04605155575a974127b33b4147700d3b428`. It adds durable launch-profile
-evidence and non-creating store-opening seams.
+Current live Rust authority is fragmented:
 
-The existing trust model has two different scopes:
+- root `rust-toolchain.toml` selects 1.89.0;
+- host `Cargo.toml` declares `rust-version = "1.89"`;
+- the `justfile`, environment probe, toolchain checker, task template, and Rust
+  guide repeat 1.89.0 directly.
 
-- signed publisher trust applies to a signing key and optional namespace;
-- unsigned developer approval applies to one semantic package digest.
+The current `justfile` also joins some commands with PowerShell semicolons, so a
+later successful command can obscure the status of an earlier failed command.
 
-Neither is pinned to one candidate ID and candidate-record digest. J24I must not
-silently reinterpret either as `exact_candidate`.
+Rust 1.97.1 is the exact approved target. It supersedes 1.97.0 because the point
+release fixes an LLVM miscompilation.
 
-`InstallationTrustScope` and `InstallationTargetState` deliberately each expose
-only one legal enum variant. Their exact values are type-level guarantees. The
-request schema, candidate ID, approval boolean, and authority remain runtime
-checks because public fields can be manually constructed or altered.
+OCaml 5.5.0, Dune 3.24.0, and Yojson 2.2.2 remain the accepted locked OCaml
+baseline. M01A must verify but not update them.
 
-J24J will build the read-only planner on this exact trust authority.
+The existing Cargo lock, dependencies, Tethers source, tests, and product
+semantics are not part of this task.
 
 ## Startup procedure
 
-1. Confirm the worktree is clean. Stop if it is not.
-2. Run `git fetch origin`.
-3. Verify blueprint checkpoint
-   `712ae4d27a969375e7b2b8980b2e17c5d26e3377` is an ancestor of
-   `origin/main`.
-4. Verify accepted J24H is an ancestor of `origin/main`:
+1. Confirm the current worktree is clean:
 
    ```powershell
-   git merge-base --is-ancestor b3d4b04605155575a974127b33b4147700d3b428 origin/main
+   git status --short
    ```
 
-5. Inspect the packet directly from `origin/main`:
+   Stop if it is not clean.
+2. Fetch remote state:
 
    ```powershell
-   git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 16
+   git fetch origin
    ```
 
-   Require J24I, OpenCode, `READY`, and branch
-   `opencode/j24i-exact-candidate-installation-trust`.
-6. Verify the blueprint directly from `origin/main`:
+3. Verify the M01A blueprint checkpoint is an ancestor of current remote main:
 
    ```powershell
-   git cat-file -e origin/main:docs/architecture/J24I_EXACT_CANDIDATE_INSTALLATION_TRUST.md
+   git merge-base --is-ancestor c9b24b3987b92092aa7800f28e1147e719c70b57 origin/main
+   ```
+
+   Require exit code 0.
+4. Verify accepted corrected J24I is an ancestor of remote main:
+
+   ```powershell
+   git merge-base --is-ancestor 88d8ab2e5c65052401b3860d8a7d68f3ccb06265 origin/main
+   ```
+
+   Require exit code 0.
+5. Inspect the packet directly from `origin/main` and require M01A, OpenCode,
+   `READY`, and branch `opencode/m01a-rust-toolchain-refresh`:
+
+   ```powershell
+   git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 18
+   ```
+
+6. Verify the blueprint exists on remote main:
+
+   ```powershell
+   git cat-file -e origin/main:docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md
    ```
 
 7. Confirm the implementation branch does not exist locally or remotely:
 
    ```powershell
-   git branch --list opencode/j24i-exact-candidate-installation-trust
-   git branch --remotes --list origin/opencode/j24i-exact-candidate-installation-trust
+   git branch --list opencode/m01a-rust-toolchain-refresh
+   git branch --remotes --list origin/opencode/m01a-rust-toolchain-refresh
    ```
 
-   Stop without overwriting it if either command reports the branch.
-8. Create it from current remote main:
+   Stop without overwriting it if either reports a branch.
+8. Create the implementation branch from current remote main:
 
    ```powershell
-   git switch --create opencode/j24i-exact-candidate-installation-trust origin/main
+   git switch --create opencode/m01a-rust-toolchain-refresh origin/main
    ```
 
-9. Read the checked-out packet and blueprint completely before editing.
+9. Read completely:
+
+   - `AGENTS.md`;
+   - `docs/CURRENT_CLINE_TASK.md`;
+   - `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`;
+   - `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`;
+   - `docs/worker-notes/2026-07-30-toolchain-baseline-01.md`;
+   - `rust-toolchain.toml`;
+   - `tethers-0.1/host-rust/Cargo.toml`;
+   - `justfile`;
+   - `.github/scripts/check-tethers-toolchains.ps1`;
+   - `.github/scripts/test-check-tethers-toolchains.ps1`;
+   - `scripts/check-tethers-environment.ps1`.
+
+10. Run the packet checker before editing.
+11. Capture the current Cargo.lock SHA-256 and the current Rust 1.89.0 full-suite
+    and warning baseline if 1.89.0 remains installed.
+12. Check whether exact Rust 1.97.1, rustfmt, and Clippy are installed. Matthew
+    explicitly authorises only this exact installation if missing:
+
+    ```powershell
+    rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy
+    ```
+
+    Do not update the global default, uninstall 1.89.0, modify PATH, or install
+    anything else.
 
 ## Required behaviour
 
-1. Add `tethers-0.1/host-rust/src/installation_trust.rs` and export it from
-   `lib.rs`.
+1. Pin root `rust-toolchain.toml` to exact Rust `1.97.1`, minimal profile, with
+   rustfmt and Clippy.
 
-2. Implement exactly the `ExactCandidateTrustRecord` fields frozen in the
-   blueprint. Candidate ID is the record identity; add no second UUID.
+2. Change only `rust-version` in host `Cargo.toml` from `1.89` to `1.97` while
+   preserving edition 2021, package version, dependencies, features, and
+   `Cargo.lock` byte-for-byte.
 
-3. Implement `ExactCandidateTrustStore` with exactly:
+3. Replace explicit `+1.89.0` Cargo selectors and `Push-Location` semicolon
+   chains in `justfile` with plain Cargo plus `--manifest-path`, keeping `--locked`
+   and making every multi-step recipe fail immediately on its first failure.
 
-   ```rust
-   pub fn open(path: &Path) -> Result<Self>;
-   pub fn open_existing(path: &Path) -> Result<Self>;
-   pub fn create(
-       &self,
-       candidate: &CandidateRecord,
-       request: &InstallationRequest,
-       approving_authority: &str,
-   ) -> Result<ExactCandidateTrustRecord>;
-   pub fn find(
-       &self,
-       candidate_id: &str,
-   ) -> Result<Option<ExactCandidateTrustRecord>>;
-   pub fn load_all(&self) -> Result<Vec<ExactCandidateTrustRecord>>;
-   ```
+4. Remove explicit `+1.89.0` arguments from
+   `scripts/check-tethers-environment.ps1`; rely on the root pin and preserve its
+   read-only, offline, machine-readable capability-report contract.
 
-4. Delegate creating, existing-only opening, path safety, and atomic JSON
-   publication to the corresponding `StoreRoot` methods.
+5. Refactor `.github/scripts/check-tethers-toolchains.ps1` to derive the exact
+   Rust channel from `rust-toolchain.toml` and Rust edition/MSRV from
+   `Cargo.toml`, while retaining explicit OCaml-switch verification and the
+   process-local rustup auto-install guard.
 
-5. Before publication, validate the candidate, request schema, matching candidate
-   ID, `true` supervised-execution approval, and non-empty approving authority.
-   Confirm the single legal trust-scope and target-state variants without unsafe
-   or impossible negative fixtures.
+6. Make the checker require exact rustc 1.97.1, Cargo major/minor 1.97, installed
+   rustfmt and Clippy components, and successful rustfmt/Clippy version commands
+   without inventing non-contractual point-version equality.
 
-6. Copy only the frozen candidate fields into the record, calculate its canonical
-   digest, validate it, and publish through
-   `StoreRoot::create_json(candidate_id, record)`.
+7. Update `.github/scripts/test-check-tethers-toolchains.ps1` without weakening
+   its existing negative paths, guard restoration, real-switch, no-fallback, and
+   repository-non-mutation evidence.
 
-7. Add `ExactCandidateTrustRecord::require_for_candidate` with the frozen exact
-   binding checks and mismatch error.
+8. Update `docs/TASK_PACKET_TEMPLATE.md` so future packets read the root exact
+   pin, use plain Cargo, and require `--locked` rather than copying a compiler
+   version into the template.
 
-8. `load_all` must reject temporary, non-JSON, malformed, and filename-mismatched
-   evidence, retain a defensive duplicate-candidate check, and sort by candidate
-   ID.
+9. Update live Rust guidance in `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` to
+   Rust 1.97.1, edition 2021, and `rust-version = 1.97`; direct agents to the
+   repository pins rather than floating latest documentation or remembered
+   versions.
 
-9. `find` must use the validated store view. Corrupt evidence must never be
-   treated as absence.
+10. Add a concise `docs/TOOLCHAIN_POLICY.md` covering exact pins, monthly or
+    milestone review, prompt security/soundness point releases, separation of
+    compiler/dependency/edition jobs, locked builds, OCaml lock authority, and
+    preservation of historical evidence.
 
-10. Extend `TrustModeEvidence` with exactly:
+11. Preserve all historical worker notes, completed packets, release notes, and
+    architecture evidence exactly as historical records even when they mention
+    Rust 1.89.0.
 
-    ```rust
-    ExactCandidate {
-        candidate_id: String,
-        candidate_record_digest: String,
-        installation_trust_record_digest: String,
-        approving_authority: String,
-    }
-    ```
+12. Record evidence-backed candidates for M01B in the worker note only. Do not
+    delete or rename files during M01A.
 
-11. Add `PackageTrustEvidence::exact_candidate(record)` and calculate normal
-    package-trust evidence deterministically from the validated record.
+13. Preserve all Tethers language, Plug lifecycle, provider, trust, execution,
+    Anchor, Trail, package, and runtime behaviour.
 
-12. Extend `PackageTrustEvidence::validate` and `require_for_candidate` so the
-    new mode accepts only its exact candidate.
-
-13. Preserve the serialised fields and behaviour of existing signed-publisher
-    and unsigned-developer evidence.
-
-14. `PackageTrustEvidence::revalidate_current` must fail closed for the new mode
-    with:
-
-    - code `trust_exact_candidate_authority_required`
-    - message `exact-candidate trust requires current installation-trust authority`
-
-15. Do not wire the mode into provider launch, conformance, installation
-    approval, installed publication, or operational launch.
-
-16. Add the complete focused evidence matrix from the blueprint.
+14. Follow the DeepSeek exact-edit recovery rule: after one `oldString` failure,
+    reread the current file and create a smaller fresh patch; never retry the
+    identical edit and stop after two materially different failed attempts.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/installation_trust.rs`
-- `tethers-0.1/host-rust/src/trust.rs`
-- `tethers-0.1/host-rust/src/installation_request.rs`
-- `tethers-0.1/host-rust/src/candidate.rs`
-- `tethers-0.1/host-rust/src/m3_store.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/tests/j24i_exact_candidate_installation_trust.rs`
-- `docs/architecture/J24I_EXACT_CANDIDATE_INSTALLATION_TRUST.md`
+- `rust-toolchain.toml`
+- `tethers-0.1/host-rust/Cargo.toml`
+- `tethers-0.1/host-rust/Cargo.lock`
+- `justfile`
+- `scripts/check-tethers-environment.ps1`
+- `.github/scripts/check-tethers-toolchains.ps1`
+- `.github/scripts/test-check-tethers-toolchains.ps1`
+- `docs/TASK_PACKET_TEMPLATE.md`
+- `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
+- `docs/TOOLCHAIN_POLICY.md`
+- `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`
+- `docs/worker-notes/2026-07-30-toolchain-baseline-01.md`
 - `docs/CURRENT_CLINE_TASK.md`
+
+Read-only references include:
+
+- `AGENTS.md`;
+- `docs/OCAML_GUIDE_FOR_AGENTS.md`;
+- `tethers-0.1/engine-ocaml/tethers_engine.opam`;
+- `tethers-0.1/engine-ocaml/tethers_engine.opam.locked`;
+- `tethers-0.1/engine-ocaml/dune-project`.
 
 ## Frozen decisions and invariants
 
-- `exact_candidate` means one candidate ID plus one candidate-record digest.
-- Publisher trust is not granted or widened.
-- Semantic-digest developer approval is not rebranded as exact-candidate trust.
-- Candidate ID is the store identity; no extra UUID appears.
-- The record is immutable and atomically published through `StoreRoot`.
-- Public request strings and the approval boolean are rechecked before creation.
-- Single-variant trust-scope and target-state enums are compile-time guarantees;
-  no unsafe fixture may fabricate alternatives.
-- Exact package-trust evidence is deterministic from the validated record.
-- Existing signed and developer evidence remain schema compatible.
-- Exact trust evidence cannot pass current-authority revalidation in J24I.
-- The future planner may inspect it; existing execution paths must refuse it.
-- Candidate, trust, conformance, installation approval, installed, and enablement
-  authorities remain separate.
-- Tethers Core and OCaml semantics remain untouched.
+- Exact active Rust channel is `1.97.1`, not floating `stable`.
+- Rust edition remains 2021.
+- Declared Rust minimum becomes `1.97`; no separate older MSRV lane is claimed.
+- Toolchain, dependency, warning-cleanup, file-pruning, and edition migration are
+  separate jobs.
+- `Cargo.lock` remains byte-identical and ordinary Cargo verification is locked.
+- Plain Cargo commands inherit the exact root toolchain pin.
+- Cargo's point version is not required to equal rustc's point-release number.
+- Existing explicit OCaml switch and lock authority remain unchanged.
+- Toolchain checks are read-only and restore `RUSTUP_AUTO_INSTALL` exactly.
+- Historical evidence is not rewritten to look current.
+- No production source or test changes are authorised.
+- No inactive configuration or document is deleted in M01A.
+- M01B handles warning cleanup and safe repository pruning after this compiler
+  refresh is accepted.
+- No Plug-installation work proceeds until M01A is accepted.
 
 ## Acceptance criteria
 
-1. The module and `lib.rs` export compile without dependency or lockfile changes.
-2. A valid request and candidate create one valid exact trust record.
-3. The filename is exactly the candidate ID with no new lifecycle UUID.
-4. `load_all` and `find` round-trip it without changing unrelated files.
-5. Missing `open_existing` roots remain missing.
-6. A second exact create returns `record_conflict` and changes no byte.
-7. Manually constructed wrong schema, mismatched candidate ID, false execution
-   approval, and empty authority fail before publication.
-8. Trust scope and target state remain guaranteed by their single-variant types;
-   no unsafe or impossible negative enum fixture is required.
-9. Temporary, non-JSON, malformed, and filename-mismatched evidence fail closed.
-10. Copied evidence under another filename returns the frozen filename mismatch;
-    no structurally impossible duplicate fixture is required.
-11. A record refuses a different candidate even when semantic digest text is the
-    same.
-12. Exact `PackageTrustEvidence` is deterministic and validates.
-13. Exact package-trust evidence accepts only its exact candidate.
-14. Current-authority revalidation refuses exact trust with the frozen result.
-15. Existing signed and developer trust suites remain green.
-16. J24E through J24H focused regressions remain green.
-17. Full suite remains green apart from the five documented `pwsh.exe not found`
-    environment failures.
-18. Packet checker, Rustfmt, and `git diff --check` pass.
-19. J24I launches no process and creates no conformance, approval, installed,
-    enablement, policy, Trail, or Anchor state.
+1. `rust-toolchain.toml` selects exact 1.97.1 with minimal profile, rustfmt, and
+   Clippy.
+2. Host `Cargo.toml` remains edition 2021 and declares `rust-version = "1.97"`.
+3. Cargo dependencies, features, package version, and `Cargo.lock` are unchanged.
+4. No explicit `+1.89.0` remains in active `justfile` or environment-probe
+   commands.
+5. Every Just verification recipe stops at its first failing command and uses
+   the host manifest explicitly.
+6. The environment probe resolves the root-pinned compiler and remains
+   read-only/offline where previously required.
+7. The toolchain checker derives the exact Rust channel and Cargo metadata from
+   repository files rather than copied constants.
+8. Exact rustc 1.97.1, Cargo 1.97 major/minor, rustfmt, and Clippy are verified
+   without false point-version assumptions.
+9. All prior toolchain-checker negative paths and environment-restoration tests
+   remain green.
+10. The real explicit OCaml switch still passes with OCaml 5.5.0, Dune 3.24.0,
+    and Yojson 2.2.2.
+11. The task template no longer fossilises a specific Rust version.
+12. The Rust guide and new toolchain policy describe the accepted live baseline
+    and maintenance cadence accurately.
+13. Historical evidence mentioning Rust 1.89.0 remains unchanged.
+14. Rust formatting, check, Clippy, and complete all-target/all-feature tests run
+    under exact Rust 1.97.1 with `--locked` where supported.
+15. Before/after evidence identifies any new warnings or failures introduced by
+    1.97.1; none are silently dismissed.
+16. `just --list`, `just fmt`, `just check`, `just test-rust`, and `just verify`
+    all succeed.
+17. Packet checker, toolchain checker tests, real preflight, and
+    `git diff --check` pass.
+18. No production Rust/OCaml source, production test, dependency, lock, runtime,
+    lifecycle, or language behaviour changes.
+19. The worker note records exact tool versions, Cargo.lock hash equality,
+    changed files, warning comparison, M01B candidates, and a verified real
+    implementation checkpoint.
 
 ## Required verification
 
+Run in this order after changes:
+
 ```powershell
+rustup run 1.97.1 rustc --version
+rustup component list --toolchain 1.97.1 --installed
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-cargo +1.89.0 fmt --all -- --check
-cargo +1.89.0 test installation_trust --locked
-cargo +1.89.0 test trust --locked
-cargo +1.89.0 test --test j24i_exact_candidate_installation_trust --locked
-cargo +1.89.0 test installation_request --locked
-cargo +1.89.0 test --test j24g_installation_request --locked
-cargo +1.89.0 test launch_profile --locked
-cargo +1.89.0 test --test j24h_installation_evidence_access --locked
-cargo +1.89.0 test candidate_preparation --locked
-cargo +1.89.0 test --test j24e_candidate_preparation --locked
-cargo +1.89.0 test --test j24f_plug_stage_cli --locked
-cargo +1.89.0 test --all-targets --all-features --locked
+cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
+cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+just --list
+just fmt
+just check
+just test-rust
+pwsh -NoProfile -File .github/scripts/test-check-tethers-toolchains.ps1 -OcamlSwitchPath 'D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml'
+pwsh -NoProfile -File .github/scripts/check-tethers-toolchains.ps1 -OcamlSwitchPath 'D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml'
+just verify
 git diff --check
+git status --short
 ```
 
-## Editing recovery discipline
+Also prove:
 
-If an exact replacement reports that `oldString` was not found:
+```powershell
+Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
+rg -n --fixed-strings '+1.89.0' justfile scripts/check-tethers-environment.ps1 .github/scripts/check-tethers-toolchains.ps1 docs/TASK_PACKET_TEMPLATE.md docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md
+```
 
-1. do not retry the identical replacement;
-2. reread the current file;
-3. locate the smallest stable surrounding anchor;
-4. make a fresh, smaller patch against the latest contents;
-5. stop after two materially different failures rather than rewriting the whole
-   file.
+The final `rg` must return no active copied command or guidance pin. A historical
+reference inside the blueprint explaining the migration is allowed; historical
+worker notes and release evidence are outside this active-file search.
 
 ## Permitted changes
 
-Expected files are limited to:
+Only these files may change:
 
-- `tethers-0.1/host-rust/src/installation_trust.rs`
-- `tethers-0.1/host-rust/src/trust.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/tests/j24i_exact_candidate_installation_trust.rs`
-- `docs/worker-notes/2026-08-04-j24i-exact-candidate-installation-trust.md`
-- `docs/CURRENT_CLINE_TASK.md` only for status transitions and the final verified
-  implementation checkpoint
+- `rust-toolchain.toml`
+- `tethers-0.1/host-rust/Cargo.toml`
+- `justfile`
+- `scripts/check-tethers-environment.ps1`
+- `.github/scripts/check-tethers-toolchains.ps1`
+- `.github/scripts/test-check-tethers-toolchains.ps1`
+- `docs/TASK_PACKET_TEMPLATE.md`
+- `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
+- `docs/TOOLCHAIN_POLICY.md` (new)
+- `docs/worker-notes/2026-08-04-m01a-rust-toolchain-refresh.md` (new)
+- `docs/CURRENT_CLINE_TASK.md` only for status transitions and final checkpoint
 
-`installation_request.rs`, `candidate.rs`, and `m3_store.rs` are read-only
-references. Stop before changing any other file.
+Stop before changing any other file.
 
 ## Forbidden changes
 
-Do not modify installation request, candidate, package, store-root,
-launch-profile, conformance, installation-approval, installed, enablement,
-operational-scope, CLI, application, or Plug-command code.
+Do not:
 
-Do not add the planner, host-data-root orchestration, installation lock, provider
-preparation or launch, conformance execution, approval creation, payload copying,
-installed publication, enablement, `plug install`, another CLI command, download,
-update, removal, registry, policy, replay, event, Anchor, Trail, OCaml, Tether
-syntax, release, tag, or version work.
-
-Do not change dependencies or lockfiles.
-
-Do not amend, reset, rebase, cherry-pick, force-push, or merge into `main`.
+- modify `Cargo.lock`, dependencies, features, package version, production source,
+  production tests, fixtures, or generated evidence;
+- change OCaml, opam, Dune, Yojson, OCaml locks, or Dune language;
+- migrate to Rust edition 2024;
+- suppress, allow, or repair existing warnings in production code;
+- delete or rename `.clinerules`, `.clineignore`, scripts, guides, roadmaps,
+  worker notes, release notes, control files, or any historical evidence;
+- modify `AGENTS.md`, `docs/OCAML_GUIDE_FOR_AGENTS.md`, CI, release, version tag,
+  Tethers Core, Plug installation, trust, provider, runtime, Anchor, Trail, or
+  application code;
+- update the global Rust default, uninstall 1.89.0, modify PATH, install another
+  tool, or change global/user Cargo configuration;
+- amend, reset, rebase, cherry-pick, force-push, merge into main, tag, or publish.
 
 ## Stop conditions
 
-Stop cleanly and report the smallest unresolved question if:
+Stop and return exact evidence plus the smallest unresolved question if:
 
 - the implementation branch already exists;
-- current `origin/main` lacks accepted J24H or the J24I packet/blueprint;
-- exact trust cannot be added without changing an existing evidence record
-  outside `TrustModeEvidence`;
-- existing signed or developer trust serialisation would change;
-- an impossible enum test appears necessary;
-- a planner, process launch, lifecycle mutation, dependency, lockfile, or
-  forbidden file appears necessary;
+- the blueprint or corrected J24I is not on current remote main;
+- the worktree is dirty;
+- the explicit OCaml switch path is absent, resolves elsewhere, or fails the
+  accepted no-fallback contract;
+- Rust 1.97.1 cannot be installed using only the authorised rustup command;
+- the upgrade requires a dependency, Cargo.lock, production code, test, OCaml,
+  edition, or forbidden-file change;
+- Cargo 1.97 cannot consume the existing lock without mutation;
+- a new compiler failure cannot be repaired strictly within the permitted
+  tooling/document files;
+- checker compatibility requires a wider environment-system redesign;
 - an exact-edit replacement fails twice after rereading and using materially
   different anchors;
-- branch-specific failures remain after two materially different attempts.
+- branch-specific verification fails after two materially different attempts.
 
 ## Expected pre-existing changes
 
 None.
 
-## Git and return contract
+## Git and completion contract
 
-Use ordinary commits and normal push only.
+Use normal commits and normal push only.
 
-After all required checks pass:
+After every check passes:
 
-- create the authorised worker note;
-- set the packet to `COMPLETE`;
-- make the implementation commit normally;
-- obtain the real 40-character SHA from Git;
-- verify it exists with `git cat-file -e <SHA>^{commit}` before recording it;
-- record that exact SHA in both packet and worker note;
-- create completion documentation separately;
-- push normally.
+1. Create `docs/worker-notes/2026-08-04-m01a-rust-toolchain-refresh.md`.
+2. Set this packet to `COMPLETE`.
+3. Create the implementation commit normally.
+4. Obtain its real full SHA from Git.
+5. Verify it exists:
 
-Return the branch, remote final SHA, verified implementation checkpoint, exact
-changed files, focused and full test evidence, packet/rustfmt/diff results,
-worker-note path, exact-candidate binding evidence, fail-closed current-authority
-evidence, and explicit confirmation that J24I planned nothing, launched nothing,
-and changed no installation lifecycle state beyond its new immutable trust
-record store fixture tests.
+   ```powershell
+   git cat-file -e <REAL_SHA>^{commit}
+   ```
+
+6. Record that exact SHA in the packet and worker note.
+7. Create completion-documentation commit separately.
+8. Push normally.
+
+Return branch, remote tip, verified implementation checkpoint, exact changed
+files, exact tool versions, Cargo.lock before/after hashes, toolchain-checker
+assertion count, Rust full-suite result, Just recipe results, warning comparison,
+M01B cleanup candidates, worker-note path, and explicit confirmation that M01A
+changed no dependency, production source, OCaml lock, edition, or Tethers
+behaviour.
