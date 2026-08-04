@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `db84c71dc92381921cdc05c62029a1899c13d7f2`
-Implementation checkpoint: `f82af8b3c5f0c0f3bf6e6bb0c7c955c8e71a44c0`
+Implementation checkpoint: `f82af8b595889a65b2003d425cb0ab18d4f20a7b`
 
 ## Requested outcome
 
@@ -72,7 +72,7 @@ Lucy should independently review the pushed bounded diff and the preparation-com
 diagnostic before acceptance.
 
 ## Final Git Evidence
-- Implementation commit: `f82af8b3c5f0c0f3bf6e6bb0c7c955c8e71a44c0`.
+- Implementation commit: `f82af8b595889a65b2003d425cb0ab18d4f20a7b`.
 - Documentation commits: `273ccaf53090f7e1bb3ed65bc9a8fc392c7cbc6f`,
   `3c04e610cead482e67023ea6b695b833f4319c31`, and
   `37bfa96052b8f7afa9725175d849355e23eeb56b`.
