@@ -3,18 +3,18 @@
 Control contract: `1`
 Task: `M01C4 - Application CLI import suppression cleanup`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode using HY3 for a narrow Rust import-configuration cleanup; Lucy performs independent review`
 Base branch: `main`
-Base commit: `16988b5b31613cece42714f32fe413c39b9ef977`
+Base commit: `966ff269ee06f6182bd6029ffe1919b0a43acda8`
 Implementation branch: `opencode/m01c4-application-cli-import-suppression`
 Worker note: `docs/worker-notes/2026-08-04-m01c4-application-cli-import-suppression.md`
 Implementation blueprint: `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md`
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
 Agent tools: bounded `rg`, Clippy JSON, rustfmt, and ordinary Cargo through `just verify`; do not retry ineffective OpenCode LSP
 OCaml switch path: `N/A`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `976d2519c1629c751f219a246cba0328ac90efb3`
 
 ## Objective
 
