@@ -11,16 +11,14 @@ Base commit: `87e254de15794783ec61ec9abfff56b633668bb0`
 Implementation branch: `opencode/j24j-installation-reconciliation-planner`
 Worker note: `docs/worker-notes/2026-08-04-j24j-installation-reconciliation.md`
 Implementation blueprint: `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCILIATION_PLANNER.md`
-Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
-Agent tools: bounded `rg`, compiler diagnostics, rustfmt, focused Nextest, and ordinary Cargo through `just verify`; LSP is optional and never a gate
-OCaml switch path: `N/A`
+Rust toolchain: `1.97.1`
 Implementation checkpoint: `b3fa3e757b1d2e926ae7e142e730f521cbe30ac0`
 
 ## Objective
 
 Implement a pure, read-only planner that reconciles one exact J24G installation request against the accepted candidate, exact-trust, launch-profile, conformance, installation-approval, and installed-state authorities.
 
-Return exactly one legitimate next action:
+The planner returns exactly one legitimate next action:
 
 - create exact-candidate trust;
 - run supervised conformance;
@@ -28,13 +26,11 @@ Return exactly one legitimate next action:
 - publish disabled installation;
 - complete.
 
-Read `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCILIATION_PLANNER.md` completely before editing. It is authoritative.
-
 ## Relevant background and existing behaviour
 
 J24G, J24H, and J24I are accepted on `main`.
 
-Current planning line:
+The installation sequence is:
 
 ```text
 J24G request contract
@@ -45,7 +41,7 @@ J24G request contract
   -> J24L thin public plug install CLI
 ```
 
-Accepted engineering baseline:
+Accepted baseline:
 
 ```text
 Rust             1.97.1
@@ -54,175 +50,65 @@ Nextest retries  0
 Cargo.lock       D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
-## Required public seam
+## Required behaviour
 
-Add and export `src/installation_plan.rs` with the exact action enum, plan record, and `plan_installation` signature frozen in the blueprint.
+1. Revalidate all public `InstallationRequest` fields before reading evidence.
+2. Load the validated candidate registry and select only the exact requested candidate.
+3. Find and validate exact-candidate installation trust, treating present mismatch as an error rather than absence.
+4. Construct deterministic `PackageTrustEvidence::exact_candidate` without calling `PackageTrustEvidence::revalidate_current`.
+5. Select reusable current passed conformance only when candidate, trust, launch profile, and current suite pins all match.
+6. Select multiple reusable conformances by greatest `ended_unix_ms`, then lexicographically greatest `evidence_id`.
+7. Validate any existing installation approval against the complete selected evidence chain and fail closed on stale pins.
+8. Validate any existing present-disabled installed record against the complete selected evidence chain and fail closed on stale pins.
+9. Return the earliest missing legitimate action with only genuine evidence pins populated and perform no mutation.
 
-The planner accepts already-opened authorities. It does not define host-data-root layout and does not create missing stores.
+Historical failed, interrupted, invalidated, or stale conformance is not reusable authority and may be ignored when planning a fresh supervised run. Malformed or corrupt store evidence must fail closed.
 
-## Core behaviour
-
-1. Revalidate the public typed request fields.
-2. Load the validated candidate registry and select the exact requested candidate.
-3. Find and validate exact-candidate trust.
-4. Construct deterministic exact `PackageTrustEvidence`.
-5. Find reusable current passed conformance only when its launch profile, trust, candidate, and current suite pins all match.
-6. Select multiple current passed runs deterministically by greatest `ended_unix_ms`, then greatest `evidence_id`.
-7. Validate any existing candidate installation approval against the selected current chain.
-8. Validate any existing exact-candidate installed record against the approval and current chain.
-9. Return the earliest missing legitimate action with only the evidence pins available at that stage.
-
-Malformed or corrupt store evidence fails closed. Historical failed, interrupted, invalidated, or stale conformance may be ignored when planning a new supervised run.
-
-## Frozen read-only boundary
-
-Do not:
-
-- create or modify a directory or file;
-- acquire a lock;
-- generate a timestamp;
-- create trust;
-- prepare or launch a provider;
-- run conformance;
-- create installation approval;
-- copy payloads;
-- publish installed state;
-- inspect or alter enablement;
-- add a CLI command;
-- call `PackageTrustEvidence::revalidate_current`;
-- change an accepted evidence schema;
-- change dependencies or Cargo.lock.
-
-## Permitted files
-
-Only:
+## Relevant components
 
 - `tethers-0.1/host-rust/src/installation_plan.rs`
 - `tethers-0.1/host-rust/src/lib.rs`
 - `tethers-0.1/host-rust/tests/j24j_installation_reconciliation.rs`
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-04-j24j-installation-reconciliation.md`
+- `InstallationRequest`
+- `CandidateRegistry`
+- `ExactCandidateTrustStore`
+- `PackageTrustEvidence`
+- `LaunchProfileEvidenceStore`
+- `ConformanceEvidenceStore`
+- `InstallationApprovalStore`
+- `InstalledPlugRegistry`
+- `current_suite_digest`
+- existing `M3Error` and `Result`
 
-Stop before changing another path.
+## Frozen decisions and invariants
 
-## Startup procedure
+- The public action enum has exactly five variants: `CreateExactCandidateTrust`, `RunSupervisedConformance`, `CreateInstallationApproval`, `PublishDisabledInstallation`, and `Complete`.
+- The public plan record and `plan_installation` signature are frozen by the J24J architecture blueprint.
+- The planner accepts already-opened authorities and does not define host-data-root layout.
+- Launch-profile authority exists only through a reusable current conformance record that pins it.
+- A present stale approval or installed record is an error, not permission to create a replacement.
+- Future-stage evidence fields remain `None`; the planner never invents IDs or digests.
+- The planner is read-only and does not acquire a lock, generate time or identity, launch a process, create authority, publish state, or inspect enablement.
+- Accepted evidence schemas, dependencies, Cargo configuration, OCaml, and Cargo.lock remain unchanged.
 
-1. Require a clean worktree:
+## Acceptance criteria
 
-   ```powershell
-   git status --short
-   ```
-
-2. Fetch remote state:
-
-   ```powershell
-   git fetch origin
-   ```
-
-3. Verify the J24J blueprint is on `origin/main`:
-
-   ```powershell
-   git merge-base --is-ancestor 2bfb7d36b0ab7c877d6042e327328eca8acdef34 origin/main
-   ```
-
-4. Inspect the remote packet and require J24J, READY, OpenCode, and the required branch:
-
-   ```powershell
-   git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 24
-   ```
-
-5. Require the implementation branch not to exist locally or remotely:
-
-   ```powershell
-   git branch --list opencode/j24j-installation-reconciliation-planner
-   git branch --remotes --list origin/opencode/j24j-installation-reconciliation-planner
-   ```
-
-6. Create it from current remote main:
-
-   ```powershell
-   git switch --create opencode/j24j-installation-reconciliation-planner origin/main
-   ```
-
-7. Update this packet's Base commit to the exact current `origin/main` before the implementation commit. Record the same base in the worker note.
-
-8. Read completely before editing:
-
-   - `AGENTS.md`
-   - this packet
-   - J24J blueprint
-   - J24G, J24H, and J24I blueprints
-   - J24I worker note
-   - `src/installation_request.rs`
-   - `src/candidate.rs`
-   - `src/installation_trust.rs`
-   - relevant public validation and store seams in `trust.rs`, `launch_profile.rs`, `conformance.rs`, and `installed.rs`
-   - `src/lib.rs`
-   - focused J24G, J24H, and J24I tests
-
-9. Run:
-
-   ```powershell
-   pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-   pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1
-   Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
-   ```
-
-If child processes cannot resolve `pwsh.exe`, prepend `$PSHOME` to PATH for this process only. Do not modify user or machine PATH.
-
-## Discovery discipline
-
-Use bounded `rg` to confirm the exact accepted seams and method names.
-
-OpenCode LSP is optional. It may be tried once only when it would genuinely save work. Empty, null, unavailable, or hanging output must be recorded and abandoned immediately. Continue with source inspection, `rg`, compiler diagnostics, and tests.
-
-No optional tool has veto power over this task.
-
-## Required implementation details
-
-- Use existing `M3Error` and `Result`.
-- Validate manually constructed request fields before loading evidence.
-- Candidate absence uses the frozen planner error.
-- Present mismatched trust is an error, not absence.
-- Launch-profile authority exists only when pinned by reusable current conformance.
-- Do not choose an arbitrary unpinned launch profile.
-- Multiple current passed conformances use the blueprint's deterministic ordering.
-- A stale existing approval or installed record fails closed; do not ignore it and create another.
-- Plans populate only evidence pins proven at their stage. Future pins remain `None`.
-- Do not serialize the plan or add public JSON in J24J.
-
-## Focused test requirements
-
-Add `tests/j24j_installation_reconciliation.rs` and cover every required blueprint path, including:
-
-- all five plan actions;
-- exact evidence pins at each stage;
-- stale/failed conformance handling;
-- deterministic selection between current runs;
-- invalid manual request;
-- missing candidate;
-- mismatched trust;
-- corrupt store evidence;
-- stale approval;
-- stale installed state;
-- complete recursive no-mutation snapshots;
-- no provider launch or new evidence.
-
-Use direct Rust fixtures and accepted store APIs. Do not add production test-only constructors.
-
-## Edit recovery
-
-If an exact edit misses:
-
-1. reread the latest file;
-2. use a smaller stable anchor;
-3. make one fresh materially different patch;
-4. never repeat the identical failed replacement;
-5. stop after two materially different failed attempts rather than rewriting a file wholesale.
+1. The J24J module and export match the frozen public seam.
+2. All five plan actions are reached through valid evidence states.
+3. Every later action carries the complete valid earlier evidence chain.
+4. Corrupt evidence is never treated as absence.
+5. Historical non-current conformance does not block a fresh conformance action.
+6. Deterministic conformance selection is independent of enumeration order.
+7. Approval and installed state fail closed when their pins drift.
+8. Every successful and failed planning route preserves recursive byte/path snapshots.
+9. Focused Nextest executes the J24J integration suite with zero retries.
+10. Focused ordinary Cargo integration tests pass.
+11. Cargo.lock remains byte-identical and the final diff contains only permitted files.
+12. Final Cargo verification retains the accepted 926-test baseline, with only the five documented pre-existing `pwsh.exe` environment failures.
 
 ## Required verification
 
-Run:
+Required commands:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
@@ -234,14 +120,15 @@ cargo fmt `
 cargo nextest run `
   --config-file .config/nextest.toml `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets --all-features --locked `
-  -E 'test(j24j_installation_reconciliation) | test(installation_plan)'
+  --all-features --locked `
+  --test j24j_installation_reconciliation
 
 cargo test `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
   --test j24j_installation_reconciliation `
   --locked
 
+$env:PATH = "$PSHOME;$env:PATH"
 just verify
 
 Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
@@ -249,28 +136,28 @@ git diff --check
 git status --short
 ```
 
-The Nextest filter may be adjusted once if Nextest reports the exact integration test name differently. Record the adjustment. Do not repeat a bad filter blindly.
+Recorded implementation evidence:
 
-Do not run full Nextest, cargo-deny, cargo-machete, `just verify-agent`, OCaml tests, packaging, release, or unrelated scripts.
+- focused Nextest: 24 passed, 0 failed, 0 skipped;
+- focused Cargo integration: 24 passed, 0 failed;
+- Cargo baseline: 926 passed with five unchanged pre-existing `pwsh.exe` environment failures;
+- rustfmt: pass;
+- Cargo.lock: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 
-## Acceptance criteria
+The packet and worker-note headings were normalized during Lucy's acceptance review after OpenCode reported that the earlier Lucy-authored packet did not match the control-v1 checker schema. This connector-side documentation correction did not rerun local commands.
 
-1. J24J module and export match the frozen public seam.
-2. All five plan actions are reachable through valid evidence states.
-3. Every later action carries the complete valid earlier evidence chain.
-4. Corrupt evidence is never treated as absence.
-5. Historical non-current conformance does not block a new conformance action.
-6. Approval and installed state fail closed when their pins drift.
-7. Planning changes no byte or path and launches no process.
-8. Focused Nextest passes with zero retries.
-9. Focused ordinary Cargo integration tests pass.
-10. `just verify` passes with at least 926 Cargo tests and zero failures, aside from an honestly documented pre-existing environmental flake that passes on one evidence-led rerun.
-11. Cargo.lock remains byte-identical.
-12. Final diff contains only permitted files.
+## Forbidden changes
+
+- No trust creation, conformance execution, approval creation, installation publication, enablement work, lock acquisition, timestamp or UUID generation inside the planner.
+- No provider preparation, process launch, protocol communication, payload copying, or CLI command.
+- No call to `PackageTrustEvidence::revalidate_current` from J24J.
+- No accepted evidence-schema, dependency, Cargo.lock, tool-configuration, OCaml, packaging, or release changes.
+- No production test-only constructors.
+- No files outside the five permitted paths.
 
 ## Stop conditions
 
-Stop as BLOCKED only if:
+Stop as `BLOCKED` only if:
 
 - an accepted authority lacks a required read-only load or validation seam;
 - a required exact pin is absent from accepted records;
@@ -278,27 +165,8 @@ Stop as BLOCKED only if:
 - implementation requires mutation, process launch, lock, CLI, dependency, schema, or out-of-scope changes;
 - required verification still fails after one evidence-led correction.
 
-Do not stop for failed LSP, an optional tool, or one failed exact replacement.
+Do not stop for failed LSP, an unavailable optional tool, or one failed exact replacement.
 
-## Completion contract
+## Expected pre-existing changes
 
-After all acceptance criteria pass:
-
-1. Create the worker note with:
-   - Requested outcome
-   - Changes made
-   - Decisions and assumptions
-   - Evidence-chain algorithm
-   - All five action proofs
-   - Read-only snapshot evidence
-   - Focused Nextest and Cargo evidence
-   - Full Cargo evidence
-   - Tool usefulness and fallbacks
-   - Cargo.lock and final-diff evidence
-   - Remaining risks
-   - Smallest next action
-2. Change packet status to `COMPLETE`.
-3. Set the real implementation checkpoint SHA.
-4. Commit documentation normally.
-5. Push the branch normally without force.
-6. Return branch, base, implementation checkpoint, completion tip, changed files, focused counts, full Cargo count, Cargo.lock hash, and confirmation that only permitted files changed.
+None.
