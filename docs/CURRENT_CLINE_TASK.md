@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K1 - Explicit current-trust authority foundation`
 Owner: `OpenCode`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro V4 for bounded security-sensitive Rust refactoring; Lucy performs independent review and routine safe merge`
 Base branch: `main`

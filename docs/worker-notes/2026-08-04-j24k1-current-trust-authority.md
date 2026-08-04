@@ -3,9 +3,9 @@
 Task: `J24K1 - Explicit current-trust authority foundation`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Base commit: `db84c71dc92381921cdc05c62029a1899c13d7f2`
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `PENDING (set to implementation commit before final documentation commit)`
 
 ## Requested outcome
 
@@ -13,7 +13,15 @@ Introduce the crate-private current-trust authority foundation required by the f
 
 ## Changes made
 
-Pending implementation.
+- Added crate-private `CurrentTrustAuthority`, `PublisherDeveloperTrustAuthority`, and
+  `ExactCandidateTrustAuthority` in `src/current_trust.rs`.
+- Added explicit authority-aware launch, conformance, approval, installation-entry, and
+  final-installation-revalidation seams. Existing wrappers preserve accepted signatures
+  and construct the legacy adapter locally.
+- Added crate-private focused tests for matching, stale, absent, wrong-mode, and corrupt
+  exact-candidate authority evidence.
+- Declared the production module privately and the focused test module only under
+  `#[cfg(test)]`.
 
 ## Decisions and assumptions
 
@@ -21,22 +29,47 @@ Pending implementation.
 - Every authority-aware internal seam requires an explicit authority argument.
 - Existing public APIs retain their signatures and use the legacy publisher/developer authority adapter.
 - Exact-candidate authority remains crate-private and has no fallback path.
+- Exact authority validates candidate and supplied evidence before loading the current
+  exact store record, then compares all frozen pins and reconstructed evidence.
+- The authority is passed as `&dyn CurrentTrustAuthority`; no optional or implicit
+  authority state was introduced.
 
 ## Evidence
 
-Pending implementation and verification.
+- J24K1 focused tests: `3 passed, 0 failed` in ordinary Cargo and Nextest (`3 run,
+  931 skipped`, zero retries).
+- Representative regressions: J24I `30 passed`; M3 lifecycle `13 passed`; J23C2
+  `8 passed`; J23C3 `1 passed`.
+- Full `just verify`: `934 passed, 0 failed`.
+- Earlier all-target Cargo run without PATH correction reproduced the five known
+  environment failures (`execution_environment` tests reporting `pwsh.exe not found`)
+  and `929 passed`; the PATH-corrected repository verification passed all `934` tests.
+- Cargo.lock SHA-256:
+  `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
+- `cargo fmt --all -- --check`: passed. `git diff --check`: passed.
+- Task-packet checker was run before and after implementation; it remains blocked by
+  its pre-existing report that the expected J24K1 architecture and worker-note
+  preparation commits are non-planning paths after the packet base.
 
 ## Discoveries
 
-Pending implementation.
+- The requested J24K1 branch existed on `origin` but was not present in stale local
+  refs; it was fetched and checked out without creating a second task branch.
+- The packet checker does not currently accept the packet's own documented preparation
+  commits after the declared `main` base. No checker or frozen architecture file was
+  changed.
 
 ## Remaining risks
 
-Pending implementation review.
+- Independent Lucy review remains required because the packet is Red security-sensitive
+  trust refactoring.
+- The task checker preparation-commit diagnostic remains an external control-loop issue,
+  not a Rust implementation failure.
 
 ## Smallest next action
 
-Implement the bounded J24K1 task packet and update this note with exact files, commits, test evidence, and any stopped condition.
+Lucy should independently review the pushed bounded diff and the preparation-commit
+diagnostic before acceptance.
 
 ## References
 

@@ -5,6 +5,7 @@
 
 use crate::candidate::CandidateRecord;
 use crate::conformance::{current_suite_digest, ConformanceDisposition, ConformanceEvidence};
+use crate::current_trust::{CurrentTrustAuthority, PublisherDeveloperTrustAuthority};
 use crate::launch_profile::{revalidate_candidate, LaunchProfileEvidence};
 use crate::m3_store::{
     canonical, reject_reparse, sha256, strict_json, unix_ms, verify_chain, M3Error, Result,
@@ -165,15 +166,33 @@ impl InstallationApprovalStore {
         conformance: &ConformanceEvidence,
         approving_authority: &str,
     ) -> Result<InstallationApprovalRecord> {
+        let authority = PublisherDeveloperTrustAuthority::new(publisher_trust, developer_approvals);
+        self.approve_with_authority(
+            candidate,
+            quarantine_root,
+            trust,
+            &authority,
+            launch,
+            conformance,
+            approving_authority,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn approve_with_authority(
+        &self,
+        candidate: &CandidateRecord,
+        quarantine_root: &Path,
+        trust: &PackageTrustEvidence,
+        authority: &dyn CurrentTrustAuthority,
+        launch: &LaunchProfileEvidence,
+        conformance: &ConformanceEvidence,
+        approving_authority: &str,
+    ) -> Result<InstallationApprovalRecord> {
         let quarantine = revalidate_candidate(candidate, quarantine_root)?;
         trust.require_for_candidate(candidate)?;
         launch.require_for_candidate(candidate)?;
-        trust.revalidate_current(
-            &candidate.package_id,
-            publisher_trust,
-            developer_approvals,
-            unix_ms()?,
-        )?;
+        authority.revalidate_current(candidate, trust, unix_ms()?)?;
         conformance.require_current(candidate, trust, launch, &current_suite_digest()?)?;
         if conformance.disposition != ConformanceDisposition::Passed {
             return Err(M3Error::new(
@@ -510,15 +529,33 @@ impl InstalledPlugRegistry {
         conformance: &ConformanceEvidence,
         approval: &InstallationApprovalRecord,
     ) -> Result<InstalledPlugRecord> {
+        let authority = PublisherDeveloperTrustAuthority::new(publisher_trust, developer_approvals);
+        self.install_disabled_with_authority(
+            candidate,
+            quarantine_root,
+            trust,
+            &authority,
+            launch,
+            conformance,
+            approval,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn install_disabled_with_authority(
+        &self,
+        candidate: &CandidateRecord,
+        quarantine_root: &Path,
+        trust: &PackageTrustEvidence,
+        authority: &dyn CurrentTrustAuthority,
+        launch: &LaunchProfileEvidence,
+        conformance: &ConformanceEvidence,
+        approval: &InstallationApprovalRecord,
+    ) -> Result<InstalledPlugRecord> {
         let source = revalidate_candidate(candidate, quarantine_root)?;
         trust.require_for_candidate(candidate)?;
         launch.require_for_candidate(candidate)?;
-        trust.revalidate_current(
-            &candidate.package_id,
-            publisher_trust,
-            developer_approvals,
-            unix_ms()?,
-        )?;
+        authority.revalidate_current(candidate, trust, unix_ms()?)?;
         conformance.require_current(candidate, trust, launch, &current_suite_digest()?)?;
         approval.validate()?;
         if approval.candidate_id != candidate.candidate_id
@@ -562,12 +599,7 @@ impl InstalledPlugRegistry {
             revalidate_candidate(candidate, quarantine_root)?;
             trust.require_for_candidate(candidate)?;
             launch.require_for_candidate(candidate)?;
-            trust.revalidate_current(
-                &candidate.package_id,
-                publisher_trust,
-                developer_approvals,
-                unix_ms()?,
-            )?;
+            authority.revalidate_current(candidate, trust, unix_ms()?)?;
             conformance.require_current(candidate, trust, launch, &current_suite_digest()?)?;
             Ok(())
         })();

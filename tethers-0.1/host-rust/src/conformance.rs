@@ -1,6 +1,7 @@
 //! Host-owned M3 conformance orchestration and immutable evidence.
 
 use crate::candidate::CandidateRecord;
+use crate::current_trust::{CurrentTrustAuthority, PublisherDeveloperTrustAuthority};
 use crate::launch_profile::{
     revalidate_candidate, LaunchProfileEvidence, PreparedSupervisedLaunch,
 };
@@ -272,6 +273,25 @@ pub fn run_host_conformance(
     developer_approvals: &DeveloperApprovalStore,
     host_build_identity: &str,
 ) -> Result<ConformanceEvidence> {
+    let authority = PublisherDeveloperTrustAuthority::new(publisher_trust, developer_approvals);
+    run_host_conformance_with_authority(
+        prepared,
+        candidate,
+        quarantine_root,
+        trust,
+        &authority,
+        host_build_identity,
+    )
+}
+
+pub(crate) fn run_host_conformance_with_authority(
+    prepared: &PreparedSupervisedLaunch,
+    candidate: &CandidateRecord,
+    quarantine_root: &Path,
+    trust: &PackageTrustEvidence,
+    authority: &dyn CurrentTrustAuthority,
+    host_build_identity: &str,
+) -> Result<ConformanceEvidence> {
     let started = unix_ms()?;
     let mut cases = Vec::new();
     let quarantine = revalidate_candidate(candidate, quarantine_root)?;
@@ -282,9 +302,9 @@ pub fn run_host_conformance(
     // This deliberately reopens host-owned authority after candidate
     // revalidation and immediately before the process boundary. Historical
     // PackageTrustEvidence is never current launch authority.
-    prepared.revalidate_current_trust(candidate, trust, publisher_trust, developer_approvals)?;
+    prepared.revalidate_current_trust_with(candidate, trust, authority)?;
     let mut child = prepared
-        .launch_for_candidate(candidate, trust, publisher_trust, developer_approvals)
+        .launch_for_candidate_with(candidate, trust, authority)
         .map_err(|error| M3Error::new("conformance_launch", error.to_string()))?;
     cases.push(passed("exact_launch_clean_environment"));
     let deadline =

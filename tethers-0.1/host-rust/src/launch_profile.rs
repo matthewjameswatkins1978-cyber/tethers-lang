@@ -6,6 +6,7 @@
 use crate::candidate::CandidateRecord;
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use crate::conformance::{ConformanceDisposition, ConformanceEvidence};
+use crate::current_trust::{CurrentTrustAuthority, PublisherDeveloperTrustAuthority};
 use crate::enablement::EnablementRecord;
 use crate::installed::{InstallationApprovalRecord, InstalledPlugRecord};
 use crate::m3_store::{
@@ -544,14 +545,19 @@ impl PreparedSupervisedLaunch {
         publisher_trust: &PublisherTrustStore,
         developer_approvals: &DeveloperApprovalStore,
     ) -> Result<()> {
+        let authority = PublisherDeveloperTrustAuthority::new(publisher_trust, developer_approvals);
+        self.revalidate_current_trust_with(candidate, trust, &authority)
+    }
+
+    pub(crate) fn revalidate_current_trust_with(
+        &self,
+        candidate: &CandidateRecord,
+        trust: &PackageTrustEvidence,
+        authority: &dyn CurrentTrustAuthority,
+    ) -> Result<()> {
         self.evidence.require_for_candidate(candidate)?;
         trust.require_for_candidate(candidate)?;
-        trust.revalidate_current(
-            &candidate.package_id,
-            publisher_trust,
-            developer_approvals,
-            crate::m3_store::unix_ms()?,
-        )
+        authority.revalidate_current(candidate, trust, crate::m3_store::unix_ms()?)
     }
 
     pub fn prepare(
@@ -637,7 +643,17 @@ impl PreparedSupervisedLaunch {
         publisher_trust: &PublisherTrustStore,
         developer_approvals: &DeveloperApprovalStore,
     ) -> std::result::Result<SupervisedChild, ChildError> {
-        self.revalidate_current_trust(candidate, trust, publisher_trust, developer_approvals)
+        let authority = PublisherDeveloperTrustAuthority::new(publisher_trust, developer_approvals);
+        self.launch_for_candidate_with(candidate, trust, &authority)
+    }
+
+    pub(crate) fn launch_for_candidate_with(
+        &self,
+        candidate: &CandidateRecord,
+        trust: &PackageTrustEvidence,
+        authority: &dyn CurrentTrustAuthority,
+    ) -> std::result::Result<SupervisedChild, ChildError> {
+        self.revalidate_current_trust_with(candidate, trust, authority)
             .map_err(|error| ChildError::LaunchFailed {
                 command: self.executable.to_string_lossy().into_owned(),
                 message: format!("{}: {}", error.code, error.message),
