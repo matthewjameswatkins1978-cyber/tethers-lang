@@ -73,7 +73,7 @@ diagnostic before acceptance.
 
 ## Final Git Evidence
 - Implementation commit: `f82af8b`.
-- Final documentation commit: pending until this note and packet checkpoint are committed.
+- Final documentation commit: `273ccaf`.
 - Final branch push is the requested `opencode/j24k1-current-trust-authority` branch.
 
 ## References
