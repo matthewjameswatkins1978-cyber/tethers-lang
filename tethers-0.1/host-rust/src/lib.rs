@@ -25,6 +25,9 @@ pub mod installation_execution;
 #[cfg(test)]
 mod installation_execution_tests;
 pub mod installation_plan;
+mod installation_publication_intent;
+#[cfg(test)]
+mod installation_publication_intent_tests;
 pub mod installation_request;
 pub mod installation_trust;
 pub mod installed;
