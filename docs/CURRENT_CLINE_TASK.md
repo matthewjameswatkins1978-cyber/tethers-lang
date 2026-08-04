@@ -12,7 +12,7 @@ Implementation branch: `opencode/j24k1-current-trust-authority`
 Worker note: `docs/worker-notes/2026-08-04-j24k1-current-trust-authority.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
-Implementation checkpoint: `f82af8b`
+Implementation checkpoint: `f82af8b3c5f0c0f3bf6e6bb0c7c955c8e71a44c0`
 
 ## Objective
 
