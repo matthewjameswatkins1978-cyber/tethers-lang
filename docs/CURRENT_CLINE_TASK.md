@@ -1,178 +1,224 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `M01C3 - Event-queue dead API cleanup`
+Task: `M01C4 - Application CLI import suppression cleanup`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `READY`
 Task colour: `Green`
-Route: `OpenCode using HY3 for a narrow Rust internal-API cleanup; Lucy performs independent review`
+Route: `OpenCode using HY3 for a narrow Rust import-configuration cleanup; Lucy performs independent review`
 Base branch: `main`
-Base commit: `170063ea24b3ba4ba5529749ae6fc615e7c58de6`
-Implementation branch: `opencode/m01c3-event-queue-dead-api`
-Worker note: `docs/worker-notes/2026-08-04-m01c3-event-queue-dead-api-cleanup.md`
-Implementation blueprint: `docs/architecture/M01C3_EVENT_QUEUE_DEAD_API_CLEANUP.md`
+Base commit: `16988b5b31613cece42714f32fe413c39b9ef977`
+Implementation branch: `opencode/m01c4-application-cli-import-suppression`
+Worker note: `docs/worker-notes/2026-08-04-m01c4-application-cli-import-suppression.md`
+Implementation blueprint: `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md`
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
-Agent tools: Clippy JSON and cargo-nextest 0.9.140; do not retry ineffective OpenCode LSP
+Agent tools: bounded `rg`, Clippy JSON, rustfmt, and ordinary Cargo through `just verify`; do not retry ineffective OpenCode LSP
 OCaml switch path: `N/A`
-Implementation checkpoint: `a145714f47ee04e729e6dfbb2419521aa95e7bbb`
+Implementation checkpoint: `TBD`
 
 ## Objective
 
-Remove the remaining `dead_code` warning in `tethers-0.1/host-rust/src/event_queue.rs` by deleting the unused `ResultEventQueue::is_empty` and `ResultEventQueue::len` methods and rewriting their test-only assertions through `pop_front`.
+Remove the blanket `#[allow(unused_imports)]` attached to the CLI imports at the top of `tethers-0.1/host-rust/src/application.rs`, replacing it with an honest import layout that reflects each symbol's real production, debug-only, or test-only use.
 
-Read `docs/architecture/M01C3_EVENT_QUEUE_DEAD_API_CLEANUP.md` completely before editing. It is authoritative.
+Read `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md` completely before editing. It is authoritative.
 
 ## Relevant background and existing behaviour
 
-M01C2 is accepted on `main` at:
+M01C3 is accepted and merged on `main` at:
 
-`21671b06365f28923d7375005d9b14d9559b71a4`
+`40539e3084727e5357a448d9fd3cacd6fd08ce2d`
 
 Accepted baseline:
 
 ```text
 Rust             1.97.1
-Cargo tests      926 passing
-Nextest tests    1133 passing
-Nextest retries  0
-Clippy emitted   119 warnings
+Cargo tests      926 passing minimum
+Clippy messages  118 emitted warnings after M01C3
 Cargo.lock       D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
-M01C2 established that `ResultEventQueue` is truthfully `Send` under its current representation and that serial processing is enforced by coordinator structure, not a fake type marker.
+The exact current warning count must be captured before editing. The historical number is context, not a substitute for current evidence.
 
-The remaining warning covers two methods that production does not call:
+The target import currently suppresses unused-import diagnostics across its entire group:
 
-- `ResultEventQueue::is_empty`;
-- `ResultEventQueue::len`.
+```rust
+#[allow(unused_imports)]
+use tethers_reference_host::cli::{Cli, CliEnvelope, Command as CliCommand, OutcomeStatus};
+```
 
-Production creates, enqueues, and drains through `new`, `enqueue`, and `pop_front`. The two warned methods are test conveniences only.
+The task is to encode the actual configuration boundary in the imports, not to change CLI behaviour.
 
 ## Required behaviour
 
-1. Keep FIFO ordering exactly unchanged.
-2. Keep coordinator-driven one-at-a-time draining exactly unchanged.
-3. Delete the two dead methods rather than manufacturing production callers or hiding them behind test configuration.
-4. Rewrite affected queue tests through `pop_front().is_none()` only when the queue is expected to be exhausted.
-5. Keep exactly nine event-queue tests.
-6. Preserve the compile-time `ResultEventQueue: Send` assertion added by M01C2.
-7. Finish with zero warnings whose primary span is `src/event_queue.rs`.
+1. Remove the target blanket `#[allow(unused_imports)]`.
+2. Classify `Cli`, `CliEnvelope`, `CliCommand`, and `OutcomeStatus` through one bounded exact reference search in `application.rs`.
+3. Keep always-compiled imports ordinary.
+4. Gate test-only or debug-only imports with the narrowest truthful `#[cfg(...)]`.
+5. Remove any genuinely unused import.
+6. Preserve the `CliCommand` alias if it remains used.
+7. Preserve all CLI parsing, command routing, debug probes, test configuration, serialization, output, exit codes, and errors.
+8. Finish without a new warning or replacement suppression.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/event_queue.rs` — queue type, dead methods, and colocated tests.
-- `tethers-0.1/host-rust/src/application.rs` — production coordinator drain using `while let Some(anchor) = queue.pop_front()`; inspection only.
-- `.config/nextest.toml` — accepted zero-retry focused test configuration; inspection only.
-- `justfile` — final Cargo verification route; inspection only.
+- `tethers-0.1/host-rust/src/application.rs` — target import block and all local symbol uses.
+- `tethers-0.1/host-rust/src/cli.rs` — defines the imported types; read only if needed to understand configuration, never edit.
+- `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md` — frozen repair rules.
+- `.github/scripts/check-tethers-task-packet.ps1` — packet-state checker.
+- `justfile` — accepted final Cargo verification route.
 
 ## Frozen decisions and invariants
 
-- `ResultEventQueue` continues to wrap private `VecDeque<ResultAnchor>` storage.
-- `enqueue` remains `push_back`; `pop_front` remains `pop_front`.
-- The queue remains process-local and in-memory.
-- No recursion, retry, worker thread, async runtime, channel, lock, scheduling policy, or persistence is added.
-- Result Anchor identity, correlation, causation, generation, admission, replay, dispatch, and serialization remain unchanged.
-- No CLI, language, Plug, Trail, capability, protocol, dependency, lockfile, or tool-policy change is permitted.
+- The task changes import configuration only.
+- No CLI type, enum, parser, subcommand, JSON envelope, outcome status, output text, error text, exit code, or runtime route may change.
+- Debug-only probes remain available exactly where they were.
+- Test-only code remains test-only.
+- No replacement `#[allow]` or `#[expect]` is permitted.
+- No dependency, lockfile, feature, Rust pin, tool configuration, OCaml, protocol, Plug, Trail, replay, admission, concurrency, or release change is permitted.
+- OpenCode LSP is optional infrastructure that has already failed honestly in this workspace. Do not retry it. It has no veto over this task.
 
 ## Startup procedure
 
-1. Require a clean worktree.
-2. Fetch `origin`.
-3. Verify M01C2 is an ancestor of `origin/main`:
+1. Require a clean worktree:
 
    ```powershell
-   git merge-base --is-ancestor 21671b06365f28923d7375005d9b14d9559b71a4 origin/main
+   git status --short
    ```
 
-4. Read the packet and blueprint directly from current `origin/main`.
-5. Confirm the implementation branch does not already exist locally or remotely.
-6. Create `opencode/m01c3-event-queue-dead-api` from current `origin/main`.
-7. Update this packet's Base commit to the exact branch base before the implementation commit. Record the same base in the worker note.
-8. Read completely before editing:
+   Stop only if unrelated local changes would be overwritten or make the task unsafe.
+
+2. Fetch remote state:
+
+   ```powershell
+   git fetch origin
+   ```
+
+3. Verify the planning checkpoint is on remote main:
+
+   ```powershell
+   git merge-base --is-ancestor 16988b5b31613cece42714f32fe413c39b9ef977 origin/main
+   ```
+
+   Require exit code 0.
+
+4. Verify accepted M01C3 is on remote main:
+
+   ```powershell
+   git merge-base --is-ancestor 40539e3084727e5357a448d9fd3cacd6fd08ce2d origin/main
+   ```
+
+   Require exit code 0.
+
+5. Confirm the implementation branch does not already contain unrelated work. If absent, create it from current remote main:
+
+   ```powershell
+   git switch --create opencode/m01c4-application-cli-import-suppression origin/main
+   ```
+
+   If the branch already exists and is exactly this unfinished task, continue it rather than creating a second branch. Stop only if it contains unrelated or ambiguous work.
+
+6. Update the packet Base commit to the exact `origin/main` used to create the implementation branch. Record the same base in the worker note.
+
+7. Read completely before editing:
+
    - `AGENTS.md`;
-   - this packet;
-   - the M01C3 blueprint;
-   - `tethers-0.1/host-rust/src/event_queue.rs`;
-   - the production drain in `tethers-0.1/host-rust/src/application.rs`;
-   - the M01C2 worker note;
-   - `.config/nextest.toml`;
+   - `docs/CURRENT_CLINE_TASK.md`;
+   - `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md`;
+   - `tethers-0.1/host-rust/src/application.rs`;
+   - `tethers-0.1/host-rust/src/cli.rs` only if symbol definitions are needed;
    - `justfile`.
-9. Record the Cargo.lock SHA-256.
-10. Run the task-packet checker.
 
-## Reference proof
+8. Run the packet checker and record the lock hash:
 
-Do not retry OpenCode LSP.
+   ```powershell
+   pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
+   Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
+   ```
 
-Run one bounded exact text-reference pass before editing. Confirm that `is_empty` and `len` have no non-test `ResultEventQueue` callers in `tethers-0.1/host-rust/src`. Distinguish unrelated collection methods from the queue methods.
+## Reference classification
 
-Useful searches include:
+Run one bounded exact search in `application.rs` for the four names:
 
 ```powershell
-rg -n "ResultEventQueue|queue\.is_empty\(\)|queue\.len\(\)" tethers-0.1/host-rust/src
+rg -n --glob 'application.rs' '\b(Cli|CliEnvelope|CliCommand|OutcomeStatus)\b' tethers-0.1/host-rust/src
 ```
 
-Record the exact result in the worker note. Do not broaden into repository archaeology.
+Read the surrounding configuration gates and classify every actual use as:
+
+- always compiled;
+- `debug_assertions` only;
+- test only;
+- both debug and test;
+- unused.
+
+Record the classification in the worker note. Do not retry LSP, search unrelated repositories, or broaden into CLI redesign.
 
 ## Baseline warning capture
 
-Before editing, run ordinary Clippy once and capture machine-readable output once:
+Before editing, run one machine-readable locked Clippy capture:
 
 ```powershell
-cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+$beforeJson = Join-Path $env:TEMP 'm01c4-clippy-before.jsonl'
+$beforeErr = Join-Path $env:TEMP 'm01c4-clippy-before.stderr.txt'
 
-cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked --message-format=json 1> $env:TEMP\m01c3-clippy-before.jsonl 2> $env:TEMP\m01c3-clippy-before.stderr.txt
+cargo clippy `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --all-targets `
+  --all-features `
+  --locked `
+  --message-format=json `
+  1> $beforeJson `
+  2> $beforeErr
 ```
 
-Actual diagnostics are authoritative. Expected from M01C2:
+Require exit code 0. Record:
 
-- 119 emitted warning messages in total;
-- one unique source warning in `src/event_queue.rs` covering unused `is_empty` and `len` methods.
+- total emitted warnings;
+- any warning whose primary span is the target import block;
+- the warning set outside the target for comparison.
 
-Record emitted totals, unique source warnings, lint codes, targets, and every warning outside the target for comparison.
+The current suppression may mean there is no target warning before editing. That is expected and is not a blocker.
 
 ## Required implementation
 
-Change only `tethers-0.1/host-rust/src/event_queue.rs` production/test content as follows:
+Implement only the frozen blueprint:
 
-1. Delete the `is_empty` method and its documentation comment.
-2. Delete the `len` method and its documentation comment.
-3. In existing tests, replace assertions that use those methods with assertions through the real queue operation:
-   - an untouched new queue must return `None` from `pop_front`;
-   - after expected items are drained, one additional `pop_front` must return `None`.
-4. Preserve every existing ordering assertion.
-5. Preserve the existing nine test functions, permitting only names or assertion bodies needed for this cleanup.
-6. Do not expose or inspect the private `pending` field.
+1. Delete the target `#[allow(unused_imports)]`.
+2. Arrange imports according to the observed use classification.
+3. Prefer a small number of clear imports over scattered fully qualified names.
+4. Keep `Command as CliCommand` if the alias is used.
+5. If all four symbols are genuinely required in all target configurations, remove only the redundant attribute.
+6. If a symbol is unused everywhere, remove it.
+7. Do not move functions, change configuration gates around functions, or alter code beyond the import block unless rustfmt changes whitespace mechanically.
 
 ## Permitted files
 
-Only:
+Only these may change:
 
-- `tethers-0.1/host-rust/src/event_queue.rs`;
-- `tethers-0.1/host-rust/src/application.rs` — test-module-only `#[cfg(test)]` callers of `is_empty` / `len` (lines 7150, 7163, 7236, 7407, 7448, 7457, 7605, 7834, 7963, 8025, 8160, 8485), rewritten to `pop_front().is_none()` / `pop_front()` assertions; no production code change;
-- `docs/CURRENT_CLINE_TASK.md` for base, state, and checkpoint;
-- `docs/worker-notes/2026-08-04-m01c3-event-queue-dead-api-cleanup.md`.
+- `tethers-0.1/host-rust/src/application.rs`;
+- `docs/CURRENT_CLINE_TASK.md` for state and checkpoint;
+- `docs/worker-notes/2026-08-04-m01c4-application-cli-import-suppression.md`.
 
-Stop before changing any other path or any production (non-test) code in `application.rs`.
+Stop before changing another path.
 
 ## Forbidden changes
 
-- No `#[allow(...)]`, `#[expect(...)]`, underscore concealment, dummy call, `black_box`, unreachable use, or source-text test.
-- No `#[cfg(test)]` versions of the deleted methods.
-- No coordinator change merely to call the dead methods.
-- No queue field, storage type, visibility, `enqueue`, `pop_front`, or `Default` change.
-- No dependency, Cargo.lock, policy, configuration, tool, OCaml, protocol, CLI, replay, admission, dispatch, concurrency, or scheduling change.
+Do not modify `cli.rs`, Cargo.toml, Cargo.lock, dependencies, features, Rust pins, tool versions, tool configuration, Just recipes, PowerShell tooling, Nextest policy, deny policy, OCaml, protocol, request or response JSON, command routing, exit codes, debug-probe availability, tests outside the permitted file, Plug behaviour, Trail, replay, admission, concurrency, release, tag, or publication state.
+
+Do not add any suppression, dummy use, underscore import, `black_box`, unreachable reference, or source-text guard pretending to prove runtime behaviour.
 
 ## Stop conditions
 
-Stop only if:
+Stop as `BLOCKED` only when:
 
-- either warned method has a genuine non-test source caller;
-- the baseline warning is already absent;
-- the repair requires an out-of-scope behavioural change;
-- an evidence-bearing verification reveals a real defect that cannot be corrected within the three permitted files.
+- the branch contains unrelated work that cannot be safely separated;
+- removing the suppression exposes a real compile problem that requires an out-of-scope behavioural or configuration change;
+- `just verify` exposes a real failure caused by this edit that cannot be corrected inside the permitted import-only scope;
+- completing the task would require changing another production file.
 
-Do not stop for ineffective LSP, warning duplication across targets, line-number drift, or intentionally skipped dependency scans.
+Do not stop merely because an optional tool is unavailable, an LSP result is empty, or the exact current warning count differs from the historical note. Record those facts and continue using the compiler-backed path.
+
+After two materially different failed edit attempts, stop with exact evidence and the smallest unresolved question rather than repeating the same action.
 
 ## Expected pre-existing changes
 
@@ -182,45 +228,66 @@ None.
 
 If an exact replacement fails:
 
-1. reread the current file;
-2. make a smaller patch against current content;
-3. do not repeat the same failed edit;
-4. after two materially different failed edits, use a precise local rewrite of the affected block rather than abandoning the task.
+1. reread the current import block;
+2. make one fresh small patch against current content;
+3. do not rewrite the full file;
+4. stop only after two materially different failed attempts.
 
-## Focused feedback loop
+## Focused feedback
 
-After the coherent edit:
+After the coherent import edit:
 
-1. run Rustfmt;
-2. run the focused event-queue Nextest filter once;
-3. run Clippy once and inspect target warnings;
-4. correct any in-scope defect on the same branch.
+1. run rustfmt check;
+2. run ordinary locked Clippy once and inspect the import diagnostics;
+3. run a narrow CLI/application test filter only if the reference classification exposes an existing meaningful filter;
+4. otherwise record that focused tests were skipped because import configuration is fully checked by compilation and the final Cargo graph.
 
-Expected focused result: 9 passed, 0 failed, 0 retries.
+Do not invent ceremonial focused tests.
 
 ## Final warning accounting
 
-Capture final Clippy JSON once. Require:
+Capture final machine-readable Clippy output:
 
-- zero warnings whose primary span is `src/event_queue.rs`;
-- total emitted warnings lower than before;
-- no new or changed warning outside the target;
-- no suppression attribute or fake production use.
+```powershell
+$afterJson = Join-Path $env:TEMP 'm01c4-clippy-after.jsonl'
+$afterErr = Join-Path $env:TEMP 'm01c4-clippy-after.stderr.txt'
 
-Report both emitted-message totals and unique source-warning totals.
+cargo clippy `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --all-targets `
+  --all-features `
+  --locked `
+  --message-format=json `
+  1> $afterJson `
+  2> $afterErr
+```
+
+Require:
+
+- no warning caused by the new import layout;
+- no new or changed warning outside the target import block;
+- total emitted warnings unchanged or lower;
+- the target blanket suppression absent;
+- no replacement suppression added.
+
+Record an exact before/after table in the worker note.
 
 ## Required verification
 
-Run only:
+Run only these evidence-bearing checks:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 
-cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
+cargo fmt `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --all -- --check
 
-cargo nextest run --config-file .config/nextest.toml --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked -E 'test(event_queue::)'
-
-cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+cargo clippy `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --all-targets `
+  --all-features `
+  --locked
 
 just verify
 
@@ -229,51 +296,52 @@ git diff --check
 git status --short
 ```
 
-Do not run full Nextest, cargo-deny, cargo-machete, `just verify-agent`, OCaml tests, or unrelated scripts. Confirm dependency and tool-policy paths are absent from the diff instead.
+Do not run full Nextest, cargo-deny, cargo-machete, `just verify-agent`, OCaml tests, LSP diagnostics, or unrelated scripts.
 
-Expected floors:
-
-- focused Nextest: 9 passed, 0 failed, 0 retries;
-- full Cargo through `just verify`: at least 926 passed, 0 failed;
-- no event-queue test disappears;
-- Cargo.lock hash unchanged.
+Expected Cargo floor remains 926 passed and 0 failed. If the repository's authoritative total is higher, record the actual total; no test may disappear because of this task.
 
 ## Acceptance criteria
 
-1. Exact reference proof confirms both deleted methods lacked non-test callers.
-2. `is_empty` and `len` are removed, not hidden or artificially used.
-3. Tests assert empty/exhausted state through `pop_front` without inspecting storage.
-4. Nine event-queue tests pass with zero retries.
-5. Full Cargo passes with zero failures and no missing test.
-6. `event_queue.rs` emits zero warning.
-7. Total warnings decrease and no outside warning changes.
-8. Cargo.lock is unchanged.
-9. No runtime queue, coordinator, dependency, protocol, CLI, concurrency, admission, replay, or dispatch behaviour changes.
+1. The target `#[allow(unused_imports)]` is removed.
+2. No new `allow` or `expect` replaces it.
+3. All four symbols are classified by their actual configuration uses.
+4. The final import layout exactly reflects those uses.
+5. Locked all-target Clippy exits zero with no new warning.
+6. Total emitted warnings are unchanged or lower.
+7. `just verify` passes with no missing test.
+8. Cargo.lock hash is unchanged.
+9. Only the three permitted files change.
+10. No CLI, debug-probe, test, JSON, exit-code, protocol, or runtime behaviour changes.
 
 ## Completion contract
 
 After every acceptance condition passes:
 
-1. Create the worker note with these control-v1 sections:
+1. Create `docs/worker-notes/2026-08-04-m01c4-application-cli-import-suppression.md` with:
    - Requested outcome
    - Changes made
    - Decisions and assumptions
    - Evidence
-   - Discoveries
+   - Exact symbol-use classification
+   - Before/after warning table
+   - Focused-test decision
+   - Final Cargo evidence
+   - Cargo.lock hash
    - Remaining risks
    - Smallest next action
    - References
-2. Record the exact implementation checkpoint after the source/test commit.
-3. Set this packet to `COMPLETE` and task colour `Green`.
-4. Commit documentation normally and push the implementation branch normally.
-5. Return only:
+2. Record the real implementation commit as `Implementation checkpoint` in both packet and worker note.
+3. Set packet and worker note status to `COMPLETE` only after verification passes.
+4. Commit normally and push the implementation branch normally.
+5. Return a concise handoff containing:
    - outcome;
    - branch and remote tip;
    - implementation checkpoint;
-   - exact changed files;
-   - reference proof;
-   - warning before/after table;
-   - focused Nextest result;
-   - final Cargo result;
-   - Cargo.lock hash;
-   - confirmation that forbidden scans were intentionally skipped.
+   - changed files;
+   - exact import classification and final layout;
+   - before/after warning totals;
+   - final Cargo total;
+   - unchanged Cargo.lock hash;
+   - any honest remaining risk.
+
+Do not merge `main`; Lucy performs independent review and, once accepted, has standing permission to fast-forward and push `main` with `force=false`.
