@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `f5e621bee4338a496888daaf78e2f029e4ab0914`
 
-Implementation checkpoint: `fa3ffcf4f7c8e96c0a7f5e2b3f8d7a9c6b1e4d2f`
+Implementation checkpoint: `fa3ffcf42b613cc55219ab33210dcd07668d990a`
 
 ## Requested outcome
 
@@ -65,7 +65,7 @@ read-only, duplicate-aware, and limited to the frozen stable error contract.
   `installation_request_invalid` and `installation_request_io` codes, exact
   frozen messages and field pointers, and no filesystem path creation,
   deletion, or modification by parsing/loading.
-- J24G implementation commit: `fa3ffcf4f7c8e96c0a7f5e2b3f8d7a9c6b1e4d2f`.
+- J24G implementation commit: `fa3ffcf42b613cc55219ab33210dcd07668d990a`.
 
 ## Discoveries
 
@@ -89,4 +89,4 @@ Lucy performs the bounded final review of the pushed J24G branch.
 - `tethers-0.1/host-rust/src/installation_request.rs`
 - `tethers-0.1/host-rust/tests/j24g_installation_request.rs`
 - Branch: `opencode/j24g-installation-request-contract`
-- Implementation commit: `fa3ffcf4f7c8e96c0a7f5e2b3f8d7a9c6b1e4d2f`
+- Implementation commit: `fa3ffcf42b613cc55219ab33210dcd07668d990a`
