@@ -1,36 +1,32 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `M01C1 - Engine-session warning cleanup pilot`
+Task: `M01C2 - Event-queue contract warning cleanup`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `READY`
 Task colour: `Green`
-Route: `OpenCode using DeepSeek Pro V4 for a small language-aware Rust warning repair; Lucy performs independent review`
+Route: `OpenCode using HY3 for a narrow Rust test-and-comment correction; Lucy performs independent review`
 Base branch: `main`
-Base commit: `d557d01ab41ddc881b08976de5822c2ccec53f24`
-Implementation branch: `opencode/m01c1-engine-session-warning-pilot`
-Worker note: `docs/worker-notes/2026-08-04-m01c1-engine-session-warning-pilot.md`
-Implementation blueprint: `docs/architecture/M01C1_ENGINE_SESSION_WARNING_PILOT.md`
+Base commit: `09ee5ab32f3f34c237b247a3bafbbb573325dadc`
+Implementation branch: `opencode/m01c2-event-queue-contract-warning`
+Worker note: `docs/worker-notes/2026-08-04-m01c2-event-queue-contract-warning.md`
+Implementation blueprint: `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_CLEANUP.md`
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
-Agent tools: rust-analyzer, cargo-nextest 0.9.140, cargo-deny 0.19.7, cargo-machete 0.9.2
+Agent tools: cargo-nextest 0.9.140 and accepted Rust tool checker; do not retry ineffective OpenCode LSP
 OCaml switch path: `N/A`
-Implementation checkpoint: `1083e7be5bef5fca78ec9d33fe725b6709f46636`
+Implementation checkpoint: `TBD`
 
 ## Objective
 
-Use the new Rust agent toolset on one bounded, behaviour-preserving warning cluster in:
+Remove the warning in `tethers-0.1/host-rust/src/event_queue.rs` by replacing a misleading non-proving `!Send` test with a truthful compile-time assertion, while preserving the actual J10 contract: FIFO, coordinator-driven serial evaluation, no recursion, no retry, and no parallel worker.
 
-`tethers-0.1/host-rust/src/engine_stdio.rs`
-
-The pilot must prove that OpenCode can use rust-analyzer for real reference discovery, Nextest for focused feedback, ordinary Cargo for final authority, cargo-deny for dependency policy, and cargo-machete for advisory dependency evidence.
-
-Read `docs/architecture/M01C1_ENGINE_SESSION_WARNING_PILOT.md` completely before any edit. It is authoritative.
+Read `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_CLEANUP.md` completely before editing. It is authoritative.
 
 ## Relevant background and existing behaviour
 
-M01B is accepted at:
+M01C1 is accepted on `main` at:
 
-`f7e84a467bf77a02f1f1b60cd319c55644dd9bbd`
+`2fbebfc14c8e2c55990f2bdfc8e85830da339b65`
 
 Accepted baseline:
 
@@ -42,33 +38,41 @@ Nextest retries  0
 Cargo.lock       D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
-The target module retains a ten-second engine read timeout but currently stores timeout state that is not used by later reads. Accepted Clippy may also report path-reference linting around `EngineSession::launch`. Diagnostics captured under Rust 1.97.1 decide the exact target set.
+J10 established serial follow-up evaluation through an explicit FIFO queue and coordinator drain. It did not establish a type-level `!Send` guarantee. The current `queue_cannot_be_moved_across_threads` test defines an `assert_send<T: Send>()` helper but does not call it, and its comments claim a guarantee the type does not enforce.
 
-The existing implementation checkpoint is `1083e7be5bef5fca78ec9d33fe725b6709f46636`. Its source repair is provisionally sound: it makes the retained timeout authoritative and replaces unnecessary `&PathBuf` parameters without changing the MCP interaction. The correction is limited to missing packet-format, LSP, and environment-backed verification evidence unless a required verification exposes a defect.
+OpenCode LSP has already been tested and found ineffective for this Rust workspace. Do not retry it. This job uses exact Clippy diagnostics and `rg` only where textual confirmation is useful.
 
 ## Required behaviour
 
-1. Preserve the existing checkpoint’s behaviour-preserving source repair unless a required verification exposes a real defect.
-2. Record the completed fresh OpenCode LSP trial for `EngineSession::launch`, `EngineSession::read_timeout`, and `read_json` honestly: the operation was exposed but returned no usable results, so it is a failed tooling trial and must not be retried.
-3. Use the existing verified `rg` reference counts as the fallback discovery evidence, clearly distinguished from the ineffective LSP trial.
-4. Restore `pwsh.exe` for verification process-locally by prepending `$PSHOME`; do not change user or machine PATH.
-5. Run every required packet, tool, Rust, policy, Just, lock-hash, diff, and status check with the stated zero-failure and zero-retry floors.
-6. Retain the warning result: three target-source warnings before the repair and zero after it, no added suppression, and no changed warning outside the target.
+1. Capture the actual Rust 1.97.1 Clippy warning baseline before editing.
+2. Identify every warning whose primary span is `src/event_queue.rs`.
+3. Replace the false/non-proving `queue_cannot_be_moved_across_threads` test with a truthful compile-time `Send` assertion for the current representation.
+4. State clearly that `Send` means the value may be moved between threads, while Tethers seriality remains a coordinator policy and execution design.
+5. Keep the event-queue test count unchanged.
+6. Remove every warning whose primary span is `src/event_queue.rs` when caused by this test.
+7. Preserve production queue code and all runtime behaviour exactly.
+8. Use focused Nextest during the edit loop and ordinary Cargo through `just verify` as final authority.
+9. Skip irrelevant dependency scans because dependency and policy files are forbidden from changing.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/engine_stdio.rs` — retained engine session, default read timeout, and private JSON reader.
-- `tethers-0.1/host-rust/src/host_execution.rs` — direct `EngineSession::launch` call site.
-- `scripts/start-opencode-lsp.ps1` — process-local OpenCode LSP launcher.
-- `.github/scripts/check-tethers-task-packet.ps1` — control-v1 structure and state check.
-- `scripts/check-rust-agent-tools.ps1`, `.config/nextest.toml`, and `justfile` — accepted tool and verification path.
+- `tethers-0.1/host-rust/src/event_queue.rs` — target queue and colocated tests.
+- `tethers-0.1/host-rust/src/result_anchor.rs` — queue payload definition, read-only for understanding only.
+- `docs/worker-notes/2026-07-27-j10-result-event-queue.md` — accepted serial queue contract.
+- `.config/nextest.toml` — committed zero-retry focused test configuration.
+- `.github/scripts/check-tethers-task-packet.ps1` — control-v1 checker.
+- `scripts/check-rust-agent-tools.ps1` — accepted tool presence/configuration checker.
+- `justfile` — final ordinary Cargo verification route.
 
 ## Frozen decisions and invariants
 
-- The MCP protocol remains `2025-11-25`; initialize and initialized messages, `tethers.validate`, `tethers.evaluate`, request IDs, response validation, error strings, shutdown, and stderr-tail behaviour remain unchanged.
-- The effective default engine read timeout remains exactly ten seconds for initialize, validation, and evaluation.
-- No suppression attributes, dummy uses, retries, sleeps, dependency, lockfile, tool, configuration, test, or protocol changes are permitted.
-- The implementation checkpoint stays `1083e7be5bef5fca78ec9d33fe725b6709f46636` after successful correction evidence.
+- FIFO remains `push_back` and `pop_front`.
+- The queue remains process-local and in-memory.
+- Follow-up events remain coordinator-driven and one-at-a-time.
+- No recursion, retry, thread, async runtime, channel, lock, worker pool, parallel evaluation, persistence, or scheduler is added.
+- Do not force `ResultEventQueue` to become `!Send` with marker fields or non-`Send` payloads.
+- Result Anchor identity, causation, correlation, generation, admission and serialization remain unchanged.
+- No public CLI, language, Plug, Trail, capability, protocol, dependency, tool or configuration behaviour changes.
 
 ## Startup procedure
 
@@ -86,35 +90,35 @@ The existing implementation checkpoint is `1083e7be5bef5fca78ec9d33fe725b6709f46
    git fetch origin
    ```
 
-3. Verify the frozen M01C1 blueprint is on remote main:
+3. Verify the M01C2 blueprint is on remote main:
 
    ```powershell
-   git merge-base --is-ancestor ffb34707c6b57b708dc329061fdadd593153f650 origin/main
+   git merge-base --is-ancestor 09ee5ab32f3f34c237b247a3bafbbb573325dadc origin/main
    ```
 
    Require exit code 0.
 
-4. Verify accepted M01B is on remote main:
+4. Verify accepted M01C1 is on remote main:
 
    ```powershell
-   git merge-base --is-ancestor f7e84a467bf77a02f1f1b60cd319c55644dd9bbd origin/main
+   git merge-base --is-ancestor 2fbebfc14c8e2c55990f2bdfc8e85830da339b65 origin/main
    ```
 
    Require exit code 0.
 
-5. Inspect the task directly from remote main:
+5. Inspect the packet directly from remote main:
 
    ```powershell
    git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 20
    ```
 
-   Require M01C1, owner OpenCode, status READY, and branch `opencode/m01c1-engine-session-warning-pilot`.
+   Require M01C2, owner OpenCode, status READY, colour Green, and branch `opencode/m01c2-event-queue-contract-warning`.
 
 6. Confirm the implementation branch does not exist:
 
    ```powershell
-   git branch --list opencode/m01c1-engine-session-warning-pilot
-   git branch --remotes --list origin/opencode/m01c1-engine-session-warning-pilot
+   git branch --list opencode/m01c2-event-queue-contract-warning
+   git branch --remotes --list origin/opencode/m01c2-event-queue-contract-warning
    ```
 
    Stop without overwriting it if either command reports the branch.
@@ -122,7 +126,7 @@ The existing implementation checkpoint is `1083e7be5bef5fca78ec9d33fe725b6709f46
 7. Create it from current remote main:
 
    ```powershell
-   git switch --create opencode/m01c1-engine-session-warning-pilot origin/main
+   git switch --create opencode/m01c2-event-queue-contract-warning origin/main
    ```
 
 8. Update the packet Base commit to the exact current `origin/main` before the implementation commit. Record the same value in the worker note.
@@ -131,17 +135,28 @@ The existing implementation checkpoint is `1083e7be5bef5fca78ec9d33fe725b6709f46
 
    - `AGENTS.md`;
    - `docs/CURRENT_CLINE_TASK.md`;
-   - `docs/architecture/M01C1_ENGINE_SESSION_WARNING_PILOT.md`;
-   - `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`;
-   - `docs/TOOLCHAIN_POLICY.md`;
-   - `docs/worker-notes/2026-08-04-m01b-rust-agent-tooling.md`;
-   - `tethers-0.1/host-rust/src/engine_stdio.rs`;
-   - `tethers-0.1/host-rust/src/check_command.rs`;
-   - `tethers-0.1/host-rust/src/host_execution.rs`;
+   - `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_CLEANUP.md`;
+   - `docs/worker-notes/2026-07-27-j10-result-event-queue.md`;
+   - `docs/worker-notes/2026-08-04-m01c1-engine-session-warning-pilot.md`;
+   - `tethers-0.1/host-rust/src/event_queue.rs`;
+   - `tethers-0.1/host-rust/src/result_anchor.rs`;
    - `.config/nextest.toml`;
    - `justfile`.
 
-10. Run:
+10. Restore PowerShell resolution process-locally if required:
+
+   ```powershell
+   $pwshExe = Join-Path $PSHOME 'pwsh.exe'
+   if (-not (Test-Path -LiteralPath $pwshExe -PathType Leaf)) {
+       throw "pwsh.exe not found under PSHOME: $PSHOME"
+   }
+   $env:PATH = "$PSHOME;$env:PATH"
+   Get-Command pwsh.exe -CommandType Application -ErrorAction Stop
+   ```
+
+   Do not change user or machine PATH.
+
+11. Run startup checks:
 
    ```powershell
    pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
@@ -149,21 +164,13 @@ The existing implementation checkpoint is `1083e7be5bef5fca78ec9d33fe725b6709f46
    Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
    ```
 
-   Use the accepted real OpenCode CLI through `OPENCODE_BIN` or `-OpenCodePath` if the current shell does not resolve it. Do not change global PATH.
-
-## LSP discovery record
-
-The required fresh wrapped OpenCode 1.18.12 LSP trial was completed before this correction: it exposed the operation but returned no definitions, references, symbols, or hover data, and a targeted second session timed out. This is recorded as ineffective tooling, not an acceptance blocker; do not retry it or alter configuration.
-
-Use the already verified `rg` fallback in the worker note: `EngineSession::launch` has one definition and seven references (two non-test call sites and five test calls); `read_json` has one definition and three call sites; `read_timeout` is traced from its declaration through its initialization and retained-session uses.
-
 ## Baseline warning capture
 
-Before editing, run ordinary Clippy and a separate machine-readable capture:
+Before editing:
 
 ```powershell
-$beforeJson = Join-Path $env:TEMP 'm01c1-clippy-before.jsonl'
-$beforeErr = Join-Path $env:TEMP 'm01c1-clippy-before.stderr.txt'
+$beforeJson = Join-Path $env:TEMP 'm01c2-clippy-before.jsonl'
+$beforeErr = Join-Path $env:TEMP 'm01c2-clippy-before.stderr.txt'
 
 cargo clippy `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
@@ -181,63 +188,61 @@ cargo clippy `
   2> $beforeErr
 ```
 
-Require both commands to exit zero.
+Require exit code 0. Record:
 
-Parse and record:
-
-- total warnings;
+- total emitted warnings;
 - warning counts by lint code;
-- every warning whose primary span is `src/engine_stdio.rs`;
-- all warnings outside the target file for later comparison.
+- unique warnings whose primary span is `src/event_queue.rs`;
+- warnings outside the target file.
 
-Do not assume a warning exists merely because the blueprint predicts it.
+Trust the captured diagnostics. If `event_queue.rs` has no warning, stop as `BLOCKED` with the exact evidence rather than inventing work.
 
 ## Required implementation
 
-Implement only the frozen blueprint.
+In `event_queue.rs` only:
 
-Required shape:
+1. Replace `queue_cannot_be_moved_across_threads` with a truthfully named test.
+2. Use a real compile-time assertion:
 
-1. Remove every warning whose primary span is `src/engine_stdio.rs` when the cause can be repaired without protocol or behaviour change.
-2. Establish one named ten-second default engine read duration.
-3. Use that same default during initialize and store it in the retained session.
-4. Make validation and evaluation reads use the stored session timeout.
-5. Pass an explicit timeout into the private `read_json` helper rather than leaving the retained field decorative.
-6. If accepted Clippy emits `ptr_arg` for `EngineSession::launch`, change `&PathBuf` parameters to `&Path` and update only LSP-proven call sites.
-7. Preserve all request JSON, MCP version, method names, IDs, error text, validation, shutdown and stderr-tail behaviour.
-8. Add or adjust focused tests only where necessary to prove unchanged behaviour.
+   ```rust
+   fn assert_send<T: Send>() {}
+   assert_send::<ResultEventQueue>();
+   ```
 
-Forbidden repair techniques:
-
-- no new `#[allow(...)]` or `#[expect(...)]`;
-- no underscore rename to conceal use;
-- no dummy read, unreachable use or black-box consumption;
-- no sleeps or retries;
-- no dependency or configuration change;
-- no broad refactor.
+3. Explain in the test comments that current `Send` capability does not create parallel evaluation. Seriality is enforced by the coordinator and explicit mutable queue drain.
+4. Keep the number of event-queue tests unchanged.
+5. Remove misleading claims that `ResultAnchor` or `ResultEventQueue` is intentionally `!Send`.
+6. Do not modify production queue fields, methods, visibility, or implementation.
 
 ## Permitted files
 
-Only these may change:
+Only:
 
-- `tethers-0.1/host-rust/src/engine_stdio.rs`;
-- `tethers-0.1/host-rust/src/check_command.rs` only if the `&Path` signature requires a direct call-site adjustment;
-- `tethers-0.1/host-rust/src/host_execution.rs` only for the same reason;
-- focused tests already colocated in those files if necessary;
+- `tethers-0.1/host-rust/src/event_queue.rs`;
 - `docs/CURRENT_CLINE_TASK.md` for state and checkpoint;
-- `docs/worker-notes/2026-08-04-m01c1-engine-session-warning-pilot.md`.
+- `docs/worker-notes/2026-08-04-m01c2-event-queue-contract-warning.md`.
 
 Stop before changing another path.
 
 ## Forbidden changes
 
-Do not modify Cargo.toml, Cargo.lock, dependencies, features, edition, rust-version, `publish`, Rust pins, tool versions, tool configuration, Just recipes, OpenCode configuration, PowerShell tooling, deny policy, Nextest policy, OCaml, fixtures, production modules outside the permitted list, event-queue Send semantics, Plug installation, J24J, CLI contracts, Trail, Anchor, provider policy, release, tag or publication state.
+Do not modify production queue code, `ResultAnchor`, application/coordinator code, dispatch, replay, admission, Cargo.toml, Cargo.lock, dependencies, features, Rust pins, tool versions, tool configuration, deny policy, Nextest policy, Just recipes, OpenCode configuration, PowerShell tooling, OCaml, fixtures, Plug installation, J24J, CLI contracts, Trail, Anchor, release, tag or publication state.
+
+Do not add:
+
+- `PhantomData`, `Rc`, `Cell`, raw pointers or another artificial non-`Send` marker;
+- `#[allow(...)]` or `#[expect(...)]`;
+- underscore renaming, dummy use, unreachable use or `black_box`;
+- threads, async code, channels, locks, workers, retries or sleeps;
+- source-text tests pretending to prove type behaviour.
 
 ## Stop conditions
 
-- Stop as `BLOCKED` if either full Rust graph has any failure or retry after the specified process-local `pwsh.exe` restoration.
-- Stop if verification requires an out-of-scope source, test, dependency, policy, configuration, or protocol change.
-- After two materially similar failed attempts, stop with the exact evidence and one smallest unresolved question.
+- Stop if the captured warning is not in `event_queue.rs` or is unrelated to the false test.
+- Stop if the compile-time `Send` assertion does not compile.
+- Stop if fixing the warning would require production source or an out-of-scope file.
+- Stop if focused Nextest or final `just verify` has any failure.
+- After two materially different failed edits, stop with exact evidence rather than rewriting the file wholesale.
 
 ## Expected pre-existing changes
 
@@ -245,31 +250,46 @@ None.
 
 ## Edit recovery
 
-After an exact replacement reports that `oldString` was not found:
+After an exact replacement reports `oldString` was not found:
 
-1. do not repeat it unchanged;
+1. do not repeat the same edit;
 2. reread the current file;
-3. make a fresh smaller patch against the latest content;
-4. stop after two materially different failed attempts rather than rewriting the file wholesale.
+3. create a smaller patch against stable surrounding text;
+4. stop after two materially different failures.
 
 ## Focused feedback loop
 
-After the first coherent edit:
+After the single coherent edit:
 
-1. run Rustfmt;
-2. use Nextest to list and run the narrowest engine-session-related tests with the root config, `--locked`, and zero retries;
-3. run ordinary Clippy and inspect target warnings;
-4. correct on the same branch if needed.
+```powershell
+cargo fmt `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --all -- --check
 
-Do not claim Nextest is faster. Its value here is clearer focused feedback and independent execution.
+cargo nextest list `
+  --config-file .config/nextest.toml `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --all-targets `
+  --all-features `
+  --locked `
+  -E 'test(event_queue::)'
+
+cargo nextest run `
+  --config-file .config/nextest.toml `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --all-targets `
+  --all-features `
+  --locked `
+  -E 'test(event_queue::)'
+```
+
+Require zero failures and zero retries. Record the exact listed and passed test counts.
 
 ## Final warning accounting
 
-Capture final machine-readable Clippy output:
-
 ```powershell
-$afterJson = Join-Path $env:TEMP 'm01c1-clippy-after.jsonl'
-$afterErr = Join-Path $env:TEMP 'm01c1-clippy-after.stderr.txt'
+$afterJson = Join-Path $env:TEMP 'm01c2-clippy-after.jsonl'
+$afterErr = Join-Path $env:TEMP 'm01c2-clippy-after.stderr.txt'
 
 cargo clippy `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
@@ -283,20 +303,19 @@ cargo clippy `
 
 Require:
 
-- zero warnings whose primary span is `src/engine_stdio.rs`;
-- total warnings lower than before;
-- no new warning code or warning instance outside the target file;
-- no added suppression attribute.
+- zero warnings whose primary span is `src/event_queue.rs`;
+- no new or changed warning outside the target;
+- no suppression attribute;
+- lower total emitted warning count if the expected warning was present.
 
-Record the exact before/after table in the worker note.
+Explain duplicate emitted messages when the same unique source warning is compiled for multiple targets.
 
 ## Required verification
 
-Every command below must succeed:
+Run only these evidence-bearing checks:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-pwsh -NoProfile -File scripts/test-check-rust-agent-tools.ps1
 pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1
 
 cargo fmt `
@@ -309,89 +328,76 @@ cargo clippy `
   --all-features `
   --locked
 
-cargo test `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked
-
-cargo nextest run `
-  --config-file .config/nextest.toml `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked
-
-cargo deny --locked `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  check licenses bans sources
-
-cargo deny --locked `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  check advisories
-
-cargo machete --with-metadata tethers-0.1/host-rust
-
 just verify
-just verify-agent
-just deps-unused
 
 Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
 git diff --check
 git status --short
 ```
 
-Expected full-suite floors remain:
+Required final Cargo floor:
 
-- Cargo: 926 passed, 0 failed;
-- Nextest: 1133 passed, 0 failed;
-- retries: zero.
+```text
+926 passed
+0 failed
+```
 
-If an intentionally added focused test increases a total, record and explain the exact increase. No test may disappear.
+Do not run full Nextest, cargo-deny, cargo-machete, `just verify-agent`, OCaml tests, or unrelated scripts. They cannot add relevant evidence to a permitted test-and-comment-only diff. If an unexpected dependency, policy, configuration or runtime file changes, stop instead of broadening verification.
 
 ## Acceptance criteria
 
-1. The attempted LSP trial, its ineffective result, and the verified `rg` fallback are recorded without retrying LSP.
-2. Exact before/after warning inventories are recorded.
-3. `src/engine_stdio.rs` emits no warning.
-4. No warning outside the target file is added or altered unexpectedly.
-5. Total warning count decreases.
-6. Ten seconds remains the effective default for initialize, validate and evaluate reads.
-7. No warning suppression or fake use is introduced.
-8. Cargo and Nextest complete with zero failures and zero retries.
-9. Cargo-deny and cargo-machete complete successfully.
+1. The exact `event_queue.rs` warning is captured before editing.
+2. The misleading non-proving `!Send` test is replaced by a real current-representation `Send` assertion.
+3. Comments correctly separate type mobility from serial coordinator policy.
+4. Event-queue test count is unchanged.
+5. Focused Nextest passes with zero retries.
+6. `event_queue.rs` has zero warnings afterward.
+7. No warning outside the target changes.
+8. No suppression or fake use is added.
+9. `just verify` passes with 926 Cargo tests and zero failures.
 10. Cargo.lock hash is unchanged.
-11. No dependency, configuration, OCaml, protocol, CLI, lifecycle, concurrency or Tethers behaviour changes.
-12. The worker note records what each new tool contributed and whether its result was useful.
+11. Only the three permitted files change.
+12. No runtime, dependency, protocol, CLI, language, Plug, Trail, replay, admission or concurrency behaviour changes.
 
 ## Completion contract
 
 After every acceptance condition passes:
 
-1. Create `docs/worker-notes/2026-08-04-m01c1-engine-session-warning-pilot.md` with control-v1 header and sections:
+1. Create `docs/worker-notes/2026-08-04-m01c2-event-queue-contract-warning.md` with the control-v1 header and sections:
    - Requested outcome
    - Changes made
    - Decisions and assumptions
-   - LSP evidence
-   - Warning inventory before/after
-   - Test and policy evidence
-   - Tool usefulness assessment
+   - Warning evidence before and after
+   - Focused Nextest evidence
+   - Final Cargo evidence
+   - Tool usefulness
    - Discoveries
    - Remaining risks
    - Smallest next action
    - References
-2. Set the single packet status field to `COMPLETE`, task colour to `Green`, and retain the implementation checkpoint.
+2. Set the single packet status to `COMPLETE`, colour to `Green`, and checkpoint to `TBD`.
 3. Make one normal implementation commit.
-4. Obtain and verify its real SHA:
+4. Verify its real SHA:
 
    ```powershell
    git cat-file -e <REAL_SHA>^{commit}
    ```
 
 5. Record that exact SHA in the packet and worker note.
-6. Make a separate completion-documentation commit.
+6. Make completion documentation a separate normal commit.
 7. Push normally.
 
 Do not amend, reset, rebase, cherry-pick, force-push, merge into main, tag or publish.
 
-Return branch, remote tip, verified implementation checkpoint, exact changed files, LSP reference results, warning before/after table, focused Nextest command/result, complete Cargo and Nextest totals, deny and machete results, Cargo.lock hashes, tool usefulness assessment, worker-note path, and confirmation that no forbidden behaviour changed.
+Return:
+
+- branch and remote tip;
+- implementation checkpoint;
+- exact changed files;
+- unique warning and emitted-message counts before and after;
+- focused Nextest listed/passed totals and zero retries;
+- final Cargo total;
+- Cargo.lock hashes;
+- confirmation that dependency scans were intentionally skipped because no dependency or policy path changed;
+- worker-note path;
+- confirmation that no production source or runtime behaviour changed.
