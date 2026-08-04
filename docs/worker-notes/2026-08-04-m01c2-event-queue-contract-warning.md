@@ -38,7 +38,9 @@ Remove the warning in `tethers-0.1/host-rust/src/event_queue.rs` caused by the m
   (`VecDeque<ResultAnchor>`, and `ResultAnchor` is composed only from `Send`
   types), so the compile-time assertion is truthful and compiles cleanly.
 
-## Warning evidence before and after
+## Evidence
+
+### Warning evidence before and after
 
 Captured with `cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml
 --all-targets --all-features --locked --message-format=json`.
@@ -71,7 +73,7 @@ test targets, the unique `is_empty`/`len` source warning is emitted once per
 target that compiles the lib; the count above reflects unique source warnings
 grouped by primary span.
 
-## Focused Nextest evidence
+### Focused Nextest evidence
 
 Command:
 
@@ -86,7 +88,7 @@ set lists exactly the 9 event-queue tests including the renamed
 `queue_value_is_send_under_current_representation` (the `assert_send`
 compile-time assertion executes and passes as part of the test).
 
-## Final Cargo evidence
+### Final Cargo evidence
 
 `just verify` (packet checker, Rustfmt, `cargo check`, `cargo test
 --all-targets --all-features --locked`) passes. Cargo test total: 926 passed, 0
