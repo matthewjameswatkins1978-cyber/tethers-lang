@@ -21,10 +21,10 @@ Install, pin, configure, and prove the small Rust toolset selected to help the
 active OpenCode workflow:
 
 ```text
-rust-analyzer   toolchain-owned language intelligence
-cargo-nextest   alternative agent test loop
-cargo-deny      dependency policy and advisory gate
-cargo-machete   advisory unused-dependency detector
+rust-analyzer   Rust 1.97.1 toolchain component
+cargo-nextest   0.9.140 alternative agent test loop
+cargo-deny      0.19.7 dependency policy and advisory gate
+cargo-machete   0.9.2 advisory unused-dependency detector
 ```
 
 M01B adds no production behaviour and performs no cleanup deletion. It creates
@@ -32,40 +32,31 @@ the diagnostic foundation that M01C will later use for warning repair and
 repository pruning.
 
 Read `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md` completely before
-editing. It freezes exact versions, installation authority, policy boundaries,
-OpenCode integration, and verification.
+editing. It is authoritative for exact versions, installation authority, policy
+boundaries, OpenCode integration, and verification.
 
 ## Relevant background and existing behaviour
 
 M01A is accepted on `main` at
 `d561b8400a1398c3d5bdde2cf670eebe661a5cc4`.
 
-The repository now uses exact Rust 1.97.1, edition 2021, `rust-version = 1.97`,
-plain Cargo commands, fail-fast Just recipes, and a byte-identical Cargo.lock.
+The repository uses exact Rust 1.97.1, edition 2021, `rust-version = 1.97`, plain
+Cargo commands, fail-fast Just recipes, and a committed Cargo.lock that M01B must
+preserve byte-for-byte.
 
-The accepted M01B cargo-tool versions are:
+Rust-analyzer must belong to the Rust 1.97.1 rustup toolchain rather than arriving
+as an unrelated weekly binary. Nextest may be slower on native Windows, so this
+task measures it rather than assuming it is faster. Ordinary `cargo test` remains
+the final completion authority.
 
-```text
-cargo-nextest 0.9.137
-cargo-deny    0.19.7
-cargo-machete 0.9.2
-```
+Cargo-deny replaces cargo-audit in this workflow. Cargo-semver-checks remains
+deferred until Tethers explicitly promises compatibility for a public Rust
+library API. Cargo-machete is advisory only and may not modify dependencies.
 
-Rust-analyzer is the Rust 1.97.1 rustup component, not a separately downloaded
-weekly binary.
-
-OpenCode's repository configuration currently loads required instructions but
-does not enable LSP. The active OpenCode documentation requires LSP to be enabled
-in config, requires the `rust-analyzer` command for Rust, and gates direct LSP
-queries behind a process-local experimental flag. The repository must prepare the
-next OpenCode process honestly; a currently running process need not hot-reload.
-
-Nextest may be slower on native Windows because it creates a process per test.
-M01B measures rather than assumes performance. Ordinary `cargo test` remains the
-final authority regardless of the benchmark.
-
-Cargo-deny replaces the need for cargo-audit in this workflow. Cargo-semver-checks
-remains deferred until a public Rust API compatibility promise exists.
+OpenCode currently loads repository instructions but has no explicit LSP setting.
+M01B must enable and verify the repository configuration honestly. A currently
+running OpenCode process need not hot-reload; the next process launched through
+the repository wrapper is the acceptance target.
 
 ## Startup procedure
 
@@ -88,14 +79,12 @@ remains deferred until a public Rust API compatibility promise exists.
    git merge-base --is-ancestor 05d0fbc6fe3cc8e05d3670cad4056f093c1c63d4 origin/main
    ```
 
-   Require exit code 0.
 4. Verify accepted M01A is on remote main:
 
    ```powershell
    git merge-base --is-ancestor d561b8400a1398c3d5bdde2cf670eebe661a5cc4 origin/main
    ```
 
-   Require exit code 0.
 5. Inspect the packet directly from remote main:
 
    ```powershell
@@ -110,7 +99,7 @@ remains deferred until a public Rust API compatibility promise exists.
    git cat-file -e origin/main:docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md
    ```
 
-7. Confirm the implementation branch does not already exist:
+7. Confirm the implementation branch does not exist locally or remotely:
 
    ```powershell
    git branch --list opencode/m01b-rust-agent-tooling
@@ -118,7 +107,7 @@ remains deferred until a public Rust API compatibility promise exists.
    ```
 
    Stop without overwriting it if either command reports the branch.
-8. Create it from current remote main:
+8. Create the branch from current remote main:
 
    ```powershell
    git switch --create opencode/m01b-rust-agent-tooling origin/main
@@ -137,102 +126,88 @@ remains deferred until a public Rust API compatibility promise exists.
    - `opencode.json`;
    - `scripts/check-dev-tools.ps1`;
    - `.github/scripts/check-tethers-toolchains.ps1`.
-
 10. Run the packet checker.
-11. Capture:
-
-    ```powershell
-    git rev-parse origin/main
-    Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
-    rustc --version
-    opencode --version
-    cargo nextest --version
-    cargo deny --version
-    cargo machete --version
-    rust-analyzer --version
-    ```
-
-    Missing commands are expected inventory results, not permission to choose
-    different tools.
-12. Update the packet Base commit to the exact current `origin/main` before the
-    implementation commit and keep the worker note identical to that value.
+11. Capture current `origin/main`, Cargo.lock SHA-256, Rust/OpenCode versions,
+    and whether each selected tool is already installed.
+12. Update this packet's Base commit to the exact current `origin/main` before
+    the implementation commit, and use the identical value in the worker note.
 
 ## Installation authority
 
 Matthew explicitly authorises only these machine changes:
 
 - add rust-analyzer to exact Rust 1.97.1;
-- install cargo-nextest exactly 0.9.137;
+- install cargo-nextest exactly 0.9.140;
 - install cargo-deny exactly 0.19.7;
 - install cargo-machete exactly 0.9.2.
 
-Installation must be performed through the repository installer created by this
-task. Do not update the global Rust default, PATH, OpenCode, Cargo configuration,
-other Cargo tools, or any unrelated package.
+Installation must use the repository installer created by this task. Do not
+update the global Rust default, PATH, OpenCode, Cargo configuration, another
+Cargo tool, or any unrelated package.
 
 ## Required behaviour
 
-1. Add `tools/rust-agent-tools.json` with the exact schema and versions frozen in
-   the blueprint. Executable scripts read this file rather than copying versions.
+1. Add `tools/rust-agent-tools.json` with schema 1 and exactly the four frozen
+   tool/version declarations. Installation and checking scripts must read it.
 
 2. Add rust-analyzer to the existing Rust 1.97.1 component list in
-   `rust-toolchain.toml` without changing the channel, profile, rustfmt, or Clippy.
+   `rust-toolchain.toml` without changing the channel, profile, rustfmt, or
+   Clippy.
 
-3. Add `scripts/install-rust-agent-tools.ps1` with exact, idempotent installation
-   behaviour and no global default, PATH, Cargo-config, or unrelated mutation.
+3. Add `scripts/install-rust-agent-tools.ps1`. It must validate repository and
+   config, install only missing or mismatched exact tools, use `--locked`, use
+   `--force` only for a genuine version mismatch, avoid global configuration,
+   and be idempotent.
 
-4. Add read-only `scripts/check-rust-agent-tools.ps1` that validates config,
-   exact versions, rust-analyzer ownership, OpenCode availability/config, and
-   required repository policy files.
+4. Add read-only `scripts/check-rust-agent-tools.ps1` plus focused
+   `scripts/test-check-rust-agent-tools.ps1`. The checker must expose an
+   in-process function and prove exact versions, rust-analyzer ownership,
+   OpenCode/config readiness, required policy files, and repository non-mutation.
 
-5. Expose the checker's callable function and add
-   `scripts/test-check-rust-agent-tools.ps1` covering missing, malformed,
-   wrong-schema, impossible-version, real-success, and non-mutation paths.
+5. Preserve the existing `opencode.json` instruction list and add only LSP
+   enablement plus permission for the LSP tool.
 
-6. Preserve `opencode.json` instructions and add only LSP enablement plus LSP-tool
-   permission.
+6. Add `scripts/start-opencode-lsp.ps1`. It must process-locally set
+   `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` and
+   `OPENCODE_DISABLE_LSP_DOWNLOAD=true`, forward arbitrary OpenCode arguments,
+   return the child exit code, and restore both previous environment values on
+   success and failure.
 
-7. Add `scripts/start-opencode-lsp.ps1` that process-locally enables the
-   experimental LSP tool, disables OpenCode LSP downloads, forwards arguments,
-   returns the child exit code, and restores both environment values.
+7. Prove `opencode debug config` sees the repository LSP configuration. If the
+   installed OpenCode build cannot provide the frozen behaviour, stop and report
+   the exact version and limitation rather than claiming success.
 
-8. Prove `opencode debug config` sees the repository LSP configuration. Stop
-   rather than claiming integration if the installed OpenCode build cannot
-   provide the frozen current behaviour.
+8. Add `.config/nextest.toml` requiring nextest 0.9.140 with retries zero and
+   fail-fast true. Add no flaky-test exception or retry override.
 
-9. Add minimal `.config/nextest.toml` requiring 0.9.137 with retries zero and
-   fail-fast true. Add no flaky-test exceptions or retry override.
+9. Add a concise reviewed root `deny.toml` implementing the blueprint's frozen
+   licence, advisory, source, wildcard, and duplicate-version policy. Do not add
+   advisory ignores or autonomous licence exceptions.
 
-10. Add a concise reviewed root `deny.toml` implementing the frozen licence,
-    advisory, source, wildcard, and duplicate-version policy with no advisory
-    ignores.
+10. Extend `justfile` with fail-fast `agent-tools`, `test-agent`, `deps-policy`,
+    `deps-advisories`, `deps-unused`, and `verify-agent`. Keep ordinary Cargo
+    inside normal `verify`; keep advisory `deps-unused` outside `verify-agent`.
 
-11. Extend `justfile` with fail-fast `agent-tools`, `test-agent`, `deps-policy`,
-    `deps-advisories`, `deps-unused`, and `verify-agent` recipes exactly as
-    described by the blueprint.
+11. Update only live guidance in `AGENTS.md`,
+    `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`, and
+    `docs/TOOLCHAIN_POLICY.md` with the frozen tool roles and authority limits.
 
-12. Keep `deps-unused` advisory and outside `verify-agent`. Never run
-    cargo-machete with `--fix` and remove no dependency.
-
-13. Update only live agent/tool guidance in `AGENTS.md`, the Rust engineering
-    guide, and toolchain policy with the frozen tool roles and authority limits.
-
-14. Benchmark three warm complete runs each of ordinary Cargo and nextest on
+12. Benchmark three warm complete runs each of ordinary Cargo and nextest on
     native Windows. Record all durations and medians without changing machine
-    security or scheduling settings.
+    security, scheduling, PATH, or cache state.
 
-15. Run cargo-deny licences, bans, sources, and advisories. Stop on an advisory or
-    licence outside the frozen list rather than inventing an exception.
+13. Run cargo-deny licences, bans, sources, and advisories. Stop on an advisory
+    or licence outside the frozen policy rather than inventing an exception.
 
-16. Preserve Cargo.lock byte-for-byte and all production source, tests, OCaml,
-    edition, compiler channel, dependency graph, and Tethers behaviour.
+14. Run cargo-machete with metadata and never `--fix`. Record every finding for
+    M01C without concluding automatically that it is truly unused.
 
-17. Record every cargo-machete finding for M01C with no automatic conclusion that
-    it is truly unused.
+15. Preserve Cargo.toml, Cargo.lock, dependencies, source, tests, OCaml, edition,
+    Rust channel, Plug lifecycle, and Tethers behaviour.
 
-18. Follow the exact-edit recovery rule: reread after one `oldString` failure,
-    make a fresh smaller patch, never retry the identical edit, and stop after two
-    materially different failures.
+16. Follow the exact-edit recovery rule: after one `oldString` failure, reread
+    the current file, make a fresh smaller patch, never retry the identical edit,
+    and stop after two materially different failures.
 
 ## Relevant components
 
@@ -252,62 +227,58 @@ other Cargo tools, or any unrelated package.
 - `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md`
 - `docs/CURRENT_CLINE_TASK.md`
 
-Read-only references include Cargo.toml, Cargo.lock, production source/tests,
-OCaml files, M01A evidence, and inactive files reserved for M01C review.
+Cargo.toml, Cargo.lock, production source/tests, OCaml files, M01A evidence, and
+inactive files reserved for M01C are read-only.
 
 ## Frozen decisions and invariants
 
-- Exact tool versions are frozen; no floating latest install is permitted.
+- Exact tool versions are frozen; no floating latest installation is permitted.
 - Rust-analyzer belongs to exact Rust 1.97.1.
 - LSP assists navigation; compiler, Clippy, tests, and contracts remain authority.
 - Direct OpenCode LSP queries are opt-in and process-local.
-- OpenCode may not download a second rust-analyzer when using the wrapper.
-- Nextest never retries and never replaces final ordinary Cargo testing.
-- Native Windows nextest performance is measured, not assumed.
-- Cargo-deny is the one accepted dependency/advisory gate.
+- OpenCode may not download a second rust-analyzer through the wrapper.
+- Nextest retries remain zero and it never replaces final ordinary Cargo tests.
+- Native Windows performance is measured, not assumed.
+- Cargo-deny is the single accepted dependency/advisory gate.
 - Cargo-audit and cargo-semver-checks remain absent.
-- Cargo-machete is advisory only and never removes dependencies automatically.
+- Cargo-machete is advisory and never removes dependencies automatically.
 - No advisory ignore or new licence is invented by the worker.
-- Machine installation is exact, bounded, idempotent, and separate from verify.
-- Cargo.lock, dependencies, edition, compiler channel, production behaviour, and
-  OCaml remain unchanged.
+- Installation is exact, bounded, idempotent, and separate from verification.
+- Cargo.lock and all product behaviour remain unchanged.
 - M01C performs actual warning cleanup and deletion review.
 
 ## Acceptance criteria
 
-1. The root JSON contains only the frozen schema and exact tool versions.
-2. Rust 1.97.1 owns installed rust-analyzer while its other components remain.
-3. The installer installs only missing/mismatched accepted versions and a second
-   run performs no installation.
-4. The checker reports every exact version and changes no repository state.
-5. All focused checker negative and success tests pass.
-6. OpenCode config retains instructions, enables LSP, and permits the LSP tool.
-7. The opt-in launcher sets and restores both environment variables on success
-   and a forced child-command failure.
-8. `opencode debug config` confirms the effective repository LSP configuration.
-9. Nextest accepts its repository config, runs with zero retries, and completes
-   the supported Rust test graph.
-10. Ordinary Cargo still completes the authoritative all-target/all-feature test
-    graph.
-11. Three-run timing evidence reports honest Cargo and nextest medians.
-12. Cargo-deny licence, bans, and sources checks pass with only the frozen policy.
-13. Cargo-deny advisories pass with no ignores.
-14. Cargo-machete runs with metadata and no `--fix`; all findings are recorded.
+1. Repository JSON contains exactly the frozen schema and tool declarations.
+2. Rust 1.97.1 owns installed rust-analyzer while existing components remain.
+3. The installer installs only missing or mismatched accepted versions.
+4. A second installer run performs no installation and succeeds.
+5. The read-only checker reports exact versions and changes no repository state.
+6. All checker negative and real-success tests pass.
+7. OpenCode config retains instructions, enables LSP, and permits the LSP tool.
+8. The launcher sets and restores both environment variables on success and a
+   forced child failure.
+9. `opencode debug config` confirms effective repository LSP configuration.
+10. Nextest accepts its config, uses zero retries, and completes the test graph.
+11. Ordinary Cargo completes the authoritative all-target/all-feature graph.
+12. Three-run timing evidence reports honest Cargo and nextest medians.
+13. Cargo-deny licence, bans, sources, and advisories pass with no ignores.
+14. Cargo-machete runs with metadata and no fix; findings are recorded only.
 15. New Just recipes are fail-fast and `verify-agent` retains ordinary Cargo
     verification.
-16. Live agent/tool guidance accurately describes tool roles and limitations.
-17. Cargo.lock before/after hashes are identical.
-18. No dependency, source, test, OCaml, edition, Rust channel, Plug lifecycle, or
+16. Live agent/tool guidance accurately describes roles and limits.
+17. Cargo.lock before and after hashes are identical.
+18. No dependency, source, test, OCaml, edition, Rust channel, lifecycle, or
     Tethers behaviour changes.
 19. Packet checker, Rustfmt, ordinary `just verify`, `verify-agent`, and
     `git diff --check` pass.
-20. The worker note records installed versions, idempotency, LSP evidence,
-    benchmarks, deny results, machete findings, lock hash, exact changed files,
-    and a verified real implementation checkpoint.
+20. The worker note records versions, idempotency, LSP evidence, benchmarks, deny
+    results, machete findings, lock hash, changed files, and a verified real
+    implementation checkpoint.
 
 ## Required verification
 
-Run every applicable command in this order:
+Run every applicable command:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
@@ -342,18 +313,13 @@ git diff --check
 git status --short
 ```
 
-`cargo machete` and `just deps-unused` may return its documented finding exit
-code. That does not authorise ignoring the output or changing a dependency. The
-worker note must record the exact result and M01C candidates. All other required
-commands must succeed.
+`cargo machete` and `just deps-unused` may return their documented finding exit
+code. This does not authorise ignoring output or changing a dependency. Record
+the exact result and M01C candidates. Every other required command must succeed.
 
-Test the OpenCode launcher with a fast child invocation and environment sentinels
-as defined in the blueprint. Record whether the currently running OpenCode
-process exposed direct LSP queries; completion is based on the next process and
-effective config, not hot reload.
-
-For the benchmark, warm once and then use `Measure-Command` for three complete
-runs of each test runner. Do not clear caches between runs.
+Test the OpenCode launcher with a fast child invocation and environment
+sentinels. For the benchmark, warm once and then use `Measure-Command` for three
+complete runs of each test runner without clearing caches.
 
 ## Permitted changes
 
@@ -379,7 +345,8 @@ Stop before changing another path.
 
 ## Forbidden changes
 
-- No Cargo.toml, Cargo.lock, dependency, feature, package, edition, or MSRV change.
+- No Cargo.toml, Cargo.lock, dependency, feature, package, edition, or MSRV
+  change.
 - No production source, test, fixture, generated lifecycle evidence, or OCaml
   change.
 - No Rust channel change or unrelated rustup component.
@@ -389,10 +356,9 @@ Stop before changing another path.
 - No cargo-deny advisory ignore or autonomous licence expansion.
 - No cargo-machete `--fix`, dependency removal, source deletion, warning cleanup,
   inactive-agent-file deletion, roadmap pruning, or M01C work.
-- No Plug installation, J24J, CLI, runtime, provider, Anchor, Trail, or release
-  work.
-- No amend, reset, rebase, cherry-pick, force-push, merge to main, tag, or
-  publication.
+- No Plug installation, J24J, CLI, runtime, provider, Anchor, Trail, release, tag,
+  or publication work.
+- No amend, reset, rebase, cherry-pick, force-push, or merge into main.
 
 ## Stop conditions
 
@@ -400,9 +366,8 @@ Stop and return exact evidence when:
 
 - the implementation branch already exists;
 - current origin/main lacks accepted M01A or the M01B blueprint;
-- exact accepted tool installation would require another package or global
-  configuration change;
-- OpenCode effective config cannot enable the frozen LSP behaviour;
+- exact installation requires another package or global configuration change;
+- OpenCode effective config cannot provide the frozen LSP behaviour;
 - cargo-deny reports an advisory or licence outside the frozen policy;
 - nextest requires retries or a production-test change;
 - Cargo.lock, Cargo.toml, source, tests, OCaml, Rust channel, or a forbidden path
@@ -433,9 +398,8 @@ After all required evidence passes:
 6. Make a separate completion-documentation commit.
 7. Push normally.
 
-Return branch, remote tip, verified implementation checkpoint, exact changed
-files, exact installed versions, second-install no-op evidence, checker results,
-OpenCode/LSP evidence, Cargo/nextest benchmark, deny results, machete findings,
-Cargo.lock hashes, full ordinary and nextest test results, Just results, worker
-note path, and explicit confirmation that no dependency or product behaviour
-changed.
+Return branch, remote tip, verified implementation checkpoint, changed files,
+installed versions, second-install no-op evidence, checker results, OpenCode/LSP
+evidence, Cargo/nextest benchmark, deny results, machete findings, Cargo.lock
+hashes, ordinary and nextest test results, Just results, worker-note path, and
+explicit confirmation that no dependency or product behaviour changed.
