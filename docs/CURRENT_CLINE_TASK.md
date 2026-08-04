@@ -1,81 +1,109 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `M01C4 - Application CLI import suppression cleanup`
+Task: `J24J - Read-only installation reconciliation planner`
 Owner: `OpenCode`
-Status: `COMPLETE`
-Task colour: `Green`
-Route: `OpenCode using HY3 for a narrow Rust import-configuration cleanup; Lucy performs independent review`
+Status: `READY`
+Task colour: `Amber`
+Route: `OpenCode using DeepSeek Pro V4 for bounded semantic Rust planning logic; Lucy performs independent review and routine safe merge`
 Base branch: `main`
-Base commit: `966ff269ee06f6182bd6029ffe1919b0a43acda8`
-Implementation branch: `opencode/m01c4-application-cli-import-suppression`
-Worker note: `docs/worker-notes/2026-08-04-m01c4-application-cli-import-suppression.md`
-Implementation blueprint: `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md`
+Base commit: `7b41eae28e48872986393561b961267613fe8338`
+Implementation branch: `opencode/j24j-installation-reconciliation-planner`
+Worker note: `docs/worker-notes/2026-08-04-j24j-installation-reconciliation.md`
+Implementation blueprint: `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCILIATION_PLANNER.md`
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
-Agent tools: bounded `rg`, Clippy JSON, rustfmt, and ordinary Cargo through `just verify`; do not retry ineffective OpenCode LSP
+Agent tools: bounded `rg`, compiler diagnostics, rustfmt, focused Nextest, and ordinary Cargo through `just verify`; LSP is optional and never a gate
 OCaml switch path: `N/A`
-Implementation checkpoint: `976d2519c1629c751f219a246cba0328ac90efb3`
+Implementation checkpoint: `TBD`
 
 ## Objective
 
-Remove the blanket `#[allow(unused_imports)]` attached to the CLI imports at the top of `tethers-0.1/host-rust/src/application.rs`, replacing it with an honest import layout that reflects each symbol's real production, debug-only, or test-only use.
+Implement a pure, read-only planner that reconciles one exact J24G installation request against the accepted candidate, exact-trust, launch-profile, conformance, installation-approval, and installed-state authorities.
 
-Read `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md` completely before editing. It is authoritative.
+Return exactly one legitimate next action:
 
-## Relevant background and existing behaviour
+- create exact-candidate trust;
+- run supervised conformance;
+- create installation approval;
+- publish disabled installation;
+- complete.
 
-M01C3 is accepted and merged on `main` at:
+Read `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCILIATION_PLANNER.md` completely before editing. It is authoritative.
 
-`40539e3084727e5357a448d9fd3cacd6fd08ce2d`
+## Accepted foundation
 
-Accepted baseline:
+J24G, J24H, and J24I are accepted on `main`.
+
+Current planning line:
+
+```text
+J24G request contract
+  -> J24H read-only evidence access
+  -> J24I exact-candidate trust
+  -> J24J read-only reconciliation planner
+  -> J24K locked gated executor
+  -> J24L thin public plug install CLI
+```
+
+Accepted engineering baseline:
 
 ```text
 Rust             1.97.1
 Cargo tests      926 passing minimum
-Clippy messages  118 emitted warnings after M01C3
+Nextest retries  0
 Cargo.lock       D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
-The exact current warning count must be captured before editing. The historical number is context, not a substitute for current evidence.
+## Required public seam
 
-The target import currently suppresses unused-import diagnostics across its entire group:
+Add and export `src/installation_plan.rs` with the exact action enum, plan record, and `plan_installation` signature frozen in the blueprint.
 
-```rust
-#[allow(unused_imports)]
-use tethers_reference_host::cli::{Cli, CliEnvelope, Command as CliCommand, OutcomeStatus};
-```
+The planner accepts already-opened authorities. It does not define host-data-root layout and does not create missing stores.
 
-The task is to encode the actual configuration boundary in the imports, not to change CLI behaviour.
+## Core behaviour
 
-## Required behaviour
+1. Revalidate the public typed request fields.
+2. Load the validated candidate registry and select the exact requested candidate.
+3. Find and validate exact-candidate trust.
+4. Construct deterministic exact `PackageTrustEvidence`.
+5. Find reusable current passed conformance only when its launch profile, trust, candidate, and current suite pins all match.
+6. Select multiple current passed runs deterministically by greatest `ended_unix_ms`, then greatest `evidence_id`.
+7. Validate any existing candidate installation approval against the selected current chain.
+8. Validate any existing exact-candidate installed record against the approval and current chain.
+9. Return the earliest missing legitimate action with only the evidence pins available at that stage.
 
-1. Remove the target blanket `#[allow(unused_imports)]`.
-2. Classify `Cli`, `CliEnvelope`, `CliCommand`, and `OutcomeStatus` through one bounded exact reference search in `application.rs`.
-3. Keep always-compiled imports ordinary.
-4. Gate test-only or debug-only imports with the narrowest truthful `#[cfg(...)]`.
-5. Remove any genuinely unused import.
-6. Preserve the `CliCommand` alias if it remains used.
-7. Preserve all CLI parsing, command routing, debug probes, test configuration, serialization, output, exit codes, and errors.
-8. Finish without a new warning or replacement suppression.
+Malformed or corrupt store evidence fails closed. Historical failed, interrupted, invalidated, or stale conformance may be ignored when planning a new supervised run.
 
-## Relevant components
+## Frozen read-only boundary
 
-- `tethers-0.1/host-rust/src/application.rs` — target import block and all local symbol uses.
-- `tethers-0.1/host-rust/src/cli.rs` — defines the imported types; read only if needed to understand configuration, never edit.
-- `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md` — frozen repair rules.
-- `.github/scripts/check-tethers-task-packet.ps1` — packet-state checker.
-- `justfile` — accepted final Cargo verification route.
+Do not:
 
-## Frozen decisions and invariants
+- create or modify a directory or file;
+- acquire a lock;
+- generate a timestamp;
+- create trust;
+- prepare or launch a provider;
+- run conformance;
+- create installation approval;
+- copy payloads;
+- publish installed state;
+- inspect or alter enablement;
+- add a CLI command;
+- call `PackageTrustEvidence::revalidate_current`;
+- change an accepted evidence schema;
+- change dependencies or Cargo.lock.
 
-- The task changes import configuration only.
-- No CLI type, enum, parser, subcommand, JSON envelope, outcome status, output text, error text, exit code, or runtime route may change.
-- Debug-only probes remain available exactly where they were.
-- Test-only code remains test-only.
-- No replacement `#[allow]` or `#[expect]` is permitted.
-- No dependency, lockfile, feature, Rust pin, tool configuration, OCaml, protocol, Plug, Trail, replay, admission, concurrency, or release change is permitted.
-- OpenCode LSP is optional infrastructure that has already failed honestly in this workspace. Do not retry it. It has no veto over this task.
+## Permitted files
+
+Only:
+
+- `tethers-0.1/host-rust/src/installation_plan.rs`
+- `tethers-0.1/host-rust/src/lib.rs`
+- `tethers-0.1/host-rust/tests/j24j_installation_reconciliation.rs`
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/worker-notes/2026-08-04-j24j-installation-reconciliation.md`
+
+Stop before changing another path.
 
 ## Startup procedure
 
@@ -85,196 +113,116 @@ The task is to encode the actual configuration boundary in the imports, not to c
    git status --short
    ```
 
-   Stop only if unrelated local changes would be overwritten or make the task unsafe.
-
 2. Fetch remote state:
 
    ```powershell
    git fetch origin
    ```
 
-3. Verify the planning checkpoint is on remote main:
+3. Verify the J24J blueprint is on `origin/main`:
 
    ```powershell
-   git merge-base --is-ancestor 16988b5b31613cece42714f32fe413c39b9ef977 origin/main
+   git merge-base --is-ancestor 2bfb7d36b0ab7c877d6042e327328eca8acdef34 origin/main
    ```
 
-   Require exit code 0.
-
-4. Verify accepted M01C3 is on remote main:
+4. Inspect the remote packet and require J24J, READY, OpenCode, and the required branch:
 
    ```powershell
-   git merge-base --is-ancestor 40539e3084727e5357a448d9fd3cacd6fd08ce2d origin/main
+   git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 24
    ```
 
-   Require exit code 0.
-
-5. Confirm the implementation branch does not already contain unrelated work. If absent, create it from current remote main:
+5. Require the implementation branch not to exist locally or remotely:
 
    ```powershell
-   git switch --create opencode/m01c4-application-cli-import-suppression origin/main
+   git branch --list opencode/j24j-installation-reconciliation-planner
+   git branch --remotes --list origin/opencode/j24j-installation-reconciliation-planner
    ```
 
-   If the branch already exists and is exactly this unfinished task, continue it rather than creating a second branch. Stop only if it contains unrelated or ambiguous work.
+6. Create it from current remote main:
 
-6. Update the packet Base commit to the exact `origin/main` used to create the implementation branch. Record the same base in the worker note.
+   ```powershell
+   git switch --create opencode/j24j-installation-reconciliation-planner origin/main
+   ```
 
-7. Read completely before editing:
+7. Update this packet's Base commit to the exact current `origin/main` before the implementation commit. Record the same base in the worker note.
 
-   - `AGENTS.md`;
-   - `docs/CURRENT_CLINE_TASK.md`;
-   - `docs/architecture/M01C4_APPLICATION_CLI_IMPORT_SUPPRESSION_CLEANUP.md`;
-   - `tethers-0.1/host-rust/src/application.rs`;
-   - `tethers-0.1/host-rust/src/cli.rs` only if symbol definitions are needed;
-   - `justfile`.
+8. Read completely before editing:
 
-8. Run the packet checker and record the lock hash:
+   - `AGENTS.md`
+   - this packet
+   - J24J blueprint
+   - J24G, J24H, and J24I blueprints
+   - J24I worker note
+   - `src/installation_request.rs`
+   - `src/candidate.rs`
+   - `src/installation_trust.rs`
+   - relevant public validation and store seams in `trust.rs`, `launch_profile.rs`, `conformance.rs`, and `installed.rs`
+   - `src/lib.rs`
+   - focused J24G, J24H, and J24I tests
+
+9. Run:
 
    ```powershell
    pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
+   pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1
    Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
    ```
 
-## Reference classification
+If child processes cannot resolve `pwsh.exe`, prepend `$PSHOME` to PATH for this process only. Do not modify user or machine PATH.
 
-Run one bounded exact search in `application.rs` for the four names:
+## Discovery discipline
 
-```powershell
-rg -n --glob 'application.rs' '\b(Cli|CliEnvelope|CliCommand|OutcomeStatus)\b' tethers-0.1/host-rust/src
-```
+Use bounded `rg` to confirm the exact accepted seams and method names.
 
-Read the surrounding configuration gates and classify every actual use as:
+OpenCode LSP is optional. It may be tried once only when it would genuinely save work. Empty, null, unavailable, or hanging output must be recorded and abandoned immediately. Continue with source inspection, `rg`, compiler diagnostics, and tests.
 
-- always compiled;
-- `debug_assertions` only;
-- test only;
-- both debug and test;
-- unused.
+No optional tool has veto power over this task.
 
-Record the classification in the worker note. Do not retry LSP, search unrelated repositories, or broaden into CLI redesign.
+## Required implementation details
 
-## Baseline warning capture
+- Use existing `M3Error` and `Result`.
+- Validate manually constructed request fields before loading evidence.
+- Candidate absence uses the frozen planner error.
+- Present mismatched trust is an error, not absence.
+- Launch-profile authority exists only when pinned by reusable current conformance.
+- Do not choose an arbitrary unpinned launch profile.
+- Multiple current passed conformances use the blueprint's deterministic ordering.
+- A stale existing approval or installed record fails closed; do not ignore it and create another.
+- Plans populate only evidence pins proven at their stage. Future pins remain `None`.
+- Do not serialize the plan or add public JSON in J24J.
 
-Before editing, run one machine-readable locked Clippy capture:
+## Focused test requirements
 
-```powershell
-$beforeJson = Join-Path $env:TEMP 'm01c4-clippy-before.jsonl'
-$beforeErr = Join-Path $env:TEMP 'm01c4-clippy-before.stderr.txt'
+Add `tests/j24j_installation_reconciliation.rs` and cover every required blueprint path, including:
 
-cargo clippy `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked `
-  --message-format=json `
-  1> $beforeJson `
-  2> $beforeErr
-```
+- all five plan actions;
+- exact evidence pins at each stage;
+- stale/failed conformance handling;
+- deterministic selection between current runs;
+- invalid manual request;
+- missing candidate;
+- mismatched trust;
+- corrupt store evidence;
+- stale approval;
+- stale installed state;
+- complete recursive no-mutation snapshots;
+- no provider launch or new evidence.
 
-Require exit code 0. Record:
-
-- total emitted warnings;
-- any warning whose primary span is the target import block;
-- the warning set outside the target for comparison.
-
-The current suppression may mean there is no target warning before editing. That is expected and is not a blocker.
-
-## Required implementation
-
-Implement only the frozen blueprint:
-
-1. Delete the target `#[allow(unused_imports)]`.
-2. Arrange imports according to the observed use classification.
-3. Prefer a small number of clear imports over scattered fully qualified names.
-4. Keep `Command as CliCommand` if the alias is used.
-5. If all four symbols are genuinely required in all target configurations, remove only the redundant attribute.
-6. If a symbol is unused everywhere, remove it.
-7. Do not move functions, change configuration gates around functions, or alter code beyond the import block unless rustfmt changes whitespace mechanically.
-
-## Permitted files
-
-Only these may change:
-
-- `tethers-0.1/host-rust/src/application.rs`;
-- `docs/CURRENT_CLINE_TASK.md` for state and checkpoint;
-- `docs/worker-notes/2026-08-04-m01c4-application-cli-import-suppression.md`.
-
-Stop before changing another path.
-
-## Forbidden changes
-
-Do not modify `cli.rs`, Cargo.toml, Cargo.lock, dependencies, features, Rust pins, tool versions, tool configuration, Just recipes, PowerShell tooling, Nextest policy, deny policy, OCaml, protocol, request or response JSON, command routing, exit codes, debug-probe availability, tests outside the permitted file, Plug behaviour, Trail, replay, admission, concurrency, release, tag, or publication state.
-
-Do not add any suppression, dummy use, underscore import, `black_box`, unreachable reference, or source-text guard pretending to prove runtime behaviour.
-
-## Stop conditions
-
-Stop as `BLOCKED` only when:
-
-- the branch contains unrelated work that cannot be safely separated;
-- removing the suppression exposes a real compile problem that requires an out-of-scope behavioural or configuration change;
-- `just verify` exposes a real failure caused by this edit that cannot be corrected inside the permitted import-only scope;
-- completing the task would require changing another production file.
-
-Do not stop merely because an optional tool is unavailable, an LSP result is empty, or the exact current warning count differs from the historical note. Record those facts and continue using the compiler-backed path.
-
-After two materially different failed edit attempts, stop with exact evidence and the smallest unresolved question rather than repeating the same action.
-
-## Expected pre-existing changes
-
-None.
+Use direct Rust fixtures and accepted store APIs. Do not add production test-only constructors.
 
 ## Edit recovery
 
-If an exact replacement fails:
+If an exact edit misses:
 
-1. reread the current import block;
-2. make one fresh small patch against current content;
-3. do not rewrite the full file;
-4. stop only after two materially different failed attempts.
-
-## Focused feedback
-
-After the coherent import edit:
-
-1. run rustfmt check;
-2. run ordinary locked Clippy once and inspect the import diagnostics;
-3. run a narrow CLI/application test filter only if the reference classification exposes an existing meaningful filter;
-4. otherwise record that focused tests were skipped because import configuration is fully checked by compilation and the final Cargo graph.
-
-Do not invent ceremonial focused tests.
-
-## Final warning accounting
-
-Capture final machine-readable Clippy output:
-
-```powershell
-$afterJson = Join-Path $env:TEMP 'm01c4-clippy-after.jsonl'
-$afterErr = Join-Path $env:TEMP 'm01c4-clippy-after.stderr.txt'
-
-cargo clippy `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
-  --locked `
-  --message-format=json `
-  1> $afterJson `
-  2> $afterErr
-```
-
-Require:
-
-- no warning caused by the new import layout;
-- no new or changed warning outside the target import block;
-- total emitted warnings unchanged or lower;
-- the target blanket suppression absent;
-- no replacement suppression added.
-
-Record an exact before/after table in the worker note.
+1. reread the latest file;
+2. use a smaller stable anchor;
+3. make one fresh materially different patch;
+4. never repeat the identical failed replacement;
+5. stop after two materially different failed attempts rather than rewriting a file wholesale.
 
 ## Required verification
 
-Run only these evidence-bearing checks:
+Run:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
@@ -283,10 +231,15 @@ cargo fmt `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
   --all -- --check
 
-cargo clippy `
+cargo nextest run `
+  --config-file .config/nextest.toml `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-targets `
-  --all-features `
+  --all-targets --all-features --locked `
+  -E 'test(j24j_installation_reconciliation) | test(installation_plan)'
+
+cargo test `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --test j24j_installation_reconciliation `
   --locked
 
 just verify
@@ -296,52 +249,56 @@ git diff --check
 git status --short
 ```
 
-Do not run full Nextest, cargo-deny, cargo-machete, `just verify-agent`, OCaml tests, LSP diagnostics, or unrelated scripts.
+The Nextest filter may be adjusted once if Nextest reports the exact integration test name differently. Record the adjustment. Do not repeat a bad filter blindly.
 
-Expected Cargo floor remains 926 passed and 0 failed. If the repository's authoritative total is higher, record the actual total; no test may disappear because of this task.
+Do not run full Nextest, cargo-deny, cargo-machete, `just verify-agent`, OCaml tests, packaging, release, or unrelated scripts.
 
 ## Acceptance criteria
 
-1. The target `#[allow(unused_imports)]` is removed.
-2. No new `allow` or `expect` replaces it.
-3. All four symbols are classified by their actual configuration uses.
-4. The final import layout exactly reflects those uses.
-5. Locked all-target Clippy exits zero with no new warning.
-6. Total emitted warnings are unchanged or lower.
-7. `just verify` passes with no missing test.
-8. Cargo.lock hash is unchanged.
-9. Only the three permitted files change.
-10. No CLI, debug-probe, test, JSON, exit-code, protocol, or runtime behaviour changes.
+1. J24J module and export match the frozen public seam.
+2. All five plan actions are reachable through valid evidence states.
+3. Every later action carries the complete valid earlier evidence chain.
+4. Corrupt evidence is never treated as absence.
+5. Historical non-current conformance does not block a new conformance action.
+6. Approval and installed state fail closed when their pins drift.
+7. Planning changes no byte or path and launches no process.
+8. Focused Nextest passes with zero retries.
+9. Focused ordinary Cargo integration tests pass.
+10. `just verify` passes with at least 926 Cargo tests and zero failures, aside from an honestly documented pre-existing environmental flake that passes on one evidence-led rerun.
+11. Cargo.lock remains byte-identical.
+12. Final diff contains only permitted files.
+
+## Stop conditions
+
+Stop as BLOCKED only if:
+
+- an accepted authority lacks a required read-only load or validation seam;
+- a required exact pin is absent from accepted records;
+- safe reconciliation would require weakening validation;
+- implementation requires mutation, process launch, lock, CLI, dependency, schema, or out-of-scope changes;
+- required verification still fails after one evidence-led correction.
+
+Do not stop for failed LSP, an optional tool, or one failed exact replacement.
 
 ## Completion contract
 
-After every acceptance condition passes:
+After all acceptance criteria pass:
 
-1. Create `docs/worker-notes/2026-08-04-m01c4-application-cli-import-suppression.md` with:
+1. Create the worker note with:
    - Requested outcome
    - Changes made
    - Decisions and assumptions
-   - Evidence
-   - Exact symbol-use classification
-   - Before/after warning table
-   - Focused-test decision
-   - Final Cargo evidence
-   - Cargo.lock hash
+   - Evidence-chain algorithm
+   - All five action proofs
+   - Read-only snapshot evidence
+   - Focused Nextest and Cargo evidence
+   - Full Cargo evidence
+   - Tool usefulness and fallbacks
+   - Cargo.lock and final-diff evidence
    - Remaining risks
    - Smallest next action
-   - References
-2. Record the real implementation commit as `Implementation checkpoint` in both packet and worker note.
-3. Set packet and worker note status to `COMPLETE` only after verification passes.
-4. Commit normally and push the implementation branch normally.
-5. Return a concise handoff containing:
-   - outcome;
-   - branch and remote tip;
-   - implementation checkpoint;
-   - changed files;
-   - exact import classification and final layout;
-   - before/after warning totals;
-   - final Cargo total;
-   - unchanged Cargo.lock hash;
-   - any honest remaining risk.
-
-Do not merge `main`; Lucy performs independent review and, once accepted, has standing permission to fast-forward and push `main` with `force=false`.
+2. Change packet status to `COMPLETE`.
+3. Set the real implementation checkpoint SHA.
+4. Commit documentation normally.
+5. Push the branch normally without force.
+6. Return branch, base, implementation checkpoint, completion tip, changed files, focused counts, full Cargo count, Cargo.lock hash, and confirmation that only permitted files changed.
