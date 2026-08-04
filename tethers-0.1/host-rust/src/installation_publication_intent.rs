@@ -28,9 +28,10 @@ fn io_error() -> M3Error {
     )
 }
 
-fn intent_error(error: M3Error) -> M3Error {
+fn to_intent_error(error: M3Error) -> M3Error {
     match error.code {
         "unsafe_store_path" => error,
+        "store_io" | "install_io" | "install_review_io" | "record_conflict" => io_error(),
         _ => invalid(),
     }
 }
@@ -72,7 +73,7 @@ impl InstallationPublicationIntent {
     }
 
     pub(crate) fn from_precomputed_record(record: InstalledPlugRecord) -> Result<Self> {
-        record.validate()?;
+        record.validate().map_err(|_| invalid())?;
         let mut intent = Self {
             schema_version: 1,
             transaction_id: record.installed_id.clone(),
@@ -82,7 +83,7 @@ impl InstallationPublicationIntent {
             installed_record_digest: record.record_digest.clone(),
             intent_digest: String::new(),
         };
-        intent.intent_digest = sha256(&intent.covered_bytes()?);
+        intent.intent_digest = sha256(&intent.covered_bytes().map_err(|_| invalid())?);
         intent.validate()?;
         Ok(intent)
     }
@@ -114,16 +115,17 @@ pub(crate) struct InstallationPublicationIntentStore {
 
 impl InstallationPublicationIntentStore {
     pub(crate) fn open(executor_state_root: &Path) -> Result<Self> {
-        let state_root = StoreRoot::open(executor_state_root)?;
+        let state_root = StoreRoot::open(executor_state_root).map_err(to_intent_error)?;
         Ok(Self {
-            root: StoreRoot::open(&state_root.path().join(INTENT_ROOT))?,
+            root: StoreRoot::open(&state_root.path().join(INTENT_ROOT)).map_err(to_intent_error)?,
         })
     }
 
     pub(crate) fn open_existing(executor_state_root: &Path) -> Result<Self> {
-        let state_root = StoreRoot::open_existing(executor_state_root)?;
+        let state_root = StoreRoot::open_existing(executor_state_root).map_err(to_intent_error)?;
         Ok(Self {
-            root: StoreRoot::open_existing(&state_root.path().join(INTENT_ROOT))?,
+            root: StoreRoot::open_existing(&state_root.path().join(INTENT_ROOT))
+                .map_err(to_intent_error)?,
         })
     }
 
@@ -132,7 +134,7 @@ impl InstallationPublicationIntentStore {
     }
 
     fn validate_entry(path: &Path) -> Result<()> {
-        reject_reparse(path)?;
+        reject_reparse(path).map_err(to_intent_error)?;
         let metadata = fs::symlink_metadata(path).map_err(|_| io_error())?;
         if !metadata.is_file() {
             return Err(invalid());
@@ -142,27 +144,22 @@ impl InstallationPublicationIntentStore {
 
     pub(crate) fn create(&self, intent: &InstallationPublicationIntent) -> Result<()> {
         intent.validate()?;
-        let entries = self.root.entries().map_err(intent_error)?;
+        let entries = self.root.entries().map_err(to_intent_error)?;
         if !entries.is_empty() {
-            match self.load()? {
-                Some(_) => return Err(conflict()),
-                None => return Err(invalid()),
+            match self.load() {
+                Ok(Some(_)) => return Err(conflict()),
+                Ok(None) => return Err(invalid()),
+                Err(error) => return Err(error),
             }
         }
-        self.root.create_json("current", intent).map_err(|error| {
-            if error.code == "record_conflict" {
-                conflict()
-            } else if error.code == "unsafe_store_path" {
-                error
-            } else {
-                io_error()
-            }
-        })?;
+        self.root
+            .create_json("current", intent)
+            .map_err(to_intent_error)?;
         Ok(())
     }
 
     pub(crate) fn load(&self) -> Result<Option<InstallationPublicationIntent>> {
-        let entries = self.root.entries().map_err(intent_error)?;
+        let entries = self.root.entries().map_err(to_intent_error)?;
         if entries.is_empty() {
             return Ok(None);
         }
