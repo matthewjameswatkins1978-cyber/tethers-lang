@@ -30,7 +30,7 @@ Return exactly one legitimate next action:
 
 Read `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCILIATION_PLANNER.md` completely before editing. It is authoritative.
 
-## Accepted foundation
+## Relevant background and existing behaviour
 
 J24G, J24H, and J24I are accepted on `main`.
 
