@@ -3,11 +3,11 @@
 Control contract: `1`
 Task: `J24J - Read-only installation reconciliation planner`
 Owner: `OpenCode`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for bounded semantic Rust planning logic; Lucy performs independent review and routine safe merge`
 Base branch: `main`
-Base commit: `7b41eae28e48872986393561b961267613fe8338`
+Base commit: `87e254de15794783ec61ec9abfff56b633668bb0`
 Implementation branch: `opencode/j24j-installation-reconciliation-planner`
 Worker note: `docs/worker-notes/2026-08-04-j24j-installation-reconciliation.md`
 Implementation blueprint: `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCILIATION_PLANNER.md`
