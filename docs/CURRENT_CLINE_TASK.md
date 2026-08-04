@@ -1,247 +1,226 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24G - Strict Plug installation request contract`
+Task: `J24H - Installation evidence access foundation`
 Owner: `OpenCode`
-Status: `COMPLETE`
-Task colour: `Green`
-Route: `OpenCode using Luna for a bounded JSON contract and parser; Lucy performs final review`
+Status: `READY`
+Task colour: `Amber`
+Route: `OpenCode using DeepSeek Pro V4 for narrow security-sensitive store seams; Lucy performs final review`
 Base branch: `main`
-Base commit: `f5e621bee4338a496888daaf78e2f029e4ab0914`
-Implementation branch: `opencode/j24g-installation-request-contract`
-Implementation checkpoint: `fa3ffcf4f7c8e96c0a7f5e2b3f8d7a9c6b1e4d2f`
-Worker note: `docs/worker-notes/2026-08-04-j24g-installation-request-contract.md`
-Implementation blueprint: `docs/architecture/J24G_INSTALLATION_REQUEST_CONTRACT.md`
+Base commit: `1cfba49c0031f0e2f2f9fc136d466c8fce7994f9`
+Implementation branch: `opencode/j24h-installation-evidence-access`
+Worker note: `docs/worker-notes/2026-08-04-j24h-installation-evidence-access.md`
+Implementation blueprint: `docs/architecture/J24H_INSTALLATION_EVIDENCE_ACCESS_FOUNDATION.md`
 
 ## Objective
 
-Implement the exact, hostile-input-safe request contract for the future public
-Plug installation command.
+Add the smallest persistence and read-only access foundation required before the
+installation reconciliation planner can be implemented safely.
 
-J24G turns one small JSON file into a typed `InstallationRequest` expressing
-only:
+J24H must:
 
-- one exact candidate identity;
-- exact-candidate trust;
-- explicit permission for non-isolated supervised conformance execution;
-- installation to the disabled state only.
+- persist complete immutable `LaunchProfileEvidence` through the existing
+  audited `StoreRoot` authority;
+- add non-creating `open_existing` constructors to the candidate, trust,
+  conformance, and installation-approval stores needed by the future planner;
+- prove every read-only opening leaves missing roots missing and valid stores
+  byte-identical.
 
-J24G performs no candidate lookup, planning, trust mutation, provider launch,
-conformance, approval, payload copying, installed publication, enablement, or
-CLI work.
+J24H performs no installation planning, trust mutation, provider launch,
+conformance execution, approval creation, payload copying, installed
+publication, enablement, lock, or CLI work.
 
-Read `docs/architecture/J24G_INSTALLATION_REQUEST_CONTRACT.md` completely before
-editing. It freezes the public JSON, Rust seam, error codes, messages, field
-pointers, validation order, and evidence matrix.
+Read `docs/architecture/J24H_INSTALLATION_EVIDENCE_ACCESS_FOUNDATION.md`
+completely before editing. It freezes the exact methods, launch-profile record
+identity, failure messages, and evidence matrix.
 
 ## Relevant background and existing behaviour
 
-J24E and J24F are accepted on `main`. Together they provide a safe public
-package-intake boundary:
+J24G is accepted. Its real implementation checkpoint is
+`fa3ffcf42b613cc55219ab33210dcd07668d990a` and its accepted branch tip was
+`ec467c308948178be1739ba48dc90ff8ce5ffc02` before the historical worker-note
+correction.
 
-- `plug stage` inspects a hostile `.tetherplug`;
-- the package is extracted into immutable quarantine;
-- one candidate record is published;
-- exact replay returns the same candidate identity without mutation;
-- staging grants no trust, approval, installation, permission, or operational
-  availability.
+The future installation pipeline is intentionally resumable. Trust,
+conformance, and approval evidence may legitimately survive a later publication
+failure. A later invocation must be able to inspect and reuse that evidence
+without creating store roots merely by planning.
 
-The future installation pipeline is frozen as separate internal gates behind
-one simple public operation:
+The repository already has immutable stores for publisher trust, exact-digest
+developer approval, conformance evidence, installation approval, and installed
+records. `InstalledPlugRegistry::open_existing` and
+`StoreRoot::open_existing` already establish the desired non-creating pattern.
 
-```text
-request
-→ read-only reconciliation plan
-→ host installation lock and replan
-→ exact-candidate trust
-→ supervised conformance
-→ installation approval
-→ atomic installed publication
-→ present disabled
-```
+One required evidence object is not yet persisted: full
+`LaunchProfileEvidence`. `ConformanceEvidence` pins only its digest. Without the
+complete object, a later process cannot call `ConformanceEvidence::require_current`
+and safely reuse a passed result after interruption.
 
-J24G owns only the request boundary. J24H will later consume its typed output in
-a read-only reconciliation planner.
-
-The repository already provides
-`crate::manifest::parse_value_no_dupes`, which parses one complete JSON value,
-rejects duplicate keys recursively, and rejects trailing non-whitespace
-content. Reuse it rather than implementing another parser.
-
-`run_input.rs` provides a useful style reference for exact object validation,
-stable errors, and RFC 6901 field pointers, but J24G must use the contract and
-messages frozen in its own blueprint.
+J24H closes only that evidence-access gap. J24I will build the read-only planner
+on top of it.
 
 ## Startup procedure
 
-The current worktree may still be on an older implementation branch. Do not read
-that branch's packet as current authority.
+The worktree may still be on an older implementation branch. Do not inspect that
+branch's packet as current authority.
 
 1. Confirm the worktree is clean. Stop if it is not.
 2. Run `git fetch origin`.
-3. Verify checkpoint `f5e621bee4338a496888daaf78e2f029e4ab0914` is an ancestor of `origin/main`.
+3. Verify checkpoint `1cfba49c0031f0e2f2f9fc136d466c8fce7994f9` is an ancestor of
+   `origin/main`.
 4. Inspect the first lines of the packet directly from `origin/main`:
 
    ```powershell
    git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 16
    ```
 
-   Require J24G, OpenCode, `READY`, and branch
-   `opencode/j24g-installation-request-contract`.
+   Require J24H, OpenCode, `READY`, and branch
+   `opencode/j24h-installation-evidence-access`.
 5. Verify the blueprint directly from `origin/main`:
 
    ```powershell
-   git cat-file -e origin/main:docs/architecture/J24G_INSTALLATION_REQUEST_CONTRACT.md
+   git cat-file -e origin/main:docs/architecture/J24H_INSTALLATION_EVIDENCE_ACCESS_FOUNDATION.md
    ```
 
-6. Check that `opencode/j24g-installation-request-contract` does not exist
-   locally or remotely. If it exists, stop without resetting or overwriting it.
+6. Check that `opencode/j24h-installation-evidence-access` does not exist locally
+   or remotely. If it exists, stop without resetting or overwriting it.
 7. Create and switch to it from current `origin/main`:
 
    ```powershell
-   git switch --create opencode/j24g-installation-request-contract origin/main
+   git switch --create opencode/j24h-installation-evidence-access origin/main
    ```
 
 8. Read the checked-out packet and blueprint completely before editing.
 
 ## Required behaviour
 
-1. Add `tethers-0.1/host-rust/src/installation_request.rs` and export it from
-   `lib.rs`.
+1. Add `CandidateRegistry::open_existing(root, quarantine_root)` with the exact
+   read-only validation order frozen in the blueprint.
 
-2. Implement exactly the public constants, types, enums, error shape, and two
-   public functions frozen in the blueprint:
+2. `CandidateRegistry::open_existing` must never call `create_safe_dir_all`,
+   `create_dir_all`, `create_dir`, write, rename, delete, or alter permissions.
+
+3. Add `open_existing(path)` to `PublisherTrustStore` and
+   `DeveloperApprovalStore`, delegating only to `StoreRoot::open_existing`.
+
+4. Add `open_existing(path)` to `ConformanceEvidenceStore`, delegating only to
+   `StoreRoot::open_existing`.
+
+5. Add `open_existing(path)` to `InstallationApprovalStore`, delegating only to
+   `StoreRoot::open_existing`.
+
+6. Add `LaunchProfileEvidenceStore` to `launch_profile.rs` with exactly:
 
    ```rust
-   load_installation_request(path: &Path)
-   parse_installation_request_bytes(bytes: &[u8])
+   pub fn open(path: &Path) -> Result<Self>;
+   pub fn open_existing(path: &Path) -> Result<Self>;
+   pub fn create(&self, evidence: &LaunchProfileEvidence) -> Result<()>;
+   pub fn load_all(&self) -> Result<Vec<LaunchProfileEvidence>>;
    ```
 
-3. Keep the public request shape exactly:
+7. Name launch-profile evidence files from the 64-character lowercase hex suffix
+   of `profile_evidence_digest`; introduce no UUID or timestamp identity.
 
-   ```json
-   {
-     "schema": "tethers.plug-install/1",
-     "candidate_id": "<canonical-lowercase-hyphenated-uuid>",
-     "trust": { "scope": "exact_candidate" },
-     "conformance": {
-       "allow_non_isolated_supervised_execution": true
-     },
-     "installation": { "target_state": "disabled" }
-   }
-   ```
+8. `LaunchProfileEvidenceStore::create` must validate the evidence and publish
+   only through `StoreRoot::create_json`. Do not add another temporary-file or
+   atomic-write implementation.
 
-   Every field is required and no unknown field is permitted at any depth.
+9. `load_all` must reject torn temporary files, unexpected entries, filename
+   mismatch, malformed evidence, and duplicate digest evidence exactly as
+   frozen in the blueprint.
 
-4. Implement bounded file loading: require an absolute ordinary file, reject a
-   final symlink or directory, and read at most 16 KiB plus one byte through a
-   bounded reader. Do not use `fs::read`.
+10. `load_all` must return records sorted by `profile_evidence_digest`.
 
-5. Validate bytes in the frozen order: size, BOM, UTF-8, shared duplicate-key
-   parser, then exact shape and semantic values.
+11. Every new `open_existing` path must fail closed on missing, non-directory,
+    symbolic-link, or Windows reparse/junction roots without creating anything.
 
-6. Reuse `crate::manifest::parse_value_no_dupes`. Do not add a custom JSON
-   parser, custom Serde visitor, or dependency.
+12. Add focused recursive snapshot evidence proving every new read-only opening
+    and load operation changes no byte or path.
 
-7. Require `candidate_id` to be a canonical lowercase hyphenated UUID by
-   parsing it and comparing it with `parsed.hyphenated().to_string()`.
-
-8. Require exact-candidate trust, the JSON boolean `true` for
-   `allow_non_isolated_supervised_execution`, and disabled target state. No
-   alternative value is accepted.
-
-9. Use only the two frozen public error codes:
-
-   - `installation_request_io` for metadata, open, or read failures;
-   - `installation_request_invalid` for every path or content validation
-     failure.
-
-10. Preserve every frozen error message and RFC 6901 field pointer. Never expose
-    an operating-system path, raw request content, or platform I/O message.
-
-11. Return only the typed request. Do not retain the original JSON value,
-    compute a request digest, access any lifecycle store, or create any evidence.
-
-12. Add comprehensive unit and integration evidence covering the complete
-    blueprint matrix while proving parsing and loading create, delete, or modify
-    no filesystem path.
+13. Preserve all existing store creation, trust, launch, conformance, approval,
+    installed, enablement, J24E, J24F, and J24G behaviour.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/installation_request.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/manifest.rs`
-- `tethers-0.1/host-rust/src/run_input.rs`
-- `tethers-0.1/host-rust/tests/j24g_installation_request.rs`
-- `docs/architecture/J24G_INSTALLATION_REQUEST_CONTRACT.md`
+- `tethers-0.1/host-rust/src/candidate.rs`
+- `tethers-0.1/host-rust/src/trust.rs`
+- `tethers-0.1/host-rust/src/conformance.rs`
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/launch_profile.rs`
+- `tethers-0.1/host-rust/src/m3_store.rs`
+- `tethers-0.1/host-rust/tests/j24h_installation_evidence_access.rs`
+- `docs/architecture/J24H_INSTALLATION_EVIDENCE_ACCESS_FOUNDATION.md`
 - `docs/CURRENT_CLINE_TASK.md`
 
 ## Frozen decisions and invariants
 
-- The installation request is a human decision, not host-generated evidence.
-- The request applies only to one exact immutable candidate.
-- Publisher-wide trust is not part of the first installation path.
-- The wording `allow_non_isolated_supervised_execution` remains explicit and
-  long because supervision is not a sandbox.
-- `false`, a missing field, or a string such as `"true"` is not approval.
-- Installation can target only `disabled`.
-- The user never supplies timestamps, authorities, digests, evidence IDs,
-  installation paths, quarantine paths, installed IDs, or enablement state.
-- The request file is read once; its validated typed contents, not its path,
-  become input to later gates.
-- All reads are bounded before JSON parsing.
-- Duplicate keys and trailing JSON are rejected through the existing shared
-  parser.
-- J24G performs no mutation and executes no provider code.
-- Candidate identity remains distinct from installed identity.
-- Tethers Core, OCaml semantics, package schemas, candidate schemas, and
-  lifecycle evidence formats remain unchanged.
+- J24H is an evidence-access foundation, not the installation planner.
+- The actual read-only planner moves to J24I; the executor and CLI move one
+  letter later.
+- Full launch-profile evidence must be durable because conformance pins its
+  digest and later revalidation requires the complete object.
+- `LaunchProfileEvidence` schema and `PreparedSupervisedLaunch` behaviour remain
+  unchanged.
+- `StoreRoot::create_json` remains the only launch-profile publication
+  authority.
+- Existing `open` methods retain their current creating behaviour.
+- New `open_existing` methods never create a missing root.
+- Candidate and quarantine roots remain separate and are both required.
+- Store corruption is never treated as an empty store.
+- Temporary and unexpected entries fail closed.
+- Launch-profile filenames are content identities, not new lifecycle IDs.
+- No evidence record is rewritten or replaced.
+- J24H launches no process and changes no lifecycle state.
+- Tethers Core, OCaml semantics, package schemas, candidate schemas, and all
+  existing evidence schemas remain unchanged.
 
 ## Acceptance criteria
 
-1. The new module and `lib.rs` export compile without dependency or lockfile
-   changes.
-2. The exact valid request parses into the exact typed values frozen in the
-   blueprint.
-3. An absolute ordinary request file loads successfully through a bounded read.
-4. A valid request padded with JSON whitespace to exactly 16 KiB succeeds, and
-   16 KiB plus one byte fails with the frozen limit error.
-5. BOM, invalid UTF-8, malformed JSON, a second trailing JSON value, root
-   duplicates, and duplicates in every nested object are rejected.
-6. Every missing field is rejected with code `installation_request_invalid`,
-   the frozen message, and its exact JSON pointer.
-7. Unknown fields at the root and in `trust`, `conformance`, and `installation`
-   are rejected with their exact escaped pointers.
-8. Wrong root, nested-object, string, and boolean types are rejected with the
-   frozen code, message, and pointer.
-9. Unsupported schema values are rejected at `/schema`.
-10. Invalid, uppercase, simple, braced, and otherwise non-canonical UUID text is
-    rejected at `/candidate_id`.
-11. Any trust scope other than `exact_candidate` is rejected at `/trust/scope`.
-12. Missing, false, or non-boolean supervised-execution approval is rejected at
-    `/conformance/allow_non_isolated_supervised_execution`.
-13. Any target state other than `disabled` is rejected at
-    `/installation/target_state`.
-14. Relative, missing, directory, and final-symlink request paths are rejected
-    with the frozen code and message; platform paths and raw I/O errors are not
-    exposed.
-15. Filesystem snapshots prove valid and invalid parsing/loading alter no byte
-    and create or remove no path.
-16. J24E and J24F focused tests remain green.
-17. The full suite remains green apart from the five documented
-    `pwsh.exe not found` environment failures.
-18. Rustfmt, packet checker, and `git diff --check` pass.
+1. `CandidateRegistry::open_existing` accepts two existing safe roots and
+   `load_all` preserves their recursive byte snapshot.
+2. Missing candidate and quarantine roots fail without creating either path.
+3. Non-directory candidate or quarantine roots fail with
+   `registry_invalid` and the frozen message.
+4. Unsafe symbolic-link and Windows junction/reparse roots fail closed without
+   creating a target child.
+5. Publisher trust and developer approval `open_existing` methods accept
+   existing roots and create no missing root.
+6. Conformance and installation-approval `open_existing` methods accept existing
+   roots and create no missing root.
+7. One valid `LaunchProfileEvidence` round-trips exactly through the new store.
+8. The launch-profile filename equals the digest suffix and contains no UUID or
+   timestamp identity.
+9. Opening and loading the launch-profile store changes no byte or path.
+10. A second create of identical evidence returns `record_conflict` and changes
+    no byte.
+11. Torn `.tmp`, non-JSON, filename mismatch, malformed evidence, and duplicate
+    digest conditions fail closed with the frozen code/message.
+12. `load_all` returns multiple valid records sorted by digest.
+13. Missing launch-profile and every other new existing-store root return the
+    expected existing store error and remain absent.
+14. Existing candidate, trust, conformance, launch-profile, and approval unit
+    tests remain green.
+15. J24E, J24F, and J24G focused tests remain green.
+16. Full suite remains green apart from the five documented `pwsh.exe not found`
+    environment failures.
+17. Packet checker, Rustfmt, and `git diff --check` pass.
 
 ## Required verification
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 cargo +1.89.0 fmt --all -- --check
-cargo +1.89.0 test installation_request --locked
-cargo +1.89.0 test --test j24g_installation_request --locked
+cargo +1.89.0 test candidate --locked
+cargo +1.89.0 test trust --locked
+cargo +1.89.0 test launch_profile --locked
+cargo +1.89.0 test conformance --locked
+cargo +1.89.0 test installed --locked
+cargo +1.89.0 test --test j24h_installation_evidence_access --locked
 cargo +1.89.0 test candidate_preparation --locked
 cargo +1.89.0 test --test j24e_candidate_preparation --locked
 cargo +1.89.0 test --test j24f_plug_stage_cli --locked
+cargo +1.89.0 test installation_request --locked
+cargo +1.89.0 test --test j24g_installation_request --locked
 cargo +1.89.0 test --all-targets --all-features --locked
 git diff --check
 ```
@@ -250,31 +229,34 @@ git diff --check
 
 Expected files are limited to:
 
-- `tethers-0.1/host-rust/src/installation_request.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/tests/j24g_installation_request.rs`
-- `docs/worker-notes/2026-08-04-j24g-installation-request-contract.md`
-- `docs/CURRENT_CLINE_TASK.md` only for status transitions and the final full
+- `tethers-0.1/host-rust/src/candidate.rs`
+- `tethers-0.1/host-rust/src/trust.rs`
+- `tethers-0.1/host-rust/src/conformance.rs`
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/launch_profile.rs`
+- `tethers-0.1/host-rust/tests/j24h_installation_evidence_access.rs`
+- `docs/worker-notes/2026-08-04-j24h-installation-evidence-access.md`
+- `docs/CURRENT_CLINE_TASK.md` only for status transitions and the final real
   implementation checkpoint
 
+Do not change `m3_store.rs`; it is a reference and reused authority only.
 Stop before changing any other file.
 
 ## Forbidden changes
 
-Do not modify `manifest.rs`, `run_input.rs`, candidate preparation, candidate,
-package, trust, trusted store, launch profile, conformance, approval, installed,
-enablement, CLI, application routing, Plug command formatting, dependencies, or
-lockfiles.
+Do not modify `StoreRoot`, `LaunchProfileEvidence`, `PreparedSupervisedLaunch`,
+installation request types, package or candidate record schemas, trust evidence
+schemas, conformance schemas, installation approval schemas, installed record
+schemas, dependencies, or lockfiles.
 
-Do not add `plug install`, a placeholder command, a reconciliation planner, a
-request digest, a lock, atomic evidence writing, trust mutation, provider
-launch, conformance execution, installation approval, payload copying,
-installed publication, enablement, removal, update, download, registry, policy,
-replay, event, Anchor, Trail, OCaml, Tether syntax, release, tag, or version
-work.
+Do not add the installation planner, executor, request digest, host lock,
+provider launch, conformance execution, approval mutation, payload copying,
+installed publication, enablement, `plug install`, another CLI command, download,
+update, removal, registry, policy, replay, event, Anchor, Trail, OCaml, Tether
+syntax, release, tag, or version work.
 
-Do not broaden trust beyond `exact_candidate` or allow installation to any state
-other than `disabled`.
+Do not duplicate `StoreRoot` atomic writing, path verification, JSON parsing, or
+canonicalisation.
 
 Do not amend, reset, rebase, cherry-pick, force-push, or merge into `main`.
 
@@ -283,12 +265,12 @@ Do not amend, reset, rebase, cherry-pick, force-push, or merge into `main`.
 Stop cleanly and report the smallest unresolved question if:
 
 - the implementation branch already exists;
-- current `origin/main` lacks accepted J24F or the J24G packet/blueprint;
-- the shared duplicate-key parser cannot be reused without changing
-  `manifest.rs`;
-- a dependency, lockfile, CLI, lifecycle store, provider launch, or forbidden
-  file appears necessary;
-- the exact contract cannot be implemented with bounded read-only input;
+- current `origin/main` lacks accepted J24G or the J24H packet/blueprint;
+- an existing evidence schema must change;
+- `StoreRoot::open_existing` or `create_json` cannot be reused as frozen;
+- a planner, process launch, lifecycle mutation, dependency, lockfile, or
+  forbidden file appears necessary;
+- the read-only guarantee cannot be proved with recursive snapshots;
 - branch-specific failures remain after two materially different attempts.
 
 ## Expected pre-existing changes
@@ -303,11 +285,13 @@ After all required checks pass:
 
 - create the authorised worker note;
 - set the packet to `COMPLETE`;
-- record the full 40-character implementation checkpoint;
+- record the real full 40-character implementation commit returned by Git;
+- verify that commit exists with `git cat-file -e <SHA>^{commit}` before writing
+  it into the packet or worker note;
 - push normally.
 
-Return the branch, remote final SHA, implementation checkpoint, exact changed
-files, unit and integration test counts, full-suite result, packet/rustfmt/diff
-results, worker-note path, stable-error evidence, bounded-read evidence, and
-explicit confirmation that J24G launched nothing and changed no lifecycle
-state.
+Return the branch, remote final SHA, real implementation checkpoint, exact
+changed files, focused and full test evidence, packet/rustfmt/diff results,
+worker-note path, launch-profile round-trip evidence, recursive no-mutation
+proof, and explicit confirmation that J24H planned nothing, launched nothing,
+and changed no installation lifecycle state.
