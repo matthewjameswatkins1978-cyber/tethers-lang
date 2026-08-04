@@ -1233,6 +1233,64 @@ mod transition_tests {
     }
 
     #[test]
+    fn j24k2_transition_changed_retained_conformance_id_is_postcondition_failed() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::CreateInstallationApproval,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            launch_profile_evidence_digest: Some("sha256:launch".to_string()),
+            conformance_evidence_id: Some("conformance-a".to_string()),
+            conformance_evidence_digest: Some("sha256:conf".to_string()),
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::PublishDisabledInstallation,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            launch_profile_evidence_digest: Some("sha256:launch".to_string()),
+            conformance_evidence_id: Some("conformance-b".to_string()),
+            conformance_evidence_digest: Some("sha256:conf".to_string()),
+            ..base_plan()
+        };
+        let error = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::CreateInstallationApproval,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "installation_execution_postcondition_failed");
+    }
+
+    #[test]
+    fn j24k2_transition_changed_retained_conformance_digest_is_postcondition_failed() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::CreateInstallationApproval,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            launch_profile_evidence_digest: Some("sha256:launch".to_string()),
+            conformance_evidence_id: Some("conformance".to_string()),
+            conformance_evidence_digest: Some("sha256:conf-a".to_string()),
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::PublishDisabledInstallation,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            launch_profile_evidence_digest: Some("sha256:launch".to_string()),
+            conformance_evidence_id: Some("conformance".to_string()),
+            conformance_evidence_digest: Some("sha256:conf-b".to_string()),
+            ..base_plan()
+        };
+        let error = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::CreateInstallationApproval,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "installation_execution_postcondition_failed");
+    }
+
+    #[test]
     fn j24k2_transition_legitimate_advance_with_new_pins_accepted() {
         let before = InstallationPlan {
             action: InstallationPlanAction::CreateExactCandidateTrust,
