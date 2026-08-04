@@ -5,7 +5,8 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `9dc4498b644317e99851879cd40f2874eb611298`
-Implementation checkpoint: `ef3b4688528abc51a08a27a2f5331c2ad6156b38`
+Implementation checkpoint: `330eefd85900e911420cba80fdcb74698b7a5ae0`
+Final remote tip: control-document correction commit follows
 
 ## Requested outcome
 
@@ -23,7 +24,9 @@ Add the Windows non-inheritable RAII installation lock and the bounded single-st
 - Private transition validator enforces action ranking, rejects regressed, skipped, and pin-mismatched transitions. Allows new pins on advancement (None -> Some) while requiring existing pins to be retained.
 - Private `ConformanceScratchGuard` performs best-effort cleanup on unwind.
 - Added `src/installation_execution_tests.rs`: options validation, deferred publication error.
-- Added `tests/j24k2_locked_single_step_executor.rs`: integration tests proving lock acquisition order, lock release after error/panic, trust creation advancement, resumable state, and lock reacquisition.
+- Added `src/installation_execution_tests.rs`: options validation and a valid completed exact-candidate installation fixture proving Complete idempotence and mutation freedom.
+- Added `tests/j24k2_locked_single_step_executor.rs`: real M3 failed/interrupted executor coverage, post-prepare candidate tampering refusal with provider-marker proof, complete deferred-publication root snapshots, and serialized interruption-sensitive integration tests.
+- Added retained conformance ID and digest pin transition tests.
 - Updated `src/lib.rs`: `pub mod installation_execution`, `#[cfg(test)] mod installation_execution_tests`.
 - Updated `docs/CURRENT_CLINE_TASK.md`: READY → IN_PROGRESS → COMPLETE.
 - Updated this worker note.
@@ -60,34 +63,43 @@ Add the Windows non-inheritable RAII installation lock and the bounded single-st
 13. `j24k2_create_exact_candidate_trust_advances_once`: trust created, advances to conformance, pins populated
 14. `j24k2_trust_creation_is_resumable`: second call plans RunSupervisedConformance (state persisted)
 15. `j24k2_options_invalid_rejected_before_mutation`: invalid options fail before planning
+16. `j24k2_failed_conformance_records_once_without_advance_or_retry`: malformed M3 provider records Failed evidence once, with retry count zero and no approval/install/publication state
+17. `j24k2_interrupted_conformance_records_once_without_advance_or_retry`: interruption records Interrupted evidence once, with reset guard, no retry, and cleaned scratch
+18. `j24k2_candidate_tampering_after_prepare_refuses_before_provider_marker`: changed indexed executable returns `candidate_drift` and never creates the provider marker
+19. `j24k2_complete_state_is_idempotent_and_mutation_free`: completed exact-candidate installation returns equal plans and unchanged evidence/install trees
+20. `j24k2_transition_changed_retained_conformance_id_is_postcondition_failed`: retained conformance ID drift fails closed
+21. `j24k2_transition_changed_retained_conformance_digest_is_postcondition_failed`: retained conformance digest drift fails closed
+22. `j24k2_full_passed_conformance_and_approval_chain`: deferred publication snapshot proves no relevant root mutation, including staging, plug, intent, or executor-state paths
 
 ### Options validation
 16-19: empty authority, empty build identity, zero wall-time rejected; valid accepted
 
 ### Test counts
-- Unit tests (lib): 12 passed (8 lock + 4 options)
-- Integration tests (j24k2 test binary): 7 passed
-- Focused Nextest: 19 run, 19 passed, 1171 skipped, 0 retries
+- Unit tests (lib): 26 passed (10 lock, 11 transition, 5 options/completion)
+- Integration tests (j24k2 test binary): 9 passed
+- Focused Nextest: 35 run, 35 passed, 1171 skipped, 0 retries
 - J24K1 regression: 9 passed
 - J24J regression: 24 passed
 - M3 lifecycle regression: 13 passed
 - J23C2 regression: 8 passed
-- Full `just verify`: 952 lib tests + all integration suites = ALL PASSED (0 failures)
+- Full `just verify`: 966 library tests and all integration suites passed, 0 failed, after serializing the interruption-sensitive J24K2 integration binary
 
 ### Commands executed
 - `cargo fmt --all -- --check`: PASS (after formatting)
-- `cargo test --lib j24k2 --locked`: 12 passed
-- `cargo test --test j24k2_locked_single_step_executor --locked`: 7 passed
-- `cargo nextest run -E 'test(j24k2)' --locked`: 19 passed, 1171 skipped
+- `cargo test --lib j24k2 --locked`: 26 passed, 940 filtered
+- `cargo test --test j24k2_locked_single_step_executor --locked`: 9 passed
+- `cargo test --test j24k2_locked_single_step_executor --locked -- --test-threads=1`: 9 passed
+- `cargo nextest run --config-file .config/nextest.toml --manifest-path tethers-0.1/host-rust/Cargo.toml --all-features --locked -E 'test(j24k2)'`: 35 passed, 1171 skipped, 0 retries
 - `cargo test --lib j24k1 --locked`: 9 passed
 - `cargo test --test j24j_installation_reconciliation --locked`: 24 passed
 - `cargo test --test m3_lifecycle --locked`: 13 passed
 - `cargo test --test j23c2_pdf_conformance --locked`: 8 passed
 - `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`: PASS
-- `just verify`: 952 passed, 0 failed
+- `$env:PATH = "$PSHOME;$env:PATH"; just verify`: 966 library tests plus all integration suites passed, 0 failed
 - `Get-FileHash Cargo.lock`: D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB (unchanged)
 - `git diff --check`: PASS (LF/CRLF warning only, no trailing whitespace)
-- `git status --short`: 6 files (3 modified, 3 new)
+- `git diff --check`: PASS
+- `git status --short`: clean after the control-document commit
 
 ### Unrun checks
 - OpenCode LSP: not a gate per packet
@@ -100,8 +112,7 @@ Add the Windows non-inheritable RAII installation lock and the bounded single-st
 - `.read(true).create(true)` without `.write(true)` fails to create a new file on Windows via `CreateFile`. Added `.write(true)` alongside `share_mode(0)`.
 - `SetHandleInformation` with `HANDLE_FLAG_INHERIT` requires importing from `Win32::Foundation` (not `Win32::Storage::FileSystem`).
 - The transition validator's pin-retention check must allow new pins (None → Some) on advancement; the original naive equality check incorrectly treated newly-added pins as lost.
-- Integration tests for `Complete` and `PublishDisabledInstallation` require full evidence-chain construction (approved conformance, installed records), which is complex to build manually. These are proven by the J24J planner tests and the executor's deferred-publication error path.
-- `ConformanceRecordedWithoutAdvance` (failed/interrupted conformance) is structurally tested through the resumed test (`j24k2_trust_creation_is_resumable`); full conformance failure requires the provider binary to fail, which the existing M3 lifecycle tests cover through `m3_malformed_and_interrupted_conformance_fail_without_retry_or_install`.
+- The J24K2 integration binary shares the process-global interruption flag across parallel tests; a test-only mutex now serializes that binary while the RAII reset guard restores the prior flag even during assertion unwinding.
 
 ## Remaining risks
 
