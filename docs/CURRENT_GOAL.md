@@ -4,85 +4,38 @@ Updated: 2026-08-04
 
 ## Goal
 
-Complete the repository spring clean in bounded maintenance increments before resuming the Plug-installation sequence at J24J.
+Resume proper Tethers product development by completing the Plug-installation sequence from the accepted J24G, J24H, and J24I foundations.
 
 ```text
-M01A   accepted Rust 1.97.1 toolchain refresh
-M01B   accepted Rust agent tooling foundation
-M01C1  engine-session warning cleanup pilot
-M01C2  remaining warning clusters
-M01C3  evidence-backed documentation and file pruning
-J24J   read-only installation reconciliation planner
+J24G   accepted strict installation request contract
+J24H   accepted read-only evidence access foundation
+J24I   accepted exact-candidate installation trust
+J24J   active read-only installation reconciliation planner
+J24K   host installation lock and gated executor
+J24L   thin public plug install CLI
 ```
 
-## Accepted maintenance baseline
+The bounded Rust maintenance programme is closed. M01A through M01C4 remain accepted history and are not prerequisites for further cosmetic cleanup.
 
-M01A is accepted at `d561b8400a1398c3d5bdde2cf670eebe661a5cc4`.
+## Active increment
 
-M01B is accepted at `f7e84a467bf77a02f1f1b60cd319c55644dd9bbd`.
-
-The active baseline is:
+J24J adds a pure read-only planner that reconciles one exact installation request against existing immutable evidence and returns one next legitimate action:
 
 ```text
-Rust             1.97.1 exact root pin
-Rust edition     2021
-rust-version     1.97
-rust-analyzer    Rust 1.97.1 component
-cargo-nextest    0.9.140, retries 0
-cargo-deny       0.19.7
-cargo-machete    0.9.2
-Cargo tests      926 passing
-Nextest tests    1133 passing
-OCaml            5.5.0
-Dune             3.24.0
-Yojson           2.2.2
-Cargo.lock       committed
+create exact-candidate trust
+run supervised conformance
+create installation approval
+publish disabled installation
+complete
 ```
 
-OpenCode’s real console CLI has proved the repository LSP configuration. Agent tooling fails closed when the executable or effective LSP permission is missing.
-
-## Active maintenance increment
-
-M01C1 is a deliberately small trial of the new tools against warnings in:
-
-`tethers-0.1/host-rust/src/engine_stdio.rs`
-
-The trial must demonstrate:
-
-- rust-analyzer/OpenCode LSP reference discovery before editing;
-- machine-readable warning accounting before and after;
-- focused Nextest feedback with zero retries;
-- ordinary Cargo as final test authority;
-- Cargo-deny policy gates;
-- cargo-machete advisory evidence;
-- no warning suppression, dependency drift, protocol change or behavioural redesign.
-
-The retained engine read timeout must become real authority while remaining exactly ten seconds. If accepted Clippy reports path-reference linting around `EngineSession::launch`, only LSP-proven direct call sites may change.
-
-## M01C1 boundaries
-
-- Target only warnings whose primary span is `src/engine_stdio.rs`.
-- Do not repair other warning clusters in the same job.
-- Do not change Cargo dependencies, lockfile, tool versions or configuration.
-- Do not change OCaml, MCP protocol, CLI behaviour, Plug installation, concurrency or retry policy.
-- Preserve 926 Cargo tests and 1133 Nextest tests as the minimum complete-suite floor.
-- Record the usefulness of each new tool rather than assuming it helped.
-
-## Later spring-clean work
-
-After the pilot is accepted:
-
-- M01C2 handles remaining warning clusters in separate coherent slices.
-- M01C3 reviews inactive `.clinerules` and `.clineignore`, duplicated checks, stale live guidance, one-off scripts, obsolete roadmaps and safe deletions.
-- Historical worker notes, completed packets, release records and architecture evidence remain historical and are not rewritten to appear current.
-
-The existing `event_queue.rs` comment-only Send test is explicitly not part of M01C1 because correcting its warning would require an architectural decision about the queue’s actual thread-transfer contract.
+The planner validates the complete evidence chain but mutates nothing. It does not create trust, launch a provider, run conformance, approve, install, lock, enable, or add a CLI.
 
 ## Accepted product baseline
 
 Tethers 0.2.0 remains the accepted and published baseline. The annotated `v0.2.0` tag remains at `b5546411661dcbcb53e1cf2538eaec594c6f76f2`; Tethers language semantics remain 0.1.
 
-The accepted public Plug surface remains:
+Accepted public Plug surface:
 
 - `plug inspect`;
 - `plug list`;
@@ -90,38 +43,60 @@ The accepted public Plug surface remains:
 - permission-file `plug enable`;
 - `plug stage`.
 
-J24G provides the strict installation request. J24H provides durable launch-profile evidence and non-creating store openings. J24I provides exact-candidate trust and is accepted at `88d8ab2e5c65052401b3860d8a7d68f3ccb06265`.
+Accepted installation foundations:
 
-After maintenance:
+- J24G supplies typed request schema `tethers.plug-install/1`;
+- J24H supplies non-creating evidence access and launch-profile persistence;
+- J24I supplies exact-candidate trust pinned to candidate identity and record digest.
+
+## Active engineering baseline
 
 ```text
-J24J  read-only installation reconciliation planner
-J24K  host installation lock and gate executor
-J24L  thin public plug install CLI
+Rust             1.97.1 exact root pin
+Rust edition     2021
+rust-version     1.97
+cargo-nextest    0.9.140, retries 0
+Cargo tests      926 passing minimum
+Nextest tests    1133 passing historical complete-suite floor
+OCaml            5.5.0
+Dune             3.24.0
+Yojson           2.2.2
+Cargo.lock       D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
+
+OpenCode LSP remains an optional experimental helper. Empty, null, unavailable, or hanging LSP output must be recorded honestly and replaced with `rg`, compiler, and test evidence. It never blocks a task merely because it failed to help.
 
 ## Active development posture
 
 Current operating mode: **Gorilla Coding**.
 
-- Lucy: architecture, packet compilation, independent review and routine safe merges.
-- OpenCode: implementation programme.
-- DeepSeek Pro V4: M01C1 implementation under the frozen warning contract.
-- Matthew: product authority, ideas, priorities and human judgement.
+- Lucy: architecture, packet compilation, independent review, and routine safe fast-forward merges.
+- OpenCode: bounded implementation programme.
+- DeepSeek Pro V4: semantic Amber work such as J24J.
+- HY3: mechanical Green work.
+- Matthew: product authority, ideas, priorities, and human judgement.
 - Active prototype tree: `tethers-0.1/`.
 - Required automation shell where applicable: PowerShell 7.
 
-DeepSeek editing rule: after an exact replacement failure, reread the current file and make a fresh smaller patch. Never repeat the identical failed edit; stop after two materially different failed attempts rather than rewriting a file wholesale.
+Tools begin as helpers, not gatekeepers. A tool may become a stop condition only after it is proven reliable for the repository and its failure genuinely prevents safe completion.
+
+## J24J boundaries
+
+- Add only the read-only installation planner module, export, focused tests, and task evidence.
+- No store mutation, process launch, trust creation, conformance execution, approval, installation, lock, enablement, or CLI.
+- No dependency, Cargo.lock, toolchain, protocol, package-schema, candidate-schema, evidence-schema, OCaml, or language-semantic change.
+- Reconcile from the most advanced valid durable state backwards and return the earliest missing legitimate action.
+- Invalid or corrupt evidence fails closed; historical failed or stale conformance may be ignored in favour of a new conformance run.
 
 ## Authoritative references
 
 - Current task: `docs/CURRENT_CLINE_TASK.md`
-- M01C1 blueprint: `docs/architecture/M01C1_ENGINE_SESSION_WARNING_PILOT.md`
-- M01B tooling blueprint: `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md`
+- J24J blueprint: `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCILIATION_PLANNER.md`
+- J24G request contract: `docs/architecture/J24G_INSTALLATION_REQUEST_CONTRACT.md`
+- J24H evidence access: `docs/architecture/J24H_INSTALLATION_EVIDENCE_ACCESS_FOUNDATION.md`
+- J24I exact-candidate trust: `docs/architecture/J24I_EXACT_CANDIDATE_INSTALLATION_TRUST.md`
+- Universal Plug architecture: `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`
 - Toolchain policy: `docs/TOOLCHAIN_POLICY.md`
-- Rust engineering guidance: `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
 - Enduring principles: `docs/CONSTITUTION.md`
 - Language semantics: `tethers-0.1/SPEC.md`
-- Universal Plug architecture: `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`
-- J24I exact-candidate trust: `docs/architecture/J24I_EXACT_CANDIDATE_INSTALLATION_TRUST.md`
 - Historical evidence: `docs/worker-notes/`
