@@ -12,7 +12,7 @@ Implementation branch: `opencode/j24k2-locked-single-step-executor`
 Worker note: `docs/worker-notes/2026-08-04-j24k2-locked-single-step-executor.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `ef3b4688528abc51a08a27a2f5331c2ad6156b38`
 
 ## Objective
 
