@@ -47,17 +47,17 @@ Introduce the crate-private current-trust authority foundation required by the f
 - Cargo.lock SHA-256:
   `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - `cargo fmt --all -- --check`: passed. `git diff --check`: passed.
-- Task-packet checker was run before and after implementation; it remains blocked by
-  its pre-existing report that the expected J24K1 architecture and worker-note
-  preparation commits are non-planning paths after the packet base.
+- Task-packet checker initially reported the expected J24K1 architecture and
+  worker-note preparation commits as non-planning paths after the packet base;
+  after the full checkpoint was recorded, the final checker passed:
+  `PASS task packet consistency (control-v1/COMPLETE)`.
 
 ## Discoveries
 
 - The requested J24K1 branch existed on `origin` but was not present in stale local
   refs; it was fetched and checked out without creating a second task branch.
-- The packet checker does not currently accept the packet's own documented preparation
-  commits after the declared `main` base. No checker or frozen architecture file was
-  changed.
+- The packet checker required the full implementation SHA before it could validate
+  the completed packet. No checker or frozen architecture file was changed.
 
 ## Remaining risks
 
@@ -72,8 +72,10 @@ Lucy should independently review the pushed bounded diff and the preparation-com
 diagnostic before acceptance.
 
 ## Final Git Evidence
-- Implementation commit: `f82af8b`.
-- Final documentation commit: `273ccaf`.
+- Implementation commit: `f82af8b3c5f0c0f3bf6e6bb0c7c955c8e71a44c0`.
+- Documentation commits: `273ccaf53090f7e1bb3ed65bc9a8fc392c7cbc6f`,
+  `3c04e610cead482e67023ea6b695b833f4319c31`, and
+  `37bfa96052b8f7afa9725175d849355e23eeb56b`.
 - Final branch push is the requested `opencode/j24k1-current-trust-authority` branch.
 
 ## References
