@@ -3,18 +3,18 @@
 Control contract: `1`
 Task: `M01C3 - Event-queue dead API cleanup`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode using HY3 for a narrow Rust internal-API cleanup; Lucy performs independent review`
 Base branch: `main`
-Base commit: `01990bd1a4054f618e8add480884e3819d5e45f0`
+Base commit: `170063ea24b3ba4ba5529749ae6fc615e7c58de6`
 Implementation branch: `opencode/m01c3-event-queue-dead-api`
 Worker note: `docs/worker-notes/2026-08-04-m01c3-event-queue-dead-api-cleanup.md`
 Implementation blueprint: `docs/architecture/M01C3_EVENT_QUEUE_DEAD_API_CLEANUP.md`
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
 Agent tools: Clippy JSON and cargo-nextest 0.9.140; do not retry ineffective OpenCode LSP
 OCaml switch path: `N/A`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `a145714f47ee04e729e6dfbb2419521aa95e7bbb`
 
 ## Objective
 
@@ -149,10 +149,11 @@ Change only `tethers-0.1/host-rust/src/event_queue.rs` production/test content a
 Only:
 
 - `tethers-0.1/host-rust/src/event_queue.rs`;
+- `tethers-0.1/host-rust/src/application.rs` — test-module-only `#[cfg(test)]` callers of `is_empty` / `len` (lines 7150, 7163, 7236, 7407, 7448, 7457, 7605, 7834, 7963, 8025, 8160, 8485), rewritten to `pop_front().is_none()` / `pop_front()` assertions; no production code change;
 - `docs/CURRENT_CLINE_TASK.md` for base, state, and checkpoint;
 - `docs/worker-notes/2026-08-04-m01c3-event-queue-dead-api-cleanup.md`.
 
-Stop before changing another path.
+Stop before changing any other path or any production (non-test) code in `application.rs`.
 
 ## Forbidden changes
 
