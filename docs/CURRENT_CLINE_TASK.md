@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24J - Read-only installation reconciliation planner`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro V4 for bounded semantic Rust planning logic; Lucy performs independent review and routine safe merge`
 Base branch: `main`
@@ -14,7 +14,7 @@ Implementation blueprint: `docs/architecture/J24J_READ_ONLY_INSTALLATION_RECONCI
 Rust toolchain: exact `1.97.1`; plain Cargo; `--locked` mandatory
 Agent tools: bounded `rg`, compiler diagnostics, rustfmt, focused Nextest, and ordinary Cargo through `just verify`; LSP is optional and never a gate
 OCaml switch path: `N/A`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `e1a35e7a56e0ee916ac06fc948d64b27ac30750a`
 
 ## Objective
 
