@@ -93,9 +93,11 @@ before acceptance.
   `3c04e610cead482e67023ea6b695b833f4319c31`,
   `37bfa96052b8f7afa9725175d849355e23eeb56b`,
   `ac02837654de22d9a31ae4065ce0c071bde14fed`,
-  `0d6f2e7fe5364c6c742ad2d18845e0564b86409a`.
+  `0d6f2e7fe5364c6c742ad2d18845e0564b86409a`,
+  `45048d81bdb1ce9475be13dafaa4dd00f2e27024`,
+  `4ede589884dc653c6e859e4908e39b2526161c92`.
 - Final branch push is the requested `opencode/j24k1-current-trust-authority` branch.
-- Remote tip: `5559efb432d46637a8da9149e57a1c6604a5c0fa`.
+- Remote tip: `4ede589884dc653c6e859e4908e39b2526161c92`.
 
 ## References
 
