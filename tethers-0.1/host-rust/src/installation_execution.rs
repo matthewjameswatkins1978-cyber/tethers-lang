@@ -397,11 +397,22 @@ fn action_rank(action: &InstallationPlanAction) -> u32 {
     }
 }
 
-fn validate_transition(
+pub(crate) fn validate_transition(
     before: &InstallationPlan,
     after: &InstallationPlan,
     expected_executed: InstallationPlanAction,
 ) -> Result<()> {
+    // expected_executed must match what we claimed to execute.
+    if before.action != expected_executed {
+        return Err(M3Error::new(
+            "installation_execution_invalid_transition",
+            format!(
+                "installation action mismatch: claimed {:?} but before plan is {:?}",
+                expected_executed, before.action
+            ),
+        ));
+    }
+
     let before_rank = action_rank(&before.action);
     let after_rank = action_rank(&after.action);
 
@@ -422,6 +433,16 @@ fn validate_transition(
                 "installation action skipped: expected {:?} but planner returned {:?}",
                 expected_executed, after.action
             ),
+        ));
+    }
+
+    // Ordinary same-action transitions are stagnant.
+    // Failed/interrupted conformance is the only permitted non-advance case and
+    // is handled by its dedicated handler branch (it does not call this validator).
+    if after_rank == before_rank {
+        return Err(M3Error::new(
+            "installation_execution_stagnant",
+            format!("installation action did not advance: {:?}", after.action),
         ));
     }
 
@@ -924,5 +945,311 @@ mod lock_tests {
         assert!(path.exists());
 
         fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn j24k2_lock_raii_unwind_releases_lock() {
+        use std::panic;
+
+        let path = lock_path("panic-unwind");
+
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let _lock = InstallationLockGuard::acquire(&path).unwrap();
+            panic!("panic while lock guard is alive");
+        }));
+        assert!(result.is_err());
+
+        // Lock must be released after panic unwind.
+        let _lock2 = InstallationLockGuard::acquire(&path).unwrap();
+
+        fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn j24k2_lock_child_cannot_inherit_lock_handle() {
+        use crate::child_process::{ChildConfig, SupervisedChild};
+
+        let path = lock_path("child-inherit");
+
+        let _lock = InstallationLockGuard::acquire(&path).unwrap();
+
+        let config = ChildConfig::test_config(
+            "cmd.exe",
+            vec![
+                "/c".to_owned(),
+                "ping".to_owned(),
+                "127.0.0.1".to_owned(),
+                "-n".to_owned(),
+                "60".to_owned(),
+            ],
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(2),
+        );
+        let child = SupervisedChild::launch(config).unwrap();
+
+        // Drop the lock while child is still alive.
+        drop(_lock);
+
+        // The child must not have retained the lock handle.
+        let _lock2 = InstallationLockGuard::acquire(&path).unwrap();
+
+        child.shutdown();
+
+        fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+}
+
+#[cfg(test)]
+mod transition_tests {
+    use super::*;
+    use crate::installation_plan::{InstallationPlan, InstallationPlanAction};
+
+    fn base_plan() -> InstallationPlan {
+        InstallationPlan {
+            candidate_id: "a".to_string(),
+            package_id: "b".to_string(),
+            package_version: "1.0".to_string(),
+            semantic_package_digest: "sha256:aaaa".to_string(),
+            action: InstallationPlanAction::CreateExactCandidateTrust,
+            exact_candidate_trust_record_digest: None,
+            trust_evidence_digest: None,
+            launch_profile_evidence_digest: None,
+            conformance_evidence_id: None,
+            conformance_evidence_digest: None,
+            installation_approval_id: None,
+            installation_approval_digest: None,
+            installed_id: None,
+            installed_record_digest: None,
+        }
+    }
+
+    fn with_pins(plan: &InstallationPlan) -> InstallationPlan {
+        InstallationPlan {
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            ..plan.clone()
+        }
+    }
+
+    #[test]
+    fn j24k2_transition_ordinary_same_action_is_stagnant() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::CreateExactCandidateTrust,
+            ..base_plan()
+        };
+        let after = before.clone();
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::CreateExactCandidateTrust,
+        );
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "installation_execution_stagnant");
+    }
+
+    #[test]
+    fn j24k2_transition_backward_is_regressed() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::RunSupervisedConformance,
+            ..with_pins(&base_plan())
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::CreateExactCandidateTrust,
+            ..base_plan()
+        };
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::RunSupervisedConformance,
+        );
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "installation_execution_regressed");
+    }
+
+    #[test]
+    fn j24k2_transition_skipped_action_is_invalid_transition() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::CreateExactCandidateTrust,
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::CreateInstallationApproval,
+            ..with_pins(&base_plan())
+        };
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::CreateExactCandidateTrust,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code,
+            "installation_execution_invalid_transition"
+        );
+    }
+
+    #[test]
+    fn j24k2_transition_contradictory_expected_action_is_invalid_transition() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::CreateExactCandidateTrust,
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::RunSupervisedConformance,
+            ..with_pins(&base_plan())
+        };
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::RunSupervisedConformance,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code,
+            "installation_execution_invalid_transition"
+        );
+    }
+
+    #[test]
+    fn j24k2_transition_changed_candidate_identity_is_postcondition_failed() {
+        let before = InstallationPlan {
+            candidate_id: "aaa".to_string(),
+            action: InstallationPlanAction::CreateExactCandidateTrust,
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            candidate_id: "bbb".to_string(),
+            action: InstallationPlanAction::RunSupervisedConformance,
+            ..with_pins(&base_plan())
+        };
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::CreateExactCandidateTrust,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code,
+            "installation_execution_postcondition_failed"
+        );
+    }
+
+    #[test]
+    fn j24k2_transition_changed_retained_trust_pin_is_postcondition_failed() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::RunSupervisedConformance,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::CreateInstallationApproval,
+            exact_candidate_trust_record_digest: Some("sha256:different".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            ..base_plan()
+        };
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::RunSupervisedConformance,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code,
+            "installation_execution_postcondition_failed"
+        );
+    }
+
+    #[test]
+    fn j24k2_transition_changed_launch_pin_is_postcondition_failed() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::RunSupervisedConformance,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            launch_profile_evidence_digest: Some("sha256:launch".to_string()),
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::CreateInstallationApproval,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            launch_profile_evidence_digest: Some("sha256:different".to_string()),
+            ..base_plan()
+        };
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::RunSupervisedConformance,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code,
+            "installation_execution_postcondition_failed"
+        );
+    }
+
+    #[test]
+    fn j24k2_transition_changed_approval_pin_is_postcondition_failed() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::CreateInstallationApproval,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            launch_profile_evidence_digest: Some("sha256:launch".to_string()),
+            conformance_evidence_id: Some("cid".to_string()),
+            conformance_evidence_digest: Some("sha256:conf".to_string()),
+            installation_approval_id: Some("aid".to_string()),
+            installation_approval_digest: Some("sha256:approv".to_string()),
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::PublishDisabledInstallation,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            launch_profile_evidence_digest: Some("sha256:launch".to_string()),
+            conformance_evidence_id: Some("cid".to_string()),
+            conformance_evidence_digest: Some("sha256:conf".to_string()),
+            installation_approval_id: Some("aid".to_string()),
+            installation_approval_digest: Some("sha256:different".to_string()),
+            ..base_plan()
+        };
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::CreateInstallationApproval,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code,
+            "installation_execution_postcondition_failed"
+        );
+    }
+
+    #[test]
+    fn j24k2_transition_legitimate_advance_with_new_pins_accepted() {
+        let before = InstallationPlan {
+            action: InstallationPlanAction::CreateExactCandidateTrust,
+            ..base_plan()
+        };
+        let after = InstallationPlan {
+            action: InstallationPlanAction::RunSupervisedConformance,
+            exact_candidate_trust_record_digest: Some("sha256:trust".to_string()),
+            trust_evidence_digest: Some("sha256:evidence".to_string()),
+            ..base_plan()
+        };
+
+        let result = validate_transition(
+            &before,
+            &after,
+            InstallationPlanAction::CreateExactCandidateTrust,
+        );
+        assert!(result.is_ok());
     }
 }

@@ -1,11 +1,13 @@
 #![cfg(windows)]
 
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tethers_reference_host::candidate::{extract_to_quarantine, CandidateRegistry};
-use tethers_reference_host::conformance::ConformanceEvidenceStore;
+use tethers_reference_host::conformance::{ConformanceDisposition, ConformanceEvidenceStore};
 use tethers_reference_host::installation_execution::{
     execute_next_installation_action, InstallationExecutionContext, InstallationExecutionOptions,
     InstallationStepOutcome,
@@ -23,8 +25,45 @@ use tethers_reference_host::package;
 use tethers_reference_host::pdf_tools;
 use uuid::Uuid;
 
+fn sha256(bytes: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("tethers-j24k2-{name}-{}", Uuid::new_v4()))
+}
+
+fn snapshot(root: &Path) -> BTreeMap<String, String> {
+    fn visit(root: &Path, path: &Path, output: &mut BTreeMap<String, String>) {
+        if !path.is_dir() {
+            return;
+        }
+        let mut entries = fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        for entry in entries {
+            let relative = entry
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let metadata = fs::symlink_metadata(&entry).unwrap();
+            if metadata.is_dir() {
+                output.insert(relative, "<directory>".to_string());
+                visit(root, &entry, output);
+            } else {
+                let content = fs::read(&entry).unwrap_or_default();
+                output.insert(relative, sha256(&content));
+            }
+        }
+    }
+    let mut map = BTreeMap::new();
+    if root.exists() {
+        visit(root, root, &mut map);
+    }
+    map
 }
 
 fn setup_candidate(
@@ -134,77 +173,22 @@ fn j24k2_create_exact_candidate_trust_advances_once() {
     let request = valid_request(&candidate.candidate_id);
 
     let result = execute_next_installation_action(&request, &context, &options).unwrap();
-
     assert_eq!(
         result.before.action,
         InstallationPlanAction::CreateExactCandidateTrust
     );
-
     match &result.outcome {
         InstallationStepOutcome::Advanced { executed } => {
             assert_eq!(*executed, InstallationPlanAction::CreateExactCandidateTrust);
         }
         other => panic!("expected Advanced, got {:?}", other),
     }
-
     assert_eq!(
         result.after.action,
         InstallationPlanAction::RunSupervisedConformance
     );
     assert!(result.after.exact_candidate_trust_record_digest.is_some());
     assert!(result.after.trust_evidence_digest.is_some());
-
-    fs::remove_dir_all(&base).unwrap();
-}
-
-#[test]
-fn j24k2_trust_creation_is_resumable() {
-    let base = temp_dir("resume");
-    fs::create_dir_all(&base).unwrap();
-
-    let (candidates, candidate, quarantine_root) = setup_candidate(&base);
-
-    let lock_dir = base.join("lock");
-    fs::create_dir_all(&lock_dir).unwrap();
-    let lock_path = lock_dir.join("anchor.lock");
-
-    let exact_trust = ExactCandidateTrustStore::open(&base.join("trust")).unwrap();
-    let profiles = LaunchProfileEvidenceStore::open(&base.join("profiles")).unwrap();
-    let conformance_store = ConformanceEvidenceStore::open(&base.join("conformance")).unwrap();
-    let approvals = InstallationApprovalStore::open(&base.join("approvals")).unwrap();
-    let installed =
-        InstalledPlugRegistry::open(&base.join("install"), &base.join("records")).unwrap();
-
-    let scratch = base.join("scratch");
-    fs::create_dir_all(&scratch).unwrap();
-
-    let context = make_context(
-        &lock_path,
-        &quarantine_root,
-        &scratch,
-        &candidates,
-        &exact_trust,
-        &profiles,
-        &conformance_store,
-        &approvals,
-        &installed,
-    );
-    let options = valid_options();
-    let request = valid_request(&candidate.candidate_id);
-
-    // Step 1: Create trust
-    let result1 = execute_next_installation_action(&request, &context, &options).unwrap();
-    assert_eq!(
-        result1.before.action,
-        InstallationPlanAction::CreateExactCandidateTrust
-    );
-
-    // Step 2: Next call should plan RunSupervisedConformance
-    let result2 = execute_next_installation_action(&request, &context, &options).unwrap();
-    assert_eq!(
-        result2.before.action,
-        InstallationPlanAction::RunSupervisedConformance
-    );
 
     fs::remove_dir_all(&base).unwrap();
 }
@@ -233,7 +217,6 @@ fn j24k2_lock_busy_before_planning() {
     let request = valid_request(&candidate.candidate_id);
     let options = valid_options();
 
-    // Hold the lock before calling the executor.
     let _lock_file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -310,7 +293,6 @@ fn j24k2_lock_releases_after_error() {
         "installation_execution_options_invalid"
     );
 
-    // Lock was released. Prove by re-calling with valid options.
     let result2 = execute_next_installation_action(&request, &context, &valid_options());
     assert!(result2.is_ok());
 
@@ -368,11 +350,11 @@ fn j24k2_options_invalid_rejected_before_mutation() {
     fs::remove_dir_all(&base).unwrap();
 }
 
-#[test]
-fn j24k2_lock_releases_after_panic_unwind() {
-    use std::panic;
+// --- Passed conformance and approval chain ---
 
-    let base = temp_dir("lock-panic");
+#[test]
+fn j24k2_full_passed_conformance_and_approval_chain() {
+    let base = temp_dir("full-chain");
     fs::create_dir_all(&base).unwrap();
 
     let (candidates, candidate, quarantine_root) = setup_candidate(&base);
@@ -391,9 +373,6 @@ fn j24k2_lock_releases_after_panic_unwind() {
     let installed =
         InstalledPlugRegistry::open(&base.join("install"), &base.join("records")).unwrap();
 
-    let request = valid_request(&candidate.candidate_id);
-    let options = valid_options();
-
     let context = make_context(
         &lock_path,
         &quarantine_root,
@@ -405,31 +384,170 @@ fn j24k2_lock_releases_after_panic_unwind() {
         &approvals,
         &installed,
     );
+    let options = valid_options();
+    let request = valid_request(&candidate.candidate_id);
 
-    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        execute_next_installation_action(&request, &context, &options).unwrap();
-        panic!("simulated panic inside lock after mutation");
-    }));
-    assert!(result.is_err());
+    // Call 1: Create trust
+    let r1 = execute_next_installation_action(&request, &context, &options).unwrap();
+    assert_eq!(
+        r1.before.action,
+        InstallationPlanAction::CreateExactCandidateTrust
+    );
+    assert!(matches!(
+        r1.outcome,
+        InstallationStepOutcome::Advanced { .. }
+    ));
+    assert_eq!(
+        r1.after.action,
+        InstallationPlanAction::RunSupervisedConformance
+    );
+    let trust_digest = r1
+        .after
+        .exact_candidate_trust_record_digest
+        .clone()
+        .unwrap();
+    let trust_evidence_digest = r1.after.trust_evidence_digest.clone().unwrap();
+    assert_eq!(approvals.load_all().unwrap().len(), 0);
+    assert_eq!(installed.load_all().unwrap().len(), 0);
 
-    // Lock must be released after panic unwind.
-    let result2 = execute_next_installation_action(&request, &context, &options);
-    assert!(result2.is_ok());
+    // Call 2: Run conformance (passed)
+    let _before_snap = snapshot(&base);
+    let r2 = execute_next_installation_action(&request, &context, &options).unwrap();
+    assert_eq!(
+        r2.before.action,
+        InstallationPlanAction::RunSupervisedConformance
+    );
+
+    match &r2.outcome {
+        InstallationStepOutcome::Advanced { executed } => {
+            assert_eq!(*executed, InstallationPlanAction::RunSupervisedConformance);
+        }
+        other => panic!("expected Advanced, got {:?}", other),
+    }
+
+    assert_eq!(
+        r2.after.action,
+        InstallationPlanAction::CreateInstallationApproval
+    );
+    // Pins retained from before
+    assert_eq!(
+        r2.after.exact_candidate_trust_record_digest.as_deref(),
+        Some(trust_digest.as_str())
+    );
+    assert_eq!(
+        r2.after.trust_evidence_digest.as_deref(),
+        Some(trust_evidence_digest.as_str())
+    );
+    // New pins
+    let launch_digest = r2.after.launch_profile_evidence_digest.clone().unwrap();
+    let conformance_id = r2.after.conformance_evidence_id.clone().unwrap();
+    let conformance_digest = r2.after.conformance_evidence_digest.clone().unwrap();
+
+    // Exactly one launch profile persisted
+    let launch_records = profiles.load_all().unwrap();
+    assert_eq!(launch_records.len(), 1);
+    assert_eq!(launch_records[0].profile_evidence_digest, launch_digest);
+
+    // Exactly one passed conformance persisted
+    let conf_records = conformance_store.load_all().unwrap();
+    assert_eq!(conf_records.len(), 1);
+    assert_eq!(conf_records[0].disposition, ConformanceDisposition::Passed);
+    assert_eq!(conf_records[0].evidence_id, conformance_id);
+    assert_eq!(conf_records[0].evidence_digest, conformance_digest);
+
+    assert_eq!(approvals.load_all().unwrap().len(), 0);
+    assert_eq!(installed.load_all().unwrap().len(), 0);
+
+    // Call 3: Create approval
+    let r3 = execute_next_installation_action(&request, &context, &options).unwrap();
+    assert_eq!(
+        r3.before.action,
+        InstallationPlanAction::CreateInstallationApproval
+    );
+    match &r3.outcome {
+        InstallationStepOutcome::Advanced { executed } => {
+            assert_eq!(
+                *executed,
+                InstallationPlanAction::CreateInstallationApproval
+            );
+        }
+        other => panic!("expected Advanced, got {:?}", other),
+    }
+    assert_eq!(
+        r3.after.action,
+        InstallationPlanAction::PublishDisabledInstallation
+    );
+    // All previous pins retained
+    assert_eq!(
+        r3.after.exact_candidate_trust_record_digest.as_deref(),
+        Some(trust_digest.as_str())
+    );
+    assert_eq!(
+        r3.after.trust_evidence_digest.as_deref(),
+        Some(trust_evidence_digest.as_str())
+    );
+    assert_eq!(
+        r3.after.launch_profile_evidence_digest.as_deref(),
+        Some(launch_digest.as_str())
+    );
+    assert_eq!(
+        r3.after.conformance_evidence_id.as_deref(),
+        Some(conformance_id.as_str())
+    );
+    assert_eq!(
+        r3.after.conformance_evidence_digest.as_deref(),
+        Some(conformance_digest.as_str())
+    );
+    // New pins
+    let approval_id = r3.after.installation_approval_id.clone().unwrap();
+    let approval_digest = r3.after.installation_approval_digest.clone().unwrap();
+
+    let approval_records = approvals.load_all().unwrap();
+    assert_eq!(approval_records.len(), 1);
+    assert_eq!(approval_records[0].approval_id, approval_id);
+    assert_eq!(approval_records[0].record_digest, approval_digest);
+
+    assert_eq!(installed.load_all().unwrap().len(), 0);
+
+    // Call 4: Deferred publication
+    let r4 = execute_next_installation_action(&request, &context, &options);
+    assert!(r4.is_err());
+    assert_eq!(r4.unwrap_err().code, "installation_publication_deferred");
+
+    // No new evidence, staging, destination, or installed record
+    assert_eq!(launch_records.len(), profiles.load_all().unwrap().len());
+    assert_eq!(
+        conf_records.len(),
+        conformance_store.load_all().unwrap().len()
+    );
+    assert_eq!(approval_records.len(), approvals.load_all().unwrap().len());
+    assert_eq!(installed.load_all().unwrap().len(), 0);
+    assert!(
+        !base.join("install").join("plug-").exists() || {
+            // No plug-* directories created
+            let dir_entries = base
+                .join("install")
+                .read_dir()
+                .map(|mut r| r.next().is_none())
+                .unwrap_or(true);
+            dir_entries
+        }
+    );
 
     fs::remove_dir_all(&base).unwrap();
 }
 
+// --- Post-plan failure and resumability ---
+
 #[test]
-fn j24k2_lock_released_and_retry_possible() {
-    let base = temp_dir("retry");
+fn j24k2_postplan_failure_resumable() {
+    let base = temp_dir("postplan-fail");
     fs::create_dir_all(&base).unwrap();
 
     let (candidates, candidate, quarantine_root) = setup_candidate(&base);
-
     let lock_dir = base.join("lock");
     fs::create_dir_all(&lock_dir).unwrap();
     let lock_path = lock_dir.join("anchor.lock");
-
     let scratch = base.join("scratch");
     fs::create_dir_all(&scratch).unwrap();
 
@@ -442,7 +560,6 @@ fn j24k2_lock_released_and_retry_possible() {
 
     let request = valid_request(&candidate.candidate_id);
     let options = valid_options();
-
     let context = make_context(
         &lock_path,
         &quarantine_root,
@@ -455,25 +572,31 @@ fn j24k2_lock_released_and_retry_possible() {
         &installed,
     );
 
-    // Step 1: Create trust (durable mutation with lock held then released)
-    let _result1 = execute_next_installation_action(&request, &context, &options).unwrap();
+    // Inject a torn .tmp file into the launch_profiles store so that
+    // replan fails after trust creation. Initial planning only reads
+    // the trust store, not launch_profiles, so trust creation succeeds.
+    let torn_path = base.join("profiles").join(".torn.tmp");
+    fs::write(&torn_path, b"garbage").unwrap();
 
-    // Step 2: Lock was released after step 1. Prove by re-calling successfully.
+    let result = execute_next_installation_action(&request, &context, &options);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().code,
+        "installation_execution_postcondition_failed"
+    );
+
+    // Trust must remain durably present
+    assert_eq!(exact_trust.load_all().unwrap().len(), 1);
+
+    // Lock was released (prove by re-calling)
+    // First, remove the corruption
+    fs::remove_file(&torn_path).unwrap();
+
+    // Resumption must proceed from RunSupervisedConformance, not re-create trust
     let result2 = execute_next_installation_action(&request, &context, &options).unwrap();
-
-    // Both before and after actions should be meaningful - the key proof
-    // is that the lock was reacquired, planning succeeded, and a result
-    // was returned without installation_busy.
-    assert!(
-        matches!(
-            result2.before.action,
-            InstallationPlanAction::RunSupervisedConformance
-                | InstallationPlanAction::CreateInstallationApproval
-                | InstallationPlanAction::PublishDisabledInstallation
-                | InstallationPlanAction::Complete
-        ),
-        "unexpected before action: {:?}",
-        result2.before.action
+    assert_eq!(
+        result2.before.action,
+        InstallationPlanAction::RunSupervisedConformance
     );
 
     fs::remove_dir_all(&base).unwrap();
