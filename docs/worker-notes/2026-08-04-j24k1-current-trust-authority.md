@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `db84c71dc92381921cdc05c62029a1899c13d7f2`
-Implementation checkpoint: `f82af8b595889a65b2003d425cb0ab18d4f20a7b`
+Correction checkpoint: `5559efb432d46637a8da9149e57a1c6604a5c0fa`
 
 ## Requested outcome
 
@@ -20,6 +20,9 @@ Introduce the crate-private current-trust authority foundation required by the f
   and construct the legacy adapter locally.
 - Added crate-private focused tests for matching, stale, absent, wrong-mode, and corrupt
   exact-candidate authority evidence.
+- Added crate-test-only `RecordingAuthority` and `FailOnNthAuthority` adapter types and
+  six behavioural propagation tests proving that every authority-aware downstream seam
+  invokes and propagates the supplied authority.
 - Declared the production module privately and the focused test module only under
   `#[cfg(test)]`.
 
@@ -36,21 +39,25 @@ Introduce the crate-private current-trust authority foundation required by the f
 
 ## Evidence
 
-- J24K1 focused tests: `3 passed, 0 failed` in ordinary Cargo and Nextest (`3 run,
-  931 skipped`, zero retries).
+- J24K1 focused tests: `9 passed, 0 failed` in ordinary Cargo (`9 passed, 931 filtered`)
+  and Nextest (`9 run, 931 skipped`, zero retries). 3 original exact-authority tests
+  plus 6 new behavioural propagation tests.
+- Behavioural tests added:
+  1. `j24k1_prepared_launch_revalidate_current_trust_with_uses_supplied_authority`
+  2. `j24k1_prepared_launch_launch_for_candidate_with_refuses_before_launch`
+  3. `j24k1_run_host_conformance_with_authority_uses_supplied_authority`
+  4. `j24k1_approve_with_authority_uses_and_propagates_supplied_authority`
+  5. `j24k1_install_disabled_with_authority_uses_supplied_authority_at_entry`
+  6. `j24k1_install_disabled_invokes_authority_again_after_staging_before_publication`
+     — proves call count 2, sentinel propagation, no published record, staging cleanup.
 - Representative regressions: J24I `30 passed`; M3 lifecycle `13 passed`; J23C2
   `8 passed`; J23C3 `1 passed`.
-- Full `just verify`: `934 passed, 0 failed`.
-- Earlier all-target Cargo run without PATH correction reproduced the five known
-  environment failures (`execution_environment` tests reporting `pwsh.exe not found`)
-  and `929 passed`; the PATH-corrected repository verification passed all `934` tests.
+- Full `just verify`: `940 passed, 0 failed`.
 - Cargo.lock SHA-256:
-  `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
+  `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB` (unchanged
+  throughout both implementation and correction rounds).
 - `cargo fmt --all -- --check`: passed. `git diff --check`: passed.
-- Task-packet checker initially reported the expected J24K1 architecture and
-  worker-note preparation commits as non-planning paths after the packet base;
-  after the full checkpoint was recorded, the final checker passed:
-  `PASS task packet consistency (control-v1/COMPLETE)`.
+- Task-packet checker final: PASS.
 
 ## Discoveries
 
@@ -58,25 +65,37 @@ Introduce the crate-private current-trust authority foundation required by the f
   refs; it was fetched and checked out without creating a second task branch.
 - The packet checker required the full implementation SHA before it could validate
   the completed packet. No checker or frozen architecture file was changed.
+- The original implementation's three exact-authority tests proved only the adapter
+  itself, not downstream propagation. The correction added `RecordingAuthority` and
+  `FailOnNthAuthority` crate-test-only types and six behavioural propagation tests.
+- The `FailOnNthAuthority` final-installation-revalidation test required constructing a
+  fully valid pipeline (candidate in quarantine, trust, launch, conformance, and
+  approval records) to reach the post-staging authority call. Programmatic construction
+  using the J24J pattern was sufficient; no actual process launch was required.
 
 ## Remaining risks
 
 - Independent Lucy review remains required because the packet is Red security-sensitive
-  trust refactoring.
-- The task checker preparation-commit diagnostic remains an external control-loop issue,
-  not a Rust implementation failure.
+  trust refactoring and now carries behavioural propagation proofs.
+- The `RecordingAuthority` and `FailOnNthAuthority` types are crate-test-only and have
+  no production footprint.
 
 ## Smallest next action
 
-Lucy should independently review the pushed bounded diff and the preparation-commit
-diagnostic before acceptance.
+Lucy should independently review both the initial implementation and this correction
+before acceptance.
 
 ## Final Git Evidence
 - Implementation commit: `f82af8b595889a65b2003d425cb0ab18d4f20a7b`.
+- Correction commit: `5559efb432d46637a8da9149e57a1c6604a5c0fa` (behavioural
+  propagation tests).
 - Documentation commits: `273ccaf53090f7e1bb3ed65bc9a8fc392c7cbc6f`,
-  `3c04e610cead482e67023ea6b695b833f4319c31`, and
-  `37bfa96052b8f7afa9725175d849355e23eeb56b`.
+  `3c04e610cead482e67023ea6b695b833f4319c31`,
+  `37bfa96052b8f7afa9725175d849355e23eeb56b`,
+  `ac02837654de22d9a31ae4065ce0c071bde14fed`,
+  `0d6f2e7fe5364c6c742ad2d18845e0564b86409a`.
 - Final branch push is the requested `opencode/j24k1-current-trust-authority` branch.
+- Remote tip: `5559efb432d46637a8da9149e57a1c6604a5c0fa`.
 
 ## References
 
