@@ -4,24 +4,24 @@ Updated: 2026-08-04
 
 ## Goal
 
-Extend the accepted public Plug lifecycle from safe package intake toward one
-simple but high-assurance installation operation without changing Tethers 0.1
-language semantics, putting Plugs into Tethers Core, or collapsing trust,
-conformance, approval, installation, enablement, policy, replay, Anchor, and
-Trail authorities.
+Pause the Plug-installation sequence after accepted J24I and complete a bounded
+repository spring clean before J24J begins.
 
-## Accepted baseline
+The first maintenance increment, M01A, refreshes the repository-owned Rust
+compiler from 1.89.0 to exact Rust 1.97.1 and removes stale live version
+duplication from build commands, toolchain checks, task templates, and Rust
+engineering guidance.
+
+The second maintenance increment, M01B, will separately review inactive agent
+configuration, duplicated guidance, optional developer utilities, warning debt,
+one-off scripts, and files that may be safely removed.
+
+## Accepted product baseline
 
 Tethers 0.2.0 remains the accepted and published baseline. The annotated
 `v0.2.0` tag remains at
-`b5546411661dcbcb53e1cf2538eaec594c6f76f2`; language semantics remain 0.1.
-
-The Universal Plug architecture remains frozen at
-`a5fd63593a9d9acd397030ecd2e27b4f318c87fd`. Existing host modules already
-provide package inspection, safe quarantine and candidate identity, publisher
-and developer trust, supervised launch evidence, conformance, installation
-approval, installed-disabled publication, enablement histories, operational
-scopes, installed PDF execution, and durable lifecycle authorities.
+`b5546411661dcbcb53e1cf2538eaec594c6f76f2`; Tethers language semantics remain
+0.1.
 
 The accepted public Plug surface contains:
 
@@ -45,56 +45,23 @@ availability.
 
 ## Accepted installation foundations
 
-J24G adds the strict public installation-request contract:
+J24G provides the strict installation-request contract for one canonical
+candidate, exact-candidate trust, explicit non-isolated supervised execution,
+and disabled installation.
 
-```json
-{
-  "schema": "tethers.plug-install/1",
-  "candidate_id": "<canonical UUID>",
-  "trust": { "scope": "exact_candidate" },
-  "conformance": {
-    "allow_non_isolated_supervised_execution": true
-  },
-  "installation": { "target_state": "disabled" }
-}
-```
+J24H provides durable launch-profile evidence and non-creating read-only store
+openings.
 
-The request is bounded, duplicate-aware, read-only, and permits only one exact
-candidate, explicit non-isolated supervised execution, and disabled
-installation.
+J24I is accepted at
+`88d8ab2e5c65052401b3860d8a7d68f3ccb06265`. It adds exact-candidate
+installation trust pinned to candidate ID, candidate-record digest, package and
+provider identity, semantic and raw archive digests, and approving authority.
 
-J24H adds durable launch-profile evidence plus non-creating read-only store
-openings. A later invocation can inspect existing candidate, trust,
-launch-profile, conformance, approval, and installed evidence without creating
-empty roots merely by planning.
+Exact-candidate `PackageTrustEvidence` validates its complete mode fields and
+refuses current-authority execution revalidation until the later locked executor
+supplies the exact installation-trust authority.
 
-## Active increment
-
-J24I adds exact-candidate installation trust.
-
-The existing publisher-trust and developer-approval records are deliberately
-not treated as equivalent:
-
-- publisher trust is wider than one candidate;
-- developer approval is pinned to a semantic package digest rather than one
-  candidate record.
-
-J24I adds one immutable record bound to:
-
-```text
-candidate ID
-+ candidate record digest
-+ package and provider identity
-+ semantic package digest
-+ raw archive digest
-+ approving authority
-```
-
-It also adds an exact-candidate `PackageTrustEvidence` mode for the future
-planner. That mode must fail current-authority execution revalidation until the
-future locked executor explicitly supplies the exact trust store.
-
-After J24I, the remaining reviewed sequence is:
+After maintenance, the reviewed installation sequence resumes as:
 
 ```text
 J24J  read-only installation reconciliation planner
@@ -102,10 +69,46 @@ J24K  host installation lock and gate executor
 J24L  thin public plug install CLI
 ```
 
-The user-facing operation may eventually be one command, but its internal gates
-remain separate and independently testable.
+## Active maintenance increment
+
+M01A is:
+
+```text
+Rust 1.89.0
+→ exact Rust 1.97.1
+→ live build commands follow root pin
+→ toolchain checker derives repository truth
+→ Just recipes fail fast
+→ active Rust guidance is current
+```
+
+Frozen M01A boundaries:
+
+- exact Rust point release is pinned, never floating `stable`;
+- Rust edition remains 2021;
+- declared `rust-version` becomes 1.97;
+- compiler refresh is separate from dependency updates and edition migration;
+- Cargo.lock remains byte-identical;
+- OCaml 5.5.0, Dune 3.24.0, and Yojson 2.2.2 remain unchanged;
+- no production source, production test, Tethers behaviour, Plug lifecycle, or
+  runtime change is allowed;
+- historical worker notes and release evidence retain their original versions;
+- M01A records deletion candidates but removes nothing;
+- M01B performs the evidence-backed pruning pass.
+
+## Toolchain maintenance posture
+
+- Exact compiler pins are repository authority.
+- Stable toolchains are reviewed after meaningful milestones and at least
+  monthly during active development.
+- Security, soundness, and miscompilation point releases are prioritised.
+- Compiler, dependency, warning-cleanup, and edition changes remain separate.
+- Ordinary Cargo verification uses the committed lock with `--locked`.
+- No floating toolchain channel or automatic background upgrade is permitted.
 
 ## Frozen installation shape
+
+The installation design remains unchanged during maintenance:
 
 ```text
 validated installation request
@@ -121,37 +124,6 @@ validated installation request
 A failed installation may leave completed immutable gate evidence, but it must
 never leave a Plug falsely or partially installed.
 
-Exact replay must reuse current matching evidence and return the same installed
-identity without rerunning provider code or rewriting records. A different
-candidate must never be mistaken for replay, even when package release text is
-the same.
-
-## Frozen boundaries
-
-- Tethers Core remains deterministic and application-agnostic.
-- Plugs remain outside the language Core.
-- Package inspection and planning never execute payloads.
-- Candidate identity remains distinct from installed identity.
-- Publisher trust, semantic-digest developer approval, and exact-candidate trust
-  remain distinct authorities.
-- The installation request grants no publisher-wide trust.
-- Supervised execution remains explicitly non-isolated.
-- A read-only planner creates no directory, record, scratch path, process, or
-  lock.
-- A plan is advice, never authority; the executor must replan after acquiring
-  the host installation lock.
-- Candidate bytes must be reverified before and after conformance and before
-  installed publication.
-- Every immutable evidence record is atomically published through audited store
-  primitives.
-- Installed state is always `present_disabled`.
-- Only a separate exact current enablement record creates operational
-  availability.
-- Installation never grants operational scope, policy, credentials, runtime Ask
-  approval, Anchor admission, or Trail authority.
-- No public download/update registry, network listener, OAuth, arbitrary
-  third-party enablement, or Tether language change belongs to this increment.
-
 ## Active development posture
 
 Current operating mode: **Gorilla Coding**.
@@ -161,12 +133,13 @@ Current operating mode: **Gorilla Coding**.
 - OpenCode: implementation programme.
 - Luna: bounded Green and ordinary Amber implementation.
 - HY3: mechanical, repetitive, low-risk implementation.
-- DeepSeek Pro V4: thicker cross-module integration under frozen contracts.
+- DeepSeek Pro V4: thicker cross-file work under frozen contracts.
 - Matthew: product authority, ideas, priorities, and human judgement.
 - Cline and Goose are not used.
 - Active prototype tree: `tethers-0.1/`.
-- Required Rust toolchain: 1.89.0 with `--locked`.
-- Required automation shell where applicable: PowerShell 7 (`pwsh.exe`).
+- Current accepted Rust toolchain before M01A: 1.89.0.
+- M01A target Rust toolchain: exact 1.97.1.
+- Required automation shell where applicable: PowerShell 7.
 
 DeepSeek editing rule: after an exact `oldString` replacement failure, reread
 the current file and create a fresh smaller patch. Never repeat the identical
@@ -175,25 +148,22 @@ rewriting a file wholesale.
 
 ## Authoritative references
 
+- Current maintenance task: `docs/CURRENT_CLINE_TASK.md`
+- M01A blueprint: `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`
+- Current root Rust pin: `rust-toolchain.toml`
+- Rust package metadata: `tethers-0.1/host-rust/Cargo.toml`
+- Toolchain checker: `.github/scripts/check-tethers-toolchains.ps1`
 - Enduring principles: `docs/CONSTITUTION.md`
-- Language and protocol semantics: `tethers-0.1/SPEC.md`
+- Language semantics: `tethers-0.1/SPEC.md`
 - Universal Plug architecture:
   `docs/architecture/TETHERS_UNIVERSAL_PLUG_ARCHITECTURE.md`
-- J24E candidate preparation:
-  `docs/architecture/J24E_CANDIDATE_PREPARATION_BLUEPRINT.md`
-- J24F public staging:
-  `docs/architecture/J24F_PLUG_STAGE_CLI_BLUEPRINT.md`
 - J24G request contract:
   `docs/architecture/J24G_INSTALLATION_REQUEST_CONTRACT.md`
-- J24H evidence-access foundation:
+- J24H evidence access:
   `docs/architecture/J24H_INSTALLATION_EVIDENCE_ACCESS_FOUNDATION.md`
 - J24I exact-candidate trust:
   `docs/architecture/J24I_EXACT_CANDIDATE_INSTALLATION_TRUST.md`
-- Lifecycle contract:
-  `docs/architecture/TETHERS_LIFECYCLE_OUTCOMES_EVENTS_CONFORMANCE_V1.md`
-- Capability bridge and host trust contract: `docs/CAPABILITY_BRIDGE.md`
-- Accepted design decisions: `docs/DECISIONS.md`
-- Current task: `docs/CURRENT_CLINE_TASK.md`
+- Accepted decisions: `docs/DECISIONS.md`
 - Short project status: `docs/PROJECT_DASHBOARD.md`
 - Detailed queue: `docs/TASK_QUEUE.md`
-- Evidence and reviews: `docs/worker-notes/`
+- Historical evidence: `docs/worker-notes/`
