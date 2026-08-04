@@ -43,7 +43,7 @@ All fourteen existing tests retained. Total: 16 direct J24K3b tests.
 - `git diff --check`: passed.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256`: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - Implementation checkpoint: `d31185fb68e1df5e73853f1807c048285e4c0da2`.
-- Final remote tip at evidence commit: `d31185fb68e1df5e73853f1807c048285e4c0da2`.
+- Final remote tip at evidence commit: `4a77729f7cd13f181fe2ecbead58cc723a6a610d`.
 
 ## Discoveries
 
