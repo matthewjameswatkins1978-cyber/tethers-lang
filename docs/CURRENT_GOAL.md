@@ -19,7 +19,7 @@ J24J  read-only installation reconciliation planner
 M01A is accepted at
 `d561b8400a1398c3d5bdde2cf670eebe661a5cc4`.
 
-The active repository baseline is now:
+The active repository baseline is:
 
 ```text
 Rust             1.97.1 exact root pin
@@ -42,7 +42,7 @@ implementation and review:
 
 ```text
 rust-analyzer   Rust 1.97.1 component
-cargo-nextest   0.9.137
+cargo-nextest   0.9.140
 cargo-deny      0.19.7
 cargo-machete   0.9.2
 ```
@@ -65,7 +65,7 @@ public Rust library API.
 - Rust-analyzer belongs to the exact Rust 1.97.1 toolchain.
 - OpenCode LSP is explicitly enabled and its direct query tool is opt-in and
   process-local.
-- OpenCode may not download a second language server when using the repository
+- OpenCode may not download a second language server through the repository
   launcher.
 - Nextest retries remain zero and ordinary `cargo test` remains final authority.
 - Native Windows nextest performance is measured rather than assumed.
@@ -83,7 +83,7 @@ M01C will use accepted M01B evidence to review:
 - existing Rust warnings;
 - cargo-machete findings;
 - inactive `.clinerules` and `.clineignore` configuration;
-- duplicated environment/tool checks;
+- duplicated environment and tool checks;
 - stale active guidance;
 - obsolete one-off scripts and roadmaps;
 - files that can be removed with direct reference evidence.
