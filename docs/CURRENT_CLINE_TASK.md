@@ -1,64 +1,75 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `M01A - Rust toolchain refresh and verification cleanup`
+Task: `M01B - Rust agent tooling foundation`
 Owner: `OpenCode`
-Status: `COMPLETE`
-Implementation checkpoint: `8ba365c0e0108440d09b0fd19c43942db4ddfbd9`
+Status: `READY`
 Task colour: `Amber`
-Route: `OpenCode using DeepSeek Pro V4 for a cross-file toolchain and PowerShell maintenance change; Lucy performs independent review`
+Route: `OpenCode using DeepSeek Pro V4 for pinned Rust tooling, PowerShell verification, and OpenCode LSP configuration; Lucy performs independent review`
 Base branch: `main`
-Base commit: `fe3a635646f62ed2e718dfb45e9f5e6bc3c6f333`
-Implementation branch: `opencode/m01a-rust-toolchain-refresh`
-Worker note: `docs/worker-notes/2026-08-04-m01a-rust-toolchain-refresh.md`
-Implementation blueprint: `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`
-OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
-Rust toolchain: current `1.89.0`; target exact `1.97.1`; plain Cargo after root pin; `--locked` mandatory
-Toolchain preflight: required
+Base commit: `05d0fbc6fe3cc8e05d3670cad4056f093c1c63d4`
+Implementation branch: `opencode/m01b-rust-agent-tooling`
+Worker note: `docs/worker-notes/2026-08-04-m01b-rust-agent-tooling.md`
+Implementation blueprint: `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md`
+Rust toolchain: exact `1.97.1` from root pin; plain Cargo; `--locked` mandatory
+OCaml switch path: `N/A`
+Tool installation: exact M01B tools explicitly authorised
 
 ## Objective
 
-Upgrade the repository-owned Rust toolchain to exact stable Rust 1.97.1 and
-clean the live verification plumbing so future commands derive compiler truth
-from repository pins instead of repeating `1.89.0` throughout scripts and
-instructions.
+Install, pin, configure, and prove the small Rust toolset selected to help the
+active OpenCode workflow:
 
-M01A is deliberately separate from dependency updates, edition migration,
-production refactoring, warning removal, file deletion, and the Plug installation
-sequence.
+```text
+rust-analyzer   toolchain-owned language intelligence
+cargo-nextest   alternative agent test loop
+cargo-deny      dependency policy and advisory gate
+cargo-machete   advisory unused-dependency detector
+```
 
-Read `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md` completely before any
-edit. It is authoritative for version semantics, allowed machine installation,
-required files, and verification.
+M01B adds no production behaviour and performs no cleanup deletion. It creates
+the diagnostic foundation that M01C will later use for warning repair and
+repository pruning.
+
+Read `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md` completely before
+editing. It freezes exact versions, installation authority, policy boundaries,
+OpenCode integration, and verification.
 
 ## Relevant background and existing behaviour
 
-J24I is accepted on `main` at
-`88d8ab2e5c65052401b3860d8a7d68f3ccb06265`. The installation sequence pauses
-before J24J while this maintenance milestone refreshes the build floor.
+M01A is accepted on `main` at
+`d561b8400a1398c3d5bdde2cf670eebe661a5cc4`.
 
-Current live Rust authority is fragmented:
+The repository now uses exact Rust 1.97.1, edition 2021, `rust-version = 1.97`,
+plain Cargo commands, fail-fast Just recipes, and a byte-identical Cargo.lock.
 
-- root `rust-toolchain.toml` selects 1.89.0;
-- host `Cargo.toml` declares `rust-version = "1.89"`;
-- the `justfile`, environment probe, toolchain checker, task template, and Rust
-  guide repeat 1.89.0 directly.
+The accepted M01B cargo-tool versions are:
 
-The current `justfile` also joins some commands with PowerShell semicolons, so a
-later successful command can obscure the status of an earlier failed command.
+```text
+cargo-nextest 0.9.137
+cargo-deny    0.19.7
+cargo-machete 0.9.2
+```
 
-Rust 1.97.1 is the exact approved target. It supersedes 1.97.0 because the point
-release fixes an LLVM miscompilation.
+Rust-analyzer is the Rust 1.97.1 rustup component, not a separately downloaded
+weekly binary.
 
-OCaml 5.5.0, Dune 3.24.0, and Yojson 2.2.2 remain the accepted locked OCaml
-baseline. M01A must verify but not update them.
+OpenCode's repository configuration currently loads required instructions but
+does not enable LSP. The active OpenCode documentation requires LSP to be enabled
+in config, requires the `rust-analyzer` command for Rust, and gates direct LSP
+queries behind a process-local experimental flag. The repository must prepare the
+next OpenCode process honestly; a currently running process need not hot-reload.
 
-The existing Cargo lock, dependencies, Tethers source, tests, and product
-semantics are not part of this task.
+Nextest may be slower on native Windows because it creates a process per test.
+M01B measures rather than assumes performance. Ordinary `cargo test` remains the
+final authority regardless of the benchmark.
+
+Cargo-deny replaces the need for cargo-audit in this workflow. Cargo-semver-checks
+remains deferred until a public Rust API compatibility promise exists.
 
 ## Startup procedure
 
-1. Confirm the current worktree is clean:
+1. Confirm the worktree is clean:
 
    ```powershell
    git status --short
@@ -71,330 +82,360 @@ semantics are not part of this task.
    git fetch origin
    ```
 
-3. Verify the M01A blueprint checkpoint is an ancestor of current remote main:
+3. Verify the M01B blueprint checkpoint is on remote main:
 
    ```powershell
-   git merge-base --is-ancestor c9b24b3987b92092aa7800f28e1147e719c70b57 origin/main
+   git merge-base --is-ancestor 05d0fbc6fe3cc8e05d3670cad4056f093c1c63d4 origin/main
    ```
 
    Require exit code 0.
-4. Verify accepted corrected J24I is an ancestor of remote main:
+4. Verify accepted M01A is on remote main:
 
    ```powershell
-   git merge-base --is-ancestor 88d8ab2e5c65052401b3860d8a7d68f3ccb06265 origin/main
+   git merge-base --is-ancestor d561b8400a1398c3d5bdde2cf670eebe661a5cc4 origin/main
    ```
 
    Require exit code 0.
-5. Inspect the packet directly from `origin/main` and require M01A, OpenCode,
-   `READY`, and branch `opencode/m01a-rust-toolchain-refresh`:
+5. Inspect the packet directly from remote main:
 
    ```powershell
    git show origin/main:docs/CURRENT_CLINE_TASK.md | Select-Object -First 18
    ```
 
-6. Verify the blueprint exists on remote main:
+   Require M01B, owner OpenCode, status READY, and branch
+   `opencode/m01b-rust-agent-tooling`.
+6. Verify the blueprint exists:
 
    ```powershell
-   git cat-file -e origin/main:docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md
+   git cat-file -e origin/main:docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md
    ```
 
-7. Confirm the implementation branch does not exist locally or remotely:
+7. Confirm the implementation branch does not already exist:
 
    ```powershell
-   git branch --list opencode/m01a-rust-toolchain-refresh
-   git branch --remotes --list origin/opencode/m01a-rust-toolchain-refresh
+   git branch --list opencode/m01b-rust-agent-tooling
+   git branch --remotes --list origin/opencode/m01b-rust-agent-tooling
    ```
 
-   Stop without overwriting it if either reports a branch.
-8. Create the implementation branch from current remote main:
+   Stop without overwriting it if either command reports the branch.
+8. Create it from current remote main:
 
    ```powershell
-   git switch --create opencode/m01a-rust-toolchain-refresh origin/main
+   git switch --create opencode/m01b-rust-agent-tooling origin/main
    ```
 
-9. Read completely:
+9. Read completely before editing:
 
    - `AGENTS.md`;
    - `docs/CURRENT_CLINE_TASK.md`;
-   - `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`;
+   - `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md`;
    - `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`;
-   - `docs/worker-notes/2026-07-30-toolchain-baseline-01.md`;
+   - `docs/TOOLCHAIN_POLICY.md`;
+   - `docs/worker-notes/2026-08-04-m01a-rust-toolchain-refresh.md`;
    - `rust-toolchain.toml`;
-   - `tethers-0.1/host-rust/Cargo.toml`;
    - `justfile`;
-   - `.github/scripts/check-tethers-toolchains.ps1`;
-   - `.github/scripts/test-check-tethers-toolchains.ps1`;
-   - `scripts/check-tethers-environment.ps1`.
+   - `opencode.json`;
+   - `scripts/check-dev-tools.ps1`;
+   - `.github/scripts/check-tethers-toolchains.ps1`.
 
-10. Run the packet checker before editing.
-11. Capture the current Cargo.lock SHA-256 and the current Rust 1.89.0 full-suite
-    and warning baseline if 1.89.0 remains installed.
-12. Check whether exact Rust 1.97.1, rustfmt, and Clippy are installed. Matthew
-    explicitly authorises only this exact installation if missing:
+10. Run the packet checker.
+11. Capture:
 
     ```powershell
-    rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy
+    git rev-parse origin/main
+    Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
+    rustc --version
+    opencode --version
+    cargo nextest --version
+    cargo deny --version
+    cargo machete --version
+    rust-analyzer --version
     ```
 
-    Do not update the global default, uninstall 1.89.0, modify PATH, or install
-    anything else.
+    Missing commands are expected inventory results, not permission to choose
+    different tools.
+12. Update the packet Base commit to the exact current `origin/main` before the
+    implementation commit and keep the worker note identical to that value.
+
+## Installation authority
+
+Matthew explicitly authorises only these machine changes:
+
+- add rust-analyzer to exact Rust 1.97.1;
+- install cargo-nextest exactly 0.9.137;
+- install cargo-deny exactly 0.19.7;
+- install cargo-machete exactly 0.9.2.
+
+Installation must be performed through the repository installer created by this
+task. Do not update the global Rust default, PATH, OpenCode, Cargo configuration,
+other Cargo tools, or any unrelated package.
 
 ## Required behaviour
 
-1. Pin root `rust-toolchain.toml` to exact Rust `1.97.1`, minimal profile, with
-   rustfmt and Clippy.
+1. Add `tools/rust-agent-tools.json` with the exact schema and versions frozen in
+   the blueprint. Executable scripts read this file rather than copying versions.
 
-2. Change only `rust-version` in host `Cargo.toml` from `1.89` to `1.97` while
-   preserving edition 2021, package version, dependencies, features, and
-   `Cargo.lock` byte-for-byte.
+2. Add rust-analyzer to the existing Rust 1.97.1 component list in
+   `rust-toolchain.toml` without changing the channel, profile, rustfmt, or Clippy.
 
-3. Replace explicit `+1.89.0` Cargo selectors and `Push-Location` semicolon
-   chains in `justfile` with plain Cargo plus `--manifest-path`, keeping `--locked`
-   and making every multi-step recipe fail immediately on its first failure.
+3. Add `scripts/install-rust-agent-tools.ps1` with exact, idempotent installation
+   behaviour and no global default, PATH, Cargo-config, or unrelated mutation.
 
-4. Remove explicit `+1.89.0` arguments from
-   `scripts/check-tethers-environment.ps1`; rely on the root pin and preserve its
-   read-only, offline, machine-readable capability-report contract.
+4. Add read-only `scripts/check-rust-agent-tools.ps1` that validates config,
+   exact versions, rust-analyzer ownership, OpenCode availability/config, and
+   required repository policy files.
 
-5. Refactor `.github/scripts/check-tethers-toolchains.ps1` to derive the exact
-   Rust channel from `rust-toolchain.toml` and Rust edition/MSRV from
-   `Cargo.toml`, while retaining explicit OCaml-switch verification and the
-   process-local rustup auto-install guard.
+5. Expose the checker's callable function and add
+   `scripts/test-check-rust-agent-tools.ps1` covering missing, malformed,
+   wrong-schema, impossible-version, real-success, and non-mutation paths.
 
-6. Make the checker require exact rustc 1.97.1, Cargo major/minor 1.97, installed
-   rustfmt and Clippy components, and successful rustfmt/Clippy version commands
-   without inventing non-contractual point-version equality.
+6. Preserve `opencode.json` instructions and add only LSP enablement plus LSP-tool
+   permission.
 
-7. Update `.github/scripts/test-check-tethers-toolchains.ps1` without weakening
-   its existing negative paths, guard restoration, real-switch, no-fallback, and
-   repository-non-mutation evidence.
+7. Add `scripts/start-opencode-lsp.ps1` that process-locally enables the
+   experimental LSP tool, disables OpenCode LSP downloads, forwards arguments,
+   returns the child exit code, and restores both environment values.
 
-8. Update `docs/TASK_PACKET_TEMPLATE.md` so future packets read the root exact
-   pin, use plain Cargo, and require `--locked` rather than copying a compiler
-   version into the template.
+8. Prove `opencode debug config` sees the repository LSP configuration. Stop
+   rather than claiming integration if the installed OpenCode build cannot
+   provide the frozen current behaviour.
 
-9. Update live Rust guidance in `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md` to
-   Rust 1.97.1, edition 2021, and `rust-version = 1.97`; direct agents to the
-   repository pins rather than floating latest documentation or remembered
-   versions.
+9. Add minimal `.config/nextest.toml` requiring 0.9.137 with retries zero and
+   fail-fast true. Add no flaky-test exceptions or retry override.
 
-10. Add a concise `docs/TOOLCHAIN_POLICY.md` covering exact pins, monthly or
-    milestone review, prompt security/soundness point releases, separation of
-    compiler/dependency/edition jobs, locked builds, OCaml lock authority, and
-    preservation of historical evidence.
+10. Add a concise reviewed root `deny.toml` implementing the frozen licence,
+    advisory, source, wildcard, and duplicate-version policy with no advisory
+    ignores.
 
-11. Preserve all historical worker notes, completed packets, release notes, and
-    architecture evidence exactly as historical records even when they mention
-    Rust 1.89.0.
+11. Extend `justfile` with fail-fast `agent-tools`, `test-agent`, `deps-policy`,
+    `deps-advisories`, `deps-unused`, and `verify-agent` recipes exactly as
+    described by the blueprint.
 
-12. Record evidence-backed candidates for M01B in the worker note only. Do not
-    delete or rename files during M01A.
+12. Keep `deps-unused` advisory and outside `verify-agent`. Never run
+    cargo-machete with `--fix` and remove no dependency.
 
-13. Preserve all Tethers language, Plug lifecycle, provider, trust, execution,
-    Anchor, Trail, package, and runtime behaviour.
+13. Update only live agent/tool guidance in `AGENTS.md`, the Rust engineering
+    guide, and toolchain policy with the frozen tool roles and authority limits.
 
-14. Follow the DeepSeek exact-edit recovery rule: after one `oldString` failure,
-    reread the current file and create a smaller fresh patch; never retry the
-    identical edit and stop after two materially different failed attempts.
+14. Benchmark three warm complete runs each of ordinary Cargo and nextest on
+    native Windows. Record all durations and medians without changing machine
+    security or scheduling settings.
+
+15. Run cargo-deny licences, bans, sources, and advisories. Stop on an advisory or
+    licence outside the frozen list rather than inventing an exception.
+
+16. Preserve Cargo.lock byte-for-byte and all production source, tests, OCaml,
+    edition, compiler channel, dependency graph, and Tethers behaviour.
+
+17. Record every cargo-machete finding for M01C with no automatic conclusion that
+    it is truly unused.
+
+18. Follow the exact-edit recovery rule: reread after one `oldString` failure,
+    make a fresh smaller patch, never retry the identical edit, and stop after two
+    materially different failures.
 
 ## Relevant components
 
 - `rust-toolchain.toml`
-- `tethers-0.1/host-rust/Cargo.toml`
-- `tethers-0.1/host-rust/Cargo.lock`
+- `tools/rust-agent-tools.json`
+- `scripts/install-rust-agent-tools.ps1`
+- `scripts/check-rust-agent-tools.ps1`
+- `scripts/test-check-rust-agent-tools.ps1`
+- `scripts/start-opencode-lsp.ps1`
+- `opencode.json`
+- `.config/nextest.toml`
+- `deny.toml`
 - `justfile`
-- `scripts/check-tethers-environment.ps1`
-- `.github/scripts/check-tethers-toolchains.ps1`
-- `.github/scripts/test-check-tethers-toolchains.ps1`
-- `docs/TASK_PACKET_TEMPLATE.md`
+- `AGENTS.md`
 - `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
 - `docs/TOOLCHAIN_POLICY.md`
-- `docs/architecture/M01A_RUST_TOOLCHAIN_REFRESH.md`
-- `docs/worker-notes/2026-07-30-toolchain-baseline-01.md`
+- `docs/architecture/M01B_RUST_AGENT_TOOLING_FOUNDATION.md`
 - `docs/CURRENT_CLINE_TASK.md`
 
-Read-only references include:
-
-- `AGENTS.md`;
-- `docs/OCAML_GUIDE_FOR_AGENTS.md`;
-- `tethers-0.1/engine-ocaml/tethers_engine.opam`;
-- `tethers-0.1/engine-ocaml/tethers_engine.opam.locked`;
-- `tethers-0.1/engine-ocaml/dune-project`.
+Read-only references include Cargo.toml, Cargo.lock, production source/tests,
+OCaml files, M01A evidence, and inactive files reserved for M01C review.
 
 ## Frozen decisions and invariants
 
-- Exact active Rust channel is `1.97.1`, not floating `stable`.
-- Rust edition remains 2021.
-- Declared Rust minimum becomes `1.97`; no separate older MSRV lane is claimed.
-- Toolchain, dependency, warning-cleanup, file-pruning, and edition migration are
-  separate jobs.
-- `Cargo.lock` remains byte-identical and ordinary Cargo verification is locked.
-- Plain Cargo commands inherit the exact root toolchain pin.
-- Cargo's point version is not required to equal rustc's point-release number.
-- Existing explicit OCaml switch and lock authority remain unchanged.
-- Toolchain checks are read-only and restore `RUSTUP_AUTO_INSTALL` exactly.
-- Historical evidence is not rewritten to look current.
-- No production source or test changes are authorised.
-- No inactive configuration or document is deleted in M01A.
-- M01B handles warning cleanup and safe repository pruning after this compiler
-  refresh is accepted.
-- No Plug-installation work proceeds until M01A is accepted.
+- Exact tool versions are frozen; no floating latest install is permitted.
+- Rust-analyzer belongs to exact Rust 1.97.1.
+- LSP assists navigation; compiler, Clippy, tests, and contracts remain authority.
+- Direct OpenCode LSP queries are opt-in and process-local.
+- OpenCode may not download a second rust-analyzer when using the wrapper.
+- Nextest never retries and never replaces final ordinary Cargo testing.
+- Native Windows nextest performance is measured, not assumed.
+- Cargo-deny is the one accepted dependency/advisory gate.
+- Cargo-audit and cargo-semver-checks remain absent.
+- Cargo-machete is advisory only and never removes dependencies automatically.
+- No advisory ignore or new licence is invented by the worker.
+- Machine installation is exact, bounded, idempotent, and separate from verify.
+- Cargo.lock, dependencies, edition, compiler channel, production behaviour, and
+  OCaml remain unchanged.
+- M01C performs actual warning cleanup and deletion review.
 
 ## Acceptance criteria
 
-1. `rust-toolchain.toml` selects exact 1.97.1 with minimal profile, rustfmt, and
-   Clippy.
-2. Host `Cargo.toml` remains edition 2021 and declares `rust-version = "1.97"`.
-3. Cargo dependencies, features, package version, and `Cargo.lock` are unchanged.
-4. No explicit `+1.89.0` remains in active `justfile` or environment-probe
-   commands.
-5. Every Just verification recipe stops at its first failing command and uses
-   the host manifest explicitly.
-6. The environment probe resolves the root-pinned compiler and remains
-   read-only/offline where previously required.
-7. The toolchain checker derives the exact Rust channel and Cargo metadata from
-   repository files rather than copied constants.
-8. Exact rustc 1.97.1, Cargo 1.97 major/minor, rustfmt, and Clippy are verified
-   without false point-version assumptions.
-9. All prior toolchain-checker negative paths and environment-restoration tests
-   remain green.
-10. The real explicit OCaml switch still passes with OCaml 5.5.0, Dune 3.24.0,
-    and Yojson 2.2.2.
-11. The task template no longer fossilises a specific Rust version.
-12. The Rust guide and new toolchain policy describe the accepted live baseline
-    and maintenance cadence accurately.
-13. Historical evidence mentioning Rust 1.89.0 remains unchanged.
-14. Rust formatting, check, Clippy, and complete all-target/all-feature tests run
-    under exact Rust 1.97.1 with `--locked` where supported.
-15. Before/after evidence identifies any new warnings or failures introduced by
-    1.97.1; none are silently dismissed.
-16. `just --list`, `just fmt`, `just check`, `just test-rust`, and `just verify`
-    all succeed.
-17. Packet checker, toolchain checker tests, real preflight, and
+1. The root JSON contains only the frozen schema and exact tool versions.
+2. Rust 1.97.1 owns installed rust-analyzer while its other components remain.
+3. The installer installs only missing/mismatched accepted versions and a second
+   run performs no installation.
+4. The checker reports every exact version and changes no repository state.
+5. All focused checker negative and success tests pass.
+6. OpenCode config retains instructions, enables LSP, and permits the LSP tool.
+7. The opt-in launcher sets and restores both environment variables on success
+   and a forced child-command failure.
+8. `opencode debug config` confirms the effective repository LSP configuration.
+9. Nextest accepts its repository config, runs with zero retries, and completes
+   the supported Rust test graph.
+10. Ordinary Cargo still completes the authoritative all-target/all-feature test
+    graph.
+11. Three-run timing evidence reports honest Cargo and nextest medians.
+12. Cargo-deny licence, bans, and sources checks pass with only the frozen policy.
+13. Cargo-deny advisories pass with no ignores.
+14. Cargo-machete runs with metadata and no `--fix`; all findings are recorded.
+15. New Just recipes are fail-fast and `verify-agent` retains ordinary Cargo
+    verification.
+16. Live agent/tool guidance accurately describes tool roles and limitations.
+17. Cargo.lock before/after hashes are identical.
+18. No dependency, source, test, OCaml, edition, Rust channel, Plug lifecycle, or
+    Tethers behaviour changes.
+19. Packet checker, Rustfmt, ordinary `just verify`, `verify-agent`, and
     `git diff --check` pass.
-18. No production Rust/OCaml source, production test, dependency, lock, runtime,
-    lifecycle, or language behaviour changes.
-19. The worker note records exact tool versions, Cargo.lock hash equality,
-    changed files, warning comparison, M01B candidates, and a verified real
-    implementation checkpoint.
+20. The worker note records installed versions, idempotency, LSP evidence,
+    benchmarks, deny results, machete findings, lock hash, exact changed files,
+    and a verified real implementation checkpoint.
 
 ## Required verification
 
-Run in this order after changes:
+Run every applicable command in this order:
 
 ```powershell
-rustup run 1.97.1 rustc --version
-rustup component list --toolchain 1.97.1 --installed
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
-cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
-cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
-cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+pwsh -NoProfile -File scripts/install-rust-agent-tools.ps1
+pwsh -NoProfile -File scripts/install-rust-agent-tools.ps1
+pwsh -NoProfile -File scripts/test-check-rust-agent-tools.ps1
+pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1
+rustc --version
+rust-analyzer --version
+cargo nextest --version
+cargo deny --version
+cargo machete --version
+opencode --version
+opencode debug config
+cargo nextest show-config version
+cargo nextest run --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features
+cargo deny --manifest-path tethers-0.1/host-rust/Cargo.toml check licenses bans sources
+cargo deny --manifest-path tethers-0.1/host-rust/Cargo.toml check advisories
+cargo machete --with-metadata tethers-0.1/host-rust
 just --list
-just fmt
-just check
-just test-rust
-pwsh -NoProfile -File .github/scripts/test-check-tethers-toolchains.ps1 -OcamlSwitchPath 'D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml'
-pwsh -NoProfile -File .github/scripts/check-tethers-toolchains.ps1 -OcamlSwitchPath 'D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml'
+just agent-tools
+just test-agent
+just deps-policy
+just deps-advisories
+just deps-unused
 just verify
+just verify-agent
+cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
+cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
 git diff --check
 git status --short
 ```
 
-Also prove:
+`cargo machete` and `just deps-unused` may return its documented finding exit
+code. That does not authorise ignoring the output or changing a dependency. The
+worker note must record the exact result and M01C candidates. All other required
+commands must succeed.
 
-```powershell
-Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
-rg -n --fixed-strings '+1.89.0' justfile scripts/check-tethers-environment.ps1 .github/scripts/check-tethers-toolchains.ps1 docs/TASK_PACKET_TEMPLATE.md docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md
-```
+Test the OpenCode launcher with a fast child invocation and environment sentinels
+as defined in the blueprint. Record whether the currently running OpenCode
+process exposed direct LSP queries; completion is based on the next process and
+effective config, not hot reload.
 
-The final `rg` must return no active copied command or guidance pin. A historical
-reference inside the blueprint explaining the migration is allowed; historical
-worker notes and release evidence are outside this active-file search.
+For the benchmark, warm once and then use `Measure-Command` for three complete
+runs of each test runner. Do not clear caches between runs.
 
 ## Permitted changes
 
-Only these files may change:
+Only these paths may change:
 
 - `rust-toolchain.toml`
-- `tethers-0.1/host-rust/Cargo.toml`
+- `tools/rust-agent-tools.json`
+- `scripts/install-rust-agent-tools.ps1`
+- `scripts/check-rust-agent-tools.ps1`
+- `scripts/test-check-rust-agent-tools.ps1`
+- `scripts/start-opencode-lsp.ps1`
+- `opencode.json`
+- `.config/nextest.toml`
+- `deny.toml`
 - `justfile`
-- `scripts/check-tethers-environment.ps1`
-- `.github/scripts/check-tethers-toolchains.ps1`
-- `.github/scripts/test-check-tethers-toolchains.ps1`
-- `docs/TASK_PACKET_TEMPLATE.md`
+- `AGENTS.md`
 - `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
-- `docs/TOOLCHAIN_POLICY.md` (new)
-- `docs/worker-notes/2026-08-04-m01a-rust-toolchain-refresh.md` (new)
-- `docs/CURRENT_CLINE_TASK.md` only for status transitions and final checkpoint
+- `docs/TOOLCHAIN_POLICY.md`
+- `docs/worker-notes/2026-08-04-m01b-rust-agent-tooling.md`
+- `docs/CURRENT_CLINE_TASK.md` only for control state and checkpoint
 
-Stop before changing any other file.
+Stop before changing another path.
 
 ## Forbidden changes
 
-Do not:
-
-- modify `Cargo.lock`, dependencies, features, package version, production source,
-  production tests, fixtures, or generated evidence;
-- change OCaml, opam, Dune, Yojson, OCaml locks, or Dune language;
-- migrate to Rust edition 2024;
-- suppress, allow, or repair existing warnings in production code;
-- delete or rename `.clinerules`, `.clineignore`, scripts, guides, roadmaps,
-  worker notes, release notes, control files, or any historical evidence;
-- modify `AGENTS.md`, `docs/OCAML_GUIDE_FOR_AGENTS.md`, CI, release, version tag,
-  Tethers Core, Plug installation, trust, provider, runtime, Anchor, Trail, or
-  application code;
-- update the global Rust default, uninstall 1.89.0, modify PATH, install another
-  tool, or change global/user Cargo configuration;
-- amend, reset, rebase, cherry-pick, force-push, merge into main, tag, or publish.
+- No Cargo.toml, Cargo.lock, dependency, feature, package, edition, or MSRV change.
+- No production source, test, fixture, generated lifecycle evidence, or OCaml
+  change.
+- No Rust channel change or unrelated rustup component.
+- No OpenCode update, global environment edit, PATH edit, or Cargo config edit.
+- No cargo-audit, cargo-semver-checks, cargo-binstall, or other tool installation.
+- No nextest retries or replacement of ordinary Cargo completion tests.
+- No cargo-deny advisory ignore or autonomous licence expansion.
+- No cargo-machete `--fix`, dependency removal, source deletion, warning cleanup,
+  inactive-agent-file deletion, roadmap pruning, or M01C work.
+- No Plug installation, J24J, CLI, runtime, provider, Anchor, Trail, or release
+  work.
+- No amend, reset, rebase, cherry-pick, force-push, merge to main, tag, or
+  publication.
 
 ## Stop conditions
 
-Stop and return exact evidence plus the smallest unresolved question if:
+Stop and return exact evidence when:
 
 - the implementation branch already exists;
-- the blueprint or corrected J24I is not on current remote main;
-- the worktree is dirty;
-- the explicit OCaml switch path is absent, resolves elsewhere, or fails the
-  accepted no-fallback contract;
-- Rust 1.97.1 cannot be installed using only the authorised rustup command;
-- the upgrade requires a dependency, Cargo.lock, production code, test, OCaml,
-  edition, or forbidden-file change;
-- Cargo 1.97 cannot consume the existing lock without mutation;
-- a new compiler failure cannot be repaired strictly within the permitted
-  tooling/document files;
-- checker compatibility requires a wider environment-system redesign;
-- an exact-edit replacement fails twice after rereading and using materially
-  different anchors;
-- branch-specific verification fails after two materially different attempts.
+- current origin/main lacks accepted M01A or the M01B blueprint;
+- exact accepted tool installation would require another package or global
+  configuration change;
+- OpenCode effective config cannot enable the frozen LSP behaviour;
+- cargo-deny reports an advisory or licence outside the frozen policy;
+- nextest requires retries or a production-test change;
+- Cargo.lock, Cargo.toml, source, tests, OCaml, Rust channel, or a forbidden path
+  appears necessary;
+- a cargo-machete finding cannot be recorded without acting on it;
+- two materially different edit attempts fail after rereading current content.
 
 ## Expected pre-existing changes
 
 None.
 
-## Git and completion contract
+## Git and return contract
 
-Use normal commits and normal push only.
+Use ordinary commits and normal push only.
 
-After every check passes:
+After all required evidence passes:
 
-1. Create `docs/worker-notes/2026-08-04-m01a-rust-toolchain-refresh.md`.
-2. Set this packet to `COMPLETE`.
-3. Create the implementation commit normally.
-4. Obtain its real full SHA from Git.
-5. Verify it exists:
+1. Create the worker note at the exact packet path.
+2. Set packet status to `COMPLETE` and implementation checkpoint to `TBD`.
+3. Make one normal implementation commit.
+4. Obtain and verify its real full SHA:
 
    ```powershell
    git cat-file -e <REAL_SHA>^{commit}
    ```
 
-6. Record that exact SHA in the packet and worker note.
-7. Create completion-documentation commit separately.
-8. Push normally.
+5. Record that exact SHA in packet and worker note.
+6. Make a separate completion-documentation commit.
+7. Push normally.
 
 Return branch, remote tip, verified implementation checkpoint, exact changed
-files, exact tool versions, Cargo.lock before/after hashes, toolchain-checker
-assertion count, Rust full-suite result, Just recipe results, warning comparison,
-M01B cleanup candidates, worker-note path, and explicit confirmation that M01A
-changed no dependency, production source, OCaml lock, edition, or Tethers
-behaviour.
+files, exact installed versions, second-install no-op evidence, checker results,
+OpenCode/LSP evidence, Cargo/nextest benchmark, deny results, machete findings,
+Cargo.lock hashes, full ordinary and nextest test results, Just results, worker
+note path, and explicit confirmation that no dependency or product behaviour
+changed.
