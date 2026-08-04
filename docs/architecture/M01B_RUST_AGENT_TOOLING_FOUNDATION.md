@@ -24,7 +24,7 @@ The exact accepted tools are:
 
 ```text
 rust-analyzer   Rust 1.97.1 rustup component
-cargo-nextest   0.9.137
+cargo-nextest   0.9.140
 cargo-deny      0.19.7
 cargo-machete   0.9.2
 ```
@@ -126,7 +126,7 @@ with exactly:
 ```json
 {
   "schema": 1,
-  "cargo_nextest": "0.9.137",
+  "cargo_nextest": "0.9.140",
   "cargo_deny": "0.19.7",
   "cargo_machete": "0.9.2",
   "rust_analyzer": "toolchain-component"
@@ -183,7 +183,7 @@ It must be read-only and prove:
 - rust-analyzer is declared in `rust-toolchain.toml`;
 - rust-analyzer is installed for the exact root toolchain;
 - `rust-analyzer --version` succeeds from the repository;
-- cargo-nextest is exactly 0.9.137;
+- cargo-nextest is exactly 0.9.140;
 - cargo-deny is exactly 0.19.7;
 - cargo-machete is exactly 0.9.2;
 - OpenCode is available and reports its version;
@@ -261,11 +261,11 @@ Add:
 .config/nextest.toml
 ```
 
-with a required minimum of exact M01B version 0.9.137 and an explicit no-retry
+with a required minimum of exact M01B version 0.9.140 and an explicit no-retry
 policy:
 
 ```toml
-nextest-version = { required = "0.9.137" }
+nextest-version = { required = "0.9.140" }
 
 [profile.default]
 retries = 0
