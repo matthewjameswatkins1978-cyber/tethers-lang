@@ -1,245 +1,464 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24K1 - Explicit current-trust authority foundation`
+Task: `J24K2 - Non-inheritable RAII lock and single-step executor`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `READY`
 Task colour: `Red`
-Route: `OpenCode using DeepSeek Pro V4 for bounded security-sensitive Rust refactoring; Lucy performs independent review and routine safe merge`
+Route: `OpenCode using DeepSeek Pro V4 for bounded security-sensitive Rust implementation; Lucy performs independent review and routine safe merge`
 Base branch: `main`
-Base commit: `db84c71dc92381921cdc05c62029a1899c13d7f2`
-Implementation branch: `opencode/j24k1-current-trust-authority`
-Worker note: `docs/worker-notes/2026-08-04-j24k1-current-trust-authority.md`
+Base commit: `9dc4498b644317e99851879cd40f2874eb611298`
+Implementation branch: `opencode/j24k2-locked-single-step-executor`
+Worker note: `docs/worker-notes/2026-08-04-j24k2-locked-single-step-executor.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
-Implementation checkpoint: `5559efb432d46637a8da9149e57a1c6604a5c0fa`
+Implementation checkpoint: `PENDING`
 
 ## Objective
 
-Introduce the crate-private current-trust authority foundation required by J24K.
+Implement J24K2: the Windows non-inheritable RAII installation lock and the bounded single-step installation executor.
 
-The change must allow existing supervised conformance, installation approval, and disabled installation internals to require one explicit current-trust authority while preserving the accepted signed-publisher and unsigned-developer public paths unchanged.
+One invocation must:
 
-Add an exact-candidate authority implementation backed only by `ExactCandidateTrustStore`.
+```text
+acquire lock
+  -> plan with J24J inside the lock
+  -> execute zero or one supported action
+  -> re-plan
+  -> validate the action-specific postcondition
+  -> release the lock last
+```
 
-J24K1 does not add the installation lock, public executor, multi-step driver, publication intent, recovery logic, CLI, or enablement.
+J24K2 executes:
+
+- `CreateExactCandidateTrust`;
+- `RunSupervisedConformance`;
+- `CreateInstallationApproval`;
+- `Complete`.
+
+`PublishDisabledInstallation` is recognised but must fail closed without mutation until J24K3 adds the publication intent and recovery authority.
+
+J24K2 does not add the J24L four-call driver, publication intent, installed-root recovery, CLI, prompts, output styling, or enablement.
 
 ## Relevant background and existing behaviour
 
-J24I added immutable exact-candidate installation trust and `PackageTrustEvidence::exact_candidate`.
+J24K1 is accepted on `main` and provides:
 
-J24J can reconcile that evidence and return the next legitimate installation action.
+- crate-private `CurrentTrustAuthority`;
+- `ExactCandidateTrustAuthority` backed only by `ExactCandidateTrustStore`;
+- explicit authority-aware conformance, approval, and installation internals;
+- behavioural proof that supplied authority reaches every downstream trust check.
 
-The current downstream mutation seams still call:
+J24J provides the pure planner:
 
 ```rust
-PackageTrustEvidence::revalidate_current(
-    package_id,
-    publisher_trust,
-    developer_approvals,
-    now_unix_ms,
-)
+pub fn plan_installation(
+    request: &InstallationRequest,
+    candidates: &CandidateRegistry,
+    exact_trust: &ExactCandidateTrustStore,
+    launch_profiles: &LaunchProfileEvidenceStore,
+    conformance: &ConformanceEvidenceStore,
+    approvals: &InstallationApprovalStore,
+    installed: &InstalledPlugRegistry,
+) -> Result<InstallationPlan>;
 ```
 
-That accepted legacy method deliberately refuses `TrustModeEvidence::ExactCandidate` with:
+Accepted action progression:
 
 ```text
-trust_exact_candidate_authority_required
-exact-candidate trust requires current installation-trust authority
+CreateExactCandidateTrust
+  -> RunSupervisedConformance
+  -> CreateInstallationApproval
+  -> PublishDisabledInstallation
+  -> Complete
 ```
-
-The affected paths include:
-
-- `PreparedSupervisedLaunch::revalidate_current_trust`;
-- `PreparedSupervisedLaunch::launch_for_candidate`;
-- `run_host_conformance`;
-- `InstallationApprovalStore::approve`;
-- `InstalledPlugRegistry::install_disabled`, including its final pre-publication revalidation.
-
-J24K1 introduces the explicit authority seam without weakening or replacing accepted trust policy.
 
 Accepted baseline:
 
 ```text
 Rust             1.97.1
-Cargo tests      926 passing minimum before new J24K1 tests
+Cargo tests      940 passing minimum before J24K2
 Nextest retries  0
 Cargo.lock       D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
+The frozen J24K architecture is authoritative. Do not edit it.
+
 ## Required behaviour
 
-1. Add a crate-private module:
+### 1. New execution module
+
+Add:
 
 ```text
-tethers-0.1/host-rust/src/current_trust.rs
+tethers-0.1/host-rust/src/installation_execution.rs
 ```
 
-2. Define a crate-private trait semantically equivalent to:
+Expose it from `lib.rs` as:
 
 ```rust
-pub(crate) trait CurrentTrustAuthority {
-    fn revalidate_current(
-        &self,
-        candidate: &CandidateRecord,
-        evidence: &PackageTrustEvidence,
-        now_unix_ms: u64,
-    ) -> Result<()>;
+pub mod installation_execution;
+```
+
+The public seam must be structurally equivalent to:
+
+```rust
+pub struct InstallationExecutionContext<'a> {
+    pub lock_path: &'a Path,
+    pub quarantine_root: &'a Path,
+    pub conformance_scratch_root: &'a Path,
+    pub candidates: &'a CandidateRegistry,
+    pub exact_trust: &'a ExactCandidateTrustStore,
+    pub launch_profiles: &'a LaunchProfileEvidenceStore,
+    pub conformance: &'a ConformanceEvidenceStore,
+    pub approvals: &'a InstallationApprovalStore,
+    pub installed: &'a InstalledPlugRegistry,
+}
+
+pub struct InstallationExecutionOptions<'a> {
+    pub approving_authority: &'a str,
+    pub host_build_identity: &'a str,
+    pub conformance_wall_time: Duration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallationStepResult {
+    pub before: InstallationPlan,
+    pub after: InstallationPlan,
+    pub outcome: InstallationStepOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallationStepOutcome {
+    AlreadyComplete,
+    Advanced {
+        executed: InstallationPlanAction,
+    },
+    ConformanceRecordedWithoutAdvance {
+        evidence_id: String,
+        disposition: ConformanceDisposition,
+    },
+}
+
+pub fn execute_next_installation_action(
+    request: &InstallationRequest,
+    context: &InstallationExecutionContext<'_>,
+    options: &InstallationExecutionOptions<'_>,
+) -> Result<InstallationStepResult>;
+```
+
+A narrowly cleaner field order is acceptable. The semantic inputs and outputs are frozen.
+
+Validate non-empty `approving_authority`, non-empty `host_build_identity`, and a positive conformance wall-time before mutation. Invalid options fail with:
+
+```text
+code: installation_execution_options_invalid
+message: installation execution options are invalid
+```
+
+### 2. Outer lock scope
+
+The public function must contain the outer lifetime boundary:
+
+```rust
+pub fn execute_next_installation_action(...) -> Result<InstallationStepResult> {
+    let _lock = InstallationLockGuard::acquire(context.lock_path)?;
+    execute_installation_action_while_locked(request, context, options)
 }
 ```
 
-A generic `A: CurrentTrustAuthority + ?Sized` form is acceptable at call sites. Every authority-aware seam must receive an explicit authority reference.
+All planner, candidate, trust, launch, conformance, approval, scratch, and postcondition values live in the inner function. The lock therefore drops after every other local on normal return and panic unwind.
 
-3. Define a crate-private legacy adapter holding only:
+The function must never accept a precomputed plan.
 
-```rust
-&PublisherTrustStore
-&DeveloperApprovalStore
-```
+### 3. Windows lock abstraction
 
-Its `revalidate_current` implementation must delegate to the existing `PackageTrustEvidence::revalidate_current` method and preserve all existing signed-publisher and unsigned-developer behaviour and error contracts.
-
-4. Define a crate-private exact-candidate adapter holding only:
+Add a private owned guard:
 
 ```rust
-&ExactCandidateTrustStore
+struct InstallationLockGuard {
+    file: std::fs::File,
+}
 ```
 
-Its validation order is frozen:
+On Windows:
 
-- call `candidate.validate()` and map the existing safe candidate error;
-- call `evidence.require_for_candidate(candidate)`;
-- require `TrustModeEvidence::ExactCandidate`;
-- load the current exact-candidate record with `store.find(candidate_id)`;
-- call `record.require_for_candidate(candidate)`;
-- compare the evidence candidate ID, candidate-record digest, installation-trust record digest, and approving authority against the current record;
-- reconstruct `PackageTrustEvidence::exact_candidate(&record)`;
-- require exact equality with the supplied evidence.
+- `lock_path` must be absolute;
+- its parent must already exist, be a directory, and be reparse-safe;
+- any existing lock anchor must be an ordinary, empty, non-reparse file;
+- acquire with `OpenOptionsExt::share_mode(0)` and no polling;
+- Windows sharing or lock violations (`ERROR_SHARING_VIOLATION` / `ERROR_LOCK_VIOLATION`) map to `installation_busy`;
+- explicitly clear `HANDLE_FLAG_INHERIT` using `SetHandleInformation`;
+- verify the opened path again after acquisition;
+- write no PID, timestamp, owner, or other bytes;
+- dropping the owned `File` releases the lock;
+- the empty anchor may remain permanently.
 
-5. Exact-candidate stable failures:
+On non-Windows, acquisition fails before planning with `installation_lock_invalid`; do not invent a stale-file pseudo-lock.
 
-Wrong trust mode:
+Stable lock errors:
 
 ```text
-code: trust_exact_candidate_authority_required
-message: exact-candidate trust requires current installation-trust authority
+installation_busy
+installation_lock_invalid
+installation_lock_io
 ```
 
-Current exact record absent:
+Stable messages:
 
 ```text
-code: trust_drift
-message: exact-candidate installation trust is absent
+installation_busy: another installation action is already running
+installation_lock_invalid: installation lock path is invalid
+installation_lock_io: installation lock could not be acquired
 ```
 
-Current record or reconstructed evidence differs:
+### 4. Locked planning and exact candidate loading
+
+After lock acquisition, call J24J.
+
+Load exactly one candidate matching `before.candidate_id` from the accepted registry. Validate it and require its package ID, package version, and semantic digest to equal the plan.
+
+Missing, duplicate, invalid, or mismatched evidence fails closed using existing planner/candidate errors or:
 
 ```text
-code: trust_drift
-message: exact-candidate installation trust changed
+code: installation_execution_plan_stale
+message: installation plan no longer matches current evidence
 ```
 
-Existing exact-store, candidate, and record-validation failures remain unchanged and fail closed.
+Every record used for an action must be reloaded from its current store and checked against the exact IDs and digests pinned in `before`. Do not trust detached caller objects or merely match by package name.
 
-6. Add crate-private authority-aware forms equivalent to:
+### 5. CreateExactCandidateTrust
+
+For `CreateExactCandidateTrust`:
+
+- call `ExactCandidateTrustStore::create(candidate, request, options.approving_authority)`;
+- perform no other mutation;
+- re-plan inside the same lock;
+- require exactly:
+
+```text
+CreateExactCandidateTrust -> RunSupervisedConformance
+```
+
+The `after` plan must pin the created exact-trust record digest and reconstructed package-trust evidence digest.
+
+Return:
 
 ```rust
-PreparedSupervisedLaunch::revalidate_current_trust_with(...)
-PreparedSupervisedLaunch::launch_for_candidate_with(...)
-run_host_conformance_with_authority(...)
-InstallationApprovalStore::approve_with_authority(...)
-InstalledPlugRegistry::install_disabled_with_authority(...)
+InstallationStepOutcome::Advanced {
+    executed: InstallationPlanAction::CreateExactCandidateTrust,
+}
 ```
 
-Names may vary narrowly if Rust readability improves, but each seam must require an explicit authority argument.
+### 6. RunSupervisedConformance
 
-7. Route every current-trust check inside those internal paths through the supplied authority, including:
+For `RunSupervisedConformance`:
 
-- the pre-launch conformance revalidation;
-- the revalidation performed immediately by provider launch;
-- approval creation;
-- installation entry validation;
-- the final installation revalidation after staging and before final publication.
+1. reload and validate the exact-candidate trust record pinned by `before`;
+2. reconstruct `PackageTrustEvidence::exact_candidate` and require its digest matches `before`;
+3. construct `ExactCandidateTrustAuthority` explicitly;
+4. call `PreparedSupervisedLaunch::prepare` with the exact candidate, quarantine root, scratch root, and bounded wall-time;
+5. persist the prepared `LaunchProfileEvidence` through `LaunchProfileEvidenceStore::create`;
+6. call `run_host_conformance_with_authority` with the exact authority;
+7. persist the returned `ConformanceEvidence` through `ConformanceEvidenceStore::create`;
+8. explicitly clean the prepared scratch directory;
+9. re-plan and validate the outcome.
 
-No hidden call to the legacy publisher/developer revalidation may remain inside an authority-aware path.
+No legacy publisher/developer authority may be constructed or consulted.
 
-8. Preserve existing public and accepted crate-visible signatures.
+A private scratch guard must own the prepared launch and perform best-effort cleanup on unwind. Ordinary success performs explicit cleanup.
 
-Existing methods construct `PublisherDeveloperTrustAuthority` locally and call the authority-aware implementation. Existing callers must not need to change.
-
-9. Add:
+If launch-profile or conformance evidence has been durably published and explicit scratch cleanup then fails, return:
 
 ```text
-tethers-0.1/host-rust/src/current_trust_tests.rs
+code: installation_scratch_cleanup_failed
+message: conformance scratch cleanup failed after evidence publication
 ```
 
-Declare it from `lib.rs` only under `#[cfg(test)]` so tests can exercise crate-private seams without exposing production API.
+Do not remove durable evidence to conceal cleanup failure.
 
-10. Focused tests must prove:
+Passed conformance requires:
 
-- matching exact-candidate evidence and current exact store are accepted;
-- exact evidence from one valid store is rejected against a different valid current record for the same candidate;
-- absent exact authority is rejected;
-- signed-publisher or unsigned-developer evidence is rejected by the exact adapter with the frozen mode error;
-- malformed or corrupt exact-store evidence fails closed;
-- a distinctive recording/failing authority is invoked by every authority-aware downstream seam and its error is propagated rather than replaced by legacy trust lookup;
-- the provider-launch path uses the same supplied authority for its immediate revalidation;
-- the installation final revalidation after staging also uses the supplied authority;
-- accepted public signed-publisher and unsigned-developer paths remain behaviourally unchanged;
-- no production test-only constructor or public authority export is added.
+```text
+RunSupervisedConformance -> CreateInstallationApproval
+```
 
-Use direct Rust fixtures and existing store/publication APIs. A small crate-internal test authority under `#[cfg(test)]` is allowed.
+The `after` plan must pin the exact newly persisted launch-profile and conformance IDs/digests.
+
+Failed or interrupted conformance may legitimately produce:
+
+```text
+RunSupervisedConformance -> RunSupervisedConformance
+```
+
+Return:
+
+```rust
+InstallationStepOutcome::ConformanceRecordedWithoutAdvance {
+    evidence_id,
+    disposition,
+}
+```
+
+J24K2 must stop. It must not retry conformance or perform another action.
+
+Any other same-action result is stagnant.
+
+### 7. CreateInstallationApproval
+
+For `CreateInstallationApproval`:
+
+- reload the exact trust, package-trust evidence, launch profile, and passed conformance exactly pinned by `before`;
+- construct `ExactCandidateTrustAuthority` explicitly;
+- call `InstallationApprovalStore::approve_with_authority`;
+- perform no other mutation;
+- re-plan;
+- require exactly:
+
+```text
+CreateInstallationApproval -> PublishDisabledInstallation
+```
+
+The `after` plan must pin the newly created approval ID and digest while retaining every prior pin.
+
+Return `Advanced` for `CreateInstallationApproval`.
+
+### 8. Deferred publication boundary
+
+For `PublishDisabledInstallation`, J24K2 must perform no mutation and return:
+
+```text
+code: installation_publication_deferred
+message: disabled installation publication requires J24K3
+```
+
+Do not call `InstalledPlugRegistry::install_disabled_with_authority` in J24K2.
+
+Do not create staging directories, final destinations, installed records, executor-state roots, or recovery intent.
+
+J24K3 will replace this temporary fail-closed boundary with crash-safe publication.
+
+### 9. Complete
+
+For `Complete`:
+
+- perform no mutation;
+- call J24J again while still locked;
+- require `before == after`;
+- return `AlreadyComplete`.
+
+### 10. Post-plan and transition validation
+
+Initial planning errors and action-seam errors retain their existing safe codes.
+
+If the action mutates durable state but the immediate second J24J call fails, return:
+
+```text
+code: installation_execution_postcondition_failed
+message: installation state could not be reconciled after mutation: <safe underlying code>
+```
+
+Do not roll back immutable evidence. The next invocation must be able to resume from durable state after the underlying inconsistency is corrected.
+
+Add a private transition validator. Rank actions in accepted order and fail as follows:
+
+Same action, except recorded failed/interrupted conformance:
+
+```text
+installation_execution_stagnant
+```
+
+Backward action:
+
+```text
+installation_execution_regressed
+```
+
+Skipped or contradictory action:
+
+```text
+installation_execution_invalid_transition
+```
+
+Expected action but missing, changed, or contradictory pins:
+
+```text
+installation_execution_postcondition_failed
+```
+
+Stable messages may include the safe before/after action names but no paths, untrusted stderr, or package-controlled text.
+
+### 11. One-mutation invariant
+
+No action handler may call another action handler.
+
+No loop over planner actions is permitted.
+
+One invocation creates at most one of these logical state transitions:
+
+- one exact-candidate trust record;
+- one launch-profile plus one conformance record as the single conformance action;
+- one installation approval record;
+- no mutation for complete or deferred publication.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/current_trust.rs`
-- `tethers-0.1/host-rust/src/current_trust_tests.rs`
+- `tethers-0.1/host-rust/src/installation_execution.rs`
+- `tethers-0.1/host-rust/src/installation_execution_tests.rs`
 - `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/trust.rs`
-- `tethers-0.1/host-rust/src/installation_trust.rs`
-- `tethers-0.1/host-rust/src/launch_profile.rs`
-- `tethers-0.1/host-rust/src/conformance.rs`
-- `tethers-0.1/host-rust/src/installed.rs`
-- `PackageTrustEvidence`
-- `TrustModeEvidence`
-- `ExactCandidateTrustStore`
-- `ExactCandidateTrustRecord`
-- `PublisherTrustStore`
-- `DeveloperApprovalStore`
-- existing `M3Error` and `Result`
+- `tethers-0.1/host-rust/tests/j24k2_locked_single_step_executor.rs`
+- `installation_plan::plan_installation`
+- `installation_plan::{InstallationPlan, InstallationPlanAction}`
+- `current_trust::ExactCandidateTrustAuthority`
+- `PreparedSupervisedLaunch`
+- `run_host_conformance_with_authority`
+- `InstallationApprovalStore::approve_with_authority`
+- accepted candidate and evidence stores
+- `m3_store::{verify_chain, reject_reparse, M3Error, Result}`
+- Windows `OpenOptionsExt`, raw handles, and `SetHandleInformation`
 
 ## Frozen decisions and invariants
 
-- `CurrentTrustAuthority` and both adapters are crate-private.
-- Authority-aware seams require an explicit authority argument. No `Option`, default, implicit fallback, global, static, or thread-local authority is permitted.
-- Exact-candidate authority never consults or mutates publisher trust or developer approval.
-- Legacy authority never consults exact-candidate installation trust.
-- Existing public method signatures and accepted callers remain unchanged.
-- `PackageTrustEvidence::revalidate_current` retains its current public behaviour and continues to refuse exact-candidate mode.
-- Current trust authority validates authority only. It does not absorb candidate-byte integrity or remove existing candidate/launch revalidation.
-- No lock, executor, action loop, publication intent, installed-root recovery, CLI, or enablement work is part of J24K1.
-- Accepted evidence schemas, JSON, dependencies, Cargo configuration, OCaml, and Cargo.lock remain unchanged.
+- J24K2 is Windows-lock authoritative; non-Windows execution fails closed.
+- The lock is the exclusively held non-inheritable file handle, not file existence.
+- Lock acquisition is immediate and never polls.
+- Planning occurs only after lock acquisition.
+- The lock outer scope drops last.
+- Every action reloads and validates currently pinned evidence.
+- Exact-candidate actions use only `ExactCandidateTrustAuthority`.
+- Existing J24K1 legacy wrappers remain unchanged.
+- One invocation performs zero or one logical mutation.
+- Failed and interrupted conformance are recorded but never automatically retried.
+- `PublishDisabledInstallation` is fail-closed and mutation-free until J24K3.
+- No executor-state root, publication intent, recovery, installed-root audit, adoption, deletion, or repair belongs to J24K2.
+- No J24L multi-call driver, CLI, prompt, terminal output, enablement, operational-scope, schema, dependency, Cargo configuration, OCaml, or Cargo.lock change is permitted.
 
 ## Acceptance criteria
 
-1. The new crate-private authority module compiles without public API expansion.
-2. Exact-candidate authority accepts only an exact matching current record and reconstructed evidence.
-3. Missing, stale, malformed, wrong-mode, or mismatched exact authority fails closed with the frozen or existing safe error.
-4. Every new authority-aware downstream seam requires an explicit authority reference.
-5. No authority-aware path silently invokes legacy trust revalidation.
-6. Existing public conformance, approval, and installation signatures remain source-compatible.
-7. Existing signed-publisher and unsigned-developer behaviour remains green.
-8. Tests behaviourally prove authority propagation through conformance launch, approval, installation entry, and final installation revalidation.
-9. No lock, executor, recovery journal, CLI, enablement, schema, dependency, or Cargo.lock change appears.
-10. Focused Nextest executes J24K1 tests with zero retries.
-11. Focused ordinary Cargo J24K1 tests pass.
-12. J24I exact-candidate trust and representative existing conformance/installation suites remain green.
-13. Final verification retains the accepted baseline plus the new J24K1 tests.
-14. The final diff contains only permitted files and Cargo.lock remains byte-identical.
+1. A non-inheritable exclusive Windows lock guard exists and is private.
+2. A second acquisition fails immediately with `installation_busy`.
+3. Ordinary return, error, and panic unwind release the lock.
+4. A supervised child cannot retain the lock handle after the parent guard drops.
+5. Busy lock refusal occurs before request validation or planning.
+6. The public execution seam matches the frozen semantic boundary.
+7. No precomputed plan can be supplied.
+8. `CreateExactCandidateTrust` performs only that stage and advances exactly once.
+9. Passed conformance persists current launch/conformance evidence and advances exactly once.
+10. Failed and interrupted conformance persist evidence, return `ConformanceRecordedWithoutAdvance`, and do not retry.
+11. Candidate tampering after launch preparation is refused by existing revalidation before provider execution.
+12. Approval creation uses exact authority and advances exactly once.
+13. `PublishDisabledInstallation` performs no mutation and returns the frozen deferred error.
+14. `Complete` performs no mutation and returns equal before/after plans.
+15. Pure transition tests cover stagnant, regressed, skipped, and pin-mismatch refusal.
+16. A post-plan failure after durable mutation releases the lock and leaves state resumable.
+17. Existing J24K1 authority tests and representative M3/J24J suites remain green.
+18. Focused Nextest runs with zero retries.
+19. Full verification passes with at least the accepted 940-test baseline plus new tests.
+20. Cargo.lock remains byte-identical and only permitted files change.
 
 ## Required verification
 
-Run from the repository root:
+Run from repository root:
 
 ```powershell
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
@@ -251,8 +470,18 @@ cargo fmt `
 cargo nextest run `
   --config-file .config/nextest.toml `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --all-features --locked --lib `
-  -E 'test(j24k1)'
+  --all-features --locked `
+  -E 'test(j24k2)'
+
+cargo test `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --lib j24k2 `
+  --locked
+
+cargo test `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --test j24k2_locked_single_step_executor `
+  --locked
 
 cargo test `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
@@ -261,7 +490,7 @@ cargo test `
 
 cargo test `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --test j24i_exact_candidate_installation_trust `
+  --test j24j_installation_reconciliation `
   --locked
 
 cargo test `
@@ -274,11 +503,6 @@ cargo test `
   --test j23c2_pdf_conformance `
   --locked
 
-cargo test `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --test j23c3_installed_pdf_execution `
-  --locked
-
 $env:PATH = "$PSHOME;$env:PATH"
 just verify
 
@@ -287,62 +511,60 @@ git diff --check
 git status --short
 ```
 
-The focused Nextest filter may be adjusted once if Nextest reports the crate-internal test name differently. Do not repeat an ineffective filter blindly. Record the exact executed test count.
+The focused Nextest expression may be adjusted once if discovery reports a different exact test name. Record exact executed and skipped counts. Do not repeat ineffective filters blindly.
 
-OpenCode LSP is not a gate. Do not spend task time diagnosing empty LSP output. Use `rg`, compiler diagnostics, Cargo tests, and Nextest.
+Use the existing `m3_fixture_provider` binary and accepted M3 fixture patterns for real conformance tests. Do not replace behavioural execution with mocks where the packet requires provider-process evidence.
+
+OpenCode LSP is not a gate. Do not spend task time diagnosing empty LSP results.
 
 Cargo.lock must remain:
 
 `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`
 
-If the five previously documented `pwsh.exe` environment failures remain after prepending `$PSHOME`, record them exactly and prove they are unchanged. No other full-verification failure is acceptable.
+No full-verification failure is acceptable after `$PSHOME` is prepended to PATH.
 
 ## Forbidden changes
 
-- No public `CurrentTrustAuthority` API.
-- No `Option` authority argument, implicit fallback, global state, thread-local state, or mutable policy switch.
-- No change to `PackageTrustEvidence` or `TrustModeEvidence` schemas.
-- No weakening of exact trust, candidate, launch-profile, conformance, approval, or installed validation.
-- No installation lock or lock file.
-- No `execute_next_installation_action` implementation.
-- No internal multi-mutation loop.
-- No installation publication intent, recovery matrix, installed-root repair, or orphan deletion.
-- No CLI, prompt, terminal output, enablement, operational-scope, packaging, release, or OCaml work.
-- No dependency, Cargo configuration, tool configuration, or Cargo.lock changes.
-- No production test-only constructors.
+- No edit to `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`.
+- No change to J24K1 trust semantics or legacy public wrappers.
+- No optional, default, global, static, or thread-local trust authority.
+- No caller-supplied plan.
+- No internal action loop or second mutation.
+- No automatic conformance retry.
+- No call to installed publication from the deferred action.
+- No publication intent, recovery matrix, installed-root audit, adoption, deletion, rollback, or repair.
+- No J24L driver, CLI, prompt, terminal styling, enablement, operational-scope, packaging, release, or OCaml work.
+- No schema, dependency, Cargo configuration, tool configuration, or Cargo.lock changes.
+- No production test-only constructor or bypass.
 - No files outside the permitted set.
 
 Permitted files:
 
-- `tethers-0.1/host-rust/src/current_trust.rs`;
-- `tethers-0.1/host-rust/src/current_trust_tests.rs`;
+- `tethers-0.1/host-rust/src/installation_execution.rs`;
+- `tethers-0.1/host-rust/src/installation_execution_tests.rs`;
 - `tethers-0.1/host-rust/src/lib.rs`;
-- `tethers-0.1/host-rust/src/launch_profile.rs`;
-- `tethers-0.1/host-rust/src/conformance.rs`;
-- `tethers-0.1/host-rust/src/installed.rs`;
+- `tethers-0.1/host-rust/tests/j24k2_locked_single_step_executor.rs`;
 - `docs/CURRENT_CLINE_TASK.md`;
-- `docs/worker-notes/2026-08-04-j24k1-current-trust-authority.md`.
-
-The frozen architecture file is already present and must not be edited by the implementation worker.
+- `docs/worker-notes/2026-08-04-j24k2-locked-single-step-executor.md`.
 
 ## Stop conditions
 
 Stop as `BLOCKED` only if:
 
-- Rust visibility rules cannot support a crate-private test module without public API expansion;
-- an existing downstream seam cannot be split into public legacy wrapper plus crate-private authority-aware implementation without changing accepted behaviour;
-- exact-candidate authority cannot be proven current using the accepted store and evidence pins;
-- safe implementation requires schema, dependency, lock, executor, recovery, CLI, enablement, or out-of-scope changes;
+- Windows exclusive file-handle locking cannot be implemented using existing dependencies and standard/windows-sys APIs;
+- the lock cannot be made explicitly non-inheritable;
+- existing store visibility prevents the single-step executor without public evidence-bypass APIs;
+- exact-candidate conformance or approval cannot use the accepted J24K1 authority seams;
+- safe implementation requires publication intent, recovery, schema, dependency, CLI, enablement, or out-of-scope files;
 - required verification still fails after one evidence-led correction.
 
-Do not stop for failed LSP, an unavailable optional tool, one ineffective Nextest filter, or one failed exact text replacement. Reread the current file, make one smaller evidence-led correction, and continue.
+Do not stop for failed LSP, one ineffective Nextest filter, a stale local branch ref, or a failed broad text replacement. Reread the current file and make one smaller evidence-led correction.
 
 ## Expected pre-existing changes
 
-The branch already contains documentation-only preparation commits for:
+The branch already contains the documentation-only preparation commit for:
 
-- `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`;
-- `docs/CURRENT_CLINE_TASK.md`;
-- `docs/worker-notes/2026-08-04-j24k1-current-trust-authority.md`.
+- `docs/worker-notes/2026-08-04-j24k2-locked-single-step-executor.md`;
+- this `docs/CURRENT_CLINE_TASK.md` packet.
 
-Treat those as expected task scaffolding. Do not revert them.
+The frozen J24K architecture and accepted J24K1 implementation are inherited from `main`. Do not revert or edit them.
