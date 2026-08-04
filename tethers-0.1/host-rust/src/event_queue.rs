@@ -190,21 +190,24 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 7 (queue-level): The queue is `!Send` because `ResultAnchor`
-    // contains a non-Send (in the test configuration) handle.  We assert
-    // this at compile time by attempting to bind the queue to a generic
-    // over `Send`.
+    // Test 7 (queue-level): `ResultEventQueue` is `Send` under the current
+    // representation.  It wraps `VecDeque<ResultAnchor>`, and `ResultAnchor`
+    // is composed only from `Send` types, so the queue may be moved between
+    // threads.  We assert that property at compile time.
+    //
+    // `Send` only means the value *may* be moved between threads.  It does not
+    // create parallel evaluation.  Tethers still evaluates queued Result
+    // Anchors one at a time: the coordinator owns the queue and drains it via
+    // `pop_front`, and no worker pool, thread, async runtime, channel, lock,
+    // or retry loop exists.  Seriality is an execution design enforced by the
+    // coordinator and the explicit mutable-queue drain, not by a fake `!Send`
+    // marker bolted onto the type.  Do not add `PhantomData`, `Rc`, `Cell`,
+    // or raw pointers merely to force `!Send`.
     // -----------------------------------------------------------------------
     #[test]
-    fn queue_cannot_be_moved_across_threads() {
+    fn queue_value_is_send_under_current_representation() {
         fn assert_send<T: Send>() {}
-        // The following line documents the intent: a future parallel
-        // worker must not be possible without an explicit re-architecture.
-        // `ResultEventQueue` intentionally is `!Send` because its anchor
-        // payloads are not declared `Send`-only.  The static assertion
-        // keeps that guarantee visible at the test site.
-        // assert_send::<ResultEventQueue>();  // intentionally uncommenting
-        // would fail to compile, blocking parallel evaluation.
+        assert_send::<ResultEventQueue>();
     }
 
     // -----------------------------------------------------------------------

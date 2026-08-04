@@ -3,11 +3,11 @@
 Control contract: `1`
 Task: `M01C2 - Event-queue contract warning cleanup`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode using HY3 for a narrow Rust test-and-comment correction; Lucy performs independent review`
 Base branch: `main`
-Base commit: `09ee5ab32f3f34c237b247a3bafbbb573325dadc`
+Base commit: `2bbbe3c84d65d5610dd417b00e0a8c711904ecf7`
 Implementation branch: `opencode/m01c2-event-queue-contract-warning`
 Worker note: `docs/worker-notes/2026-08-04-m01c2-event-queue-contract-warning.md`
 Implementation blueprint: `docs/architecture/M01C2_EVENT_QUEUE_CONTRACT_WARNING_CLEANUP.md`
