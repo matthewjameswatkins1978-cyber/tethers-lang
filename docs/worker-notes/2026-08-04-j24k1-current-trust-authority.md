@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `db84c71dc92381921cdc05c62029a1899c13d7f2`
-Implementation checkpoint: `PENDING (set to implementation commit before final documentation commit)`
+Implementation checkpoint: `f82af8b`
 
 ## Requested outcome
 
@@ -70,6 +70,11 @@ Introduce the crate-private current-trust authority foundation required by the f
 
 Lucy should independently review the pushed bounded diff and the preparation-commit
 diagnostic before acceptance.
+
+## Final Git Evidence
+- Implementation commit: `f82af8b`.
+- Final documentation commit: pending until this note and packet checkpoint are committed.
+- Final branch push is the requested `opencode/j24k1-current-trust-authority` branch.
 
 ## References
 

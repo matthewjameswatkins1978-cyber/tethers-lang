@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K1 - Explicit current-trust authority foundation`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro V4 for bounded security-sensitive Rust refactoring; Lucy performs independent review and routine safe merge`
 Base branch: `main`
@@ -12,7 +12,7 @@ Implementation branch: `opencode/j24k1-current-trust-authority`
 Worker note: `docs/worker-notes/2026-08-04-j24k1-current-trust-authority.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `f82af8b`
 
 ## Objective
 
