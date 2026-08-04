@@ -31,6 +31,24 @@ function Get-CrateName {
     return $SnakeKey -replace '_', '-'
 }
 
+function Test-ToolConfiguration {
+    param($Config)
+
+    $requiredNames = @('schema', 'cargo_nextest', 'cargo_deny', 'cargo_machete', 'rust_analyzer')
+    $actualNames = @($Config.PSObject.Properties.Name)
+    $unknown = @($actualNames | Where-Object { $_ -notin $requiredNames })
+    $missing = @($requiredNames | Where-Object { $_ -notin $actualNames })
+    if ($unknown.Count -gt 0) { throw "config has unknown field(s): $($unknown -join ', ')" }
+    if ($missing.Count -gt 0) { throw "config missing required field(s): $($missing -join ', ')" }
+    if ($Config.schema -isnot [long] -or $Config.schema -ne 1) { throw "expected schema 1, got $($Config.schema)" }
+    if ($Config.rust_analyzer -ne 'toolchain-component') { throw 'rust_analyzer must be toolchain-component' }
+    foreach ($field in @('cargo_nextest', 'cargo_deny', 'cargo_machete')) {
+        if ($Config.$field -isnot [string] -or $Config.$field -notmatch '^\d+\.\d+\.\d+$') {
+            throw "$field must be a semantic version such as 0.9.140"
+        }
+    }
+}
+
 $RepoRoot = Get-RepoRoot
 
 $configPath = Join-Path $RepoRoot "tools/rust-agent-tools.json"
@@ -43,13 +61,9 @@ $configText = Get-Content $configPath -Raw -Encoding UTF8
 $config = $null
 try {
     $config = $configText | ConvertFrom-Json -ErrorAction Stop
+    Test-ToolConfiguration -Config $config
 } catch {
-    Write-Host "FAIL: config is not valid JSON: $_"
-    exit 1
-}
-
-if ($config.schema -ne 1) {
-    Write-Host "FAIL: expected schema 1, got $($config.schema)"
+    Write-Host "FAIL: config is invalid: $($_.Exception.Message)"
     exit 1
 }
 

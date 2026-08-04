@@ -41,15 +41,15 @@ agent-tools:
     pwsh -NoProfile -File scripts/check-rust-agent-tools.ps1
 
 test-agent:
-    cargo nextest run --manifest-path {{_manifest}} --all-targets --all-features
+    cargo nextest run --config-file .config/nextest.toml --manifest-path {{_manifest}} --all-targets --all-features --locked
 
 deps-policy:
-    cargo deny --manifest-path {{_manifest}} check licenses bans sources
+    cargo deny --locked --manifest-path {{_manifest}} check licenses bans sources
 
 deps-advisories:
-    cargo deny --manifest-path {{_manifest}} check advisories
+    cargo deny --locked --manifest-path {{_manifest}} check advisories
 
 deps-unused:
     cargo machete --with-metadata tethers-0.1/host-rust
 
-verify-agent: verify agent-tools deps-policy test-agent
+verify-agent: verify agent-tools deps-policy deps-advisories test-agent

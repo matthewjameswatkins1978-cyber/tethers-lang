@@ -3,3 +3,4 @@ nextest-version = { required = "0.9.140" }
 [profile.default]
 retries = 0
 fail-fast = true
+test-threads = 1

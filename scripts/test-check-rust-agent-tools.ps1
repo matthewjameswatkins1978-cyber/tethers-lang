@@ -4,123 +4,105 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = $PSScriptRoot | Split-Path -Parent
-$checkerScript = Join-Path $repoRoot "scripts/check-rust-agent-tools.ps1"
-$configPath = Join-Path $repoRoot "tools/rust-agent-tools.json"
-
+$checkerScript = Join-Path ($PSScriptRoot | Split-Path -Parent) 'scripts/check-rust-agent-tools.ps1'
+. $checkerScript
+$testRepoRoot = $PSScriptRoot | Split-Path -Parent
 $passed = 0
 $failed = 0
+$testRoot = Join-Path $env:TEMP ('tethers-m01b-checker-' + [guid]::NewGuid())
+
+function Assert-Result {
+    param([bool]$Condition, [string]$Name)
+    if ($Condition) { Write-Host "PASS: $Name"; $script:passed++ }
+    else { Write-Host "FAIL: $Name"; $script:failed++ }
+}
+
+function New-TestRepository {
+    param([string]$Name)
+    $path = Join-Path $testRoot $Name
+    & git clone --quiet $testRepoRoot $path
+    if ($LASTEXITCODE -ne 0) { throw "git clone failed for $Name" }
+    Remove-Item -LiteralPath (Join-Path $path 'tethers-0.1/host-rust/.config/nextest.toml') -Force -ErrorAction SilentlyContinue
+    return [string]$path
+}
 
 function Invoke-Checker {
-    param([string]$RepoPath)
-    . $checkerScript
-    $result = Invoke-RustAgentToolCheck -RepoRoot $RepoPath
-    return $result
+    param([string]$Path, [string]$OpenCodePath)
+    return (Invoke-RustAgentToolCheck -RepoRoot $Path -OpenCodePath $OpenCodePath)
 }
 
-Write-Host "=== Missing config rejection ==="
-$testDir1 = Join-Path $env:TEMP "tethers-agent-test-missing"
-Remove-Item -LiteralPath $testDir1 -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $testDir1 -ErrorAction Stop | Out-Null
-& git clone $repoRoot $testDir1 2>&1 | Out-Null
-Remove-Item -LiteralPath (Join-Path $testDir1 "tools/rust-agent-tools.json") -Force -ErrorAction SilentlyContinue
-$ec = Invoke-Checker -RepoPath $testDir1
-if ($ec -ne 1) { Write-Host "FAIL: missing config (exit $ec, expected 1)"; $script:failed++ }
-else { Write-Host "PASS: missing config rejected"; $script:passed++ }
-Remove-Item -LiteralPath $testDir1 -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "=== Malformed JSON rejection ==="
-$testDir2 = Join-Path $env:TEMP "tethers-agent-test-malformed"
-Remove-Item -LiteralPath $testDir2 -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $testDir2 -ErrorAction Stop | Out-Null
-& git clone $repoRoot $testDir2 2>&1 | Out-Null
-$toolsDir = Join-Path $testDir2 "tools"
-if (-not (Test-Path $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null }
-Set-Content -LiteralPath (Join-Path $testDir2 "tools/rust-agent-tools.json") -Value "not json" -Encoding UTF8
-$ec = Invoke-Checker -RepoPath $testDir2
-if ($ec -ne 1) { Write-Host "FAIL: malformed JSON (exit $ec, expected 1)"; $script:failed++ }
-else { Write-Host "PASS: malformed JSON rejected"; $script:passed++ }
-Remove-Item -LiteralPath $testDir2 -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "=== Wrong schema rejection ==="
-$testDir3 = Join-Path $env:TEMP "tethers-agent-test-wrong-schema"
-Remove-Item -LiteralPath $testDir3 -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $testDir3 -ErrorAction Stop | Out-Null
-& git clone $repoRoot $testDir3 2>&1 | Out-Null
-$toolsDir3 = Join-Path $testDir3 "tools"
-if (-not (Test-Path $toolsDir3)) { New-Item -ItemType Directory -Path $toolsDir3 -Force | Out-Null }
-Set-Content -LiteralPath (Join-Path $testDir3 "tools/rust-agent-tools.json") -Value '{"schema":99,"cargo_nextest":"0.9.140","cargo_deny":"0.19.7","cargo_machete":"0.9.2","rust_analyzer":"toolchain-component"}' -Encoding UTF8
-$ec = Invoke-Checker -RepoPath $testDir3
-if ($ec -ne 1) { Write-Host "FAIL: wrong schema (exit $ec, expected 1)"; $script:failed++ }
-else { Write-Host "PASS: wrong schema rejected"; $script:passed++ }
-Remove-Item -LiteralPath $testDir3 -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "=== Impossible configured version rejection ==="
-$testDir4 = Join-Path $env:TEMP "tethers-agent-test-impossible"
-Remove-Item -LiteralPath $testDir4 -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $testDir4 -ErrorAction Stop | Out-Null
-& git clone $repoRoot $testDir4 2>&1 | Out-Null
-$toolsDir4 = Join-Path $testDir4 "tools"
-if (-not (Test-Path $toolsDir4)) { New-Item -ItemType Directory -Path $toolsDir4 -Force | Out-Null }
-Set-Content -LiteralPath (Join-Path $testDir4 "tools/rust-agent-tools.json") -Value '{"schema":1,"cargo_nextest":"9.9.999","cargo_deny":"0.19.7","cargo_machete":"0.9.2","rust_analyzer":"toolchain-component"}' -Encoding UTF8
-$ec = Invoke-Checker -RepoPath $testDir4
-if ($ec -ne 1) { Write-Host "FAIL: impossible version (exit $ec, expected 1)"; $script:failed++ }
-else { Write-Host "PASS: impossible version rejected"; $script:passed++ }
-Remove-Item -LiteralPath $testDir4 -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "=== Real accepted configuration ==="
-$testDir5 = Join-Path $env:TEMP "tethers-agent-test-real"
-Remove-Item -LiteralPath $testDir5 -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $testDir5 -ErrorAction Stop | Out-Null
-& git clone $repoRoot $testDir5 2>&1 | Out-Null
-$toolsDir5 = Join-Path $testDir5 "tools"
-if (-not (Test-Path $toolsDir5)) { New-Item -ItemType Directory -Path $toolsDir5 -Force | Out-Null }
-Set-Content -LiteralPath (Join-Path $testDir5 "tools/rust-agent-tools.json") -Value '{"schema":1,"cargo_nextest":"0.9.140","cargo_deny":"0.19.7","cargo_machete":"0.9.2","rust_analyzer":"toolchain-component"}' -Encoding UTF8
-# Apply M01B changes to the clone
-$rtPath = Join-Path $testDir5 "rust-toolchain.toml"
-$rtContent = Get-Content $rtPath -Raw
-$rtContent = $rtContent -replace 'components = \["rustfmt", "clippy"\]', 'components = ["rustfmt", "clippy", "rust-analyzer"]'
-Set-Content -LiteralPath $rtPath -Value $rtContent -Encoding UTF8
-$ocPath = Join-Path $testDir5 "opencode.json"
-$ocContent = Get-Content $ocPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$ocContent | Add-Member -MemberType NoteProperty -Name "lsp" -Value $true -Force
-$ocContent | Add-Member -MemberType NoteProperty -Name "permission" -Value @{ lsp = "allow" } -Force
-$ocContent | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $ocPath -Encoding UTF8
-$configDir5 = Join-Path $testDir5 ".config"
-if (-not (Test-Path $configDir5)) { New-Item -ItemType Directory -Path $configDir5 -Force | Out-Null }
-Set-Content -LiteralPath (Join-Path $testDir5 ".config/nextest.toml") -Value "nextest-version = { required = `"0.9.140`" }`n[profile.default]`nretries = 0`nfail-fast = true" -Encoding UTF8
-Copy-Item -LiteralPath $configPath -Destination (Join-Path $testDir5 "deny.toml") -ErrorAction SilentlyContinue
-$ec = Invoke-Checker -RepoPath $testDir5
-if ($ec -ne 0) { Write-Host "FAIL: real config (exit $ec, expected 0)"; $script:failed++ }
-else { Write-Host "PASS: real config passed"; $script:passed++ }
-Remove-Item -LiteralPath $testDir5 -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "=== Repository non-mutation ==="
-$testDir6 = Join-Path $env:TEMP "tethers-agent-test-nonmut"
-Remove-Item -LiteralPath $testDir6 -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $testDir6 -ErrorAction Stop | Out-Null
-& git clone $repoRoot $testDir6 2>&1 | Out-Null
-$beforeGitStatus = & git -C $testDir6 status --porcelain=v1 2>&1 | Out-String
-$ec = Invoke-Checker -RepoPath $testDir6
-$afterGitStatus = & git -C $testDir6 status --porcelain=v1 2>&1 | Out-String
-if ($beforeGitStatus.Trim() -eq $afterGitStatus.Trim()) {
-    Write-Host "PASS: repository non-mutation (git status unchanged)"
-    $script:passed++
-} else {
-    Write-Host "FAIL: repository mutation detected"
-    Write-Host "Before: $beforeGitStatus"
-    Write-Host "After: $afterGitStatus"
-    $script:failed++
+function Assert-CheckerExitCode {
+    param([string]$Path, [string]$OpenCodePath, [int]$Expected, [string]$Name)
+    $actual = Invoke-Checker -Path $Path -OpenCodePath $OpenCodePath
+    Assert-Result ($actual -eq $Expected) $Name
 }
-Remove-Item -LiteralPath $testDir6 -Recurse -Force -ErrorAction SilentlyContinue
 
-Write-Host ""
-Write-Host "=== Summary ==="
-Write-Host "Passed: $passed"
-Write-Host "Failed: $failed"
-
-if ($failed -gt 0) {
-    exit 1
-} else {
-    exit 0
+function New-FakeOpenCode {
+    $path = Join-Path $testRoot 'fake-opencode.cmd'
+    @'
+@echo off
+if "%1"=="--version" (
+  echo OpenCode 1.0.0-test
+  exit /b 0
+)
+if "%1"=="debug" if "%2"=="config" (
+  echo {"lsp":true,"permission":{"lsp":"allow"}}
+  exit /b 0
+)
+exit /b 1
+'@ | Set-Content -LiteralPath $path -Encoding ASCII
+    return [string]$path
 }
+
+try {
+    New-Item -ItemType Directory -Path $testRoot -ErrorAction Stop | Out-Null
+    $fakeOpenCode = [string](New-FakeOpenCode)
+
+    $missing = New-TestRepository -Name 'missing-config'
+    Remove-Item -LiteralPath (Join-Path $missing 'tools/rust-agent-tools.json') -Force
+    Assert-CheckerExitCode -Path $missing -OpenCodePath $fakeOpenCode -Expected 1 -Name 'missing tool JSON is rejected'
+
+    $malformed = New-TestRepository -Name 'malformed-json'
+    Set-Content -LiteralPath (Join-Path $malformed 'tools/rust-agent-tools.json') -Value '{bad' -Encoding UTF8
+    Assert-CheckerExitCode -Path $malformed -OpenCodePath $fakeOpenCode -Expected 1 -Name 'malformed JSON is rejected'
+
+    $wrongSchema = New-TestRepository -Name 'wrong-schema'
+    Set-Content -LiteralPath (Join-Path $wrongSchema 'tools/rust-agent-tools.json') -Value '{"schema":2,"cargo_nextest":"0.9.140","cargo_deny":"0.19.7","cargo_machete":"0.9.2","rust_analyzer":"toolchain-component"}' -Encoding UTF8
+    Assert-CheckerExitCode -Path $wrongSchema -OpenCodePath $fakeOpenCode -Expected 1 -Name 'wrong schema is rejected'
+
+    $unknown = New-TestRepository -Name 'unknown-field'
+    Set-Content -LiteralPath (Join-Path $unknown 'tools/rust-agent-tools.json') -Value '{"schema":1,"cargo_nextest":"0.9.140","cargo_deny":"0.19.7","cargo_machete":"0.9.2","rust_analyzer":"toolchain-component","extra":true}' -Encoding UTF8
+    Assert-CheckerExitCode -Path $unknown -OpenCodePath $fakeOpenCode -Expected 1 -Name 'unknown tool JSON field is rejected'
+
+    $badRa = New-TestRepository -Name 'bad-ra'
+    Set-Content -LiteralPath (Join-Path $badRa 'tools/rust-agent-tools.json') -Value '{"schema":1,"cargo_nextest":"0.9.140","cargo_deny":"0.19.7","cargo_machete":"0.9.2","rust_analyzer":"weekly"}' -Encoding UTF8
+    Assert-CheckerExitCode -Path $badRa -OpenCodePath $fakeOpenCode -Expected 1 -Name 'non-component rust-analyzer is rejected'
+
+    $badVersion = New-TestRepository -Name 'bad-version'
+    Set-Content -LiteralPath (Join-Path $badVersion 'tools/rust-agent-tools.json') -Value '{"schema":1,"cargo_nextest":"nine","cargo_deny":"0.19.7","cargo_machete":"0.9.2","rust_analyzer":"toolchain-component"}' -Encoding UTF8
+    Assert-CheckerExitCode -Path $badVersion -OpenCodePath $fakeOpenCode -Expected 1 -Name 'malformed version is rejected'
+
+    $accepted = New-TestRepository -Name 'accepted'
+    Assert-CheckerExitCode -Path $accepted -OpenCodePath $fakeOpenCode -Expected 0 -Name 'supplied executable proves accepted effective configuration'
+
+    $missingOpenCode = New-TestRepository -Name 'missing-opencode'
+    $oldOpenCodeBin = $env:OPENCODE_BIN
+    Remove-Item Env:OPENCODE_BIN -ErrorAction SilentlyContinue
+    Assert-CheckerExitCode -Path $missingOpenCode -OpenCodePath $null -Expected 1 -Name 'missing OpenCode fails closed'
+    if ($null -ne $oldOpenCodeBin) { $env:OPENCODE_BIN = $oldOpenCodeBin }
+
+    $invalidOpenCode = New-TestRepository -Name 'invalid-opencode'
+    $invalidPath = Join-Path $testRoot 'missing.exe'
+    Assert-CheckerExitCode -Path $invalidOpenCode -OpenCodePath $invalidPath -Expected 1 -Name 'invalid explicit OpenCode path fails'
+
+    $nonMutation = New-TestRepository -Name 'non-mutation'
+    $before = (& git -C $nonMutation status --porcelain=v1 | Out-String).Trim()
+    $exitCode = Invoke-Checker -Path $nonMutation -OpenCodePath $fakeOpenCode
+    $after = (& git -C $nonMutation status --porcelain=v1 | Out-String).Trim()
+    Assert-Result ($exitCode -eq 0 -and $before -eq $after) 'checker does not mutate repository'
+} finally {
+    Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host "Checks: $passed passed, $failed failed."
+if ($failed -gt 0) { exit 1 }

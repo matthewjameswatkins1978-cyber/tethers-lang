@@ -14,10 +14,6 @@ allow = [
 ]
 confidence-threshold = 0.8
 
-[[licenses.exceptions]]
-crate = "tethers-reference-host"
-allow = ["MIT"]
-
 [bans]
 wildcards = "deny"
 

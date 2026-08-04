@@ -267,7 +267,8 @@ unless the current task explicitly authorises it.
 - `scripts/start-opencode-lsp.ps1` is an opt-in launcher for the next OpenCode
   process. It sets `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` and
   `OPENCODE_DISABLE_LSP_DOWNLOAD=true` process-locally and restores previous
-  values on exit.
+  values on exit. Supply `-OpenCodePath`, set process-local `OPENCODE_BIN`, or
+  rely on `opencode` already resolved from PATH; the launcher never changes PATH.
 
 ## Control Check
 
