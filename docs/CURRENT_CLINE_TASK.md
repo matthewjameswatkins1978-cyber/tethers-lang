@@ -16,8 +16,8 @@ Accepted main: `20cd25f328568aa2726505580689d67b6219449c`
 Reviewed OpenCode tip: `26ecf14b9f3d4449f6b872d5cbf04e273c426881`
 Actual original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
 Actual prior completion candidate: `b76691c5b97bd1b3a82de824535365fec4676c20`
-Implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
-Correction implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
+Implementation checkpoint: `208ef6f0cbf29c5933cc72a8c93ca87973a3f733`
+Correction implementation checkpoint: `208ef6f0cbf29c5933cc72a8c93ca87973a3f733`
 Verification checkpoint: `WORKTREE`
 
 ## Objective

@@ -6,8 +6,8 @@ Owner: `OpenCode`
 Status: `IN_PROGRESS`
 Base commit: `96902b715cbb8d62aad12d468a474ae03abfaaed`
 Original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
-Implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
-Correction implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
+Implementation checkpoint: `208ef6f0cbf29c5933cc72a8c93ca87973a3f733`
+Correction implementation checkpoint: `208ef6f0cbf29c5933cc72a8c93ca87973a3f733`
 Verification checkpoint: `WORKTREE`
 
 ## Requested outcome
