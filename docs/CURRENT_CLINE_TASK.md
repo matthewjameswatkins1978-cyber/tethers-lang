@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3d2 - Exact installation recovery executor`
 Owner: `OpenCode`
 Model: `Luna`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using Luna for one bounded Rust recovery-mutation package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
@@ -14,7 +14,7 @@ Worker note: `docs/worker-notes/2026-08-05-j24k3d2-exact-recovery-executor.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
 Accepted main: `ea4076085ed246a95eb2c0edab462b8c69d461fc`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `371136913c99a67c08eb61484d6a69e3576ea5ad`
 Verification checkpoint: `WORKTREE`
 
 ## Objective
