@@ -8,7 +8,7 @@ Verification checkpoint: `52520ce566a7c8138bc00502146b97012e721ef0`
 Base commit: `d76735608febd648e95f505ff885142612a5eeda`
 Implementation checkpoint: `ff75243693c3b9fd0709cd9043f1642ab43e614b`
 Correction documentation commit: `52520ce566a7c8138bc00502146b97012e721ef0`
-Final remote tip: `e76519e3f049e2a6e921329e7e6aba1ba1b852bb`
+Final remote tip: `04805c7ce132f8aed87cc8277a80997062e59e46`
 
 ## Requested outcome
 
