@@ -152,6 +152,7 @@ impl InstallationLockGuard {
 
 pub struct InstallationExecutionContext<'a> {
     pub lock_path: &'a Path,
+    pub executor_state_root: &'a Path,
     pub quarantine_root: &'a Path,
     pub conformance_scratch_root: &'a Path,
     pub candidates: &'a CandidateRegistry,
@@ -238,7 +239,9 @@ fn execute_installation_action_while_locked(
         InstallationPlanAction::CreateInstallationApproval => {
             handle_installation_approval(request, context, options, &before, &candidate)
         }
-        InstallationPlanAction::PublishDisabledInstallation => handle_deferred_publication(),
+        InstallationPlanAction::PublishDisabledInstallation => {
+            handle_publication(request, context, &before)
+        }
         InstallationPlanAction::Complete => handle_complete(request, context, &before),
     }
 }
@@ -789,11 +792,61 @@ fn handle_installation_approval(
     })
 }
 
-fn handle_deferred_publication() -> Result<InstallationStepResult> {
-    Err(M3Error::new(
-        "installation_publication_deferred",
-        "disabled installation publication requires J24K3",
-    ))
+fn handle_publication(
+    request: &InstallationRequest,
+    context: &InstallationExecutionContext<'_>,
+    before: &InstallationPlan,
+) -> Result<InstallationStepResult> {
+    use crate::installation_publication_intent::InstallationPublicationIntentStore;
+    use crate::installation_publication_mutation::execute_prepared_disabled_installation_publication;
+    use crate::installation_publication_preparation::prepare_disabled_installation_publication;
+    use crate::installation_recovery_evidence::InstallationRecoveryEvidenceContext;
+    use crate::installation_recovery_plan::InstallationRecoveryPlanningContext;
+
+    let intents = InstallationPublicationIntentStore::open(context.executor_state_root)?;
+    let evidence = InstallationRecoveryEvidenceContext {
+        quarantine_root: context.quarantine_root,
+        candidates: context.candidates,
+        exact_trust: context.exact_trust,
+        launch_profiles: context.launch_profiles,
+        conformance: context.conformance,
+        approvals: context.approvals,
+    };
+    let recovery_context = InstallationRecoveryPlanningContext {
+        intents: &intents,
+        installed: context.installed,
+        evidence,
+    };
+
+    let prepared = prepare_disabled_installation_publication(request, &recovery_context, before)?;
+    let _published =
+        execute_prepared_disabled_installation_publication(request, &recovery_context, prepared)?;
+
+    let after = replan(request, context)?;
+
+    if after.action != InstallationPlanAction::Complete {
+        return Err(M3Error::new(
+            "installation_execution_postcondition_failed",
+            format!(
+                "installation state could not be reconciled after mutation: expected Complete but planner returned {:?}",
+                after.action
+            ),
+        ));
+    }
+
+    validate_transition(
+        before,
+        &after,
+        InstallationPlanAction::PublishDisabledInstallation,
+    )?;
+
+    Ok(InstallationStepResult {
+        before: before.clone(),
+        after,
+        outcome: InstallationStepOutcome::Advanced {
+            executed: InstallationPlanAction::PublishDisabledInstallation,
+        },
+    })
 }
 
 fn handle_complete(

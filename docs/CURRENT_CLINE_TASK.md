@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3f - Lock-composed disabled installation publication`
 Owner: `OpenCode`
 Model: `DeepSeek Pro`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro for one bounded Rust lock-composition package; Lucy performs independent review and routine safe merge`
 Base branch: `main`

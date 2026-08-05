@@ -201,6 +201,7 @@ fn valid_request(candidate_id: &str) -> InstallationRequest {
 
 fn make_context<'a>(
     lock_path: &'a Path,
+    executor_state_root: &'a Path,
     quarantine_root: &'a Path,
     scratch: &'a Path,
     candidates: &'a CandidateRegistry,
@@ -212,6 +213,7 @@ fn make_context<'a>(
 ) -> InstallationExecutionContext<'a> {
     InstallationExecutionContext {
         lock_path,
+        executor_state_root,
         quarantine_root,
         conformance_scratch_root: scratch,
         candidates,
@@ -252,9 +254,12 @@ fn j24k2_create_exact_candidate_trust_advances_once() {
 
     let scratch = base.join("scratch");
     fs::create_dir_all(&scratch).unwrap();
+    let exec_state = base.join("executor-state");
+    fs::create_dir_all(&exec_state).unwrap();
 
     let context = make_context(
         &lock_path,
+        &exec_state,
         &quarantine_root,
         &scratch,
         &candidates,
@@ -321,8 +326,11 @@ fn j24k2_lock_busy_before_planning() {
         .open(&lock_path)
         .unwrap();
 
+    let exec_state = base.join("executor-state");
+    fs::create_dir_all(&exec_state).unwrap();
     let context = make_context(
         &lock_path,
+        &exec_state,
         &quarantine_root,
         &scratch,
         &candidates,
@@ -365,8 +373,11 @@ fn j24k2_lock_releases_after_error() {
 
     let request = valid_request(&candidate.candidate_id);
 
+    let exec_state = base.join("executor-state");
+    fs::create_dir_all(&exec_state).unwrap();
     let context = make_context(
         &lock_path,
+        &exec_state,
         &quarantine_root,
         &scratch,
         &candidates,
@@ -420,8 +431,11 @@ fn j24k2_options_invalid_rejected_before_mutation() {
 
     let request = valid_request(&candidate.candidate_id);
 
+    let exec_state = base.join("executor-state");
+    fs::create_dir_all(&exec_state).unwrap();
     let context = make_context(
         &lock_path,
+        &exec_state,
         &quarantine_root,
         &scratch,
         &candidates,
@@ -472,8 +486,11 @@ fn j24k2_full_passed_conformance_and_approval_chain() {
     let installed =
         InstalledPlugRegistry::open(&base.join("install"), &base.join("records")).unwrap();
 
+    let exec_state = base.join("executor-state");
+    fs::create_dir_all(&exec_state).unwrap();
     let context = make_context(
         &lock_path,
+        &exec_state,
         &quarantine_root,
         &scratch,
         &candidates,
@@ -608,34 +625,39 @@ fn j24k2_full_passed_conformance_and_approval_chain() {
 
     assert_eq!(installed.load_all().unwrap().len(), 0);
 
-    // Call 4: Deferred publication
-    let deferred_roots = [
-        base.join("profiles"),
-        base.join("conformance"),
-        base.join("approvals"),
-        base.join("records"),
-        base.join("install"),
-        base.join("executor-state"),
-        base.join("installation-intent"),
-    ];
-    let before_deferred = deferred_roots
-        .iter()
-        .map(|root| snapshot(root))
-        .collect::<Vec<_>>();
-    let r4 = execute_next_installation_action(&request, &context, &options);
-    assert!(r4.is_err());
-    assert_eq!(r4.unwrap_err().code, "installation_publication_deferred");
+    // Call 4: Publication must now succeed (J24K3f implements publication).
+    let r4 = execute_next_installation_action(&request, &context, &options).unwrap();
+    assert_eq!(
+        r4.before.action,
+        InstallationPlanAction::PublishDisabledInstallation
+    );
+    assert_eq!(r4.after.action, InstallationPlanAction::Complete);
+    match &r4.outcome {
+        InstallationStepOutcome::Advanced { executed } => {
+            assert_eq!(
+                *executed,
+                InstallationPlanAction::PublishDisabledInstallation
+            );
+        }
+        other => panic!("expected Advanced, got {:?}", other),
+    }
+    assert!(r4.after.installed_id.is_some());
+    assert!(r4.after.installed_record_digest.is_some());
 
-    // No evidence, installed record, staging, destination, intent, or executor
-    // state changed. The persistent lock anchor is intentionally excluded.
-    let after_deferred = deferred_roots
-        .iter()
-        .map(|root| snapshot(root))
-        .collect::<Vec<_>>();
-    assert_eq!(before_deferred, after_deferred);
-    assert!(snapshot(&base.join("install"))
-        .keys()
-        .all(|path| !path.contains(".staging-") && !path.contains("plug-")));
+    // Publication created the installed record and destination.
+    let installed_records = installed.load_all().unwrap();
+    assert_eq!(installed_records.len(), 1);
+    let dest = base
+        .join("install")
+        .join(format!("plug-{}", installed_records[0].installed_id));
+    assert!(dest.is_dir());
+
+    // Call 5: Must return AlreadyComplete with no further mutation.
+    let r5 = execute_next_installation_action(&request, &context, &options).unwrap();
+    assert_eq!(r5.before.action, InstallationPlanAction::Complete);
+    assert_eq!(r5.after, r5.before);
+    assert_eq!(r5.outcome, InstallationStepOutcome::AlreadyComplete);
+    assert_eq!(installed.load_all().unwrap().len(), 1);
 
     fs::remove_dir_all(&base).unwrap();
 }
@@ -659,8 +681,11 @@ fn assert_failed_or_interrupted_executor_step(
     let approvals = InstallationApprovalStore::open(&base.join("approvals")).unwrap();
     let installed =
         InstalledPlugRegistry::open(&base.join("install"), &base.join("records")).unwrap();
+    let exec_state = base.join("executor-state");
+    fs::create_dir_all(&exec_state).unwrap();
     let context = make_context(
         &lock_path,
+        &exec_state,
         &quarantine_root,
         &scratch,
         &candidates,
@@ -812,8 +837,11 @@ fn j24k2_postplan_failure_resumable() {
 
     let request = valid_request(&candidate.candidate_id);
     let options = valid_options();
+    let exec_state = base.join("executor-state");
+    fs::create_dir_all(&exec_state).unwrap();
     let context = make_context(
         &lock_path,
+        &exec_state,
         &quarantine_root,
         &scratch,
         &candidates,
