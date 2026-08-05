@@ -59,7 +59,7 @@ fn map_m3_error(error: M3Error) -> M3Error {
 
 fn map_candidate_error(error: crate::package::PackageError) -> M3Error {
     match error.code {
-        "unsafe_destination" => M3Error::new("unsafe_store_path", error.message),
+        "unsafe_destination" => M3Error::new("unsafe_store_path", "candidate location is unsafe"),
         "candidate_io" => recovery_io(),
         _ => evidence_stale(),
     }
@@ -106,7 +106,7 @@ pub(crate) fn revalidate_installation_recovery_evidence(
             &candidate,
             &trust_evidence,
             &launch,
-            &current_suite_digest()?,
+            &current_suite_digest().map_err(|_| evidence_stale())?,
         )
         .map_err(|_| evidence_stale())?;
 
@@ -222,7 +222,7 @@ fn revalidate_trust(
         .require_for_candidate(candidate)
         .map_err(|_| evidence_stale())?;
 
-    if trust_evidence.evidence_digest != intent.installed_record.trust_evidence.evidence_digest {
+    if trust_evidence != intent.installed_record.trust_evidence {
         return Err(evidence_stale());
     }
 

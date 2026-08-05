@@ -103,7 +103,7 @@ impl InstallationApprovalRecord {
             || self.launch_profile_label != launch.profile_label
             || self.launch_profile_limitation != launch.limitation
             || self.launch_profile_evidence_digest != launch.profile_evidence_digest
-            || self.trust_evidence.evidence_digest != trust.evidence_digest
+            || self.trust_evidence != *trust
             || self.conformance_evidence_id != conformance.evidence_id
             || self.conformance_evidence_digest != conformance.evidence_digest
         {
@@ -400,7 +400,7 @@ impl InstalledPlugRecord {
             || self.payloads != candidate.payloads
             || self.signature_files != candidate.signature_files
             || self.capability_manifests != candidate.capabilities
-            || self.trust_evidence.evidence_digest != trust.evidence_digest
+            || self.trust_evidence != *trust
             || self.installation_approval_id != approval.approval_id
             || self.installation_approval_digest != approval.record_digest
             || self.conformance_evidence_id != conformance.evidence_id

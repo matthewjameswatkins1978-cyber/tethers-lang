@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K3c3 correction - exact trust equality and evidence hygiene`
 Owner: `OpenCode`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `OpenCode using Kimi K2.7Code for one bounded correction to its J24K3c3 authority-chain package; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3c3-evidence-revalidator`
@@ -82,6 +82,33 @@ The closed enums `InstallationTrustScope` and `InstallationTargetState` currentl
 do not construct invalid states and instead pass the valid chain.
 
 Rename or replace them so the names honestly describe the closed accepted variants they prove. Do not add enum variants, unsafe representation tricks, deserialisation bypasses, public constructors, or architecture changes merely to manufacture impossible typed states. Record this closed-enum limitation accurately in the worker note and exact test count.
+
+## Relevant background and existing behaviour
+
+The J24K3c3 recovery evidence-chain revalidator is fully implemented and reviewed at `88a911772aef7511262a365cccbcbdf3b0ad4ae9`. Independent review identified three narrow findings:
+
+1. Trust comparison at three recovery boundaries uses only `evidence_digest` rather than full `PackageTrustEvidence` equality as the frozen packet requires.
+2. `map_candidate_error` copies the candidate layer's error message into the recovery-facing `unsafe_store_path` error, and `current_suite_digest()` failure is not mapped to a safe recovery error.
+3. The successful read-only test compares logical values and hashes but not modification timestamps or permissions, and two closed-enum test names claim invalid states the type system prevents.
+
+The existing accepted stores, candidate-byte revalidation, trust-authority, launch, conformance, approval, and installed-record checks remain sound.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs` — entry point, trust revalidation, error mapping.
+- `tethers-0.1/host-rust/src/installation_recovery_evidence_tests.rs` — 44 focused tests including the metadata-preservation test and the misleading closed-enum tests.
+- `tethers-0.1/host-rust/src/installed.rs` — `InstallationApprovalRecord::require_for_recovery`, `InstalledPlugRecord::require_for_recovery`.
+- `docs/CURRENT_CLINE_TASK.md` — this packet.
+- `docs/worker-notes/2026-08-05-j24k3c3-correction.md` — correction worker note.
+
+## Frozen decisions and invariants
+
+1. SHA-256 coverage remains mandatory, but exact `PackageTrustEvidence` object equality must be enforced at all three recovery boundaries.
+2. Only the three stable recovery-facing error codes are permitted: `installation_intent_invalid`, `installation_intent_evidence_stale`, `installation_recovery_io`. Explicit `unsafe_store_path` is allowed with one fixed safe message.
+3. `InstallationTrustScope` and `InstallationTargetState` are closed enums exposing only their accepted variants; no new variants, unsafe representation tricks, or deserialisation bypasses may be added.
+4. No production mutation, no destination verification, no recovery classification or cleanup, no publication, no intent removal, no locking, no planner or executor wiring.
+5. Cargo.lock must remain byte-identical.
+6. The evidence-chain architecture, intent-first ordering, store selection, and authority policy are frozen.
 
 ## Required behaviour
 

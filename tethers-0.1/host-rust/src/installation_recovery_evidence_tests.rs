@@ -301,12 +301,22 @@ impl Drop for RecoveryFixture {
     }
 }
 
-fn sha_file(path: &Path) -> String {
-    sha256(&fs::read(path).unwrap())
+#[derive(Debug, PartialEq, Eq)]
+enum SnapshotEntry {
+    Directory,
+    File {
+        hash: String,
+        modified_unix_ms: u128,
+        readonly: bool,
+    },
 }
 
-fn tree_snapshot(root: &Path) -> std::collections::BTreeMap<String, String> {
-    fn visit(root: &Path, path: &Path, output: &mut std::collections::BTreeMap<String, String>) {
+fn tree_snapshot(root: &Path) -> std::collections::BTreeMap<String, SnapshotEntry> {
+    fn visit(
+        root: &Path,
+        path: &Path,
+        output: &mut std::collections::BTreeMap<String, SnapshotEntry>,
+    ) {
         if !path.is_dir() {
             return;
         }
@@ -319,10 +329,23 @@ fn tree_snapshot(root: &Path) -> std::collections::BTreeMap<String, String> {
                 .to_string_lossy()
                 .replace('\\', "/");
             if path.is_dir() {
-                output.insert(relative, "<directory>".to_owned());
+                output.insert(relative, SnapshotEntry::Directory);
                 visit(root, &path, output);
             } else {
-                output.insert(relative, sha_file(&path));
+                let metadata = path.metadata().unwrap();
+                output.insert(
+                    relative,
+                    SnapshotEntry::File {
+                        hash: sha256(&fs::read(&path).unwrap()),
+                        modified_unix_ms: metadata
+                            .modified()
+                            .unwrap()
+                            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis(),
+                        readonly: metadata.permissions().readonly(),
+                    },
+                );
             }
         }
     }
@@ -364,12 +387,12 @@ fn j24k3c3_candidate_mismatch_fails_stale() {
 }
 
 #[test]
-fn j24k3c3_non_exact_trust_scope_fails_stale() {
-    let mut fixture = RecoveryFixture::new();
-    fixture.request.trust.scope = InstallationTrustScope::ExactCandidate;
-    // ExactCandidate is the only variant, so this test exercises the field path
-    // by relying on the request still being valid; we test stale via candidate mismatch instead.
-    // Keep the compiler happy by asserting the valid request still passes.
+fn j24k3c3_exact_candidate_trust_scope_passes_validation() {
+    let fixture = RecoveryFixture::new();
+    assert!(matches!(
+        fixture.request.trust.scope,
+        InstallationTrustScope::ExactCandidate
+    ));
     fixture.revalidate().unwrap();
 }
 
@@ -385,10 +408,12 @@ fn j24k3c3_missing_non_isolated_consent_fails_stale() {
 }
 
 #[test]
-fn j24k3c3_non_disabled_target_fails_stale() {
-    // InstallationTargetState only has Disabled, so this test verifies the field is checked
-    // by confirming a valid disabled request passes.
+fn j24k3c3_disabled_target_state_passes_validation() {
     let fixture = RecoveryFixture::new();
+    assert!(matches!(
+        fixture.request.installation.target_state,
+        InstallationTargetState::Disabled
+    ));
     fixture.revalidate().unwrap();
 }
 
@@ -926,34 +951,33 @@ fn j24k3c3_genuine_io_failure_maps_to_recovery_io() {
 #[test]
 fn j24k3c3_success_leaves_stores_quarantine_and_permissions_unchanged() {
     let fixture = RecoveryFixture::new();
-    let stores_before = (
-        fixture.exact_trust.load_all().unwrap(),
-        fixture.launch_profiles.load_all().unwrap(),
-        fixture.conformance.load_all().unwrap(),
-        fixture.approvals.load_all().unwrap(),
-    );
-    let quarantine_before = tree_snapshot(&fixture.quarantine_root);
-    let candidate_before = sha_file(
-        &fixture
-            .base
-            .join("candidates")
-            .join(format!("{}.json", fixture.candidate.candidate_id)),
-    );
+    let candidate_root = fixture.base.join("candidates");
+    let quarantine_root = fixture.quarantine_root.clone();
+    let exact_trust_root = fixture.base.join("trust");
+    let launch_profiles_root = fixture.base.join("profiles");
+    let conformance_root = fixture.base.join("conformance");
+    let approvals_root = fixture.base.join("approvals");
+
+    let candidates_before = tree_snapshot(&candidate_root);
+    let quarantine_before = tree_snapshot(&quarantine_root);
+    let exact_trust_before = tree_snapshot(&exact_trust_root);
+    let launch_profiles_before = tree_snapshot(&launch_profiles_root);
+    let conformance_before = tree_snapshot(&conformance_root);
+    let approvals_before = tree_snapshot(&approvals_root);
+
     fixture.revalidate().unwrap();
-    let stores_after = (
-        fixture.exact_trust.load_all().unwrap(),
-        fixture.launch_profiles.load_all().unwrap(),
-        fixture.conformance.load_all().unwrap(),
-        fixture.approvals.load_all().unwrap(),
-    );
-    let quarantine_after = tree_snapshot(&fixture.quarantine_root);
-    let candidate_after = sha_file(
-        &fixture
-            .base
-            .join("candidates")
-            .join(format!("{}.json", fixture.candidate.candidate_id)),
-    );
-    assert_eq!(stores_before, stores_after);
+
+    let candidates_after = tree_snapshot(&candidate_root);
+    let quarantine_after = tree_snapshot(&quarantine_root);
+    let exact_trust_after = tree_snapshot(&exact_trust_root);
+    let launch_profiles_after = tree_snapshot(&launch_profiles_root);
+    let conformance_after = tree_snapshot(&conformance_root);
+    let approvals_after = tree_snapshot(&approvals_root);
+
+    assert_eq!(candidates_before, candidates_after);
     assert_eq!(quarantine_before, quarantine_after);
-    assert_eq!(candidate_before, candidate_after);
+    assert_eq!(exact_trust_before, exact_trust_after);
+    assert_eq!(launch_profiles_before, launch_profiles_after);
+    assert_eq!(conformance_before, conformance_after);
+    assert_eq!(approvals_before, approvals_after);
 }
