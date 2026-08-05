@@ -4,7 +4,7 @@ Task: `J24K3d2 - Exact installation recovery executor`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Model: `Luna`
-Status: `READY`
+Status: `IN_PROGRESS`
 Base commit: `ea4076085ed246a95eb2c0edab462b8c69d461fc`
 Implementation checkpoint: `WORKTREE`
 Verification checkpoint: `WORKTREE`

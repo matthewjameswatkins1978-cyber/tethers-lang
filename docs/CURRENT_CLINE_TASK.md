@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3d2 - Exact installation recovery executor`
 Owner: `OpenCode`
 Model: `Luna`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `OpenCode using Luna for one bounded Rust recovery-mutation package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
@@ -37,6 +37,10 @@ receive one sealed validated recovery plan
 J24K3d2 completes an already-started or already-completed private publication transaction. It does not begin a new publication transaction and does not execute an ordinary J24J installation action.
 
 The package remains crate-private and unwired from the public installation executor. Lock integration is deliberately deferred to the next composition package, where planning and execution will occur inside one held installation-lock lifetime.
+
+## Relevant background and existing behaviour
+
+The accepted J24K3d1 foundation is the sole read-only planning and proof-selection boundary for private installation recovery.
 
 ## Accepted foundation
 
@@ -272,6 +276,52 @@ J24K3d2 must not:
 
 The new executor is crate-private and directly tested. The next package will wire it inside the existing outer lock scope.
 
+## Relevant components
+
+- `tethers-0.1/host-rust/src/installation_recovery_execution.rs`: crate-private recovery executor.
+- `tethers-0.1/host-rust/src/installation_recovery_execution_tests.rs`: direct executor-entry tests.
+- `tethers-0.1/host-rust/src/installation_recovery_plan.rs`: sealed-plan equality support only.
+- `tethers-0.1/host-rust/src/installed.rs`: exact staging cleanup and exact record publication.
+- `tethers-0.1/host-rust/src/lib.rs`: private module registrations only.
+
+## Frozen decisions and invariants
+
+- J24K3d1 remains the sole planner, classifier, evidence, and proof-selection boundary.
+- The executor accepts only `ValidatedInstallationRecoveryPlan` and uses exact value equality for every replan check.
+- Intent removal is performed only through `InstallationPublicationIntentStore::remove_if_matches` with the exact authoritative intent.
+- Recovery mutations are limited to exact staging cleanup and publication of the exact precomputed installed record.
+- Every successful route ends with a fresh idle recovery plan; failures retain resumable authoritative state.
+- Lock ownership and public installation-executor composition remain deferred to the next package.
+
+## Acceptance criteria
+
+1. The executor accepts only a sealed validated recovery plan and performs an exact fresh-plan equality check before mutation.
+2. Idle, intent-only, staging, destination-only, and completed-publication routes perform only their accepted mutations and require a final idle plan.
+3. Staging cleanup and exact record publication preserve authoritative state and fail closed on path, root, evidence, record, and filesystem errors.
+4. Direct `j24k3d2` tests prove resumability, exact identity preservation, no unrelated mutations, and no ordinary installation execution.
+5. All named regression suites, focused Nextest, full serial verification, formatting, lockfile hash, and task-packet checks pass.
+6. A fresh idle plan equal to the supplied idle plan performs no mutation.
+7. A fresh pending plan must equal the complete supplied intent and disposition before mutation.
+8. A changed authoritative intent returns `installation_recovery_conflict` without mutation.
+9. A changed disposition returns `installation_recovery_conflict` without mutation.
+10. Intent-only recovery removes only the exact matching authoritative intent.
+11. Missing or mismatched intent removal is not treated as success.
+12. Staging recovery removes only the exact transaction staging directory.
+13. Staging recovery replans to the same intent-only disposition before intent removal.
+14. Failed staging cleanup retains both the intent and staging state.
+15. Reparse staging state is rejected without deleting its target.
+16. Destination-only recovery uses only the exact verified destination and precomputed record.
+17. Exact record publication preserves every installed-record field and digest.
+18. Record publication rejects staging, destination, root, and record conflicts.
+19. Record publication replans to completed-publication state before intent removal.
+20. Failed record publication retains the intent and destination.
+21. Completed-publication recovery removes only the exact matching intent.
+22. No recovery route rewrites or republishes an already matching record.
+23. Every successful mutation route ends with a fresh idle plan.
+24. Unsafe paths preserve `unsafe_store_path`.
+25. Ordinary filesystem failures map to the existing recovery I/O family.
+26. No recovery route creates staging, renames a destination, adopts final state, or invokes ordinary installation execution.
+
 ## Direct test acceptance
 
 Add direct production-entry tests whose names begin `j24k3d2`.
@@ -341,6 +391,10 @@ Avoid both transcription errors and self-referential final-tip fields.
 Do not add a `Final remote tip` field to any committed document.
 
 Do not manually invent, shorten or reconstruct checkpoint SHAs. Copy exact command output.
+
+## Expected pre-existing changes
+
+None.
 
 ## Required verification
 

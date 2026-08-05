@@ -17,6 +17,7 @@ pub(crate) struct InstallationRecoveryPlanningContext<'a> {
     pub evidence: InstallationRecoveryEvidenceContext<'a>,
 }
 
+#[derive(PartialEq, Eq)]
 pub(crate) struct ValidatedInstallationRecoveryPlan {
     intent: Option<InstallationPublicationIntent>,
     disposition: Option<InstallationRecoveryDisposition>,

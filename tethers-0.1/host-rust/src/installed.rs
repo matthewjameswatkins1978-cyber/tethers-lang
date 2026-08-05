@@ -949,6 +949,58 @@ impl InstalledPlugRegistry {
         Ok(())
     }
 
+    pub(crate) fn remove_installation_recovery_staging(
+        &self,
+        intent: &InstallationPublicationIntent,
+    ) -> Result<()> {
+        intent.validate().map_err(|_| intent_invalid())?;
+
+        let snapshot = self.observe_installation_recovery(intent)?;
+        if !snapshot.staging_present
+            || snapshot.destination_present
+            || snapshot.installed_record.is_some()
+        {
+            return Err(recovery_conflict());
+        }
+
+        let staging = self
+            .install_root
+            .path()
+            .join(format!(".staging-{}", intent.transaction_id));
+        fs::remove_dir_all(&staging).map_err(|_| recovery_io())?;
+        match fs::symlink_metadata(&staging) {
+            Ok(_) => Err(recovery_conflict()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(recovery_io()),
+        }
+    }
+
+    pub(crate) fn publish_installation_recovery_record(
+        &self,
+        intent: &InstallationPublicationIntent,
+    ) -> Result<()> {
+        intent.validate().map_err(|_| intent_invalid())?;
+
+        let snapshot = self.observe_installation_recovery(intent)?;
+        if snapshot.staging_present
+            || !snapshot.destination_present
+            || snapshot.installed_record.is_some()
+        {
+            return Err(recovery_conflict());
+        }
+
+        self.verify_installation_recovery_destination(intent)?;
+        self.record_root
+            .create_json(&intent.transaction_id, &intent.installed_record)
+            .map_err(map_recovery_publication_error)?;
+
+        let published = self.observe_installation_recovery(intent)?;
+        if published.installed_record.as_ref() != Some(&intent.installed_record) {
+            return Err(recovery_conflict());
+        }
+        Ok(())
+    }
+
     pub(crate) fn audit_installation_recovery_destinations(
         &self,
         intent: Option<&InstallationPublicationIntent>,
@@ -1072,6 +1124,15 @@ fn recovery_io() -> M3Error {
         "installation_recovery_io",
         "installation recovery state could not be observed",
     )
+}
+
+fn map_recovery_publication_error(error: M3Error) -> M3Error {
+    match error.code {
+        "unsafe_store_path" => error,
+        "record_conflict" => recovery_conflict(),
+        "record_invalid" => intent_invalid(),
+        _ => recovery_io(),
+    }
 }
 
 fn map_recovery_path_error(error: M3Error) -> M3Error {
