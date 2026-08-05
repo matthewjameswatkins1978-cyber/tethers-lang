@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K3c4 correction - preserve unsafe installed-state paths`
 Owner: `OpenCode`
-Status: `COMPLETE` (verified)
+Status: `COMPLETE`
 Verification checkpoint: `52520ce566a7c8138bc00502146b97012e721ef0`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro for one bounded error-mapping, regression-test, and evidence-note correction; Lucy performs independent review and routine safe merge`
