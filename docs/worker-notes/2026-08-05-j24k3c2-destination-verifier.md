@@ -3,9 +3,9 @@
 Task: `J24K3c2 - Exact recovery destination verifier`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `READY`
-Base commit: `WORKTREE`
-Implementation checkpoint: `WORKTREE`
+Status: `COMPLETE`
+Base commit: `e8b80c13728cf45911880b42734cc4f19fe6d73e`
+Implementation checkpoint: `89fd8a1880fe3a6938923c920f4ab711ad61b7d3`
 
 ## Requested outcome
 
@@ -13,7 +13,17 @@ Add one crate-private, read-only verifier that proves the exact final destinatio
 
 ## Changes made
 
-None yet.
+### Production code (tethers-0.1/host-rust/src/installed.rs)
+- Added `require_existing_recovery_root(path)` shared guard: calls `verify_chain`, preserves `unsafe_store_path`, requires the root to exist as an ordinary directory via `symlink_metadata`, rejects reparse points, and maps every other failure to `installation_recovery_io`.
+- Added `require_existing_recovery_destination(path)` for the exact destination: same chain/reparse safety, but a missing destination returns `installation_recovery_conflict` and a non-directory destination returns `installation_recovery_conflict`.
+- Replaced the two broad `verify_chain(...).map_err(|_| recovery_io())` calls in `observe_installation_recovery` with `require_existing_recovery_root` for both install and record roots.
+- Added `pub(crate) fn verify_installation_recovery_destination(&self, intent: &InstallationPublicationIntent) -> Result<()>` that validates the intent, validates the install root, derives only `install_root / intent.destination_relative_path`, builds the expected file set from the precomputed record (`plug_json`, `payloads`, `signature_files`), recursively enumerates the exact destination, compares the collected set, and verifies each expected file's length, SHA-256 digest, and read-only state.
+- Added `recovery_expected_files`, `recovery_expected_path`, and `collect_recovery_files` helpers to enforce the exact file universe, reject duplicate/unsafe/ambiguous expected paths, and collect only ordinary files while refusing reparse points.
+
+### Test code
+- Added `tethers-0.1/host-rust/src/installation_recovery_destination_tests.rs` with 21 `j24k3c2` tests.
+- Added two `j24k3c1` regression tests in `installation_recovery_observation_tests.rs` proving missing install or record root returns `installation_recovery_io`.
+- Registered the new test module in `lib.rs`.
 
 ## Decisions and assumptions
 
@@ -24,15 +34,34 @@ None yet.
 
 ## Evidence
 
-Not run yet.
+- `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`: passed.
+- `cargo nextest run --config-file .config/nextest.toml --manifest-path tethers-0.1/host-rust/Cargo.toml --all-features --locked -E 'test(j24k3c2)'`: 21 passed, 1247 skipped, 0 retries.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --lib j24k3c2 --locked`: 21 passed, 1027 filtered, 0 failed.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --lib j24k3c1 --locked`: 20 passed, 1028 filtered, 0 failed.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --lib j24k3b --locked`: 16 passed, 1032 filtered, 0 failed.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --lib j24k3a --locked`: 25 passed, 1023 filtered, 0 failed.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --lib j24k2 --locked`: 26 passed, 1022 filtered, 0 failed.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --test j24j_installation_reconciliation --locked`: 24 passed, 0 failed.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --test m3_lifecycle --locked`: 13 passed, 0 failed.
+- `$env:PATH = "$PSHOME;$env:PATH"; just verify`: lib tests 1048 passed, 0 failed; all integration suites passed; no handle-contention failure.
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`: PASS.
+- `git diff --check`: passed.
+- `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256`: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
+- Implementation checkpoint: `89fd8a1880fe3a6938923c920f4ab711ad61b7d3`.
+- Final remote tip: `WORKTREE` (to be pinned after push).
 
 ## Discoveries
 
-None yet.
+- `verify_chain` intentionally allows `NotFound` because it is also used before directory creation; for already-opened registry roots the new `require_existing_recovery_root` closes the gap by requiring `symlink_metadata` to return an ordinary directory.
+- Windows junction fixture tests must remove the empty directory before `mklink /J` can create the junction at the same path.
+- Duplicate expected paths in the precomputed record are rejected by `recovery_expected_files` before any destination enumeration, so the destination filesystem state cannot mask the conflict.
+- `set_permissions(readonly=false)` on Windows reliably clears the read-only flag for the writable-file negative test; the verifier's `metadata.permissions().readonly()` check detects it as expected.
 
 ## Remaining risks
 
-Filesystem verification must fail closed without leaking paths, OS errors, or package-controlled text. It must not mutate the destination or infer absence from `Path::exists()`.
+- Global installed-root consistency audit, recovery classification, staging cleanup, intent removal, record publication, lock integration, and executor wiring remain later packages.
+- Current-authority and evidence-freshness revalidation are intentionally outside this package.
+- No public API or dependency changes were made; this module is crate-private and read-only.
 
 ## Smallest next action
 
