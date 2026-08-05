@@ -176,6 +176,10 @@ impl InstallationPublicationIntentStore {
         Ok(Some(intent))
     }
 
+    pub(crate) fn root_path(&self) -> &Path {
+        self.root.path()
+    }
+
     pub(crate) fn remove_if_matches(
         &self,
         expected: &InstallationPublicationIntent,

@@ -38,6 +38,9 @@ mod installation_recovery_evidence;
 mod installation_recovery_evidence_tests;
 #[cfg(test)]
 mod installation_recovery_observation_tests;
+mod installation_recovery_plan;
+#[cfg(test)]
+mod installation_recovery_plan_tests;
 #[cfg(test)]
 mod installation_recovery_tests;
 pub mod installation_request;
