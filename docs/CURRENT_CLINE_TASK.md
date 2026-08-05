@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K3c3 correction - exact trust equality and evidence hygiene`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using Kimi K2.7Code for one bounded correction to its J24K3c3 authority-chain package; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3c3-evidence-revalidator`
