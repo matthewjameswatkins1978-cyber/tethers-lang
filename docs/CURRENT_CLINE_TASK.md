@@ -1,361 +1,383 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24K3d2 - Exact installation recovery executor`
+Task: `J24K3e1 - Read-only disabled installation publication preparation`
 Owner: `OpenCode`
 Model: `Luna`
-Status: `COMPLETE`
+Status: `READY`
 Task colour: `Red`
-Route: `OpenCode using Luna for one bounded Rust recovery-mutation package; Lucy performs independent review and routine safe merge`
+Route: `OpenCode using Luna for one bounded Rust publication-preparation package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
-Base commit: `ea4076085ed246a95eb2c0edab462b8c69d461fc`
-Implementation branch: `opencode/j24k3d2-exact-recovery-executor`
-Worker note: `docs/worker-notes/2026-08-05-j24k3d2-exact-recovery-executor.md`
+Base commit: `fe4f0e84569e793be3c0e8818799ac36e895da1a`
+Implementation branch: `opencode/j24k3e1-publication-preparation`
+Worker note: `docs/worker-notes/2026-08-05-j24k3e1-publication-preparation.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
-Accepted main: `ea4076085ed246a95eb2c0edab462b8c69d461fc`
-Implementation checkpoint: `371136913c99a67c08eb61484d6a69e3576ea5ad`
-Verification checkpoint: `c1ccb8e22c51aa292ae885b4f2ae7e61cdd64090`
+Accepted main: `fe4f0e84569e793be3c0e8818799ac36e895da1a`
+Implementation checkpoint: `WORKTREE`
+Verification checkpoint: `WORKTREE`
 
 ## Objective
 
-Implement only J24K3d2: one crate-private exact installation-recovery executor built on the accepted J24K3d1 sealed read-only plan.
+Implement only J24K3e1: one crate-private, read-only preparation boundary for a future crash-safe `PublishDisabledInstallation` transaction.
 
-The executor must:
+The preparation sequence is:
 
 ```text
-receive one sealed validated recovery plan
-  -> create a fresh authoritative recovery plan
-  -> require exact plan equality before the first mutation
-  -> perform only the accepted disposition sequence
-  -> replan between dependent recovery mutations
-  -> remove the exact authoritative intent only when the required post-state is proven
-  -> create one fresh final plan
-  -> require idle recovery state
+receive the current ordinary J24J before-plan
+  -> create one fresh authoritative J24J plan
+  -> require exact plan equality and PublishDisabledInstallation
+  -> create one fresh authoritative J24K3d1 recovery plan
+  -> require idle recovery state after the global installed-root audit
+  -> load and revalidate the exact plan-pinned evidence chain
+  -> precompute one immutable disabled installed record
+  -> construct one matching publication intent
+  -> revalidate the complete prepared intent evidence chain
+  -> prove recovery remains idle
+  -> return one sealed prepared publication value
 ```
 
-J24K3d2 completes an already-started or already-completed private publication transaction. It does not begin a new publication transaction and does not execute an ordinary J24J installation action.
+J24K3e1 generates transaction identity and immutable publication content, but performs no durable mutation.
 
-The package remains crate-private and unwired from the public installation executor. Lock integration is deliberately deferred to the next composition package, where planning and execution will occur inside one held installation-lock lifetime.
+It must not create the intent file, create or copy staging files, rename staging into the final destination, publish an installed record, remove an intent, acquire a lock, execute an ordinary J24J action, or wire the public executor.
 
 ## Relevant background and existing behaviour
-
-The accepted J24K3d1 foundation is the sole read-only planning and proof-selection boundary for private installation recovery.
-
-## Accepted foundation
 
 Accepted main is exactly:
 
 ```text
-ea4076085ed246a95eb2c0edab462b8c69d461fc
+fe4f0e84569e793be3c0e8818799ac36e895da1a
 ```
 
-The accepted recovery foundation provides:
-
-- J24K3a: one validated authoritative `InstallationPublicationIntentStore`, including exact `remove_if_matches`;
-- J24K3b: the four frozen recovery dispositions;
-- J24K3c1: exact staging, destination and installed-record observation;
-- J24K3c2: exact destination file-set, digest, length, permission and path verification;
-- J24K3c3: complete current-evidence revalidation;
-- J24K3c4: global installed-root namespace audit;
-- J24K3d1: one sealed read-only plan that composes those proofs and performs no mutation.
-
-J24K3d1 is authoritative for planning and proof selection. J24K3d2 must not reproduce its state table, evidence rules or classifier.
-
-The frozen recovery dispositions are:
+The accepted ordinary installation progression remains:
 
 ```text
-RemoveIntentOnly
-RemoveStagingThenIntent
-RevalidateDestinationThenPublishRecord
-VerifyCompletedPublicationThenRemoveIntent
+CreateExactCandidateTrust
+  -> RunSupervisedConformance
+  -> CreateInstallationApproval
+  -> PublishDisabledInstallation
+  -> Complete
 ```
+
+`installation_execution.rs` still returns `installation_publication_deferred` for `PublishDisabledInstallation`.
+
+The accepted crash-safe recovery foundation now provides:
+
+- J24K3a: authoritative private publication intent storage;
+- J24K3b: pure recovery classification;
+- J24K3c1: exact transaction-state observation;
+- J24K3c2: exact destination verification;
+- J24K3c3: complete current-evidence revalidation;
+- J24K3c4: global installed-root audit;
+- J24K3d1: sealed read-only recovery planning;
+- J24K3d2: exact recovery mutation execution returning to idle.
+
+The missing ordinary publication path must eventually:
+
+```text
+precompute record and intent
+  -> create durable intent
+  -> build and verify staging
+  -> rename staging to final destination
+  -> publish exact record
+  -> remove intent
+```
+
+This package implements only the first line.
 
 ## Required behaviour
 
-### 1. Add one narrow crate-private recovery executor
+### 1. Add one sealed crate-private prepared publication value
 
 Add a private module structurally equivalent to:
 
 ```rust
-pub(crate) enum InstallationRecoveryExecutionOutcome {
-    Idle,
-    Recovered {
-        disposition: InstallationRecoveryDisposition,
-    },
+pub(crate) struct PreparedInstallationPublication {
+    intent: InstallationPublicationIntent,
 }
 
-pub(crate) fn execute_validated_installation_recovery(
+impl PreparedInstallationPublication {
+    pub(crate) fn intent(&self) -> &InstallationPublicationIntent;
+    pub(crate) fn installed_record(&self) -> &InstalledPlugRecord;
+}
+```
+
+The exact naming and accessor arrangement may be narrowed for Rust clarity, but the semantic boundary is frozen.
+
+Requirements:
+
+- all fields are private;
+- no arbitrary constructor;
+- no mutable accessor;
+- the value owns exactly one validated publication intent containing exactly one precomputed installed record;
+- `Debug`, `PartialEq` or `Eq` may be derived only where useful for direct tests and later exact-value checks;
+- the prepared value performs no mutation on drop.
+
+It must not expose:
+
+- arbitrary roots or paths;
+- a caller-supplied installed record;
+- replacement intent data;
+- callbacks or mutation functions;
+- adoption or repair policy.
+
+### 2. Add one read-only preparation function
+
+Add a crate-private function structurally equivalent to:
+
+```rust
+pub(crate) fn prepare_disabled_installation_publication(
     request: &InstallationRequest,
     context: &InstallationRecoveryPlanningContext<'_>,
-    plan: ValidatedInstallationRecoveryPlan,
-) -> Result<InstallationRecoveryExecutionOutcome>;
+    before: &InstallationPlan,
+) -> Result<PreparedInstallationPublication>;
 ```
 
-The exact naming and ownership arrangement may be narrowed for Rust borrowing clarity, but the semantic boundary is frozen.
+The exact context arrangement may be narrowed if compilation proves a small dedicated borrowed context is cleaner. Do not add a public context or duplicate mutable store ownership.
 
-The executor accepts only the sealed `ValidatedInstallationRecoveryPlan` produced by J24K3d1.
+The function accepts the existing `before` plan only as an exact value to compare against fresh authority. It must never trust caller-supplied plan pins without reloading them from the authoritative stores.
 
-It must not accept:
+### 3. Require one fresh exact ordinary plan
 
-- a caller-supplied intent;
-- a caller-supplied disposition;
-- staging, destination or record booleans;
-- arbitrary roots or paths;
-- callbacks, mutation functions or repair policy;
-- a precomputed installed-record replacement;
-- an allow-list or adoption policy.
+At function entry, call `plan_installation` using the authoritative stores already reachable through the preparation/recovery context.
 
-Make the minimum internal trait derives or accessors needed to compare one sealed plan with a freshly generated plan. Do not expose arbitrary constructors or mutable fields.
+Require:
 
-### 2. Require a fresh exact plan before the first mutation
+- fresh plan exactly equals `before`;
+- action is exactly `InstallationPlanAction::PublishDisabledInstallation`;
+- candidate identity and every existing trust, launch, conformance and approval pin remain exact;
+- `installed_id` and `installed_record_digest` are absent.
 
-Immediately before any mutation, call `plan_installation_recovery(request, context)` again.
+A stale or forged before-plan performs no mutation and fails through the existing execution plan-stale or invalid-transition family.
 
-Require exact equality between:
+Do not accept a superficially equivalent plan with changed pins.
 
-- idle or pending state;
-- the complete validated intent;
-- the recovery disposition.
+### 4. Require idle private recovery before preparation
 
-If the fresh plan differs, return the frozen recovery conflict classification and perform no mutation.
+Call `plan_installation_recovery(request, context)` before generating transaction identity.
 
-Do not treat a new but superficially equivalent intent as the same transaction. Exact value equality is required.
+Require:
 
-The future lock-integration package will guarantee that no concurrent installer can change state between this recheck and mutation. J24K3d2 must still perform the recheck itself.
+- the recovery plan is idle;
+- it contains no intent and no disposition;
+- the global installed-root audit has succeeded.
 
-### 3. Idle route
+Any present, malformed, torn or contradictory intent blocks preparation.
+Any staging, destination, record or global installed-root conflict blocks preparation.
+An untracked final destination remains fail-closed.
 
-When both the supplied and fresh plans are idle:
+Do not clean, adopt or alter recovery state.
 
-- perform no mutation;
-- return `InstallationRecoveryExecutionOutcome::Idle`;
-- preserve every relevant root byte-for-byte.
+A non-idle valid recovery plan returns `installation_recovery_conflict` without mutation.
+Errors discovered by J24K3d1 retain their accepted recovery-facing classification.
 
-### 4. RemoveIntentOnly
+### 5. Load and revalidate the exact plan-pinned evidence chain
 
-For `RemoveIntentOnly`:
+Use authoritative stores only.
 
-1. require the fresh plan to equal the sealed supplied plan;
-2. call only `InstallationPublicationIntentStore::remove_if_matches` with the exact planned intent;
-3. require it to return `true`;
-4. create one fresh final recovery plan;
-5. require the final plan to be idle;
-6. return `Recovered { disposition: RemoveIntentOnly }`.
+Load exactly one candidate matching `before.candidate_id` and require exact equality with the before-plan identity fields.
 
-A missing or changed intent is a conflict, not success.
+Revalidate the quarantined candidate and path chain.
 
-### 5. RemoveStagingThenIntent
+Load the exact-candidate trust record and require:
 
-Add one narrow host-owned registry operation structurally equivalent to:
+- exact candidate match;
+- record digest equals `before.exact_candidate_trust_record_digest`;
+- reconstructed exact-candidate trust evidence digest equals `before.trust_evidence_digest`;
+- current exact-candidate trust authority still accepts it;
+- no publisher/developer fallback.
 
-```rust
-InstalledPlugRegistry::remove_installation_recovery_staging(
-    &self,
-    intent: &InstallationPublicationIntent,
-) -> Result<()>;
-```
+Load the launch profile by exact `before.launch_profile_evidence_digest` and require it for the candidate.
 
-It must:
+Load conformance by exact ID and digest from the before-plan and require it remains current against:
 
-- validate the complete intent;
-- revalidate the already-opened install and record roots;
-- derive only the exact `.staging-<transaction_id>` path;
-- reject symlink, junction or reparse staging state;
-- require staging present, destination absent and record absent;
-- remove only that exact staging directory;
-- verify the exact staging path is absent afterward;
-- map ordinary filesystem failure to `installation_recovery_io`;
-- preserve `unsafe_store_path`;
-- leave the intent untouched on failure;
-- never inspect or delete arbitrary sibling staging paths.
+- candidate;
+- exact trust evidence;
+- exact launch profile;
+- current conformance suite digest.
 
-The executor sequence is exact:
+Load installation approval by exact ID and digest from the before-plan and require the complete approval chain, including reviewed capabilities, remains current.
 
-1. fresh supplied-plan equality check;
-2. remove exact staging;
-3. call J24K3d1 again;
-4. require the same exact intent with `RemoveIntentOnly`;
-5. remove that intent through `remove_if_matches` and require `true`;
-6. replan and require idle;
-7. return `Recovered { disposition: RemoveStagingThenIntent }`.
+Reject missing, duplicate, stale, drifted or contradictory evidence.
 
-Failed staging cleanup retains the intent.
+Do not select a newer or merely compatible replacement record for any plan pin.
 
-### 6. RevalidateDestinationThenPublishRecord
+### 6. Precompute one exact immutable disabled installed record
 
-Add one narrow exact-record publication operation structurally equivalent to:
+Add the minimum crate-private installed-state preparation seam needed to construct one record without filesystem mutation.
 
-```rust
-InstalledPlugRegistry::publish_installation_recovery_record(
-    &self,
-    intent: &InstallationPublicationIntent,
-) -> Result<()>;
-```
+The prepared record must contain:
 
-It must:
+- one newly generated canonical lowercase UUID installed ID;
+- `installation_relative_path` exactly `plug-<installed_id>`;
+- state exactly `present_disabled`;
+- package, candidate, archive, payload, signature and capability evidence copied exactly from the validated candidate;
+- exact current trust evidence;
+- exact approval ID and digest;
+- exact conformance ID and digest;
+- exact provider, launch, platform and architecture fields;
+- socket and MCP protocol pins matching accepted installed-state behaviour;
+- disabled bindings derived deterministically from candidate capabilities, preserving accepted order;
+- one `created_unix_ms` generated exactly once for this prepared transaction;
+- one canonical record digest calculated after all other fields are frozen.
 
-- validate the complete intent and embedded installed record;
-- revalidate the already-opened install and record roots;
-- derive only the exact destination and exact `<installed_id>.json` record path;
-- require staging absent, destination present and installed record absent;
-- call the accepted destination verifier again immediately before publication;
-- publish the exact precomputed `intent.installed_record` through the accepted immutable record-store boundary;
-- preserve `created_unix_ms`, installed ID, record digest and every record byte-semantic field;
-- never recompute the record, refresh timestamps or generate a new identity;
-- verify the newly observable record exactly equals the intent record;
-- map ordinary filesystem failure to `installation_recovery_io`;
-- preserve `unsafe_store_path`;
-- leave the intent present on failure.
+Call `InstalledPlugRecord::validate` before returning.
 
-The executor sequence is exact:
+The preparation seam must also refuse a duplicate installed package release or contradictory installed registry state.
 
-1. fresh supplied-plan equality check, which already reruns complete evidence and destination proofs;
-2. publish the exact precomputed installed record;
-3. call J24K3d1 again;
-4. require the same exact intent with `VerifyCompletedPublicationThenRemoveIntent`;
-5. remove that intent through `remove_if_matches` and require `true`;
-6. replan and require idle;
-7. return `Recovered { disposition: RevalidateDestinationThenPublishRecord }`.
+Prefer one small private pure record-construction helper that can preserve schema consistency. Do not refactor the legacy installation mutation order or error mapping merely for elegance. If sharing with the legacy path would change behaviour, keep the preparation path separate and document why.
 
-No destination rename or staging construction occurs in this package.
+### 7. Construct and validate one exact publication intent
 
-### 7. VerifyCompletedPublicationThenRemoveIntent
+Construct the intent only through the accepted `InstallationPublicationIntent::from_precomputed_record` boundary or an exactly equivalent accepted constructor.
 
-For `VerifyCompletedPublicationThenRemoveIntent`:
+Require:
 
-1. require the fresh plan to equal the supplied plan;
-2. rely on that fresh J24K3d1 plan to rerun current evidence and exact destination verification;
-3. remove only the exact matching authoritative intent;
-4. require removal to return `true`;
-5. replan and require idle;
-6. return `Recovered { disposition: VerifyCompletedPublicationThenRemoveIntent }`.
+- transaction ID equals installed ID;
+- candidate ID equals source candidate ID;
+- destination equals the record installation path;
+- installed-record digest equals the record digest;
+- intent digest covers the frozen intent exactly;
+- complete intent validation succeeds.
 
-Do not rewrite or republish an already matching installed record.
+Then call the accepted complete recovery evidence revalidator against the newly prepared intent.
 
-### 8. Error preservation and resumability
+This second proof must demonstrate that the new precomputed record is fully justified by current candidate, exact trust, launch, conformance and approval evidence.
 
-Use existing stable recovery-facing errors only:
+Do not persist the intent.
+
+### 8. Prove preparation remained read-only
+
+After record and intent preparation, call `plan_installation_recovery(request, context)` again and require idle recovery state.
+
+Successful preparation must leave byte-semantic snapshots unchanged for:
+
+- intent root;
+- install root;
+- installed-record root;
+- quarantine root;
+- candidate registry;
+- exact trust store;
+- launch-profile store;
+- conformance store;
+- approval store;
+- unrelated executor state.
+
+The only newly created values exist in memory inside the sealed prepared value.
+
+### 9. Error preservation
+
+Use existing stable families wherever possible:
 
 ```text
-installation_intent_invalid
-installation_intent_conflict
-installation_intent_io
-installation_intent_evidence_stale
-installation_destination_untracked
+installation_execution_plan_stale
+installation_execution_invalid_transition
 installation_recovery_conflict
 installation_recovery_io
+installation_intent_invalid
+installation_intent_evidence_stale
+installation_destination_untracked
 unsafe_store_path
 ```
 
-Do not add a generic success-on-absence path.
+Do not collapse path-safety failures into generic evidence staleness.
+Do not add success-on-absence behaviour.
+Do not add a broad generic `publication_failed` code.
 
-After any error:
+### 10. Preserve existing public installation behaviour
 
-- never remove a mismatched intent;
-- failed staging cleanup leaves intent and staging recoverable;
-- failed exact record publication leaves intent and destination recoverable;
-- successful record publication followed by intent-removal failure leaves matching record, destination and intent recoverable through the completed-publication disposition;
-- unexplained final state remains fail-closed.
+The existing public `InstalledPlugRegistry::install_disabled` and crate-private `install_disabled_with_authority` signatures and externally observable behaviour remain accepted.
 
-Do not add rollback of immutable records or deletion of final destinations.
+J24K3e1 must not:
 
-### 9. No public or lock integration yet
+- wire the new prepared value into those methods;
+- change their staging, rename, record publication or cleanup order;
+- change their timestamps, UUID generation, errors or mutation semantics;
+- remove or weaken any existing revalidation.
 
-J24K3d2 must not:
-
-- modify `InstallationExecutionContext`;
-- acquire or expose `InstallationLockGuard`;
-- call the recovery executor from `execute_next_installation_action`;
-- call J24J or ordinary installation execution;
-- create a publication intent;
-- build or rename a staging directory;
-- implement `PublishDisabledInstallation`;
-- add a public API;
-- change dependencies or Cargo.lock.
-
-The new executor is crate-private and directly tested. The next package will wire it inside the existing outer lock scope.
+Any private helper extraction must be proven by existing installed-state regressions and full verification.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/installation_recovery_execution.rs`: crate-private recovery executor.
-- `tethers-0.1/host-rust/src/installation_recovery_execution_tests.rs`: direct executor-entry tests.
-- `tethers-0.1/host-rust/src/installation_recovery_plan.rs`: sealed-plan equality support only.
-- `tethers-0.1/host-rust/src/installed.rs`: exact staging cleanup and exact record publication.
+- `tethers-0.1/host-rust/src/installation_publication_preparation.rs`: new read-only preparation boundary;
+- `tethers-0.1/host-rust/src/installation_publication_preparation_tests.rs`: direct production-entry tests;
+- `tethers-0.1/host-rust/src/installation_plan.rs`: fresh authoritative ordinary plan;
+- `tethers-0.1/host-rust/src/installation_recovery_plan.rs`: required idle recovery proof;
+- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs`: complete prepared-intent evidence proof;
+- `tethers-0.1/host-rust/src/installation_publication_intent.rs`: accepted intent construction and validation;
+- `tethers-0.1/host-rust/src/installed.rs`: minimum read-only record-preparation seam;
 - `tethers-0.1/host-rust/src/lib.rs`: private module registrations only.
 
 ## Frozen decisions and invariants
 
-- J24K3d1 remains the sole planner, classifier, evidence, and proof-selection boundary.
-- The executor accepts only `ValidatedInstallationRecoveryPlan` and uses exact value equality for every replan check.
-- Intent removal is performed only through `InstallationPublicationIntentStore::remove_if_matches` with the exact authoritative intent.
-- Recovery mutations are limited to exact staging cleanup and publication of the exact precomputed installed record.
-- Every successful route ends with a fresh idle recovery plan; failures retain resumable authoritative state.
-- Lock ownership and public installation-executor composition remain deferred to the next package.
+- J24J is the sole ordinary installation reconciliation authority.
+- J24K3d1 is the sole private recovery planning and global audit authority.
+- Preparation requires both a fresh exact ordinary plan and idle recovery state.
+- Plan pins are identities, not hints for selecting replacement evidence.
+- Installed ID and creation time are generated once and frozen before intent construction.
+- The complete record and intent are immutable values after preparation.
+- The prepared value is sealed and crate-private.
+- J24K3e1 performs no durable mutation.
+- Later mutation must freshly revalidate before creating durable state.
+- Later lock composition must keep preparation and mutation inside one held lock lifetime.
 
 ## Acceptance criteria
 
-1. The executor accepts only a sealed validated recovery plan and performs an exact fresh-plan equality check before mutation.
-2. Idle, intent-only, staging, destination-only, and completed-publication routes perform only their accepted mutations and require a final idle plan.
-3. Staging cleanup and exact record publication preserve authoritative state and fail closed on path, root, evidence, record, and filesystem errors.
-4. Direct `j24k3d2` tests prove resumability, exact identity preservation, no unrelated mutations, and no ordinary installation execution.
-5. All named regression suites, focused Nextest, full serial verification, formatting, lockfile hash, and task-packet checks pass.
-6. A fresh idle plan equal to the supplied idle plan performs no mutation.
-7. A fresh pending plan must equal the complete supplied intent and disposition before mutation.
-8. A changed authoritative intent returns `installation_recovery_conflict` without mutation.
-9. A changed disposition returns `installation_recovery_conflict` without mutation.
-10. Intent-only recovery removes only the exact matching authoritative intent.
-11. Missing or mismatched intent removal is not treated as success.
-12. Staging recovery removes only the exact transaction staging directory.
-13. Staging recovery replans to the same intent-only disposition before intent removal.
-14. Failed staging cleanup retains both the intent and staging state.
-15. Reparse staging state is rejected without deleting its target.
-16. Destination-only recovery uses only the exact verified destination and precomputed record.
-17. Exact record publication preserves every installed-record field and digest.
-18. Record publication rejects staging, destination, root, and record conflicts.
-19. Record publication replans to completed-publication state before intent removal.
-20. Failed record publication retains the intent and destination.
-21. Completed-publication recovery removes only the exact matching intent.
-22. No recovery route rewrites or republishes an already matching record.
-23. Every successful mutation route ends with a fresh idle plan.
-24. Unsafe paths preserve `unsafe_store_path`.
-25. Ordinary filesystem failures map to the existing recovery I/O family.
-26. No recovery route creates staging, renames a destination, adopts final state, or invokes ordinary installation execution.
+1. A fresh exact `PublishDisabledInstallation` plan with idle recovery produces one sealed prepared publication.
+2. The prepared record validates and exactly pins the current candidate, trust, launch, conformance and approval chain.
+3. The prepared intent validates and exactly contains the prepared record.
+4. Installed ID, destination, creation time, record digest and intent digest are generated and frozen consistently.
+5. Successful preparation changes no durable root.
+6. A stale or forged ordinary plan is refused without mutation.
+7. Any non-`PublishDisabledInstallation` action is refused without mutation.
+8. Pending, malformed, torn or contradictory recovery state blocks preparation without cleanup.
+9. Global untracked installed destinations block preparation.
+10. Missing, duplicate, stale or drifted candidate/trust/launch/conformance/approval evidence is refused.
+11. Candidate or evidence reparse/path-safety failures preserve `unsafe_store_path`.
+12. Duplicate installed package release or contradictory installed state is refused.
+13. No publication intent file, staging directory, final destination or installed record is created.
+14. No lock, public executor or ordinary action wiring is introduced.
+15. Existing legacy installed-state behaviour and all named regressions remain green.
+16. Cargo.lock remains unchanged.
 
 ## Direct test acceptance
 
-Add direct production-entry tests whose names begin `j24k3d2`.
+Add direct tests whose names begin `j24k3e1`.
 
 At minimum prove:
 
-1. idle plan performs no mutation;
-2. intent-only recovery removes exactly the matching intent and returns idle;
-3. staging recovery removes only exact staging, then exact intent, and returns idle;
-4. destination-only recovery publishes exactly the precomputed installed record, removes intent, and returns idle;
-5. matching completed publication removes only intent and returns idle;
-6. a changed authoritative intent after the supplied plan was created causes conflict with no mutation;
-7. a changed disposition after the supplied plan was created causes conflict with no mutation;
-8. stale evidence or destination drift before execution prevents publication and retains intent;
-9. staging cleanup failure retains intent and staging;
-10. staging symlink, junction or reparse state is refused without deleting its target;
-11. unsafe or missing install/record roots preserve frozen errors;
-12. record conflict or record-root write failure retains intent;
-13. exact record publication preserves installed ID, `created_unix_ms`, record digest and complete record equality;
-14. after exact record publication, completed-state replan is required before intent removal;
-15. after staging cleanup, intent-only replan is required before intent removal;
-16. a second call using a newly created idle plan performs no mutation;
-17. unrelated executor, quarantine, candidate, trust, launch, conformance and approval roots remain unchanged;
-18. no final destination is adopted or deleted;
-19. no ordinary installation action or J24J mutation occurs.
+1. valid publication-ready evidence produces a sealed prepared value;
+2. prepared intent and record both validate;
+3. installed ID is a canonical lowercase UUID;
+4. destination is exactly `plug-<installed_id>`;
+5. intent transaction ID, record installed ID and destination identity agree;
+6. record fields exactly match candidate, trust, launch, conformance and approval evidence;
+7. disabled bindings exactly match candidate capabilities in accepted order;
+8. `created_unix_ms` is nonzero and remains unchanged through intent construction and validation;
+9. record digest and intent digest remain stable under repeated validation;
+10. successful preparation leaves all durable roots unchanged;
+11. stale before-plan identity or pins are refused without mutation;
+12. wrong before-plan action is refused without mutation;
+13. an authoritative plan changed after the supplied before-plan is refused;
+14. a valid pending recovery intent blocks preparation and is retained;
+15. malformed or torn intent state blocks preparation and is retained;
+16. staging, destination, record or global untracked-final recovery conflicts are not cleaned or adopted;
+17. missing or changed exact trust is refused;
+18. missing or drifted launch, conformance or approval evidence is refused;
+19. candidate-byte or quarantine path drift is refused;
+20. duplicate installed release is refused;
+21. unsafe install, record, intent or candidate path state preserves `unsafe_store_path`;
+22. no test observes an intent file, staging directory, final destination or installed record created by preparation;
+23. two successful independent preparations may have different generated transaction IDs, while each remains internally exact and both leave durable state unchanged;
+24. existing public `install_disabled` behaviour remains covered by regression tests.
 
-Use real filesystem and platform path fixtures. Do not add callbacks, fault-injection production hooks or arbitrary constructors.
-
-For Windows cleanup contention, use a real non-shareable file handle fixture. For Unix, use a real platform-appropriate permission or directory-state fixture. Record platform skips honestly.
+Use real stores and filesystem fixtures. Do not add callbacks, clocks supplied by callers, deterministic UUID injection, fault-injection production hooks or arbitrary constructors.
 
 ## Regression acceptance
 
 Preserve all accepted suites, including:
 
+- J24K3d2;
 - J24K3d1;
 - J24K3c4;
 - J24K3c3;
@@ -365,13 +387,13 @@ Preserve all accepted suites, including:
 - J24K3a;
 - J24K2;
 - J24J;
-- M3 lifecycle.
+- installed-state and M3 lifecycle suites.
 
-The bounded Windows lifecycle teardown helper accepted in J24K3d1 remains unchanged.
+The bounded Windows lifecycle teardown helper remains unchanged.
 
 ## Checkpoint procedure
 
-Avoid both transcription errors and self-referential final-tip fields.
+Avoid transcription errors and self-referential final-tip fields.
 
 1. Change task and worker-note status `READY` to `IN_PROGRESS`.
 2. Implement production code and direct tests.
@@ -389,18 +411,21 @@ Avoid both transcription errors and self-referential final-tip fields.
 14. Return the final remote tip externally.
 
 Do not add a `Final remote tip` field to any committed document.
-
-Do not manually invent, shorten or reconstruct checkpoint SHAs. Copy exact command output.
+Do not manually invent, shorten or reconstruct checkpoint SHAs.
 
 ## Expected pre-existing changes
 
-None.
+- This task packet and its READY worker-note scaffold are present on the implementation branch.
+- Accepted J24K3d2 production and independent-review code are already on main.
+- No Rust production change is expected before implementation begins.
 
 ## Required verification
 
 Run from repository root:
 
 ```powershell
+$env:PATH = "$HOME\.cargo\bin;$PSHOME;$env:PATH"
+
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 
 cargo fmt `
@@ -411,7 +436,12 @@ cargo nextest run `
   --config-file .config/nextest.toml `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
   --all-features --locked `
-  -E 'test(j24k3d2)'
+  -E 'test(j24k3e1)'
+
+cargo test `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --lib j24k3e1 `
+  --locked
 
 cargo test `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
@@ -468,20 +498,26 @@ cargo test `
   --test m3_lifecycle `
   --locked
 
-$env:PATH = "$HOME\.cargo\bin;$PSHOME;$env:PATH"
 $env:RUST_TEST_THREADS = "1"
 just verify
 
 Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
 git diff --check
 git status --short
+git log --oneline --decorate -16
 ```
 
 Focused Nextest must finish with zero failures and zero retries.
+Full serial `just verify` must finish with zero failures.
+Do not exclude a failed test from totals.
 
-Full serial `just verify` must finish with zero failures. Do not exclude a failed test from totals.
+If the known Windows lifecycle teardown test fails during a non-serial named regression command:
 
-Cargo.lock must remain exactly:
+1. record the exact test name and error;
+2. rerun that exact test serially and require it to pass;
+3. still require the final full serial `just verify` to pass with zero failures.
+
+Cargo.lock SHA-256 must remain:
 
 ```text
 D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
@@ -489,40 +525,93 @@ D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 
 ## Permitted files
 
-- `tethers-0.1/host-rust/src/installation_recovery_execution.rs` or one equivalently narrow new module;
-- `tethers-0.1/host-rust/src/installation_recovery_execution_tests.rs` or one equivalently narrow direct-test module;
-- `tethers-0.1/host-rust/src/installation_recovery_plan.rs` only for minimum sealed-plan equality/access support;
-- `tethers-0.1/host-rust/src/installed.rs` only for exact staging cleanup and exact record-publication methods;
+- `tethers-0.1/host-rust/src/installation_publication_preparation.rs`;
+- `tethers-0.1/host-rust/src/installation_publication_preparation_tests.rs`;
+- `tethers-0.1/host-rust/src/installed.rs` only for the minimum crate-private read-only record-preparation seam or pure shared constructor;
 - `tethers-0.1/host-rust/src/lib.rs` only for private module registrations;
 - `docs/CURRENT_CLINE_TASK.md`;
-- `docs/worker-notes/2026-08-05-j24k3d2-exact-recovery-executor.md`.
+- `docs/worker-notes/2026-08-05-j24k3e1-publication-preparation.md`.
+
+If compilation proves one tiny accessor or visibility change is essential in an already accepted crate-private module, stop and document it before broadening scope. Do not silently edit `installation_execution.rs`, recovery classification, intent persistence or public APIs.
 
 ## Forbidden changes
 
-- No installation-lock integration.
+- No publication intent persistence.
+- No staging directory creation or file copying.
+- No staging verification mutation seam.
+- No staging-to-destination rename.
+- No installed-record publication.
+- No intent removal.
+- No recovery execution.
+- No lock acquisition or lock visibility change.
 - No `InstallationExecutionContext` change.
-- No call from `execute_next_installation_action`.
-- No J24J planning or ordinary action execution.
-- No new publication-intent creation.
-- No staging construction or staging-to-destination rename.
-- No `PublishDisabledInstallation` implementation.
-- No destination deletion, adoption or rollback.
-- No public API, schema or error-code expansion.
+- No replacement of `handle_deferred_publication`.
+- No public executor or CLI wiring.
+- No ordinary installation action execution.
+- No public API, schema or interchange change.
 - No dependency, Cargo configuration or Cargo.lock change.
-- No CLI, packaging, release, enablement, operational-scope or OCaml change.
-- No automatic tool installation.
+- No OCaml, language, packaging, enablement, operational-scope or release change.
+- No caller-supplied clock, UUID, record, intent, path, callback or repair policy.
 - No unrelated refactor.
 
 ## Stop conditions
 
 Stop as `BLOCKED` if:
 
-- the accepted J24K3d1 plan cannot remain the sole proof-selection boundary;
-- safe exact mutation would require a public seam, arbitrary caller paths or production fault-injection hooks;
-- a recovery error cannot be represented by the existing frozen error families;
 - focused Nextest is unavailable;
-- any required regression remains red;
-- full serial `just verify` has any failure;
+- the task requires changing accepted J24J or J24K3 recovery semantics;
+- exact record preparation cannot be implemented without changing the existing public installation mutation order;
+- a required error must be collapsed into a weaker generic class;
+- full serial `just verify` remains red;
 - Cargo.lock changes.
 
-Do not merge.
+Do not stop for adding crate-private sealed values, read-only evidence selection, exact record construction, intent construction, direct tests or private module registration within this packet.
+
+## Return format
+
+```text
+J24K3e1 complete
+
+Branch:
+Final remote tip:
+Implementation checkpoint:
+Verification checkpoint:
+
+Fresh exact J24J plan:
+Idle recovery proof:
+Exact candidate and quarantine proof:
+Exact current trust proof:
+Exact launch proof:
+Exact conformance proof:
+Exact approval proof:
+Installed record precomputation:
+Publication intent construction:
+Complete prepared-intent revalidation:
+Final idle proof:
+Durable mutation performed:
+
+Direct J24K3e1 tests:
+Focused Nextest:
+J24K3d2 regression:
+J24K3d1 regression:
+J24K3c4 regression:
+J24K3c3 regression:
+J24K3c2 regression:
+J24K3c1 regression:
+J24K3b regression:
+J24K3a regression:
+J24K2 regression:
+J24J regression:
+M3 lifecycle regression:
+Full just verify:
+
+Cargo.lock SHA-256:
+Final task packet checker:
+cargo fmt --check:
+git diff --check:
+git status:
+
+Files changed:
+Discoveries:
+Remaining risks:
+```
