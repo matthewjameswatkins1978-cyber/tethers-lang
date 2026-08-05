@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K3d1 correction - planner path-safety regressions and complete verification`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro for one bounded regression-test, verification, and evidence correction; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3d1-validated-recovery-plan`

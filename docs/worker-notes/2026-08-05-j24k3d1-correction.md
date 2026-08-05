@@ -3,7 +3,7 @@
 Task: `J24K3d1 correction - planner path-safety regressions and complete verification`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Base commit: `96902b715cbb8d62aad12d468a474ae03abfaaed`
 Original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
 Implementation checkpoint: `208ef6f0cbf29c5933cc72a8c93ca87973a3f733`
@@ -40,6 +40,7 @@ Add direct planner-entry regressions for destination reparse state and unsafe or
 - Full serial `just verify` failed on `m3_malformed_and_interrupted_conformance_fail_without_retry_or_install` at `tests/m3_lifecycle.rs:1009` with `Os { code: 5, kind: PermissionDenied, message: "Access is denied." }`.
 - The exact permitted serial rerun of that test failed with the same error.
 - The bounded teardown correction is intentionally not best-effort: unexpected errors fail immediately and persistent contention fails after two seconds with the final error.
+- After the correction, the exact failing test passed serially: 1 passed, 0 failed, 12 filtered out.
 
 ## Discoveries
 
