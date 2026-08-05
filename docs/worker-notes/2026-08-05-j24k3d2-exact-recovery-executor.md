@@ -56,7 +56,7 @@ The package must complete only recovery. It must not create new publication inte
 - `$env:PATH = "$HOME\.cargo\bin;$PSHOME;$env:PATH"; $env:RUST_TEST_THREADS = "1"; just verify` - PASS, 1164 library tests passed, 2 ignored, and all integration suites passed.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256` - PASS, `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - `git diff --check` - PASS.
-- Final working-tree status — clean after the implementation and evidence commits.
+- Final working-tree status - clean after the implementation and evidence commits.
 
 ## Discoveries
 
@@ -70,7 +70,7 @@ The package must complete only recovery. It must not create new publication inte
 
 ## Smallest next action
 
-Implement only the packet, verify the complete recovery matrix, push the branch, and return it for Lucy’s independent review.
+Lucy performs the independent review of the pushed implementation and evidence.
 
 ## References
 
