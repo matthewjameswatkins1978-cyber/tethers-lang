@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K3c4 - Global installed-root consistency auditor`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro for one bounded, read-only Rust filesystem and record-reconciliation package; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3c4-installed-root-audit`
