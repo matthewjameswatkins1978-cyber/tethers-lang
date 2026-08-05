@@ -36,7 +36,7 @@ Only the permitted files were changed; no dependency, Cargo.lock, public API, or
 - `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --lib j24k3c3 --locked` passed: 44/44.
 - Regression suites passed: J24K3c2 (21/21), J24K3c1 (20/20), J24K3b (16/16), J24K3a (25/25), J24K2 (26/26), J24I (30/30), J24H (19/19), J24J (24/24), M3 lifecycle (13/13).
 - Full `$env:PATH = "$PSHOME;$env:PATH"; just verify` failed once on the pre-existing intermittent Windows handle-contention failure in `m3_lifecycle::m3_malformed_and_interrupted_conformance_fail_without_retry_or_install` (`Os { code: 5, kind: PermissionDenied }`). Rerunning the failing test serially with `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --test m3_lifecycle --locked m3_malformed_and_interrupted_conformance_fail_without_retry_or_install` passed.
-- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` passed after final commit: `PASS task packet consistency (control-v1/COMPLETE): base 374cb57, HEAD 727a209`.
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` passed with status `COMPLETE` against base `374cb57`.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256` returned `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - `git diff --check` reported only the expected LF-to-CRLF conversion warnings for the edited Rust files; no trailing-whitespace or whitespace errors.
 - No `Cargo.lock` change; only permitted files were modified.
