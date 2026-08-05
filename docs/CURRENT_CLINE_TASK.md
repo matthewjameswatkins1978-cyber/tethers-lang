@@ -3,7 +3,8 @@
 Control contract: `1`
 Task: `J24K3c4 correction - preserve unsafe installed-state paths`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `COMPLETE` (verified)
+Verification checkpoint: `52520ce566a7c8138bc00502146b97012e721ef0`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro for one bounded error-mapping, regression-test, and evidence-note correction; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3c4-installed-root-audit`
@@ -91,7 +92,7 @@ Its completed evidence above those stale sections is truthful and must remain un
 
 ## Required behaviour
 
-### 1. Add one narrow installed-state error mapper
+1. Add one narrow installed-state error mapper
 
 Replace the blanket `map_err` with a small private mapper used only by the recovery audit.
 
@@ -105,7 +106,7 @@ Do not copy lower-layer messages, paths, record strings, JSON, or operating-syst
 
 Do not change public `InstalledPlugRegistry::load_all()` behaviour.
 
-### 2. Preserve all accepted J24K3c4 semantics
+2. Preserve all accepted J24K3c4 semantics
 
 Do not change:
 
@@ -120,7 +121,7 @@ Do not change:
 - read-only behaviour;
 - stable messages or codes outside this correction.
 
-### 3. Add production-entry-point regressions
+3. Add production-entry-point regressions
 
 Add platform-appropriate tests that create a complete valid installed record and then make that record's exact tracked final destination unsafe:
 
@@ -133,7 +134,7 @@ Retain the existing untracked direct-child reparse tests. They prove the later d
 
 A narrow installed-record-entry reparse test may also be added when it can be made reliable without privileges, public seams, or platform-specific flakiness, but it is not required if the tracked-destination regression proves the mapping defect directly.
 
-### 4. Clean the original completed worker note
+4. Clean the original completed worker note
 
 In `docs/worker-notes/2026-08-05-j24k3c4-installed-root-audit.md`, remove the duplicated stale scaffold tail beginning with the second `## Evidence` section containing `Not run yet` and continuing through its duplicate `Discoveries` and `Remaining risks` material.
 

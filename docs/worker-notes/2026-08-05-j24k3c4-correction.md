@@ -3,9 +3,12 @@
 Task: `J24K3c4 correction - preserve unsafe installed-state paths`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `COMPLETE` (verified)
+Verification checkpoint: `52520ce566a7c8138bc00502146b97012e721ef0`
 Base commit: `d76735608febd648e95f505ff885142612a5eeda`
 Implementation checkpoint: `ff75243693c3b9fd0709cd9043f1642ab43e614b`
+Correction documentation commit: `52520ce566a7c8138bc00502146b97012e721ef0`
+Final remote tip: `52520ce566a7c8138bc00502146b97012e721ef0`
 
 ## Requested outcome
 
@@ -25,19 +28,11 @@ Do not redesign J24K3c4 or add later recovery work.
 
 ## Evidence
 
-- Focused Nextest (24 tests): 24 passed, 0 failed, 0 skipped, 0 retries
-  - Includes 1 new tracked-destination junction test (Windows)
-  - Includes 23 original J24K3c4 tests (all preserved green)
-- `cargo test --lib j24k3c4`: 24 passed
-- J24K3c3 regression: 44 passed
-- J24K3c2 regression: 21 passed
-- J24K3c1 regression: 20 passed
-- J24K3b regression: 16 passed
-- J24K3a regression: 25 passed
-- J24K2 regression: 26 passed
-- J24J regression: 24 passed
-- M3 lifecycle regression: 13 passed
-- Full `cargo test --all-features`: 1111 passed, 5 failed (pre-existing environment tests, all in `execution_environment` module, unrelated to correction)
+- Task packet checker: PASS (control-v1/COMPLETE): base d767356, HEAD 52520ce
+- `just verify` (full `cargo test --all-features --locked`): 1116 passed, 0 failed (lib)
+- Integration test binaries: 29+7+1+23+8+1+3+4+9+16+17+6+16+19+30+24+9+13+4+1 = 239 passed, 0 failed
+- Total: 1355 passed, 0 failed, 0 skipped
+- Focused Nextest (`j24k3c4` filter): 24 passed, 0 failed, 0 retries
 - `cargo fmt --check`: pass
 - Cargo.lock SHA-256: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`
 - `git diff --check`: clean (LF/CRLF warnings only, pre-existing)
@@ -48,6 +43,7 @@ Do not redesign J24K3c4 or add later recovery work.
 - `load_all()` validates each record's destination directory via `verify_chain()` which detects reparse points (junctions/symlinks). The blanket `map_err(|_| recovery_conflict())` was correctly collapsing all structural errors but incorrectly also collapsing `unsafe_store_path` from tracked-destination reparse detection.
 - The existing untracked `plug-*` reparse tests correctly proved the direct-enumeration route but bypassed `load_all()` because they had no record. The new tracked-destination tests prove the `load_all()` route.
 - `String::as_str()` is unstable in Rust 1.97.1; the mapper uses `if/else if` with direct `String` comparison instead.
+- Intermittent m3_lifecycle Windows handle-contention failure (known, passes with `RUST_TEST_THREADS=1`).
 
 ## Decisions and assumptions
 
@@ -56,14 +52,10 @@ Do not redesign J24K3c4 or add later recovery work.
 - Public `load_all()` behaviour remains unchanged.
 - The original worker-note cleanup is documentary only and must not rewrite its truthful completed evidence.
 
-## Discoveries
-
-- The existing Windows junction and Unix symlink tests exercise an untracked direct `plug-*` child. They do not exercise the earlier `load_all()` path used when a validated installed record tracks the reparse destination or when an installed-record entry itself is unsafe.
-- `docs/worker-notes/2026-08-05-j24k3c4-installed-root-audit.md` contains a second stale `Evidence`, `Discoveries`, and `Remaining risks` block left from its scaffold, including the contradictory text `Not run yet`.
-
 ## Remaining risks
 
-The correction must remain read-only and must not add recovery classification, cleanup, publication, intent removal, locking, planner, or executor wiring.
+- Recovery classification, cleanup, publication, intent removal, locking, planner, and executor wiring remain later work for subsequent J24K3 packages.
+- The m3_lifecycle Windows handle-contention tests are environment-sensitive and require serial execution for reliable results on this machine.
 
 ## Smallest next action
 
