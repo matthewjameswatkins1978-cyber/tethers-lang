@@ -963,6 +963,125 @@ impl InstalledPlugRegistry {
         Ok(directory)
     }
 
+    /// J24K3e2: build one exact staging directory for the prepared transaction.
+    ///
+    /// Copies only the candidate file set justified by the prepared record
+    /// (`plug.json`, payloads, and signature files) from the revalidated
+    /// quarantine source, marks every file read-only, and verifies the staging
+    /// directory through the same evidence used to verify the final destination.
+    /// The installed record is never written into the payload directory.
+    pub(crate) fn build_installation_recovery_staging(
+        &self,
+        intent: &InstallationPublicationIntent,
+        candidate: &CandidateRecord,
+        quarantine_root: &Path,
+    ) -> Result<()> {
+        intent.validate().map_err(|_| intent_invalid())?;
+        require_existing_recovery_root(self.install_root.path())?;
+
+        let source = revalidate_candidate(candidate, quarantine_root)?;
+
+        let staging = self
+            .install_root
+            .path()
+            .join(format!(".staging-{}", intent.transaction_id));
+        if staging.exists() {
+            reject_reparse(&staging).map_err(map_recovery_path_error)?;
+        }
+        fs::create_dir(&staging).map_err(|_| recovery_io())?;
+        verify_chain(&staging)?;
+
+        let expected = expected_files(candidate);
+        copy_files(&source, &staging, &expected)?;
+
+        self.verify_installation_recovery_staging(intent)?;
+        Ok(())
+    }
+
+    /// J24K3e2: verify an exact staging directory for the prepared transaction
+    /// through the same evidence used to verify the final destination.
+    pub(crate) fn verify_installation_recovery_staging(
+        &self,
+        intent: &InstallationPublicationIntent,
+    ) -> Result<()> {
+        intent.validate().map_err(|_| intent_invalid())?;
+        require_existing_recovery_root(self.install_root.path())?;
+
+        let staging = self
+            .install_root
+            .path()
+            .join(format!(".staging-{}", intent.transaction_id));
+        let staging_metadata = fs::symlink_metadata(&staging).map_err(|_| recovery_io())?;
+        if !staging_metadata.is_dir() {
+            return Err(recovery_conflict());
+        }
+        reject_reparse(&staging).map_err(map_recovery_path_error)?;
+
+        let expected = recovery_expected_files(intent)?;
+        let mut actual = BTreeSet::new();
+        collect_recovery_files(&staging, &staging, &mut actual)?;
+
+        if actual != expected.keys().cloned().collect::<BTreeSet<_>>() {
+            return Err(recovery_conflict());
+        }
+
+        for (relative, evidence) in expected {
+            let file = staging.join(&relative);
+            reject_reparse(&file).map_err(map_recovery_path_error)?;
+            let metadata = fs::symlink_metadata(&file).map_err(|_| recovery_io())?;
+            if !metadata.is_file() {
+                return Err(recovery_conflict());
+            }
+            let bytes = fs::read(&file).map_err(|_| recovery_io())?;
+            if !metadata.permissions().readonly()
+                || bytes.len() as u64 != evidence.size_bytes
+                || sha256(&bytes) != evidence.sha256
+            {
+                return Err(recovery_conflict());
+            }
+        }
+        Ok(())
+    }
+
+    /// J24K3e2: rename a verified staging directory to the exact prepared final
+    /// destination within the same install root, then re-verify the destination.
+    pub(crate) fn rename_installation_recovery_staging(
+        &self,
+        intent: &InstallationPublicationIntent,
+    ) -> Result<()> {
+        intent.validate().map_err(|_| intent_invalid())?;
+        let install_root = self.install_root.path();
+        require_existing_recovery_root(install_root)?;
+
+        let staging = install_root.join(format!(".staging-{}", intent.transaction_id));
+        let destination = install_root.join(&intent.destination_relative_path);
+
+        // The final destination must exactly match the prepared intent and be
+        // absent: never adopt, merge with, or replace an existing destination.
+        if Path::new(&intent.destination_relative_path).is_absolute() {
+            return Err(recovery_conflict());
+        }
+        if destination.exists() {
+            reject_reparse(&destination).map_err(map_recovery_path_error)?;
+            return Err(recovery_conflict());
+        }
+
+        let staging_metadata = fs::symlink_metadata(&staging).map_err(|_| recovery_io())?;
+        if !staging_metadata.is_dir() {
+            return Err(recovery_conflict());
+        }
+
+        fs::rename(&staging, &destination).map_err(|_| recovery_io())?;
+
+        // Exact destination again after rename.
+        require_existing_recovery_destination(&destination)?;
+        match fs::symlink_metadata(&staging) {
+            Ok(_) => Err(recovery_conflict()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(recovery_io()),
+        }
+    }
+
     pub(crate) fn observe_installation_recovery(
         &self,
         intent: &InstallationPublicationIntent,

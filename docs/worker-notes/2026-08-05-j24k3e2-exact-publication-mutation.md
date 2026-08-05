@@ -4,7 +4,7 @@ Task: `J24K3e2 - Exact durable disabled installation publication mutation`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Model: `HY3`
-Status: `READY`
+Status: `IN_PROGRESS`
 Base commit: `45f78e47a09638d4070bf4479e4f1dcbe39c8cb1`
 Implementation checkpoint: `WORKTREE`
 Verification checkpoint: `WORKTREE`

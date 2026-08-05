@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3e2 - Exact durable disabled installation publication mutation`
 Owner: `OpenCode`
 Model: `HY3`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `OpenCode using HY3 for one bounded Rust publication-mutation package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
