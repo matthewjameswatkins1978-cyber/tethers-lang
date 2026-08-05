@@ -6,6 +6,7 @@ Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `374cb57ba50e685e3fe8716ecd6f2166a6f6e9b5`
 Implementation checkpoint: `727a20944270a5c71484f8c1728c339d0d7f1dbf`
+Final branch tip: `861794c581462366c9760e12d19559e2416da911`
 Final branch: `opencode/j24k3c3-evidence-revalidator`
 
 ## Requested outcome
