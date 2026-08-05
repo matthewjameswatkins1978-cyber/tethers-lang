@@ -16,6 +16,7 @@ Accepted main: `20cd25f328568aa2726505580689d67b6219449c`
 Reviewed OpenCode tip: `26ecf14b9f3d4449f6b872d5cbf04e273c426881`
 Actual original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
 Actual prior completion candidate: `b76691c5b97bd1b3a82de824535365fec4676c20`
+Implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
 Correction implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
 Verification checkpoint: `WORKTREE`
 
@@ -95,6 +96,13 @@ That does not satisfy the frozen acceptance criteria.
 
 ## Required behaviour
 
+1. Preserve the accepted production planner ordering and read-only behavior.
+2. Add direct destination-reparse planner tests.
+3. Add direct root-state planner tests.
+4. Correct documentary checkpoint identities.
+5. Complete focused Nextest with zero retries.
+6. Complete one genuinely green full serial verification.
+
 ### 1. Preserve the accepted production planner
 
 Do not change `installation_recovery_plan.rs` unless a newly added production-entry regression demonstrates a real defect.
@@ -128,6 +136,35 @@ Exercise `plan_installation_recovery` itself and prove at minimum:
 - an already-opened record root replaced by a Windows junction or Unix symbolic link returns `unsafe_store_path`.
 
 Use the accepted safe platform fixture pattern. Do not add unsafe representation tricks, public seams, or production test hooks.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/installation_recovery_plan.rs`: accepted read-only planner entry point.
+- `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs`: direct planner-entry regression fixtures.
+- `tethers-0.1/host-rust/src/installed.rs`: authoritative installed-root audit and destination verification.
+- `tethers-0.1/host-rust/src/installation_publication_intent.rs`: authoritative intent store.
+
+## Frozen decisions and invariants
+
+- Preserve the accepted planner ordering and sealed plan invariant.
+- Keep path safety fail-closed: missing roots return `installation_recovery_io`; reparse roots return `unsafe_store_path`.
+- Tests must use real platform path representations and must not add production hooks or unsafe test seams.
+- The correction remains test and evidence documentation only; no mutation or executor behavior is added.
+
+## Acceptance criteria
+
+1. Direct planner-entry destination junction or symlink regression returns `unsafe_store_path`.
+2. Direct planner-entry missing opened install-root regression returns `installation_recovery_io`.
+3. Direct planner-entry record-root junction or symlink regression returns `unsafe_store_path`.
+4. Existing J24K3d1 tests and all named regression suites pass without excluded failures.
+5. Focused Nextest passes with zero retries and records platform skips honestly.
+6. Full serial `just verify` passes with zero failures and Cargo.lock retains the required hash.
+7. Corrected checkpoint identities and final packet evidence are committed and pushed normally.
+
+## Expected pre-existing changes
+
+- The branch is synchronized to the authoritative READY correction packet commit `ab5dd86186a9df0c10434cd5552915fd5e055f1a` before implementation.
+- The accepted J24K3d1 planner and its original 25 tests are already present and are not redesigned.
 
 ### 4. Correct documentary checkpoint identities
 
