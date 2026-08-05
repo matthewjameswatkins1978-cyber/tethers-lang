@@ -48,7 +48,8 @@ Add one crate-private, read-only verifier that proves the exact final destinatio
 - `git diff --check`: passed.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256`: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - Implementation checkpoint: `89fd8a1880fe3a6938923c920f4ab711ad61b7d3`.
-- Final remote tip: `6860a501546f165ba9e9bbd65109bae63c5faef2`.
+- Evidence commit recorded by the worker: `6860a501546f165ba9e9bbd65109bae63c5faef2`.
+- OpenCode final handoff tip: `de5e8f5d66fe012fac20bfc21c77f096bced33bf`.
 
 ## Discoveries
 
@@ -63,9 +64,17 @@ Add one crate-private, read-only verifier that proves the exact final destinatio
 - Current-authority and evidence-freshness revalidation are intentionally outside this package.
 - No public API or dependency changes were made; this module is crate-private and read-only.
 
+## Independent review
+
+Lucy independently inspected the accepted-main ancestry, changed-file boundary, production root guards, exact destination verifier, expected-path normalization, destination-only traversal, immutable evidence checks, and direct tests at OpenCode handoff tip `de5e8f5d66fe012fac20bfc21c77f096bced33bf`.
+
+No production or test correction was required. The only reviewer change was this documentation clarification distinguishing the worker's evidence commit from the actual OpenCode handoff tip.
+
+The reported Rust and repository verification was not rerun personally by Lucy.
+
 ## Smallest next action
 
-Read the task packet and accepted storage code, implement the exact destination verifier and existing-root guard, add direct tests, run the complete verification packet, and return the branch for independent review.
+Implement the next bounded J24K3 package for current-authority and pinned evidence-chain revalidation. Global installed-root audit, mutation, publication, and executor wiring remain later work.
 
 ## References
 
