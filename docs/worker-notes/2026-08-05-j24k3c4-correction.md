@@ -3,12 +3,12 @@
 Task: `J24K3c4 correction - preserve unsafe installed-state paths`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `COMPLETE` (verified)
+Status: `COMPLETE`
 Verification checkpoint: `52520ce566a7c8138bc00502146b97012e721ef0`
 Base commit: `d76735608febd648e95f505ff885142612a5eeda`
 Implementation checkpoint: `ff75243693c3b9fd0709cd9043f1642ab43e614b`
 Correction documentation commit: `52520ce566a7c8138bc00502146b97012e721ef0`
-Final remote tip: `52520ce566a7c8138bc00502146b97012e721ef0`
+Final remote tip: `102271a1c9160a9de3084eb2bd297f5d32439e70`
 
 ## Requested outcome
 
