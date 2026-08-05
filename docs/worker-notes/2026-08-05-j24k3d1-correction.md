@@ -3,10 +3,10 @@
 Task: `J24K3d1 correction - planner path-safety regressions and complete verification`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Base commit: `96902b715cbb8d62aad12d468a474ae03abfaaed`
 Original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
-Correction implementation checkpoint: `WORKTREE`
+Correction implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
 Verification checkpoint: `WORKTREE`
 
 ## Requested outcome
