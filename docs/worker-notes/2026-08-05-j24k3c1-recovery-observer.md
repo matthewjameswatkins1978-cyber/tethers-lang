@@ -43,6 +43,7 @@ Apply one bounded correction to the otherwise accepted J24K3c1 observer. Preserv
 - `git diff --check`: passed.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256`: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - Implementation checkpoint: `0a83c036c3a446e63e1587cd220f8988e08683f4`.
+- Final remote tip at evidence commit: `905050605f5b2bb8eb258d459a2d55ed7a5e9bd2`.
 
 ## Discoveries
 
