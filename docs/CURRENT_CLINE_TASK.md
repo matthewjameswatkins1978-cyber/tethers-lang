@@ -1,144 +1,232 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24K3c3 correction - exact trust equality and evidence hygiene`
+Task: `J24K3c4 - Global installed-root consistency auditor`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `READY`
 Task colour: `Red`
-Route: `OpenCode using Kimi K2.7Code for one bounded correction to its J24K3c3 authority-chain package; Lucy performs independent review and routine safe merge`
-Base branch: `opencode/j24k3c3-evidence-revalidator`
-Base commit: `7b148070a04a3af30ffe0165c35ea56e499b36a5`
-Implementation branch: `opencode/j24k3c3-evidence-revalidator`
-Worker note: `docs/worker-notes/2026-08-05-j24k3c3-correction.md`
+Route: `OpenCode using DeepSeek Pro for one bounded, read-only Rust filesystem and record-reconciliation package; Lucy performs independent review and routine safe merge`
+Base branch: `opencode/j24k3c4-installed-root-audit`
+Base commit: `612b43eaa92d2142975d2dd4878561a1f60e4313`
+Implementation branch: `opencode/j24k3c4-installed-root-audit`
+Worker note: `docs/worker-notes/2026-08-05-j24k3c4-installed-root-audit.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
-Accepted main: `6cbcbaf8bfa9c67f274b503061187ae51a08b080`
-Reviewed OpenCode tip: `88a911772aef7511262a365cccbcbdf3b0ad4ae9`
-Reviewed implementation checkpoint: `727a20944270a5c71484f8c1728c339d0d7f1dbf`
+Accepted main: `e95e061e815d69b91b0637d08f84caaa602f1772`
 
 ## Objective
 
-Correct three narrow independent-review findings in the otherwise sound J24K3c3 read-only recovery evidence-chain revalidator.
+Implement only J24K3c4: one crate-private, read-only global installed-root consistency audit.
 
-Do not redesign the package. Preserve its context, ordering, store selection, candidate-byte revalidation, exact-candidate authority, launch/conformance/approval chain, installed-record derivation, stable errors, read-only boundary, and all later-work exclusions.
+Given the optional current `InstallationPublicationIntent`, the audit must prove that every direct final-destination namespace entry beginning `plug-` is accounted for by either:
 
-## Independent-review findings
+- one validated installed record whose exact destination is `plug-<installed_id>`; or
+- the single validated current publication intent and its exact destination.
 
-### 1. The frozen packet requires literal trust-object equality
-
-The current implementation compares only `PackageTrustEvidence.evidence_digest` at three recovery boundaries:
-
-- reconstructed trust versus `intent.installed_record.trust_evidence` in `revalidate_trust`;
-- approval trust versus reconstructed trust in `InstallationApprovalRecord::require_for_recovery`;
-- installed-record trust versus reconstructed trust in `InstalledPlugRecord::require_for_recovery`.
-
-SHA-256 coverage remains mandatory, but the frozen J24K3c3 contract explicitly requires exact `PackageTrustEvidence` equality. Enforce full value equality at all three boundaries. Do not remove validation or digest checks performed by the accepted types.
-
-### 2. Recovery-facing error translation must not carry lower-layer messages
-
-`map_candidate_error` currently constructs `unsafe_store_path` using the candidate layer's `error.message`. Preserve the explicit unsafe-path code, but replace the copied message with one fixed recovery-owned safe message. Do not expose the candidate message, a filesystem path, package text, JSON, or OS diagnostics.
-
-Also map failure from `current_suite_digest()` into an allowed stable recovery-facing error rather than allowing a lower `record_invalid` or canonicalisation error to escape. No clock, callback, fault-injection seam, or public API may be added.
-
-The only ordinary recovery-facing errors remain:
-
-```text
-installation_intent_invalid: installation publication intent is invalid
-installation_intent_evidence_stale: installation publication evidence is no longer current
-installation_recovery_io: installation recovery state could not be observed
-```
-
-Explicit `unsafe_store_path` remains allowed with one fixed safe message.
-
-### 3. The successful read-only test must prove the metadata claim it makes
-
-`j24k3c3_success_leaves_stores_quarantine_and_permissions_unchanged` currently compares loaded store values and byte hashes, but does not compare modification timestamps or permission state.
-
-Strengthen the production-entry-point test to snapshot and compare, for every relevant file beneath:
-
-- candidate registry root;
-- quarantine root;
-- exact-trust store;
-- launch-profile store;
-- conformance store;
-- approval store;
-
-At minimum capture:
-
-- normalized relative path and entry type;
-- file bytes or SHA-256 digest;
-- `modified()` timestamp;
-- `permissions().readonly()`.
-
-The snapshot must be taken immediately before and after one successful call to `revalidate_installation_recovery_evidence`. Do not alter the files to prepare the assertion. Directory entry sets must remain exact.
-
-### 4. Test names and evidence must describe what they prove
-
-The closed enums `InstallationTrustScope` and `InstallationTargetState` currently expose only `ExactCandidate` and `Disabled`. The tests named:
-
-- `j24k3c3_non_exact_trust_scope_fails_stale`;
-- `j24k3c3_non_disabled_target_fails_stale`;
-
-do not construct invalid states and instead pass the valid chain.
-
-Rename or replace them so the names honestly describe the closed accepted variants they prove. Do not add enum variants, unsafe representation tricks, deserialisation bypasses, public constructors, or architecture changes merely to manufacture impossible typed states. Record this closed-enum limitation accurately in the worker note and exact test count.
+Any unexplained final destination is a global integrity failure. The audit must not adopt it, delete it, repair it, classify transaction recovery, publish a record, remove an intent, acquire a lock, plan another action, or wire the executor.
 
 ## Relevant background and existing behaviour
 
-The J24K3c3 recovery evidence-chain revalidator is fully implemented and reviewed at `88a911772aef7511262a365cccbcbdf3b0ad4ae9`. Independent review identified three narrow findings:
+Accepted `main` is exactly:
 
-1. Trust comparison at three recovery boundaries uses only `evidence_digest` rather than full `PackageTrustEvidence` equality as the frozen packet requires.
-2. `map_candidate_error` copies the candidate layer's error message into the recovery-facing `unsafe_store_path` error, and `current_suite_digest()` failure is not mapped to a safe recovery error.
-3. The successful read-only test compares logical values and hashes but not modification timestamps or permissions, and two closed-enum test names claim invalid states the type system prevents.
+```text
+e95e061e815d69b91b0637d08f84caaa602f1772
+```
 
-The existing accepted stores, candidate-byte revalidation, trust-authority, launch, conformance, approval, and installed-record checks remain sound.
+J24K3a provides the durable validated publication intent. J24K3b provides the pure recovery classifier. J24K3c1 observes the exact staging, destination, and record paths for one transaction. J24K3c2 verifies the exact current-intent destination file set, hashes, lengths, permissions, and path safety. J24K3c3 revalidates the complete request, candidate, trust, launch, conformance, approval, and installed-record evidence chain.
 
-## Relevant components
+`InstalledPlugRegistry::load_all()` validates every installed record and the destination named by that record. It does not enumerate the install root to detect an orphan final directory that has no record. The frozen J24K architecture requires a global pass because final destination names are generated installed IDs and cannot be inferred from only the current candidate.
 
-- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs` — entry point, trust revalidation, error mapping.
-- `tethers-0.1/host-rust/src/installation_recovery_evidence_tests.rs` — 44 focused tests including the metadata-preservation test and the misleading closed-enum tests.
-- `tethers-0.1/host-rust/src/installed.rs` — `InstallationApprovalRecord::require_for_recovery`, `InstalledPlugRecord::require_for_recovery`.
-- `docs/CURRENT_CLINE_TASK.md` — this packet.
-- `docs/worker-notes/2026-08-05-j24k3c3-correction.md` — correction worker note.
-
-## Frozen decisions and invariants
-
-1. SHA-256 coverage remains mandatory, but exact `PackageTrustEvidence` object equality must be enforced at all three recovery boundaries.
-2. Only the three stable recovery-facing error codes are permitted: `installation_intent_invalid`, `installation_intent_evidence_stale`, `installation_recovery_io`. Explicit `unsafe_store_path` is allowed with one fixed safe message.
-3. `InstallationTrustScope` and `InstallationTargetState` are closed enums exposing only their accepted variants; no new variants, unsafe representation tricks, or deserialisation bypasses may be added.
-4. No production mutation, no destination verification, no recovery classification or cleanup, no publication, no intent removal, no locking, no planner or executor wiring.
-5. Cargo.lock must remain byte-identical.
-6. The evidence-chain architecture, intent-first ordering, store selection, and authority policy are frozen.
+The current `InstalledPlugRecord::validate()` does not itself prove that `installation_relative_path` is exactly `plug-<installed_id>`. J24K3c4 must enforce that recovery identity invariant without changing the public record schema or ordinary `load_all()` behaviour.
 
 ## Required behaviour
 
-1. Preserve `intent.validate()` as the first production operation.
-2. Preserve every accepted request, candidate, trust-authority, launch, conformance, approval, and installed-record check.
-3. Compare full `PackageTrustEvidence` values at all three recovery chain boundaries.
-4. Preserve all accepted validation and cryptographic digest coverage.
-5. Translate candidate unsafe state to `unsafe_store_path` with one fixed safe recovery-owned message.
-6. Ensure `current_suite_digest()` cannot leak a non-recovery-facing error.
-7. Strengthen the successful no-mutation test to compare bytes, entry sets, modification timestamps, and read-only permissions across all evidence roots.
-8. Rename the two misleading closed-enum tests without changing accepted public types.
-9. Retain every other J24K3c3 test and production semantic.
-10. Perform no production mutation and no later recovery work.
+### 1. Add one narrow crate-private audit seam
+
+Add a method on `InstalledPlugRegistry` structurally equivalent to:
+
+```rust
+pub(crate) fn audit_installation_recovery_destinations(
+    &self,
+    intent: Option<&InstallationPublicationIntent>,
+) -> Result<()>;
+```
+
+The caller supplies only the optional current validated intent. It must not supply a root, path, record set, allow-list, callback, deletion policy, or mutation capability.
+
+### 2. Validate a supplied intent before filesystem or store access
+
+When `intent` is `Some`, `intent.validate()` must be the first operation. Invalid intent returns the existing stable error:
+
+```text
+installation_intent_invalid: installation publication intent is invalid
+```
+
+When `intent` is `None`, no synthetic intent is created and the audit proceeds directly to root validation.
+
+### 3. Require both already-opened registry roots to remain safe and present
+
+Reuse the accepted J24K3c2 existing-root guard for both the install root and record root.
+
+- explicit symlink, junction, or reparse refusal remains `unsafe_store_path`;
+- missing, inaccessible, replaced, or non-directory registry roots return `installation_recovery_io`;
+- do not recreate or repair a root.
+
+### 4. Load and validate the complete installed-record set
+
+Use the accepted installed-state validation boundary rather than creating a second payload validator. `InstalledPlugRegistry::load_all()` may be used directly, or its internal validation may be narrowly factored only if required to preserve stable recovery errors. Public `load_all()` behaviour must not change.
+
+Every accepted installed record must additionally satisfy:
+
+- `installed_id` is a canonical lowercase hyphenated UUID;
+- `installation_relative_path` equals exactly `plug-<installed_id>`;
+- no two records account for the same final destination path.
+
+A malformed record, invalid record identity, missing tracked destination, payload drift, permission drift, duplicate destination claim, or other contradictory tracked state returns `installation_recovery_conflict` without exposing lower-layer detail. Explicit unsafe path state remains `unsafe_store_path`.
+
+For failures already collapsed by accepted `load_all()` into a structural installed-state error, map conservatively to `installation_recovery_conflict`. Do not redesign public installed-state error semantics solely to distinguish operating-system failure from corruption. The audit's own root and direct-directory access failures use `installation_recovery_io`.
+
+### 5. Cross-check an optional intent against installed records
+
+A validated intent authorizes only `intent.destination_relative_path`.
+
+- The intent destination may be absent. That is valid at this audit stage because J24K3c1 owns exact state observation.
+- The intent destination may be present without an installed record. That is valid at this identity-audit stage because J24K3c2 and J24K3c3 own full destination and evidence revalidation before publication.
+- If an installed record already claims the intent destination, that record must equal `intent.installed_record` exactly.
+- A different record, repinned record, or contradictory claim at the intent destination returns `installation_recovery_conflict`.
+- The intent must not authorize any sibling or package-release-equivalent destination.
+
+Do not verify the content of an intent-only destination in this package. Do not repeat J24K3c2.
+
+### 6. Enumerate the install root's direct final namespace
+
+Enumerate direct children of the install root only. Final destinations are direct children and must never be discovered through recursive searching.
+
+For every direct entry whose UTF-8 filename begins with `plug-`:
+
+1. reject symlink, junction, and Windows reparse state using the accepted primitive;
+2. require the filename to be exactly `plug-<canonical lowercase hyphenated UUID>`;
+3. require an accounted exact final name from either the validated installed-record set or the optional current intent;
+4. when the accounted path is present, require it to be one ordinary directory.
+
+A `plug-*` entry with a malformed final name or no accounting record/intent returns:
+
+```text
+installation_destination_untracked: installed destination is not tracked by a validated record or current publication intent
+```
+
+An exact accounted name that is present as a non-directory returns `installation_recovery_conflict`. Explicit reparse refusal remains `unsafe_store_path`. Direct enumeration or metadata access failure returns `installation_recovery_io`.
+
+A direct filename that cannot be represented as UTF-8 cannot be safely classified and returns `installation_recovery_conflict`.
+
+### 7. Leave non-final private entries outside this audit
+
+Direct entries not beginning with `plug-` are not final destinations and remain outside J24K3c4's classification boundary.
+
+In particular:
+
+- `.staging-<transaction-id>` remains owned by J24K3c1 and the recovery classifier;
+- unrelated non-final test fixtures must not be adopted, deleted, renamed, recursively scanned, or treated as final destinations by this package.
+
+This is not permission to accept an untracked `plug-*` entry with a malformed UUID. Every entry in the `plug-` namespace is fail-closed.
+
+### 8. Use stable recovery-facing errors
+
+The new audit exposes only:
+
+```text
+installation_intent_invalid: installation publication intent is invalid
+installation_destination_untracked: installed destination is not tracked by a validated record or current publication intent
+installation_recovery_conflict: installation recovery state conflicts with publication intent
+installation_recovery_io: installation recovery state could not be observed
+```
+
+Explicit accepted `unsafe_store_path` remains allowed. Do not expose filesystem paths, record-controlled strings, raw JSON, or operating-system diagnostics.
+
+### 9. Add direct tests and complete verification
+
+Add a private test module whose test names begin `j24k3c4`.
+
+Directly prove at minimum:
+
+- empty install and record roots pass with no intent;
+- one or more complete validated installed records and destinations pass with no intent;
+- a valid intent whose destination is absent passes the identity audit;
+- a valid intent destination present without a record passes the identity audit;
+- a matching intent, record, and destination pass;
+- one untracked canonical final directory fails with `installation_destination_untracked` when no intent exists;
+- an authorised intent destination does not excuse a second untracked final directory;
+- malformed `plug-*` directory names fail as untracked;
+- an untracked canonical `plug-*` ordinary file fails as untracked;
+- an accounted canonical destination present as a file fails as recovery conflict;
+- final-destination symlink, junction, or reparse state remains `unsafe_store_path`;
+- a record whose destination is not exactly `plug-<installed_id>` fails closed after its digest and fixture state are validly rebuilt;
+- an intent and existing record that claim the same destination with different complete records fail as recovery conflict;
+- a tracked record whose destination is missing or whose installed bytes drift fails as recovery conflict;
+- staging and unrelated non-final entries are ignored and remain untouched;
+- invalid intent wins before missing roots or orphan destinations can influence the result;
+- removal of either already-opened registry root returns `installation_recovery_io`;
+- a successful audit leaves exact entry sets, bytes, modification timestamps, and read-only permission state unchanged beneath both registry roots.
+
+Exercise the production method. Do not test only helper functions or source strings.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_audit_tests.rs`
+- `tethers-0.1/host-rust/src/installation_publication_intent.rs`
+- `tethers-0.1/host-rust/src/installation_recovery.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_destination_tests.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_observation_tests.rs`
+- `tethers-0.1/host-rust/src/lib.rs`
+- `InstalledPlugRegistry`
+- `InstalledPlugRecord`
+- `InstallationPublicationIntent`
+- `InstalledPlugRegistry::load_all`
+- `require_existing_recovery_root`
+- `reject_reparse`
+
+`installation_publication_intent.rs`, `installation_recovery.rs`, and the accepted J24K3c1-c3 modules are reference-only and are not permitted production edit targets.
+
+## Frozen decisions and invariants
+
+- J24K3c4 is crate-private and read-only.
+- A supplied intent is validated before any root, store, or filesystem access.
+- Every entry in the direct `plug-` namespace must be accounted for globally.
+- Installed records account only for exact canonical `plug-<installed_id>` paths.
+- One current intent accounts only for its one exact destination.
+- Intent-only destination content remains J24K3c2's responsibility.
+- Current authority and evidence freshness remain J24K3c3's responsibility.
+- Staging observation and recovery classification remain J24K3c1 and J24K3b responsibilities.
+- Non-final direct entries are not recursively inspected or mutated.
+- No orphan is adopted, deleted, renamed, repaired, or converted into a record.
+- Existing public installation and `load_all()` behaviour remain unchanged.
+- No public API, dependency, Cargo configuration, Cargo.lock, request, evidence schema, CLI, packaging, release, enablement, operational-scope, or OCaml change is permitted.
+- Recovery mutation, cleanup, record publication, intent removal, lock integration, planner, and executor wiring remain later work.
 
 ## Acceptance criteria
 
-1. `revalidate_trust` requires reconstructed trust to equal the complete intent-record trust value.
-2. `InstallationApprovalRecord::require_for_recovery` requires complete approval trust equality.
-3. `InstalledPlugRecord::require_for_recovery` requires complete installed-record trust equality.
-4. Candidate unsafe translation copies no lower-layer message or detail.
-5. Current-suite calculation returns only an allowed recovery-facing error on failure.
-6. Existing intent-first ordering and all authority-chain checks remain unchanged.
-7. The successful read-only test proves exact entry sets, bytes, modification timestamps, and read-only permission state across all relevant roots.
-8. Closed-enum test names no longer claim to exercise impossible invalid variants.
-9. All existing focused negative cases remain green.
-10. Focused Nextest passes with zero retries.
-11. J24K3c2, J24K3c1, J24K3b, J24K3a, J24K2, J24I, J24H, J24J, and M3 lifecycle regressions remain green.
-12. Full `just verify` and the task packet checker pass, subject only to the already-documented intermittent Windows handle-contention rule.
-13. Cargo.lock remains byte-identical and only permitted files change.
-14. The worker note records exact corrected test counts, implementation checkpoint, verification, discoveries, remaining risks, and final remote tip.
+1. One crate-private method accepts only an optional validated intent.
+2. Supplied-intent validation is the first operation.
+3. Both already-opened roots must remain ordinary safe directories.
+4. All installed records and their tracked destinations remain valid through accepted installed-state validation.
+5. Every record destination is exactly canonical `plug-<installed_id>`.
+6. The current intent authorizes no destination other than its exact path.
+7. A matching record at the intent path must equal the complete precomputed intent record.
+8. Every direct `plug-*` entry is canonical, ordinary, safe, and accounted for.
+9. Any unexplained or malformed final namespace entry returns `installation_destination_untracked`.
+10. Contradictory tracked state returns `installation_recovery_conflict`.
+11. Explicit reparse state remains `unsafe_store_path`.
+12. Root and direct-audit access failure returns `installation_recovery_io` without detail.
+13. Missing intent destination is permitted; missing record-backed destination is not.
+14. Staging and unrelated non-final entries are untouched and not recursively audited.
+15. Audit performs no mutation and preserves bytes, entries, timestamps, and permissions.
+16. Direct tests exercise the production audit seam.
+17. Focused Nextest passes with zero retries and all `j24k3c4` tests pass.
+18. J24K3c3, J24K3c2, J24K3c1, J24K3b, J24K3a, J24K2, J24J, and M3 lifecycle regressions remain green.
+19. Full `just verify` and the task packet checker pass.
+20. Cargo.lock remains byte-identical and only permitted files change.
+21. The task packet and worker note record exact commands, counts, checkpoint SHA, discoveries, risks, and final remote tip.
 
 ## Required verification
 
@@ -155,7 +243,12 @@ cargo nextest run `
   --config-file .config/nextest.toml `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
   --all-features --locked `
-  -E 'test(j24k3c3)'
+  -E 'test(j24k3c4)'
+
+cargo test `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --lib j24k3c4 `
+  --locked
 
 cargo test `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
@@ -189,16 +282,6 @@ cargo test `
 
 cargo test `
   --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --test j24i_exact_candidate_installation_trust `
-  --locked
-
-cargo test `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
-  --test j24h_installation_evidence_access `
-  --locked
-
-cargo test `
-  --manifest-path tethers-0.1/host-rust/Cargo.toml `
   --test j24j_installation_reconciliation `
   --locked
 
@@ -222,31 +305,34 @@ Cargo.lock must remain:
 D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
-If the already-documented `m3_lifecycle` Windows handle-contention failure occurs, identify the exact same failure, rerun that test serially, and require it to pass. Do not relabel a new failure as pre-existing.
+If the documented `m3_lifecycle` Windows handle-contention failure occurs, identify the exact known failure, rerun that test serially, and require it to pass. Do not classify a different failure as pre-existing.
 
 ## Forbidden changes
 
 - No edit to the frozen architecture.
-- No edit to accepted request, candidate, trust, launch-profile, conformance, store, intent, recovery classifier, execution, or destination-verifier modules beyond the already-permitted narrow `installed.rs` helpers.
-- No enum variants, unsafe representation construction, parser bypass, public API, schema, dependency, Cargo configuration, Cargo.lock, CLI, packaging, release, enablement, operational-scope, or OCaml change.
-- No destination verification, global audit, recovery classification, cleanup, publication, intent removal, lock, planner, or executor wiring.
-- No production mutation.
-- No unrelated refactor or broad test-fixture framework.
+- No edit to `installation_publication_intent.rs`, `installation_recovery.rs`, `installation_recovery_evidence.rs`, `installation_execution.rs`, `m3_store.rs`, or accepted destination/observation production semantics.
+- No public `load_all()` behaviour change.
+- No intent-destination content verification beyond accepted installed-record validation.
+- No recursive scan of unrelated install-root entries.
+- No staging classification or cleanup.
+- No global repair, adoption, deletion, rename, record creation, intent removal, lock, planner, or executor wiring.
+- No public API, schema, dependency, Cargo configuration, Cargo.lock, CLI, packaging, release, enablement, operational-scope, or OCaml change.
+- No unrelated refactor or broad test framework.
 
 Permitted files:
 
-- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs`;
-- `tethers-0.1/host-rust/src/installation_recovery_evidence_tests.rs`;
-- `tethers-0.1/host-rust/src/installed.rs` only for the existing narrow recovery helpers;
+- `tethers-0.1/host-rust/src/installed.rs` only for the narrow crate-private audit and private helpers;
+- `tethers-0.1/host-rust/src/installation_recovery_audit_tests.rs` new;
+- `tethers-0.1/host-rust/src/lib.rs` only to register the new private test module;
 - `docs/CURRENT_CLINE_TASK.md`;
-- `docs/worker-notes/2026-08-05-j24k3c3-correction.md`.
+- `docs/worker-notes/2026-08-05-j24k3c4-installed-root-audit.md`.
 
 ## Stop conditions
 
-Stop as `BLOCKED` only if literal trust equality, safe error translation, or metadata-preservation evidence requires changing an accepted public type, evidence schema, dependency, Cargo.lock, trust policy, or production mutation; or if full verification still fails after one evidence-led correction.
+Stop as `BLOCKED` only if global final-destination accounting requires changing an accepted public type, record schema, intent schema, dependency, Cargo.lock, public `load_all()` semantics, or production filesystem mutation; or if full verification still fails after one evidence-led correction.
 
-Do not stop for failed LSP, a stale local ref, renaming the two misleading tests, or the documented intermittent Windows handle-contention fixture.
+Do not stop for failed LSP, a stale local ref, constructing validly redigested installed-record fixtures, or the documented intermittent Windows handle-contention fixture.
 
 ## Expected pre-existing changes
 
-The branch contains the complete reviewed J24K3c3 implementation and evidence at `88a911772aef7511262a365cccbcbdf3b0ad4ae9`, followed by the correction worker-note scaffold at the `Base commit`. No production correction has yet been applied.
+None. The branch is expected to be clean at handoff. The worker-note scaffold commit named by `Base commit` changes only the new worker note; this task-packet commit changes only `docs/CURRENT_CLINE_TASK.md`.
