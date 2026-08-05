@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tethers_reference_host::candidate::CandidateRecord;
 use tethers_reference_host::conformance::ConformanceEvidence;
 use tethers_reference_host::conformance::{
@@ -45,6 +45,39 @@ fn root(name: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!("tethers-m3-{name}-{}", Uuid::new_v4()));
     fs::create_dir_all(&path).unwrap();
     path
+}
+
+fn remove_test_tree_with_retry(path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+
+    loop {
+        match fs::remove_dir_all(path) {
+            Ok(()) => return,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::DirectoryNotEmpty
+                ) =>
+            {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    panic!(
+                        "failed to remove test tree '{}' after 2 seconds: {error}",
+                        path.display()
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(25).min(remaining));
+                if Instant::now() >= deadline {
+                    panic!(
+                        "failed to remove test tree '{}' after 2 seconds: {error}",
+                        path.display()
+                    );
+                }
+            }
+            Err(error) => panic!("failed to remove test tree '{}': {error}", path.display()),
+        }
+    }
 }
 
 fn write_read_only(path: &Path, bytes: &[u8]) {
@@ -1006,7 +1039,7 @@ fn m3_malformed_and_interrupted_conformance_fail_without_retry_or_install() {
     assert_eq!(evidence.retry_count, 0);
     prepared.cleanup_scratch().unwrap();
     assert!(!base.join("install").exists());
-    fs::remove_dir_all(base).unwrap();
+    remove_test_tree_with_retry(&base);
 }
 
 #[test]

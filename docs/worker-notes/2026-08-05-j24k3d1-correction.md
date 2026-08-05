@@ -3,7 +3,7 @@
 Task: `J24K3d1 correction - planner path-safety regressions and complete verification`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `BLOCKED`
+Status: `IN_PROGRESS`
 Base commit: `96902b715cbb8d62aad12d468a474ae03abfaaed`
 Original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
 Implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
@@ -20,7 +20,8 @@ Add direct planner-entry regressions for destination reparse state and unsafe or
 
 ## Changes made
 
-None yet.
+- Added a private `m3_lifecycle.rs` test helper that retries only Windows teardown `PermissionDenied` or `DirectoryNotEmpty` errors for a bounded two-second deadline, treats `NotFound` as success, and panics with the complete path and final error otherwise.
+- Replaced only the final teardown call in `m3_malformed_and_interrupted_conformance_fail_without_retry_or_install`.
 
 ## Decisions and assumptions
 
@@ -29,6 +30,7 @@ None yet.
 - Existing lower-level path-safety tests are not a substitute for exercising `plan_installation_recovery` directly.
 - Missing Nextest is a tooling block, not permission to mark the task complete. Do not install software automatically.
 - Workers record actual implementation and verification checkpoints only. No final remote tip is committed inside the branch.
+- Lucy authorised this one test-only Windows teardown correction after the exact serial rerun also failed. No production, assertion, child-shutdown, or conformance behavior is changed.
 
 ## Evidence
 
@@ -37,6 +39,7 @@ None yet.
 - Named regression suites passed, including the first full serial verification through `j24c_plug_disable_cli` after its exact failing test passed on serial rerun.
 - Full serial `just verify` failed on `m3_malformed_and_interrupted_conformance_fail_without_retry_or_install` at `tests/m3_lifecycle.rs:1009` with `Os { code: 5, kind: PermissionDenied, message: "Access is denied." }`.
 - The exact permitted serial rerun of that test failed with the same error.
+- The bounded teardown correction is intentionally not best-effort: unexpected errors fail immediately and persistent contention fails after two seconds with the final error.
 
 ## Discoveries
 
@@ -52,7 +55,7 @@ None yet.
 
 ## Smallest next action
 
-Escalate the repeated Windows handle-contention failure for diagnosis. Do not mark COMPLETE or push a verification checkpoint.
+Run the ten exact serial repetitions, then the complete packet verification matrix. If bounded cleanup still fails, record the complete path, final OS error, and remaining `m3_fixture_provider` processes, then stop BLOCKED without broadening the correction.
 
 ## References
 

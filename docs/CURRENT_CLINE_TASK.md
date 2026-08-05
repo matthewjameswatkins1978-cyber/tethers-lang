@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K3d1 correction - planner path-safety regressions and complete verification`
 Owner: `OpenCode`
-Status: `BLOCKED`
+Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro for one bounded regression-test, verification, and evidence correction; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3d1-validated-recovery-plan`
@@ -141,6 +141,7 @@ Use the accepted safe platform fixture pattern. Do not add unsafe representation
 
 - `tethers-0.1/host-rust/src/installation_recovery_plan.rs`: accepted read-only planner entry point.
 - `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs`: direct planner-entry regression fixtures.
+- `tethers-0.1/host-rust/tests/m3_lifecycle.rs`: one authorised test-only Windows teardown correction.
 - `tethers-0.1/host-rust/src/installed.rs`: authoritative installed-root audit and destination verification.
 - `tethers-0.1/host-rust/src/installation_publication_intent.rs`: authoritative intent store.
 
@@ -150,6 +151,7 @@ Use the accepted safe platform fixture pattern. Do not add unsafe representation
 - Keep path safety fail-closed: missing roots return `installation_recovery_io`; reparse roots return `unsafe_store_path`.
 - Tests must use real platform path representations and must not add production hooks or unsafe test seams.
 - The correction remains test and evidence documentation only; no mutation or executor behavior is added.
+- Lucy authorised one bounded test-only Windows teardown correction after the exact serial rerun of the documented `m3_lifecycle` failure also failed. This does not change production recovery, conformance, launch, child-shutdown, or assertion behavior.
 
 ## Acceptance criteria
 
@@ -354,6 +356,7 @@ D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ## Permitted files
 
 - `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs`;
+- `tethers-0.1/host-rust/tests/m3_lifecycle.rs` only for the authorised bounded teardown helper and its one call-site replacement;
 - `tethers-0.1/host-rust/src/installation_recovery_plan.rs` only if a new direct regression exposes a real defect;
 - `docs/CURRENT_CLINE_TASK.md`;
 - `docs/worker-notes/2026-08-05-j24k3d1-validated-recovery-plan.md` only for checkpoint and truthful evidence correction;
