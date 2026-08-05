@@ -79,6 +79,49 @@ impl InstallationApprovalRecord {
         canonical(&copy)
     }
 
+    pub(crate) fn require_for_recovery(
+        &self,
+        candidate: &CandidateRecord,
+        quarantine: &Path,
+        trust: &PackageTrustEvidence,
+        launch: &LaunchProfileEvidence,
+        conformance: &ConformanceEvidence,
+    ) -> Result<()> {
+        self.validate()?;
+        if self.candidate_id != candidate.candidate_id
+            || self.package_id != candidate.package_id
+            || self.package_version != candidate.package_version
+            || self.semantic_package_digest != candidate.semantic_package_digest
+            || self.raw_archive_digest != candidate.raw_archive_digest
+            || self.source_size_bytes != candidate.source_size_bytes
+            || self.payloads != candidate.payloads
+            || self.provider_id != candidate.provider_id
+            || self.provider_version != candidate.provider_version
+            || self.launch_path != candidate.launch_path
+            || self.launch_arguments != candidate.launch_arguments
+            || self.provider_working_directory != candidate.provider_working_directory
+            || self.launch_profile_label != launch.profile_label
+            || self.launch_profile_limitation != launch.limitation
+            || self.launch_profile_evidence_digest != launch.profile_evidence_digest
+            || self.trust_evidence.evidence_digest != trust.evidence_digest
+            || self.conformance_evidence_id != conformance.evidence_id
+            || self.conformance_evidence_digest != conformance.evidence_digest
+        {
+            return Err(M3Error::new(
+                "install_approval_stale",
+                "approval pins drifted",
+            ));
+        }
+        let reviewed = reviewed_capabilities(candidate, quarantine)?;
+        if reviewed != self.reviewed_capabilities {
+            return Err(M3Error::new(
+                "install_approval_stale",
+                "reviewed capabilities drifted",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<()> {
         self.trust_evidence.validate()?;
         if self.schema_version != 1
@@ -98,7 +141,7 @@ impl InstallationApprovalRecord {
     }
 }
 
-fn reviewed_capabilities(
+pub(crate) fn reviewed_capabilities(
     candidate: &CandidateRecord,
     quarantine: &Path,
 ) -> Result<Vec<ReviewedCapability>> {
@@ -327,6 +370,73 @@ impl InstalledPlugRecord {
         let mut copy = self.clone();
         copy.record_digest.clear();
         canonical(&copy)
+    }
+
+    pub(crate) fn require_for_recovery(
+        &self,
+        intent: &InstallationPublicationIntent,
+        candidate: &CandidateRecord,
+        trust: &PackageTrustEvidence,
+        launch: &LaunchProfileEvidence,
+        conformance: &ConformanceEvidence,
+        approval: &InstallationApprovalRecord,
+    ) -> Result<()> {
+        self.validate()?;
+        if self.installed_id != intent.transaction_id
+            || self.source_candidate_id != intent.candidate_id
+            || self.source_candidate_id != candidate.candidate_id
+            || self.installation_relative_path != intent.destination_relative_path
+        {
+            return Err(M3Error::new(
+                "installed_record_invalid",
+                "recovery identity mismatch",
+            ));
+        }
+        if self.package_id != candidate.package_id
+            || self.package_version != candidate.package_version
+            || self.semantic_package_digest != candidate.semantic_package_digest
+            || self.raw_archive_digest != candidate.raw_archive_digest
+            || self.plug_json != candidate.plug_json
+            || self.payloads != candidate.payloads
+            || self.signature_files != candidate.signature_files
+            || self.capability_manifests != candidate.capabilities
+            || self.trust_evidence.evidence_digest != trust.evidence_digest
+            || self.installation_approval_id != approval.approval_id
+            || self.installation_approval_digest != approval.record_digest
+            || self.conformance_evidence_id != conformance.evidence_id
+            || self.conformance_evidence_digest != conformance.evidence_digest
+            || self.provider_id != candidate.provider_id
+            || self.provider_version != candidate.provider_version
+            || self.launch_path != candidate.launch_path
+            || self.launch_arguments != candidate.launch_arguments
+            || self.provider_working_directory != candidate.provider_working_directory
+            || self.launch_profile_label != launch.profile_label
+            || self.platform != candidate.selected_platform.os
+            || self.architecture != candidate.selected_platform.architecture
+        {
+            return Err(M3Error::new(
+                "installed_record_invalid",
+                "recovery chain mismatch",
+            ));
+        }
+        let expected_bindings: Vec<DisabledBindingRecord> = candidate
+            .capabilities
+            .iter()
+            .map(|capability| DisabledBindingRecord {
+                state: "disabled".into(),
+                capability_name: capability.name.clone(),
+                capability_version: capability.version,
+                manifest_digest: capability.manifest_digest.clone(),
+                provider_operation_name: capability.operation.clone(),
+            })
+            .collect();
+        if self.disabled_bindings != expected_bindings {
+            return Err(M3Error::new(
+                "installed_record_invalid",
+                "disabled bindings mismatch",
+            ));
+        }
+        Ok(())
     }
 
     pub fn validate(&self) -> Result<()> {
