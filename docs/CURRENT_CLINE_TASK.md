@@ -25,6 +25,7 @@ For `InstallationPlanAction::PublishDisabledInstallation`, the locked executor m
 
 ```text
 use the current before-plan already created inside the lock
+  -> open the accepted publication-intent store from executor_state_root
   -> prepare one sealed exact publication
   -> execute that exact prepared publication
   -> freshly run J24J after mutation
@@ -32,7 +33,15 @@ use the current before-plan already created inside the lock
   -> return Advanced { executed: PublishDisabledInstallation }
 ```
 
-This package finishes J24K publication execution. It does not add J24L, a CLI, a multi-step loop, new public context fields, or any second mutation per invocation.
+This package finishes J24K publication execution. It does not add J24L, a CLI, a multi-step loop, or any second mutation per invocation.
+
+The package is explicitly authorised to restore the already frozen blueprint field:
+
+```rust
+pub executor_state_root: &'a Path,
+```
+
+on `InstallationExecutionContext`. No other context field or public API change is authorised.
 
 ## Relevant background and existing behaviour
 
@@ -46,34 +55,39 @@ Accepted foundations now provide:
 - J24K3e2: exact durable mutation consuming that sealed prepared value;
 - `installation_execution.rs` still returns `installation_publication_deferred` for `PublishDisabledInstallation`.
 
-The outer public entry point already acquires the lock and delegates to an inner function whose planner, action and post-plan values remain inside the lock lifetime. Preserve that shape.
+The frozen architecture blueprint already defines `executor_state_root: &'a Path` on `InstallationExecutionContext`, but the current implementation omitted it. J24K3f requires that exact root to open `InstallationPublicationIntentStore` and construct `InstallationRecoveryPlanningContext` without deriving authority from an unrelated path.
+
+The outer public entry point already acquires the lock and delegates to an inner function whose recovery, planner, action and post-plan values remain inside the lock lifetime. Preserve that shape.
 
 ## Required behaviour
 
-1. Replace only the deferred `PublishDisabledInstallation` action arm.
-2. Reuse the exact current locked `before` plan as the preparation comparison value.
-3. Build the existing recovery/planning context from already accepted executor context fields.
-4. Call J24K3e1 preparation while the lock is held.
-5. Call J24K3e2 mutation with the sealed prepared value while the same lock is held.
-6. Run one fresh authoritative J24J plan after mutation.
-7. Require the exact forward transition `PublishDisabledInstallation -> Complete`.
-8. Return the existing `Advanced { executed: PublishDisabledInstallation }` outcome shape.
-9. Preserve recovery-before-ordinary-action ordering and every earlier error classification.
-10. Preserve the one-invocation/one-mutation invariant and all excluded public behaviour.
+1. Restore exactly one accepted `InstallationExecutionContext` field: `executor_state_root: &'a Path`.
+2. Update every legitimate construction site and fixture for that field without adding defaults or derived fallback paths.
+3. Replace only the deferred `PublishDisabledInstallation` action arm.
+4. Reuse the exact current locked `before` plan as the preparation comparison value.
+5. Open `InstallationPublicationIntentStore` from `context.executor_state_root` while the lock is held.
+6. Build the accepted `InstallationRecoveryPlanningContext` from the intent store and existing executor authorities.
+7. Call J24K3e1 preparation and J24K3e2 mutation while the same lock remains held.
+8. Run one fresh authoritative J24J plan after mutation and require `PublishDisabledInstallation -> Complete`.
+9. Return the existing `Advanced { executed: PublishDisabledInstallation }` outcome shape.
+10. Preserve recovery-before-ordinary-action ordering, earlier error classifications, and the one-invocation/one-mutation invariant.
 
 ## Relevant components
 
 Expected changes are bounded to the minimum among:
 
 - `tethers-0.1/host-rust/src/installation_execution.rs`;
+- existing execution-context construction sites and direct fixtures that must supply the newly restored accepted field;
 - its direct test module or one new narrowly named J24K3f test module;
 - `tethers-0.1/host-rust/src/lib.rs` only if a new private test module is added;
 - this packet and its worker note.
 
-J24K3e1, J24K3e2, recovery, lock, installed-state and planner modules should be called, not redesigned. Any additional production file requires a compile-proven necessity recorded before editing.
+J24K3e1, J24K3e2, recovery, lock, intent, installed-state and planner modules should be called, not redesigned. Any other production file requires a compile-proven necessity recorded before editing.
 
 ## Frozen decisions and invariants
 
+- `executor_state_root` is an independent accepted authority root, not a subdirectory inferred from lock, quarantine, scratch, install or record paths.
+- `InstallationPublicationIntentStore` is opened from exactly `context.executor_state_root`.
 - One outer `InstallationLockGuard` spans recovery, before-plan, preparation, mutation, after-plan and postcondition checks.
 - Preparation and mutation never occur outside that lock in this executor route.
 - J24J remains the sole ordinary installation reconciliation authority.
@@ -87,28 +101,32 @@ J24K3e1, J24K3e2, recovery, lock, installed-state and planner modules should be 
 
 ## Acceptance criteria
 
-1. A locked publication-ready request completes exact disabled installation publication.
-2. J24K3e1 receives the exact `before` plan produced inside the lock.
-3. J24K3e2 consumes the resulting sealed prepared value inside the same lock lifetime.
-4. Successful publication yields a fresh after-plan with action `Complete`.
-5. The returned outcome is `Advanced { executed: PublishDisabledInstallation }`.
-6. The returned before-plan is the original exact publication-ready plan.
-7. The returned after-plan is the fresh exact complete plan.
-8. A stale evidence change between planning and preparation fails closed without publication.
-9. A mutation or recovery failure releases the lock and leaves accepted resumable state.
-10. A concurrent second invocation still fails immediately with `installation_busy`.
-11. No invocation executes any second ordinary mutation.
-12. Existing trust, conformance, approval, complete and failed-conformance action behaviour remains unchanged.
-13. `installation_publication_deferred` is removed only from the now-implemented action route and is not repurposed.
-14. No public context, API, CLI, J24L, schema, dependency or Cargo.lock change occurs.
-15. Named J24K3e2, J24K3e1, J24K3d2, J24K2 and J24J regressions pass.
-16. Full serial verification passes.
+1. `InstallationExecutionContext` contains exactly the restored `executor_state_root: &'a Path` field in the frozen blueprint position or an equivalent Rust ordering.
+2. All context construction sites compile only by supplying an explicit executor-state root.
+3. No fallback derives executor state from another root.
+4. A locked publication-ready request completes exact disabled installation publication.
+5. J24K3e1 receives the exact `before` plan produced inside the lock.
+6. J24K3e2 consumes the resulting sealed prepared value inside the same lock lifetime.
+7. Successful publication yields a fresh after-plan with action `Complete`.
+8. The returned outcome is `Advanced { executed: PublishDisabledInstallation }`.
+9. The returned before-plan is the original exact publication-ready plan and the returned after-plan is the fresh exact complete plan.
+10. A stale evidence change between planning and preparation fails closed without publication.
+11. A mutation or recovery failure releases the lock and leaves accepted resumable state.
+12. A concurrent second invocation still fails immediately with `installation_busy`.
+13. No invocation executes any second ordinary mutation.
+14. Existing trust, conformance, approval, complete and failed-conformance action behaviour remains unchanged.
+15. `installation_publication_deferred` is removed only from the now-implemented action route and is not repurposed.
+16. No other public context/API, CLI, J24L, schema, dependency or Cargo.lock change occurs.
+17. Named J24K3e2, J24K3e1, J24K3d2, J24K2 and J24J regressions pass.
+18. Full serial verification passes.
 
 ## Required verification
 
 Add direct tests whose names begin `j24k3f` and use real stores/filesystem fixtures. At minimum prove:
 
 - valid publication-ready state advances to `Complete` through the public locked executor;
+- the publication intent store is rooted under the explicit executor-state root;
+- no intent state is created under lock, quarantine, scratch, install or record roots;
 - exact destination and installed record are created and recovery is idle;
 - returned before/after plans and executed action are exact;
 - preparation or evidence failure before intent creation produces no publication;
@@ -123,23 +141,25 @@ Run direct tests, focused Nextest where available, named regressions for `j24k3e
 
 Do not:
 
+- add any `InstallationExecutionContext` field other than exactly `executor_state_root: &'a Path`;
+- derive executor state from `lock_path`, `quarantine_root`, `conformance_scratch_root`, install root, record root, current directory, environment variables or process-global state;
+- make `executor_state_root` optional or provide an implicit default;
 - alter lock acquisition, lock path rules, handle inheritance or RAII behaviour;
 - add another lock or shorten the existing lock lifetime;
-- add fields to `InstallationExecutionContext` unless compilation proves an already accepted field is genuinely inaccessible, in which case stop and report;
-- change public function signatures or result enums;
+- change any other public function signature or result enum;
 - add an internal loop, retry, fifth-call logic or J24L;
 - parse CLI arguments or print UI/progress output;
 - execute trust, conformance, approval or publication twice;
 - regenerate prepared publication identity;
-- redesign preparation, mutation, recovery or installed-state modules;
+- redesign preparation, mutation, recovery, intent or installed-state modules;
 - change schemas, dependencies or Cargo.lock;
 - add production fault injection, caller clocks or arbitrary constructors.
 
 ## Stop conditions
 
-Stop before further edits on any packet-checker failure, branch/base mismatch, dirty unexplained file, need for public context/API change, need to redesign lock/recovery/publication boundaries, failed direct test or regression, changed Cargo.lock, non-fast-forward history or scope expansion.
+Stop before further edits on any packet-checker failure, branch/base mismatch, dirty unexplained file, need for any public context/API change beyond the exact accepted `executor_state_root` field, need to redesign lock/recovery/publication boundaries, failed direct test or regression, changed Cargo.lock, non-fast-forward history or scope expansion.
 
-Do not repair or rewrite this Red task's normative scope. Return any blocker to Lucy.
+Do not repair or rewrite this Red task's normative scope. Return any further blocker to Lucy.
 
 ## Expected pre-existing changes
 
@@ -147,7 +167,7 @@ None.
 
 ## Checkpoint procedure
 
-1. Require the READY packet checker passes.
+1. Require the amended READY packet checker passes.
 2. Change packet and worker-note status to `IN_PROGRESS`.
 3. Implement production code and direct tests.
 4. Commit implementation and capture one full implementation SHA.
