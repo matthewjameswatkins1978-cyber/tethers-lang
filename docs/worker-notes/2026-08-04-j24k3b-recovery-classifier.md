@@ -43,7 +43,7 @@ All fourteen existing tests retained. Total: 16 direct J24K3b tests.
 - `git diff --check`: passed.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256`: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - Implementation checkpoint: `d31185fb68e1df5e73853f1807c048285e4c0da2`.
-- Final remote tip at evidence commit: `4a77729f7cd13f181fe2ecbead58cc723a6a610d`.
+- Final reviewed remote tip: `d6ba66f1473b65c06454cf78a7cf3a9b886db523`.
 
 ## Discoveries
 
@@ -57,7 +57,7 @@ Later J24K3 packages still own filesystem observation, destination verification,
 
 ## Smallest next action
 
-OpenCode should apply the one production ordering fix, add direct invalid-record tests for broad conflict rows, run the corrected packet checker, run full `just verify`, and return the branch for independent review.
+Lucy should independently review the corrected branch and fast-forward main only after acceptance.
 
 ## References
 
