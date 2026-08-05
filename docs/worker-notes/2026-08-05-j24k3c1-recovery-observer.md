@@ -43,19 +43,22 @@ Apply one bounded correction to the otherwise accepted J24K3c1 observer. Preserv
 - `git diff --check`: passed.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256`: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - Implementation checkpoint: `0a83c036c3a446e63e1587cd220f8988e08683f4`.
-- Final remote tip at evidence commit: `905050605f5b2bb8eb258d459a2d55ed7a5e9bd2`.
+- OpenCode final remote tip reviewed by Lucy: `5936c6e28d9c00a866e1d9de28316fbcc0cb8c5c`.
+- The subsequent reviewer documentation commit changes only this worker note and does not alter production code or test evidence.
 
 ## Discoveries
 
-The previous worker note stated that unsafe-path errors from root-chain rechecking were preserved, but the production code preserves them only for exact child `reject_reparse` calls.
+The previous worker note stated that unsafe-path errors from root-chain rechecking were preserved, but the production code preserved them only for exact child `reject_reparse` calls. The correction now applies the same narrow preservation rule to both accepted root chains.
+
+The junction fixtures require removing the empty opened root directory before `mklink /J` can recreate that exact path as a junction. `verify_chain` detects the replacement because it checks every existing ancestor for reparse state.
 
 ## Remaining risks
 
-The correction must be demonstrated through the production observer after a previously opened install root or record root is replaced by an accepted platform symlink, junction, or reparse fixture.
+Later J24K3 work still owns destination-content verification, evidence revalidation, global installed-root audit, recovery mutation, and executor wiring. None of those concerns belongs in J24K3c1.
 
 ## Smallest next action
 
-Preserve explicit root-chain `unsafe_store_path`, add direct install-root and record-root regression coverage, and rerun the complete J24K3c1 verification packet.
+Lucy should complete independent review and fast-forward the accepted branch to `main` if the branch remains a clean descendant of accepted main.
 
 ## References
 
