@@ -48,7 +48,7 @@ Add one crate-private, read-only verifier that proves the exact final destinatio
 - `git diff --check`: passed.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256`: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - Implementation checkpoint: `89fd8a1880fe3a6938923c920f4ab711ad61b7d3`.
-- Final remote tip: `WORKTREE` (to be pinned after push).
+- Final remote tip: `6860a501546f165ba9e9bbd65109bae63c5faef2`.
 
 ## Discoveries
 
