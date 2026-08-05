@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3f - Lock-composed disabled installation publication`
 Owner: `OpenCode`
 Model: `DeepSeek Pro`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro for one bounded Rust lock-composition package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
@@ -14,7 +14,7 @@ Worker note: `docs/worker-notes/2026-08-05-j24k3f-lock-composed-publication.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
 Accepted main: `13cae687dc59c0dae74363b24d0ab57547702c53`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `eaa0e125744616af08a1a1c6dd57e16cccc3b41f`
 Verification checkpoint: `WORKTREE`
 
 ## Objective
