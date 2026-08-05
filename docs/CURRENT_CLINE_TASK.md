@@ -15,7 +15,7 @@ Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP
 Rust toolchain: `1.97.1`
 Accepted main: `ea4076085ed246a95eb2c0edab462b8c69d461fc`
 Implementation checkpoint: `371136913c99a67c08eb61484d6a69e3576ea5ad`
-Verification checkpoint: `WORKTREE`
+Verification checkpoint: `c1ccb8e22c51aa292ae885b4f2ae7e61cdd64090`
 
 ## Objective
 
