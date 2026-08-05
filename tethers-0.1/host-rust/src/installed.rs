@@ -948,12 +948,105 @@ impl InstalledPlugRegistry {
 
         Ok(())
     }
+
+    pub(crate) fn audit_installation_recovery_destinations(
+        &self,
+        intent: Option<&InstallationPublicationIntent>,
+    ) -> Result<()> {
+        if let Some(intent) = intent {
+            intent.validate().map_err(|_| intent_invalid())?;
+        }
+
+        let install_path = self.install_root.path();
+        let record_path = self.record_root.path();
+        require_existing_recovery_root(install_path)?;
+        require_existing_recovery_root(record_path)?;
+
+        let records = self.load_all().map_err(|_| recovery_conflict())?;
+
+        let mut destination_set = BTreeSet::new();
+        for record in &records {
+            let uuid = Uuid::parse_str(&record.installed_id).map_err(|_| recovery_conflict())?;
+            if uuid.to_string() != record.installed_id {
+                return Err(recovery_conflict());
+            }
+            let expected_dest = format!("plug-{}", record.installed_id);
+            if record.installation_relative_path != expected_dest {
+                return Err(recovery_conflict());
+            }
+            if !destination_set.insert(&record.installation_relative_path) {
+                return Err(recovery_conflict());
+            }
+        }
+
+        if let Some(intent) = intent {
+            for record in &records {
+                if record.installation_relative_path == intent.destination_relative_path {
+                    if *record != intent.installed_record {
+                        return Err(recovery_conflict());
+                    }
+                }
+            }
+        }
+
+        let entries = fs::read_dir(install_path).map_err(|_| recovery_io())?;
+        for entry_result in entries {
+            let entry = entry_result.map_err(|_| recovery_io())?;
+            let entry_path = entry.path();
+            let file_name = entry.file_name();
+            let name_str = match file_name.to_str() {
+                Some(s) => s,
+                None => return Err(recovery_conflict()),
+            };
+
+            if !name_str.starts_with("plug-") {
+                continue;
+            }
+
+            reject_reparse(&entry_path).map_err(|e| {
+                if e.code == "unsafe_store_path" {
+                    e
+                } else {
+                    recovery_io()
+                }
+            })?;
+
+            let uuid_str = &name_str[5..];
+            let uuid = Uuid::parse_str(uuid_str).map_err(|_| destination_untracked())?;
+            if uuid.to_string() != uuid_str {
+                return Err(destination_untracked());
+            }
+
+            let accounted = records
+                .iter()
+                .any(|r| r.installation_relative_path == name_str)
+                || intent.map_or(false, |i| i.destination_relative_path == name_str);
+
+            if !accounted {
+                return Err(destination_untracked());
+            }
+
+            let metadata = fs::symlink_metadata(&entry_path).map_err(|_| recovery_io())?;
+            if !metadata.is_dir() {
+                return Err(recovery_conflict());
+            }
+        }
+
+        Ok(())
+    }
 }
 
 fn intent_invalid() -> M3Error {
     M3Error::new(
         "installation_intent_invalid",
         "installation publication intent is invalid",
+    )
+}
+
+fn destination_untracked() -> M3Error {
+    M3Error::new(
+        "installation_destination_untracked",
+        "installed destination is not tracked by a validated record or current publication intent",
     )
 }
 
