@@ -268,6 +268,7 @@ $isPreWorkState = (
 )
 
 $planningPaths = @(
+    ".github/scripts/check-tethers-task-packet.ps1",
     "docs/CURRENT_CLINE_TASK.md",
     "docs/COPILOT_TRIAL.md",
     "docs/PROJECT_DASHBOARD.md"
