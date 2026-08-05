@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3e1 - Read-only disabled installation publication preparation`
 Owner: `OpenCode`
 Model: `HY3`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Red`
 Route: `OpenCode using HY3 for one bounded Rust publication-preparation package; Lucy performs independent review and routine safe merge`
 Base branch: `main`

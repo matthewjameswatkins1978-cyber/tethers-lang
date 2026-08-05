@@ -557,6 +557,72 @@ fn copy_files(
     Ok(())
 }
 
+/// Build one complete disabled installed record from already-validated evidence.
+///
+/// This is deliberately pure: identity (`installed_id`), destination
+/// (`installation_relative_path`), and time (`created_unix_ms`) are supplied by
+/// the caller so that the legacy mutation path and the read-only J24K3e1
+/// preparation path cannot drift apart in schema, field derivation, binding
+/// order, or digest coverage. Callers remain responsible for proving the
+/// evidence current before calling.
+fn build_disabled_installed_record(
+    installed_id: String,
+    installation_relative_path: String,
+    created_unix_ms: u64,
+    candidate: &CandidateRecord,
+    trust: &PackageTrustEvidence,
+    launch: &LaunchProfileEvidence,
+    conformance: &ConformanceEvidence,
+    approval: &InstallationApprovalRecord,
+) -> Result<InstalledPlugRecord> {
+    let disabled_bindings = candidate
+        .capabilities
+        .iter()
+        .map(|capability| DisabledBindingRecord {
+            state: "disabled".into(),
+            capability_name: capability.name.clone(),
+            capability_version: capability.version,
+            manifest_digest: capability.manifest_digest.clone(),
+            provider_operation_name: capability.operation.clone(),
+        })
+        .collect();
+    let mut record = InstalledPlugRecord {
+        schema_version: 1,
+        installed_id,
+        state: "present_disabled".into(),
+        package_id: candidate.package_id.clone(),
+        package_version: candidate.package_version.clone(),
+        semantic_package_digest: candidate.semantic_package_digest.clone(),
+        source_candidate_id: candidate.candidate_id.clone(),
+        installation_relative_path,
+        raw_archive_digest: candidate.raw_archive_digest.clone(),
+        plug_json: candidate.plug_json.clone(),
+        payloads: candidate.payloads.clone(),
+        signature_files: candidate.signature_files.clone(),
+        capability_manifests: candidate.capabilities.clone(),
+        trust_evidence: trust.clone(),
+        installation_approval_id: approval.approval_id.clone(),
+        installation_approval_digest: approval.record_digest.clone(),
+        conformance_evidence_id: conformance.evidence_id.clone(),
+        conformance_evidence_digest: conformance.evidence_digest.clone(),
+        provider_id: candidate.provider_id.clone(),
+        provider_version: candidate.provider_version.clone(),
+        launch_path: candidate.launch_path.clone(),
+        launch_arguments: candidate.launch_arguments.clone(),
+        provider_working_directory: candidate.provider_working_directory.clone(),
+        launch_profile_label: launch.profile_label.clone(),
+        socket_major: 1,
+        mcp_protocol_version: "2025-11-25".into(),
+        platform: candidate.selected_platform.os.clone(),
+        architecture: candidate.selected_platform.architecture.clone(),
+        disabled_bindings,
+        created_unix_ms,
+        record_digest: String::new(),
+    };
+    record.record_digest = sha256(&record.covered_bytes()?);
+    Ok(record)
+}
+
 fn collect_installed_files(
     root: &Path,
     directory: &Path,
@@ -734,54 +800,68 @@ impl InstalledPlugRegistry {
             .map_err(|_| M3Error::new("installed_store_invalid", "installation escaped root"))?
             .to_string_lossy()
             .replace('\\', "/");
-        let disabled_bindings = candidate
-            .capabilities
-            .iter()
-            .map(|capability| DisabledBindingRecord {
-                state: "disabled".into(),
-                capability_name: capability.name.clone(),
-                capability_version: capability.version,
-                manifest_digest: capability.manifest_digest.clone(),
-                provider_operation_name: capability.operation.clone(),
-            })
-            .collect();
-        let mut record = InstalledPlugRecord {
-            schema_version: 1,
+        let record = build_disabled_installed_record(
             installed_id,
-            state: "present_disabled".into(),
-            package_id: candidate.package_id.clone(),
-            package_version: candidate.package_version.clone(),
-            semantic_package_digest: candidate.semantic_package_digest.clone(),
-            source_candidate_id: candidate.candidate_id.clone(),
-            installation_relative_path: relative,
-            raw_archive_digest: candidate.raw_archive_digest.clone(),
-            plug_json: candidate.plug_json.clone(),
-            payloads: candidate.payloads.clone(),
-            signature_files: candidate.signature_files.clone(),
-            capability_manifests: candidate.capabilities.clone(),
-            trust_evidence: trust.clone(),
-            installation_approval_id: approval.approval_id.clone(),
-            installation_approval_digest: approval.record_digest.clone(),
-            conformance_evidence_id: conformance.evidence_id.clone(),
-            conformance_evidence_digest: conformance.evidence_digest.clone(),
-            provider_id: candidate.provider_id.clone(),
-            provider_version: candidate.provider_version.clone(),
-            launch_path: candidate.launch_path.clone(),
-            launch_arguments: candidate.launch_arguments.clone(),
-            provider_working_directory: candidate.provider_working_directory.clone(),
-            launch_profile_label: launch.profile_label.clone(),
-            socket_major: 1,
-            mcp_protocol_version: "2025-11-25".into(),
-            platform: candidate.selected_platform.os.clone(),
-            architecture: candidate.selected_platform.architecture.clone(),
-            disabled_bindings,
-            created_unix_ms: unix_ms()?,
-            record_digest: String::new(),
-        };
-        record.record_digest = sha256(&record.covered_bytes()?);
+            relative,
+            unix_ms()?,
+            candidate,
+            trust,
+            launch,
+            conformance,
+            approval,
+        )?;
         record.validate()?;
         self.record_root
             .create_json(&record.installed_id, &record)?;
+        Ok(record)
+    }
+
+    /// J24K3e1: precompute one immutable disabled installed record without any
+    /// durable mutation.
+    ///
+    /// Reads the installed registry only to refuse a duplicate package release
+    /// or contradictory registry state. It creates no staging directory, no
+    /// destination, and no record file; the returned value exists only in
+    /// memory. Callers must already have proved the supplied evidence current.
+    pub(crate) fn prepare_disabled_installation_record(
+        &self,
+        candidate: &CandidateRecord,
+        trust: &PackageTrustEvidence,
+        launch: &LaunchProfileEvidence,
+        conformance: &ConformanceEvidence,
+        approval: &InstallationApprovalRecord,
+    ) -> Result<InstalledPlugRecord> {
+        // `load_all` is also the contradictory-registry-state detector: it
+        // rejects torn, duplicate-identity, and unparsable installed records.
+        for existing in self.load_all()? {
+            if existing.package_id == candidate.package_id
+                && existing.package_version == candidate.package_version
+            {
+                return Err(M3Error::new(
+                    "installed_conflict",
+                    "package release already installed",
+                ));
+            }
+            if existing.source_candidate_id == candidate.candidate_id {
+                return Err(M3Error::new(
+                    "installed_conflict",
+                    "candidate already installed",
+                ));
+            }
+        }
+        let installed_id = Uuid::new_v4().to_string();
+        let relative = format!("plug-{installed_id}");
+        let record = build_disabled_installed_record(
+            installed_id,
+            relative,
+            unix_ms()?,
+            candidate,
+            trust,
+            launch,
+            conformance,
+            approval,
+        )?;
+        record.validate()?;
         Ok(record)
     }
 

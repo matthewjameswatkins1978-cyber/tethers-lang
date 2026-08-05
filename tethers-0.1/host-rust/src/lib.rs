@@ -28,6 +28,9 @@ pub mod installation_plan;
 mod installation_publication_intent;
 #[cfg(test)]
 mod installation_publication_intent_tests;
+mod installation_publication_preparation;
+#[cfg(test)]
+mod installation_publication_preparation_tests;
 mod installation_recovery;
 #[cfg(test)]
 mod installation_recovery_audit_tests;

@@ -4,7 +4,7 @@ Task: `J24K3e1 - Read-only disabled installation publication preparation`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Model: `HY3`
-Status: `READY`
+Status: `IN_PROGRESS`
 Base commit: `fe4f0e84569e793be3c0e8818799ac36e895da1a`
 Implementation checkpoint: `WORKTREE`
 Verification checkpoint: `WORKTREE`
