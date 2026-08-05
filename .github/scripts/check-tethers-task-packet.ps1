@@ -272,6 +272,9 @@ $planningPaths = @(
     "docs/COPILOT_TRIAL.md",
     "docs/PROJECT_DASHBOARD.md"
 )
+if (-not [string]::IsNullOrWhiteSpace($workerNotePath)) {
+    $planningPaths += $workerNotePath
+}
 
 if (
     $baseCommit -ne $headCommit -and
