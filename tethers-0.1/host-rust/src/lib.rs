@@ -30,6 +30,8 @@ mod installation_publication_intent;
 mod installation_publication_intent_tests;
 mod installation_recovery;
 #[cfg(test)]
+mod installation_recovery_destination_tests;
+#[cfg(test)]
 mod installation_recovery_observation_tests;
 #[cfg(test)]
 mod installation_recovery_tests;

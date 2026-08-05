@@ -438,3 +438,23 @@ fn j24k3c1_invalid_intent_rejected_before_state_inspection() {
     assert_eq!(err.code, "installation_intent_invalid");
     drop(record);
 }
+
+#[test]
+fn j24k3c1_missing_install_root_returns_recovery_io() {
+    let (record, intent) = valid_intent();
+    let (registry, install_root, _record_root) = registry();
+    fs::remove_dir_all(&install_root).unwrap();
+    let err = registry.observe_installation_recovery(&intent).unwrap_err();
+    assert_eq!(err.code, "installation_recovery_io");
+    drop(record);
+}
+
+#[test]
+fn j24k3c1_missing_record_root_returns_recovery_io() {
+    let (record, intent) = valid_intent();
+    let (registry, _install_root, record_root) = registry();
+    fs::remove_dir_all(&record_root).unwrap();
+    let err = registry.observe_installation_recovery(&intent).unwrap_err();
+    assert_eq!(err.code, "installation_recovery_io");
+    drop(record);
+}

@@ -21,7 +21,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Component, Path};
 use uuid::Uuid;
 
 #[cfg(windows)]
@@ -782,8 +782,8 @@ impl InstalledPlugRegistry {
         let install_root = self.install_root.path();
         let record_root = self.record_root.path();
 
-        verify_chain(install_root).map_err(map_recovery_path_error)?;
-        verify_chain(record_root).map_err(map_recovery_path_error)?;
+        require_existing_recovery_root(install_root)?;
+        require_existing_recovery_root(record_root)?;
 
         let staging_path = install_root.join(format!(".staging-{}", intent.transaction_id));
         let destination_path = install_root.join(&intent.destination_relative_path);
@@ -798,6 +798,45 @@ impl InstalledPlugRegistry {
             destination_present,
             installed_record,
         })
+    }
+
+    pub(crate) fn verify_installation_recovery_destination(
+        &self,
+        intent: &InstallationPublicationIntent,
+    ) -> Result<()> {
+        intent.validate().map_err(|_| intent_invalid())?;
+
+        let install_root = self.install_root.path();
+        require_existing_recovery_root(install_root)?;
+
+        let destination = install_root.join(&intent.destination_relative_path);
+        require_existing_recovery_destination(&destination)?;
+
+        let expected = recovery_expected_files(intent)?;
+        let mut actual = BTreeSet::new();
+        collect_recovery_files(&destination, &destination, &mut actual)?;
+
+        if actual != expected.keys().cloned().collect::<BTreeSet<_>>() {
+            return Err(recovery_conflict());
+        }
+
+        for (relative, evidence) in expected {
+            let file = destination.join(&relative);
+            reject_reparse(&file).map_err(map_recovery_path_error)?;
+            let metadata = fs::symlink_metadata(&file).map_err(|_| recovery_io())?;
+            if !metadata.is_file() {
+                return Err(recovery_conflict());
+            }
+            let bytes = fs::read(&file).map_err(|_| recovery_io())?;
+            if !metadata.permissions().readonly()
+                || bytes.len() as u64 != evidence.size_bytes
+                || sha256(&bytes) != evidence.sha256
+            {
+                return Err(recovery_conflict());
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -828,6 +867,98 @@ fn map_recovery_path_error(error: M3Error) -> M3Error {
     } else {
         recovery_io()
     }
+}
+
+fn require_existing_recovery_root(path: &Path) -> Result<()> {
+    verify_chain(path).map_err(map_recovery_path_error)?;
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if !metadata.is_dir() {
+                return Err(recovery_io());
+            }
+            reject_reparse(path).map_err(map_recovery_path_error)
+        }
+        Err(_) => Err(recovery_io()),
+    }
+}
+
+fn require_existing_recovery_destination(path: &Path) -> Result<()> {
+    verify_chain(path).map_err(map_recovery_path_error)?;
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if !metadata.is_dir() {
+                return Err(recovery_conflict());
+            }
+            reject_reparse(path).map_err(map_recovery_path_error)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(recovery_conflict()),
+        Err(_) => Err(recovery_io()),
+    }
+}
+
+fn recovery_expected_files(
+    intent: &InstallationPublicationIntent,
+) -> Result<BTreeMap<String, PayloadEvidence>> {
+    let mut expected = BTreeMap::new();
+    for evidence in std::iter::once(&intent.installed_record.plug_json)
+        .chain(intent.installed_record.payloads.iter())
+        .chain(intent.installed_record.signature_files.iter())
+    {
+        let normalized = recovery_expected_path(&evidence.path)?;
+        if expected.insert(normalized, evidence.clone()).is_some() {
+            return Err(recovery_conflict());
+        }
+    }
+    Ok(expected)
+}
+
+fn recovery_expected_path(path: &str) -> Result<String> {
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.starts_with('\\')
+        || path.ends_with('/')
+        || path.ends_with('\\')
+        || path.contains("\\")
+        || path.contains("//")
+    {
+        return Err(recovery_conflict());
+    }
+    let parsed = Path::new(path);
+    if parsed.is_absolute() {
+        return Err(recovery_conflict());
+    }
+    for component in parsed.components() {
+        if !matches!(component, Component::Normal(_)) {
+            return Err(recovery_conflict());
+        }
+    }
+    Ok(path.replace('\\', "/"))
+}
+
+fn collect_recovery_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut BTreeSet<String>,
+) -> Result<()> {
+    for entry in fs::read_dir(directory).map_err(|_| recovery_io())? {
+        let entry = entry.map_err(|_| recovery_io())?;
+        let path = entry.path();
+        reject_reparse(&path).map_err(map_recovery_path_error)?;
+        let kind = entry.file_type().map_err(|_| recovery_io())?;
+        if kind.is_dir() {
+            collect_recovery_files(root, &path, files)?;
+        } else if kind.is_file() {
+            files.insert(
+                path.strip_prefix(root)
+                    .map_err(|_| recovery_io())?
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+            );
+        } else {
+            return Err(recovery_conflict());
+        }
+    }
+    Ok(())
 }
 
 fn observe_directory(path: &Path) -> Result<bool> {
