@@ -1,298 +1,233 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24K3d1 - Validated read-only installation recovery plan`
+Task: `J24K3d1 correction - planner path-safety regressions and complete verification`
 Owner: `OpenCode`
-Status: `COMPLETE`
-Implementation checkpoint: `351a27867078f4f37bca80bd2f481e790cdfb5cf`
-Verification checkpoint: `b76691c529fde3ce0f09bce8c4d7ea6a4ef33407`
+Status: `READY`
 Task colour: `Red`
-Route: `OpenCode using DeepSeek Pro for one bounded Rust composition and recovery-planning package; Lucy performs independent review and routine safe merge`
+Route: `OpenCode using DeepSeek Pro for one bounded regression-test, verification, and evidence correction; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3d1-validated-recovery-plan`
-Base commit: `e2cffcb93fdd457cadf2091b8657e7e6a4e8a5a2`
+Base commit: `96902b715cbb8d62aad12d468a474ae03abfaaed`
 Implementation branch: `opencode/j24k3d1-validated-recovery-plan`
-Worker note: `docs/worker-notes/2026-08-05-j24k3d1-validated-recovery-plan.md`
+Worker note: `docs/worker-notes/2026-08-05-j24k3d1-correction.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
 Accepted main: `20cd25f328568aa2726505580689d67b6219449c`
+Reviewed OpenCode tip: `26ecf14b9f3d4449f6b872d5cbf04e273c426881`
+Actual original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
+Actual prior completion candidate: `b76691c5b97bd1b3a82de824535365fec4676c20`
 
 ## Objective
 
-Implement only J24K3d1: one crate-private, read-only recovery-planning boundary that composes the accepted J24K3a through J24K3c4 primitives.
+Correct only the remaining independent-review evidence gaps in J24K3d1.
 
-Given the typed installation request and host-owned recovery stores, the planner must return either:
-
-- no pending publication intent; or
-- one exact validated recovery disposition paired with the exact loaded publication intent.
-
-Before returning a mutation-bearing disposition, it must complete every read-only proof required for that disposition. It must not perform the mutation itself.
-
-The governing sequence is:
+The production planner is accepted as structurally correct:
 
 ```text
-load current intent from the authoritative store
-  -> audit the global installed-root namespace
-  -> if no intent: return no pending recovery
-  -> observe the exact transaction state
-  -> classify with the accepted pure classifier
-  -> conditionally revalidate evidence and destination
-  -> return one sealed validated recovery plan
+load authoritative intent
+  -> audit global installed-root namespace
+  -> idle only after successful no-intent audit
+  -> observe exact transaction
+  -> classify through the accepted classifier
+  -> for publication-bearing dispositions, revalidate evidence then destination
+  -> return a sealed read-only plan
 ```
 
-This package must not delete staging, publish a record, remove an intent, acquire a lock, call J24J, or wire `installation_execution.rs`.
+Do not redesign this production sequence.
+
+The correction must:
+
+1. add missing direct planner-entry path-safety and root-state regressions;
+2. correct the two nonexistent checkpoint SHAs in the task and worker documentation;
+3. run focused Nextest with zero retries;
+4. finish one full serial `just verify` with zero failures;
+5. record actual checkpoints without a self-referential final-tip field.
 
 ## Relevant background and existing behaviour
 
-Accepted `main` is exactly:
+Accepted main is exactly:
 
 ```text
 20cd25f328568aa2726505580689d67b6219449c
 ```
 
-The accepted recovery foundation now provides:
+The reviewed branch tip before this correction is:
 
-- J24K3a: `InstallationPublicationIntent` and authoritative single-current-intent store;
-- J24K3b: pure `classify_installation_recovery` with four accepted dispositions;
-- J24K3c1: exact staging, destination, and installed-record observation;
-- J24K3c2: exact intent-destination file-set, hash, length, permission, and path verification;
-- J24K3c3: complete request, candidate, exact-trust, launch, conformance, approval, and installed-record evidence revalidation;
-- J24K3c4: global direct `plug-*` namespace accounting against installed records and the optional current intent.
+```text
+26ecf14b9f3d4449f6b872d5cbf04e273c426881
+```
 
-These seams are individually accepted but are not yet composed. A later mutation package must not independently choose which proofs to run or accept a caller-supplied intent that can omit the authoritative current transaction.
+GitHub proves the real production commit is:
 
-`InstallationExecutionContext` still has no executor-state root or intent store and `PublishDisabledInstallation` remains deliberately deferred. Do not change that boundary in this package.
+```text
+351a2782b59d1b08c5529bd18caf8a7fa29cde6b
+```
+
+The completed packet instead records nonexistent SHA:
+
+```text
+351a27867078f4f37bca80bd2f481e790cdfb5cf
+```
+
+GitHub proves the prior completion-candidate commit is:
+
+```text
+b76691c5b97bd1b3a82de824535365fec4676c20
+```
+
+The completed packet instead records nonexistent SHA:
+
+```text
+b76691c529fde3ce0f09bce8c4d7ea6a4ef33407
+```
+
+The existing 25 direct tests cover the four dispositions, idle state, global untracked detection, evidence staleness, file-set/digest/size/permission drift and one full read-only snapshot. They do not contain a planner-entry symlink, junction, reparse, or explicit unsafe-root test.
+
+The prior handoff also reports:
+
+- focused Nextest not run;
+- one `m3_lifecycle` failure;
+- full verification totals with that failure excluded.
+
+That does not satisfy the frozen acceptance criteria.
 
 ## Required behaviour
 
-### 1. Add one narrow recovery-planning module
+### 1. Preserve the accepted production planner
 
-Add a private module structurally equivalent to:
+Do not change `installation_recovery_plan.rs` unless a newly added production-entry regression demonstrates a real defect.
 
-```rust
-pub(crate) struct InstallationRecoveryPlanningContext<'a> {
-    pub intents: &'a InstallationPublicationIntentStore,
-    pub installed: &'a InstalledPlugRegistry,
-    pub evidence: InstallationRecoveryEvidenceContext<'a>,
-}
+Preserve exactly:
 
-pub(crate) struct ValidatedInstallationRecoveryPlan {
-    // private fields
-}
+- authoritative intent loading first;
+- global installed-root audit for both `Some` and `None`;
+- accepted observation and classifier only;
+- no package evidence for cleanup-only dispositions;
+- evidence revalidation before destination verification for both publication-bearing dispositions;
+- sealed private plan fields;
+- no mutation.
 
-pub(crate) fn plan_installation_recovery(
-    request: &InstallationRequest,
-    context: &InstallationRecoveryPlanningContext<'_>,
-) -> Result<ValidatedInstallationRecoveryPlan>;
-```
+### 2. Add direct destination-reparse planner tests
 
-The exact field arrangement may be narrowed for borrowing clarity, but the semantic boundary is frozen.
+In `installation_recovery_plan_tests.rs`, add platform-appropriate production-entry tests:
 
-The caller must not supply:
+- Windows: create a complete valid destination-only recovery fixture, replace the exact intent destination with a directory junction, call `plan_installation_recovery`, and require `unsafe_store_path`.
+- Unix: create the equivalent symbolic-link fixture and require `unsafe_store_path`.
 
-- an optional intent;
-- staging, destination, or record-presence booleans;
-- a preclassified disposition;
-- arbitrary paths or roots outside accepted store objects;
-- callbacks, mutation capabilities, allow-lists, or repair policy.
+The target may contain the valid copied destination bytes. The rejection must be caused by the destination path being a reparse link, not by missing or malformed evidence.
 
-The planner loads the current intent itself from `InstallationPublicationIntentStore`.
+Retain all existing drift tests.
 
-### 2. Return one sealed plan with no caller-constructible inconsistent state
+### 3. Add direct root-state planner tests
 
-`ValidatedInstallationRecoveryPlan` must have private fields and no public or crate-visible arbitrary constructor.
+Exercise `plan_installation_recovery` itself and prove at minimum:
 
-It may expose narrow crate-private read access structurally equivalent to:
+- an already-opened install root removed before planning returns `installation_recovery_io`;
+- an already-opened record root replaced by a Windows junction or Unix symbolic link returns `unsafe_store_path`.
 
-```rust
-pub(crate) fn intent(&self) -> Option<&InstallationPublicationIntent>;
-pub(crate) fn disposition(&self) -> Option<InstallationRecoveryDisposition>;
-pub(crate) fn is_idle(&self) -> bool;
-```
+Use the accepted safe platform fixture pattern. Do not add unsafe representation tricks, public seams, or production test hooks.
 
-Its invariant is exact:
+### 4. Correct documentary checkpoint identities
 
-- idle plan: no intent and no disposition;
-- pending plan: one validated intent and one disposition;
-- mixed states are unrepresentable outside the module.
+Update both:
 
-Do not carry mutable stores, filesystem handles, arbitrary paths, snapshots, caller strings, or callbacks in the returned plan.
+- `docs/CURRENT_CLINE_TASK.md`;
+- `docs/worker-notes/2026-08-05-j24k3d1-validated-recovery-plan.md`.
 
-### 3. Load the authoritative current intent first
-
-Call `InstallationPublicationIntentStore::load()` before inspecting the installed root or transaction paths.
-
-- malformed, torn, duplicate, unknown, or unsafe intent state retains the accepted intent-store error;
-- no caller may suppress a pending intent by passing `None`;
-- do not create, repair, rewrite, or remove the intent.
-
-### 4. Always run the global installed-root audit
-
-After loading the optional current intent, call:
-
-```rust
-installed.audit_installation_recovery_destinations(intent.as_ref())
-```
-
-This happens for both `Some` and `None`.
-
-When there is no intent, the planner must still reject an orphan or malformed direct `plug-*` final destination. Absence of a transaction is not permission to ignore global installed-state corruption.
-
-Preserve accepted recovery-facing errors unchanged. Do not remap them to a new planning error.
-
-### 5. Return idle only after a successful no-intent audit
-
-When the authoritative intent store returns `None` and the global audit succeeds, return one idle validated plan.
-
-Do not observe a synthetic transaction, inspect evidence stores, create a placeholder intent, or validate an unrelated request against a nonexistent transaction.
-
-### 6. Observe and classify one current transaction
-
-When an intent exists:
-
-1. call `InstalledPlugRegistry::observe_installation_recovery(&intent)`;
-2. call `classify_installation_recovery(snapshot.as_observation(&intent))`;
-3. preserve the exact accepted disposition.
-
-Do not reproduce the state table, compare booleans independently, or add a second classifier.
-
-Contradictory state remains `installation_recovery_conflict`.
-
-### 7. Apply disposition-specific read-only proofs
-
-For these dispositions:
+Replace the nonexistent original implementation SHA with:
 
 ```text
-RemoveIntentOnly
-RemoveStagingThenIntent
+351a2782b59d1b08c5529bd18caf8a7fa29cde6b
 ```
 
-return the pending validated plan after successful load, global audit, observation, and classification.
-
-Do not require current package evidence for cleanup-only recovery. Stale or missing candidate/trust/conformance/approval state must not prevent removal of an intent whose durable publication never began, or removal of its exact private staging directory by a later package.
-
-For these dispositions:
+Do not preserve the prior failed verification attempt as the final verification checkpoint. It may be identified as the prior completion candidate:
 
 ```text
-RevalidateDestinationThenPublishRecord
-VerifyCompletedPublicationThenRemoveIntent
+b76691c5b97bd1b3a82de824535365fec4676c20
 ```
 
-before returning the plan, call in this order:
+The correction worker note must record:
 
-1. `revalidate_installation_recovery_evidence(request, &intent, &context.evidence)`;
-2. `installed.verify_installation_recovery_destination(&intent)`.
+- original implementation checkpoint;
+- correction implementation checkpoint;
+- final successful verification checkpoint.
 
-Both publication-ready and completed-publication recovery must prove current evidence and exact destination bytes. A matching installed record alone is not enough to clear the intent.
+Do not add a final remote tip field to committed documents.
 
-Preserve accepted errors unchanged:
+### 5. Complete focused Nextest
+
+Run the required focused command exactly:
+
+```powershell
+cargo nextest run `
+  --config-file .config/nextest.toml `
+  --manifest-path tethers-0.1/host-rust/Cargo.toml `
+  --all-features --locked `
+  -E 'test(j24k3d1)'
+```
+
+It must pass with zero retries.
+
+Do not install software automatically. If `cargo nextest` is unavailable, stop as `BLOCKED` and report the exact command-not-found evidence. Do not mark the packet complete.
+
+### 6. Complete one genuinely green full serial verification
+
+Set:
+
+```powershell
+$env:PATH = "$PSHOME;$env:PATH"
+$env:RUST_TEST_THREADS = "1"
+```
+
+Then run:
+
+```powershell
+just verify
+```
+
+It must finish with zero failures.
+
+If the documented `m3_lifecycle` Windows handle-contention failure occurs:
+
+1. record the exact failing test name and error;
+2. rerun that exact test serially and require it to pass;
+3. rerun full serial `just verify` once;
+4. require the full rerun to pass.
+
+Do not exclude the failed test from totals. Do not call a failed verify run complete.
+
+## Direct test acceptance
+
+Directly prove through `plan_installation_recovery`:
+
+- all 25 existing J24K3d1 tests remain green;
+- destination junction/symlink returns `unsafe_store_path`;
+- missing already-opened install root returns `installation_recovery_io`;
+- unsafe record-root junction/symlink returns `unsafe_store_path`;
+- all new fixtures leave unrelated stores untouched.
+
+Expected direct count should increase by the platform-appropriate tests. Record exact platform skips rather than pretending both platform branches ran.
+
+## Verification procedure and checkpoints
+
+Avoid the SHA chase.
+
+1. Change task and correction worker-note status `READY` -> `IN_PROGRESS`.
+2. Replace correction worker-note Base commit `WORKTREE` with:
 
 ```text
-installation_intent_invalid
-installation_intent_evidence_stale
-installation_destination_untracked
-installation_recovery_conflict
-installation_recovery_io
-unsafe_store_path
+96902b715cbb8d62aad12d468a474ae03abfaaed
 ```
 
-No lower-layer path, JSON, record string, or operating-system diagnostic may be introduced by this module.
-
-### 8. Remain strictly read-only
-
-The planner must not change:
-
-- intent entries or metadata;
-- staging, destination, or unrelated install-root entries;
-- installed records;
-- candidate, trust, launch-profile, conformance, or approval stores;
-- timestamps or permissions.
-
-It must not call:
-
-- `InstallationPublicationIntentStore::create`;
-- `InstallationPublicationIntentStore::remove_if_matches`;
-- `fs::remove_file`, `fs::remove_dir`, or `fs::remove_dir_all`;
-- installed record creation or ordinary installation publication;
-- lock acquisition;
-- J24J planning or J24K execution.
-
-### 9. Add direct production-entry-point tests
-
-Add one private test module whose test names begin `j24k3d1`.
-
-Directly prove at minimum:
-
-- empty intent, install, and record roots return an idle plan;
-- no intent plus one untracked canonical final destination fails as `installation_destination_untracked`;
-- malformed or torn authoritative intent fails before installed-root auditing can influence the result;
-- intent only returns `RemoveIntentOnly` without requiring candidate or evidence stores to contain current evidence;
-- exact staging only returns `RemoveStagingThenIntent` without requiring current package evidence;
-- destination only plus complete current evidence returns `RevalidateDestinationThenPublishRecord`;
-- matching destination and exact installed record plus complete current evidence returns `VerifyCompletedPublicationThenRemoveIntent`;
-- staging plus destination fails as `installation_recovery_conflict`;
-- record without destination fails closed;
-- an authorised intent destination does not excuse a second untracked final destination;
-- destination-only recovery with stale request, candidate, exact trust, launch, conformance, approval, or installed-record pins fails as `installation_intent_evidence_stale`;
-- destination file-set, digest, length, permission, or reparse drift fails through the accepted recovery error;
-- completed-publication recovery still revalidates evidence and destination before returning a plan;
-- invalid or unsafe roots retain the accepted stable errors;
-- every successful planning route leaves exact entry sets, bytes, modification timestamps, and read-only permissions unchanged across the intent root, install root, record root, candidate/quarantine, exact-trust, launch-profile, conformance, and approval roots.
-
-Exercise `plan_installation_recovery`. Do not test only helper methods, source strings, or the accepted lower-level seams in isolation.
-
-Platform-gated reparse fixtures are allowed. Do not use unsafe representation tricks to invent impossible enum states.
-
-## Relevant components
-
-- `tethers-0.1/host-rust/src/installation_recovery_plan.rs`
-- `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs`
-- `tethers-0.1/host-rust/src/installation_publication_intent.rs`
-- `tethers-0.1/host-rust/src/installation_recovery.rs`
-- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs`
-- `tethers-0.1/host-rust/src/installed.rs`
-- `tethers-0.1/host-rust/src/installation_request.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `InstallationPublicationIntentStore`
-- `InstallationRecoveryEvidenceContext`
-- `InstallationRecoveryDisposition`
-- `classify_installation_recovery`
-- `InstalledPlugRegistry::observe_installation_recovery`
-- `InstalledPlugRegistry::verify_installation_recovery_destination`
-- `InstalledPlugRegistry::audit_installation_recovery_destinations`
-- `revalidate_installation_recovery_evidence`
-
-The accepted lower-level production modules are reference-only unless one minimal visibility change is required to compose an already accepted crate-private seam. Do not change their semantics.
-
-## Frozen decisions and invariants
-
-- The intent is loaded from the authoritative store, never supplied by the caller.
-- Intent loading precedes installed-root and transaction observation.
-- Global installed-root audit always runs, including when no intent exists.
-- The accepted pure classifier remains the only state-table authority.
-- Cleanup-only dispositions do not require current package evidence.
-- Destination publication and completed-intent removal require both current evidence and exact destination verification.
-- The returned plan contains no mutation capability and cannot represent intent/disposition mismatch.
-- No mutation, lock, J24J planning, executor wiring, or public API is added.
-- No dependency, Cargo configuration, Cargo.lock, request schema, evidence schema, CLI, packaging, release, enablement, operational-scope, or OCaml change is permitted.
-- Workers record implementation and verification checkpoints only. They must not place a supposed final branch SHA inside a file committed on that branch. Lucy records the reviewed remote tip externally after review.
-
-## Acceptance criteria
-
-1. One crate-private planner loads the authoritative current intent itself.
-2. The global installed-root audit runs for both intent-present and intent-absent state.
-3. Idle is returned only after a successful no-intent global audit.
-4. Intent-present state is observed and classified only through accepted production seams.
-5. Cleanup-only dispositions do not require package evidence freshness.
-6. Destination publication and completed-publication dispositions require both evidence and destination revalidation.
-7. Accepted stable errors are preserved without lower-layer detail leakage.
-8. The returned plan has private invariant-preserving state and no mutation capability.
-9. The planner performs no durable or metadata mutation.
-10. Direct tests exercise every disposition and the idle route through the production planner.
-11. Focused Nextest passes with zero retries and all `j24k3d1` tests pass.
-12. J24K3c4, J24K3c3, J24K3c2, J24K3c1, J24K3b, J24K3a, J24K2, J24J, and M3 lifecycle regressions remain green.
-13. Full serial `just verify` and the task packet checker pass.
-14. Cargo.lock remains byte-identical and only permitted files change.
-15. The task packet and worker note record exact commands, counts, implementation checkpoint, verification checkpoint, discoveries, and risks without self-referential final-tip fields.
+3. Apply only test and documentary corrections.
+4. Commit the test changes and checkpoint corrections. Record that commit as the correction implementation checkpoint.
+5. Update task and correction worker note to `COMPLETE`, with Verification checkpoint still `WORKTREE`.
+6. Commit that completion candidate.
+7. At that exact completion-candidate SHA, run every required verification command below.
+8. Only after everything passes, record that tested completion-candidate SHA as Verification checkpoint in the task and correction worker note.
+9. Commit and push that final evidence update.
+10. Run the packet checker at the final documentation tip.
+11. Return the final remote tip externally. Do not commit it into the branch.
 
 ## Required verification
 
@@ -368,7 +303,7 @@ just verify
 Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
 git diff --check
 git status --short
-git log --oneline --decorate -14
+git log --oneline --decorate -16
 ```
 
 Cargo.lock must remain:
@@ -377,38 +312,31 @@ Cargo.lock must remain:
 D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
-The completed packet must record the commit on which the packet checker and full verification were actually run. Do not update that commit field afterward merely to make it equal the branch tip; doing so creates a new unverified commit and restarts the SHA chase.
+## Permitted files
+
+- `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs`;
+- `tethers-0.1/host-rust/src/installation_recovery_plan.rs` only if a new direct regression exposes a real defect;
+- `docs/CURRENT_CLINE_TASK.md`;
+- `docs/worker-notes/2026-08-05-j24k3d1-validated-recovery-plan.md` only for checkpoint and truthful evidence correction;
+- `docs/worker-notes/2026-08-05-j24k3d1-correction.md`.
 
 ## Forbidden changes
 
-- No edit to the frozen architecture.
-- No mutation of intent, staging, destination, installed records, or evidence stores.
-- No intent creation or removal.
-- No staging cleanup.
-- No installed-record publication.
-- No lock acquisition or lock-context changes.
-- No J24J planner call or `installation_execution.rs` wiring.
-- No public API, schema, dependency, Cargo configuration, Cargo.lock, CLI, packaging, release, enablement, operational-scope, or OCaml change.
-- No second recovery state table or duplicated evidence/destination validator.
-- No caller-supplied intent, booleans, snapshot, disposition, paths, allow-list, callback, or repair policy.
-- No self-referential `Final remote tip` field in committed task or worker documentation.
-- No unrelated refactor or broad test framework.
-
-Permitted files:
-
-- `tethers-0.1/host-rust/src/installation_recovery_plan.rs`;
-- `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs`;
-- `tethers-0.1/host-rust/src/lib.rs` only for private module and test registration;
-- one minimal visibility-only edit in an accepted lower-level module if compilation proves it essential;
-- `docs/CURRENT_CLINE_TASK.md`;
-- `docs/worker-notes/2026-08-05-j24k3d1-validated-recovery-plan.md`.
+- No mutation implementation.
+- No intent removal, staging deletion or record publication.
+- No lock, planner, or executor wiring.
+- No public API or schema changes.
+- No dependency, Cargo configuration, Cargo.lock, CLI, packaging, release, enablement, operational-scope or OCaml change.
+- No automatic tool installation.
+- No unrelated refactor.
 
 ## Stop conditions
 
-Stop as `BLOCKED` only if composition requires changing a public API, accepted recovery semantics, request or evidence schema, dependency, Cargo.lock, or performing mutation; or if full verification still fails after one evidence-led correction.
+Stop as `BLOCKED` if:
 
-Do not stop for failed LSP, a stale local ref, building complete private fixtures, adding platform-gated tests, serialising the known Windows handle-contention suite, or making one narrow crate-private visibility adjustment.
+- Nextest is unavailable;
+- a new direct test requires changing an accepted lower-level contract rather than preserving it;
+- full serial `just verify` still fails after the one permitted evidence-led rerun;
+- Cargo.lock changes.
 
-## Expected pre-existing changes
-
-The branch begins from accepted main and contains only the J24K3d1 worker-note scaffold at the Base commit. No J24K3d1 production code or tests exist yet.
+Do not stop for adding platform-gated fixtures, correcting nonexistent SHAs, or the first occurrence of the exact documented `m3_lifecycle` handle-contention failure when its serial rerun passes.
