@@ -3,16 +3,49 @@
 Task: `J24K3d1 - Validated read-only installation recovery plan`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `READY`
-Base commit: `WORKTREE`
-Implementation checkpoint: `WORKTREE`
+Status: `COMPLETE`
+Base commit: `e2cffcb93fdd457cadf2091b8657e7e6a4e8a5a2`
+Implementation checkpoint: `351a27867078f4f37bca80bd2f481e790cdfb5cf`
 Verification checkpoint: `WORKTREE`
 
 ## Requested outcome
 
-Compose the accepted J24K3 recovery seams into one crate-private, read-only recovery planning boundary.
+Add one crate-private, read-only recovery-planning boundary that composes the accepted J24K3a through J24K3c4 primitives.
 
-Given the typed installation request, the authoritative publication-intent store, the installed registry, and the accepted evidence stores, return either:
+## Changes made
+
+- `tethers-0.1/host-rust/src/installation_recovery_plan.rs` (new): crate-private `plan_installation_recovery`, `InstallationRecoveryPlanningContext`, sealed `ValidatedInstallationRecoveryPlan` with private fields and accessors
+- `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs` (new): 25 direct production-entry-point tests exercising all four recovery dispositions, idle route, evidence staleness, destination drift, conflict states, and read-only proof
+- `tethers-0.1/host-rust/src/lib.rs`: registered `installation_recovery_plan` and `installation_recovery_plan_tests` modules
+- `tethers-0.1/host-rust/src/installation_publication_intent.rs`: added narrow `pub(crate) fn root_path()` accessor
+
+## Decisions and assumptions
+
+- Planner always loads the authoritative current intent itself from `InstallationPublicationIntentStore`
+- Global installed-root audit runs for both intent-present and intent-absent state
+- Cleanup-only dispositions (RemoveIntentOnly, RemoveStagingThenIntent) do not require current package evidence
+- Publication-ready dispositions (RevalidateDestinationThenPublishRecord, VerifyCompletedPublicationThenRemoveIntent) require both evidence revalidation and exact destination verification
+- Sealed plan invariant: idle (no intent, no disposition) or pending (intent + disposition); mixed states unrepresentable outside module
+- No mutation, lock acquisition, J24J planning, or executor wiring performed
+
+## Evidence
+
+All 25 j24k3d1 tests pass:
+- idle route: 2 tests
+- no-intent audit failures: 2 tests
+- intent-only: 1 test
+- staging-only: 2 tests
+- destination-only with evidence: 1 test
+- completed publication: 1 test
+- conflict states: 2 tests
+- untracked destinations: 1 test
+- evidence staleness: 6 tests (request, candidate, trust, launch, conformance, approval)
+- installed-record staleness: 1 test
+- destination drift (file-set, digest, size, permission): 4 tests
+- completed publication still requires evidence: 1 test
+- read-only proof: 1 test
+
+Regression: J24K3c4 (24), J24K3c3 (44), J24K3c2 (21), J24K3c1 (20), J24K3b (16), J24K3a (25), J24K2 (26), J24J (24) all pass. M3 lifecycle (12 of 13 pass, 1 known intermittent Windows handle-contention failure).
 
 - no pending recovery; or
 - one exact validated recovery disposition whose required read-only proofs have completed.
