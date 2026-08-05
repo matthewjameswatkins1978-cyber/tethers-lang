@@ -3,7 +3,7 @@
 Control contract: `1`
 Task: `J24K3c3 - Exact recovery evidence-chain revalidator`
 Owner: `OpenCode`
-Status: `READY`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using Kimi K2.7Code for a second measured, bounded repository-reading and security-sensitive Rust authority-chain package; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3c3-evidence-revalidator`
