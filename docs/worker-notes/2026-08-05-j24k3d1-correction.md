@@ -8,7 +8,7 @@ Base commit: `96902b715cbb8d62aad12d468a474ae03abfaaed`
 Original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
 Implementation checkpoint: `208ef6f0cbf29c5933cc72a8c93ca87973a3f733`
 Correction implementation checkpoint: `208ef6f0cbf29c5933cc72a8c93ca87973a3f733`
-Verification checkpoint: `WORKTREE`
+Verification checkpoint: `aa8720b5758296ea550cb119354b6073908664a6`
 
 ## Requested outcome
 
@@ -41,6 +41,11 @@ Add direct planner-entry regressions for destination reparse state and unsafe or
 - The exact permitted serial rerun of that test failed with the same error.
 - The bounded teardown correction is intentionally not best-effort: unexpected errors fail immediately and persistent contention fails after two seconds with the final error.
 - After the correction, the exact failing test passed serially: 1 passed, 0 failed, 12 filtered out.
+- Ten exact serial repetitions of the failing test passed: 10/10, each 1 passed and 0 failed.
+- Focused Nextest passed with 28 tests passed, 0 failed, 0 retries, and 2 Unix symlink tests skipped by the Windows platform gate.
+- All named J24K3d1/J24K3a-J24K3c4/J24K3b/J24K2/J24J and `m3_lifecycle` regression commands passed.
+- Full serial `just verify` passed with zero failures.
+- Cargo.lock SHA-256 remained `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 
 ## Discoveries
 
