@@ -3,7 +3,7 @@
 Task: `J24K3d1 correction - planner path-safety regressions and complete verification`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `BLOCKED`
 Base commit: `96902b715cbb8d62aad12d468a474ae03abfaaed`
 Original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
 Implementation checkpoint: `9a48be4e08d06e636cb53e21c9686ef65fbca8c8`
@@ -34,6 +34,9 @@ None yet.
 
 - Focused Nextest on Windows: 28 passed, 0 failed, 0 retries; 2 Unix symlink tests skipped by platform gate.
 - New direct planner-entry coverage: destination junction, missing opened install root, and record-root junction.
+- Named regression suites passed, including the first full serial verification through `j24c_plug_disable_cli` after its exact failing test passed on serial rerun.
+- Full serial `just verify` failed on `m3_malformed_and_interrupted_conformance_fail_without_retry_or_install` at `tests/m3_lifecycle.rs:1009` with `Os { code: 5, kind: PermissionDenied, message: "Access is denied." }`.
+- The exact permitted serial rerun of that test failed with the same error.
 
 ## Discoveries
 
@@ -49,7 +52,7 @@ None yet.
 
 ## Smallest next action
 
-Apply only the correction packet, complete all required verification, and return the branch for independent review. Do not merge.
+Escalate the repeated Windows handle-contention failure for diagnosis. Do not mark COMPLETE or push a verification checkpoint.
 
 ## References
 
