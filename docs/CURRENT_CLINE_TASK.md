@@ -3,10 +3,10 @@
 Control contract: `1`
 Task: `J24K3e1 - Read-only disabled installation publication preparation`
 Owner: `OpenCode`
-Model: `Luna`
+Model: `HY3`
 Status: `READY`
 Task colour: `Red`
-Route: `OpenCode using Luna for one bounded Rust publication-preparation package; Lucy performs independent review and routine safe merge`
+Route: `OpenCode using HY3 for one bounded Rust publication-preparation package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
 Base commit: `fe4f0e84569e793be3c0e8818799ac36e895da1a`
 Implementation branch: `opencode/j24k3e1-publication-preparation`
@@ -86,6 +86,20 @@ precompute record and intent
 This package implements only the first line.
 
 ## Required behaviour
+
+The following numbered index is checker-facing and restates the ten frozen
+required-behaviour subsections without changing their meaning or scope.
+
+1. Add one sealed crate-private prepared publication value.
+2. Add one read-only preparation function.
+3. Require one fresh exact ordinary plan.
+4. Require idle private recovery before preparation.
+5. Load and revalidate the exact plan-pinned evidence chain.
+6. Precompute one exact immutable disabled installed record.
+7. Construct and validate one exact publication intent.
+8. Prove preparation remained read-only.
+9. Preserve existing recovery and path-safety error classifications.
+10. Preserve existing public installation behaviour.
 
 ### 1. Add one sealed crate-private prepared publication value
 
