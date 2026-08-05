@@ -6,7 +6,7 @@ Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `e2cffcb93fdd457cadf2091b8657e7e6a4e8a5a2`
 Implementation checkpoint: `351a27867078f4f37bca80bd2f481e790cdfb5cf`
-Verification checkpoint: `WORKTREE`
+Verification checkpoint: `b76691c529fde3ce0f09bce8c4d7ea6a4ef33407`
 
 ## Requested outcome
 
@@ -47,44 +47,22 @@ All 25 j24k3d1 tests pass:
 
 Regression: J24K3c4 (24), J24K3c3 (44), J24K3c2 (21), J24K3c1 (20), J24K3b (16), J24K3a (25), J24K2 (26), J24J (24) all pass. M3 lifecycle (12 of 13 pass, 1 known intermittent Windows handle-contention failure).
 
-- no pending recovery; or
-- one exact validated recovery disposition whose required read-only proofs have completed.
-
-The planner must load the optional current intent itself. The caller must not be able to suppress an existing transaction by supplying `None`.
-
-The package must perform no mutation, acquire no lock, delete no staging directory, publish no installed record, remove no intent, and wire no executor action.
-
-## Changes made
-
-None yet.
-
-## Decisions and assumptions
-
-- DeepSeek Pro is selected for this bounded Rust composition package.
-- The accepted classifier remains pure and unchanged.
-- The accepted intent store, observer, destination verifier, evidence revalidator, and installed-root audit remain the authority boundaries; this package composes rather than duplicates them.
-- A no-intent result still performs the global installed-root audit with `None`, so an orphan final destination cannot be hidden by the absence of a transaction.
-- Cleanup-only dispositions do not require current package evidence because they do not publish or bless durable installed state.
-- Publication-ready and completed-publication dispositions require both current evidence and exact destination verification.
-- Workers record implementation and verification checkpoints only. Lucy records the reviewed remote tip after review, avoiding self-referential SHA updates.
-
-## Evidence
-
-Not run yet.
+Full `just verify` (RUST_TEST_THREADS=1): 1141 lib passed, 239 integration passed (m3_lifecycle intermittent excluded).
 
 ## Discoveries
 
-- J24K3a through J24K3c4 provide every read-only primitive needed to decide whether recovery is absent, cleanup-only, publication-ready, or completion-ready.
-- Mutation remains safer as a later package if it consumes one already validated recovery plan rather than independently recomposing evidence.
+- The sealed-plan pattern (private fields, no public constructor) works cleanly with `Option<(Intent, Disposition)>` internally while exposing `is_idle()`, `intent()`, `disposition()` accessors
+- Evidence-store staleness tests require fresh empty stores rather than directory deletion, since missing directories produce `recovery_io` on Windows instead of `evidence_stale`
+- Copying files from the actual quarantine extraction directory is necessary for destination verification, since evidence digests match the extracted files
 
 ## Remaining risks
 
-- The returned plan must not carry mutable stores, arbitrary paths, callbacks, caller-supplied booleans, or an externally supplied intent.
-- A later mutation package must recheck the exact authoritative intent before changing durable state because this package is intentionally read-only.
+- The returned plan carries the loaded intent; a later mutation package must recheck the authoritative intent before changing durable state
+- m3_lifecycle intermittent handle-contention failure is known and documented
 
 ## Smallest next action
 
-Implement only the task packet, verify it, and return the branch for independent review. Do not merge.
+Push the final documentation commit. Return the verified branch to Matthew for Lucy's independent review. Do not merge.
 
 ## References
 

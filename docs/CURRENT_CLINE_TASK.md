@@ -5,6 +5,7 @@ Task: `J24K3d1 - Validated read-only installation recovery plan`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Implementation checkpoint: `351a27867078f4f37bca80bd2f481e790cdfb5cf`
+Verification checkpoint: `b76691c529fde3ce0f09bce8c4d7ea6a4ef33407`
 Task colour: `Red`
 Route: `OpenCode using DeepSeek Pro for one bounded Rust composition and recovery-planning package; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3d1-validated-recovery-plan`
