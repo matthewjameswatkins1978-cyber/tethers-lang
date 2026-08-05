@@ -6,17 +6,20 @@ Owner: `OpenCode`
 Status: `READY`
 Base commit: `WORKTREE`
 Implementation checkpoint: `WORKTREE`
+Verification checkpoint: `WORKTREE`
 
 ## Requested outcome
 
 Compose the accepted J24K3 recovery seams into one crate-private, read-only recovery planning boundary.
 
-Given the typed installation request, the optional current publication intent, the installed registry, and the accepted evidence stores, return either:
+Given the typed installation request, the authoritative publication-intent store, the installed registry, and the accepted evidence stores, return either:
 
 - no pending recovery; or
 - one exact validated recovery disposition whose required read-only proofs have completed.
 
-The package must load no hidden global state, perform no mutation, acquire no lock, delete no staging directory, publish no installed record, remove no intent, and wire no executor action.
+The planner must load the optional current intent itself. The caller must not be able to suppress an existing transaction by supplying `None`.
+
+The package must perform no mutation, acquire no lock, delete no staging directory, publish no installed record, remove no intent, and wire no executor action.
 
 ## Changes made
 
@@ -28,7 +31,9 @@ None yet.
 - The accepted classifier remains pure and unchanged.
 - The accepted intent store, observer, destination verifier, evidence revalidator, and installed-root audit remain the authority boundaries; this package composes rather than duplicates them.
 - A no-intent result still performs the global installed-root audit with `None`, so an orphan final destination cannot be hidden by the absence of a transaction.
-- Workers record implementation and verification checkpoints only. The final remote tip is recorded by Lucy after review, avoiding self-referential SHA updates.
+- Cleanup-only dispositions do not require current package evidence because they do not publish or bless durable installed state.
+- Publication-ready and completed-publication dispositions require both current evidence and exact destination verification.
+- Workers record implementation and verification checkpoints only. Lucy records the reviewed remote tip after review, avoiding self-referential SHA updates.
 
 ## Evidence
 
@@ -41,8 +46,8 @@ Not run yet.
 
 ## Remaining risks
 
-- The returned plan must not carry mutable stores, arbitrary paths, callbacks, or caller-supplied booleans.
-- A later mutation package must recheck the exact intent before changing durable state because this package is intentionally read-only.
+- The returned plan must not carry mutable stores, arbitrary paths, callbacks, caller-supplied booleans, or an externally supplied intent.
+- A later mutation package must recheck the exact authoritative intent before changing durable state because this package is intentionally read-only.
 
 ## Smallest next action
 
