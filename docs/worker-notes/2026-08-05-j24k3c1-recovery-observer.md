@@ -51,6 +51,7 @@ Add one private read-only observer that accepts a validated publication intent a
 - `git diff --check`: passed.
 - `Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256`: `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
 - Implementation checkpoint: `9e0ca9ac5c599adc9e5e4630198972a8946790ce`.
+- Final remote tip at evidence commit: `41c7286d2e8ac355a08eb46cfd077f74c71940c2`.
 
 ## Discoveries
 
