@@ -7,7 +7,7 @@ Model: `HY3`
 Status: `COMPLETE`
 Base commit: `45f78e47a09638d4070bf4479e4f1dcbe39c8cb1`
 Implementation checkpoint: `043eab0f2c0a45d47aae14adc1777a06882095ca`
-Verification checkpoint: `WORKTREE`
+Verification checkpoint: `a20e286d9907b7cb54a379abe406d83f709f8c80`
 
 ## Requested outcome
 
