@@ -782,8 +782,8 @@ impl InstalledPlugRegistry {
         let install_root = self.install_root.path();
         let record_root = self.record_root.path();
 
-        verify_chain(install_root).map_err(|_| recovery_io())?;
-        verify_chain(record_root).map_err(|_| recovery_io())?;
+        verify_chain(install_root).map_err(map_recovery_path_error)?;
+        verify_chain(record_root).map_err(map_recovery_path_error)?;
 
         let staging_path = install_root.join(format!(".staging-{}", intent.transaction_id));
         let destination_path = install_root.join(&intent.destination_relative_path);
@@ -820,6 +820,14 @@ fn recovery_io() -> M3Error {
         "installation_recovery_io",
         "installation recovery state could not be observed",
     )
+}
+
+fn map_recovery_path_error(error: M3Error) -> M3Error {
+    if error.code == "unsafe_store_path" {
+        error
+    } else {
+        recovery_io()
+    }
 }
 
 fn observe_directory(path: &Path) -> Result<bool> {

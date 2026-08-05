@@ -284,6 +284,72 @@ fn j24k3c1_windows_junction_staging_path_is_refused() {
     drop(record);
 }
 
+#[cfg(windows)]
+#[test]
+fn j24k3c1_windows_junction_install_root_verify_chain_is_refused() {
+    let (record, intent) = valid_intent();
+    let base = std::env::temp_dir().join(format!("tethers-j24k3c1-{}", Uuid::new_v4()));
+    let install_root = base.join("install");
+    let record_root = base.join("records");
+    fs::create_dir_all(&install_root).unwrap();
+    fs::create_dir_all(&record_root).unwrap();
+    let registry = InstalledPlugRegistry::open_existing(&install_root, &record_root).unwrap();
+
+    fs::remove_dir(&install_root).unwrap();
+    let target = base.join("target");
+    fs::create_dir(&target).unwrap();
+    let status = std::process::Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            install_root.to_str().unwrap(),
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "could not create Windows junction fixture"
+    );
+    let err = registry.observe_installation_recovery(&intent).unwrap_err();
+    assert_eq!(err.code, "unsafe_store_path");
+    drop(record);
+}
+
+#[cfg(windows)]
+#[test]
+fn j24k3c1_windows_junction_record_root_verify_chain_is_refused() {
+    let (record, intent) = valid_intent();
+    let base = std::env::temp_dir().join(format!("tethers-j24k3c1-{}", Uuid::new_v4()));
+    let install_root = base.join("install");
+    let record_root = base.join("records");
+    fs::create_dir_all(&install_root).unwrap();
+    fs::create_dir_all(&record_root).unwrap();
+    let registry = InstalledPlugRegistry::open_existing(&install_root, &record_root).unwrap();
+
+    fs::remove_dir(&record_root).unwrap();
+    let target = base.join("target");
+    fs::create_dir(&target).unwrap();
+    let status = std::process::Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            record_root.to_str().unwrap(),
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "could not create Windows junction fixture"
+    );
+    let err = registry.observe_installation_recovery(&intent).unwrap_err();
+    assert_eq!(err.code, "unsafe_store_path");
+    drop(record);
+}
+
 #[cfg(unix)]
 #[test]
 fn j24k3c1_unix_symlink_staging_path_is_refused() {
