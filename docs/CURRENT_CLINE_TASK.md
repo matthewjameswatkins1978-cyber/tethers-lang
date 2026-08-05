@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3e1 - Read-only disabled installation publication preparation`
 Owner: `OpenCode`
 Model: `HY3`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using HY3 for one bounded Rust publication-preparation package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
@@ -14,7 +14,7 @@ Worker note: `docs/worker-notes/2026-08-05-j24k3e1-publication-preparation.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
 Accepted main: `fe4f0e84569e793be3c0e8818799ac36e895da1a`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `6a82dd529a47f2561234e72a8b7154ede92cabb0`
 Verification checkpoint: `WORKTREE`
 
 ## Objective
