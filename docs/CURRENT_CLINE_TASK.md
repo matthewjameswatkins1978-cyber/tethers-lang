@@ -1,171 +1,46 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24K3c3 - Exact recovery evidence-chain revalidator`
+Task: `J24K3c3 correction - exact trust equality and evidence hygiene`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `READY`
 Task colour: `Red`
-Route: `OpenCode using Kimi K2.7Code for a second measured, bounded repository-reading and security-sensitive Rust authority-chain package; Lucy performs independent review and routine safe merge`
+Route: `OpenCode using Kimi K2.7Code for one bounded correction to its J24K3c3 authority-chain package; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3c3-evidence-revalidator`
-Base commit: `374cb57ba50e685e3fe8716ecd6f2166a6f6e9b5`
+Base commit: `7b148070a04a3af30ffe0165c35ea56e499b36a5`
 Implementation branch: `opencode/j24k3c3-evidence-revalidator`
-Worker note: `docs/worker-notes/2026-08-05-j24k3c3-evidence-revalidator.md`
+Worker note: `docs/worker-notes/2026-08-05-j24k3c3-correction.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
 Accepted main: `6cbcbaf8bfa9c67f274b503061187ae51a08b080`
+Reviewed OpenCode tip: `88a911772aef7511262a365cccbcbdf3b0ad4ae9`
+Reviewed implementation checkpoint: `727a20944270a5c71484f8c1728c339d0d7f1dbf`
 
 ## Objective
 
-Implement only J24K3c3: one crate-private, read-only revalidator that proves the complete evidence chain behind one validated `InstallationPublicationIntent` is still current and exactly matches the current typed `InstallationRequest`.
+Correct three narrow independent-review findings in the otherwise sound J24K3c3 read-only recovery evidence-chain revalidator.
 
-The revalidator must prove, in order:
+Do not redesign the package. Preserve its context, ordering, store selection, candidate-byte revalidation, exact-candidate authority, launch/conformance/approval chain, installed-record derivation, stable errors, read-only boundary, and all later-work exclusions.
 
-- the intent is valid before any store access;
-- the typed request still represents exact-candidate trust, explicit non-isolated supervised conformance consent, disabled installation, and the same candidate ID as the intent;
-- exactly one current candidate exists and its quarantine bytes are revalidated through the accepted candidate boundary;
-- the exact-candidate trust record still exists and binds that candidate;
-- reconstructed `PackageTrustEvidence` is exactly the intent record's trust evidence and remains current through `ExactCandidateTrustAuthority`;
-- one exact launch profile remains pinned to the candidate;
-- one exact passed conformance record remains pinned to the candidate, trust, launch profile, and current conformance suite;
-- one exact installation approval remains fully pinned to the candidate, reconstructed trust, launch profile, conformance, and re-reviewed capability manifests;
-- the precomputed `InstalledPlugRecord` remains an exact derivation of that complete chain.
+## Independent-review findings
 
-This package does not verify destination files, audit unrelated installed roots, classify recovery, mutate state, clean staging, publish a record, remove an intent, acquire a lock, or wire the executor.
+### 1. The frozen packet requires literal trust-object equality
 
-## Relevant background and existing behaviour
+The current implementation compares only `PackageTrustEvidence.evidence_digest` at three recovery boundaries:
 
-Accepted `main` is exactly:
+- reconstructed trust versus `intent.installed_record.trust_evidence` in `revalidate_trust`;
+- approval trust versus reconstructed trust in `InstallationApprovalRecord::require_for_recovery`;
+- installed-record trust versus reconstructed trust in `InstalledPlugRecord::require_for_recovery`.
 
-```text
-6cbcbaf8bfa9c67f274b503061187ae51a08b080
-```
+SHA-256 coverage remains mandatory, but the frozen J24K3c3 contract explicitly requires exact `PackageTrustEvidence` equality. Enforce full value equality at all three boundaries. Do not remove validation or digest checks performed by the accepted types.
 
-J24K3a supplies a strict publication intent containing one complete precomputed installed record. J24K3b classifies already-observed recovery facts. J24K3c1 observes the exact staging, destination, and installed-record paths. J24K3c2 verifies the exact final destination's file set, lengths, hashes, permissions, and path safety.
+### 2. Recovery-facing error translation must not carry lower-layer messages
 
-The frozen J24K architecture requires recovery to revalidate the request and complete authority chain before publishing a record for an already-present destination. A structurally valid intent is not sufficient: its host-owned digests can still be internally consistent while naming stale or incorrectly repinned evidence.
+`map_candidate_error` currently constructs `unsafe_store_path` using the candidate layer's `error.message`. Preserve the explicit unsafe-path code, but replace the copied message with one fixed recovery-owned safe message. Do not expose the candidate message, a filesystem path, package text, JSON, or OS diagnostics.
 
-Existing accepted seams already provide the authority:
+Also map failure from `current_suite_digest()` into an allowed stable recovery-facing error rather than allowing a lower `record_invalid` or canonicalisation error to escape. No clock, callback, fault-injection seam, or public API may be added.
 
-- `CandidateRegistry::load_all` and `revalidate_candidate` for exact candidate and quarantine bytes;
-- `ExactCandidateTrustStore::find` and `ExactCandidateTrustRecord::require_for_candidate`;
-- `PackageTrustEvidence::exact_candidate`;
-- `ExactCandidateTrustAuthority::revalidate_current`;
-- `LaunchProfileEvidence::require_for_candidate`;
-- `ConformanceEvidence::require_current` with `current_suite_digest()`;
-- `InstallationApprovalRecord::validate` and the existing manifest-review machinery in `installed.rs`;
-- `InstalledPlugRecord::validate` and the accepted physical/capability fields.
-
-Do not create a parallel trust or validation model. Compose and narrowly extend these accepted seams.
-
-## Required behaviour
-
-1. Add one narrow crate-private recovery evidence context and entry point.
-
-Add a private module such as `installation_recovery_evidence.rs` with a context structurally equivalent to:
-
-```rust
-pub(crate) struct InstallationRecoveryEvidenceContext<'a> {
-    pub quarantine_root: &'a Path,
-    pub candidates: &'a CandidateRegistry,
-    pub exact_trust: &'a ExactCandidateTrustStore,
-    pub launch_profiles: &'a LaunchProfileEvidenceStore,
-    pub conformance: &'a ConformanceEvidenceStore,
-    pub approvals: &'a InstallationApprovalStore,
-}
-```
-
-Provide one seam structurally equivalent to:
-
-```rust
-pub(crate) fn revalidate_installation_recovery_evidence(
-    request: &InstallationRequest,
-    intent: &InstallationPublicationIntent,
-    context: &InstallationRecoveryEvidenceContext<'_>,
-) -> Result<()>;
-```
-
-The context contains read-only references only. It contains no installed registry, destination path, lock, callback, clock injection, cleanup capability, publisher/developer fallback authority, or mutation seam.
-
-2. Validate the intent and typed request before reading stores.
-
-`intent.validate()` must be the first operation.
-
-Then require the typed request to contain exactly the accepted fixed values:
-
-- schema `tethers.plug-install/1`;
-- candidate ID equal to `intent.candidate_id` and `intent.installed_record.source_candidate_id`;
-- `InstallationTrustScope::ExactCandidate`;
-- `allow_non_isolated_supervised_execution == true`;
-- `InstallationTargetState::Disabled`.
-
-A caller can construct the public typed request fields directly, so do not assume successful parsing happened earlier.
-
-3. Load and revalidate exactly one candidate.
-
-Use `CandidateRegistry::load_all()` and require exactly one record whose candidate ID equals the request and intent candidate ID. Do not select by package release or semantic digest.
-
-Require the candidate's package ID, package version, semantic digest, raw archive digest, provider identity, platform, architecture, launch declaration, physical evidence, and capability evidence to match the precomputed installed record where those fields are represented.
-
-Call the accepted `revalidate_candidate(candidate, context.quarantine_root)` boundary after loading it. Recovery must not rely only on historical candidate JSON.
-
-4. Reconstruct and revalidate current exact-candidate trust.
-
-Load the exact trust record through `ExactCandidateTrustStore::find(candidate_id)` and require it for the candidate.
-
-Reconstruct `PackageTrustEvidence::exact_candidate(&record)`, require it for the candidate, and require exact equality with `intent.installed_record.trust_evidence`.
-
-Construct `ExactCandidateTrustAuthority` from the supplied exact-trust store and call `revalidate_current` with the candidate and reconstructed evidence. Do not add publisher/developer fallback, optional authority, global authority, or cached authority state.
-
-5. Load the exact approval, conformance, and launch-profile records.
-
-Load the installation approval by `intent.installed_record.installation_approval_id` and require its digest to equal `installation_approval_digest`.
-
-Load conformance by `intent.installed_record.conformance_evidence_id` and require its digest to equal `conformance_evidence_digest`.
-
-Require the approval's conformance ID and digest to equal both the loaded conformance and the installed record.
-
-Require the approval and conformance to pin the same launch-profile evidence digest. Load exactly that launch profile from `LaunchProfileEvidenceStore::load_all()`.
-
-Missing evidence, duplicate/malformed store state, ID mismatch, digest mismatch, or disagreement between the approval and conformance pins must fail closed.
-
-6. Revalidate launch and conformance freshness.
-
-Call `launch.require_for_candidate(candidate)`.
-
-Call `conformance.require_current(candidate, reconstructed_trust, launch, &current_suite_digest()?)`.
-
-This must require a passed disposition and the current suite digest. Invalidated, failed, interrupted, stale-suite, stale-trust, stale-launch, payload, or capability drift is not recoverable here.
-
-7. Revalidate the complete installation approval chain.
-
-Add one narrow crate-private approval method or equivalent helper in `installed.rs` that:
-
-- calls `approval.validate()`;
-- requires candidate ID, package ID/version, semantic and raw archive digests, source size, payload evidence, provider identity/version, launch path/arguments/working directory, launch-profile label/limitation/digest, trust evidence, conformance ID/digest, and all corresponding pins to equal the loaded current evidence;
-- reconstructs the accepted reviewed capabilities from the revalidated quarantine directory using the existing manifest-review machinery;
-- requires exact equality with `approval.reviewed_capabilities`.
-
-Do not weaken or duplicate manifest verification. Reuse the existing `reviewed_capabilities` implementation or a narrowly extracted equivalent within `installed.rs`.
-
-8. Revalidate the precomputed installed record as an exact chain product.
-
-Add one narrow crate-private installed-record method or equivalent helper that calls `record.validate()` and requires exact equality with the current candidate/evidence chain for:
-
-- installed/source candidate identity and destination identity already pinned by the intent;
-- package ID/version, semantic and raw archive digests;
-- `plug_json`, payloads, signature files, and capability manifests;
-- reconstructed trust evidence;
-- installation approval ID/digest;
-- conformance evidence ID/digest;
-- provider ID/version, launch path/arguments/working directory, launch-profile label;
-- platform and architecture;
-- exact disabled bindings derived from every candidate capability, with no missing, extra, reordered, enabled, or repinned binding.
-
-Do not refresh `created_unix_ms`, installed ID, destination path, or record digest. Recovery validates and later publishes the precomputed record unchanged.
-
-9. Use stable recovery errors without leaking details.
-
-Use only these recovery-facing errors:
+The only ordinary recovery-facing errors remain:
 
 ```text
 installation_intent_invalid: installation publication intent is invalid
@@ -173,103 +48,70 @@ installation_intent_evidence_stale: installation publication evidence is no long
 installation_recovery_io: installation recovery state could not be observed
 ```
 
-Preserving explicit accepted `unsafe_store_path` is allowed. Translate the candidate layer's explicit unsafe-destination/reparse refusal to `unsafe_store_path` rather than treating it as stale evidence.
+Explicit `unsafe_store_path` remains allowed with one fixed safe message.
 
-Map genuine candidate/store read or access failures to `installation_recovery_io`. Map missing, malformed, duplicate, contradictory, invalid, stale, or mismatched evidence to `installation_intent_evidence_stale`.
+### 3. The successful read-only test must prove the metadata claim it makes
 
-Do not expose filesystem paths, package-controlled strings, raw JSON, lower-layer messages, or OS diagnostics.
+`j24k3c3_success_leaves_stores_quarantine_and_permissions_unchanged` currently compares loaded store values and byte hashes, but does not compare modification timestamps or permission state.
 
-10. Add direct production tests and complete full verification.
+Strengthen the production-entry-point test to snapshot and compare, for every relevant file beneath:
 
-Add a private test module whose test names are prefixed `j24k3c3`.
+- candidate registry root;
+- quarantine root;
+- exact-trust store;
+- launch-profile store;
+- conformance store;
+- approval store;
 
-Directly prove at minimum:
+At minimum capture:
 
-- one complete valid current evidence chain passes;
-- invalid intent is rejected before request or store state can influence the result;
-- each invalid typed-request field fails stale, including candidate mismatch;
-- missing and tampered candidate evidence fail stale;
-- quarantined candidate byte mutation fails stale;
-- missing, changed, or differently authorised exact-candidate trust fails stale;
-- reconstructed trust evidence must exactly equal the intent record's trust evidence;
-- missing, mismatched, or candidate-stale launch profile fails stale;
-- missing, mismatched, non-passed, or old-suite conformance fails stale;
-- missing or digest-mismatched approval fails stale;
-- approval trust, launch, conformance, candidate, provider, payload, or reviewed-capability drift fails stale;
-- installed-record package, physical evidence, capability, trust, approval, conformance, provider, launch, platform, architecture, or disabled-binding drift fails stale after recomputing its record and intent digests;
-- unrelated valid evidence records do not satisfy or replace the exact pinned records;
-- explicit unsafe candidate/store path state remains unsafe rather than stale or absent;
-- genuine inaccessible/read failure maps to `installation_recovery_io` where an accepted deterministic fixture is available;
-- successful revalidation leaves every store entry, quarantine byte, timestamp, and permission unchanged.
+- normalized relative path and entry type;
+- file bytes or SHA-256 digest;
+- `modified()` timestamp;
+- `permissions().readonly()`.
 
-Exercise the production entry point. Do not test only private comparison helpers or source strings.
+The snapshot must be taken immediately before and after one successful call to `revalidate_installation_recovery_evidence`. Do not alter the files to prepare the assertion. Directory entry sets must remain exact.
 
-## Relevant components
+### 4. Test names and evidence must describe what they prove
 
-- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs`
-- `tethers-0.1/host-rust/src/installation_recovery_evidence_tests.rs`
-- `tethers-0.1/host-rust/src/installation_publication_intent.rs`
-- `tethers-0.1/host-rust/src/installation_request.rs`
-- `tethers-0.1/host-rust/src/candidate.rs`
-- `tethers-0.1/host-rust/src/installation_trust.rs`
-- `tethers-0.1/host-rust/src/current_trust.rs`
-- `tethers-0.1/host-rust/src/launch_profile.rs`
-- `tethers-0.1/host-rust/src/conformance.rs`
-- `tethers-0.1/host-rust/src/installed.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `InstallationRequest`
-- `InstallationPublicationIntent`
-- `CandidateRegistry`, `CandidateRecord`, `revalidate_candidate`
-- `ExactCandidateTrustStore`, `ExactCandidateTrustAuthority`, `CurrentTrustAuthority`
-- `PackageTrustEvidence::exact_candidate`
-- `LaunchProfileEvidenceStore`, `LaunchProfileEvidence::require_for_candidate`
-- `ConformanceEvidenceStore`, `ConformanceEvidence::require_current`, `current_suite_digest`
-- `InstallationApprovalStore`, `InstallationApprovalRecord`
-- `InstalledPlugRecord`, `DisabledBindingRecord`
+The closed enums `InstallationTrustScope` and `InstallationTargetState` currently expose only `ExactCandidate` and `Disabled`. The tests named:
 
-The accepted evidence/store modules are references. Only the narrow extension points listed below may be edited.
+- `j24k3c3_non_exact_trust_scope_fails_stale`;
+- `j24k3c3_non_disabled_target_fails_stale`;
 
-## Frozen decisions and invariants
+do not construct invalid states and instead pass the valid chain.
 
-- J24K3c3 is crate-private and read-only.
-- Intent validation is the first operation.
-- The current typed request is mandatory authority and must exactly match the intent candidate.
-- Candidate bytes are revalidated through the accepted quarantine boundary.
-- Exact-candidate trust has no publisher/developer fallback.
-- Historical package-trust evidence is not current authority.
-- Launch profile, conformance, approval, and installed-record pins must form one exact chain.
-- Conformance must be passed against the current suite.
-- Reviewed capabilities must be reconstructed from current revalidated manifests.
-- The precomputed installed record is validated unchanged; no identity or timestamp is recomputed.
-- Destination verification remains J24K3c2 and is not repeated here.
-- Global installed-root audit, recovery classification, mutation, cleanup, publication, intent removal, lock integration, planner, and executor wiring remain later work.
-- Existing public APIs and ordinary installation behaviour remain unchanged.
-- No dependency, Cargo configuration, Cargo.lock, CLI, prompt, output, enablement, operational-scope, packaging, release, or OCaml change is permitted.
+Rename or replace them so the names honestly describe the closed accepted variants they prove. Do not add enum variants, unsafe representation tricks, deserialisation bypasses, public constructors, or architecture changes merely to manufacture impossible typed states. Record this closed-enum limitation accurately in the worker note and exact test count.
+
+## Required behaviour
+
+1. Preserve `intent.validate()` as the first production operation.
+2. Preserve every accepted request, candidate, trust-authority, launch, conformance, approval, and installed-record check.
+3. Compare full `PackageTrustEvidence` values at all three recovery chain boundaries.
+4. Preserve all accepted validation and cryptographic digest coverage.
+5. Translate candidate unsafe state to `unsafe_store_path` with one fixed safe recovery-owned message.
+6. Ensure `current_suite_digest()` cannot leak a non-recovery-facing error.
+7. Strengthen the successful no-mutation test to compare bytes, entry sets, modification timestamps, and read-only permissions across all evidence roots.
+8. Rename the two misleading closed-enum tests without changing accepted public types.
+9. Retain every other J24K3c3 test and production semantic.
+10. Perform no production mutation and no later recovery work.
 
 ## Acceptance criteria
 
-1. One crate-private read-only entry point accepts only the typed request, validated intent, and narrow evidence context.
-2. Intent validation precedes request and store access.
-3. Every fixed request field and candidate identity is checked explicitly.
-4. Exactly one candidate is loaded by candidate ID and its quarantine bytes are revalidated.
-5. Current exact-candidate trust is reconstructed and revalidated without fallback.
-6. Reconstructed trust evidence exactly equals the intent installed record's trust evidence.
-7. Approval, conformance, and launch evidence are loaded only through exact pinned IDs/digests.
-8. Launch evidence remains bound to the exact candidate.
-9. Conformance remains passed and current for candidate, trust, launch, and current suite.
-10. Approval pins and reviewed capabilities remain exact and current.
-11. The precomputed installed record exactly matches candidate, trust, launch, conformance, approval, platform, architecture, capabilities, files, and disabled bindings.
-12. Missing, malformed, duplicate, contradictory, stale, or mismatched evidence fails closed.
-13. Genuine read/access failure is not reported as stale or absent.
-14. Stable errors contain no unsafe lower-layer detail.
-15. No destination or unrelated installed-root state is inspected.
-16. Revalidation performs no mutation.
-17. Direct tests exercise the production revalidator.
-18. Focused Nextest passes with zero retries and all `j24k3c3` tests pass.
-19. J24K3c2, J24K3c1, J24K3b, J24K3a, J24K2, J24I, J24H, J24J, and representative M3 regressions remain green.
-20. Full `just verify` and the task packet checker pass.
-21. Cargo.lock remains byte-identical and only permitted files change.
-22. The task packet and worker note contain exact commands, counts, checkpoint SHA, discoveries, risks, and final remote tip.
+1. `revalidate_trust` requires reconstructed trust to equal the complete intent-record trust value.
+2. `InstallationApprovalRecord::require_for_recovery` requires complete approval trust equality.
+3. `InstalledPlugRecord::require_for_recovery` requires complete installed-record trust equality.
+4. Candidate unsafe translation copies no lower-layer message or detail.
+5. Current-suite calculation returns only an allowed recovery-facing error on failure.
+6. Existing intent-first ordering and all authority-chain checks remain unchanged.
+7. The successful read-only test proves exact entry sets, bytes, modification timestamps, and read-only permission state across all relevant roots.
+8. Closed-enum test names no longer claim to exercise impossible invalid variants.
+9. All existing focused negative cases remain green.
+10. Focused Nextest passes with zero retries.
+11. J24K3c2, J24K3c1, J24K3b, J24K3a, J24K2, J24I, J24H, J24J, and M3 lifecycle regressions remain green.
+12. Full `just verify` and the task packet checker pass, subject only to the already-documented intermittent Windows handle-contention rule.
+13. Cargo.lock remains byte-identical and only permitted files change.
+14. The worker note records exact corrected test counts, implementation checkpoint, verification, discoveries, remaining risks, and final remote tip.
 
 ## Required verification
 
@@ -344,7 +186,7 @@ just verify
 Get-FileHash tethers-0.1/host-rust/Cargo.lock -Algorithm SHA256
 git diff --check
 git status --short
-git log --oneline --decorate -10
+git log --oneline --decorate -12
 ```
 
 Cargo.lock must remain:
@@ -353,35 +195,31 @@ Cargo.lock must remain:
 D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB
 ```
 
-Do not substitute `just test-rust` for full `just verify`. A pre-existing intermittent Windows handle-contention failure must be identified precisely, rerun serially, and pass before handoff.
+If the already-documented `m3_lifecycle` Windows handle-contention failure occurs, identify the exact same failure, rerun that test serially, and require it to pass. Do not relabel a new failure as pre-existing.
 
 ## Forbidden changes
 
 - No edit to the frozen architecture.
-- No edit to `installation_publication_intent.rs`, `installation_request.rs`, `candidate.rs`, `installation_trust.rs`, `current_trust.rs`, `launch_profile.rs`, `conformance.rs`, `m3_store.rs`, `installation_recovery.rs`, `installation_execution.rs`, or destination-verifier production semantics.
-- No publisher/developer trust fallback, optional authority, global authority, cached authority, or new trust schema.
-- No destination file verification, global installed-root audit, recovery classification, cleanup, deletion, publication, repair, adoption, intent removal, lock, planner, or executor wiring.
-- No mutation in production code.
-- No public API or broad store/root accessor.
-- No dependency, Cargo configuration, Cargo.lock, CLI, packaging, release, enablement, operational-scope, or OCaml change.
-- No unrelated refactor.
-- No files outside the permitted set.
+- No edit to accepted request, candidate, trust, launch-profile, conformance, store, intent, recovery classifier, execution, or destination-verifier modules beyond the already-permitted narrow `installed.rs` helpers.
+- No enum variants, unsafe representation construction, parser bypass, public API, schema, dependency, Cargo configuration, Cargo.lock, CLI, packaging, release, enablement, operational-scope, or OCaml change.
+- No destination verification, global audit, recovery classification, cleanup, publication, intent removal, lock, planner, or executor wiring.
+- No production mutation.
+- No unrelated refactor or broad test-fixture framework.
 
 Permitted files:
 
-- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs` new;
-- `tethers-0.1/host-rust/src/installation_recovery_evidence_tests.rs` new;
-- `tethers-0.1/host-rust/src/installed.rs` only for narrow crate-private approval and installed-record chain validation helpers;
-- `tethers-0.1/host-rust/src/lib.rs` only to register the new private production and test modules;
+- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs`;
+- `tethers-0.1/host-rust/src/installation_recovery_evidence_tests.rs`;
+- `tethers-0.1/host-rust/src/installed.rs` only for the existing narrow recovery helpers;
 - `docs/CURRENT_CLINE_TASK.md`;
-- `docs/worker-notes/2026-08-05-j24k3c3-evidence-revalidator.md`.
+- `docs/worker-notes/2026-08-05-j24k3c3-correction.md`.
 
 ## Stop conditions
 
-Stop as `BLOCKED` only if complete read-only evidence revalidation requires changing an accepted evidence schema, public API, dependency, Cargo.lock, trust policy, intent/classifier type, or production filesystem mutation; or if full verification still fails after one evidence-led correction.
+Stop as `BLOCKED` only if literal trust equality, safe error translation, or metadata-preservation evidence requires changing an accepted public type, evidence schema, dependency, Cargo.lock, trust policy, or production mutation; or if full verification still fails after one evidence-led correction.
 
-Do not stop for failed LSP, a stale local ref, one ineffective Nextest filter, or the need to build focused host-owned test fixtures from accepted records.
+Do not stop for failed LSP, a stale local ref, renaming the two misleading tests, or the documented intermittent Windows handle-contention fixture.
 
 ## Expected pre-existing changes
 
-None. The branch is expected to be clean at handoff. The worker-note scaffold commit named by `Base commit` changes only the new worker note; this task-packet commit changes only `docs/CURRENT_CLINE_TASK.md`.
+The branch contains the complete reviewed J24K3c3 implementation and evidence at `88a911772aef7511262a365cccbcbdf3b0ad4ae9`, followed by the correction worker-note scaffold at the `Base commit`. No production correction has yet been applied.
