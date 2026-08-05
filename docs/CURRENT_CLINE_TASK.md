@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3e2 - Exact durable disabled installation publication mutation`
 Owner: `OpenCode`
 Model: `HY3`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode using HY3 for one bounded Rust publication-mutation package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
@@ -14,7 +14,7 @@ Worker note: `docs/worker-notes/2026-08-05-j24k3e2-exact-publication-mutation.md
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
 Accepted main: `45f78e47a09638d4070bf4479e4f1dcbe39c8cb1`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `043eab0f2c0a45d47aae14adc1777a06882095ca`
 Verification checkpoint: `WORKTREE`
 
 ## Objective
