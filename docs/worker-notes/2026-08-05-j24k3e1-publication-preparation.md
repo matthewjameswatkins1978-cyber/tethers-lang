@@ -17,6 +17,26 @@ The preparation must prove the current ordinary J24J plan is still exactly `Publ
 
 No durable state may change in this package.
 
+## Changes made
+
+- Added `tethers-0.1/host-rust/src/installation_publication_preparation.rs`, the
+  sealed crate-private read-only preparation boundary and its
+  `PreparedInstallationPublication` value.
+- Added `tethers-0.1/host-rust/src/installation_publication_preparation_tests.rs`
+  with 30 direct `j24k3e1` tests against real stores and filesystem fixtures.
+- Modified `tethers-0.1/host-rust/src/installed.rs`: extracted the pure
+  `build_disabled_installed_record` constructor now shared with the unchanged
+  legacy mutation path, and added the crate-private read-only
+  `prepare_disabled_installation_record` seam.
+- Modified `tethers-0.1/host-rust/src/lib.rs` with two private module
+  registrations only.
+- Applied Lucy's authorised mechanical task-packet correction: model and route
+  fields set to HY3, and a checker-facing numbered index added under
+  `## Required behaviour` without altering the ten frozen `### 1.`–`### 10.`
+  subsections.
+
+No durable mutation path, public API, schema, dependency or Cargo.lock change.
+
 ## Decisions and assumptions
 
 - J24J remains the sole ordinary installation reconciliation authority.
