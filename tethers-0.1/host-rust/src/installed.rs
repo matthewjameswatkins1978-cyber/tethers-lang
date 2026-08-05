@@ -962,7 +962,7 @@ impl InstalledPlugRegistry {
         require_existing_recovery_root(install_path)?;
         require_existing_recovery_root(record_path)?;
 
-        let records = self.load_all().map_err(|_| recovery_conflict())?;
+        let records = self.load_all().map_err(map_installed_load_error)?;
 
         let mut destination_set = BTreeSet::new();
         for record in &records {
@@ -1041,6 +1041,16 @@ fn intent_invalid() -> M3Error {
         "installation_intent_invalid",
         "installation publication intent is invalid",
     )
+}
+
+fn map_installed_load_error(error: M3Error) -> M3Error {
+    if error.code == "unsafe_store_path" {
+        error
+    } else if error.code == "store_io" {
+        recovery_io()
+    } else {
+        recovery_conflict()
+    }
 }
 
 fn destination_untracked() -> M3Error {

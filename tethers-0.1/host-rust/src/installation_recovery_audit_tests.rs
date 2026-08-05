@@ -393,6 +393,86 @@ fn j24k3c4_accounted_destination_present_as_file_fails_conflict() {
 
 #[cfg(windows)]
 #[test]
+fn j24k3c4_windows_junction_tracked_destination_load_all_refused() {
+    let plug_json_bytes = b"{\"plug\":true}";
+    let payload_bytes = b"payload";
+    let signature_bytes = b"signature";
+    let record = build_valid_record_with_payloads(
+        plug_json_bytes,
+        &["manifest.json"],
+        payload_bytes,
+        &["signature.sig"],
+        signature_bytes,
+    );
+    let (registry, install_root, record_root) = audit_registry();
+    build_destination_for_record(
+        &install_root,
+        &record,
+        plug_json_bytes,
+        payload_bytes,
+        signature_bytes,
+    );
+    write_record(&record_root, &record);
+    let destination = install_root.join(&record.installation_relative_path);
+    fs::remove_dir_all(&destination).unwrap();
+    let target = install_root.join(format!("target-{}", Uuid::new_v4()));
+    fs::create_dir(&target).unwrap();
+    let status = std::process::Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            destination.to_str().unwrap(),
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "could not create Windows junction fixture"
+    );
+    let err = registry
+        .audit_installation_recovery_destinations(None)
+        .unwrap_err();
+    assert_eq!(err.code, "unsafe_store_path");
+}
+
+#[cfg(unix)]
+#[test]
+fn j24k3c4_unix_symlink_tracked_destination_load_all_refused() {
+    use std::os::unix::fs::symlink;
+    let plug_json_bytes = b"{\"plug\":true}";
+    let payload_bytes = b"payload";
+    let signature_bytes = b"signature";
+    let record = build_valid_record_with_payloads(
+        plug_json_bytes,
+        &["manifest.json"],
+        payload_bytes,
+        &["signature.sig"],
+        signature_bytes,
+    );
+    let (registry, install_root, record_root) = audit_registry();
+    build_destination_for_record(
+        &install_root,
+        &record,
+        plug_json_bytes,
+        payload_bytes,
+        signature_bytes,
+    );
+    write_record(&record_root, &record);
+    let destination = install_root.join(&record.installation_relative_path);
+    fs::remove_dir_all(&destination).unwrap();
+    let target = install_root.join(format!("target-{}", Uuid::new_v4()));
+    fs::create_dir(&target).unwrap();
+    symlink(&target, &destination).unwrap();
+    let err = registry
+        .audit_installation_recovery_destinations(None)
+        .unwrap_err();
+    assert_eq!(err.code, "unsafe_store_path");
+}
+
+#[cfg(windows)]
+#[test]
 fn j24k3c4_windows_junction_final_destination_refused() {
     let (registry, install_root, _record_root) = audit_registry();
     let id = Uuid::new_v4().to_string();

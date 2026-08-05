@@ -51,26 +51,6 @@ The audit must detect and refuse untracked final destinations without adopting, 
 - Non-UTF-8 filenames in the install root are classified as `installation_recovery_conflict` per the task contract.
 - J24K3b recovery classification, J24K3c1-c3 evidence revalidation, and the executor remain separate.
 
-## Decisions and assumptions
-
-- DeepSeek Pro is the selected implementation model for this bounded Rust filesystem and record-reconciliation package.
-- The package is read-only and performs no recovery classification, cleanup, publication, intent removal, locking, planning, or executor wiring.
-- J24K3c1 owns exact transaction-state observation, J24K3c2 owns exact intent-destination content verification, and J24K3c3 owns evidence-chain freshness. This package owns only the global final-destination accounting invariant.
-
-## Evidence
-
-Not run yet.
-
-## Discoveries
-
-- Existing `InstalledPlugRegistry::load_all()` validates every installed record and its destination but does not enumerate the install root for orphan final directories.
-- Final destination identity is generated as `plug-<installed_id>`; the audit must reject a record whose destination identity is not exactly canonical even if its record digest is otherwise internally valid.
-
-## Remaining risks
-
-- The audit must not treat an allowed current intent destination as a completed record or repeat J24K3c2 content verification.
-- Staging and unrelated non-final entries must remain outside this package's classification boundary.
-
 ## Smallest next action
 
 Return branch for independent review by Lucy. Do not merge.
