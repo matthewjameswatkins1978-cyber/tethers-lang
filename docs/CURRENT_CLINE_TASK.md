@@ -5,9 +5,9 @@ Task: `J24K3c4 correction - preserve unsafe installed-state paths`
 Owner: `OpenCode`
 Status: `READY`
 Task colour: `Red`
-Route: `OpenCode using DeepSeek Pro for one bounded error-mapping and regression-test correction; Lucy performs independent review and routine safe merge`
+Route: `OpenCode using DeepSeek Pro for one bounded error-mapping, regression-test, and evidence-note correction; Lucy performs independent review and routine safe merge`
 Base branch: `opencode/j24k3c4-installed-root-audit`
-Base commit: `66047d7f475d9221b293cb7d178c5ed61cd0bd75`
+Base commit: `d76735608febd648e95f505ff885142612a5eeda`
 Implementation branch: `opencode/j24k3c4-installed-root-audit`
 Worker note: `docs/worker-notes/2026-08-05-j24k3c4-correction.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
@@ -18,7 +18,7 @@ Reviewed implementation checkpoint: `31c741b663e08ffd631004de7ca0d3556f5cedfe`
 
 ## Objective
 
-Correct one narrow independent-review finding in the otherwise sound J24K3c4 global installed-root consistency auditor.
+Correct one narrow production finding and one documentary finding in the otherwise sound J24K3c4 global installed-root consistency auditor.
 
 The current audit uses:
 
@@ -29,6 +29,8 @@ self.load_all().map_err(|_| recovery_conflict())?
 That collapses every accepted installed-state validation failure into `installation_recovery_conflict`, including an explicit `unsafe_store_path` produced when a tracked installed destination or installed-record entry is a symlink, junction, or Windows reparse point.
 
 The frozen J24K3c4 contract requires explicit unsafe-path refusal to remain `unsafe_store_path`.
+
+The original completed J24K3c4 worker note also contains duplicated stale scaffold sections, including `Evidence: Not run yet`, after its truthful completed evidence. Remove only those duplicate stale sections.
 
 Do not redesign the audit or add later recovery behaviour.
 
@@ -51,7 +53,41 @@ The implementation correctly:
 - preserves explicit unsafe errors found during that later direct enumeration;
 - performs no mutation.
 
-The defect is limited to the earlier `load_all()` error translation. The existing Windows-junction and Unix-symlink tests create an untracked direct `plug-*` child, so they bypass `load_all()` and do not cover a reparse path tracked by a validated installed record.
+The production defect is limited to the earlier `load_all()` error translation. The existing Windows-junction and Unix-symlink tests create an untracked direct `plug-*` child, so they bypass `load_all()` and do not cover a reparse path tracked by a validated installed record.
+
+The documentary defect is limited to duplicated stale tail sections in:
+
+```text
+docs/worker-notes/2026-08-05-j24k3c4-installed-root-audit.md
+```
+
+Its completed evidence above those stale sections is truthful and must remain unchanged.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_audit_tests.rs`
+- `docs/worker-notes/2026-08-05-j24k3c4-installed-root-audit.md`
+- `docs/worker-notes/2026-08-05-j24k3c4-correction.md`
+- `docs/CURRENT_CLINE_TASK.md`
+- `InstalledPlugRegistry::audit_installation_recovery_destinations`
+- `InstalledPlugRegistry::load_all`
+- `unsafe_store_path`
+- `installation_recovery_conflict`
+- `installation_recovery_io`
+
+## Frozen decisions and invariants
+
+1. J24K3c4 remains crate-private and read-only.
+2. A supplied intent remains the first production operation.
+3. Explicit reparse state remains `unsafe_store_path` at every audit route.
+4. Genuine accepted store access failure maps to `installation_recovery_io` without detail.
+5. Contradictory installed state maps to `installation_recovery_conflict` without detail.
+6. Public `load_all()` semantics remain untouched.
+7. Existing direct final-namespace reparse handling remains unchanged.
+8. The original completed evidence is preserved; only its duplicate stale scaffold tail is removed.
+9. No dependency, Cargo configuration, Cargo.lock, schema, public API, CLI, packaging, release, enablement, operational-scope, or OCaml change.
+10. Recovery classification, cleanup, record publication, intent removal, locking, planner, and executor wiring remain later work.
 
 ## Required behaviour
 
@@ -97,16 +133,18 @@ Retain the existing untracked direct-child reparse tests. They prove the later d
 
 A narrow installed-record-entry reparse test may also be added when it can be made reliable without privileges, public seams, or platform-specific flakiness, but it is not required if the tracked-destination regression proves the mapping defect directly.
 
-## Frozen decisions and invariants
+### 4. Clean the original completed worker note
 
-1. J24K3c4 remains crate-private and read-only.
-2. A supplied intent remains the first production operation.
-3. Explicit reparse state remains `unsafe_store_path` at every audit route.
-4. Genuine audit/store access failure maps to `installation_recovery_io` without detail.
-5. Contradictory installed state maps to `installation_recovery_conflict` without detail.
-6. Public `load_all()` semantics remain untouched.
-7. No dependency, Cargo configuration, Cargo.lock, schema, public API, CLI, packaging, release, enablement, operational-scope, or OCaml change.
-8. Recovery classification, cleanup, record publication, intent removal, locking, planner, and executor wiring remain later work.
+In `docs/worker-notes/2026-08-05-j24k3c4-installed-root-audit.md`, remove the duplicated stale scaffold tail beginning with the second `## Evidence` section containing `Not run yet` and continuing through its duplicate `Discoveries` and `Remaining risks` material.
+
+Preserve:
+
+- the real completed evidence and counts;
+- the real discoveries and remaining risks;
+- the recorded implementation checkpoint;
+- the final branch and references.
+
+Do not rewrite history or alter truthful results.
 
 ## Acceptance criteria
 
@@ -118,11 +156,12 @@ A narrow installed-record-entry reparse test may also be added when it can be ma
 6. Existing J24K3c4 success and failure semantics remain unchanged.
 7. New tracked-destination reparse tests exercise the production audit seam.
 8. Existing untracked reparse tests remain green.
-9. Focused Nextest passes with zero retries.
-10. J24K3c3, J24K3c2, J24K3c1, J24K3b, J24K3a, J24K2, J24J, and M3 lifecycle regressions remain green.
-11. Full `just verify` and the task packet checker pass.
-12. Cargo.lock remains byte-identical and only permitted files change.
-13. The worker note records the exact correction checkpoint, counts, verification, discoveries, risks, and final remote tip.
+9. The original worker note contains one coherent completed evidence/discovery/risk sequence and no contradictory `Not run yet` tail.
+10. Focused Nextest passes with zero retries.
+11. J24K3c3, J24K3c2, J24K3c1, J24K3b, J24K3a, J24K2, J24J, and M3 lifecycle regressions remain green.
+12. Full `just verify` and the task packet checker pass.
+13. Cargo.lock remains byte-identical and only permitted files change.
+14. The correction worker note records the exact correction checkpoint, counts, verification, discoveries, risks, and final remote tip.
 
 ## Required verification
 
@@ -220,14 +259,15 @@ Permitted files:
 - `tethers-0.1/host-rust/src/installed.rs` only for the recovery-audit mapper and call site;
 - `tethers-0.1/host-rust/src/installation_recovery_audit_tests.rs`;
 - `docs/CURRENT_CLINE_TASK.md`;
+- `docs/worker-notes/2026-08-05-j24k3c4-installed-root-audit.md` only to remove duplicated stale scaffold sections;
 - `docs/worker-notes/2026-08-05-j24k3c4-correction.md`.
 
 ## Stop conditions
 
 Stop as `BLOCKED` only if preserving unsafe-path state requires changing a public API, accepted store primitive, evidence schema, dependency, Cargo.lock, or production mutation; or if full verification still fails after one evidence-led correction.
 
-Do not stop for failed LSP, a stale local ref, adding platform-gated tracked-destination fixtures, or the documented intermittent Windows handle-contention fixture.
+Do not stop for failed LSP, a stale local ref, adding platform-gated tracked-destination fixtures, cleaning the duplicate stale worker-note tail, or the documented intermittent Windows handle-contention fixture.
 
 ## Expected pre-existing changes
 
-The branch contains the complete reviewed J24K3c4 implementation and evidence at `37fe0440493986847e72be53852048f9703ace24`, followed by the correction worker-note scaffold at the `Base commit`. No correction production code has yet been applied.
+The branch contains the complete reviewed J24K3c4 implementation and evidence at `37fe0440493986847e72be53852048f9703ace24`, followed by the correction worker-note preparation at the `Base commit`. No correction production code has yet been applied.
