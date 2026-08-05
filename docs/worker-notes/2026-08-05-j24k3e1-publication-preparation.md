@@ -7,7 +7,7 @@ Model: `HY3`
 Status: `COMPLETE`
 Base commit: `fe4f0e84569e793be3c0e8818799ac36e895da1a`
 Implementation checkpoint: `6a82dd529a47f2561234e72a8b7154ede92cabb0`
-Verification checkpoint: `WORKTREE`
+Verification checkpoint: `e255e8b3875af3e270f861a523289af5106b600b`
 
 ## Requested outcome
 
@@ -82,7 +82,12 @@ Verification (all at implementation checkpoint
 - Named regressions all green: j24k3d2 (20), j24k3d1 (28/2 ignored), j24k3c4
   (24), j24k3c3 (44), j24k3c2 (21), j24k3c1 (20), j24k3b (16), j24k3a (25),
   j24k2 (26), j24j_installation_reconciliation (24), m3_lifecycle (13).
-- Full serial `just verify` and Cargo.lock hash: recorded at verification.
+- Full serial `just verify` at verification checkpoint
+  `e255e8b3875af3e270f861a523289af5106b600b` with `RUST_TEST_THREADS=1`: exit 0,
+  zero failures across every suite.
+- Cargo.lock SHA-256 unchanged:
+  `D8AF5D2D09D0FED307557856031BE8256A82441734BB00FB46FF92812F7818CB`.
+- `git diff --check` clean; final `git status --short` empty.
 
 ## Discoveries
 
