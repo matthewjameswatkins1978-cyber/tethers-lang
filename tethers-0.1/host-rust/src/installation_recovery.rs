@@ -68,3 +68,24 @@ pub(crate) fn classify_installation_recovery(
         _ => Err(recovery_conflict()),
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InstallationRecoverySnapshot {
+    pub staging_present: bool,
+    pub destination_present: bool,
+    pub installed_record: Option<InstalledPlugRecord>,
+}
+
+impl InstallationRecoverySnapshot {
+    pub(crate) fn as_observation<'a>(
+        &'a self,
+        intent: &'a InstallationPublicationIntent,
+    ) -> InstallationRecoveryObservation<'a> {
+        InstallationRecoveryObservation {
+            intent,
+            staging_present: self.staging_present,
+            destination_present: self.destination_present,
+            installed_record: self.installed_record.as_ref(),
+        }
+    }
+}

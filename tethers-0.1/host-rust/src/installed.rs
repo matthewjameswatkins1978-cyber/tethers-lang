@@ -6,6 +6,8 @@
 use crate::candidate::CandidateRecord;
 use crate::conformance::{current_suite_digest, ConformanceDisposition, ConformanceEvidence};
 use crate::current_trust::{CurrentTrustAuthority, PublisherDeveloperTrustAuthority};
+use crate::installation_publication_intent::InstallationPublicationIntent;
+use crate::installation_recovery::InstallationRecoverySnapshot;
 use crate::launch_profile::{revalidate_candidate, LaunchProfileEvidence};
 use crate::m3_store::{
     canonical, reject_reparse, sha256, strict_json, unix_ms, verify_chain, M3Error, Result,
@@ -769,5 +771,92 @@ impl InstalledPlugRegistry {
             ));
         }
         Ok(directory)
+    }
+
+    pub(crate) fn observe_installation_recovery(
+        &self,
+        intent: &InstallationPublicationIntent,
+    ) -> Result<InstallationRecoverySnapshot> {
+        intent.validate().map_err(|_| intent_invalid())?;
+
+        let install_root = self.install_root.path();
+        let record_root = self.record_root.path();
+
+        verify_chain(install_root).map_err(|_| recovery_io())?;
+        verify_chain(record_root).map_err(|_| recovery_io())?;
+
+        let staging_path = install_root.join(format!(".staging-{}", intent.transaction_id));
+        let destination_path = install_root.join(&intent.destination_relative_path);
+        let record_path = record_root.join(format!("{}.json", intent.transaction_id));
+
+        let staging_present = observe_directory(&staging_path)?;
+        let destination_present = observe_directory(&destination_path)?;
+        let installed_record = observe_record(&record_path)?;
+
+        Ok(InstallationRecoverySnapshot {
+            staging_present,
+            destination_present,
+            installed_record,
+        })
+    }
+}
+
+fn intent_invalid() -> M3Error {
+    M3Error::new(
+        "installation_intent_invalid",
+        "installation publication intent is invalid",
+    )
+}
+
+fn recovery_conflict() -> M3Error {
+    M3Error::new(
+        "installation_recovery_conflict",
+        "installation recovery state conflicts with publication intent",
+    )
+}
+
+fn recovery_io() -> M3Error {
+    M3Error::new(
+        "installation_recovery_io",
+        "installation recovery state could not be observed",
+    )
+}
+
+fn observe_directory(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) => {
+            match reject_reparse(path) {
+                Ok(()) => {}
+                Err(e) if e.code == "unsafe_store_path" => return Err(e),
+                Err(_) => return Err(recovery_io()),
+            }
+            if !meta.is_dir() {
+                return Err(recovery_conflict());
+            }
+            Ok(true)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(recovery_io()),
+    }
+}
+
+fn observe_record(path: &Path) -> Result<Option<InstalledPlugRecord>> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) => {
+            match reject_reparse(path) {
+                Ok(()) => {}
+                Err(e) if e.code == "unsafe_store_path" => return Err(e),
+                Err(_) => return Err(recovery_io()),
+            }
+            if !meta.is_file() {
+                return Err(recovery_conflict());
+            }
+            let bytes = fs::read(path).map_err(|_| recovery_io())?;
+            let record: InstalledPlugRecord =
+                strict_json(&bytes).map_err(|_| recovery_conflict())?;
+            Ok(Some(record))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(recovery_io()),
     }
 }
