@@ -512,6 +512,141 @@ fn full_snapshot(
     all
 }
 
+#[cfg(windows)]
+fn create_directory_link(link: &Path, target: &Path) {
+    let status = std::process::Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            link.to_str().unwrap(),
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "could not create Windows junction fixture"
+    );
+}
+
+#[cfg(unix)]
+fn create_directory_link(link: &Path, target: &Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+
+fn assert_unrelated_stores_unchanged(
+    before: &BTreeMap<String, BTreeMap<String, (String, u128, bool)>>,
+    after: &BTreeMap<String, BTreeMap<String, (String, u128, bool)>>,
+) {
+    for store in [
+        "intent",
+        "quarantine",
+        "candidates",
+        "trust",
+        "launch",
+        "conformance",
+        "approval",
+    ] {
+        assert_eq!(
+            before.get(store),
+            after.get(store),
+            "store changed: {store}"
+        );
+    }
+}
+
+#[test]
+#[cfg_attr(unix, ignore = "Windows junction regression")]
+#[cfg_attr(windows, allow(clippy::needless_borrow))]
+fn j24k3d1_destination_junction_is_rejected_at_planner_entry() {
+    let fix = FullFixture::new();
+    fix.intent_store.create(&fix.intent).unwrap();
+    fix.build_destination();
+    let destination = fix.install_root.join(&fix.intent.destination_relative_path);
+    let target = fix.base.join("destination-target");
+    fs::rename(&destination, &target).unwrap();
+    create_directory_link(&destination, &target);
+
+    let before = full_snapshot(
+        fix.intent_store.root_path(),
+        &fix.install_root,
+        &fix.record_root,
+        &fix.quarantine_root,
+        &fix.base.join("candidates"),
+        &fix.base.join("trust"),
+        &fix.base.join("profiles"),
+        &fix.base.join("conformance"),
+        &fix.base.join("approvals"),
+    );
+    let error = fix.plan().unwrap_err();
+    assert_eq!(error.code, "unsafe_store_path");
+    let after = full_snapshot(
+        fix.intent_store.root_path(),
+        &fix.install_root,
+        &fix.record_root,
+        &fix.quarantine_root,
+        &fix.base.join("candidates"),
+        &fix.base.join("trust"),
+        &fix.base.join("profiles"),
+        &fix.base.join("conformance"),
+        &fix.base.join("approvals"),
+    );
+    assert_unrelated_stores_unchanged(&before, &after);
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "Unix symbolic-link regression")]
+#[cfg_attr(unix, allow(clippy::needless_borrow))]
+fn j24k3d1_destination_symlink_is_rejected_at_planner_entry() {
+    let fix = FullFixture::new();
+    fix.intent_store.create(&fix.intent).unwrap();
+    fix.build_destination();
+    let destination = fix.install_root.join(&fix.intent.destination_relative_path);
+    let target = fix.base.join("destination-target");
+    fs::rename(&destination, &target).unwrap();
+    create_directory_link(&destination, &target);
+
+    let error = fix.plan().unwrap_err();
+    assert_eq!(error.code, "unsafe_store_path");
+}
+
+#[test]
+fn j24k3d1_removed_open_install_root_returns_recovery_io() {
+    let fix = FullFixture::new();
+    fs::remove_dir_all(&fix.install_root).unwrap();
+    let error = fix.plan().unwrap_err();
+    assert_eq!(error.code, "installation_recovery_io");
+}
+
+#[test]
+#[cfg_attr(unix, ignore = "Windows junction regression")]
+fn j24k3d1_record_root_junction_is_rejected_at_planner_entry() {
+    let fix = FullFixture::new();
+    fix.intent_store.create(&fix.intent).unwrap();
+    let target = fix.base.join("record-target");
+    fs::create_dir(&target).unwrap();
+    fs::remove_dir(&fix.record_root).unwrap();
+    create_directory_link(&fix.record_root, &target);
+
+    let error = fix.plan().unwrap_err();
+    assert_eq!(error.code, "unsafe_store_path");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "Unix symbolic-link regression")]
+fn j24k3d1_record_root_symlink_is_rejected_at_planner_entry() {
+    let fix = FullFixture::new();
+    fix.intent_store.create(&fix.intent).unwrap();
+    let target = fix.base.join("record-target");
+    fs::create_dir(&target).unwrap();
+    fs::remove_dir(&fix.record_root).unwrap();
+    create_directory_link(&fix.record_root, &target);
+
+    let error = fix.plan().unwrap_err();
+    assert_eq!(error.code, "unsafe_store_path");
+}
+
 #[test]
 fn j24k3d1_empty_roots_return_idle_plan() {
     let fix = LightFixture::new();

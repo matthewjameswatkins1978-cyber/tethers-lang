@@ -3,8 +3,8 @@
 Task: `J24K3d1 correction - planner path-safety regressions and complete verification`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
-Status: `READY`
-Base commit: `WORKTREE`
+Status: `IN_PROGRESS`
+Base commit: `96902b715cbb8d62aad12d468a474ae03abfaaed`
 Original implementation checkpoint: `351a2782b59d1b08c5529bd18caf8a7fa29cde6b`
 Correction implementation checkpoint: `WORKTREE`
 Verification checkpoint: `WORKTREE`
@@ -31,7 +31,8 @@ None yet.
 
 ## Evidence
 
-Not run yet.
+- Focused Nextest on Windows: 28 passed, 0 failed, 0 retries; 2 Unix symlink tests skipped by platform gate.
+- New direct planner-entry coverage: destination junction, missing opened install root, and record-root junction.
 
 ## Discoveries
 
