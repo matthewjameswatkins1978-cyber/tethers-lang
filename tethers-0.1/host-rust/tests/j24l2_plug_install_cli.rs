@@ -1,4 +1,6 @@
 use clap::Parser;
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -60,6 +62,33 @@ fn write_package(root: &Path, name: &str) -> PathBuf {
 
 fn wrap_args(args: &[&str]) -> Vec<OsString> {
     args.iter().map(|s| OsString::from(*s)).collect()
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
+fn conformance_snapshot(root: &Path) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    if !root.is_dir() {
+        return out;
+    }
+    let mut entries: Vec<_> = fs::read_dir(root)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    entries.sort();
+    for entry in entries {
+        let filename = entry.file_name().unwrap().to_string_lossy().to_string();
+        if filename.starts_with('.') {
+            continue;
+        }
+        if entry.is_file() {
+            let content = fs::read(&entry).expect("read conformance entry");
+            out.insert(filename, sha256(&content));
+        }
+    }
+    out
 }
 
 // -------------------------------------------------------------------
@@ -377,7 +406,7 @@ fn j24l2_e2e_fresh_install_and_reinstall() {
     assert_eq!(plug_list[0]["installed_id"], installed_id);
     assert_eq!(plug_list[0]["state"], "disabled");
 
-    // 9. Snapshot installed records and destination state
+    // 9. Snapshot installed records, destination state, and conformance
     let record_snapshot = {
         let mut entries: Vec<_> = fs::read_dir(&installed_records_dir)
             .unwrap()
@@ -394,6 +423,8 @@ fn j24l2_e2e_fresh_install_and_reinstall() {
         entries.sort();
         entries
     };
+    let conformance_dir = host.join("conformance");
+    let conformance_before = conformance_snapshot(&conformance_dir);
 
     // 10. Invoke plug install again
     let (code, envelope) = run(wrap_args(&[
@@ -431,26 +462,12 @@ fn j24l2_e2e_fresh_install_and_reinstall() {
         "destinations must be unchanged"
     );
 
-    // 12. Prove no conformance retry (conformance directory unchanged beyond first run)
-    let conformance_dir = host.join("conformance");
-    let conformance_count = if conformance_dir.is_dir() {
-        fs::read_dir(&conformance_dir)
-            .unwrap()
-            .filter(|e| {
-                e.as_ref().unwrap().file_name().to_string_lossy() != "."
-                    && e.as_ref().unwrap().file_name().to_string_lossy() != ".."
-            })
-            .count()
-    } else {
-        0
-    };
-    // Conformance should have exactly the evidence from the first run
-    assert!(
-        conformance_count > 0,
-        "conformance must have evidence from first run"
+    // 12. Prove no conformance retry — exact byte-level snapshot equality
+    let conformance_after = conformance_snapshot(&conformance_dir);
+    assert_eq!(
+        conformance_after, conformance_before,
+        "conformance store must be unchanged: no retry, no added/removed/changed evidence"
     );
-    // We can't prove exact count without knowing it, but we can prove no additional entries appeared
-    // by verifying the records count hasn't changed (already done above)
 
     // 13. Prove enablements is still empty
     let enablements_after: Vec<_> = fs::read_dir(&enablements_dir)

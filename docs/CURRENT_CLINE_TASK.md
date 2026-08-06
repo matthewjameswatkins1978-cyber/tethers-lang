@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24L2 - Thin public plug install CLI`
 Owner: `DeepSeek Pro`
 Model: `DeepSeek Pro`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for one bounded Rust CLI and context-assembly package; Lucy performs independent review and any later merge`
 Base branch: `main`
@@ -37,8 +37,8 @@ creates candidates and quarantine roots that `plug install` must reuse.
 3. Route `Install` through `application.rs`.
  4. Register the new module as private (`mod`, not `pub mod`) in `lib.rs`.
  5. Keep `run_install` crate-private (`pub(crate)`), not `pub`.
-5. Preserve all J24L1, J24K, and J24J behaviour unchanged.
-6. Implement comprehensive unit, mapping, and Windows E2E tests.
+ 6. Preserve all J24L1, J24K, and J24J behaviour unchanged.
+ 7. Implement comprehensive unit, mapping, and Windows E2E tests.
 
 ## Frozen decisions and invariants
 

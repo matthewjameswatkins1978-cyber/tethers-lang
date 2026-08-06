@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `190e834b8afeca060adb3b07c7a18554497aaf31`
 
-Implementation checkpoint: `f0f0c84ad0003d0af23e65dfb54f612175156177`
+Implementation checkpoint: `f0f0c841cf77bca63a0b916d03fdaad45160ccb5`
 
 ## Requested outcome
 
@@ -173,5 +173,5 @@ the J24L branch into main.
 - `tethers-0.1/host-rust/src/installation_driver.rs`
 - `tethers-0.1/host-rust/src/installation_execution.rs`
 - `tethers-0.1/host-rust/src/plug_install_command.rs`
-- Implementation checkpoint: `f0f0c84ad0003d0af23e65dfb54f612175156177`
+- Implementation checkpoint: `f0f0c841cf77bca63a0b916d03fdaad45160ccb5`
 - Branch: `opencode/j24l2-thin-plug-install-cli`
