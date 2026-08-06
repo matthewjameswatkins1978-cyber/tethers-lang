@@ -1,0 +1,111 @@
+# Replay Digest Chain Example
+#
+# Source: src/replay.rs (Claim, Generation, ExecutionBinding)
+# Ledger format version 1, generation record version 1
+# Baseline SHA: 24428139807cac0adeb0b62264547e61ca809d16
+#
+# All digests: SHA-256 over JCS-canonicalized (RFC 8785) JSON.
+# Computed 2026-08-06 from stable reference values using the same
+# canonical_digest function as replay.rs.
+#
+# This is a manually constructed representative chain.  The digests
+# are real SHA-256 values over the canonical bytes shown.
+
+## Identity Claim (generation 0 precedent)
+
+An identity claim records the planner tuple so replay can bind
+re-execution to the same identity.
+
+Identity claim canonical JSON:
+{
+  "record_kind": "identity_claim",
+  "ledger_format_version": 1,
+  "logical_key_digest": "sha256:998d7e1a3a1bb75209de6f8ac9f5a77cc9fccc50b4da35b60332be4f8306e705",
+  "execution_id": "a228f19f-4782-45f7-a34d-e066cf4b7222",
+  "execution_id_digest": "sha256:bc9613b085fa20c527f1edcf28d7b745a1c508dd679b32b6c7f80dced7a11fb4",
+  "binding": {
+    "evaluation_id": "eval-ledger",
+    "action_id": "action-1",
+    "capability_name": "calendar.create",
+    "capability_version": 1,
+    "manifest_digest": "sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f",
+    "provider_identity": "provider-local",
+    "argument_digest": "sha256:339bf0db6ca3a82e5d7459e1ce74f95634a48eb175cb0ef6e9a31c48b32c3523"
+  },
+  "binding_digest": "sha256:4f0876baa20c313a640527c18a2b78b5df76812dbca50f02bd22116e4cb5e2e0"
+}
+
+claim_digest (identity claim):
+  sha256:a206c540799be9c6fe58cf3c43753c67d6e9e89e26080b8adb48157f8bc19cd5
+
+## Generation 0 — Intent Recorded
+
+Generation 0 establishes the replay intent.  It is published immediately
+after the planner proposes an Action.  precedence claim_digest (above)
+serves as the predecessor.
+
+state_data: {"intent_recorded":true}
+
+generation 0 canonical JSON:
+{
+  "record_kind": "replay_generation",
+  "ledger_format_version": 1,
+  "record_version": 1,
+  "logical_key_digest": "sha256:998d7e1a3a1bb75209de6f8ac9f5a77cc9fccc50b4da35b60332be4f8306e705",
+  "execution_id_digest": "sha256:bc9613b085fa20c527f1edcf28d7b745a1c508dd679b32b6c7f80dced7a11fb4",
+  "generation": 0,
+  "state": "intent_recorded",
+  "predecessor_digest": "sha256:a206c540799be9c6fe58cf3c43753c67d6e9e89e26080b8adb48157f8bc19cd5",
+  "state_data": {"intent_recorded":true}
+}
+
+generation 0 record_digest:
+  sha256:356af48d0e87a44522c82a6dc1cad385c71dc77eda89bb041256e2de1fa2ee3e
+
+## Generation 1 — Invocation Armed
+
+Generation 1 arms the invocation.  Predecessor is generation 0.
+
+state_data: {"invocation_armed":true}
+
+generation 1 record_digest:
+  sha256:4dfeae6bbe273778858dc5e0c177eb02d3e58866d620cb47c4f3f9b9df64591e
+
+## Generation 2 — Succeeded (terminal)
+
+Generation 2 is the terminal outcome.  Predecessor is generation 1.
+The durable_outcome_digest covers the final execution result.
+
+durable outcome canonical JSON: {"status":"completed","output":"ok"}
+
+durable_outcome_digest:
+  sha256:e5f439992be8d5cb9fca97281462ef57cbc908dca5245e3befadbaad135e37fb
+
+state_data: {"durable_outcome_digest":"sha256:e5f439992be8d5cb9fca97281462ef57cbc908dca5245e3befadbaad135e37fb"}
+
+generation 2 record_digest:
+  sha256:e9c4d42ae6b2640ce4cf495c315ce9500ef15c1195b265b3fa2d092b894fd2a5
+
+## Ledger Chain Validation
+
+  Gen 0 claim (identity) -> Gen 0 (intent_recorded)
+  Gen 0 predecessor = identity_claim.claim_digest  ✓
+  Gen 1 predecessor = gen 0 record_digest           ✓
+  Gen 2 predecessor = gen 1 record_digest           ✓
+  Gen 2 is terminal (Succeeded)                     ✓
+
+## Key Properties
+
+- The logical_key_digest is the same for all generations (same planner tuple).
+- The execution_id_digest is the same for all generations (same dispatch).
+- Each generation's predecessor_digest links to the previous generation.
+- Tampering with any field breaks the chain (digest mismatch fails closed).
+- Replay recognises the identity claim, walks generations 0..2, and returns
+  the terminal durable_outcome_digest.
+
+## Immutable Atomic Record Property
+
+Replay generation files are written as immutable atomic records via
+write-then-rename on Windows (NTFS).  Once a generation file is written,
+it is never modified.  Generation 1 transitions from gen 0; a corrupt or
+missing gen 0 fails the entire ledger closed.

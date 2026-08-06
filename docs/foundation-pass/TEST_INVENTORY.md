@@ -1,10 +1,12 @@
 # F1 Test Inventory
 
-Mapped to contracts, not test counts. All Rust tests at `tethers-0.1/host-rust/`.
+This is a **representative** inventory mapped to J-prefix contracts (J13-J24), not an exhaustive test-by-test catalogue. Tests are grouped by contract and module, with representative test names to locate the coverage area. Not every one of the 1,254 unit tests is individually listed.
+
+All Rust tests at `tethers-0.1/host-rust/`. Baseline: `24428139807cac0adeb0b62264547e61ca809d16`.
 
 ## Unit Tests (inline `#[cfg(test)]` modules)
 
-1254 tests passed, 2 ignored.
+1,254 tests passed (warm), 2 ignored.
 
 ### CLI & Output (J13)
 

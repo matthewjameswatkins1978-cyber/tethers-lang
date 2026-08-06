@@ -1,0 +1,19 @@
+{
+  "schema": "tethers.cli/1",
+  "command": "plug install",
+  "status": "ok",
+  "exit_code": 0,
+  "data": {
+    "result": "complete",
+    "candidate_id": "00000000-0000-0000-0000-000000000003",
+    "step_count": 4,
+    "steps": [
+      {"step": 1, "phase": "conformance", "action": "conformance_test", "outcome": "passed"},
+      {"step": 2, "phase": "approval", "action": "record_approval", "outcome": "approved"},
+      {"step": 3, "phase": "publication", "action": "publish_intent", "outcome": "published"},
+      {"step": 4, "phase": "execution", "action": "execute_install", "outcome": "complete"}
+    ],
+    "installed_id": "00000000-0000-0000-0000-000000000006",
+    "installed_record_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "tethers.cli/1",
+  "command": "plug install",
+  "status": "ok",
+  "exit_code": 0,
+  "data": {
+    "result": "already_complete",
+    "candidate_id": "00000000-0000-0000-0000-000000000003",
+    "step_count": 1,
+    "steps": [
+      {"step": 1, "phase": "execution", "action": "skip_idempotent", "outcome": "already_complete"}
+    ],
+    "installed_id": "00000000-0000-0000-0000-000000000006",
+    "installed_record_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}

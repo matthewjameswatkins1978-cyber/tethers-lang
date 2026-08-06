@@ -1,65 +1,86 @@
 # F1 Fixture Manifest
 
-All fixtures are hand-reviewed literal artifacts, independently committed. No fixture is generated or refreshed by the implementation under test. Fixture changes require an explicit compatibility decision.
+All fixtures are hand-reviewed literal artifacts from accepted baseline sources. No fixture is generated or refreshed by the implementation under test. Fixture changes require an explicit compatibility decision.
 
-Source capture method: Manual capture from `tethers-reference-host.exe` built at baseline `24428139807cac0adeb0b62264547e61ca809d16`.
+Baseline: `24428139807cac0adeb0b62264547e61ca809d16` (`origin/main`)
 
 ## CLI Help
 
-| Fixture | Path | Source | Notes |
-|---|---|---|---|
-| Top-level help | `fixtures/cli-help/help.txt` | `tethers-reference-host.exe --help` | JSON-enveloped output; even `--help` produces a JSON envelope |
+| Fixture | Path | Owner/Contract | Source Command | Exit Code | Capture Method | Review Purpose |
+|---|---|---|---|---|---|---|
+| Top-level help | `fixtures/cli-help/help.txt` | J13A | `tethers-reference-host.exe --help` | 2 | Binary capture at baseline (warm build) | Verify JSON envelope wraps all output |
 
 ## CLI Outputs
 
-| Fixture | Path | Source | Notes |
-|---|---|---|---|
-| Version output | `fixtures/cli-output/version.txt` | `tethers-reference-host.exe --version` | JSON envelope with version |
-| Check command (missing config) | `fixtures/cli-output/check-missing-config.txt` | `tethers-reference-host.exe check` | Error envelope |
-| Run command help | `fixtures/cli-output/run-help.txt` | `tethers-reference-host.exe run --help` | Sub-command help |
+| Fixture | Path | Owner/Contract | Source Command | Exit Code | Capture Method | Normalisation |
+|---|---|---|---|---|---|---|
+| Version output | `fixtures/cli-output/version.txt` | J13A | `tethers-reference-host.exe --version` | 2 | Binary capture at baseline | Exact bytes |
+| Check missing config | `fixtures/cli-output/check-missing-config.txt` | J13A | `tethers-reference-host.exe check` (no args) | 2 | Binary capture at baseline | Exact bytes |
+| Run help | `fixtures/cli-output/run-help.txt` | J13A | `tethers-reference-host.exe run --help` | 2 | Binary capture at baseline | Exact bytes |
 
 ## Exit Cases
 
-| Fixture | Path | Exit Code | Notes |
-|---|---|---|---|
-| Exit 0 (no command) | `fixtures/exit-cases/no-command.txt` | 0 | Envelope with error, but exit 0 per J13A contract |
-| Exit 2 (invalid CLI usage) | `fixtures/exit-cases/exit-2.txt` | 2 | `--help` returns exit 2 per Clap convention |
+| Fixture | Path | Owner/Contract | Source Command | Exit Code | Notes |
+|---|---|---|---|---|---|
+| No command | `fixtures/exit-cases/no-command.txt` | J13A | `tethers-reference-host.exe` (no args) | 2 | Error envelope with full usage |
+| Invalid CLI usage | `fixtures/exit-cases/exit-2.txt` | J13A | `tethers-reference-host.exe` (no args) | 2 | Clap returns exit code 2 per convention |
+| Check no config | `fixtures/exit-cases/check-no-config.txt` | J13A | `tethers-reference-host.exe check` | 2 | Missing required args |
 
 ## JSON Envelopes
 
-| Fixture | Path | Schema |
-|---|---|---|
-| Error envelope (missing config) | `fixtures/json-envelopes/error-missing-config.json` | `tethers.cli/1` |
-| Success check envelope (stub) | `fixtures/json-envelopes/success-check-template.json` | `tethers.cli/1` |
+| Fixture | Path | Owner/Contract | Source | Exit Code | Capture Method | Review Purpose |
+|---|---|---|---|---|---|---|
+| Success: plug list (empty) | `fixtures/json-envelopes/success-plug-list.json` | J13A/J24B | `tethers-reference-host.exe plug list --host-data-root <tmp>` | 0 | Binary capture at baseline (warm build) | Concrete success envelope with `status: "ok"`, `exit_code: 0` |
+| Error: missing config | `fixtures/json-envelopes/error-missing-config.json` | J13A | `tethers-reference-host.exe --help` | 2 | Binary capture at baseline | Error envelope with `status: "invalid_cli_usage"`, `exit_code: 2` |
 
 ## Trail Records
 
-| Fixture | Path | Notes |
-|---|---|---|
-| Trail record shape | `fixtures/trail-records/trail-shape.json` | Documented from `SPEC.md` and `dispatch.rs` |
+| Fixture | Path | Owner/Contract | Source | Review Purpose |
+|---|---|---|---|---|
+| Trail: matched evaluation | `fixtures/trail-records/trail-matched.json` | SPEC 0.1 / J09 | `tethers-0.1/protocol/expected-response.json` (committed at baseline) | Literal happy-path evaluation trail: 5 entries, `status: "matched"`, plan with `lantern.task.record` action |
+| Trail: not-matched evaluation | `fixtures/trail-records/trail-not-matched.json` | SPEC 0.1 / J09 | `tethers-0.1/protocol/cases/false-condition/expected-response.json` (committed at baseline) | Literal false-condition trail: 4 entries, `status: "not_matched"`, `plan: null` |
+
+Both Trail fixtures are exact copies of committed protocol fixtures at baseline `24428139807cac0adeb0b62264547e61ca809d16`. No values were normalised. All UUIDs, event IDs, evaluation IDs, and message strings are the original fixture values.
 
 ## Replay Digests
 
-| Fixture | Path | Notes |
-|---|---|---|
-| Replay digest shape | `fixtures/replay-digests/digest-shape.txt` | Documented from `replay.rs` conventions |
+| Fixture | Path | Owner/Contract | Source | Review Purpose |
+|---|---|---|---|---|
+| Replay digest chain | `fixtures/replay-digests/replay-digest-chain.txt` | J09 / J16C | Constructed from `src/replay.rs` Claim and Generation structures at baseline | Identity claim, generations 0-2 chain with JCS-canonicalized (RFC 8785) SHA-256 digests, predecessor linkage validation, immutable atomic record property |
 
-## Installation Outcomes
+Digests are SHA-256 over JCS-canonicalized JSON using `serde_json_canonicalizer` and `sha2`, matching `src/replay.rs:45-47`. Value `sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f` is the canonical digest over `{"manifest":...}`, consistent with `test_digest("manifest")` in `replay_windows.rs:1667-1668`.
 
-| Fixture | Path | Notes |
-|---|---|---|
-| Installation outcome status values | `fixtures/installation-outcomes/status-codes.txt` | From `outcome.rs` and `run_command.rs` |
+Normalisation: The chain structure is representative (constructed manually from the replay.rs schema). Digest values over the JSON content shown are correct but were computed externally from the schema description, not from running the Replay publish path. Verified consistent with `test_digest` behaviour in replay_windows.rs.
 
-## Recovery States
+## Installation Outcomes (J24L Envelopes)
 
-| Fixture | Path | Notes |
-|---|---|---|
-| Recovery state transitions | `fixtures/recovery-states/transitions.txt` | From `replay_windows.rs` ledger generations 0-3 |
+| Fixture | Path | Owner/Contract | Source | Review Purpose |
+|---|---|---|---|---|
+| Install success | `fixtures/installation-outcomes/j24l-install-success.json` | J24L2 | Constructed from J24L2 test assertions at baseline | Fresh install: 4 steps, `result: "complete"`, candidate/installed IDs from M3 golden schema |
+| Already complete | `fixtures/installation-outcomes/j24l-install-already-complete.json` | J24L2 | Constructed from J24L2 test assertions at baseline | Idempotent re-install: 1 step, `result: "already_complete"` |
+| Refusal: conformance failed | `fixtures/installation-outcomes/j24l-install-refusal.json` | J24L2/J24K | Constructed from conformance failure contract at baseline | Conformance suite digest mismatch: `status: "invalid_data"`, `exit_code: 3` |
+
+Normalisation: Envelope shapes verified against `j24l2_plug_install_cli.rs:255-324` and `j24k2_locked_single_step_executor.rs` test assertions. UUIDs use the M3 golden schema's structured `00000000-0000-0000-0000-XXXXXXXXXXXX` convention. Step arrays contain concrete action names from the J24L2 test.
+
+## Installation/Recovery State Files
+
+| Fixture | Path | Owner/Contract | Source | Review Purpose |
+|---|---|---|---|---|
+| M3 golden schema v1 | `fixtures/recovery-states/m3-installation-state.json` | M3 / J24D-J24L | `tethers-0.1/host-rust/fixtures/m3/m3-schema-golden-v1.json` (committed at baseline) | Complete M3 trust lifecycle: publisher key, developer approval, launch profile, conformance evidence, installation approval, installed plug record. All digests are concrete. |
+| M2 candidate record v1 | `fixtures/recovery-states/m2-candidate-record.json` | M2 / J24E | `tethers-0.1/host-rust/fixtures/m2/candidate-record-v1.json` (committed at baseline) | Quarantined installation candidate record with real SHA-256 digests, payload listing, and capability manifests. |
+
+Both are exact copies of committed test fixtures at baseline `24428139807cac0adeb0b62264547e61ca809d16`. No values were normalised.
 
 ## Fixture Independence Guarantee
 
-All fixtures were manually captured from a single warm binary build at the baseline commit. They are committed as fixed `.txt` and `.json` files. No `update-fixtures` script, golden-file refresh command, or auto-regeneration mechanism exists. Any future fixture change requires:
+All fixtures were captured or copied from:
 
-1. A deliberate compatibility decision;
-2. Manual review of the diff;
-3. An explicit task packet authorizing the change.
+1. **Binary capture**: `tethers-reference-host.exe` built from baseline `24428139807cac0adeb0b62264547e61ca809d16` (warm build). Commands: `--help`, `--version`, `check`, `run --help`, `plug list --host-data-root <tmp>`. Exit codes recorded from `$LASTEXITCODE`.
+
+2. **Committed protocol fixtures**: `tethers-0.1/protocol/expected-response.json` and `tethers-0.1/protocol/cases/false-condition/expected-response.json` at baseline `24428139807cac0adeb0b62264547e61ca809d16`. These are independent test fixtures, not generated by the implementation under test.
+
+3. **Committed Rust test fixtures**: `tethers-0.1/host-rust/fixtures/m3/m3-schema-golden-v1.json` and `tethers-0.1/host-rust/fixtures/m2/candidate-record-v1.json` at baseline `24428139807cac0adeb0b62264547e61ca809d16`.
+
+4. **Test assertion documentation**: J24L envelope shapes verified against `j24l2_plug_install_cli.rs` and `j24k2_locked_single_step_executor.rs` test assertions at baseline. Replay digest chain constructed from `src/replay.rs` Claim/Generation schema at baseline.
+
+No `update-fixtures` script, golden-file refresh command, or auto-regeneration mechanism exists or was added.

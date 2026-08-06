@@ -1,8 +1,0 @@
-{
-  "schema": "tethers.cli/1",
-  "command": "check",
-  "status": "success",
-  "exit_code": 0,
-  "data": {},
-  "error": null
-}

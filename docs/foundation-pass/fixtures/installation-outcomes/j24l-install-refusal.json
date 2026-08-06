@@ -1,0 +1,11 @@
+{
+  "schema": "tethers.cli/1",
+  "command": "plug install",
+  "status": "invalid_data",
+  "exit_code": 3,
+  "data": {},
+  "error": {
+    "code": "conformance_failed",
+    "message": "conformance evidence failed: suite digest mismatch: expected sha256:4444444444444444444444444444444444444444444444444444444444444444, got sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}
