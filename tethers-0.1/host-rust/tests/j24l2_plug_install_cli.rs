@@ -1,6 +1,6 @@
 use clap::Parser;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 use tethers_reference_host::cli::{Cli, PlugCommand};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -10,13 +10,22 @@ fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
 #[test]
 fn j24l2_clap_valid_install_parses() {
     let cli = parse(&[
-        "plug", "install",
-        "--host-data-root", "C:\\host",
-        "--request", "C:\\req.json",
+        "plug",
+        "install",
+        "--host-data-root",
+        "C:\\host",
+        "--request",
+        "C:\\req.json",
     ])
     .unwrap();
     match cli.command.unwrap() {
-        tethers_reference_host::cli::Command::Plug { command: PlugCommand::Install { host_data_root, request } } => {
+        tethers_reference_host::cli::Command::Plug {
+            command:
+                PlugCommand::Install {
+                    host_data_root,
+                    request,
+                },
+        } => {
             assert_eq!(host_data_root, PathBuf::from("C:\\host"));
             assert_eq!(request, PathBuf::from("C:\\req.json"));
         }
@@ -27,13 +36,22 @@ fn j24l2_clap_valid_install_parses() {
 #[test]
 fn j24l2_clap_reordered_options_parse() {
     let cli = parse(&[
-        "plug", "install",
-        "--request", "C:\\req.json",
-        "--host-data-root", "C:\\host",
+        "plug",
+        "install",
+        "--request",
+        "C:\\req.json",
+        "--host-data-root",
+        "C:\\host",
     ])
     .unwrap();
     match cli.command.unwrap() {
-        tethers_reference_host::cli::Command::Plug { command: PlugCommand::Install { host_data_root, request } } => {
+        tethers_reference_host::cli::Command::Plug {
+            command:
+                PlugCommand::Install {
+                    host_data_root,
+                    request,
+                },
+        } => {
             assert_eq!(host_data_root, PathBuf::from("C:\\host"));
             assert_eq!(request, PathBuf::from("C:\\req.json"));
         }
@@ -54,51 +72,72 @@ fn j24l2_clap_missing_request_rejected() {
 #[test]
 fn j24l2_clap_duplicate_host_data_root_rejected() {
     assert!(parse(&[
-        "plug", "install",
-        "--host-data-root", "C:\\a",
-        "--host-data-root", "C:\\b",
-        "--request", "C:\\req.json",
-    ]).is_err());
+        "plug",
+        "install",
+        "--host-data-root",
+        "C:\\a",
+        "--host-data-root",
+        "C:\\b",
+        "--request",
+        "C:\\req.json",
+    ])
+    .is_err());
 }
 
 #[test]
 fn j24l2_clap_duplicate_request_rejected() {
     assert!(parse(&[
-        "plug", "install",
-        "--host-data-root", "C:\\host",
-        "--request", "C:\\a.json",
-        "--request", "C:\\b.json",
-    ]).is_err());
+        "plug",
+        "install",
+        "--host-data-root",
+        "C:\\host",
+        "--request",
+        "C:\\a.json",
+        "--request",
+        "C:\\b.json",
+    ])
+    .is_err());
 }
 
 #[test]
 fn j24l2_clap_unknown_option_rejected() {
     assert!(parse(&[
-        "plug", "install",
-        "--host-data-root", "C:\\host",
-        "--request", "C:\\req.json",
+        "plug",
+        "install",
+        "--host-data-root",
+        "C:\\host",
+        "--request",
+        "C:\\req.json",
         "--unknown",
-    ]).is_err());
+    ])
+    .is_err());
 }
 
 #[test]
 fn j24l2_clap_no_package_candidate_option_accepted() {
     // package flag should not parse as Install
     assert!(parse(&[
-        "plug", "install",
-        "--host-data-root", "C:\\host",
-        "--request", "C:\\req.json",
-        "--package", "C:\\pkg.tetherplug",
-    ]).is_err());
+        "plug",
+        "install",
+        "--host-data-root",
+        "C:\\host",
+        "--request",
+        "C:\\req.json",
+        "--package",
+        "C:\\pkg.tetherplug",
+    ])
+    .is_err());
 }
 
 #[test]
 fn j24l2_clap_equal_sign_accepted() {
     let cli = parse(&[
-        "plug", "install",
+        "plug",
+        "install",
         "--host-data-root=C:\\host",
         "--request=C:\\req.json",
-    ]).unwrap();
+    ])
+    .unwrap();
     assert!(matches!(
         cli.command,
         Some(tethers_reference_host::cli::Command::Plug {
@@ -125,10 +164,22 @@ fn j24l2_relative_host_data_root_returns_error_creates_nothing() {
         &PathBuf::from("C:\\req.json"),
     );
     assert_eq!(result.exit_code, 2);
-    assert_eq!(result.envelope.status, tethers_reference_host::cli::OutcomeStatus::InvalidCliUsage);
-    assert_eq!(result.envelope.error.as_ref().unwrap().code, "invalid_cli_usage");
-    assert_eq!(result.envelope.error.as_ref().unwrap().message, "--host-data-root must be absolute");
-    assert_eq!(result.envelope.error.as_ref().unwrap().field.as_deref(), Some("/host-data-root"));
+    assert_eq!(
+        result.envelope.status,
+        tethers_reference_host::cli::OutcomeStatus::InvalidCliUsage
+    );
+    assert_eq!(
+        result.envelope.error.as_ref().unwrap().code,
+        "invalid_cli_usage"
+    );
+    assert_eq!(
+        result.envelope.error.as_ref().unwrap().message,
+        "--host-data-root must be absolute"
+    );
+    assert_eq!(
+        result.envelope.error.as_ref().unwrap().field.as_deref(),
+        Some("/host-data-root")
+    );
 
     fs::remove_dir_all(&root).ok();
 }
@@ -143,10 +194,22 @@ fn j24l2_relative_request_path_returns_error_creates_nothing() {
         &PathBuf::from("relative-req.json"),
     );
     assert_eq!(result.exit_code, 2);
-    assert_eq!(result.envelope.status, tethers_reference_host::cli::OutcomeStatus::InvalidCliUsage);
-    assert_eq!(result.envelope.error.as_ref().unwrap().code, "invalid_cli_usage");
-    assert_eq!(result.envelope.error.as_ref().unwrap().message, "--request must be absolute");
-    assert_eq!(result.envelope.error.as_ref().unwrap().field.as_deref(), Some("/request"));
+    assert_eq!(
+        result.envelope.status,
+        tethers_reference_host::cli::OutcomeStatus::InvalidCliUsage
+    );
+    assert_eq!(
+        result.envelope.error.as_ref().unwrap().code,
+        "invalid_cli_usage"
+    );
+    assert_eq!(
+        result.envelope.error.as_ref().unwrap().message,
+        "--request must be absolute"
+    );
+    assert_eq!(
+        result.envelope.error.as_ref().unwrap().field.as_deref(),
+        Some("/request")
+    );
 
     fs::remove_dir_all(&root).ok();
 }
@@ -161,11 +224,23 @@ fn j24l2_missing_host_data_root_returns_unavailable() {
         &PathBuf::from("C:\\req.json"),
     );
     assert_eq!(result.exit_code, 4);
-    assert_eq!(result.envelope.status, tethers_reference_host::cli::OutcomeStatus::Unavailable);
-    assert_eq!(result.envelope.error.as_ref().unwrap().code, "plug_data_root_unavailable");
-    assert_eq!(result.envelope.error.as_ref().unwrap().message, "host data root is unavailable");
+    assert_eq!(
+        result.envelope.status,
+        tethers_reference_host::cli::OutcomeStatus::Unavailable
+    );
+    assert_eq!(
+        result.envelope.error.as_ref().unwrap().code,
+        "plug_data_root_unavailable"
+    );
+    assert_eq!(
+        result.envelope.error.as_ref().unwrap().message,
+        "host data root is unavailable"
+    );
 
-    assert!(!missing.exists(), "missing host-data root must not be created");
+    assert!(
+        !missing.exists(),
+        "missing host-data root must not be created"
+    );
     fs::remove_dir_all(&root).ok();
 }
 
@@ -188,7 +263,10 @@ fn j24l2_malformed_request_creates_no_lifecycle_state() {
     for name in &children {
         eprintln!("unexpected child after bad request: {name}");
     }
-    assert!(children.is_empty(), "malformed request must not create state");
+    assert!(
+        children.is_empty(),
+        "malformed request must not create state"
+    );
 
     fs::remove_dir_all(&root).ok();
 }
@@ -212,14 +290,23 @@ fn j24l2_missing_candidate_roots_creates_no_later_lifecycle_roots() {
     assert!(result.exit_code != 0);
 
     let lifecycle_children = [
-        "installation-trust", "launch-profiles", "conformance",
-        "installation-approvals", "install", "installed-records",
-        "enablements", "installation-intent", "conformance-scratch",
+        "installation-trust",
+        "launch-profiles",
+        "conformance",
+        "installation-approvals",
+        "install",
+        "installed-records",
+        "enablements",
+        "installation-intent",
+        "conformance-scratch",
         "installation.lock",
     ];
     for child in &lifecycle_children {
         let path = root.join(child);
-        assert!(!path.exists(), "{child} must not exist after missing stage roots");
+        assert!(
+            !path.exists(),
+            "{child} must not exist after missing stage roots"
+        );
     }
 
     fs::remove_dir_all(&root).ok();

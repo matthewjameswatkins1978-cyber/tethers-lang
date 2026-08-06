@@ -21,6 +21,14 @@ Complete J24L by wiring the accepted J24L1 bounded driver into one thin public
 `plug install` CLI command with canonical host-data layout, request-file loading,
 and JSON output mapping.
 
+## Relevant background and existing behaviour
+
+J24L1 is accepted. The crate-private `installation_driver.rs` provides
+`drive_installation` with a four-call maximum. J24K's public API is
+`execute_next_installation_action(request, context, options) -> Result<InstallationStepResult>`.
+J24G defines the installation request loading and validation. Existing `plug stage`
+creates candidates and quarantine roots that `plug install` must reuse.
+
 ## Required behaviour
 
 1. Add `Install` variant to `PlugCommand` in `cli.rs` with frozen fields.

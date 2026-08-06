@@ -1,4 +1,5 @@
 use crate::candidate::CandidateRegistry;
+use crate::cli::CliEnvelope;
 use crate::cli::OutcomeStatus;
 use crate::conformance::{ConformanceDisposition, ConformanceEvidenceStore};
 use crate::enablement::EnablementStore;
@@ -13,7 +14,6 @@ use crate::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use crate::launch_profile::LaunchProfileEvidenceStore;
 use crate::m3_store::verify_chain;
 use crate::plug_command::PlugCommandResult;
-use crate::cli::CliEnvelope;
 use serde_json::json;
 use std::path::Path;
 use std::time::Duration;
@@ -89,13 +89,8 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
                 OutcomeStatus::InvalidData
             };
             let field: Option<String> = error.field;
-            let envelope = CliEnvelope::error(
-                "plug install",
-                status,
-                error.code,
-                error.message,
-                field,
-            );
+            let envelope =
+                CliEnvelope::error("plug install", status, error.code, error.message, field);
             return PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
@@ -114,13 +109,8 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
                 "candidate_rollback_failed" | "clock" => OutcomeStatus::Failed,
                 _ => OutcomeStatus::InvalidData,
             };
-            let envelope = CliEnvelope::error(
-                "plug install",
-                status,
-                error.code,
-                error.message,
-                None,
-            );
+            let envelope =
+                CliEnvelope::error("plug install", status, error.code, error.message, None);
             return PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
@@ -128,49 +118,41 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
         }
     };
 
-    let exact_trust = match ExactCandidateTrustStore::open(&host_data_root.join("installation-trust")) {
-        Ok(s) => s,
-        Err(error) => {
-            let status = if error.code == "store_io" {
-                OutcomeStatus::Unavailable
-            } else {
-                OutcomeStatus::InvalidData
-            };
-            let envelope = CliEnvelope::error(
-                "plug install",
-                status,
-                error.code,
-                error.message,
-                None,
-            );
-            return PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            };
-        }
-    };
+    let exact_trust =
+        match ExactCandidateTrustStore::open(&host_data_root.join("installation-trust")) {
+            Ok(s) => s,
+            Err(error) => {
+                let status = if error.code == "store_io" {
+                    OutcomeStatus::Unavailable
+                } else {
+                    OutcomeStatus::InvalidData
+                };
+                let envelope =
+                    CliEnvelope::error("plug install", status, error.code, error.message, None);
+                return PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                };
+            }
+        };
 
-    let launch_profiles = match LaunchProfileEvidenceStore::open(&host_data_root.join("launch-profiles")) {
-        Ok(s) => s,
-        Err(error) => {
-            let status = if error.code == "store_io" {
-                OutcomeStatus::Unavailable
-            } else {
-                OutcomeStatus::InvalidData
-            };
-            let envelope = CliEnvelope::error(
-                "plug install",
-                status,
-                error.code,
-                error.message,
-                None,
-            );
-            return PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            };
-        }
-    };
+    let launch_profiles =
+        match LaunchProfileEvidenceStore::open(&host_data_root.join("launch-profiles")) {
+            Ok(s) => s,
+            Err(error) => {
+                let status = if error.code == "store_io" {
+                    OutcomeStatus::Unavailable
+                } else {
+                    OutcomeStatus::InvalidData
+                };
+                let envelope =
+                    CliEnvelope::error("plug install", status, error.code, error.message, None);
+                return PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                };
+            }
+        };
 
     let conformance = match ConformanceEvidenceStore::open(&host_data_root.join("conformance")) {
         Ok(s) => s,
@@ -180,13 +162,8 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
             } else {
                 OutcomeStatus::InvalidData
             };
-            let envelope = CliEnvelope::error(
-                "plug install",
-                status,
-                error.code,
-                error.message,
-                None,
-            );
+            let envelope =
+                CliEnvelope::error("plug install", status, error.code, error.message, None);
             return PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
@@ -194,27 +171,23 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
         }
     };
 
-    let approvals = match InstallationApprovalStore::open(&host_data_root.join("installation-approvals")) {
-        Ok(s) => s,
-        Err(error) => {
-            let status = if error.code == "store_io" {
-                OutcomeStatus::Unavailable
-            } else {
-                OutcomeStatus::InvalidData
-            };
-            let envelope = CliEnvelope::error(
-                "plug install",
-                status,
-                error.code,
-                error.message,
-                None,
-            );
-            return PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            };
-        }
-    };
+    let approvals =
+        match InstallationApprovalStore::open(&host_data_root.join("installation-approvals")) {
+            Ok(s) => s,
+            Err(error) => {
+                let status = if error.code == "store_io" {
+                    OutcomeStatus::Unavailable
+                } else {
+                    OutcomeStatus::InvalidData
+                };
+                let envelope =
+                    CliEnvelope::error("plug install", status, error.code, error.message, None);
+                return PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                };
+            }
+        };
 
     let installed = match InstalledPlugRegistry::open(
         &host_data_root.join("install"),
@@ -227,13 +200,8 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
             } else {
                 OutcomeStatus::InvalidData
             };
-            let envelope = CliEnvelope::error(
-                "plug install",
-                status,
-                error.code,
-                error.message,
-                None,
-            );
+            let envelope =
+                CliEnvelope::error("plug install", status, error.code, error.message, None);
             return PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
@@ -247,13 +215,7 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
         } else {
             OutcomeStatus::InvalidData
         };
-        let envelope = CliEnvelope::error(
-            "plug install",
-            status,
-            error.code,
-            error.message,
-            None,
-        );
+        let envelope = CliEnvelope::error("plug install", status, error.code, error.message, None);
         return PlugCommandResult {
             exit_code: envelope.exit_code,
             envelope,
@@ -289,14 +251,9 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
     match drive_installation(&request, &context, &options) {
         Ok(result) => map_drive_result(result, &request_candidate_id),
         Err(error) => {
-            let status = error_code_to_status(&error.code);
-            let envelope = CliEnvelope::error(
-                "plug install",
-                status,
-                error.code,
-                error.message,
-                None,
-            );
+        let status = error_code_to_status(error.code);
+            let envelope =
+                CliEnvelope::error("plug install", status, error.code, error.message, None);
             PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
@@ -396,21 +353,27 @@ fn map_complete(
     let last_step = match result.steps.last() {
         Some(s) => s,
         None => {
-            return contradiction_error("completed installation result is missing installed evidence");
+            return contradiction_error(
+                "completed installation result is missing installed evidence",
+            );
         }
     };
 
     let installed_id = match &last_step.after.installed_id {
         Some(id) => id.clone(),
         None => {
-            return contradiction_error("completed installation result is missing installed evidence");
+            return contradiction_error(
+                "completed installation result is missing installed evidence",
+            );
         }
     };
 
     let installed_record_digest = match &last_step.after.installed_record_digest {
         Some(d) => d.clone(),
         None => {
-            return contradiction_error("completed installation result is missing installed evidence");
+            return contradiction_error(
+                "completed installation result is missing installed evidence",
+            );
         }
     };
 
@@ -504,14 +467,7 @@ fn map_conformance_stop(
         "steps": steps,
     });
 
-    let envelope = CliEnvelope::error_with_data(
-        "plug install",
-        status,
-        code,
-        message,
-        None,
-        data,
-    );
+    let envelope = CliEnvelope::error_with_data("plug install", status, code, message, None, data);
 
     PlugCommandResult {
         exit_code: envelope.exit_code,
@@ -523,7 +479,7 @@ fn map_conformance_stop(
 mod tests {
     use super::*;
     use crate::conformance::ConformanceDisposition;
-    use crate::installation_driver::{drive_with, InstallationDriveResult, InstallationDriveStop};
+    use crate::installation_driver::{InstallationDriveResult, InstallationDriveStop};
     use crate::installation_execution::{
         InstallationStepOutcome, InstallationStepResult as ExecStepResult,
     };
@@ -562,9 +518,12 @@ mod tests {
     }
 
     fn already_complete() -> ExecStepResult {
+        let mut plan = plan_with(InstallationPlanAction::Complete);
+        plan.installed_id = Some("inst-42".to_string());
+        plan.installed_record_digest = Some("sha256:abc".to_string());
         ExecStepResult {
-            before: plan_with(InstallationPlanAction::Complete),
-            after: plan_with(InstallationPlanAction::Complete),
+            before: plan.clone(),
+            after: plan,
             outcome: InstallationStepOutcome::AlreadyComplete,
         }
     }
@@ -641,8 +600,8 @@ mod tests {
         assert_eq!(data["candidate_id"], "test-candidate");
         assert_eq!(data["step_count"], 1);
         assert_eq!(data["steps"].as_array().unwrap().len(), 1);
-        assert_eq!(data["installed_id"], serde_json::Value::Null);
-        assert_eq!(data["installed_record_digest"], serde_json::Value::Null);
+        assert_eq!(data["installed_id"], "inst-42");
+        assert_eq!(data["installed_record_digest"], "sha256:abc");
 
         let step0 = &data["steps"][0];
         assert_eq!(step0["before_action"], "complete");
@@ -659,7 +618,7 @@ mod tests {
             after: plan_with(InstallationPlanAction::RunSupervisedConformance),
             outcome: InstallationStepOutcome::ConformanceRecordedWithoutAdvance {
                 evidence_id: evidence_id.clone(),
-                disposition: disposition.clone(),
+                disposition,
             },
         };
 
@@ -695,7 +654,7 @@ mod tests {
             after: plan_with(InstallationPlanAction::RunSupervisedConformance),
             outcome: InstallationStepOutcome::ConformanceRecordedWithoutAdvance {
                 evidence_id: evidence_id.clone(),
-                disposition: disposition.clone(),
+                disposition,
             },
         };
 
@@ -781,8 +740,14 @@ mod tests {
             ("installation_iteration_limit", OutcomeStatus::Failed),
             ("installation_execution_stagnant", OutcomeStatus::Failed),
             ("installation_execution_regressed", OutcomeStatus::Failed),
-            ("installation_execution_invalid_transition", OutcomeStatus::Failed),
-            ("installation_execution_postcondition_failed", OutcomeStatus::Failed),
+            (
+                "installation_execution_invalid_transition",
+                OutcomeStatus::Failed,
+            ),
+            (
+                "installation_execution_postcondition_failed",
+                OutcomeStatus::Failed,
+            ),
             ("installation_scratch_cleanup_failed", OutcomeStatus::Failed),
         ] {
             assert_eq!(
@@ -799,10 +764,7 @@ mod tests {
             error_code_to_status("some_unknown_error"),
             OutcomeStatus::InvalidData
         );
-        assert_eq!(
-            error_code_to_status("trust_io"),
-            OutcomeStatus::InvalidData
-        );
+        assert_eq!(error_code_to_status("trust_io"), OutcomeStatus::InvalidData);
     }
 
     #[test]
