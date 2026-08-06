@@ -1,186 +1,243 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `J24K3f - Lock-composed disabled installation publication`
-Owner: `Codex`
-Model: `GPT-5`
-Status: `COMPLETE`
-Task colour: `Red`
-Route: `Codex using GPT-5 for one bounded Rust lock-composition package; Lucy performs independent review and routine safe merge`
+Task: `J24L1 - Bounded installation driver`
+Owner: `DeepSeek Pro`
+Model: `DeepSeek Pro`
+Status: `IN_PROGRESS`
+Task colour: `Amber`
+Route: `OpenCode using DeepSeek Pro for one bounded Rust control-flow package; Lucy performs independent review and any later merge`
 Base branch: `main`
-Base commit: `13cae687dc59c0dae74363b24d0ab57547702c53`
-Implementation branch: `opencode/j24k3f-lock-composed-publication`
-Worker note: `docs/worker-notes/2026-08-05-j24k3f-lock-composed-publication.md`
-Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
+Base commit: `190e834b8afeca060adb3b07c7a18554497aaf31`
+Implementation branch: `opencode/j24l1-bounded-installation-driver`
+Worker note: `docs/worker-notes/2026-08-06-j24l1-bounded-installation-driver.md`
+Implementation blueprint: `docs/architecture/J24L_THIN_PUBLIC_PLUG_INSTALL_CLI.md`
 Rust toolchain: `1.97.1`
-Accepted main: `13cae687dc59c0dae74363b24d0ab57547702c53`
-Implementation checkpoint: `a69b100b320d44b9bd36376743bb4a899264a46d`
-Verification checkpoint: `a69b100b320d44b9bd36376743bb4a899264a46d`
 
 ## Objective
 
-Implement only J24K3f: compose the accepted J24K3e1 preparation boundary and J24K3e2 exact mutation boundary into the existing single-step installation executor while the existing `InstallationLockGuard` remains held.
+Implement only the crate-private bounded control-flow driver that repeatedly
+invokes the accepted J24K single-step executor until one of these exact stopping
+conditions occurs:
 
-For `InstallationPlanAction::PublishDisabledInstallation`, the locked executor must:
+1. installation is complete;
+2. conformance was recorded without advancing;
+3. J24K returns an error;
+4. four executor calls have occurred without reaching a legitimate stopping
+   condition.
 
-```text
-use the current before-plan already created inside the lock
-  -> open the accepted publication-intent store from executor_state_root
-  -> prepare one sealed exact publication
-  -> execute that exact prepared publication
-  -> freshly run J24J after mutation
-  -> require PublishDisabledInstallation -> Complete
-  -> return Advanced { executed: PublishDisabledInstallation }
-```
-
-This package finishes J24K publication execution. It does not add J24L, a CLI, a multi-step loop, or any second mutation per invocation.
-
-### Authorised post-intent test-seam amendment
-
-The prior `BLOCKED` result established that the public locked executor cannot
-deterministically reach a post-intent failure with its internally generated
-transaction ID using an existing filesystem obstruction. This amendment
-authorises exactly one replacement: a crate-private `#[cfg(test)]` one-shot
-failure hook local to the J24K3e2 mutation boundary, immediately after durable
-intent creation and its exact read-back confirmation. It is default-inert and
-installable only by crate tests. The hook may return one test-only structured
-failure before staging begins so the test can prove the existing recovery
-authority. It must not compile into normal or release builds, add a public API
-or context field, expose transaction identity, alter normal ordering, or be
-used as a production fault-injection facility.
-
-The package is explicitly authorised to restore the already frozen blueprint field:
-
-```rust
-pub executor_state_root: &'a Path,
-```
-
-on `InstallationExecutionContext`. No other context field or public API change is authorised.
+This package contains no CLI parsing, output formatting, store construction,
+path layout, request-file loading, package staging, action-specific mutation,
+retry, or recovery implementation.
 
 ## Relevant background and existing behaviour
 
-Accepted main is exactly `13cae687dc59c0dae74363b24d0ab57547702c53`.
+J24K is complete. Its accepted public primitive is:
 
-Accepted foundations now provide:
+```rust
+pub fn execute_next_installation_action(
+    request: &InstallationRequest,
+    context: &InstallationExecutionContext<'_>,
+    options: &InstallationExecutionOptions<'_>,
+) -> Result<InstallationStepResult>;
+```
 
-- J24K2: the non-inheritable RAII installation lock, planning inside the lock, one-action execution and transition checking;
-- J24K3d: exact crash recovery planning and mutation while locked;
-- J24K3e1: sealed read-only publication preparation from an exact current `PublishDisabledInstallation` plan;
-- J24K3e2: exact durable mutation consuming that sealed prepared value;
-- `installation_execution.rs` still returns `installation_publication_deferred` for `PublishDisabledInstallation`.
+Each call acquires its own installation lock, creates its own current
+authoritative plan after locking, performs zero or one durable ordinary
+mutation, creates a fresh after-plan, and releases the lock on return.
 
-The frozen architecture blueprint already defines `executor_state_root: &'a Path` on `InstallationExecutionContext`, but the current implementation omitted it. J24K3f requires that exact root to open `InstallationPublicationIntentStore` and construct `InstallationRecoveryPlanningContext` without deriving authority from an unrelated path.
+The accepted progression is:
 
-The outer public entry point already acquires the lock and delegates to an inner function whose recovery, planner, action and post-plan values remain inside the lock lifetime. Preserve that shape.
+```text
+CreateExactCandidateTrust
+  -> RunSupervisedConformance
+  -> CreateInstallationApproval
+  -> PublishDisabledInstallation
+  -> Complete
+```
+
+J24L must call that primitive at most four times. The driver must never acquire
+or retain a lock itself. Each call to J24K must acquire a fresh lock and
+produce a fresh authoritative plan.
 
 ## Required behaviour
 
-1. Restore exactly one accepted `InstallationExecutionContext` field: `executor_state_root: &'a Path`.
-2. Update every legitimate construction site and fixture for that field without adding defaults or derived fallback paths.
-3. Replace only the deferred `PublishDisabledInstallation` action arm.
-4. Reuse the exact current locked `before` plan as the preparation comparison value.
-5. Open `InstallationPublicationIntentStore` from `context.executor_state_root` while the lock is held.
-6. Build the accepted `InstallationRecoveryPlanningContext` from the intent store and existing executor authorities.
-7. Call J24K3e1 preparation and J24K3e2 mutation while the same lock remains held.
-8. Run one fresh authoritative J24J plan after mutation and require `PublishDisabledInstallation -> Complete`.
-9. Return the existing `Advanced { executed: PublishDisabledInstallation }` outcome shape.
-10. Preserve recovery-before-ordinary-action ordering, earlier error classifications, and the one-invocation/one-mutation invariant.
-11. Add only the authorised crate-private `#[cfg(test)]` post-intent failure hook at the J24K3e2 mutation boundary. Its default is inert; it is unavailable to normal and release builds, and one forced test failure must leave the durable intent for accepted recovery.
+1. Create `installation_driver.rs` with a crate-private driver entry point
+   `drive_installation` and a private closure-based helper `drive_with` for
+   testability.
+2. Register the module and its `#[cfg(test)]` test module in `lib.rs`.
+3. Return `AlreadyComplete` immediately after one call, preserving the exact
+   step.
+4. Return `Complete` when an `Advanced` result has `after.action == Complete`,
+   without making a fifth confirmation call.
+5. Drive a fresh four-action sequence (`CreateExactCandidateTrust` through
+   `PublishDisabledInstallation -> Complete`) in exactly four calls.
+6. Return `ConformanceRecordedWithoutAdvance` immediately when J24K returns
+   that outcome, preserving the exact evidence ID and disposition, without
+   retry.
+7. Propagate J24K `M3Error` code and message exactly, without another call.
+8. After exactly four returned non-completing `Advanced` results, return
+   `installation_iteration_limit` with the exact message `installation did not
+   complete within four executor calls`, without a fifth call.
+9. Preserve returned steps exactly in order without rewriting or normalising.
 
 ## Relevant components
 
-Expected changes are bounded to the minimum among:
-
-- `tethers-0.1/host-rust/src/installation_execution.rs`;
-- `tethers-0.1/host-rust/src/installation_publication_mutation.rs` for the authorised test-only hook only;
-- existing execution-context construction sites and direct fixtures that must supply the newly restored accepted field;
-- its direct test module or one new narrowly named J24K3f test module;
-- `tethers-0.1/host-rust/src/lib.rs` only if a new private test module is added;
-- this packet and its worker note.
-
-J24K3e1, J24K3e2, recovery, lock, intent, installed-state and planner modules should be called, not redesigned. Any other production file requires a compile-proven necessity recorded before editing.
+- `tethers-0.1/host-rust/src/installation_driver.rs` (new)
+- `tethers-0.1/host-rust/src/installation_driver_tests.rs` (new)
+- `tethers-0.1/host-rust/src/lib.rs`
+- `docs/architecture/J24L_THIN_PUBLIC_PLUG_INSTALL_CLI.md` (new)
+- `docs/CURRENT_CLINE_TASK.md` (replacement)
+- `docs/worker-notes/2026-08-06-j24l1-bounded-installation-driver.md` (new)
 
 ## Frozen decisions and invariants
 
-- `executor_state_root` is an independent accepted authority root, not a subdirectory inferred from lock, quarantine, scratch, install or record paths.
-- `InstallationPublicationIntentStore` is opened from exactly `context.executor_state_root`.
-- One outer `InstallationLockGuard` spans recovery, before-plan, preparation, mutation, after-plan and postcondition checks.
-- Preparation and mutation never occur outside that lock in this executor route.
-- J24J remains the sole ordinary installation reconciliation authority.
-- The caller never supplies a precomputed plan.
-- One invocation performs zero or one durable ordinary mutation.
-- Publication preparation does not count as a mutation.
-- Publication mutation is the sole ordinary mutation in this action arm.
-- Recovery, if needed, occurs before ordinary planning and may consume the invocation according to accepted J24K2/J24K3 behaviour.
-- J24K3f adds no retry and no second action.
-- J24L remains separate.
-- The authorised test hook is thread-local and one-shot so concurrent tests cannot observe it; outside `cfg(test)` it has no code or behavioural presence.
+- Maximum four J24K calls.
+- Fresh lock and fresh plan on every J24K call.
+- Driver never acquires or retains a lock.
+- No fifth confirmation call.
+- No conformance retry.
+- Exact J24K error propagation without wrapping.
+- `installation_iteration_limit` code and message are exact and frozen.
+- Driver does not validate plans; J24K owns all validation.
+- Public API outside the crate is forbidden in J24L1.
+- No serialization derives in J24L1.
+- The `MAX_INSTALLATION_EXECUTOR_CALLS` constant is private.
+- `drive_with` closure-based helper is the sole test seam.
+- J24L2 responsibilities (CLI, stores, paths) are deferred and must not be
+  invented here.
 
 ## Acceptance criteria
 
-1. `InstallationExecutionContext` contains exactly the restored `executor_state_root: &'a Path` field in the frozen blueprint position or an equivalent Rust ordering.
-2. All context construction sites compile only by supplying an explicit executor-state root.
-3. No fallback derives executor state from another root.
-4. A locked publication-ready request completes exact disabled installation publication.
-5. J24K3e1 receives the exact `before` plan produced inside the lock.
-6. J24K3e2 consumes the resulting sealed prepared value inside the same lock lifetime.
-7. Successful publication yields a fresh after-plan with action `Complete`.
-8. The returned outcome is `Advanced { executed: PublishDisabledInstallation }`.
-9. The returned before-plan is the original exact publication-ready plan and the returned after-plan is the fresh exact complete plan.
-10. A stale evidence change between planning and preparation fails closed without publication.
-11. A mutation or recovery failure releases the lock and leaves accepted resumable state.
-12. A concurrent second invocation still fails immediately with `installation_busy`.
-13. No invocation executes any second ordinary mutation.
-14. Existing trust, conformance, approval, complete and failed-conformance action behaviour remains unchanged.
-15. `installation_publication_deferred` is removed only from the now-implemented action route and is not repurposed.
-16. No other public context/API, CLI, J24L, schema, dependency or Cargo.lock change occurs.
-17. Named J24K3e2, J24K3e1, J24K3d2, J24K2 and J24J regressions pass.
-18. Full serial verification passes.
-19. The forced post-intent test proves, through the public locked executor, that the exact durable intent remains after the forced failure, the ordinary plan is not falsely `Complete`, the lock is released, the accepted recovery authority returns to idle, a later public invocation reaches `Complete`, and exactly one installed record/destination exists.
-20. The test-only hook is absent from normal and release builds, has no public API or context field, consumes no transaction identity, and is default-inert and one-shot under `cfg(test)`.
+1. `drive_installation` exists as a `pub(crate)` function in
+   `installation_driver.rs`. Evidence: compilation and direct unit test.
+2. `lib.rs` registers `installation_driver` as a private module and
+   `installation_driver_tests` under `#[cfg(test)]`. Evidence: compilation.
+3. `j24l1_already_complete_stops_after_one_call` proves one call only, one
+   step retained, stop is `Complete`, no second call. Evidence: test pass.
+4. `j24l1_advanced_to_complete_stops_without_confirmation_call` proves an
+   `Advanced` result with `after.action == Complete` stops after one call
+   without a confirmation call. Evidence: test pass.
+5. `j24l1_fresh_sequence_completes_in_exactly_four_calls` proves exactly four
+   calls, stop is `Complete`, four steps retained in order, no fifth call.
+   Evidence: test pass.
+6. `j24l1_conformance_without_advance_stops_immediately` proves
+   `ConformanceRecordedWithoutAdvance` stops after one call with exact
+   evidence ID and disposition, no retry. Evidence: test pass.
+7. `j24l1_executor_error_propagates_without_another_call` proves exact
+   `M3Error` code and message returned, call count is one.
+   Evidence: test pass.
+8. `j24l1_four_noncomplete_advances_hit_exact_iteration_limit` proves exactly
+   four calls, no fifth, exact code and message. Evidence: test pass.
+9. `j24l1_preserves_returned_steps_without_rewriting` proves steps are
+   returned exactly as supplied, in order. Evidence: test pass.
 
 ## Required verification
 
-Add direct tests whose names begin `j24k3f` and use real stores/filesystem fixtures. At minimum prove:
+Direct tests:
 
-- valid publication-ready state advances to `Complete` through the public locked executor;
-- the publication intent store is rooted under the explicit executor-state root;
-- no intent state is created under lock, quarantine, scratch, install or record roots;
-- exact destination and installed record are created and recovery is idle;
-- returned before/after plans and executed action are exact;
-- preparation or evidence failure before intent creation produces no publication;
-- failure after intent creation remains recoverable and the lock is released;
-- the authorised post-intent seam is exercised only from a crate test through the public locked executor; recovery removes the retained intent and a later public invocation completes exactly one ordinary publication;
-- a second lock acquisition/invocation remains immediately busy;
-- no second action is executed;
-- existing `Complete` still returns `AlreadyComplete` without mutation.
+```powershell
+cargo test --lib -p tethers-reference-host j24l1_ --no-fail-fast --locked
+```
 
-Run direct tests, focused Nextest where available, named regressions for `j24k3e2`, `j24k3e1`, `j24k3d2`, `j24k2`, `j24j`, installed-state regressions, then `RUST_TEST_THREADS=1 just verify`, packet checker, fmt, diff check and clean status.
+J24K regressions:
+
+```powershell
+cargo test --lib -p tethers-reference-host j24k3f --no-fail-fast --locked
+cargo test --lib -p tethers-reference-host j24k2 --no-fail-fast --locked
+```
+
+Planner regression:
+
+```powershell
+cargo test --test j24j_installation_reconciliation --locked
+```
+
+Formatting:
+
+```powershell
+cargo fmt --all -- --check
+```
+
+Clippy:
+
+```powershell
+cargo clippy --all-targets --all-features --locked
+```
+
+Full serial verification:
+
+```powershell
+$env:RUST_TEST_THREADS = "1"
+just verify
+Remove-Item Env:RUST_TEST_THREADS
+```
+
+Packet checker:
+
+```powershell
+pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
+```
+
+Final hygiene:
+
+```powershell
+git diff --check
+git status --short
+git diff --stat main...HEAD
+git diff main...HEAD
+```
 
 ## Forbidden changes
 
 Do not:
 
-- add any `InstallationExecutionContext` field other than exactly `executor_state_root: &'a Path`;
-- derive executor state from `lock_path`, `quarantine_root`, `conformance_scratch_root`, install root, record root, current directory, environment variables or process-global state;
-- make `executor_state_root` optional or provide an implicit default;
-- alter lock acquisition, lock path rules, handle inheritance or RAII behaviour;
-- add another lock or shorten the existing lock lifetime;
-- change any other public function signature or result enum;
-- add an internal loop, retry, fifth-call logic or J24L;
-- parse CLI arguments or print UI/progress output;
-- execute trust, conformance, approval or publication twice;
-- regenerate prepared publication identity;
-- redesign preparation, mutation, recovery, intent or installed-state modules;
-- change schemas, dependencies or Cargo.lock;
-- add production fault injection, caller clocks or arbitrary constructors.
-- expose, export, feature-gate, or otherwise include the authorised hook outside `cfg(test)`; make it process-global, timing/race-dependent, or reusable without an explicit test installation;
+- add `plug install` to `cli.rs`;
+- alter `application.rs`;
+- alter `plug_command.rs`;
+- load an installation request file;
+- choose host-data-root subdirectory names;
+- create or open candidates, trust, conformance, approval, installed or intent
+  stores;
+- construct an `InstallationExecutionContext`;
+- change `InstallationExecutionContext`;
+- change `InstallationExecutionOptions`;
+- change `InstallationStepResult`;
+- change `InstallationStepOutcome`;
+- change `InstallationPlan`;
+- change J24J or J24K;
+- acquire a lock in the driver;
+- hold one lock across multiple executor calls;
+- call the planner outside J24K;
+- execute any action-specific mutation;
+- retry conformance;
+- make a fifth confirmation call;
+- add a general loop, configurable limit or caller-supplied iteration count;
+- add public API outside the crate;
+- add serialization or a new schema;
+- add dependencies;
+- change `Cargo.toml`;
+- change `Cargo.lock`;
+- change the Rust toolchain;
+- alter OCaml, Tethers language semantics, package formats or protocols;
+- merge the branch.
 
 ## Stop conditions
 
-Stop before further edits on any packet-checker failure, branch/base mismatch, dirty unexplained file, need for any public context/API change beyond the exact accepted `executor_state_root` field, need to redesign lock/recovery/publication boundaries, need for a hook beyond the exact post-intent test-only boundary, failed direct test or regression, changed Cargo.lock, non-fast-forward history or scope expansion.
+Stop and report exact evidence before further editing if:
 
-Do not repair or rewrite this Red task's normative scope. Return any further blocker to Lucy.
+- main does not equal the frozen base;
+- the worktree has unexplained changes;
+- the accepted J24K API differs from the packet;
+- implementation appears to require changing J24K;
+- implementation appears to require CLI or store-layout decisions;
+- a fifth call seems necessary to prove completion;
+- a test requires a global or timing-dependent hook;
+- `Cargo.lock` changes;
+- packet checker fails because the normative scope is contradictory;
+- two materially similar implementation attempts fail;
+- verification exposes an unrelated failure that prevents trustworthy
+  completion.
 
 ## Expected pre-existing changes
 
@@ -188,7 +245,7 @@ None.
 
 ## Checkpoint procedure
 
-1. Require the amended READY packet checker passes.
+1. Require the READY packet checker passes.
 2. Change packet and worker-note status to `IN_PROGRESS`.
 3. Implement production code and direct tests.
 4. Commit implementation and capture one full implementation SHA.
@@ -197,6 +254,8 @@ None.
 7. Complete the worker note honestly, including `## Changes made`.
 8. Change both statuses to `COMPLETE`.
 9. Commit verification documentation only.
-10. Capture and record the verification checkpoint through a final documentation-only commit if required.
+10. Capture and record the verification checkpoint through a final
+    documentation-only commit if required.
 11. Require packet checker, fmt, diff check and clean status.
-12. Push the branch and report exact SHAs and evidence. Do not merge.
+12. Push the branch and report exact SHAs and evidence.
+13. Do not merge.
