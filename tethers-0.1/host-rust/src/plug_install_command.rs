@@ -251,7 +251,7 @@ pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandRes
     match drive_installation(&request, &context, &options) {
         Ok(result) => map_drive_result(result, &request_candidate_id),
         Err(error) => {
-        let status = error_code_to_status(error.code);
+            let status = error_code_to_status(error.code);
             let envelope =
                 CliEnvelope::error("plug install", status, error.code, error.message, None);
             PlugCommandResult {

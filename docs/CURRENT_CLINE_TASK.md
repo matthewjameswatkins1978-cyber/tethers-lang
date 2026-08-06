@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24L2 - Thin public plug install CLI`
 Owner: `DeepSeek Pro`
 Model: `DeepSeek Pro`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for one bounded Rust CLI and context-assembly package; Lucy performs independent review and any later merge`
 Base branch: `main`
@@ -35,9 +35,19 @@ creates candidates and quarantine roots that `plug install` must reuse.
 2. Create `plug_install_command.rs` with `run_install`, path assembly, validation
    order, frozen options, driver call, and result mapping.
 3. Route `Install` through `application.rs`.
-4. Register the new module privately in `lib.rs`.
+4. Register the new module in `lib.rs`.
 5. Preserve all J24L1, J24K, and J24J behaviour unchanged.
 6. Implement comprehensive unit, mapping, and Windows E2E tests.
+
+## Frozen decisions and invariants
+
+- Maximum four J24K calls from the J24L1 driver.
+- Frozen CLI shape: `plug install --host-data-root <ABSOLUTE_PATH> --request <ABSOLUTE_JSON_PATH>`.
+- Frozen options: `tethers-reference-host-cli` authority, 30-second wall time, compile-time build identity.
+- Candidate must already be staged by `plug stage`.
+- No package, candidate, retry, or recovery arguments.
+- `Invalidated` and `Passed` in non-advancing conformance are contradictory at the J24L boundary.
+- Error status mapping follows the explicit table.
 
 ## Relevant components
 
