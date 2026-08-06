@@ -15,15 +15,16 @@ fn unrelated_inheritable_handle_accessible(arguments: &[String]) -> Option<bool>
     let raw = argument_value(arguments, "--unrelated-inheritable-handle")?;
     #[cfg(windows)]
     {
-        use windows_sys::Win32::Foundation::GetHandleInformation;
         use windows_sys::Win32::Foundation::HANDLE;
+        use windows_sys::Win32::System::Threading::WaitForSingleObject;
         let Ok(raw) = raw.parse::<isize>() else {
             return Some(false);
         };
-        let mut flags = 0u32;
-        // SAFETY: the fixture only asks Windows whether the supplied numeric
-        // value names an inherited handle in this provider process.
-        return Some(unsafe { GetHandleInformation(raw as HANDLE, &mut flags) != 0 });
+        // Use WaitForSingleObject to test whether the raw handle value maps
+        // to a waitable handle object.  The parent signals the event before
+        // launch, so WAIT_OBJECT_0 proves the test-handle was inherited
+        // (a colliding file-handle or registry-key would return WAIT_FAILED).
+        Some(unsafe { WaitForSingleObject(raw as HANDLE, 0) } != 0xFFFF_FFFF)
     }
     #[cfg(not(windows))]
     {

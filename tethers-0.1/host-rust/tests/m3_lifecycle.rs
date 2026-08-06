@@ -29,7 +29,7 @@ use tethers_reference_host::trust::{
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
-use windows_sys::Win32::System::Threading::CreateEventW;
+use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent};
 
 fn make_writable(path: &Path) {
     let mut permissions = fs::metadata(path).unwrap().permissions();
@@ -848,6 +848,10 @@ fn m3_windows_handle_allow_list_excludes_unrelated_inheritable_handle() {
     // fixture has attempted to inspect it inside the supervised child.
     let canary = unsafe { CreateEventW(&security, 1, 0, std::ptr::null()) };
     assert!(!canary.is_null(), "test canary event must be created");
+    // SAFETY: signal the event before the supervised child starts so the
+    // child can distinguish the inherited event from an unrelated handle
+    // sharing the same numeric value.
+    unsafe { SetEvent(canary) };
     let (candidate, quarantine_root) = candidate_fixture_with_extra_arguments(
         &base,
         "valid",
