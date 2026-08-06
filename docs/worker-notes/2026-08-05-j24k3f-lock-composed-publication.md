@@ -2,9 +2,9 @@
 
 Task: `J24K3f - Lock-composed disabled installation publication`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
-Owner: `OpenCode`
-Model: `DeepSeek Pro`
-Status: `BLOCKED`
+Owner: `Codex`
+Model: `GPT-5`
+Status: `IN_PROGRESS`
 Base commit: `13cae687dc59c0dae74363b24d0ab57547702c53`
 Implementation checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
 Verification checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
@@ -13,7 +13,23 @@ Verification checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
 
 Compose accepted J24K3e1 preparation and J24K3e2 exact mutation into the existing locked single-step executor for `PublishDisabledInstallation`, then require the fresh J24J after-plan to be `Complete`.
 
+Matthew has authorised the smallest deterministic resolution of the prior
+post-intent test blocker: one crate-private `#[cfg(test)]`, default-inert,
+thread-local one-shot failure hook immediately after durable intent creation
+and exact read-back in J24K3e2. It is permitted only to make one crate test
+prove durable-intent retention, lock release, accepted recovery, and later
+single public-executor completion. It must not alter any normal or release
+build, public API/context, transaction-ID visibility, lock design, schema,
+dependency, or Cargo.lock.
+
 ## Changes made
+
+Authorised blocker-resolution amendment (work now `IN_PROGRESS`):
+
+- `docs/CURRENT_CLINE_TASK.md` and this note now authorise the exact bounded
+  `#[cfg(test)]` mutation-boundary hook described above. The prior blocker was
+  architectural test reachability, not a request to use permissions, races, or
+  a public seam. Implementation and fresh verification evidence are pending.
 
 Original implementation (checkpoint `eaa0e125744616af08a1a1c6dd57e16cccc3b41f`):
 
@@ -37,6 +53,7 @@ No lock acquisition change, no new public API, no loop/retry, no J24L, no Cargo.
 - J24K3e1 receives the exact locked `before` plan produced by the executor's initial `plan_installation` call.
 - J24K3e2 consumes the sealed prepared value inside the same lock, with no identity regeneration.
 - Replan and transition validation use the existing `replan` and `validate_transition` helpers.
+- The authorised hook is local to J24K3e2 immediately after `InstallationPublicationIntentStore::create` and exact read-back. It is `#[cfg(test)]`, crate-private, default-inert, thread-local, and one-shot; it cannot be installed by a normal or release build and does not expose the prepared value or transaction identity.
 - The `j24k2_full_passed_conformance_and_approval_chain` test was a legitimate expectation change: it previously tested that publication returns `installation_publication_deferred`; now publication succeeds and the test exercises the full 5-call chain through Complete.
 - The pre-intent boundary is exercised through a foreign untracked destination directory, not through a pre-created intent. `plan_installation` (J24J) does not audit the install root for untracked destinations, so the before-plan still reaches `PublishDisabledInstallation`; preparation's `require_idle_recovery` -> `plan_installation_recovery` performs that global destination audit and raises `installation_destination_untracked` before any durable write. This is identical to the accepted `j24k3e1_global_untracked_final_destination_blocks_preparation` seam, driven through the public locked executor.
 
@@ -71,6 +88,11 @@ Final gates:
 
 ## Discoveries
 
+- The previous post-intent test blocker is now resolved by an explicit narrow
+  design authorisation, not by a platform-dependent filesystem trick. The hook
+  provides deterministic reachability of the already accepted durable-intent
+  prefix without changing production architecture.
+
 - The durable publication intent write occurs in `execute_prepared_disabled_installation_publication` at `installation_publication_mutation.rs:136` AFTER the pre-intent checks (stale-evidence revalidation line 106; recovery-idle check line 108; global destination audit line 115; duplicate-release check line 119; intent+record validation line 132). The post-intent failure points are staging build (line 144), staging path-safety reparse check, rename, record publication, and final recovery classification.
 - The publication `transaction_id` equals the installed record's `installed_id`, which `prepare_disabled_installation_record` generates as `Uuid::new_v4()` (`installed.rs:852`) — a fresh random UUID per preparation call. The staging path is `.staging-{transaction_id}` and the destination path is `plug-{transaction_id}`; both depend on this freshly-generated, unobservable-beforehand identity.
 - The two existing accepted post-intent obstructions both require the exact staging path and therefore the freshly-generated `transaction_id`:
@@ -81,19 +103,19 @@ Final gates:
 
 ## Remaining risks
 
-- BLOCKER on the post-intent failure-boundary test (packet acceptance criteria #11 and the reviewer's requirement B). Through the public locked executor no EXISTING test-only mechanism produces a durable-intent-then-fail boundary. Producing one would require at least one of the forbidden options:
-  - production fault injection;
-  - a new public API or a new `InstallationExecutionContext` field exposing the prepared value, `transaction_id`, or staging path;
-  - publication or recovery redesign (e.g., splitting preparation from mutation across the public seam);
-  - a platform-fragile permission trick (e.g., making `install_root` read-only so staging-dir creation fails regardless of `transaction_id`, which depends on NTFS read-only-directory semantics and is not an existing accepted obstruction);
-  - Cargo.lock or dependency changes.
-- Per the reviewer's instruction B, the post-intent test was NOT fabricated by renaming the seeded-recovery coverage. The two rejected tests were removed; only the genuine pre-intent test was added.
-- Preexisting compiler/clippy warnings remain; none introduced by this change.
-- J24L multi-step loop is the next composition layer and is out of scope here.
+- The authorised seam and its direct recovery test remain to be implemented and
+  verified. Stop if either requires public surface, normal-build code,
+  transaction-ID exposure, a lock/recovery redesign, a race/timing technique,
+  platform-dependent permissions, or a Cargo.lock change.
+- Preexisting compiler/clippy warnings remain; none were introduced by the
+  previously recorded implementation.
+- J24L multi-step loop remains out of scope.
 
 ## Smallest next action
 
-Resolve the B blocker for Lucy: is a Windows-NTFS read-only-directory obstruction of `install_root` (causing staging creation to fail with `installation_recovery_io` after the durable intent write, then restored for recovery) an acceptable existing-style test mechanism, or is it a forbidden platform-fragile permission trick? If forbidden, this packet requires a design decision on how to expose a post-intent failure seam for the public locked executor before the post-intent test can be written — e.g., a frozen test-only seam decision or an authorised minimal change to the publication boundary. The post-intent test cannot be added without that decision. Do not merge.
+Implement the explicitly authorised test-only one-shot mutation-boundary hook
+and its public-executor failure/recovery test, then run the frozen verification
+matrix, capture separate checkpoints, push the branch, and do not merge.
 
 ## References
 

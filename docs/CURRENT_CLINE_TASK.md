@@ -2,11 +2,11 @@
 
 Control contract: `1`
 Task: `J24K3f - Lock-composed disabled installation publication`
-Owner: `OpenCode`
-Model: `DeepSeek Pro`
-Status: `BLOCKED`
+Owner: `Codex`
+Model: `GPT-5`
+Status: `IN_PROGRESS`
 Task colour: `Red`
-Route: `OpenCode using DeepSeek Pro for one bounded Rust lock-composition package; Lucy performs independent review and routine safe merge`
+Route: `Codex using GPT-5 for one bounded Rust lock-composition package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
 Base commit: `13cae687dc59c0dae74363b24d0ab57547702c53`
 Implementation branch: `opencode/j24k3f-lock-composed-publication`
@@ -34,6 +34,20 @@ use the current before-plan already created inside the lock
 ```
 
 This package finishes J24K publication execution. It does not add J24L, a CLI, a multi-step loop, or any second mutation per invocation.
+
+### Authorised post-intent test-seam amendment
+
+The prior `BLOCKED` result established that the public locked executor cannot
+deterministically reach a post-intent failure with its internally generated
+transaction ID using an existing filesystem obstruction. This amendment
+authorises exactly one replacement: a crate-private `#[cfg(test)]` one-shot
+failure hook local to the J24K3e2 mutation boundary, immediately after durable
+intent creation and its exact read-back confirmation. It is default-inert and
+installable only by crate tests. The hook may return one test-only structured
+failure before staging begins so the test can prove the existing recovery
+authority. It must not compile into normal or release builds, add a public API
+or context field, expose transaction identity, alter normal ordering, or be
+used as a production fault-injection facility.
 
 The package is explicitly authorised to restore the already frozen blueprint field:
 
@@ -71,12 +85,14 @@ The outer public entry point already acquires the lock and delegates to an inner
 8. Run one fresh authoritative J24J plan after mutation and require `PublishDisabledInstallation -> Complete`.
 9. Return the existing `Advanced { executed: PublishDisabledInstallation }` outcome shape.
 10. Preserve recovery-before-ordinary-action ordering, earlier error classifications, and the one-invocation/one-mutation invariant.
+11. Add only the authorised crate-private `#[cfg(test)]` post-intent failure hook at the J24K3e2 mutation boundary. Its default is inert; it is unavailable to normal and release builds, and one forced test failure must leave the durable intent for accepted recovery.
 
 ## Relevant components
 
 Expected changes are bounded to the minimum among:
 
 - `tethers-0.1/host-rust/src/installation_execution.rs`;
+- `tethers-0.1/host-rust/src/installation_publication_mutation.rs` for the authorised test-only hook only;
 - existing execution-context construction sites and direct fixtures that must supply the newly restored accepted field;
 - its direct test module or one new narrowly named J24K3f test module;
 - `tethers-0.1/host-rust/src/lib.rs` only if a new private test module is added;
@@ -98,6 +114,7 @@ J24K3e1, J24K3e2, recovery, lock, intent, installed-state and planner modules sh
 - Recovery, if needed, occurs before ordinary planning and may consume the invocation according to accepted J24K2/J24K3 behaviour.
 - J24K3f adds no retry and no second action.
 - J24L remains separate.
+- The authorised test hook is thread-local and one-shot so concurrent tests cannot observe it; outside `cfg(test)` it has no code or behavioural presence.
 
 ## Acceptance criteria
 
@@ -119,6 +136,8 @@ J24K3e1, J24K3e2, recovery, lock, intent, installed-state and planner modules sh
 16. No other public context/API, CLI, J24L, schema, dependency or Cargo.lock change occurs.
 17. Named J24K3e2, J24K3e1, J24K3d2, J24K2 and J24J regressions pass.
 18. Full serial verification passes.
+19. The forced post-intent test proves, through the public locked executor, that the exact durable intent remains after the forced failure, the ordinary plan is not falsely `Complete`, the lock is released, the accepted recovery authority returns to idle, a later public invocation reaches `Complete`, and exactly one installed record/destination exists.
+20. The test-only hook is absent from normal and release builds, has no public API or context field, consumes no transaction identity, and is default-inert and one-shot under `cfg(test)`.
 
 ## Required verification
 
@@ -131,6 +150,7 @@ Add direct tests whose names begin `j24k3f` and use real stores/filesystem fixtu
 - returned before/after plans and executed action are exact;
 - preparation or evidence failure before intent creation produces no publication;
 - failure after intent creation remains recoverable and the lock is released;
+- the authorised post-intent seam is exercised only from a crate test through the public locked executor; recovery removes the retained intent and a later public invocation completes exactly one ordinary publication;
 - a second lock acquisition/invocation remains immediately busy;
 - no second action is executed;
 - existing `Complete` still returns `AlreadyComplete` without mutation.
@@ -154,10 +174,11 @@ Do not:
 - redesign preparation, mutation, recovery, intent or installed-state modules;
 - change schemas, dependencies or Cargo.lock;
 - add production fault injection, caller clocks or arbitrary constructors.
+- expose, export, feature-gate, or otherwise include the authorised hook outside `cfg(test)`; make it process-global, timing/race-dependent, or reusable without an explicit test installation;
 
 ## Stop conditions
 
-Stop before further edits on any packet-checker failure, branch/base mismatch, dirty unexplained file, need for any public context/API change beyond the exact accepted `executor_state_root` field, need to redesign lock/recovery/publication boundaries, failed direct test or regression, changed Cargo.lock, non-fast-forward history or scope expansion.
+Stop before further edits on any packet-checker failure, branch/base mismatch, dirty unexplained file, need for any public context/API change beyond the exact accepted `executor_state_root` field, need to redesign lock/recovery/publication boundaries, need for a hook beyond the exact post-intent test-only boundary, failed direct test or regression, changed Cargo.lock, non-fast-forward history or scope expansion.
 
 Do not repair or rewrite this Red task's normative scope. Return any further blocker to Lucy.
 

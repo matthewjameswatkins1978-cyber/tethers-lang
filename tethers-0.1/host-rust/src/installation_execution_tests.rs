@@ -8,9 +8,13 @@ use crate::current_trust::ExactCandidateTrustAuthority;
 use crate::installation_execution::{
     execute_next_installation_action, InstallationExecutionContext, InstallationStepOutcome,
 };
-use crate::installation_plan::{InstallationPlan, InstallationPlanAction};
+use crate::installation_plan::{plan_installation, InstallationPlan, InstallationPlanAction};
 use crate::installation_publication_intent::InstallationPublicationIntentStore;
+use crate::installation_publication_mutation::install_post_intent_failure_once_for_test;
 use crate::installation_recovery_evidence::InstallationRecoveryEvidenceContext;
+use crate::installation_recovery_execution::{
+    execute_validated_installation_recovery, InstallationRecoveryExecutionOutcome,
+};
 use crate::installation_recovery_plan::{
     plan_installation_recovery, InstallationRecoveryPlanningContext,
 };
@@ -964,6 +968,145 @@ fn j24k3f_global_untracked_destination_blocks_publication_pre_intent_lock_releas
     );
     assert!(intent_store.load().unwrap().is_none());
     assert_eq!(install_before, tree_snapshot(&install_root));
+
+    fs::remove_dir_all(&fix._base).unwrap();
+}
+
+#[test]
+fn j24k3f_test_only_post_intent_failure_is_recoverable_and_publishes_once() {
+    let fix = publication_ready_fixture();
+    let request = complete_request(&fix.candidate.candidate_id);
+    let lock_path = fix.lock_dir.join("anchor.lock");
+    let context = InstallationExecutionContext {
+        lock_path: &lock_path,
+        executor_state_root: &fix.executor_state,
+        quarantine_root: &fix.quarantine_root,
+        conformance_scratch_root: &fix._base.join("scratch"),
+        candidates: &fix.candidates,
+        exact_trust: &fix.exact_trust,
+        launch_profiles: &fix.profiles,
+        conformance: &fix.conformance_store,
+        approvals: &fix.approvals,
+        installed: &fix.installed,
+    };
+    let options = InstallationExecutionOptions {
+        approving_authority: "publication-test-authority",
+        host_build_identity: "publication-test",
+        conformance_wall_time: Duration::from_secs(3),
+    };
+    let intent_store = InstallationPublicationIntentStore::open(&fix.executor_state).unwrap();
+    let install_root = fix._base.join("install");
+    let records_root = fix._base.join("records");
+    let install_before = tree_snapshot(&install_root);
+    let records_before = tree_snapshot(&records_root);
+
+    // The hook is installed only for this test thread. The public executor must
+    // first create and read back the exact durable intent, then fail before
+    // staging, destination, or record publication.
+    let _forced_failure = install_post_intent_failure_once_for_test();
+    let error = execute_next_installation_action(&request, &context, &options).unwrap_err();
+    assert_eq!(error.code, "installation_test_forced_failure");
+
+    let retained_intent = intent_store
+        .load()
+        .unwrap()
+        .expect("post-intent failure must retain the exact durable intent");
+    assert!(
+        !install_root
+            .join(&retained_intent.destination_relative_path)
+            .exists(),
+        "the forced boundary is before destination publication"
+    );
+    assert!(fix.installed.load_all().unwrap().is_empty());
+    assert_eq!(install_before, tree_snapshot(&install_root));
+    assert_eq!(records_before, tree_snapshot(&records_root));
+
+    let ordinary_plan = plan_installation(
+        &request,
+        &fix.candidates,
+        &fix.exact_trust,
+        &fix.profiles,
+        &fix.conformance_store,
+        &fix.approvals,
+        &fix.installed,
+    )
+    .unwrap();
+    assert_eq!(
+        ordinary_plan.action,
+        InstallationPlanAction::PublishDisabledInstallation,
+        "a retained intent must not create a false Complete result"
+    );
+
+    // The outer RAII lock is released with the error. A second public call
+    // cannot continue ordinary publication while recovery is pending, but it
+    // must not report a held lock or create a second mutation.
+    let pending = execute_next_installation_action(&request, &context, &options).unwrap_err();
+    assert_ne!(pending.code, "installation_busy");
+    assert_eq!(pending.code, "installation_recovery_conflict");
+    assert_eq!(
+        intent_store.load().unwrap().as_ref(),
+        Some(&retained_intent)
+    );
+    assert_eq!(install_before, tree_snapshot(&install_root));
+    assert_eq!(records_before, tree_snapshot(&records_root));
+
+    let evidence = InstallationRecoveryEvidenceContext {
+        quarantine_root: &fix.quarantine_root,
+        candidates: &fix.candidates,
+        exact_trust: &fix.exact_trust,
+        launch_profiles: &fix.profiles,
+        conformance: &fix.conformance_store,
+        approvals: &fix.approvals,
+    };
+    let recovery_context = InstallationRecoveryPlanningContext {
+        intents: &intent_store,
+        installed: &fix.installed,
+        evidence,
+    };
+    let recovery_plan = plan_installation_recovery(&request, &recovery_context).unwrap();
+    assert_eq!(
+        recovery_plan.disposition(),
+        Some(crate::installation_recovery::InstallationRecoveryDisposition::RemoveIntentOnly)
+    );
+    assert_eq!(
+        execute_validated_installation_recovery(&request, &recovery_context, recovery_plan)
+            .unwrap(),
+        InstallationRecoveryExecutionOutcome::Recovered {
+            disposition:
+                crate::installation_recovery::InstallationRecoveryDisposition::RemoveIntentOnly,
+        }
+    );
+    assert!(intent_store.load().unwrap().is_none());
+    assert!(plan_installation_recovery(&request, &recovery_context)
+        .unwrap()
+        .is_idle());
+
+    // With accepted recovery complete, the next public locked invocation
+    // performs the sole ordinary mutation and reaches Complete.
+    let completed = execute_next_installation_action(&request, &context, &options).unwrap();
+    assert_eq!(
+        completed.before.action,
+        InstallationPlanAction::PublishDisabledInstallation
+    );
+    assert_eq!(completed.after.action, InstallationPlanAction::Complete);
+    assert_eq!(
+        completed.outcome,
+        InstallationStepOutcome::Advanced {
+            executed: InstallationPlanAction::PublishDisabledInstallation,
+        }
+    );
+    let records = fix.installed.load_all().unwrap();
+    assert_eq!(records.len(), 1, "recovery must not create a second record");
+    assert_ne!(
+        records[0].installed_id, retained_intent.transaction_id,
+        "intent-only recovery removes the failed transaction before the one later publication"
+    );
+    assert!(
+        install_root
+            .join(format!("plug-{}", records[0].installed_id))
+            .is_dir(),
+        "the sole installed record must own the sole final destination"
+    );
 
     fs::remove_dir_all(&fix._base).unwrap();
 }
