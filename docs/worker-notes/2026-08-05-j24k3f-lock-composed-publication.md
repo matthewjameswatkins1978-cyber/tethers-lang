@@ -4,9 +4,9 @@ Task: `J24K3f - Lock-composed disabled installation publication`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Model: `DeepSeek Pro`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Base commit: `13cae687dc59c0dae74363b24d0ab57547702c53`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `b64b5d46cd152bd71b993ee634a14c3c05799912`
 Verification checkpoint: `TBD`
 
 ## Requested outcome
