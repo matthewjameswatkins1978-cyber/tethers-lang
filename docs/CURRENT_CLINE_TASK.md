@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24L2 - Thin public plug install CLI`
 Owner: `DeepSeek Pro`
 Model: `DeepSeek Pro`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for one bounded Rust CLI and context-assembly package; Lucy performs independent review and any later merge`
 Base branch: `main`
@@ -35,7 +35,8 @@ creates candidates and quarantine roots that `plug install` must reuse.
 2. Create `plug_install_command.rs` with `run_install`, path assembly, validation
    order, frozen options, driver call, and result mapping.
 3. Route `Install` through `application.rs`.
-4. Register the new module in `lib.rs`.
+ 4. Register the new module as private (`mod`, not `pub mod`) in `lib.rs`.
+ 5. Keep `run_install` crate-private (`pub(crate)`), not `pub`.
 5. Preserve all J24L1, J24K, and J24J behaviour unchanged.
 6. Implement comprehensive unit, mapping, and Windows E2E tests.
 
@@ -48,6 +49,8 @@ creates candidates and quarantine roots that `plug install` must reuse.
 - No package, candidate, retry, or recovery arguments.
 - `Invalidated` and `Passed` in non-advancing conformance are contradictory at the J24L boundary.
 - Error status mapping follows the explicit table.
+- Module remains private (`mod`, not `pub mod`); `run_install` is `pub(crate)`.
+- `map_conformance_stop` uses exhaustive fail-closed match, never `unreachable!()`.
 
 ## Relevant components
 

@@ -21,7 +21,7 @@ use std::time::Duration;
 const INSTALL_APPROVING_AUTHORITY: &str = "tethers-reference-host-cli";
 const INSTALL_CONFORMANCE_WALL_TIME: Duration = Duration::from_secs(30);
 
-pub fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandResult {
+pub(crate) fn run_install(host_data_root: &Path, request_path: &Path) -> PlugCommandResult {
     if !host_data_root.is_absolute() {
         let envelope = CliEnvelope::error(
             "plug install",
@@ -457,7 +457,9 @@ fn map_conformance_stop(
             "installation_conformance_interrupted",
             "supervised conformance was interrupted",
         ),
-        _ => unreachable!("Passed and Invalidated filtered above"),
+        ConformanceDisposition::Passed | ConformanceDisposition::Invalidated => {
+            return contradict_non_advancing();
+        }
     };
 
     let data = json!({
@@ -485,6 +487,7 @@ mod tests {
     };
     use crate::installation_plan::{InstallationPlan, InstallationPlanAction};
     use crate::m3_store::M3Error;
+    use std::path::PathBuf;
 
     fn plan_with(action: InstallationPlanAction) -> InstallationPlan {
         InstallationPlan {
@@ -830,9 +833,159 @@ mod tests {
     #[test]
     fn j24l2_error_code_and_message_survive_mapping() {
         let error = M3Error::new("store_io", "disk full");
-        let status = error_code_to_status(&error.code);
+        let status = error_code_to_status(error.code);
         assert_eq!(status, OutcomeStatus::Unavailable);
         assert_eq!(error.code, "store_io");
         assert_eq!(error.message, "disk full");
+    }
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("tethers-j24l2-{name}-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn j24l2_relative_host_data_root_returns_error_creates_nothing() {
+        let root = temp_dir("relative-host");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let result = run_install(
+            &PathBuf::from("relative-host"),
+            &PathBuf::from("C:\\req.json"),
+        );
+        assert_eq!(result.exit_code, 2);
+        assert_eq!(result.envelope.status, OutcomeStatus::InvalidCliUsage);
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().code,
+            "invalid_cli_usage"
+        );
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().message,
+            "--host-data-root must be absolute"
+        );
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().field.as_deref(),
+            Some("/host-data-root")
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn j24l2_relative_request_path_returns_error_creates_nothing() {
+        let root = temp_dir("relative-request");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let result = run_install(
+            &PathBuf::from("C:\\host"),
+            &PathBuf::from("relative-req.json"),
+        );
+        assert_eq!(result.exit_code, 2);
+        assert_eq!(result.envelope.status, OutcomeStatus::InvalidCliUsage);
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().code,
+            "invalid_cli_usage"
+        );
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().message,
+            "--request must be absolute"
+        );
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().field.as_deref(),
+            Some("/request")
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn j24l2_missing_host_data_root_returns_unavailable() {
+        let root = temp_dir("missing-host");
+        let missing = root.join("nonexistent");
+
+        let result = run_install(&missing, &PathBuf::from("C:\\req.json"));
+        assert_eq!(result.exit_code, 4);
+        assert_eq!(result.envelope.status, OutcomeStatus::Unavailable);
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().code,
+            "plug_data_root_unavailable"
+        );
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().message,
+            "host data root is unavailable"
+        );
+
+        assert!(
+            !missing.exists(),
+            "missing host-data root must not be created"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn j24l2_malformed_request_creates_no_lifecycle_state() {
+        let root = temp_dir("malformed-req");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let request_path = root.join("bad.json");
+        std::fs::write(&request_path, b"not json").unwrap();
+
+        let result = run_install(&root, &request_path);
+        assert!(result.exit_code != 0);
+
+        let children: Vec<String> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|n| n != "bad.json")
+            .collect();
+        for name in &children {
+            eprintln!("unexpected child after bad request: {name}");
+        }
+        assert!(
+            children.is_empty(),
+            "malformed request must not create state"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn j24l2_missing_candidate_roots_creates_no_later_lifecycle_roots() {
+        let root = temp_dir("missing-stage");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let request_path = root.join("req.json");
+        let req = serde_json::json!({
+            "schema": "tethers.plug-install/1",
+            "candidate_id": "3d846d40-01fc-4e1e-b77d-83944dbed76f",
+            "trust": {"scope": "exact_candidate"},
+            "conformance": {"allow_non_isolated_supervised_execution": true},
+            "installation": {"target_state": "disabled"}
+        });
+        std::fs::write(&request_path, serde_json::to_vec(&req).unwrap()).unwrap();
+
+        let result = run_install(&root, &request_path);
+        assert!(result.exit_code != 0);
+
+        let lifecycle_children = [
+            "installation-trust",
+            "launch-profiles",
+            "conformance",
+            "installation-approvals",
+            "install",
+            "installed-records",
+            "enablements",
+            "installation-intent",
+            "conformance-scratch",
+            "installation.lock",
+        ];
+        for child in &lifecycle_children {
+            let path = root.join(child);
+            assert!(
+                !path.exists(),
+                "{child} must not exist after missing stage roots"
+            );
+        }
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }
