@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24L2 - Thin public plug install CLI`
 Owner: `DeepSeek Pro`
 Model: `DeepSeek Pro`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for one bounded Rust CLI and context-assembly package; Lucy performs independent review and any later merge`
 Base branch: `main`
