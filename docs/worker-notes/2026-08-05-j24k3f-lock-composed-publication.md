@@ -6,8 +6,8 @@ Owner: `OpenCode`
 Model: `DeepSeek Pro`
 Status: `BLOCKED`
 Base commit: `13cae687dc59c0dae74363b24d0ab57547702c53`
-Implementation checkpoint: `WORKTREE`
-Verification checkpoint: `WORKTREE`
+Implementation checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
+Verification checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
 
 ## Requested outcome
 
