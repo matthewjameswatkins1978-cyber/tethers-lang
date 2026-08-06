@@ -46,11 +46,20 @@ Both Trail fixtures are exact copies of committed protocol fixtures at baseline 
 
 | Fixture | Path | Owner/Contract | Source | Review Purpose |
 |---|---|---|---|---|
-| Replay digest chain | `fixtures/replay-digests/replay-digest-chain.txt` | J09 / J16C | Constructed from `src/replay.rs` Claim and Generation structures at baseline | Identity claim, generations 0-2 chain with JCS-canonicalized (RFC 8785) SHA-256 digests, predecessor linkage validation, immutable atomic record property |
+| Identity claim | `fixtures/replay-digests/replay-claim.json` | J09 / J16C | Production API: `Claim::new` + `canonical_bytes()` at baseline `24428139807cac0adeb0b62264547e61ca809d16` | Exact canonical bytes of an identity claim: `record_kind: "identity_claim"`, `execution_id` with `exec_` prefix, all digests are real SHA-256 over JCS |
+| Generation 0 (intent) | `fixtures/replay-digests/replay-generation-0.json` | J09 / J16C | Production API: `Generation::intent` + `canonical_bytes()` at baseline | `state: "intent_recorded"`, `state_data: {}`, predecessor = claim_digest |
+| Generation 1 (armed) | `fixtures/replay-digests/replay-generation-1.json` | J09 / J16C | Production API: `Generation::armed` + `canonical_bytes()` at baseline | `state: "invocation_armed"`, `state_data: {}`, predecessor = gen-0 record_digest |
+| Generation 2 (succeeded) | `fixtures/replay-digests/replay-generation-2.json` | J09 / J16C | Production API: `Generation::terminal(Succeeded)` + `canonical_bytes()` at baseline | `state: "succeeded"`, `state_data: {"durable_outcome_digest": "..."}`, predecessor = gen-1 record_digest |
 
-Digests are SHA-256 over JCS-canonicalized JSON using `serde_json_canonicalizer` and `sha2`, matching `src/replay.rs:45-47`. Value `sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f` is the canonical digest over `{"manifest":...}`, consistent with `test_digest("manifest")` in `replay_windows.rs:1667-1668`.
+Capture procedure: A scratch Rust program (`f1-replay-gen`) used the accepted host crate as a path dependency and only its public replay APIs (`LogicalExecutionKey::derive`, `ExecutionId::parse`, `ExecutionBinding`, `Claim::new`, `Claim::canonical_bytes`, `Generation::intent`, `Generation::armed`, `durable_outcome_digest`, `Generation::terminal`, `Generation::canonical_bytes`, `Claim::from_canonical_bytes`, `Generation::from_canonical_bytes`, `validate_chain`). Fixed deterministic inputs: `exec_00000000-0000-4000-8000-000000000000`, anchor/eval/action IDs `anchor-event-1`/`eval-1`/`action-1`, binding values matching the test module conventions, and durable outcome `{"status":"completed","output":"ok"}`. The scratch generator is not committed.
 
-Normalisation: The chain structure is representative (constructed manually from the replay.rs schema). Digest values over the JSON content shown are correct but were computed externally from the schema description, not from running the Replay publish path. Verified consistent with `test_digest` behaviour in replay_windows.rs.
+Validation (all performed by the scratch program):
+- Every emitted record parsed through its production parser (`Claim::from_canonical_bytes`, `Generation::from_canonical_bytes`) — PASS
+- Complete chain validation (`validate_chain`) — PASS
+- Terminal state is `Succeeded` — PASS
+- Re-serialising each parsed record via `canonical_bytes()` returns byte-for-byte identical output — PASS
+
+Bytes are exact canonical output from production code. No normalisation was applied. All digests are the real SHA-256 values computed by `canonical_digest`/`durable_outcome_digest` over JCS-canonicalized JSON.
 
 ## Installation Outcomes (J24L Envelopes)
 
@@ -83,8 +92,8 @@ All fixtures were captured or copied from:
 
 3. **Committed Rust test fixtures**: `tethers-0.1/host-rust/fixtures/m3/m3-schema-golden-v1.json` and `tethers-0.1/host-rust/fixtures/m2/candidate-record-v1.json` at baseline `24428139807cac0adeb0b62264547e61ca809d16`.
 
-4. **Binary capture (J24L)**: `tethers-reference-host.exe` built from baseline `24428139807cac0adeb0b62264547e61ca809d16` (warm build). Fresh install, idempotent reinstall, and missing-candidate refusal captured via `plug install` against staged `pdf-tools.tetherplug` package. Exit codes recorded from `$LASTEXITCODE`.
+4. **Binary capture (J24L)**: `tethers-reference-host.exe` built from baseline `24428139807cac0adeb0b62264547e61ca809d16` (warm build). Fresh install, idempotent reinstall, and missing-candidate refusal captured via `plug install` against staged `pdf-tools.tetherplug` package.
 
-5. **Schema construction**: Replay digest chain constructed from `src/replay.rs` Claim/Generation schema at baseline.
+5. **Production API (replay)**: Scratch Rust program (`f1-replay-gen`, not committed) using the accepted host crate as a path dependency. Called `Claim::new`, `Generation::intent`, `Generation::armed`, `Generation::terminal`, and `canonical_bytes()` with fixed deterministic inputs. All records passed production parse, chain validation, terminal=Succeeded check, and byte-for-byte re-serialisation before output.
 
 No `update-fixtures` script, golden-file refresh command, or auto-regeneration mechanism exists or was added.
