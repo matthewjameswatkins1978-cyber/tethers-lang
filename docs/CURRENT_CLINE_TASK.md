@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24K3f - Lock-composed disabled installation publication`
 Owner: `Codex`
 Model: `GPT-5`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `Codex using GPT-5 for one bounded Rust lock-composition package; Lucy performs independent review and routine safe merge`
 Base branch: `main`
@@ -14,8 +14,8 @@ Worker note: `docs/worker-notes/2026-08-05-j24k3f-lock-composed-publication.md`
 Implementation blueprint: `docs/architecture/J24K_LOCKED_GATED_INSTALLATION_STEP_EXECUTOR.md`
 Rust toolchain: `1.97.1`
 Accepted main: `13cae687dc59c0dae74363b24d0ab57547702c53`
-Implementation checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
-Verification checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
+Implementation checkpoint: `a69b100b320d44b9bd36376743bb4a899264a46d`
+Verification checkpoint: `a69b100b320d44b9bd36376743bb4a899264a46d`
 
 ## Objective
 

@@ -4,10 +4,10 @@ Task: `J24K3f - Lock-composed disabled installation publication`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `Codex`
 Model: `GPT-5`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Base commit: `13cae687dc59c0dae74363b24d0ab57547702c53`
-Implementation checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
-Verification checkpoint: `aad0b7287241d6b61ef4ef45886bd87e0cdb0b83`
+Implementation checkpoint: `a69b100b320d44b9bd36376743bb4a899264a46d`
+Verification checkpoint: `a69b100b320d44b9bd36376743bb4a899264a46d`
 
 ## Requested outcome
 
@@ -24,12 +24,20 @@ dependency, or Cargo.lock.
 
 ## Changes made
 
-Authorised blocker-resolution amendment (work now `IN_PROGRESS`):
+Authorised blocker-resolution amendment (transitioned to `IN_PROGRESS`):
 
 - `docs/CURRENT_CLINE_TASK.md` and this note now authorise the exact bounded
   `#[cfg(test)]` mutation-boundary hook described above. The prior blocker was
   architectural test reachability, not a request to use permissions, races, or
-  a public seam. Implementation and fresh verification evidence are pending.
+  a public seam.
+- Final implementation checkpoint `a69b100b320d44b9bd36376743bb4a899264a46d`:
+  `installation_publication_mutation.rs` now has the exact `#[cfg(test)]`
+  thread-local one-shot hook after `create` plus read-back, and
+  `installation_execution_tests.rs` has
+  `j24k3f_test_only_post_intent_failure_is_recoverable_and_publishes_once`.
+  Commit `733d15eaba52eb599698a6f1d7c61d59566541d1` introduced the seam and
+  direct test; `a69b100b320d44b9bd36376743bb4a899264a46d` moved the test-only
+  module to the end of its file so Clippy has no new placement warning.
 
 Original implementation (checkpoint `eaa0e125744616af08a1a1c6dd57e16cccc3b41f`):
 
@@ -58,6 +66,19 @@ No lock acquisition change, no new public API, no loop/retry, no J24L, no Cargo.
 - The pre-intent boundary is exercised through a foreign untracked destination directory, not through a pre-created intent. `plan_installation` (J24J) does not audit the install root for untracked destinations, so the before-plan still reaches `PublishDisabledInstallation`; preparation's `require_idle_recovery` -> `plan_installation_recovery` performs that global destination audit and raises `installation_destination_untracked` before any durable write. This is identical to the accepted `j24k3e1_global_untracked_final_destination_blocks_preparation` seam, driven through the public locked executor.
 
 ## Evidence
+
+Final direct evidence at implementation and verification checkpoint
+`a69b100b320d44b9bd36376743bb4a899264a46d`:
+
+- `cargo test --lib -p tethers-reference-host j24k3f_test_only_post_intent_failure_is_recoverable_and_publishes_once --no-fail-fast --locked` — PASS, 1 passed, 0 failed. The test retains the exact intent after the public executor's forced failure, confirms the ordinary plan remains `PublishDisabledInstallation`, proves a second public call is not `installation_busy` and creates no state, executes accepted `RemoveIntentOnly` recovery to idle, then reaches `Complete` through one later public publication with exactly one record/destination.
+- `cargo test --lib -p tethers-reference-host j24k3f --no-fail-fast --locked` — PASS, 10 passed, 0 failed.
+- `cargo test -p tethers-reference-host j24k3e2 --no-fail-fast --locked`; `j24k3e1`; `j24k3d2`; `j24k2`; `cargo test --test j24j_installation_reconciliation --locked`; and `cargo test --lib -p tethers-reference-host installed --no-fail-fast --locked` — all PASS.
+- `RUST_TEST_THREADS=1 just verify` — PASS. 1232 library tests passed and every integration suite passed.
+- `cargo fmt --all -- --check` — PASS.
+- `cargo clippy --all-targets --all-features --locked` — PASS. Existing repository warnings remain; the first hook placement produced a new `items_after_test_module` warning, fixed by the final implementation checkpoint.
+- `cargo build --release --locked` — PASS. The `#[cfg(test)]` hook is absent from this normal release build.
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` — PASS at `IN_PROGRESS` before final documentation completion.
+- `git diff --check` — PASS before the implementation commit.
 
 Direct tests at this correction (worktree):
 
@@ -103,19 +124,12 @@ Final gates:
 
 ## Remaining risks
 
-- The authorised seam and its direct recovery test remain to be implemented and
-  verified. Stop if either requires public surface, normal-build code,
-  transaction-ID exposure, a lock/recovery redesign, a race/timing technique,
-  platform-dependent permissions, or a Cargo.lock change.
-- Preexisting compiler/clippy warnings remain; none were introduced by the
-  previously recorded implementation.
-- J24L multi-step loop remains out of scope.
+- None. Preexisting compiler/clippy warnings remain outside this scope; the
+  final implementation introduces none. J24L remains out of scope.
 
 ## Smallest next action
 
-Implement the explicitly authorised test-only one-shot mutation-boundary hook
-and its public-executor failure/recovery test, then run the frozen verification
-matrix, capture separate checkpoints, push the branch, and do not merge.
+Await Lucy's independent review of the pushed branch. Do not merge.
 
 ## References
 
