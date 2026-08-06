@@ -610,6 +610,19 @@ pub fn run() {
         }
         Ok(Cli {
             command:
+                Some(CliCommand::Plug {
+                    command:
+                        crate::cli::PlugCommand::Install {
+                            host_data_root,
+                            request,
+                        },
+                }),
+        }) => {
+            let result = plug_install_command::run_install(&host_data_root, &request);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
                 Some(CliCommand::Run {
                     config,
                     engine,

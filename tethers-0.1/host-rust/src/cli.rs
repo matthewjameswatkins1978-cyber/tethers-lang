@@ -124,6 +124,13 @@ pub enum PlugCommand {
         #[arg(long = "package", value_name = "ABSOLUTE_TETHERPLUG_PATH")]
         package: PathBuf,
     },
+    /// Install an already-staged candidate through conformance to a disabled installed Plug.
+    Install {
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+        #[arg(long = "request", value_name = "ABSOLUTE_JSON_PATH")]
+        request: PathBuf,
+    },
 }
 
 /// Outcome status vocabulary with exit codes.

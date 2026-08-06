@@ -118,42 +118,137 @@ pub(crate) fn drive_installation(
 ) -> Result<InstallationDriveResult>;
 ```
 
-The production entry point delegates to a private closure-based helper
+The production entry point delegates to a crate-private closure-based helper
 `drive_with<F>(next_step: F)` for testability. Public API outside the crate is
 forbidden.
 
-## 12. J24L2 deferred responsibilities
+## 12. J24L2 public plug install CLI
 
-J24L2 (a later package) will add:
+J24L2 is the second and final package of J24L.
 
-- request-file loading from host-data-root;
-- canonical host-data subdirectory layout;
-- store and context opening from local configuration;
-- CLI argument parsing (`plug install`);
-- `CliEnvelope` JSON mapping;
-- public end-to-end integration tests.
+### 12.1. Frozen CLI syntax
 
-None of these belong in J24L1. Do not invent J24L2 CLI arguments, output
-schemas, path names, or error mappings in this package.
+```text
+plug install
+    --host-data-root <ABSOLUTE_PATH>
+    --request <ABSOLUTE_JSON_PATH>
+```
 
-## 13. Non-goals
+No package, candidate, retry, iteration, authority, timeout, enable, recovery,
+or confirmation arguments. The candidate must already have been created by
+`plug stage`.
 
-J24L does not:
+### 12.2. Canonical host-data layout
 
-- parse CLI arguments or print formatted output;
-- load an installation request from disk;
-- open or create stores;
-- construct an `InstallationExecutionContext`;
-- change `InstallationExecutionContext`, `InstallationExecutionOptions`, or any
-  J24K type;
-- acquire a lock;
-- hold one lock across multiple executor calls;
-- call the planner outside J24K;
-- execute any action-specific mutation;
-- retry conformance;
-- make a fifth confirmation call;
-- add a configurable call limit or general loop;
-- add public API outside the crate;
-- add serialization or a new schema;
-- add dependencies or change `Cargo.toml`/`Cargo.lock`;
-- change OCaml, language semantics, packaging, or protocols.
+```text
+<host-data-root>/
+    candidates/          (existing stage-owned)
+    quarantine/          (existing stage-owned)
+    installation-trust/  (create if absent)
+    launch-profiles/     (create if absent)
+    conformance/         (create if absent)
+    installation-approvals/ (create if absent)
+    install/             (create if absent)
+    installed-records/   (create if absent)
+    enablements/         (create if absent, for plug list compatibility)
+    conformance-scratch/ (passed to J24K)
+    installation-intent/ (created by J24K)
+    installation.lock    (passed to J24K)
+```
+
+### 12.3. Validation and creation order
+
+1. Validate `--host-data-root` is absolute.
+2. Validate `--request` is absolute.
+3. Require `host_data_root` to be an existing directory.
+4. Verify host-data-root chain through the accepted path-safety helper.
+5. Load and validate the request through `load_installation_request`.
+6. Open existing candidate and quarantine roots read-only (`CandidateRegistry::open_existing`).
+7. Only then open or create remaining installation evidence roots.
+8. Construct `InstallationExecutionContext`.
+9. Construct frozen options.
+10. Call `drive_installation` exactly once.
+11. Map result or error into one `PlugCommandResult`.
+
+Invalid CLI paths, unreadable requests, malformed requests, and missing stage
+roots must not create later trust, conformance, approval, install, enablement,
+or intent state.
+
+### 12.4. Frozen options
+
+```rust
+const INSTALL_APPROVING_AUTHORITY: &str = "tethers-reference-host-cli";
+const INSTALL_CONFORMANCE_WALL_TIME: Duration = Duration::from_secs(30);
+let host_build_identity = concat!("tethers-reference-host/", env!("CARGO_PKG_VERSION"));
+```
+
+### 12.5. Public action names
+
+| J24K action | Public string |
+|---|---|
+| `CreateExactCandidateTrust` | `create_exact_candidate_trust` |
+| `RunSupervisedConformance` | `run_supervised_conformance` |
+| `CreateInstallationApproval` | `create_installation_approval` |
+| `PublishDisabledInstallation` | `publish_disabled_installation` |
+| `Complete` | `complete` |
+
+### 12.6. Public step shape
+
+```json
+{
+  "before_action": "create_exact_candidate_trust",
+  "after_action": "run_supervised_conformance",
+  "outcome": "advanced",
+  "executed_action": "create_exact_candidate_trust"
+}
+```
+
+Conformance disposition strings: `passed`, `failed`, `interrupted`.
+`Invalidated` is a stored-evidence state but not a legitimate live
+`ConformanceRecordedWithoutAdvance` result from J24K. At the J24L boundary it
+is treated as contradictory (same as `Passed` in a non-advancing stop) and
+fails closed with `installation_execution_postcondition_failed`.
+
+### 12.7. Completed output
+
+```json
+{
+  "result": "complete",
+  "candidate_id": "<request candidate UUID>",
+  "step_count": 4,
+  "steps": [],
+  "installed_id": "<installed UUID>",
+  "installed_record_digest": "sha256:..."
+}
+```
+
+### 12.8. Non-advancing conformance mapping
+
+| Disposition | Exit | Code |
+|---|---|---|
+| `Failed` | 6 | `installation_conformance_failed` |
+| `Interrupted` | 10 | `installation_conformance_interrupted` |
+| `Passed` or `Invalidated` | 6 | `installation_execution_postcondition_failed` |
+
+### 12.9. Error status mapping
+
+| Error codes | Status |
+|---|---|
+| `installation_request_io`, `candidate_io`, `store_io`, `installation_busy`, `installation_lock_io`, `installation_recovery_io` | `unavailable` |
+| `installation_iteration_limit`, `installation_execution_stagnant`, `installation_execution_regressed`, `installation_execution_invalid_transition`, `installation_execution_postcondition_failed`, `installation_scratch_cleanup_failed` | `failed` |
+| All other codes | `invalid_data` |
+
+### 12.10. Integration evidence
+
+- Clap tests: exact valid parse, reordered options, all missing/duplicate/unknown rejections.
+- Pre-mutation validation: relative/missing paths, malformed requests, missing stage roots.
+- Pure mapping: all completion, conformance, error, and contradiction branches.
+- Windows end-to-end: fresh install in four steps, disabled record, no intent, scratch clean, enablements/ empty, second invocation already complete.
+
+### 12.11. J24L completion and merge boundary
+
+J24L is complete. No further J24L packages exist.
+
+Merging the J24L branch into main requires the accepted J24L1 and J24L2
+packages together. The J24L2 branch descends directly from J24L1's verified
+tip.
