@@ -1,0 +1,31 @@
+# Trail Record Shape
+# Source: SPEC.md and src/dispatch.rs (RecordingTrail)
+
+Each Trail entry is a JSON object written as one line (newline-delimited JSON):
+
+{
+  "execution_id": "<uuid>",
+  "evaluation": {
+    "tether_title": "<string>",
+    "anchor": "<string>",
+    "fact_checks": [
+      {"fact": "<string>", "operator": "<string>", "expected": "<value>", "result": "matched|not_matched|error"}
+    ]
+  },
+  "plan": {
+    "actions": [
+      {"capability": "<string>", "arguments": {"<key>": "<value>"}}
+    ]
+  }
+}
+
+Authorisation entries added by the host after evaluation:
+
+{
+  "execution_id": "<uuid>",
+  "authorisation": {
+    "action_id": "<string>",
+    "decision": "allow|deny|ask",
+    "reason": "<string>"
+  }
+}

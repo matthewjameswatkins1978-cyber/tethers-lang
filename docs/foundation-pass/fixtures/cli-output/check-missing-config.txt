@@ -1,0 +1,1 @@
+{"schema":"tethers.cli/1","command":"tethers-reference-host","status":"invalid_cli_usage","exit_code":2,"data":{},"error":{"code":"INVALID_CLI_USAGE","message":"error: the following required arguments were not provided:\n  --config <PATH>\n  --engine <PATH>\n\nUsage: tethers-reference-host.exe check --config <PATH> --engine <PATH>\n\nFor more information, try '--help'.\n"}}

@@ -1,0 +1,20 @@
+# Installation Outcome Status Values
+# Source: src/outcome.rs, src/run_command.rs
+
+Status values returned in execution service result envelopes:
+
+| Status | Code | Description |
+|---|---|---|
+| SUCCESS | 0 | Action completed successfully |
+| INVALID_DATA | 1 | Request validation failed |
+| UNAVAILABLE | 2 | Required resource not found |
+| PERMISSION_DENIED | 3 | Policy denied the action |
+| EXECUTION_FAILED | 4 | Runtime execution error |
+| AUDIT_FAILED | 5 | Evidence integrity check failed |
+| CONFORMANCE_FAILED | 6 | Conformance test failed |
+| APPROVAL_REQUIRED | 7 | Waiting for human approval |
+| ALREADY_COMPLETE | 8 | Idempotent re-execution detected |
+| STALE_EVIDENCE | 9 | Evidence pins no longer current |
+| INTERRUPTED | 10 | Operation interrupted (recoverable) |
+
+These values are frozen per the J13B run command contract.

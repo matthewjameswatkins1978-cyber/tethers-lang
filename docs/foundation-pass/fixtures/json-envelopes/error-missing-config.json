@@ -1,0 +1,1 @@
+{"schema":"tethers.cli/1","command":"tethers-reference-host","status":"invalid_cli_usage","exit_code":2,"data":{},"error":{"code":"MISSING_COMMAND","message":"no command provided"}}
