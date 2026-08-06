@@ -1343,10 +1343,7 @@ mod tests {
 
     // ── F2a: live stderr visibility ─────────────────────────────────
 
-    fn launch_live_stderr_fixture(
-        startup: u64,
-        close: u64,
-    ) -> Result<SupervisedChild, ChildError> {
+    fn launch_live_stderr_fixture(startup: u64, close: u64) -> Result<SupervisedChild, ChildError> {
         let config = ChildConfig::test_config(
             "pwsh.exe",
             vec![
