@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `190e834b8afeca060adb3b07c7a18554497aaf31`
 
-Implementation checkpoint: `d9cfeb24942472691e5c9723e8cf9a399a82a868`
+Implementation checkpoint: `d9cfeb21c08a29d0e115b9daa243f665ee84a4b8`
 
 ## Requested outcome
 
@@ -145,5 +145,5 @@ Lucy reviews and accepts. Matthew may merge the J24L branch into main.
 - `tethers-0.1/host-rust/src/installation_driver.rs`
 - `tethers-0.1/host-rust/src/plug_install_command.rs`
 - Prior correction checkpoint: `f0f0c841cf77bca63a0b916d03fdaad45160ccb5`
-- Implementation checkpoint: `d9cfeb24942472691e5c9723e8cf9a399a82a868`
+- Implementation checkpoint: `d9cfeb21c08a29d0e115b9daa243f665ee84a4b8`
 - Branch: `opencode/j24l2-thin-plug-install-cli`
