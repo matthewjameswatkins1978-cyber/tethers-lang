@@ -54,13 +54,15 @@ Normalisation: The chain structure is representative (constructed manually from 
 
 ## Installation Outcomes (J24L Envelopes)
 
-| Fixture | Path | Owner/Contract | Source | Review Purpose |
-|---|---|---|---|---|
-| Install success | `fixtures/installation-outcomes/j24l-install-success.json` | J24L2 | Constructed from J24L2 test assertions at baseline | Fresh install: 4 steps, `result: "complete"`, candidate/installed IDs from M3 golden schema |
-| Already complete | `fixtures/installation-outcomes/j24l-install-already-complete.json` | J24L2 | Constructed from J24L2 test assertions at baseline | Idempotent re-install: 1 step, `result: "already_complete"` |
-| Refusal: conformance failed | `fixtures/installation-outcomes/j24l-install-refusal.json` | J24L2/J24K | Constructed from conformance failure contract at baseline | Conformance suite digest mismatch: `status: "invalid_data"`, `exit_code: 3` |
+| Fixture | Path | Owner/Contract | Source Command | Exit Code | Capture Method | Review Purpose |
+|---|---|---|---|---|---|---|
+| Install success | `fixtures/installation-outcomes/j24l-install-success.json` | J24L2 | `tethers-reference-host.exe plug install --host-data-root <tmp> --request <tmp>\install-request.json` | 0 | Binary capture at baseline (warm build) | Fresh install: 4 steps with `before_action`/`after_action`/`executed_action`/`outcome` fields, concrete UUIDs and SHA-256 digest |
+| Already complete | `fixtures/installation-outcomes/j24l-install-already-complete.json` | J24L2 | `tethers-reference-host.exe plug install --host-data-root <tmp> --request <tmp>\install-request.json` (second invocation) | 0 | Binary capture at baseline (warm build) | Idempotent re-install: 1 step, `outcome: "already_complete"`, no `executed_action` field |
+| Refusal: candidate missing | `fixtures/installation-outcomes/j24l-install-refusal.json` | J24L2 | `tethers-reference-host.exe plug install --host-data-root <tmp> --request <tmp>\install-refusal.json` (non-existent candidate) | 3 | Binary capture at baseline (warm build) | Real refusal path: `status: "invalid_data"`, `exit_code: 3`, error code `installation_plan_candidate_missing` |
 
-Normalisation: Envelope shapes verified against `j24l2_plug_install_cli.rs:255-324` and `j24k2_locked_single_step_executor.rs` test assertions. UUIDs use the M3 golden schema's structured `00000000-0000-0000-0000-XXXXXXXXXXXX` convention. Step arrays contain concrete action names from the J24L2 test.
+Capture procedure: A `.tetherplug` package was built from `pdf_tools_provider.exe` at baseline using `build_reference_package`. The package was staged via `plug stage`, then `plug install` was executed twice (fresh + reinstall). The refusal was captured by submitting a request with `candidate_id: "00000000-0000-0000-0000-000000000000"` which triggers `installation_plan_candidate_missing`.
+
+Normalisation: Exact emitted JSON bytes preserved. UUIDs (`candidate_id`, `installed_id`) and digest (`installed_record_digest`) are volatile per-execution — they are the concrete values from one real execution instance, not invented placeholders. No other values were normalised.
 
 ## Installation/Recovery State Files
 
@@ -81,6 +83,8 @@ All fixtures were captured or copied from:
 
 3. **Committed Rust test fixtures**: `tethers-0.1/host-rust/fixtures/m3/m3-schema-golden-v1.json` and `tethers-0.1/host-rust/fixtures/m2/candidate-record-v1.json` at baseline `24428139807cac0adeb0b62264547e61ca809d16`.
 
-4. **Test assertion documentation**: J24L envelope shapes verified against `j24l2_plug_install_cli.rs` and `j24k2_locked_single_step_executor.rs` test assertions at baseline. Replay digest chain constructed from `src/replay.rs` Claim/Generation schema at baseline.
+4. **Binary capture (J24L)**: `tethers-reference-host.exe` built from baseline `24428139807cac0adeb0b62264547e61ca809d16` (warm build). Fresh install, idempotent reinstall, and missing-candidate refusal captured via `plug install` against staged `pdf-tools.tetherplug` package. Exit codes recorded from `$LASTEXITCODE`.
+
+5. **Schema construction**: Replay digest chain constructed from `src/replay.rs` Claim/Generation schema at baseline.
 
 No `update-fixtures` script, golden-file refresh command, or auto-regeneration mechanism exists or was added.

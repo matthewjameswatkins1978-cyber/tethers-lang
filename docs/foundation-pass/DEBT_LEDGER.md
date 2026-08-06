@@ -20,9 +20,9 @@ All items cite live evidence. No repair attempted.
 
 ### A1: Directory Durability Not Explicitly Tested
 - **Classification:** Contract ambiguity
-- **Evidence:** `PERSISTENCE_INVENTORY.md` — only the Replay Ledger (`replay_windows.rs`) calls `FlushFileBuffers` after rename to ensure directory-entry durability. All 7 `StoreRoot`-backed stores, the Trail, and the Admission Store lack directory-level durability proof. F3b (Windows primitive evidence) is tasked with this.
+- **Evidence:** `PERSISTENCE_INVENTORY.md` — no store has confirmed directory-entry durability. The Replay Ledger calls `FlushFileBuffers` after rename on the renamed file handle and verifies byte equality by reopening and comparing, but the parent directory entry is not explicitly flushed. All 7 `StoreRoot`-backed stores, the Trail, and the Admission Store lack any directory-level durability even at the file-handle level. F3b (Windows primitive evidence) is tasked with establishing the supported Windows guarantee for every store.
 - **Disposition:** F3b
-- **Notes:** NTFS metadata durability requires explicit directory handle flush after rename when `FILE_FLAG_WRITE_THROUGH` is not used on the parent. Current tests may pass but the contract is ambiguous.
+- **Notes:** NTFS metadata durability requires explicit directory handle flush after rename when `FILE_FLAG_WRITE_THROUGH` is not used on the parent. Replay's post-rename `FlushFileBuffers` flushes the renamed file handle, not the parent directory. Current tests may pass but the contract is ambiguous for all stores.
 
 ---
 
