@@ -9,11 +9,8 @@ use crate::installation_execution::{
     execute_next_installation_action, InstallationExecutionContext, InstallationStepOutcome,
 };
 use crate::installation_plan::{InstallationPlan, InstallationPlanAction};
-use crate::installation_publication_intent::{
-    InstallationPublicationIntent, InstallationPublicationIntentStore,
-};
+use crate::installation_publication_intent::InstallationPublicationIntentStore;
 use crate::installation_recovery_evidence::InstallationRecoveryEvidenceContext;
-use crate::installation_recovery_execution::execute_validated_installation_recovery;
 use crate::installation_recovery_plan::{
     plan_installation_recovery, InstallationRecoveryPlanningContext,
 };
@@ -878,129 +875,36 @@ fn j24k3f_complete_returns_already_complete_no_mutation() {
     fs::remove_dir_all(base).unwrap();
 }
 
-fn load_evidence(
-    fix: &PublicationReadyFixture,
-) -> (
-    PackageTrustEvidence,
-    crate::launch_profile::LaunchProfileEvidence,
-    ConformanceEvidence,
-    crate::installed::InstallationApprovalRecord,
-) {
-    let trust_record = fix
-        .exact_trust
-        .find(&fix.candidate.candidate_id)
-        .unwrap()
-        .unwrap();
-    let trust = PackageTrustEvidence::exact_candidate(&trust_record).unwrap();
-    let launch = fix
-        .profiles
-        .load_all()
-        .unwrap()
-        .into_iter()
-        .find(|lp| lp.candidate_id == fix.candidate.candidate_id)
-        .unwrap();
-    let conformance = fix
-        .conformance_store
-        .load_all()
-        .unwrap()
-        .into_iter()
-        .find(|ce| ce.candidate_id == fix.candidate.candidate_id)
-        .unwrap();
-    let approval = fix
-        .approvals
-        .load_all()
-        .unwrap()
-        .into_iter()
-        .find(|ar| ar.candidate_id == fix.candidate.candidate_id)
-        .unwrap();
-    (trust, launch, conformance, approval)
-}
-
-fn write_intent(fix: &PublicationReadyFixture) -> InstallationPublicationIntent {
-    let (trust, launch, conformance, approval) = load_evidence(fix);
-    let record = fix
-        .installed
-        .prepare_disabled_installation_record(
-            &fix.candidate,
-            &trust,
-            &launch,
-            &conformance,
-            &approval,
-        )
-        .unwrap();
-    let intent = InstallationPublicationIntent::from_precomputed_record(record).unwrap();
-    let intent_store = InstallationPublicationIntentStore::open(&fix.executor_state).unwrap();
-    intent_store.create(&intent).unwrap();
-    intent
-}
-
 #[test]
-fn j24k3f_pre_intent_failure_returns_error_no_creation_lock_released() {
+fn j24k3f_global_untracked_destination_blocks_publication_pre_intent_lock_released() {
+    // Genuine pre-intent preparation/evidence failure through the public locked
+    // executor. The publication-intent store begins EMPTY; no intent is
+    // pre-created. A foreign installed-looking destination directory (`plug-<uuid>`)
+    // with no owning record is a legitimate filesystem obstruction already used by
+    // `j24k3e1_global_untracked_final_destination_blocks_preparation`. It leaves the
+    // installed registry empty, so `plan_installation` still returns
+    // `PublishDisabledInstallation` and the executor reaches the accepted J24K3e1
+    // preparation boundary through the publication route. Preparation's idle-recovery
+    // global destination audit then fails closed BEFORE any durable intent is created.
     let fix = publication_ready_fixture();
-    let intent = write_intent(&fix);
     let intent_store = InstallationPublicationIntentStore::open(&fix.executor_state).unwrap();
-
-    let request = complete_request(&fix.candidate.candidate_id);
-    let context = InstallationExecutionContext {
-        lock_path: &fix.lock_dir.join("anchor.lock"),
-        executor_state_root: &fix.executor_state,
-        quarantine_root: &fix.quarantine_root,
-        conformance_scratch_root: &fix._base.join("scratch"),
-        candidates: &fix.candidates,
-        exact_trust: &fix.exact_trust,
-        launch_profiles: &fix.profiles,
-        conformance: &fix.conformance_store,
-        approvals: &fix.approvals,
-        installed: &fix.installed,
-    };
-    let options = InstallationExecutionOptions {
-        approving_authority: "publication-test-authority",
-        host_build_identity: "publication-test",
-        conformance_wall_time: Duration::from_secs(3),
-    };
-
-    let error = execute_next_installation_action(&request, &context, &options).unwrap_err();
-    assert_eq!(error.code, "installation_recovery_conflict");
-
-    assert!(fix.installed.load_all().unwrap().is_empty());
-    let install_root = fix._base.join("install");
-    if install_root.exists() {
-        for entry in fs::read_dir(&install_root).unwrap() {
-            let entry = entry.unwrap();
-            let name = entry.file_name();
-            assert!(
-                !name.to_string_lossy().starts_with("plug-"),
-                "unexpected destination {:?}",
-                entry.path()
-            );
-        }
-    }
-    assert!(intent_store.load().unwrap().is_some());
-
-    intent_store.remove_if_matches(&intent).unwrap();
-    assert!(intent_store.load().unwrap().is_none());
-
-    let result = execute_next_installation_action(&request, &context, &options).unwrap();
-    assert_eq!(result.after.action, InstallationPlanAction::Complete);
-    assert_eq!(
-        result.outcome,
-        InstallationStepOutcome::Advanced {
-            executed: InstallationPlanAction::PublishDisabledInstallation,
-        }
+    assert!(
+        intent_store.load().unwrap().is_none(),
+        "intent store must start empty"
     );
 
-    fs::remove_dir_all(&fix._base).unwrap();
-}
-
-#[test]
-fn j24k3f_post_intent_failure_state_recoverable_lock_released() {
-    let fix = publication_ready_fixture();
-    let _intent = write_intent(&fix);
-    let intent_store = InstallationPublicationIntentStore::open(&fix.executor_state).unwrap();
+    let install_root = fix._base.join("install");
+    let untracked = install_root.join(format!("plug-{}", Uuid::new_v4()));
+    fs::create_dir(&untracked).unwrap();
+    let install_before = tree_snapshot(&install_root);
+    let records_before = tree_snapshot(&fix._base.join("records"));
+    assert!(
+        fix.installed.load_all().unwrap().is_empty(),
+        "no installed records may exist before the boundary"
+    );
 
     let request = complete_request(&fix.candidate.candidate_id);
     let lock_path = fix.lock_dir.join("anchor.lock");
-
     let context = InstallationExecutionContext {
         lock_path: &lock_path,
         executor_state_root: &fix.executor_state,
@@ -1020,41 +924,46 @@ fn j24k3f_post_intent_failure_state_recoverable_lock_released() {
     };
 
     let error = execute_next_installation_action(&request, &context, &options).unwrap_err();
-    assert_eq!(error.code, "installation_recovery_conflict");
+    assert_eq!(
+        error.code, "installation_destination_untracked",
+        "accepted pre-intent failure must surface through the public executor"
+    );
 
-    let evidence = InstallationRecoveryEvidenceContext {
-        quarantine_root: &fix.quarantine_root,
-        candidates: &fix.candidates,
-        exact_trust: &fix.exact_trust,
-        launch_profiles: &fix.profiles,
-        conformance: &fix.conformance_store,
-        approvals: &fix.approvals,
-    };
-    let recovery_context = InstallationRecoveryPlanningContext {
-        intents: &intent_store,
-        installed: &fix.installed,
-        evidence,
-    };
-    let recovery_plan = plan_installation_recovery(&request, &recovery_context).unwrap();
-    assert!(!recovery_plan.is_idle());
-    execute_validated_installation_recovery(&request, &recovery_context, recovery_plan).unwrap();
+    // Pre-intent failure: the executor created no durable publication state.
+    assert!(
+        intent_store.load().unwrap().is_none(),
+        "no durable intent may be created before the publication boundary"
+    );
+    assert_eq!(
+        install_before,
+        tree_snapshot(&install_root),
+        "no destination may be created before intent creation"
+    );
+    assert!(
+        fix.installed.load_all().unwrap().is_empty(),
+        "no installed record may be created before intent creation"
+    );
+    assert_eq!(
+        records_before,
+        tree_snapshot(&fix._base.join("records")),
+        "no record file may be created before intent creation"
+    );
+    assert!(untracked.exists(), "the obstruction must be left untouched");
 
+    // The lock must have been released on the failure: a second public invocation
+    // must NOT return `installation_busy`. It reaches the same fail-closed
+    // boundary again, which also proves no second mutation occurs.
+    let second = execute_next_installation_action(&request, &context, &options).unwrap_err();
+    assert_ne!(
+        second.code, "installation_busy",
+        "the lock must be released after a pre-intent failure"
+    );
+    assert_eq!(
+        second.code, "installation_destination_untracked",
+        "the failure must be reproducible without a second mutation"
+    );
     assert!(intent_store.load().unwrap().is_none());
-    let final_plan = plan_installation_recovery(&request, &recovery_context).unwrap();
-    assert!(final_plan.is_idle());
-
-    let result = execute_next_installation_action(&request, &context, &options).unwrap();
-    assert_eq!(
-        result.before.action,
-        InstallationPlanAction::PublishDisabledInstallation
-    );
-    assert_eq!(result.after.action, InstallationPlanAction::Complete);
-    assert_eq!(
-        result.outcome,
-        InstallationStepOutcome::Advanced {
-            executed: InstallationPlanAction::PublishDisabledInstallation,
-        }
-    );
+    assert_eq!(install_before, tree_snapshot(&install_root));
 
     fs::remove_dir_all(&fix._base).unwrap();
 }
