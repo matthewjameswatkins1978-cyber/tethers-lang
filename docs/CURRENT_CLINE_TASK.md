@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `J24L1 - Bounded installation driver`
 Owner: `DeepSeek Pro`
 Model: `DeepSeek Pro`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode using DeepSeek Pro for one bounded Rust control-flow package; Lucy performs independent review and any later merge`
 Base branch: `main`
