@@ -32,53 +32,6 @@ use crate::installed::InstalledPlugRecord;
 use crate::m3_store::{M3Error, Result};
 use crate::package::PackageError;
 
-#[cfg(test)]
-mod post_intent_failure_test_hook {
-    use super::{M3Error, Result};
-    use std::cell::Cell;
-
-    std::thread_local! {
-        static FAIL_AFTER_DURABLE_INTENT: Cell<bool> = const { Cell::new(false) };
-    }
-
-    /// A crate-test-only one-shot failure installation at the durable-intent
-    /// boundary. Thread-local state prevents unrelated concurrently running
-    /// tests from observing the installation.
-    pub(crate) struct PostIntentFailureTestGuard {
-        _private: (),
-    }
-
-    pub(crate) fn install_post_intent_failure_once_for_test() -> PostIntentFailureTestGuard {
-        FAIL_AFTER_DURABLE_INTENT.with(|armed| {
-            assert!(
-                !armed.replace(true),
-                "post-intent failure hook may be installed once per test thread"
-            );
-        });
-        PostIntentFailureTestGuard { _private: () }
-    }
-
-    impl Drop for PostIntentFailureTestGuard {
-        fn drop(&mut self) {
-            FAIL_AFTER_DURABLE_INTENT.with(|armed| armed.set(false));
-        }
-    }
-
-    pub(super) fn fail_after_durable_intent_if_installed() -> Result<()> {
-        let forced = FAIL_AFTER_DURABLE_INTENT.with(|armed| armed.replace(false));
-        if forced {
-            return Err(M3Error::new(
-                "installation_test_forced_failure",
-                "test-only post-intent publication failure",
-            ));
-        }
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-pub(crate) use post_intent_failure_test_hook::install_post_intent_failure_once_for_test;
-
 fn recovery_conflict() -> M3Error {
     M3Error::new(
         "installation_recovery_conflict",
@@ -226,3 +179,50 @@ pub(crate) fn execute_prepared_disabled_installation_publication(
 
     Ok(record.clone())
 }
+
+#[cfg(test)]
+mod post_intent_failure_test_hook {
+    use super::{M3Error, Result};
+    use std::cell::Cell;
+
+    std::thread_local! {
+        static FAIL_AFTER_DURABLE_INTENT: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// A crate-test-only one-shot failure installation at the durable-intent
+    /// boundary. Thread-local state prevents unrelated concurrently running
+    /// tests from observing the installation.
+    pub(crate) struct PostIntentFailureTestGuard {
+        _private: (),
+    }
+
+    pub(crate) fn install_post_intent_failure_once_for_test() -> PostIntentFailureTestGuard {
+        FAIL_AFTER_DURABLE_INTENT.with(|armed| {
+            assert!(
+                !armed.replace(true),
+                "post-intent failure hook may be installed once per test thread"
+            );
+        });
+        PostIntentFailureTestGuard { _private: () }
+    }
+
+    impl Drop for PostIntentFailureTestGuard {
+        fn drop(&mut self) {
+            FAIL_AFTER_DURABLE_INTENT.with(|armed| armed.set(false));
+        }
+    }
+
+    pub(super) fn fail_after_durable_intent_if_installed() -> Result<()> {
+        let forced = FAIL_AFTER_DURABLE_INTENT.with(|armed| armed.replace(false));
+        if forced {
+            return Err(M3Error::new(
+                "installation_test_forced_failure",
+                "test-only post-intent publication failure",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub(crate) use post_intent_failure_test_hook::install_post_intent_failure_once_for_test;
