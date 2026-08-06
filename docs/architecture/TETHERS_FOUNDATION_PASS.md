@@ -2,7 +2,7 @@
 
 ## F1-F10 technical implementation plan
 
-Prepared: 2026-08-06  
+Prepared: 2026-08-06
 Status: planned strengthening programme; F1 packet preparation is authorised.
 
 ## Executive decision
