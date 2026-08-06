@@ -9,8 +9,11 @@ use crate::installation_execution::{
     execute_next_installation_action, InstallationExecutionContext, InstallationStepOutcome,
 };
 use crate::installation_plan::{InstallationPlan, InstallationPlanAction};
-use crate::installation_publication_intent::InstallationPublicationIntentStore;
+use crate::installation_publication_intent::{
+    InstallationPublicationIntent, InstallationPublicationIntentStore,
+};
 use crate::installation_recovery_evidence::InstallationRecoveryEvidenceContext;
+use crate::installation_recovery_execution::execute_validated_installation_recovery;
 use crate::installation_recovery_plan::{
     plan_installation_recovery, InstallationRecoveryPlanningContext,
 };
@@ -873,4 +876,185 @@ fn j24k3f_complete_returns_already_complete_no_mutation() {
     assert_eq!(install_before, tree_snapshot(&base.join("install")));
 
     fs::remove_dir_all(base).unwrap();
+}
+
+fn load_evidence(
+    fix: &PublicationReadyFixture,
+) -> (
+    PackageTrustEvidence,
+    crate::launch_profile::LaunchProfileEvidence,
+    ConformanceEvidence,
+    crate::installed::InstallationApprovalRecord,
+) {
+    let trust_record = fix
+        .exact_trust
+        .find(&fix.candidate.candidate_id)
+        .unwrap()
+        .unwrap();
+    let trust = PackageTrustEvidence::exact_candidate(&trust_record).unwrap();
+    let launch = fix
+        .profiles
+        .load_all()
+        .unwrap()
+        .into_iter()
+        .find(|lp| lp.candidate_id == fix.candidate.candidate_id)
+        .unwrap();
+    let conformance = fix
+        .conformance_store
+        .load_all()
+        .unwrap()
+        .into_iter()
+        .find(|ce| ce.candidate_id == fix.candidate.candidate_id)
+        .unwrap();
+    let approval = fix
+        .approvals
+        .load_all()
+        .unwrap()
+        .into_iter()
+        .find(|ar| ar.candidate_id == fix.candidate.candidate_id)
+        .unwrap();
+    (trust, launch, conformance, approval)
+}
+
+fn write_intent(fix: &PublicationReadyFixture) -> InstallationPublicationIntent {
+    let (trust, launch, conformance, approval) = load_evidence(fix);
+    let record = fix
+        .installed
+        .prepare_disabled_installation_record(
+            &fix.candidate,
+            &trust,
+            &launch,
+            &conformance,
+            &approval,
+        )
+        .unwrap();
+    let intent = InstallationPublicationIntent::from_precomputed_record(record).unwrap();
+    let intent_store = InstallationPublicationIntentStore::open(&fix.executor_state).unwrap();
+    intent_store.create(&intent).unwrap();
+    intent
+}
+
+#[test]
+fn j24k3f_pre_intent_failure_returns_error_no_creation_lock_released() {
+    let fix = publication_ready_fixture();
+    let intent = write_intent(&fix);
+    let intent_store = InstallationPublicationIntentStore::open(&fix.executor_state).unwrap();
+
+    let request = complete_request(&fix.candidate.candidate_id);
+    let context = InstallationExecutionContext {
+        lock_path: &fix.lock_dir.join("anchor.lock"),
+        executor_state_root: &fix.executor_state,
+        quarantine_root: &fix.quarantine_root,
+        conformance_scratch_root: &fix._base.join("scratch"),
+        candidates: &fix.candidates,
+        exact_trust: &fix.exact_trust,
+        launch_profiles: &fix.profiles,
+        conformance: &fix.conformance_store,
+        approvals: &fix.approvals,
+        installed: &fix.installed,
+    };
+    let options = InstallationExecutionOptions {
+        approving_authority: "publication-test-authority",
+        host_build_identity: "publication-test",
+        conformance_wall_time: Duration::from_secs(3),
+    };
+
+    let error = execute_next_installation_action(&request, &context, &options).unwrap_err();
+    assert_eq!(error.code, "installation_recovery_conflict");
+
+    assert!(fix.installed.load_all().unwrap().is_empty());
+    let install_root = fix._base.join("install");
+    if install_root.exists() {
+        for entry in fs::read_dir(&install_root).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name();
+            assert!(
+                !name.to_string_lossy().starts_with("plug-"),
+                "unexpected destination {:?}",
+                entry.path()
+            );
+        }
+    }
+    assert!(intent_store.load().unwrap().is_some());
+
+    intent_store.remove_if_matches(&intent).unwrap();
+    assert!(intent_store.load().unwrap().is_none());
+
+    let result = execute_next_installation_action(&request, &context, &options).unwrap();
+    assert_eq!(result.after.action, InstallationPlanAction::Complete);
+    assert_eq!(
+        result.outcome,
+        InstallationStepOutcome::Advanced {
+            executed: InstallationPlanAction::PublishDisabledInstallation,
+        }
+    );
+
+    fs::remove_dir_all(&fix._base).unwrap();
+}
+
+#[test]
+fn j24k3f_post_intent_failure_state_recoverable_lock_released() {
+    let fix = publication_ready_fixture();
+    let _intent = write_intent(&fix);
+    let intent_store = InstallationPublicationIntentStore::open(&fix.executor_state).unwrap();
+
+    let request = complete_request(&fix.candidate.candidate_id);
+    let lock_path = fix.lock_dir.join("anchor.lock");
+
+    let context = InstallationExecutionContext {
+        lock_path: &lock_path,
+        executor_state_root: &fix.executor_state,
+        quarantine_root: &fix.quarantine_root,
+        conformance_scratch_root: &fix._base.join("scratch"),
+        candidates: &fix.candidates,
+        exact_trust: &fix.exact_trust,
+        launch_profiles: &fix.profiles,
+        conformance: &fix.conformance_store,
+        approvals: &fix.approvals,
+        installed: &fix.installed,
+    };
+    let options = InstallationExecutionOptions {
+        approving_authority: "publication-test-authority",
+        host_build_identity: "publication-test",
+        conformance_wall_time: Duration::from_secs(3),
+    };
+
+    let error = execute_next_installation_action(&request, &context, &options).unwrap_err();
+    assert_eq!(error.code, "installation_recovery_conflict");
+
+    let evidence = InstallationRecoveryEvidenceContext {
+        quarantine_root: &fix.quarantine_root,
+        candidates: &fix.candidates,
+        exact_trust: &fix.exact_trust,
+        launch_profiles: &fix.profiles,
+        conformance: &fix.conformance_store,
+        approvals: &fix.approvals,
+    };
+    let recovery_context = InstallationRecoveryPlanningContext {
+        intents: &intent_store,
+        installed: &fix.installed,
+        evidence,
+    };
+    let recovery_plan = plan_installation_recovery(&request, &recovery_context).unwrap();
+    assert!(!recovery_plan.is_idle());
+    execute_validated_installation_recovery(&request, &recovery_context, recovery_plan).unwrap();
+
+    assert!(intent_store.load().unwrap().is_none());
+    let final_plan = plan_installation_recovery(&request, &recovery_context).unwrap();
+    assert!(final_plan.is_idle());
+
+    let result = execute_next_installation_action(&request, &context, &options).unwrap();
+    assert_eq!(
+        result.before.action,
+        InstallationPlanAction::PublishDisabledInstallation
+    );
+    assert_eq!(result.after.action, InstallationPlanAction::Complete);
+    assert_eq!(
+        result.outcome,
+        InstallationStepOutcome::Advanced {
+            executed: InstallationPlanAction::PublishDisabledInstallation,
+        }
+    );
+
+    fs::remove_dir_all(&fix._base).unwrap();
 }

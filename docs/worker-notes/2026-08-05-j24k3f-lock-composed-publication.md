@@ -4,10 +4,10 @@ Task: `J24K3f - Lock-composed disabled installation publication`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Model: `DeepSeek Pro`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Base commit: `13cae687dc59c0dae74363b24d0ab57547702c53`
-Implementation checkpoint: `eaa0e125744616af08a1a1c6dd57e16cccc3b41f`
-Verification checkpoint: `92f2844dccb66fcd70a5ad544f5b947839836375`
+Implementation checkpoint: `TBD`
+Verification checkpoint: `TBD`
 
 ## Requested outcome
 
@@ -15,12 +15,20 @@ Compose accepted J24K3e1 preparation and J24K3e2 exact mutation into the existin
 
 ## Changes made
 
+Original implementation (checkpoint `eaa0e125744616af08a1a1c6dd57e16cccc3b41f`):
+
 - `tethers-0.1/host-rust/src/installation_execution.rs`: added `executor_state_root: &'a Path` to `InstallationExecutionContext` (frozen blueprint field). Replaced `handle_deferred_publication` with `handle_publication` that opens `InstallationPublicationIntentStore` from `context.executor_state_root`, constructs `InstallationRecoveryPlanningContext`, calls J24K3e1 preparation, J24K3e2 mutation, replans with J24J, validates the `PublishDisabledInstallation -> Complete` transition, and returns `Advanced { executed: PublishDisabledInstallation }`.
-- `tethers-0.1/host-rust/src/installation_execution_tests.rs`: added `PublicationReadyFixture` helper and 8 direct tests (`j24k3f_publication_advances_to_complete`, `j24k3f_intent_store_rooted_under_executor_state`, `j24k3f_no_intent_under_wrong_paths`, `j24k3f_destination_and_record_exist_recovery_idle`, `j24k3f_returned_plans_and_outcome_exact`, `j24k3f_second_lock_returns_installation_busy`, `j24k3f_no_second_action_executed`, `j24k3f_complete_returns_already_complete_no_mutation`). Updated existing test fixture with `executor_state_root`.
-- `tethers-0.1/host-rust/tests/j24k2_locked_single_step_executor.rs`: added `executor_state_root` to `make_context` function and all 7 call sites. Updated `j24k2_full_passed_conformance_and_approval_chain` to expect successful publication (was deferred error; now exercises the full 5-call chain through Complete).
+- `tethers-0.1/host-rust/src/installation_execution_tests.rs`: added `PublicationReadyFixture` helper and 8 direct tests. Updated existing test fixture with `executor_state_root`.
+- `tethers-0.1/host-rust/tests/j24k2_locked_single_step_executor.rs`: added `executor_state_root` to `make_context` function and all 7 call sites. Updated `j24k2_full_passed_conformance_and_approval_chain` to expect successful publication.
 - `docs/CURRENT_CLINE_TASK.md` and this worker note: status transitions and checkpoint records.
 
-No lock acquisition change, no new public API, no loop/retry, no J24L, no Cargo.lock change.
+Review correction (reviewed tip `ccbd883a6093c3db4c1d4e8c5a60e789ffa79b33`, REJECTED pending two missing tests):
+
+- `tethers-0.1/host-rust/src/installation_execution_tests.rs`: added `load_evidence` and `write_intent` helpers and 2 direct tests:
+  - `j24k3f_pre_intent_failure_returns_error_no_creation_lock_released`: pre-creates intent, calls public executor → `installation_recovery_conflict`, proves no installed records, no destinations, no intent created by failed invocation, lock released (second executor call succeeds).
+  - `j24k3f_post_intent_failure_state_recoverable_lock_released`: pre-creates intent, proves lock released by executor non-busy error, executes recovery API to clean intent, then executor succeeds → Complete.
+
+No lock acquisition change, no new public API, no loop/retry, no J24L, no Cargo.lock change, no production fault injection.
 
 ## Decisions and assumptions
 
@@ -33,43 +41,44 @@ No lock acquisition change, no new public API, no loop/retry, no J24L, no Cargo.
 
 ## Evidence
 
-Direct tests at implementation checkpoint `eaa0e125744616af08a1a1c6dd57e16cccc3b41f`:
+Direct tests at review correction:
 
-- `cargo test -p tethers-reference-host j24k3f --no-fail-fast` — PASS, 8 passed, 0 failed.
+- `cargo test -p tethers-reference-host j24k3f --no-fail-fast` — PASS, 10 passed (8 original + 2 new), 0 failed.
 
-Named regressions (each `cargo test -p tethers-reference-host <filter> --no-fail-fast` — all PASS, exit 0):
+Named regressions (each `cargo test -p tethers-reference-host <filter> --no-fail-fast` — all PASS):
 
-- `j24k3e2` — 26 passed
-- `j24k3e1` — 30 passed
-- `j24k3d2` — 20 passed
-- `j24k2` — 26 lib + 9 integration = 35 passed
-- `j24j` — 0 matched by name filter (tests in `tests/j24j_installation_reconciliation.rs` use descriptive names); fully exercised by full serial verification
+- `j24k3e2` — 26 passed, 0 failed
+- `j24k3e1` — 30 passed, 0 failed
+- `j24k3d2` — 20 passed, 0 failed
+- `j24k2` — 26 lib + 9 integration = 35 passed, 0 failed
+- `j24j` — 0 matched by name filter (descriptive names); 24 passed, 0 failed (full serial verification)
 
 Full serial verification with `RUST_TEST_THREADS=1`:
 
-- `just verify` — PASS. Packet checker, `cargo fmt --check`, `cargo check --all-targets --all-features --locked`, then full `cargo test --all-targets --all-features --locked`. 1228 lib passed, 2 ignored; all 25 test-result lines report 0 failures.
+- `just verify` — PASS. 1230 lib passed, 2 ignored; all 25 test-result lines 0 failures.
 
 Final gates:
 
 - `cargo fmt --all -- --check` — PASS.
-- `git diff --check` — PASS (only preexisting LF→CRLF warnings).
-- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` — PASS (control-v1/IN_PROGRESS at checkpoint).
+- `git diff --check` — PASS (only preexisting LF→CRLF warning).
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` — PASS.
 - Cargo.lock unchanged.
 
 ## Discoveries
 
 - The `j24k2_full_passed_conformance_and_approval_chain` test was the main regression impact: it expected `r4.is_err()` with `installation_publication_deferred` but now publication succeeds. Updated to verify the full 5-call chain through Complete.
 - `executor_state_root` field addition required updates at all `InstallationExecutionContext` construction sites: 1 in `installation_execution_tests.rs`, 7 in `j24k2_locked_single_step_executor.rs` (via `make_context` helper).
+- The review identified two missing packet-required failure-boundary tests. Both now exercise the public `execute_next_installation_action` entry point: pre-intent failure returns `installation_recovery_conflict` to the caller with no durable mutation, and post-intent (crash-recovery) state is resumable through the accepted recovery API.
 
 ## Remaining risks
 
 - 96 preexisting compiler warnings remain; none introduced by this change.
 - J24L multi-step loop is the next composition layer; handles at-most-4-call iteration around this single-step primitive.
-- `j24j` name filter matching observation persists (test names are descriptive, not prefixed).
+- `j24j` name filter matching observation persists (test names are descriptive, not prefixed); 24 passed, 0 failed in full serial run.
 
 ## Smallest next action
 
-Lucy reviews the branch diff and worker-note evidence, then runs the routine safe merge to `main`. J24L is the next bounded task.
+Lucy runs the fast-forward safe merge to `main`. J24L is the next bounded task.
 
 ## References
 
