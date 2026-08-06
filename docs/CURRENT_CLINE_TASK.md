@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `F1 - Baseline and debt inventory`
 Owner: `OpenCode`
 Model: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode performs one documentation-and-evidence-only baseline task; Lucy independently reviews the resulting branch`
 Worker note: `docs/worker-notes/2026-08-06-f1-baseline.md`
