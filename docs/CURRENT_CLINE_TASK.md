@@ -4,15 +4,16 @@ Control contract: `1`
 Task: `F1 - Baseline and debt inventory`
 Owner: `OpenCode`
 Model: `OpenCode`
-Status: `READY`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode performs one documentation-and-evidence-only baseline task; Lucy independently reviews the resulting branch`
 Worker note: `docs/worker-notes/2026-08-06-f1-baseline.md`
 Base branch: `main`
-Base commit: `4262cf5efe25b3ca7eca65091ab2f6f75c6a1e64`
+Base commit: `24428139807cac0adeb0b62264547e61ca809d16`
 Implementation branch: `foundation/f1-baseline`
 Parent branch: `main`
 Parent tip: `24428139807cac0adeb0b62264547e61ca809d16`
+Preparation checkpoint: `158422a54bede77ea59d6d08fe1fcdb5ed21d499`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
