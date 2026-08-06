@@ -421,12 +421,16 @@ impl SupervisedChild {
                             let excess = buf.len() - stderr_tail;
                             buf.drain(..excess);
                         }
+                        // Update shared buffer incrementally for live visibility.
+                        if let Ok(mut guard) = stderr_buf.lock() {
+                            guard.clone_from(&buf);
+                        }
                     }
                     Err(_) => break,
                 }
             }
             if let Ok(mut guard) = stderr_buf.lock() {
-                *guard = buf;
+                guard.clone_from(&buf);
             }
         });
 
@@ -1387,5 +1391,152 @@ mod tests {
         );
 
         child.shutdown();
+    }
+
+    #[test]
+    fn f2a_live_stderr_visible_before_exit() {
+        let mut child = launch_live_stderr_fixture(5, 2).expect("launch");
+        let line = child
+            .read_protocol_line(Duration::from_secs(5))
+            .expect("stdout ready");
+        assert!(line.contains("READY"), "expected READY, got: {line}");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let tail = poll_stderr_tail(&child, "STDERR_MARKER_READY", deadline);
+        assert!(
+            tail.contains("STDERR_MARKER_READY"),
+            "stderr must be visible while child is alive; got: {tail}"
+        );
+        assert!(
+            !child.has_exited(),
+            "child must still be alive during stderr observation"
+        );
+
+        child.shutdown();
+    }
+
+    #[test]
+    fn f2a_bounded_stderr_tail() {
+        let small_tail: usize = 100;
+        let config = ChildConfig {
+            stderr_tail_bytes: small_tail,
+            ..ChildConfig::test_config(
+                "pwsh.exe",
+                vec![
+                    "-NoProfile".to_owned(),
+                    "-Command".to_owned(),
+                    "& { 1..50 | ForEach-Object { [Console]::Error.WriteLine(('LINE_' + ($_ -as [string]).PadLeft(4,'0') + '_MARKER')); Start-Sleep -Milliseconds 1 }; [Console]::Error.Flush(); [Console]::Out.WriteLine('READY'); [Console]::Out.Flush(); Start-Sleep -Seconds 30 }"
+                        .to_owned(),
+                ],
+                Duration::from_secs(10),
+                Duration::from_secs(2),
+            )
+        };
+        let mut child = SupervisedChild::launch(config).expect("launch");
+        let line = child
+            .read_protocol_line(Duration::from_secs(10))
+            .expect("stdout ready");
+        assert!(line.contains("READY"), "expected READY, got: {line}");
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let tail = poll_stderr_tail(&child, "LINE_0050_MARKER", deadline);
+        assert!(
+            tail.contains("LINE_0050_MARKER"),
+            "newest stderr line must be retained; got: {tail}"
+        );
+        assert!(
+            tail.len() <= small_tail + 64,
+            "tail must respect configured byte limit ({small_tail}); actual: {}",
+            tail.len()
+        );
+        assert!(
+            !tail.contains("LINE_0001_MARKER"),
+            "oldest stderr must be evicted; got: {tail}"
+        );
+
+        child.shutdown();
+    }
+
+    #[test]
+    fn f2a_timeout_remains_timeout_with_stderr_available() {
+        let mut child = launch_live_stderr_fixture(5, 2).expect("launch");
+        let line = child
+            .read_protocol_line(Duration::from_secs(5))
+            .expect("first line");
+        assert!(line.contains("READY"), "expected READY, got: {line}");
+
+        let result = child.read_protocol_line(Duration::from_millis(100));
+        assert!(
+            matches!(result, Err(ChildError::ReadTimeout(_))),
+            "second read must timeout; got: {result:?}"
+        );
+
+        let tail = child.stderr_tail();
+        assert!(
+            tail.contains("STDERR_MARKER_READY"),
+            "stderr emitted before timeout must remain available; got: {tail}"
+        );
+
+        child.shutdown();
+    }
+
+    #[test]
+    fn f2a_exit_distinguishable_from_timeout_and_disconnect() {
+        let config = ChildConfig::test_config(
+            "pwsh.exe",
+            vec![
+                "-NoProfile".to_owned(),
+                "-Command".to_owned(),
+                "& { [Console]::Out.WriteLine('READY'); [Console]::Out.Flush(); exit 7 }"
+                    .to_owned(),
+            ],
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+        );
+        let mut child = SupervisedChild::launch(config).expect("launch");
+        let line = child
+            .read_protocol_line(Duration::from_secs(5))
+            .expect("first line");
+        assert!(line.contains("READY"), "expected READY, got: {line}");
+
+        let result = child.read_protocol_line(Duration::from_millis(200));
+        assert!(
+            matches!(result, Err(ChildError::ProcessExited(7))),
+            "child exit with code 7 must produce ProcessExited; got: {result:?}"
+        );
+
+        assert!(child.has_exited(), "child must be reaped after exit");
+        child.shutdown();
+    }
+
+    #[test]
+    fn f2a_windows_cleanup_reaps_child_and_joins_threads() {
+        let child = launch_live_stderr_fixture(5, 2).expect("launch");
+        let child_id = child.child.id();
+        assert!(child_id > 0, "child must have a valid PID");
+        child.shutdown();
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let state = std::process::Command::new("pwsh")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    &format!(
+                        "if (Get-Process -Id {child_id} -ErrorAction SilentlyContinue) {{ exit 1 }}"
+                    ),
+                ])
+                .status();
+            match state {
+                Ok(status) if status.code() == Some(0) => break,
+                Ok(_) => {
+                    if Instant::now() >= deadline {
+                        panic!("child process {child_id} still alive after shutdown");
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(_) => break,
+            }
+        }
     }
 }
