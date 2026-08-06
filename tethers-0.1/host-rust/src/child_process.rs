@@ -1336,4 +1336,56 @@ mod tests {
         let child = launch_fixture("valid", 5, 2).expect("launch");
         child.shutdown();
     }
+
+    // ── F2a: live stderr visibility ─────────────────────────────────
+
+    fn launch_live_stderr_fixture(
+        startup: u64,
+        close: u64,
+    ) -> Result<SupervisedChild, ChildError> {
+        let config = ChildConfig::test_config(
+            "pwsh.exe",
+            vec![
+                "-NoProfile".to_owned(),
+                "-Command".to_owned(),
+                "& { [Console]::Error.WriteLine('STDERR_MARKER_READY'); [Console]::Error.Flush(); [Console]::Out.WriteLine('READY'); [Console]::Out.Flush(); Start-Sleep -Seconds 30 }"
+                    .to_owned(),
+            ],
+            Duration::from_secs(startup),
+            Duration::from_secs(close),
+        );
+        SupervisedChild::launch(config)
+    }
+
+    /// Poll `stderr_tail()` until `marker` is present or `deadline` passes.
+    fn poll_stderr_tail(child: &SupervisedChild, marker: &str, deadline: Instant) -> String {
+        loop {
+            let tail = child.stderr_tail();
+            if tail.contains(marker) {
+                return tail;
+            }
+            if Instant::now() >= deadline {
+                return tail;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn f2a_regression_live_stderr_not_visible_before_exit() {
+        let mut child = launch_live_stderr_fixture(5, 2).expect("launch");
+        let line = child
+            .read_protocol_line(Duration::from_secs(5))
+            .expect("stdout ready");
+        assert!(line.contains("READY"), "expected READY, got: {line}");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let tail = poll_stderr_tail(&child, "STDERR_MARKER_READY", deadline);
+        assert!(
+            tail.contains("STDERR_MARKER_READY"),
+            "stderr must be visible while child is alive; got: {tail}"
+        );
+
+        child.shutdown();
+    }
 }
