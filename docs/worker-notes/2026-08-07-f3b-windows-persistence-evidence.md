@@ -10,103 +10,131 @@ Status: `COMPLETE`
 
 Base commit: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
 
-Implementation checkpoint: `0ba1dbda969d89c853762ddf36178baad674a152`
+Implementation checkpoint: `bedf96af3988a93d531c69accae4523f3b43bd8d`
 
 ## Requested outcome
 
 Establish direct Windows evidence for five persistence primitive clusters
-identified by F3a, using isolated characterization tests and platform
-investigation. No production repair or persistence redesign.
+identified by F3a. Correction pass (r2) splits every durability label
+into three separate properties: flush accepted, close/reopen survival,
+and power-loss survival. Atomic-visibility labels split into pre-rename
+absence, post-rename completeness, and concurrent rename observation.
+Every PROVEN label corresponds to a hard assertion that fails if false.
 
 ## Changes made
 
-### 1. F3b-1: `sync_all()` + `fs::rename` characterization
-- **File:** `tests/f3b_windows_persistence_evidence.rs`
-- Tests: `sync_all_rename_full_cycle_observed`, `sync_all_rename_survives_close_and_reopen`, `sync_all_rename_no_partial_file_visible`, `sync_all_rename_multiple_records_independent`, `sync_all_stale_tmp_visible_after_failure`
-- All 7 named observable properties PROVEN during ordinary execution
-- Power-loss directory durability: UNVERIFIED
+### Corrections applied (r2)
 
-### 2. F3b-2: Parent-directory durability feasibility
-- **File:** `tests/f3b_windows_persistence_evidence.rs`
-- Test: `parent_directory_flush_feasibility`
-- Directory handle open with FILE_FLAG_BACKUP_SEMANTICS: feasible
-- FlushFileBuffers on directory handle: OS accepts the call
-- Current implementation: no parent-directory flush performed
-- Full durability after power loss: UNVERIFIED
+1. **Durability labels split**: "file-data durability PROVEN" replaced with
+   three distinct properties. Flush accepted and close/reopen survival are
+   PROVEN (F3b). Power-loss survival is UNVERIFIED (F3b).
 
-### 3. F3b-3: Replay Windows publish primitive
-- **File:** `src/replay_windows.rs` inline tests
-- Tests: `f3b3_create_write_through_open_and_write`, `f3b3_flush_before_rename_file_data_durability`, `f3b3_create_new_prevents_overwrite`, `f3b3_rename_without_replacement_defence`
-- All 6 stages characterized individually
-- FILE_FLAG_WRITE_THROUGH: file created
-- WriteFile: complete write verified
-- FlushFileBuffers before rename: file-data durability PROVEN
-- SetFileInformationByHandle rename: non-replacing rename PROVEN
-- FlushFileBuffers on renamed handle: flushes file handle only, NOT parent directory
-- Reopen/re-read: PROVEN file-data persistence, NOT directory-entry durability
-- CREATE_NEW exclusion: PROVEN against existing files
+2. **Atomic visibility corrected**: "atomic visibility PROVEN" replaced with
+   pre-rename final-name absence (PROVEN), post-rename complete bytes (PROVEN),
+   and atomic visibility during rename (UNVERIFIED, no concurrent observer).
 
-### 4. F3b-4: Trail JSONL interruption behaviour
-- **File:** `src/dispatch.rs` inline tests
-- Tests: `trail_complete_line_survives_close_and_reopen`, `trail_multiple_complete_lines_ordered_and_parseable`, `trail_truncated_final_line_detected`, `trail_incomplete_line_no_newline_present_in_raw_bytes`
-- Complete lines survive close/reopen: PROVEN
-- Multiple lines ordered and parseable: PROVEN
-- Truncated final line detected as non-parseable JSON: PROVEN
-- Incomplete line without newline present in raw bytes: PROVEN
-- Current behaviour: reader sees incomplete bytes; JSON parse fails
+3. **Parent-directory feasibility hardened**: `parent_directory_flush_feasibility`
+   now directly asserts both `CreateFileW` succeeds AND `FlushFileBuffers`
+   succeeds. If either fails, the test FAILS — F3b-2 becomes UNVERIFIED for
+   that target rather than silently passing.
 
-### 5. F3b-5: Local Anchor root reparse-point safety
-- **File:** `tests/f3b_windows_persistence_evidence.rs`
-- Test: `local_anchor_reparse_point_can_redirect_writes`
-- Junction creation requires administrator/developer-mode privileges
-- Could not complete direct redirect test on this machine
-- Verdict: UNVERIFIED. Root `verify_chain()`/`reject_reparse()` absent
-- SHA-256 filenames prevent traversal in individual names but not root
+4. **Trail truncated-line evidence strengthened**:
+   `trail_truncated_final_line_present_and_non_parseable` directly asserts
+   exactly 2 lines, truncated line non-empty, and `serde_json::from_str` Err.
+   No conditional branches that allow silent pass. Production Trail reader
+   classification of truncated entries marked UNVERIFIED.
 
-### 6. Documentation
-- `docs/CURRENT_CLINE_TASK.md`: F3b task packet with 5 numbered behaviours
-- `docs/CURRENT_GOAL.md`: Updated to F3b active increment
-- `docs/PROJECT_DASHBOARD.md`: Updated to F3b active task
-- `docs/foundation-pass/PERSISTENCE_INVENTORY.md`: Added F3b Findings section with per-property PROVEN/UNVERIFIED tags and summary matrix
-- `docs/foundation-pass/DEBT_LEDGER.md`: Updated A1 with F3b investigation results
+5. **Evidence matrix recalculated**: Every PROVEN item in
+   `PERSISTENCE_INVENTORY.md` now corresponds to a hard assertion.
+
+### F3b-1: `sync_all()` + `fs::rename`
+
+Tests in `tests/f3b_windows_persistence_evidence.rs`:
+
+| Test | Property | Status |
+|---|---|---|
+| `sync_all_rename_flush_accepted` | flush accepted | PROVEN |
+| `sync_all_rename_bytes_survive_close_and_reopen` | bytes survive close/reopen | PROVEN |
+| `sync_all_rename_final_absent_before_rename` | final absent before rename | PROVEN |
+| `sync_all_rename_final_absent_before_rename` | final complete after rename | PROVEN |
+| `sync_all_rename_temporary_disappears_after_rename` | tmp disappears | PROVEN |
+| `sync_all_rename_multiple_records_independent` | records independent | PROVEN |
+| `sync_all_stale_tmp_visible_after_failure` | stale tmp visible | PROVEN |
+| — | atomic visibility during rename (concurrent) | UNVERIFIED |
+| — | file data survives power loss | UNVERIFIED |
+| — | directory entry survives power loss | UNVERIFIED |
+
+### F3b-2: Parent-directory durability
+
+| Property | Status |
+|---|---|
+| CreateFileW opens dir with FILE_GENERIC_WRITE | PROVEN (hard assert) |
+| FlushFileBuffers on dir handle accepted | PROVEN (hard assert) |
+| Production performs parent-dir flush | DISPROVEN |
+| Dir entry survives power loss after flush | UNVERIFIED |
+
+### F3b-3: Replay Windows publish primitive
+
+Tests in `src/replay_windows.rs` inline tests:
+
+| Property | Status |
+|---|---|
+| CreateFileW(CREATE_NEW \| FILE_FLAG_WRITE_THROUGH) accepted | PROVEN |
+| WriteFile writes complete bytes | PROVEN |
+| FlushFileBuffers before rename accepted | PROVEN |
+| SetFileInformationByHandle rename accepted | PROVEN |
+| FlushFileBuffers on renamed handle accepted | PROVEN |
+| Exact bytes survive close/reopen | PROVEN |
+| CREATE_NEW rejects existing file | PROVEN |
+| ReplaceIfExists:false blocks replacement | PROVEN |
+| Atomic visibility during rename (concurrent) | UNVERIFIED |
+| File data survives power loss | UNVERIFIED |
+| Dir entry survives power loss | UNVERIFIED |
+
+### F3b-4: Trail JSONL interruption
+
+Tests in `src/dispatch.rs` inline tests:
+
+| Property | Status |
+|---|---|
+| Complete line survives close/reopen | PROVEN |
+| Multiple lines ordered and parseable | PROVEN |
+| Truncated final line present and non-parseable (raw serde_json) | PROVEN |
+| Incomplete-line raw bytes present in file | PROVEN |
+| Production Trail reader classification of truncated entry | UNVERIFIED |
+
+### F3b-5: Local Anchor root reparse-point safety
+
+| Property | Status |
+|---|---|
+| Junction redirects writes (admin required) | UNVERIFIED (mklink unavailable) |
+| SHA-256 filenames prevent traversal in names | PROVEN |
+| Root has verify_chain/reject_reparse | DISPROVEN |
 
 ## Decisions and assumptions
 
-- Characterized what the OS and Rust std actually do on the primary target,
-  without inferring guarantees from API names or documentation terminology.
-- Distinguished file-data durability (flush on file handle), atomic visibility
-  (rename of complete file, create_new exclusion), and directory-entry
-  durability (flush on parent directory) as separate properties.
-- F3b-5 junction test limitation (mklink requires admin privileges) is recorded
-  honestly as UNVERIFIED; the exposure hypothesis remains unproven.
-- No production seams widened. All tests are isolated characterization harnesses
-  using temp directories and direct Windows API calls.
+- Every PROVEN label corresponds to a hard assertion in a characterization test.
+  No PROVEN label is inferred from API names or documentation terminology alone.
+- Flush accepted ≠ power-loss durability proved. Close/reopen ≠ atomic
+  visibility proved. Three separate properties per write primitive.
+- The production Trail reader is NOT exercised in F3b-4. The truncated-line
+  test uses raw `serde_json::from_str`. Production reader classification
+  of truncated entries is UNVERIFIED unless tested separately.
+- F3b-5 remains UNVERIFIED due to mklink privilege limitation.
 
 ## Evidence
 
-### F3b characterization tests
+### Focused characterization tests
 
-| Test | Package | Result |
-|---|---|---|
-| `sync_all_rename_full_cycle_observed` | F3b-1 | PASS |
-| `sync_all_rename_survives_close_and_reopen` | F3b-1 | PASS |
-| `sync_all_rename_no_partial_file_visible` | F3b-1 | PASS |
-| `sync_all_rename_multiple_records_independent` | F3b-1 | PASS |
-| `sync_all_stale_tmp_visible_after_failure` | F3b-1 | PASS |
-| `parent_directory_flush_feasibility` | F3b-2 | PASS |
-| `f3b3_create_write_through_open_and_write` | F3b-3 | PASS |
-| `f3b3_flush_before_rename_file_data_durability` | F3b-3 | PASS |
-| `f3b3_create_new_prevents_overwrite` | F3b-3 | PASS |
-| `f3b3_rename_without_replacement_defence` | F3b-3 | PASS |
-| `trail_complete_line_survives_close_and_reopen` | F3b-4 | PASS |
-| `trail_multiple_complete_lines_ordered_and_parseable` | F3b-4 | PASS |
-| `trail_truncated_final_line_detected` | F3b-4 | PASS |
-| `trail_incomplete_line_no_newline_present_in_raw_bytes` | F3b-4 | PASS |
-| `local_anchor_reparse_point_can_redirect_writes` | F3b-5 | PASS (mklink unavailable) |
+| Command | Result |
+|---|---|
+| `cargo test --test f3b_windows_persistence_evidence` | PASS (8/8) |
+| `cargo test --lib -- f3b3` | PASS (4/4) |
+| `cargo test --lib -- dispatch::tests::trail_` | PASS (6/6, including 4 new) |
 
 ### Full test suite
 
-All 1273+ existing tests pass. No regressions.
+`cargo test --all-targets --all-features --locked`: 1273+ tests PASS.
 
 ## Verification matrix
 
@@ -114,68 +142,37 @@ All 1273+ existing tests pass. No regressions.
 |---|---|
 | `git fetch origin --prune` | PASS |
 | `git rev-parse origin/main` | PASS (`145a791`) |
-| `git rev-parse HEAD` | PASS (`f8e5442`) |
 | `git status --short --branch` | PASS (clean) |
 | `cargo fmt --all -- --check` | PASS |
 | `cargo check --all-targets --all-features --locked` | PASS |
-| `cargo test --all-targets --all-features --locked` | PASS (1273+ tests) |
-| `cargo clippy --all-targets --all-features --locked -- -W clippy::all` | PASS (all warnings pre-existing) |
+| `cargo test --all-targets --all-features --locked` | PASS |
+| `cargo clippy --all-targets --all-features --locked -- -W clippy::all` | PASS |
 | `just verify` | PASS |
-| `just verify-agent` | PASS (15/15 checks) |
+| `just verify-agent` | PASS (15/15) |
 | `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | PASS |
-| `git diff --exit-code origin/main...HEAD -- docs/foundation-pass/fixtures` | PASS (byte-identical) |
+| `git diff --exit-code origin/main...HEAD -- docs/foundation-pass/fixtures` | PASS |
 | `git diff --check origin/main...HEAD` | PASS |
-| `git diff --name-only origin/main...HEAD` | PASS (8 files, no production repair) |
-
-### Focused F3b characterization tests (explicit)
-
-| Command | Result |
-|---|---|
-| `cargo test --lib -- f3b3` | PASS (4/4) |
-| `cargo test --lib -- trail_complete\|trail_multiple\|trail_truncated\|trail_incomplete` | PASS (4/4) |
-| `cargo test --test f3b_windows_persistence_evidence` | PASS (7/7) |
 
 ## Discoveries
 
 - `FlushFileBuffers` on a Windows directory handle is technically feasible
-  (the OS accepts the call), but full directory-entry durability depends on
-  volume write-cache behaviour that cannot be controlled from user-mode Rust.
-- The Replay post-rename `FlushFileBuffers` flushes the renamed file handle
-  metadata/data, not the parent directory. The post-rename re-read proves
-  file content integrity, not directory-entry durability.
-- `SetFileInformationByHandle` with `ReplaceIfExists: false` correctly blocks
-  replacement in the tested configuration, but the exclusion may be bypassed
-  on certain volume types.
+  (hard-asserted in `parent_directory_flush_feasibility`).
+- The Replay post-rename `FlushFileBuffers` flushes the renamed file handle only.
 - Trail FileTrail has no per-line digest, checksum, or integrity footer.
-  A truncated final line produces a JSON parse error. No automated recovery
-  mechanism exists.
-- `mklink /J` requires administrator or developer-mode privileges on
-  contemporary Windows, limiting Local Anchor root reparse-point
-  characterization without privilege elevation.
+- `mklink /J` requires admin/dev-mode on contemporary Windows.
 
 ## Remaining risks
 
-1. **Directory-entry durability after power loss**: UNVERIFIED for all 14
-   stores. File-data flush is provably issued; the directory entry itself
-   may not survive power loss. A later package (F3c/d) may add optional
-   parent-directory flush where the platform supports it.
-2. **Local Anchor root reparse-point exposure**: UNVERIFIED. The root
-   has no `verify_chain()` or `reject_reparse()`. An elevated-privilege
-   characterization would complete this evidence. If exposure is confirmed,
-   repair belongs to a later package.
-3. **Trail truncation recovery**: No automated recovery. A partial final
-   line is present in the file and causes JSON parse failure. The reader
-   has no integrity footer to distinguish corruption from truncation.
-4. **Replay `ReplaceIfExists` bypass**: The `ReplaceIfExists: false` flag
-   prevents replacement in standard configurations, but its enforcement may
-   vary by volume type. The Replay's CREATE_NEW exclusion provides a
-   stronger overlapping defence.
+1. Power-loss durability: UNVERIFIED for all 14 stores.
+2. Concurrent atomic visibility: UNVERIFIED for all rename-based stores.
+3. Local Anchor root reparse-point: UNVERIFIED (privilege limitation).
+4. Production Trail reader classification of truncated entries: UNVERIFIED.
 
 ## Smallest next action
 
-Push the branch to GitHub, then route to Lucy for independent review before
-F3c. If Lucy's review identifies a correction, compile it as one bounded
-task rather than beginning F3c.
+Push the correction commit, then route to Lucy for independent review.
+Do not begin F3c. If Lucy identifies a correction, compile it as one
+bounded task.
 
 ## References
 
@@ -183,5 +180,3 @@ task rather than beginning F3c.
 - Task packet: `docs/CURRENT_CLINE_TASK.md`
 - Foundation Pass plan: `docs/architecture/TETHERS_FOUNDATION_PASS.md`
 - F3a worker note: `docs/worker-notes/2026-08-07-f3a-persistence-vocabulary.md`
-- Persistence inventory: `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
-- Debt ledger: `docs/foundation-pass/DEBT_LEDGER.md`
