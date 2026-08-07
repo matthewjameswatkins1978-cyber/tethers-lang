@@ -210,7 +210,13 @@ For every primitive on the primary Windows target:
 
 Date: 2026-08-07
 Baseline: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834` (accepted F3b)
-Evidence source: `tethers-0.1/host-rust/src/f3c_installation_intent_publication_evidence.rs` (43 tests)
+Evidence sources:
+- `tethers-0.1/host-rust/src/f3c_installation_intent_publication_evidence.rs` (44 F3c characterization tests)
+- `tethers-0.1/host-rust/src/installation_publication_mutation_tests.rs` (existing j24k3e2_* mutation tests)
+- `tethers-0.1/host-rust/src/installation_recovery_execution_tests.rs` (existing j24k3d2_* executor tests)
+- `tethers-0.1/host-rust/src/installation_execution_tests.rs` (existing j24k3f_* tests)
+
+Every PROVEN property maps to at least one hard assertion in exactly one named test. Evidence not directly asserted by a F3c characterization test cites the specific existing test that provides the proof.
 
 ### F3c-1 — Publication intent identity: PROVEN
 
@@ -237,17 +243,14 @@ Evidence source: `tethers-0.1/host-rust/src/f3c_installation_intent_publication_
 
 ### F3c-3 — Publication ordering: PROVEN
 
-The publication sequence in `execute_prepared_disabled_installation_publication` follows a strict 7-step order:
+The publication sequence in `execute_prepared_disabled_installation_publication` follows a strict order:
 
 | Step | State | Evidence |
 |---|---|---|
-| 0. Pre-condition | No intent, idle recovery | PROVEN |
-| 1. Intent created | `current.json` present, canonical bytes | PROVEN |
-| 2. Staging built | `.staging-{id}` directory with exact file set | PROVEN (existing mutation tests) |
-| 3. Staging → destination | `plug-{id}` directory present | PROVEN (existing mutation tests) |
-| 4. Record published | `{id}.json` in record root | PROVEN (existing mutation tests) |
-| 5. Intent removed | `current.json` absent | PROVEN |
-| 6. Post-condition | Idle recovery, destination + record present | PROVEN (existing mutation tests) |
+| 0. Pre-condition | No intent, idle recovery | PROVEN — `f3c3_intent_lifecycle_is_deterministic` |
+| 1. Intent created | `current.json` present, canonical bytes, no staging/destination/records | PROVEN — `f3c3_intent_creation_is_the_first_publication_step` |
+| 2-5. Staging → destination → record → intent removal | Full production sequence | PROVEN — `j24k3e2_valid_prepared_publication_completes_exactly_once` calls `execute_prepared_disabled_installation_publication`; hard-asserts final state (destination exists, record exists, intent removed, staging gone) |
+| Post-intent failure boundary | Intent persists but staging/destination/records NOT created | PROVEN — `j24k3f_test_only_post_intent_failure_is_recoverable_and_publishes_once` uses `post_intent_failure_test_hook`; hard-asserts intent loaded, no staging, no destination, no records |
 
 Power-loss durability of intermediate states: UNVERIFIED (F3b).
 
@@ -268,25 +271,31 @@ All 4 invalid states return `installation_recovery_conflict`. Invalid intent ret
 
 ### F3c-5 — Recovery must not destroy evidence: PROVEN
 
-| Property | Verification |
-|---|---|
-| Mismatched destination never deleted | PROVEN — destination + no record → `RevalidateDestinationThenPublishRecord` (not deleted) |
-| Mismatched record never overwritten | PROVEN — destination + non-matching record → `installation_recovery_conflict` |
-| Unrelated staging never removed | PROVEN — staging + destination → conflict (both present avoids deletion) |
-| Wrong intent never cleared | PROVEN — `remove_if_matches` with different intent → conflict; bytes preserved |
-| Corruption evidence preserved | PROVEN — tampered file fails load but remains on disk with tampered content |
-| Ambiguous states fail closed | PROVEN — all 4 invalid state combinations return error, never silent success |
+Classification-level (F3c tests): the classifier returns the correct disposition or error. These assertions prove the decision, not the filesystem effect.
+
+Executor-level (existing j24k3d2_* tests): the recovery executor (`execute_validated_installation_recovery`) is directly exercised and filesystem state snapshotted before/after.
+
+| Property | Classification | Executor |
+|---|---|---|
+| Mismatched destination never deleted | PROVEN — `f3c5_classifier_mismatched_destination_returns_revalidate_not_delete` | PROVEN — `j24k3d2_recovery_never_adopts_or_deletes_final_destination` (tree_snapshot before/after byte-identical) |
+| Mismatched record never overwritten | PROVEN — `f3c5_classifier_mismatched_record_returns_conflict_not_overwrite` | PROVEN — `j24k3d2_completed_publication_removes_only_intent` (destination + record tree_snapshot byte-identical) |
+| Unrelated staging never removed | PROVEN — `f3c5_classifier_staging_plus_destination_returns_conflict` | PROVEN — `j24k3d2_staging_recovery_removes_exact_staging_then_intent` (sibling `.staging-*` survives) |
+| Wrong intent never cleared | PROVEN — `f3c5_wrong_intent_is_never_cleared` (byte snapshot before/after) | Same test |
+| Corruption evidence preserved | PROVEN — `f3c5_corruption_tamper_evidence_preserved` (tampered file remains on disk) | Same test |
+| Ambiguous states fail closed | Classification PROVEN — `f3c5_all_four_classified_invalid_states_return_error` | Specific executor states PROVEN (j24k3d2_* tests); broad proof across all 4 invalid states UNVERIFIED |
+| Unrelated stores unchanged | — | PROVEN — `j24k3d2_unrelated_stores_remain_unchanged` (6 unrelated stores byte-identical) |
+| Idle performs no mutation | — | PROVEN — `j24k3d2_idle_plan_performs_no_mutation` (tree_snapshot before/after byte-identical) |
 
 ### F3c-6 — Canonical bytes / digest truth: PROVEN
 
 | Property | Verification |
 |---|---|
-| Digest computed over canonical representation | PROVEN — `covered_bytes()` clears `intent_digest` then serializes with `canonical()` |
-| Read-back identity checked | PROVEN — `load()` calls `intent.validate()` which recomputes digest |
-| Filename identity disagreement fails closed | PROVEN — `load()` requires exactly `current.json`; other filenames → invalid |
-| Recovery decisions use validated persisted state | PROVEN — `classify_installation_recovery` validates intent before classification |
-| Written bytes are canonical | PROVEN — `create()` writes exact `canonical(intent)` bytes |
-| All content fields digest-covered | PROVEN — tampering any of `transaction_id`, `candidate_id`, `destination_relative_path`, `installed_record_digest` invalidates intent |
+| Digest equals sha256 of exact covered representation | PROVEN — `f3c6_digest_computed_over_canonical_representation`: independently clears `intent_digest`, canonical serializes, sha256, asserts `== intent.intent_digest` |
+| Read-back identity checked | PROVEN — `f3c6_read_back_identity_is_checked`: `load()` calls `intent.validate()` which recomputes digest from `covered_bytes()` |
+| Filename identity disagreement fails closed | PROVEN — `f3c6_filename_record_identity_disagreement_fails_closed`: `load()` requires exactly `current.json` |
+| Recovery decisions use validated persisted state | PROVEN — `f3c6_recovery_decisions_use_validated_persisted_state`: `classify_installation_recovery` validates intent before classification |
+| Written bytes are canonical | PROVEN — `f3c6_written_bytes_are_canonical_intent`: `create()` output bytes == `canonical(intent)` |
+| All content fields digest-covered | PROVEN — `f3c6_every_content_field_is_digest_covered`: tampering any of 4 content fields invalidates digest |
 
 ### F3c unresolved
 

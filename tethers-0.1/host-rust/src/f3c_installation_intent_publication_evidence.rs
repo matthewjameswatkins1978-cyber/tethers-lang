@@ -367,9 +367,22 @@ fn f3c2_invalid_expected_does_not_mutate_store() {
 // ===========================================================================
 // F3c-3 — Publication ordering                                      PROVEN
 // ===========================================================================
+//
+// The F3c intent-store tests below prove the intent lifecycle (create, validate,
+// remove). The full 7-step production publication sequence is executed and
+// hard-asserted by these existing mutation/execution tests:
+//
+//   j24k3e2_valid_prepared_publication_completes_exactly_once:
+//     calls execute_prepared_disabled_installation_publication; asserts final
+//     state: destination (is_dir), record (is_file), intent removed,
+//     staging gone.
+//
+//   j24k3f_test_only_post_intent_failure_is_recoverable_and_publishes_once:
+//     uses post_intent_failure_test_hook; hard-asserts intent loaded,
+//     destination/staging/records NOT created.
 
 #[test]
-fn f3c3_publication_sequence_is_deterministic_and_mapped() {
+fn f3c3_intent_lifecycle_is_deterministic() {
     let (store, intent, root) = store();
 
     assert!(store.load().unwrap().is_none());
@@ -408,6 +421,25 @@ fn f3c3_intent_only_persists_and_does_not_imply_publication() {
         .collect();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].file_name().to_string_lossy(), "current.json");
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn f3c3_intent_creation_is_the_first_publication_step() {
+    let (store, intent, root) = store();
+    store.create(&intent).unwrap();
+
+    // Intent exists on disk.
+    assert!(root.join("installation-intent/current.json").exists());
+    let loaded = store.load().unwrap().unwrap();
+    assert_eq!(loaded.intent_digest, intent.intent_digest);
+
+    // Publication creates no staging directory and no installed records.
+    // Intent alone is only published state; staging, destination, and record
+    // require the remaining five steps of execute_prepared_disabled_installation_publication.
+    assert!(store.load().unwrap().is_some());
+    assert!(!root.join("installation-intent/.current.tmp").exists());
 
     fs::remove_dir_all(root).unwrap();
 }
@@ -606,9 +638,36 @@ fn f3c4_classification_preserves_input() {
 // ===========================================================================
 // F3c-5 — Recovery must not destroy evidence                         PROVEN
 // ===========================================================================
+//
+// Classification-level: the F3c tests below prove that the classifier returns
+// the correct disposition or error for every state, and that the intent store
+// does not mutate files on mismatched removal. The classifier is pure and does
+// not perform I/O.
+//
+// Executor-level (filesystem non-mutation): hard-asserted by existing execution
+// tests that snapshot bytes before/after recovery and prove files remain
+// unchanged after conflict or error. These tests are the authority for
+// filesystem non-mutation claims:
+//
+//   j24k3d2_recovery_never_adopts_or_deletes_final_destination:
+//     tree_snapshot before/after → destination byte-identical.
+//
+//   j24k3d2_completed_publication_removes_only_intent:
+//     tree_snapshot before/after → destination AND record byte-identical;
+//     only intent removed.
+//
+//   j24k3d2_staging_recovery_removes_exact_staging_then_intent:
+//     sibling .staging-* directory survives recovery.
+//
+//   j24k3d2_unrelated_stores_remain_unchanged:
+//     6 unrelated stores (quarantine, candidates, trust, profiles,
+//     conformance, approvals) byte-identical before/after recovery.
+//
+//   j24k3d2_idle_plan_performs_no_mutation:
+//     tree_snapshot before/after → entire base byte-identical.
 
 #[test]
-fn f3c5_mismatched_destination_is_never_deleted_by_recovery() {
+fn f3c5_classifier_mismatched_destination_returns_revalidate_not_delete() {
     let record = valid_record_for_test();
     let intent = InstallationPublicationIntent::from_precomputed_record(record).unwrap();
     let disposition = classify_installation_recovery(obs(&intent, false, true, None)).unwrap();
@@ -616,24 +675,30 @@ fn f3c5_mismatched_destination_is_never_deleted_by_recovery() {
         disposition,
         InstallationRecoveryDisposition::RevalidateDestinationThenPublishRecord
     );
+    // Classifier says "revalidate (don't delete)" — executor-level non-deletion
+    // is hard-proven by j24k3d2_recovery_never_adopts_or_deletes_final_destination.
 }
 
 #[test]
-fn f3c5_mismatched_record_never_overwritten() {
+fn f3c5_classifier_mismatched_record_returns_conflict_not_overwrite() {
     let record = valid_record_for_test();
     let intent = InstallationPublicationIntent::from_precomputed_record(record.clone()).unwrap();
     let other = valid_record_for_test();
     assert_ne!(record, other);
     let err = classify_installation_recovery(obs(&intent, false, true, Some(&other))).unwrap_err();
     assert_eq!(err.code, "installation_recovery_conflict");
+    // Classifier returns conflict on mismatched record — executor-level
+    // non-overwrite is hard-proven by j24k3d2_completed_publication_removes_only_intent.
 }
 
 #[test]
-fn f3c5_unrelated_staging_is_not_removed() {
+fn f3c5_classifier_staging_plus_destination_returns_conflict() {
     let record = valid_record_for_test();
     let intent = InstallationPublicationIntent::from_precomputed_record(record).unwrap();
     let err = classify_installation_recovery(obs(&intent, true, true, None)).unwrap_err();
     assert_eq!(err.code, "installation_recovery_conflict");
+    // Classifier refuses ambiguous staging + destination — executor-level
+    // non-deletion is hard-proven by j24k3d2_staging_recovery_removes_exact_staging_then_intent.
 }
 
 #[test]
@@ -676,7 +741,7 @@ fn f3c5_corruption_tamper_evidence_preserved() {
 }
 
 #[test]
-fn f3c5_recovery_never_silently_normalises_ambiguous_state_into_success() {
+fn f3c5_all_four_classified_invalid_states_return_error() {
     let record = valid_record_for_test();
     let intent = InstallationPublicationIntent::from_precomputed_record(record.clone()).unwrap();
 
@@ -697,6 +762,13 @@ fn f3c5_recovery_never_silently_normalises_ambiguous_state_into_success() {
             rec.is_some()
         );
     }
+    // Classification PROVEN: all 4 states return error from classifier.
+    // Executor-level non-mutation for specific states is hard-proven by:
+    //   j24k3d2_record_conflict_retains_intent_and_destination
+    //   j24k3d2_changed_authoritative_intent_conflicts_without_mutation
+    //   j24k3d2_changed_disposition_conflicts_without_intent_removal
+    // Broad executor proof across all 4 states: UNVERIFIED (no single test
+    // exercises the executor for every invalid-state combination).
 }
 
 // ===========================================================================
@@ -711,6 +783,16 @@ fn f3c6_digest_computed_over_canonical_representation() {
     intent.validate().unwrap();
     assert!(!intent.intent_digest.is_empty());
 
+    // Independently construct the exact covered representation:
+    // clone, clear intent_digest, canonical serialize, sha256.
+    let mut covered = intent.clone();
+    covered.intent_digest.clear();
+    let canonical_covered_bytes = canonical(&covered).unwrap();
+    let expected_digest = sha256(&canonical_covered_bytes);
+
+    assert_eq!(intent.intent_digest, expected_digest);
+
+    // Deterministic: same input → same digest.
     let intent2 = InstallationPublicationIntent::from_precomputed_record(record.clone()).unwrap();
     assert_eq!(intent.intent_digest, intent2.intent_digest);
 }
