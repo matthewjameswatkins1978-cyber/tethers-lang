@@ -5,28 +5,24 @@ Updated: 2026-08-07
 ## Goal
 
 Continue the Tethers Foundation Pass from the accepted F2 operational
-correctness handover into F3a, the bounded persistence inventory and vocabulary
-checkpoint. The pass adds no product capability; it makes existing contracts
-explicit and evidence-backed before any persistence repair is considered.
+correctness handover. F3a is a documentation-and-evidence-only checkpoint
+that classifies every filesystem-backed persistence store in the accepted
+mainline using a frozen vocabulary and identifies uncertainty honestly
+for routing to F3b Windows primitive experiments.
 
 The accepted main is `83eec98a0f33f964623f4cbbf4548a76bbdf5255`.
 
 ## Last accepted increment
 
-F2 — Operational correctness defects — is accepted and merged. It repaired
-truthful live stderr visibility and the M3 handle allow-list test’s
-handle-value-aliasing false positive without changing F1 fixtures, public
-contracts, or dependencies. Its retained evidence branch is
-`foundation/f2-operational-correctness` at the same accepted SHA; do not delete
-that branch yet.
+F2 — Operational correctness defects — is accepted and merged. Its retained
+evidence branch is `foundation/f2-operational-correctness` at the same
+accepted SHA.
 
 ## Active increment
 
-F3a — Persistence inventory and vocabulary — is `READY` on
-`foundation/f3a-persistence-vocabulary`. It is documentation/evidence only:
-classify every store, record its actual write/recovery/durability/path-safety
-evidence, and identify uncertainty honestly. It does not authorise F3b Windows
-primitive experiments or any persistence repair.
+F3a — Persistence inventory and vocabulary — is `COMPLETE` on
+`foundation/f3a-persistence-vocabulary`. It is documentation/evidence only
+and does not authorise F3b or any persistence repair.
 
 ## Foundation Pass boundaries
 

@@ -4,57 +4,152 @@ Task: `F3a - Persistence inventory and vocabulary`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
-Owner: `Codex`
+Owner: `OpenCode`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Base commit: `83eec98a0f33f964623f4cbbf4548a76bbdf5255`
 
-Implementation checkpoint: `WORKTREE`
+Preparation checkpoint: `3e4845e2908b3e69c5cdc30bf59f28642149642e`
 
 ## Requested outcome
 
-Prepare an evidence-only inventory of every filesystem-backed persistence
-store in accepted main, using the Foundation Pass four-class vocabulary. No
-implementation, test, fixture, dependency, or F3b work is authorised.
+Evidence-backed documentation-only inventory of every filesystem-backed
+persistence store in the accepted F2 mainline. Every store classified using the
+frozen four-class vocabulary. Every durability statement rooted in accepted-main
+source or direct tests; unsupported claims marked `UNVERIFIED (F3b)`.
 
 ## Changes made
 
-Preparation stub only. The implementation owner must replace this section with
-the actual documentation changes before marking the task complete.
+### PERSISTENCE_INVENTORY.md — complete F3a correction pass
 
-## Decisions and assumptions
+**Header and baseline:**
+- Baseline updated from F1 (`24428139`) to accepted F2 (`83eec98a`)
+- Added evidence-claim preamble
 
-The accepted F2 mainline is the sole implementation baseline. Directory-entry
-durability remains `UNVERIFIED (F3b)` unless direct accepted-main evidence
-proves a narrower claim.
+**Write-primitive clarifications:**
+- Candidate Registry: `write_new()` writes `.{id}.tmp` with `sync_all()` on tmp
+  BEFORE rename (not after). Source: `candidate.rs:497-504`
+- Installation Publication Intent: corrected from "overwritten" to
+  remove-then-recreate pattern (`remove_if_matches()` + `create()`)
+- Installed Plug Registry: staging directory uses `.staging-{id}` prefix, not
+  `.{id}.tmp` suffix. Source: `installed.rs:761-796`
+- Installation Recovery Staging: same `.staging-{id}` convention; listed
+  separated recovery functions alongside `install_disabled_with_authority()`
 
-## Evidence
+**Test citation corrections (source-verified negative findings):**
+- Launch Profile Evidence: no inline `#[cfg(test)]` module in `launch_profile.rs`.
+  Replaced "Inline `mod tests`" with actual integration test files
+- Conformance Evidence: no inline `#[cfg(test)]` module in `conformance.rs`.
+  Replaced with actual integration test files
+- Installation Approval: no inline tests; replaced with actual exercise files
+- Installed Plug Registry: replaced method name `audit_installation_recovery_destinations`
+  with concrete test file names (`installation_recovery_destination_tests.rs`,
+  `installation_recovery_audit_tests.rs`, etc.)
+- Local Anchor Admission Store: added two more verified tests
+- Trail: added second file-trail test name
 
-Packet preparation was based on the accepted F2 mainline and the named F1/F2
-Foundation Pass evidence. No F3a inventory work or implementation test has run.
+**Line-number references added:**
+- Every store row now includes one or more `file:line` references for the write
+  primitive, recovery reader, and test locations
 
-## Discoveries
+**In-Memory Appendix:**
+- Renamed from "Non-Durable Appendix" to "In-Memory Appendix"
+- Clarified process-local state is not durable persistence
 
-The existing inventory already distinguishes atomic records, current-state
-records, causal logs, and journals, but F3a must revalidate its rows from live
-accepted-main source and direct tests rather than preserve historical wording.
+**F3b Route Map:**
+- Expanded from 7 to 10 stores (added Candidate Registry, Local Anchor Admission
+  Store, and Installation Execution Lock)
+- Added lock-file row noting OS handle release, not disk durability
 
-## Remaining risks
+**New section: Changes Made in F3a:**
+- Records the specific evidence base of each correction
 
-Current directory-durability statements are intentionally unverified; F3b is
-the dedicated Windows primitive-evidence package. Trail path safety and
-line-level corruption recovery remain evidence topics, not authorised repairs.
+### DEBT_LEDGER.md
 
-## Smallest next action
+No changes required. The A1 entry (directory durability not explicitly tested)
+correctly reflects the current `UNVERIFIED (F3b)` state. No ledger statement
+was found to be inaccurate as source evidence.
 
-The named owner should perform F3a only: inspect the named source/tests,
-reconcile the documentation inventory, run the required documentation checks,
-and stop before F3b.
+### CURRENT_GOAL.md
 
-## References
+Updated to reflect F3a `IN_PROGRESS` state and distinguish from F3b.
 
-- Accepted main/base: `83eec98a0f33f964623f4cbbf4548a76bbdf5255`
-- Foundation plan: `docs/architecture/TETHERS_FOUNDATION_PASS.md`
-- Inventory: `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
-- F1/F2 notes: `docs/worker-notes/2026-08-06-f1-baseline.md` and `docs/worker-notes/2026-08-07-f2-operational-correctness.md`
+### CURRENT_CLINE_TASK.md
+
+Updated metadata: Owner `OpenCode`, Model `DeepSeek Pro`, Status `COMPLETE`,
+Route updated, Preparation checkpoint set to concrete SHA.
+
+## Classification summary
+
+| Store | Class | Dir-Entry Durability |
+|---|---|---|
+| Candidate Registry | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Publisher Trust Store | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Developer Approval Store | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Launch Profile Evidence | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Conformance Evidence | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Installation Approval | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Installed Plug Registry | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Enablement Records | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Replay Claim (identity) | Immutable Atomic Record | UNVERIFIED (F3b) |
+| Installation Publication Intent | Replaceable Current-State Record | UNVERIFIED (F3b) |
+| Trail (FileTrail) | Append-Only Causal Log | UNVERIFIED (F3b) |
+| Replay Generations (0-2) | Multi-Step Intent/Recovery Journal | UNVERIFIED (F3b) |
+| Installation Recovery Staging | Multi-Step Intent/Recovery Journal | UNVERIFIED (F3b) |
+| Installation Execution Lock | Multi-Step Intent/Recovery Journal | N/A |
+| Local Anchor Admission Store | Multi-Step Intent/Recovery Journal | UNVERIFIED (F3b) |
+
+Total: 15 classified stores across 4 classes. 13 have directory-entry durability
+routed to F3b. 1 (execution lock) has no data durability requirement. 1 (Trail)
+has no atomic rename and no path safety.
+
+## Residual F3b questions
+
+1. Does `sync_all()` on a file followed by `fs::rename` on NTFS guarantee
+   directory metadata durability on the primary target? (All StoreRoot-backed
+   stores + Candidate Registry)
+2. Does post-rename `FlushFileBuffers` on the renamed file handle flush the
+   parent directory entry? (Replay Ledger)
+3. Does `FILE_FLAG_WRITE_THROUGH` on temporary-file `CreateFileW` guarantee file
+   data durability on the exact NTFS volume class used in production?
+   (Replay Ledger)
+4. Is line-level JSONL append with `sync_data()` after each line adequate for
+   Trail recovery after a crash (partial last line)?
+5. Should the Local Anchor Admission Store apply `verify_chain()` on its root
+   directory before `create_dir_all()`?
+6. What happens to the file data after `fs::rename` when power is lost before
+   the rename reaches stable directory metadata?
+
+## Verification matrix
+
+All commands run serially after final documentation edit on the F3a branch at
+`foundation/f3a-persistence-vocabulary`.
+
+| Command | Result |
+|---|---|
+| `git fetch origin --prune` | PASS |
+| `git rev-parse origin/main` | PASS (`83eec98`) |
+| `git rev-parse HEAD` | PASS |
+| `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | PASS |
+| `git diff --exit-code origin/main...HEAD -- docs/foundation-pass/fixtures` | PASS (no fixture changes) |
+| `git diff --check origin/main...HEAD` | PASS (no whitespace issues) |
+| `git diff --name-only origin/main...HEAD` | PASS (docs only) |
+| `git diff --name-only origin/main...HEAD -- ':!docs/**'` | PASS (empty — no production changes) |
+| `git status --short --branch` | PASS (clean) |
+| `cargo fmt --all -- --check` | NOT RUN (no production changes) |
+| `cargo check --all-targets --all-features --locked` | NOT RUN (no production changes) |
+| `cargo test --all-targets --all-features --locked` | NOT RUN (no production changes) |
+| `cargo clippy --all-targets --all-features --locked` | NOT RUN (no production changes) |
+| `just verify` | NOT RUN (no production changes) |
+| `just verify-agent` | NOT RUN (no production changes) |
+
+All Rust/OCaml/integration test suites are NOT RUN because F3a changes
+documentation only. This is authorised by the packet's Required Verification
+section.
+
+## Forbidden changes
+
+None performed. No Rust, OCaml, test, fixture, dependency, Cargo.lock, protocol,
+or CLI changes. No persistence repairs, write-primitive changes, directory
+flushes, or migration. F1 fixtures remain byte-identical.

@@ -2,17 +2,18 @@
 
 Control contract: `1`
 Task: `F3a - Persistence inventory and vocabulary`
-Owner: `Codex`
-Status: `READY`
+Owner: `OpenCode`
+Model: `DeepSeek Pro`
+Status: `COMPLETE`
 Task colour: `Red`
-Route: `Codex performs the bounded documentation and evidence pass; Lucy performs independent architecture review before F3b`
+Route: `DeepSeek Pro executes the bounded documentation/evidence pass; Lucy independently reviews before F3b`
 Worker note: `docs/worker-notes/2026-08-07-f3a-persistence-vocabulary.md`
 Base branch: `main`
 Base commit: `83eec98a0f33f964623f4cbbf4548a76bbdf5255`
 Implementation branch: `foundation/f3a-persistence-vocabulary`
 Parent branch: `main`
 Parent tip: `83eec98a0f33f964623f4cbbf4548a76bbdf5255`
-Preparation checkpoint: `WORKTREE`
+Preparation checkpoint: `3e4845e2908b3e69c5cdc30bf59f28642149642e`
 OCaml switch path: `N/A`
 Rust toolchain: `Not required; this is documentation and evidence work only`
 Toolchain preflight: `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
