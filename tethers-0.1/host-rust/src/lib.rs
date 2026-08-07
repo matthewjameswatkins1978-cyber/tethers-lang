@@ -19,6 +19,8 @@ pub mod event_admission;
 mod event_queue;
 pub mod execution_environment;
 pub mod executor;
+#[cfg(test)]
+mod f3c_installation_intent_publication_evidence;
 pub mod file_tools;
 pub mod host_execution;
 mod installation_driver;

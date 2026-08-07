@@ -1,190 +1,163 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F3b - Windows persistence primitive evidence`
+Task: `F3c - Installation intent and publication contract`
 Owner: `OpenCode`
 Model: `DeepSeek Pro`
-Status: `COMPLETE`
-Task colour: `Red`
-Route: `DeepSeek Pro performs the bounded Windows primitive evidence pass; Lucy independently reviews before F3c`
-Worker note: `docs/worker-notes/2026-08-07-f3b-windows-persistence-evidence.md`
+Status: `IN_PROGRESS`
+Task colour: `Amber`
+Route: `DeepSeek Pro performs the bounded installation intent/publication audit and repair; Lucy independently reviews before F3d`
+Worker note: `docs/worker-notes/2026-08-07-f3c-installation-intent-publication.md`
 Base branch: `main`
-Base commit: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
-Implementation branch: `foundation/f3b-windows-persistence-evidence`
+Base commit: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
+Implementation branch: `foundation/f3c-installation-intent-publication`
 Parent branch: `main`
-Parent tip: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
-Preparation checkpoint: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
-Implementation checkpoint: `4d594dc55204744f5a8c0af4657125a2a399ebb9`
+Parent tip: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
+Preparation checkpoint: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
+Implementation checkpoint: `(TBD after first commit)`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
 
 ## Objective
 
-Establish direct Windows evidence for the persistence primitives identified
-by F3a, without repairing or redesigning the persistence stores. Every
-conclusion must distinguish the observed primitive, the directly tested
-property, and the remaining uncertainty.
+Audit and, only where directly justified, align the specialised installation
+intent/publication contract. F3c is NOT a universal persistence redesign.
+
+The target is the existing installation sequence and its recovery semantics:
+
+```text
+intent -> staged filesystem state -> destination publication
+       -> durable installation record -> exact-match intent removal/recovery
+```
+
+Preserve the specialised design where it is already correct.
+
+## Central evidence rule
+
+For every claimed property separate:
+
+1. **Observed implementation**
+2. **Directly tested property**
+3. **Remaining uncertainty**
+
+And:
+
+**PROVEN means there is a hard assertion that fails if that exact statement is false.**
+
+Do not infer correctness from comments, function names, API names, nearby tests
+or a green integration suite.
 
 ## Relevant background and existing behaviour
 
-F3a at `145a791ceb3f5e3b8855aeadbac83671d9a2b363` classified 14 filesystem-backed
-stores and identified gaps in Windows primitive evidence. The inventory marks
-every atomic-visibility and directory-durability claim `UNVERIFIED (F3b)`.
-The F3a route map records five specific question clusters:
+The installation publication system at `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
+has a specialised, well-tested contract:
 
-- `sync_all()` + `fs::rename` durability for StoreRoot/Candidate/Local Anchor
-- Parent-directory durability feasibility
-- Replay `FlushFileBuffers` + `SetFileInformationByHandle` rename semantics
-- JSONL line append interruption behaviour (Trail)
-- Local Anchor root path reparse-point safety
+- **InstallationPublicationIntent** (`installation_publication_intent.rs`):
+  singleton `current.json` in a StoreRoot-backed directory; digest covers all
+  content fields via `covered_bytes()`; validation enforces UUID canonicality,
+  schema pin, cross-field consistency, and digest integrity.
 
-The central rule for F3b: separate file-data durability, visibility of the
-final filename, atomic visibility during rename, persistence of the directory
-entry, behaviour after process interruption, behaviour after simulated
-incomplete writes, and unsafe-path / reparse-point defence. Do not treat
-evidence for one property as evidence for another.
+- **Exact-match removal** (`remove_if_matches`): validates expected intent,
+  loads current, compares with `!=`, returns `Ok(true)` on match,
+  `Ok(false)` on absent, `Err(conflict())` on mismatch.
+
+- **Publication mutation** (`installation_publication_mutation.rs`):
+  writes intent -> builds staging -> renames staging to destination
+  -> publishes record -> removes exact-matching intent via recovery.
+
+- **Recovery classification** (`installation_recovery.rs:35-69`):
+  maps 4 valid states to dispositions; all 4 invalid states return conflict.
+
+- **19 intent tests** in `installation_publication_intent_tests.rs`
+- **16 recovery tests** in `installation_recovery_tests.rs`
+- Comprehensive mutation tests in `installation_publication_mutation_tests.rs`
+
+### F3b constraints carried forward
+
+- flush operation accepted: PROVEN
+- bytes survive close/reopen: PROVEN
+- pre-rename absence and post-rename complete bytes: PROVEN
+- concurrent atomic visibility during rename: UNVERIFIED
+- file data surviving sudden power loss: UNVERIFIED
+- directory-entry survival after power loss: UNVERIFIED
+
+F3c must not upgrade any UNVERIFIED property to PROVEN.
 
 ## Required behaviour
 
-1. Characterize `sync_all()` + `fs::rename` with direct test evidence for all
-   7 named observable properties (F3b-1).
-2. Investigate parent-directory durability feasibility and record what can be
-   proven and what remains unverified (F3b-2).
-3. Characterize the Replay Windows publish primitive with direct test evidence
-   for each of the 6 observable stages (F3b-3).
-4. Characterize Trail JSONL interruption behaviour including truncated final-line
-   detection and incomplete-line handling (F3b-4).
-5. Characterize Local Anchor root reparse-point safety with a bounded
-   Windows-only test (F3b-5).
-
-### F3b-1: `sync_all()` + `fs::rename`
-
-Build a minimal private characterization test for the primitive used by
-StoreRoot/Candidate/Local Anchor style persistence. Use a temporary directory.
-
-Directly establish what can reasonably be tested on the primary Windows target:
-
-- temporary file is fully written;
-- `sync_all()` succeeds;
-- rename succeeds;
-- final path contains the complete expected bytes;
-- temporary path disappears;
-- no partial final file is exposed during ordinary execution;
-- restart/reopen reads the exact expected bytes.
-
-If true power-loss durability cannot be deterministically established, report
-`UNVERIFIED`.
-
-### F3b-2: Parent-directory durability feasibility
-
-Investigate the exact Windows/Rust mechanisms available for flushing or
-proving directory-entry durability. Determine from direct platform/API evidence
-and a minimal experiment:
-
-- whether Windows permits opening the relevant directory with necessary flags/access;
-- whether `FlushFileBuffers` can meaningfully be invoked on that handle;
-- whether the current Rust implementation performs such an operation;
-- what narrower claim can actually be proven.
-
-Do not change production persistence.
-
-### F3b-3: Replay Windows primitive
-
-Characterize the accepted-main sequence in `publish_new_canonical_file_with_temporary_stem`:
-
-- `CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH)` — test observable durability;
-- `WriteFile` — test complete write;
-- `FlushFileBuffers` before rename — test file-data durability;
-- `SetFileInformationByHandle` rename — test rename properties;
-- `FlushFileBuffers` on the renamed file handle — test what this proves;
-- reopen/re-read exact-byte verification — test what this proves.
-
-Test the observable guarantees individually. Establish exactly what the
-post-rename re-read proves and what it does not prove.
-
-### F3b-4: Trail interruption behaviour
-
-Characterize JSONL append using `writeln!`, `flush()`, `sync_data()`:
-
-- complete line survives close/reopen;
-- multiple complete lines remain ordered and parseable;
-- deliberately truncated final line is detected by the current reader;
-- establish current behaviour when the final JSONL entry is incomplete.
-
-If current recovery accepts, ignores, or fails on a partial final line,
-record the exact behaviour. Do not redesign Trail or add per-line digests.
-
-### F3b-5: Local Anchor root safety
-
-Characterize the Local Anchor Admission Store root path safety:
-
-- determine whether a reparse point at or within the persistence root can
-  redirect admission writes despite hashed safe filenames;
-- use a bounded Windows-only test.
-
-If exposure is demonstrated, record it as a confirmed defect and route the
-repair to the correct later package. Do not repair root-safety behaviour in F3b.
+1. **F3c-1 — Publication intent identity**: Establish directly: the intent has one canonical identity; stored bytes/digest bind the exact intended installation operation; conflicting intent cannot silently replace an existing different intent; exact duplicate/retry behaviour is deterministic; the singleton `current.json` contract is correctly enforced; malformed or duplicate intent state fails closed.
+2. **F3c-2 — Exact-match removal**: Directly prove that intent removal occurs only when the persisted intent exactly matches the expected operation/identity. Required negative properties: wrong digest cannot remove; wrong installation identity cannot remove; stale intent cannot remove a newer/different intent; malformed state cannot be converted into absence; missing intent is distinguished from mismatched intent.
+3. **F3c-3 — Publication ordering**: Map and test the exact normal publication sequence. Identify the points at which: intent exists; staging exists; final destination exists; durable installed-record exists; intent has been removed. Prove the permitted ordering directly.
+4. **F3c-4 — Recovery state matrix**: Audit `classify_installation_recovery` against every materially distinct observable combination of intent/staging/destination/record presence and matching/mismatching identity. For every state, prove one explicit outcome.
+5. **F3c-5 — Recovery must not destroy evidence**: Directly prove negative properties: mismatching destination is never deleted; mismatching installed record is never overwritten; unrelated staging is never removed; wrong intent is never cleared; corruption/tamper evidence is preserved; recovery does not silently normalise an ambiguous state into success.
+6. **F3c-6 — Canonical bytes / digest truth**: Directly prove: digest is computed over the intended canonical representation; persisted/read-back identity is checked; filename/record identity disagreement fails closed; recovery decisions use validated persisted state.
 
 ## Relevant components
 
-- `docs/architecture/TETHERS_FOUNDATION_PASS.md` (F3a/F3b/C boundary)
-- `docs/foundation-pass/PERSISTENCE_INVENTORY.md` (F3a deliverable, update with F3b findings)
-- `docs/foundation-pass/DEBT_LEDGER.md` (only for directly demonstrated defects/clarifications)
-- `docs/worker-notes/2026-08-07-f3a-persistence-vocabulary.md` (F3a evidence)
-- `tethers-0.1/host-rust/src/m3_store.rs` (StoreRoot, `create_json`, `verify_chain`, `reject_reparse`)
-- `tethers-0.1/host-rust/src/candidate.rs` (write_new, Candidate Registry)
-- `tethers-0.1/host-rust/src/local_anchor.rs` (AdmissionStore, atomic_create, safe_filename)
-- `tethers-0.1/host-rust/src/replay_windows.rs` (publish_new_canonical_file_with_temporary_stem)
-- `tethers-0.1/host-rust/src/dispatch.rs` (FileTrail, JSONL append)
-- `docs/worker-notes/2026-08-07-f3b-windows-persistence-evidence.md`
-- `docs/CURRENT_GOAL.md` and `docs/CURRENT_CLINE_TASK.md`
+- `tethers-0.1/host-rust/src/installation_publication_intent.rs`
+- `tethers-0.1/host-rust/src/installation_publication_intent_tests.rs`
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/installation_execution.rs`
+- `tethers-0.1/host-rust/src/installation_plan.rs`
+- `tethers-0.1/host-rust/src/installation_publication_preparation.rs`
+- `tethers-0.1/host-rust/src/installation_publication_mutation.rs`
+- `tethers-0.1/host-rust/src/installation_publication_mutation_tests.rs`
+- `tethers-0.1/host-rust/src/installation_recovery.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_execution.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_plan.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_tests.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs`
+- `docs/architecture/TETHERS_FOUNDATION_PASS.md`
+- `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
+- `docs/foundation-pass/DEBT_LEDGER.md`
 
 ## Frozen decisions and invariants
 
-- Accepted main is `145a791ceb3f5e3b8855aeadbac83671d9a2b363` (F3a merged).
-  If live `origin/main` differs, record the direct Git evidence and stop.
-- F3b is evidence-gathering only. Do not repair, redesign, or change production
-  persistence behaviour, write primitives, directory handling, Trail, Replay,
-  Local Anchor paths, installation intent/publication, or CLI/protocol/JSON
-  output.
-- Every conclusion must separate: observed primitive, directly tested property,
-  remaining uncertainty. Do not infer a Windows guarantee from API names or
-  documentation terminology alone.
-- For each property, report one of `PROVEN`, `DISPROVEN`, or `UNVERIFIED` with
-  exact source/test evidence.
-- A failing characterization test is valuable evidence. Do not change production
-  code to make it green.
-- Production seams must not be widened merely to make tests easier. Prefer
-  private helpers and isolated characterization harnesses.
-- Preserve F1 literal fixtures exactly.
-- One implementation owner per task. Do not begin F3c.
+- Accepted main is `71f79f7c80b2a09921ee59ac4b1acfa3926bf834` (F3b merged).
+- F3c is audit and evidence. Do not redesign the intent format, publication
+  flow, recovery, or any other persistence store.
+- Every PROVEN claim must map to a hard assertion.
+- Document UNVERIFIED properties from F3b without upgrading them.
+- One implementation owner per task. Do not begin F3d or F3e.
+
+## Expected pre-existing changes
+
+None. Branch is created from accepted F3b main. Only the files listed in this packet, the F3c characterization tests, and documentation updates should change.
 
 ## Acceptance criteria
 
-1. F3b-1 characterizes `sync_all()` + `fs::rename` with direct test evidence
-   for all 7 named observable properties.
-2. F3b-2 investigates parent-directory durability and records what can be
-   proven and what remains unverified.
-3. F3b-3 characterizes all 6 Replay Windows primitive stages with direct test
-   evidence for each observable guarantee.
-4. F3b-4 characterizes Trail JSONL interruption behaviour including truncated
-   final-line detection.
-5. F3b-5 characterizes Local Anchor root reparse-point safety with a bounded
-   Windows-only test.
-6. PERSISTENCE_INVENTORY.md updated with `PROVEN (F3b)`, `DISPROVEN (F3b)`,
-   or `UNVERIFIED (F3b)` tags where F3b establishes evidence.
-7. DEBT_LEDGER.md updated only for directly demonstrated defects or
-   clarifications.
-8. F3a/F1 fixtures are byte-identical to accepted main.
-9. Complete branch diff contains only characterization tests and documentation;
-   no production repair or persistence redesign.
-10. F3b worker note records exact evidence, findings, and residual questions.
+1. F3c-1 through F3c-6 each have direct characterization tests proving the
+   named properties. Every property uses PROVEN, DISPROVEN, or UNVERIFIED.
+2. PERSISTENCE_INVENTORY.md updated with F3c evidence tags.
+3. DEBT_LEDGER.md updated only for directly demonstrated defects/clarifications.
+4. F1 fixtures are byte-identical.
+5. Complete branch diff: characterization tests + documentation only.
+6. F3c worker note records exact evidence and findings.
+
+## Forbidden changes
+
+Do not:
+- create a universal persistence layer;
+- redesign StoreRoot globally;
+- add parent-directory flushing;
+- repair Candidate Registry or Local Anchor;
+- redesign Trail or Replay;
+- begin F3d or F3e;
+- change public CLI shape, JSON envelopes, exit codes, protocol semantics, or
+  F1 compatibility fixtures;
+- delete or weaken an existing direct negative-property test.
+
+## Stop conditions
+
+STOP if:
+- `origin/main` differs from `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`;
+- a required property cannot be characterized;
+- a repair would require redesign outside F3c;
+- a required check fails;
+- two materially similar attempts fail.
 
 ## Required verification
-
-Run the following serially after the final code change. Record each result as
-PASS, FAIL, or NOT RUN; a mandatory NOT RUN blocks COMPLETE.
 
 ```powershell
 git fetch origin --prune
@@ -208,35 +181,4 @@ git diff --name-only origin/main...HEAD
 git status --short --branch
 ```
 
-Also run every focused F3b characterization test explicitly. Record each
-separately.
-
-## Forbidden changes
-
-Do not perform:
-
-- StoreRoot repair (directory flushing, migration);
-- Candidate Registry repair;
-- Local Anchor path handling or root-safety repair;
-- Replay redesign or write-primitive change;
-- Trail redesign, per-line digest, or integrity footer addition;
-- installation intent/publication repair (F3c);
-- immutable/current-state implementation changes (F3d);
-- CLI, JSON, protocol, exit-code, compatibility fixture, or replay-digest changes;
-- a universal storage abstraction or new dependency;
-- beginning F3c, F3d, or F3e;
-- changing F1 fixtures;
-- weakening an experiment because it is difficult to make pass.
-
-## Stop conditions
-
-Stop and report direct evidence if `origin/main` differs from
-`145a791ceb3f5e3b8855aeadbac83671d9a2b363`; the worktree/branch/base is
-unexpected; a required property cannot be characterized on the available
-target; a finding would require production repair to prove; a required check
-fails; or two materially similar evidence attempts fail. Return one smallest
-unresolved question.
-
-## Expected pre-existing changes
-
-None.
+Run every focused F3c test explicitly and record it separately.

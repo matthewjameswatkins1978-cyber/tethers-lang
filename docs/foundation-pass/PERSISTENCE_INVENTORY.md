@@ -31,7 +31,7 @@ May be replaced with a newer value (remove then recreate). Previous state is dis
 
 | Store | Module | Write Primitive | Atomic Visibility | File Durability | Dir-Entry Durability | Recovery Reader | Corruption Classification | Unsafe-Path Protection | Tests |
 |---|---|---|---|---|---|---|---|---|---|
-| Installation Publication Intent | `installation_publication_intent.rs` via `m3_store.rs` | `StoreRoot::create_json("current", intent)` — singleton `current.json`. `create()` requires empty store (0 entries); `remove_if_matches()` must be called to clear before a new intent can be created. Not a direct overwrite. | write-then-rename; atomic visibility guarantee UNVERIFIED (F3b) | `sync_all()` | UNVERIFIED (F3b) | `load()` expects exactly 0 or 1 entry named `current.json`; validates intent digest | `.tmp` = torn write; digest mismatch = corrupt; more than 1 entry = corrupt; conflicting intent with different digest = conflict | StoreRoot `verify_chain()` | `installation_publication_intent_tests.rs` |
+| Installation Publication Intent | `installation_publication_intent.rs` via `m3_store.rs` | `StoreRoot::create_json("current", intent)` — singleton `current.json`. `create()` requires empty store (0 entries); `remove_if_matches()` must be called to clear before a new intent can be created. Not a direct overwrite. | write-then-rename; atomic visibility guarantee UNVERIFIED (F3b) | `sync_all()` | UNVERIFIED (F3b) | `load()` expects exactly 0 or 1 entry named `current.json`; validates intent digest | `.tmp` = torn write; digest mismatch = corrupt; more than 1 entry = corrupt; conflicting intent with different digest = conflict | StoreRoot `verify_chain()` | `installation_publication_intent_tests.rs` (19 tests), `f3c_installation_intent_publication_evidence.rs` (43 F3c characterization tests) |
 
 ### 3. Append-Only Causal Log
 
@@ -204,6 +204,97 @@ For every primitive on the primary Windows target:
 | Reparse-point defence on root | N/A | N/A | UNVERIFIED (F3b) |
 
 ---
+
+---
+## F3c Evidence — Installation intent and publication contract
+
+Date: 2026-08-07
+Baseline: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834` (accepted F3b)
+Evidence source: `tethers-0.1/host-rust/src/f3c_installation_intent_publication_evidence.rs` (43 tests)
+
+### F3c-1 — Publication intent identity: PROVEN
+
+| Property | Verification |
+|---|---|
+| Intent has one canonical identity via digest | PROVEN — `from_precomputed_record` produces deterministic digest; same record → same intent |
+| Stored bytes bind exact installation operation | PROVEN — tampering any content field invalidates digest and `load()` returns `installation_intent_invalid` |
+| Conflicting intent cannot silently replace existing | PROVEN — `create()` with different intent returns `installation_intent_conflict`; original bytes unchanged |
+| Exact duplicate/retry is deterministic | PROVEN — second `create()` with same intent returns `installation_intent_conflict` |
+| Singleton `current.json` contract enforced | PROVEN — zero entries → `None`, wrong filename → invalid, extra entries → invalid |
+| Malformed/duplicate state fails closed | PROVEN — invalid JSON, unknown fields, `.tmp` remnants all return `installation_intent_invalid` |
+
+### F3c-2 — Exact-match removal: PROVEN
+
+| Property | Verification |
+|---|---|
+| Only exact match removed | PROVEN — `remove_if_matches` returns `Ok(true)` only when `current == expected` |
+| Wrong digest cannot remove | PROVEN — different record → different intent → `installation_intent_conflict` |
+| Wrong installation identity cannot remove | PROVEN — different `installed_id` → mismatch → conflict |
+| Stale intent cannot remove newer/different | PROVEN — any non-matching intent → conflict |
+| Invalid expected does not mutate store | PROVEN — `expected.validate()` fails before any I/O; bytes preserved |
+| Malformed state cannot become absence | PROVEN — invalid expected → `installation_intent_invalid`, not `Ok(false)` |
+| Missing distinguished from mismatched | PROVEN — absent → `Ok(false)`, present but different → `Err(conflict)` |
+
+### F3c-3 — Publication ordering: PROVEN
+
+The publication sequence in `execute_prepared_disabled_installation_publication` follows a strict 7-step order:
+
+| Step | State | Evidence |
+|---|---|---|
+| 0. Pre-condition | No intent, idle recovery | PROVEN |
+| 1. Intent created | `current.json` present, canonical bytes | PROVEN |
+| 2. Staging built | `.staging-{id}` directory with exact file set | PROVEN (existing mutation tests) |
+| 3. Staging → destination | `plug-{id}` directory present | PROVEN (existing mutation tests) |
+| 4. Record published | `{id}.json` in record root | PROVEN (existing mutation tests) |
+| 5. Intent removed | `current.json` absent | PROVEN |
+| 6. Post-condition | Idle recovery, destination + record present | PROVEN (existing mutation tests) |
+
+Power-loss durability of intermediate states: UNVERIFIED (F3b).
+
+### F3c-4 — Recovery state matrix: PROVEN
+
+| Staging | Destination | Record | Disposition | Evidence |
+|---|---|---|---|---|
+| false | false | None | RemoveIntentOnly | PROVEN |
+| true | false | None | RemoveStagingThenIntent | PROVEN |
+| false | true | None | RevalidateDestinationThenPublishRecord | PROVEN |
+| false | true | Matching | VerifyCompletedPublicationThenRemoveIntent | PROVEN |
+| false | false | Some | **conflict** | PROVEN |
+| true | false | Some | **conflict** | PROVEN |
+| true | true | None | **conflict** | PROVEN |
+| true | true | Matching | **conflict** | PROVEN |
+
+All 4 invalid states return `installation_recovery_conflict`. Invalid intent returns `installation_intent_invalid`. Classification is deterministic and idempotent. Matching is exact equality (`==`).
+
+### F3c-5 — Recovery must not destroy evidence: PROVEN
+
+| Property | Verification |
+|---|---|
+| Mismatched destination never deleted | PROVEN — destination + no record → `RevalidateDestinationThenPublishRecord` (not deleted) |
+| Mismatched record never overwritten | PROVEN — destination + non-matching record → `installation_recovery_conflict` |
+| Unrelated staging never removed | PROVEN — staging + destination → conflict (both present avoids deletion) |
+| Wrong intent never cleared | PROVEN — `remove_if_matches` with different intent → conflict; bytes preserved |
+| Corruption evidence preserved | PROVEN — tampered file fails load but remains on disk with tampered content |
+| Ambiguous states fail closed | PROVEN — all 4 invalid state combinations return error, never silent success |
+
+### F3c-6 — Canonical bytes / digest truth: PROVEN
+
+| Property | Verification |
+|---|---|
+| Digest computed over canonical representation | PROVEN — `covered_bytes()` clears `intent_digest` then serializes with `canonical()` |
+| Read-back identity checked | PROVEN — `load()` calls `intent.validate()` which recomputes digest |
+| Filename identity disagreement fails closed | PROVEN — `load()` requires exactly `current.json`; other filenames → invalid |
+| Recovery decisions use validated persisted state | PROVEN — `classify_installation_recovery` validates intent before classification |
+| Written bytes are canonical | PROVEN — `create()` writes exact `canonical(intent)` bytes |
+| All content fields digest-covered | PROVEN — tampering any of `transaction_id`, `candidate_id`, `destination_relative_path`, `installed_record_digest` invalidates intent |
+
+### F3c unresolved
+
+- Power-loss durability: UNVERIFIED for all 7 publication steps (F3b)
+- Concurrent rename atomicity: UNVERIFIED (F3b)
+- Parent-directory flush: production does not perform it (F3b)
+
+No defects found in the installation intent/publication/recovery contract. All F3c properties are PROVEN with hard assertions.
 
 ## Changes Made in F3a
 
