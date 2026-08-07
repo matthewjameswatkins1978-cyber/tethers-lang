@@ -10,7 +10,7 @@ Status: `COMPLETE` (correction pass)
 
 Base commit: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
 
-Implementation checkpoint: `(final — read from Git)`
+Implementation checkpoint: `50a34f0dda50dfb13e178cb7410c13bcd765d345`
 
 ## Correction pass (Lucy review)
 
