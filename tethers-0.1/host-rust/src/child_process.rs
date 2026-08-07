@@ -116,14 +116,27 @@ impl ManagedChild {
             GetExitCodeProcess, WaitForSingleObject, INFINITE,
         };
         // SAFETY: process_handle is owned and WaitForSingleObject accepts it.
-        unsafe { WaitForSingleObject(self.process_handle, INFINITE) };
+        let result = unsafe { WaitForSingleObject(self.process_handle, INFINITE) };
         let mut code = 0u32;
         // SAFETY: process_handle remains valid until SupervisedChild cleanup.
         if unsafe { GetExitCodeProcess(self.process_handle, &mut code) } == 0 {
             return Err(());
         }
-        Ok(code as i32)
+        interpret_process_wait(result, code)
     }
+}
+
+#[cfg(windows)]
+fn interpret_process_wait(wait_result: u32, exit_code: u32) -> std::result::Result<i32, ()> {
+    use windows_sys::Win32::Foundation::STILL_ACTIVE;
+    const WAIT_OBJECT_0: u32 = 0;
+    if wait_result != WAIT_OBJECT_0 {
+        return Err(());
+    }
+    if exit_code == STILL_ACTIVE as u32 {
+        return Err(());
+    }
+    Ok(exit_code as i32)
 }
 
 #[cfg(windows)]
@@ -595,7 +608,7 @@ impl SupervisedChild {
         // 4. Reap direct child.
         cleanup.child_killed = self.child.kill().is_ok();
         cleanup.child_waited = self.child.wait().is_ok();
-        self.reaped = cleanup.child_killed || cleanup.child_waited;
+        self.reaped = cleanup.child_waited;
         cleanup.reaped = self.reaped;
 
         // 5. Close Job Object handle.
@@ -1547,6 +1560,8 @@ mod tests {
         assert!(child_id > 0, "child must have a valid PID");
         let cleanup = child.shutdown();
 
+        assert!(cleanup.job_terminated, "job object must be terminated");
+        assert!(cleanup.child_waited, "child process must be waited for");
         assert!(cleanup.reaped, "child must be reaped");
         assert!(
             cleanup.stdout_thread_joined,
@@ -1588,5 +1603,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn f2a_interpret_process_wait_success_waited_process() {
+        const WAIT_OBJECT_0: u32 = 0;
+        assert_eq!(interpret_process_wait(WAIT_OBJECT_0, 7), Ok(7));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn f2a_interpret_process_wait_wait_failed_is_error() {
+        const WAIT_FAILED: u32 = 0xFFFFFFFF;
+        assert!(interpret_process_wait(WAIT_FAILED, 0).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn f2a_interpret_process_wait_wait_timeout_is_error() {
+        const WAIT_TIMEOUT: u32 = 258;
+        assert!(interpret_process_wait(WAIT_TIMEOUT, 0).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn f2a_interpret_process_wait_still_active_is_error() {
+        use windows_sys::Win32::Foundation::STILL_ACTIVE;
+        const WAIT_OBJECT_0: u32 = 0;
+        assert!(interpret_process_wait(WAIT_OBJECT_0, STILL_ACTIVE as u32).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn f2a_interpret_process_wait_unexpected_wait_result_is_error() {
+        let unexpected: u32 = 42;
+        assert!(interpret_process_wait(unexpected, 0).is_err());
     }
 }

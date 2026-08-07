@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `F2 - Operational correctness defects`
 Owner: `OpenCode`
 Model: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode implements both subpackages; Lucy performs one bounded review`
 Worker note: `docs/worker-notes/2026-08-07-f2-operational-correctness.md`
@@ -13,7 +13,7 @@ Base commit: `f295daa288f4d3dc48181888d6655df798675033`
 Implementation branch: `foundation/f2-operational-correctness`
 Parent branch: `main`
 Parent tip: `f295daa288f4d3dc48181888d6655df798675033`
-Preparation checkpoint: (will be captured after first commit)
+Preparation checkpoint: `f5245f379176db4f6803716e0effda3b626baa44`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
