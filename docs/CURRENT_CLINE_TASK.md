@@ -1,170 +1,230 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F3a - Persistence inventory and vocabulary`
+Task: `F3b - Windows persistence primitive evidence`
 Owner: `OpenCode`
 Model: `DeepSeek Pro`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Red`
-Route: `DeepSeek Pro executes the bounded documentation/evidence pass; Lucy independently reviews before F3b`
-Worker note: `docs/worker-notes/2026-08-07-f3a-persistence-vocabulary.md`
+Route: `DeepSeek Pro performs the bounded Windows primitive evidence pass; Lucy independently reviews before F3c`
+Worker note: `docs/worker-notes/2026-08-07-f3b-windows-persistence-evidence.md`
 Base branch: `main`
-Base commit: `83eec98a0f33f964623f4cbbf4548a76bbdf5255`
-Implementation branch: `foundation/f3a-persistence-vocabulary`
+Base commit: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
+Implementation branch: `foundation/f3b-windows-persistence-evidence`
 Parent branch: `main`
-Parent tip: `83eec98a0f33f964623f4cbbf4548a76bbdf5255`
-Preparation checkpoint: `3e4845e2908b3e69c5cdc30bf59f28642149642e`
+Parent tip: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
+Preparation checkpoint: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
+Implementation checkpoint: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
 OCaml switch path: `N/A`
-Rust toolchain: `Not required; this is documentation and evidence work only`
-Toolchain preflight: `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
+Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
+Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
 
 ## Objective
 
-Produce one evidence-backed vocabulary and complete inventory for every
-filesystem-backed persistence store in the accepted F2 mainline. The result
-must distinguish what the current implementation proves from what remains
-unverified, without repairing any persistence behaviour or beginning F3b.
+Establish direct Windows evidence for the persistence primitives identified
+by F3a, without repairing or redesigning the persistence stores. Every
+conclusion must distinguish the observed primitive, the directly tested
+property, and the remaining uncertainty.
 
 ## Relevant background and existing behaviour
 
-F1 established the initial inventory at
-`24428139807cac0adeb0b62264547e61ca809d16`; F2 was accepted and merged as
-`83eec98a0f33f964623f4cbbf4548a76bbdf5255`. F1 records four vocabulary
-classes in `docs/foundation-pass/PERSISTENCE_INVENTORY.md`, but its claims must
-now be reconciled against the accepted F2 mainline and direct source/test
-evidence.
+F3a at `145a791ceb3f5e3b8855aeadbac83671d9a2b363` classified 14 filesystem-backed
+stores and identified gaps in Windows primitive evidence. The inventory marks
+every atomic-visibility and directory-durability claim `UNVERIFIED (F3b)`.
+The F3a route map records five specific question clusters:
 
-The Foundation Pass explicitly separates F3a vocabulary from F3b Windows
-primitive evidence. In particular, no current store has a confirmed
-directory-entry durability claim. `m3_store.rs` is shared infrastructure, not
-an independent store; Trail appends JSONL rather than writing atomic records;
-and the installation recovery plan is a reader/planner, not a store.
+- `sync_all()` + `fs::rename` durability for StoreRoot/Candidate/Local Anchor
+- Parent-directory durability feasibility
+- Replay `FlushFileBuffers` + `SetFileInformationByHandle` rename semantics
+- JSONL line append interruption behaviour (Trail)
+- Local Anchor root path reparse-point safety
+
+The central rule for F3b: separate file-data durability, visibility of the
+final filename, atomic visibility during rename, persistence of the directory
+entry, behaviour after process interruption, behaviour after simulated
+incomplete writes, and unsafe-path / reparse-point defence. Do not treat
+evidence for one property as evidence for another.
 
 ## Required behaviour
 
-1. Inspect the accepted mainline and the Foundation Pass, persistence, debt,
-   module/dependency, test-inventory, and F1/F2 worker-note evidence named in
-   this packet. Identify every filesystem-backed store and every shared write
-   primitive without treating a historical inventory row as proof.
-2. Classify each store exactly once as an immutable atomic record, replaceable
-   current-state record, append-only causal log, or multi-step intent/recovery
-   journal. Explicitly record any non-durable in-memory state in the appendix;
-   do not call it a persistence store.
-3. For every classified store, record the current write primitive, atomic
-   visibility statement, file-durability statement, directory-durability
-   statement, recovery reader, corruption classification, unsafe-path
-   protection, and one or more direct tests. Cite concrete module/function and
-   test names; use `UNVERIFIED (F3b)` where the evidence does not establish a
-   Windows guarantee.
-4. Reconcile contradictions, overclaims, duplicate rows, and category errors
-   in the persistence inventory. Record an evidence-backed correction in the
-   debt ledger only when a ledger statement itself is inaccurate; do not turn
-   an unverified guarantee into a defect or attempt a repair.
-5. Finish with a bounded F3a worker note and documentation-only verification.
-   Stop after the packet deliverables: F3b primitive experiments, installation
-   intent/recovery repair, Trail/replay redesign, and all production/test work
-   remain out of scope.
+### F3b-1: `sync_all()` + `fs::rename`
+
+Build a minimal private characterization test for the primitive used by
+StoreRoot/Candidate/Local Anchor style persistence. Use a temporary directory.
+
+Directly establish what can reasonably be tested on the primary Windows target:
+
+1. temporary file is fully written;
+2. `sync_all()` succeeds;
+3. rename succeeds;
+4. final path contains the complete expected bytes;
+5. temporary path disappears;
+6. no partial final file is exposed during ordinary execution;
+7. restart/reopen reads the exact expected bytes.
+
+If true power-loss durability cannot be deterministically established, report
+`UNVERIFIED`.
+
+### F3b-2: Parent-directory durability feasibility
+
+Investigate the exact Windows/Rust mechanisms available for flushing or
+proving directory-entry durability. Determine from direct platform/API evidence
+and a minimal experiment:
+
+1. whether Windows permits opening the relevant directory with necessary flags/access;
+2. whether `FlushFileBuffers` can meaningfully be invoked on that handle;
+3. whether the current Rust implementation performs such an operation;
+4. what narrower claim can actually be proven.
+
+Do not change production persistence.
+
+### F3b-3: Replay Windows primitive
+
+Characterize the accepted-main sequence in `publish_new_canonical_file_with_temporary_stem`:
+
+1. `CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH)` — test observable durability;
+2. `WriteFile` — test complete write;
+3. `FlushFileBuffers` before rename — test file-data durability;
+4. `SetFileInformationByHandle` rename — test rename properties;
+5. `FlushFileBuffers` on the renamed file handle — test what this proves;
+6. reopen/re-read exact-byte verification — test what this proves.
+
+Test the observable guarantees individually. Establish exactly what the
+post-rename re-read proves and what it does not prove.
+
+### F3b-4: Trail interruption behaviour
+
+Characterize JSONL append using `writeln!`, `flush()`, `sync_data()`:
+
+1. complete line survives close/reopen;
+2. multiple complete lines remain ordered and parseable;
+3. deliberately truncated final line is detected by the current reader;
+4. establish current behaviour when the final JSONL entry is incomplete.
+
+If current recovery accepts, ignores, or fails on a partial final line,
+record the exact behaviour. Do not redesign Trail or add per-line digests.
+
+### F3b-5: Local Anchor root safety
+
+Characterize the Local Anchor Admission Store root path safety:
+
+1. determine whether a reparse point at or within the persistence root can
+   redirect admission writes despite hashed safe filenames;
+2. use a bounded Windows-only test.
+
+If exposure is demonstrated, record it as a confirmed defect and route the
+repair to the correct later package. Do not repair root-safety behaviour in F3b.
 
 ## Relevant components
 
-- `docs/architecture/TETHERS_FOUNDATION_PASS.md` (F3a/F3b boundary)
-- `docs/foundation-pass/PERSISTENCE_INVENTORY.md` (primary F3a deliverable)
-- `docs/foundation-pass/DEBT_LEDGER.md` (only evidence-backed inventory corrections)
-- `docs/foundation-pass/MODULE_DEPENDENCY_MAP.md` and `docs/foundation-pass/TEST_INVENTORY.md`
-- `docs/worker-notes/2026-08-06-f1-baseline.md` and `docs/worker-notes/2026-08-07-f2-operational-correctness.md`
-- `tethers-0.1/host-rust/src/m3_store.rs`, `replay_windows.rs`, `installed.rs`,
-  `installation_publication_intent.rs`, `dispatch.rs`, `local_anchor.rs`, and
-  the source/tests reached directly from those modules
-- `docs/worker-notes/2026-08-07-f3a-persistence-vocabulary.md`
+- `docs/architecture/TETHERS_FOUNDATION_PASS.md` (F3a/F3b/C boundary)
+- `docs/foundation-pass/PERSISTENCE_INVENTORY.md` (F3a deliverable, update with F3b findings)
+- `docs/foundation-pass/DEBT_LEDGER.md` (only for directly demonstrated defects/clarifications)
+- `docs/worker-notes/2026-08-07-f3a-persistence-vocabulary.md` (F3a evidence)
+- `tethers-0.1/host-rust/src/m3_store.rs` (StoreRoot, `create_json`, `verify_chain`, `reject_reparse`)
+- `tethers-0.1/host-rust/src/candidate.rs` (write_new, Candidate Registry)
+- `tethers-0.1/host-rust/src/local_anchor.rs` (AdmissionStore, atomic_create, safe_filename)
+- `tethers-0.1/host-rust/src/replay_windows.rs` (publish_new_canonical_file_with_temporary_stem)
+- `tethers-0.1/host-rust/src/dispatch.rs` (FileTrail, JSONL append)
+- `docs/worker-notes/2026-08-07-f3b-windows-persistence-evidence.md`
 - `docs/CURRENT_GOAL.md` and `docs/CURRENT_CLINE_TASK.md`
 
 ## Frozen decisions and invariants
 
-- The accepted mainline/base is `83eec98a0f33f964623f4cbbf4548a76bbdf5255`.
-  If live `origin/main` differs before F3a begins, record the direct Git
-  evidence and stop for a packet correction.
-- Directory-entry durability is unverified unless F3a discovers direct,
-  accepted-main evidence that proves a narrower statement. F3a may clarify
-  wording but must route primitive validation to F3b.
-- The four persistence classes are vocabulary, not an instruction to make
-  stores share an implementation.
-- Preserve F1 literal fixtures exactly. They are independent compatibility
-  evidence and are not a persistence-inventory output.
-- Do not treat historical `PackageTrustEvidence` or any historical inventory
-  statement as proof of current trust or current persistence behaviour.
-- Every claim must be supported by the accepted-main source or a direct test;
-  uncertainty is reported honestly as `UNVERIFIED`, not inferred from a nearby
-  API, a passing test, or Windows terminology.
+- Accepted main is `145a791ceb3f5e3b8855aeadbac83671d9a2b363` (F3a merged).
+  If live `origin/main` differs, record the direct Git evidence and stop.
+- F3b is evidence-gathering only. Do not repair, redesign, or change production
+  persistence behaviour, write primitives, directory handling, Trail, Replay,
+  Local Anchor paths, installation intent/publication, or CLI/protocol/JSON
+  output.
+- Every conclusion must separate: observed primitive, directly tested property,
+  remaining uncertainty. Do not infer a Windows guarantee from API names or
+  documentation terminology alone.
+- For each property, report one of `PROVEN`, `DISPROVEN`, or `UNVERIFIED` with
+  exact source/test evidence.
+- A failing characterization test is valuable evidence. Do not change production
+  code to make it green.
+- Production seams must not be widened merely to make tests easier. Prefer
+  private helpers and isolated characterization harnesses.
+- Preserve F1 literal fixtures exactly.
+- One implementation owner per task. Do not begin F3c.
 
 ## Acceptance criteria
 
-1. The inventory names every filesystem-backed store reachable in accepted
-   main and classifies each once using the frozen four-class vocabulary.
-2. Each row records all nine required evidence fields: write primitive, atomic
-   visibility, file durability, directory durability, recovery reader,
-   corruption classification, unsafe-path protection, and direct tests, plus
-   its class.
-3. Every durability statement distinguishes proven file data, atomic
-   visibility, and directory-entry durability; unsupported claims are marked
-   `UNVERIFIED (F3b)`.
-4. The in-memory appendix is complete and does not misclassify process-local
-   state as durable persistence.
-5. F1 fixtures are byte-identical to accepted main, and the complete branch
-   diff contains documentation only.
-6. The F3a worker note states actual source/test evidence, corrections made,
-   residual F3b questions, and no unrun command as passed.
-7. Packet checker, whitespace check, documentation-only diff review, and
-   final Git status pass with the exact results recorded in the worker note.
+1. F3b-1 characterizes `sync_all()` + `fs::rename` with direct test evidence
+   for all 7 named observable properties.
+2. F3b-2 investigates parent-directory durability and records what can be
+   proven and what remains unverified.
+3. F3b-3 characterizes all 6 Replay Windows primitive stages with direct test
+   evidence for each observable guarantee.
+4. F3b-4 characterizes Trail JSONL interruption behaviour including truncated
+   final-line detection.
+5. F3b-5 characterizes Local Anchor root reparse-point safety with a bounded
+   Windows-only test.
+6. PERSISTENCE_INVENTORY.md updated with `PROVEN (F3b)`, `DISPROVEN (F3b)`,
+   or `UNVERIFIED (F3b)` tags where F3b establishes evidence.
+7. DEBT_LEDGER.md updated only for directly demonstrated defects or
+   clarifications.
+8. F3a/F1 fixtures are byte-identical to accepted main.
+9. Complete branch diff contains only characterization tests and documentation;
+   no production repair or persistence redesign.
+10. F3b worker note records exact evidence, findings, and residual questions.
 
 ## Required verification
 
-Run after the final documentation edit and record each result as `PASS`,
-`FAIL`, or `NOT RUN` in the worker note. A mandatory `NOT RUN` blocks
-`COMPLETE`.
+Run the following serially after the final code change. Record each result as
+PASS, FAIL, or NOT RUN; a mandatory NOT RUN blocks COMPLETE.
 
 ```powershell
 git fetch origin --prune
 git rev-parse origin/main
 git rev-parse HEAD
+git status --short --branch
+
+cargo fmt --all -- --check
+cargo check --all-targets --all-features --locked
+cargo test --all-targets --all-features --locked
+cargo clippy --all-targets --all-features --locked -- -W clippy::all
+
+just verify
+just verify-agent
+
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
+
 git diff --exit-code origin/main...HEAD -- docs/foundation-pass/fixtures
 git diff --check origin/main...HEAD
 git diff --name-only origin/main...HEAD
-git diff --name-only origin/main...HEAD -- ':!docs/**'
 git status --short --branch
 ```
 
-Before claiming complete, inspect each inventory row against its named source
-and direct test. No Rust, OCaml, or integration test run is required because
-F3a changes documentation only; record those suites as `NOT RUN (not required
-for documentation-only F3a)`.
+Also run every focused F3b characterization test explicitly. Record each
+separately.
 
 ## Forbidden changes
 
 Do not perform:
 
-- production, test, fixture, dependency, Cargo.lock, OCaml, protocol, CLI, or
-  compatibility-output changes;
-- persistence repairs, write-primitive changes, directory flushes, migration,
-  or recovery behaviour changes;
-- Windows primitive experiments or interruption/fault-injection tests (F3b);
+- StoreRoot repair (directory flushing, migration);
+- Candidate Registry repair;
+- Local Anchor path handling or root-safety repair;
+- Replay redesign or write-primitive change;
+- Trail redesign, per-line digest, or integrity footer addition;
 - installation intent/publication repair (F3c);
-- immutable/current-state implementation changes (F3d) or Trail/replay
-  redesign (F3e);
-- a universal storage framework, extraction, speculative renaming, or a new
-  persistence abstraction;
-- starting F3b or any later Foundation package;
-- changing F1 fixtures.
+- immutable/current-state implementation changes (F3d);
+- CLI, JSON, protocol, exit-code, compatibility fixture, or replay-digest changes;
+- a universal storage abstraction or new dependency;
+- beginning F3c, F3d, or F3e;
+- changing F1 fixtures;
+- weakening an experiment because it is difficult to make pass.
 
 ## Stop conditions
 
-Stop and report direct evidence if `origin/main` differs from the frozen base;
-the branch/base is unexpected; a required claim cannot be tied to a concrete
-accepted-main source or direct test; a classification requires a semantic or
-recovery design decision; a correction needs production/test/fixture changes;
-a required check fails; or two materially similar evidence attempts fail.
-Return one smallest unresolved question. Do not weaken the packet, invent a
-durability guarantee, or proceed into F3b to bypass a stop.
+Stop and report direct evidence if `origin/main` differs from
+`145a791ceb3f5e3b8855aeadbac83671d9a2b363`; the worktree/branch/base is
+unexpected; a required property cannot be characterized on the available
+target; a finding would require production repair to prove; a required check
+fails; or two materially similar evidence attempts fail. Return one smallest
+unresolved question.
 
 ## Expected pre-existing changes
 

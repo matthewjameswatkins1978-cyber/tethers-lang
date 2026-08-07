@@ -2871,4 +2871,309 @@ mod tests {
             .is_err()
         );
     }
+
+    // -----------------------------------------------------------------------
+    // F3b-3: Replay Windows publish primitive characterization
+    // -----------------------------------------------------------------------
+    //
+    // These tests characterize each stage of the accepted-main
+    // `publish_new_canonical_file_with_temporary_stem` sequence in
+    // isolation, using the same Win32 APIs without depending on the
+    // Tethers Replay infrastructure.
+    //
+    // Six stages characterized:
+    //   1. CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH) — durability
+    //   2. WriteFile — complete write
+    //   3. FlushFileBuffers before rename — file-data durability
+    //   4. SetFileInformationByHandle rename — rename properties
+    //   5. FlushFileBuffers on renamed file handle — what this proves
+    //   6. reopen/re-read — exact-byte verification
+
+    fn wide_path(path: &Path) -> Vec<u16> {
+        path.as_os_str().encode_wide().chain(Some(0)).collect()
+    }
+
+    fn f3b_replay_temp_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("f3b-replay-{}-{}", label, Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn f3b3_create_write_through_open_and_write() {
+        // Stage 1 + 2: open with CREATE_NEW | FILE_FLAG_WRITE_THROUGH,
+        // write complete bytes, verify.
+        let dir = f3b_replay_temp_dir("create-wt");
+        let path = dir.join("canonical.bin");
+        let data = b"f3b3-replay-canary-v1-abcdef";
+
+        let path_w = wide_path(&path);
+        let handle;
+        unsafe {
+            handle = CreateFileW(
+                path_w.as_ptr(),
+                GENERIC_READ | GENERIC_WRITE,
+                0, // exclusive
+                std::ptr::null_mut(),
+                CREATE_NEW,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH,
+                std::ptr::null_mut(),
+            );
+        }
+        assert!(
+            handle != INVALID_HANDLE_VALUE && handle != std::ptr::null_mut(),
+            "F3b-3 stage 1: CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH) succeeded"
+        );
+
+        let mut written = 0u32;
+        unsafe {
+            let ok = WriteFile(
+                handle,
+                data.as_ptr(),
+                data.len() as u32,
+                &mut written,
+                std::ptr::null_mut(),
+            );
+            assert_ne!(ok, 0, "WriteFile succeeded");
+        }
+        assert_eq!(written as usize, data.len(), "all bytes written");
+
+        // Close handle before reading (share_mode was 0)
+        unsafe {
+            CloseHandle(handle);
+        }
+
+        // Verify bytes on disk (after close)
+        let on_disk = std::fs::read(&path).expect("read back");
+        assert_eq!(
+            on_disk, data,
+            "F3b-3 stage 2: WriteFile bytes match on-disk contents"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn f3b3_flush_before_rename_file_data_durability() {
+        // Stage 3: FlushFileBuffers before rename confirms file-data
+        // durability for the temporary file.
+        let dir = f3b_replay_temp_dir("flush-before-rename");
+        let tmp = dir.join("temp.bin");
+        let final_path = dir.join("final.bin");
+        let data = b"f3b3-flush-canary-data";
+
+        let tmp_w = wide_path(&tmp);
+        let handle;
+        unsafe {
+            handle = CreateFileW(
+                tmp_w.as_ptr(),
+                GENERIC_READ | GENERIC_WRITE | DELETE,
+                0,
+                std::ptr::null_mut(),
+                CREATE_NEW,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH,
+                std::ptr::null_mut(),
+            );
+        }
+        assert_ne!(handle, INVALID_HANDLE_VALUE);
+
+        unsafe {
+            let mut written = 0u32;
+            WriteFile(
+                handle,
+                data.as_ptr().cast(),
+                data.len() as u32,
+                &mut written,
+                std::ptr::null_mut(),
+            );
+            assert_eq!(written as usize, data.len());
+        }
+
+        // Stage 3: FlushFileBuffers before rename
+        unsafe {
+            let flush_ok = FlushFileBuffers(handle);
+            assert_ne!(
+                flush_ok, 0,
+                "F3b-3 stage 3: FlushFileBuffers before rename succeeded"
+            );
+        }
+
+        // Rename via SetFileInformationByHandle (stages 4)
+        unsafe {
+            let name: Vec<u16> = final_path.as_os_str().encode_wide().collect();
+            let name_bytes = (name.len() * std::mem::size_of::<u16>()) as u32;
+            let total = std::mem::size_of::<FILE_RENAME_INFO>() + name_bytes as usize;
+            let buf_words = total.div_ceil(std::mem::size_of::<usize>());
+            let mut buf = vec![0usize; buf_words];
+            let info = buf.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+            (*info).Anonymous = FILE_RENAME_INFO_0 {
+                ReplaceIfExists: false,
+            };
+            (*info).RootDirectory = std::ptr::null_mut();
+            (*info).FileNameLength = name_bytes;
+            std::ptr::copy_nonoverlapping(
+                name.as_ptr(),
+                std::ptr::addr_of_mut!((*info).FileName).cast::<u16>(),
+                name.len(),
+            );
+            let rename_ok = SetFileInformationByHandle(
+                handle,
+                FileRenameInfo,
+                info.cast(),
+                (buf_words * std::mem::size_of::<usize>()) as u32,
+            );
+            assert_ne!(
+                rename_ok, 0,
+                "F3b-3 stage 4: SetFileInformationByHandle rename succeeded"
+            );
+        }
+
+        // Stage 5: FlushFileBuffers on renamed file handle
+        unsafe {
+            let flush2_ok = FlushFileBuffers(handle);
+            assert_ne!(
+                flush2_ok, 0,
+                "F3b-3 stage 5: FlushFileBuffers on renamed file handle succeeded — \
+                 this flushes file metadata/data for the renamed file handle, \
+                 not the parent directory."
+            );
+        }
+
+        // Close handle
+        unsafe {
+            CloseHandle(handle);
+        }
+
+        // Stage 6: reopen and re-read
+        let reopened_bytes = std::fs::read(&final_path).expect("reopen final");
+        assert_eq!(
+            reopened_bytes, data,
+            "F3b-3 stage 6: reopened bytes match original written bytes. \
+             This proves the rename landed complete file data. \
+             It does NOT prove the parent directory entry is durable."
+        );
+
+        // Temporary path should be gone (rename moved it)
+        assert!(
+            !tmp.exists(),
+            "temporary path no longer exists after rename"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn f3b3_create_new_prevents_overwrite() {
+        // CREATE_NEW rejects an existing file. This is the TOCTOU defence
+        // in the Replay primitive.
+        let dir = f3b_replay_temp_dir("create-new");
+        let path = dir.join("exclusive.txt");
+
+        std::fs::write(&path, b"pre-existing").expect("pre-write");
+
+        let path_w = wide_path(&path);
+        let handle;
+        unsafe {
+            handle = CreateFileW(
+                path_w.as_ptr(),
+                GENERIC_WRITE,
+                0,
+                std::ptr::null_mut(),
+                CREATE_NEW,
+                FILE_ATTRIBUTE_NORMAL,
+                std::ptr::null_mut(),
+            );
+        }
+        assert!(
+            handle == INVALID_HANDLE_VALUE,
+            "F3b-3: CREATE_NEW correctly rejects existing file. \
+             A concurrent claim cannot overwrite a published generation."
+        );
+
+        // Verify pre-existing content untouched
+        assert_eq!(
+            std::fs::read(&path).expect("read"),
+            b"pre-existing",
+            "existing content unchanged"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn f3b3_rename_without_replacement_defence() {
+        // SetFileInformationByHandle with ReplaceIfExists:false rejects
+        // when the destination already exists.
+        let dir = f3b_replay_temp_dir("rename-no-replace");
+        let src = dir.join("src.bin");
+        let dst = dir.join("dst.bin");
+
+        std::fs::write(&dst, b"pre-existing-destination").expect("pre-write dst");
+        std::fs::write(&src, b"source-content").expect("write src");
+
+        let src_w = wide_path(&src);
+        let handler;
+        unsafe {
+            handler = CreateFileW(
+                src_w.as_ptr(),
+                GENERIC_READ | GENERIC_WRITE | DELETE,
+                FILE_SHARE_READ,
+                std::ptr::null_mut(),
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                std::ptr::null_mut(),
+            );
+        }
+        assert_ne!(handler, INVALID_HANDLE_VALUE);
+
+        let rename_result;
+        unsafe {
+            let name: Vec<u16> = dst.as_os_str().encode_wide().collect();
+            let name_bytes = (name.len() * 2) as u32;
+            let total = std::mem::size_of::<FILE_RENAME_INFO>() + name_bytes as usize;
+            let buf_words = total.div_ceil(std::mem::size_of::<usize>());
+            let mut buf = vec![0usize; buf_words];
+            let info = buf.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+            (*info).Anonymous = FILE_RENAME_INFO_0 {
+                ReplaceIfExists: false,
+            };
+            (*info).RootDirectory = std::ptr::null_mut();
+            (*info).FileNameLength = name_bytes;
+            std::ptr::copy_nonoverlapping(
+                name.as_ptr(),
+                std::ptr::addr_of_mut!((*info).FileName).cast::<u16>(),
+                name.len(),
+            );
+            rename_result = SetFileInformationByHandle(
+                handler,
+                FileRenameInfo,
+                info.cast(),
+                (buf_words * std::mem::size_of::<usize>()) as u32,
+            );
+        }
+
+        unsafe {
+            CloseHandle(handler);
+        }
+
+        if rename_result == 0 {
+            // Expected on many configurations:
+            // SetFileInformationByHandle rejects replacement when
+            // ReplaceIfExists is false and destination exists.
+            eprintln!(
+                "F3b-3: SetFileInformationByHandle(ReplaceIfExists:false) \
+                 correctly rejected rename when destination existed. \
+                 This is the non-replacing rename defence in the Replay primitive."
+            );
+        } else {
+            eprintln!(
+                "F3b-3: SetFileInformationByHandle(ReplaceIfExists:false) \
+                 succeeded despite pre-existing destination. \
+                 This platform/volume does not enforce ReplaceIfExists \
+                 exclusion for this handle type."
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

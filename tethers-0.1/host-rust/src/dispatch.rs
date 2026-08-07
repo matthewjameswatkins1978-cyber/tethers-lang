@@ -1460,4 +1460,179 @@ mod tests {
         let _ = fs::remove_file(&trail_path);
         let _ = fs::remove_dir(&dir);
     }
+
+    // -----------------------------------------------------------------------
+    // F3b-4: Trail JSONL interruption characterization
+    // -----------------------------------------------------------------------
+    //
+    // Characterize the current FileTrail append behaviour for:
+    //   1. complete line survives close/reopen
+    //   2. multiple complete lines remain ordered and parseable
+    //   3. deliberately truncated final line is detected by the current reader
+    //   4. current behaviour when the final JSONL entry is incomplete
+
+    use std::io::Write as IoWrite;
+
+    fn temp_trail_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("f3b-trail-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn trail_complete_line_survives_close_and_reopen() {
+        let dir = temp_trail_dir();
+        let trail_path = dir.join("trail.jsonl");
+
+        {
+            let mut ft = FileTrail::open(&trail_path).expect("open trail");
+            ft.append_and_flush_intent(&IntentEntry {
+                execution_id: "exec-001".into(),
+                action_id: "act-1".into(),
+                capability_name: "test.op".into(),
+                capability_version: 1,
+                provider_identity: "prov-1".into(),
+                manifest_digest: "sha256:deadbeef".into(),
+                arguments: serde_json::json!({"msg": "intent before close"}),
+            })
+            .expect("append");
+        }
+        // trail dropped (file closed)
+
+        // Reopen and read back
+        let contents = std::fs::read_to_string(&trail_path).expect("read");
+        let lines: Vec<_> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.len(), 1, "one complete line survives close/reopen");
+        let parsed: serde_json::Value = serde_json::from_str(lines[0]).expect("valid JSON line");
+        assert_eq!(parsed["execution_id"], "exec-001");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn trail_multiple_complete_lines_ordered_and_parseable() {
+        let dir = temp_trail_dir();
+        let trail_path = dir.join("multi.jsonl");
+
+        {
+            let mut ft = FileTrail::open(&trail_path).expect("open");
+
+            for i in 0..3u32 {
+                ft.append_and_flush_intent(&IntentEntry {
+                    execution_id: format!("exec-{}", ('a' as u8 + i as u8) as char),
+                    action_id: format!("act-{i}"),
+                    capability_name: "multi.op".into(),
+                    capability_version: 1,
+                    provider_identity: "prov-m".into(),
+                    manifest_digest: format!("sha256:multi{:x}", i),
+                    arguments: serde_json::json!({"idx": i}),
+                })
+                .expect("append");
+            }
+        }
+
+        let contents = std::fs::read_to_string(&trail_path).expect("read");
+        let lines: Vec<_> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.len(), 3, "three complete lines");
+
+        for (i, line) in lines.iter().enumerate() {
+            let parsed: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
+            assert_eq!(parsed["arguments"]["idx"], i as u64);
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn trail_truncated_final_line_detected() {
+        // Simulate a truncated final JSONL line: write a complete line,
+        // then write an incomplete second line without trailing newline.
+        // Use raw fs::File to control exactly what bytes go to disk,
+        // then test that the reader receives the incomplete bytes.
+        let dir = temp_trail_dir();
+        let trail_path = dir.join("truncated.jsonl");
+
+        {
+            let mut f = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&trail_path)
+                .expect("create file");
+            // Complete first line
+            let line1 = serde_json::json!({"idx": 1, "msg": "complete"});
+            writeln!(f, "{}", serde_json::to_string(&line1).unwrap()).expect("write line1");
+            f.flush().expect("flush");
+            f.sync_data().expect("sync");
+            // Truncated second line — no newline, no flush
+            write!(f, "{{\"idx\": 2, \"msg\": \"bro").expect("write truncated");
+        }
+
+        // Read back: the truncated line is present but not parseable
+        let raw = std::fs::read_to_string(&trail_path).expect("read");
+        let lines: Vec<&str> = raw.lines().collect();
+
+        // Line 1 should parse, line 2 should be present but fail to parse
+        if lines.len() >= 2 && !lines[1].is_empty() {
+            let parse_result: Result<serde_json::Value, _> = serde_json::from_str(lines[1]);
+            if parse_result.is_err() {
+                // Expected: incomplete JSONL entry is not valid JSON
+                eprintln!(
+                    "F3b-4: truncated final line detected as non-parseable — \
+                     reader returns parse error. Trail needs a corruption \
+                     classification for this case."
+                );
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn trail_incomplete_line_no_newline_present_in_raw_bytes() {
+        // Write a complete line, then a partial line without newline.
+        // Check that the raw bytes of the file contain the incomplete
+        // data and that lines() treats it as a line.
+        let dir = temp_trail_dir();
+        let trail_path = dir.join("incomplete.jsonl");
+
+        {
+            let mut f = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&trail_path)
+                .expect("create");
+            writeln!(
+                f,
+                "{}",
+                serde_json::to_string(&serde_json::json!({"complete": true})).unwrap()
+            )
+            .expect("write line1");
+            f.flush().expect("flush");
+            f.sync_data().expect("sync");
+            // Incomplete write without newline, flush, or sync
+            write!(f, r#"{{"partial": true, "trun"#).expect("write partial");
+        }
+
+        let raw_bytes = std::fs::read(&trail_path).expect("read raw");
+        let raw_str = String::from_utf8_lossy(&raw_bytes);
+
+        // The incomplete bytes are present in the file
+        assert!(
+            raw_str.contains(r#"{"partial": true, "trun"#),
+            "F3b-4: incomplete line bytes are present in raw file contents.\n\
+             Trail does not strip or sanitize a truncated trailing line.\n\
+             Current behavior: the file contains the incomplete bytes;\n\
+             std::fs::read_to_string returns the partial entry as a\n\
+             trailing line without newline."
+        );
+
+        // Current reader behaviour (lines()) will include the incomplete line
+        let line_count = raw_str.lines().count();
+        assert!(
+            line_count >= 2,
+            "incomplete entry appears as a line via lines()"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

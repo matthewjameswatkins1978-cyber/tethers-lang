@@ -11,24 +11,24 @@ through separately reviewed evidence packages.
 ## Verified Checkpoint
 
 Latest accepted implementation:
-`83eec98a0f33f964623f4cbbf4548a76bbdf5255`
-(`docs: mark F2 COMPLETE with correction r2 evidence`), now `origin/main`.
+`145a791ceb3f5e3b8855aeadbac83671d9a2b363`
+(F3a merged to main), now `origin/main`.
 
-F2 preserved F1’s literal compatibility fixtures and repaired two confirmed
-operational issues: live stderr tail visibility during a running child process,
-and the M3 Windows handle test’s numeric-handle aliasing false positive.
+F3a classified 14 filesystem-backed persistence stores, identified 1
+coordination artifact, and routed all Windows primitive evidence questions
+to F3b.
 
 ## Active Task
 
-- Task: F3a — Persistence inventory and vocabulary
-- State: READY; packet prepared only, not begun
-- Owner: Codex
+- Task: F3b — Windows persistence primitive evidence
+- State: IN_PROGRESS
+- Owner: OpenCode
 - Risk: Red (persistence contract evidence)
 
 ## Last Accepted Result
 
-F2 is accepted and merged. Its evidence branch
-`foundation/f2-operational-correctness` remains retained at the same SHA as
+F3a is accepted and merged. Its evidence branch
+`foundation/f3a-persistence-vocabulary` remains retained at the same SHA as
 main; it has not been deleted.
 
 ## Matthew Decision Required
@@ -37,29 +37,30 @@ None.
 
 ## Next Route
 
-Codex performs the bounded F3a documentation/evidence pass from
-`foundation/f3a-persistence-vocabulary`; Lucy independently reviews it before
-any F3b Windows primitive evidence work. No persistence repair or F3b work is
-authorised by the F3a packet.
+OpenCode performs the bounded F3b Windows primitive evidence pass from
+`foundation/f3b-windows-persistence-evidence`; Lucy independently reviews
+before F3c. No persistence repair or F3c installation intent/publication
+work is authorised by the F3b packet.
 
 ## Operating Mode
 
 **Gorilla Coding 🦄**
 
 - Lucy: architecture, task compilation, GitHub review, acceptance, continuation.
-- Cline: ordinary Green and Amber implementation, checks, report, worker note.
+- OpenCode: ordinary Green and Amber implementation, checks, report, worker note.
 - Codex: Red work, difficult local diagnosis, Git/environment/recovery, and
   machine-required verification.
 - Matthew: product authority and the short report-routing bridge.
-- Copilot: not in the active workflow.
 
 ## Cost And Drift
 
 - Use one implementation owner per bounded package.
-- F3a documents what the accepted mainline proves; it must not infer Windows
-  directory durability or repair persistence behaviour.
-- F3b remains the only route for Windows primitive evidence.
+- F3b establishes direct Windows evidence; it must not infer guarantees or
+  repair persistence behaviour.
+- F3c remains the only route for installation intent/publication repair.
 - Preserve the F1 compatibility fixtures unchanged.
+- Separate every property: file-data durability, atomic visibility, directory
+  entry durability, interruption behaviour, reparse-point defence.
 
 ## Where Details Live
 
