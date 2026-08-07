@@ -752,4 +752,31 @@ mod tests {
         let result = read_and_filter(reader, target);
         assert!(result.is_err(), "must fail on later malformed line");
     }
+
+    // -------------------------------------------------------------------
+    // F3e1: production reader classification of truncated final entry
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn f3e1_truncated_final_line_maps_to_audit_failed() {
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        let complete = format!("{{\"execution_id\":\"{target}\",\"idx\":1}}");
+        let truncated = format!("{{\"execution_id\":\"{target}\",\"idx");
+        let input = format!("{complete}\n{truncated}"); // no trailing LF
+        let reader = BufReader::new(Cursor::new(input.as_bytes()));
+        let result = read_and_filter(reader, target);
+        assert!(
+            result.is_err(),
+            "F3e1: truncated final line without trailing LF must fail entire inspection"
+        );
+        let envelope: Value = serde_json::from_str(&result.unwrap_err().json_output).unwrap();
+        assert_eq!(
+            envelope["status"], "audit_failed",
+            "F3e1: production reader classifies truncated final entry as TRAIL_INVALID"
+        );
+        assert_eq!(
+            envelope["error"]["code"], "TRAIL_INVALID",
+            "F3e1: truncated final line -> TRAIL_INVALID (fail-closed, entire file rejected)"
+        );
+    }
 }

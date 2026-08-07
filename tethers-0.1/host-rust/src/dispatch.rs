@@ -1632,4 +1632,49 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    // -------------------------------------------------------------------
+    // F3e1: FileTrail::open() path-safety characterization
+    // -------------------------------------------------------------------
+    //
+    // FileTrail::open() performs no root validation, no reparse-point
+    // defence, no absolute-path requirement, and no chain verification.
+    // The callers (application.rs) enforce path safety before calling
+    // FileTrail::open(). This test records the actual behaviour.
+
+    #[test]
+    fn f3e1_file_trail_open_has_no_path_validation() {
+        let dir = temp_trail_dir();
+        let trail_path = dir.join("accepted.jsonl");
+
+        let ft = FileTrail::open(&trail_path).expect("F3e1: open with valid path");
+        let written_path = ft.path().to_path_buf();
+        assert!(
+            written_path.is_absolute(),
+            "F3e1: absolute path is stored as-is"
+        );
+        drop(ft);
+
+        assert!(
+            trail_path.exists(),
+            "F3e1: file was created at the requested path"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn f3e1_file_trail_open_accepts_relative_path() {
+        let rel_name = format!("f3e1-rel-trail-{}.jsonl", uuid::Uuid::new_v4());
+        let abs_path = std::env::current_dir().unwrap().join(&rel_name);
+
+        let ft = FileTrail::open(&rel_name).expect("F3e1: open with relative path succeeds");
+        drop(ft);
+
+        assert!(
+            abs_path.exists(),
+            "F3e1: relative path resolved to cwd and file created"
+        );
+        let _ = std::fs::remove_file(&abs_path);
+    }
 }
