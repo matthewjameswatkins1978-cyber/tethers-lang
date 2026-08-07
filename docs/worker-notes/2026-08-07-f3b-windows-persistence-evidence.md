@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
 
-Implementation checkpoint: `bedf96af3988a93d531c69accae4523f3b43bd8d`
+Implementation checkpoint: `4d594dc55204744f5a8c0af4657125a2a399ebb9`
 
 ## Requested outcome
 

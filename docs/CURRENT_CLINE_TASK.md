@@ -14,7 +14,7 @@ Implementation branch: `foundation/f3b-windows-persistence-evidence`
 Parent branch: `main`
 Parent tip: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
 Preparation checkpoint: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
-Implementation checkpoint: `c41ff05e1173e4a493793539457cb2fdbc7b75a0`
+Implementation checkpoint: `4d594dc55204744f5a8c0af4657125a2a399ebb9`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
