@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `F3b - Windows persistence primitive evidence`
 Owner: `OpenCode`
 Model: `DeepSeek Pro`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `DeepSeek Pro performs the bounded Windows primitive evidence pass; Lucy independently reviews before F3c`
 Worker note: `docs/worker-notes/2026-08-07-f3b-windows-persistence-evidence.md`
@@ -14,7 +14,7 @@ Implementation branch: `foundation/f3b-windows-persistence-evidence`
 Parent branch: `main`
 Parent tip: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
 Preparation checkpoint: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
-Implementation checkpoint: `145a791ceb3f5e3b8855aeadbac83671d9a2b363`
+Implementation checkpoint: `95a55b7f7a9e15c2fff9aeeb95bd4c32e1ae2189`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
