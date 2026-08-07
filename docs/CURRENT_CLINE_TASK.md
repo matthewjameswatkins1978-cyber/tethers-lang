@@ -1,37 +1,29 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F3c - Installation intent and publication contract`
+Task: `F3d - Remaining bounded persistence stores`
 Owner: `OpenCode`
 Model: `DeepSeek Pro`
 Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `DeepSeek Pro performs the bounded installation intent/publication audit and repair; Lucy independently reviews before F3d`
-Worker note: `docs/worker-notes/2026-08-07-f3c-installation-intent-publication.md`
+Route: `DeepSeek Pro performs the bounded F3d persistence store characterization; Lucy independently reviews before F3e`
+Worker note: `docs/worker-notes/2026-08-07-f3d-bounded-persistence-stores.md`
 Base branch: `main`
-Base commit: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
-Implementation branch: `foundation/f3c-installation-intent-publication`
+Base commit: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
+Implementation branch: `foundation/f3d-bounded-persistence-stores`
 Parent branch: `main`
-Parent tip: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
-Preparation checkpoint: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
-Implementation checkpoint: `50a34f0dda50dfb13e178cb7410c13bcd765d345`
+Parent tip: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
+Preparation checkpoint: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
+Implementation checkpoint: `(TBD after first commit)`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
 
 ## Objective
 
-Audit and, only where directly justified, align the specialised installation
-intent/publication contract. F3c is NOT a universal persistence redesign.
+Complete the persistence contract audit for the remaining bounded non-Trail/non-Replay stores.
 
-The target is the existing installation sequence and its recovery semantics:
-
-```text
-intent -> staged filesystem state -> destination publication
-       -> durable installation record -> exact-match intent removal/recovery
-```
-
-Preserve the specialised design where it is already correct.
+For each store, determine whether the current implementation already satisfies its intended immutable/current-state/journal contract. Add characterization tests for untested properties. Repair only a directly demonstrated defect.
 
 ## Central evidence rule
 
@@ -45,117 +37,180 @@ And:
 
 **PROVEN means there is a hard assertion that fails if that exact statement is false.**
 
-Do not infer correctness from comments, function names, API names, nearby tests
-or a green integration suite.
+Do not infer correctness from comments, function names, or nearby tests.
 
-## Relevant background and existing behaviour
+## F3d scope — 9 stores
 
-The installation publication system at `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
-has a specialised, well-tested contract:
+### Immutable records (StoreRoot-backed)
 
-- **InstallationPublicationIntent** (`installation_publication_intent.rs`):
-  singleton `current.json` in a StoreRoot-backed directory; digest covers all
-  content fields via `covered_bytes()`; validation enforces UUID canonicality,
-  schema pin, cross-field consistency, and digest integrity.
+1. **Candidate Registry** (`candidate.rs`)
+2. **Publisher Trust Store** (`installation_trust.rs`)
+3. **Developer Approval Store** (`trust.rs`)
+4. **Launch Profile Evidence** (`launch_profile.rs`)
+5. **Conformance Evidence** (`conformance.rs`)
+6. **Installation Approval** (`installed.rs`, lines 46-320)
+7. **Installed Plug Registry** — record-store contract only (`installed.rs`, lines 322-1474)
+8. **Enablement Records** (`enablement.rs`)
 
-- **Exact-match removal** (`remove_if_matches`): validates expected intent,
-  loads current, compares with `!=`, returns `Ok(true)` on match,
-  `Ok(false)` on absent, `Err(conflict())` on mismatch.
+### Remaining bounded journal (own filesystem access)
 
-- **Publication mutation** (`installation_publication_mutation.rs`):
-  writes intent -> builds staging -> renames staging to destination
-  -> publishes record -> removes exact-matching intent via recovery.
+9. **Local Anchor Admission Store** (`local_anchor.rs`)
 
-- **Recovery classification** (`installation_recovery.rs:35-69`):
-  maps 4 valid states to dispositions; all 4 invalid states return conflict.
+### Already closed elsewhere
 
-- **19 intent tests** in `installation_publication_intent_tests.rs`
-- **16 recovery tests** in `installation_recovery_tests.rs`
-- Comprehensive mutation tests in `installation_publication_mutation_tests.rs`
+- Installation Publication Intent: accepted F3c
+- Installation Recovery Staging/journal: accepted F3c
+- Trail: F3e
+- Replay: F3e
+- Installation Execution Lock: coordination artifact
 
-### F3b constraints carried forward
+## F3d evidence dimensions
 
-- flush operation accepted: PROVEN
-- bytes survive close/reopen: PROVEN
-- pre-rename absence and post-rename complete bytes: PROVEN
-- concurrent atomic visibility during rename: UNVERIFIED
-- file data surviving sudden power loss: UNVERIFIED
-- directory-entry survival after power loss: UNVERIFIED
+For each store, characterize across these dimensions:
 
-F3c must not upgrade any UNVERIFIED property to PROVEN.
+| Dimension | What to prove |
+|---|---|
+| Create conflict | Cannot silently overwrite different record; duplicate behaviour deterministic |
+| Canonical identity | One canonical filename/path; record digest or identity validated on read |
+| Duplicate behaviour | Exact duplicate create deterministic; duplicate logical identity fails closed |
+| Malformed/torn state | Malformed bytes fail closed; .tmp remnants surfaced |
+| Close/reopen | Valid record survives ordinary close/reopen |
+| Corruption detection | Digest mismatch detected; corrupt record not treated as absence |
+| Filename/content agreement | Filename identity disagreement fails closed |
+| Chain/history validation | Where applicable: predecessor chain, ordering, restart reconstruction |
+| Unsafe-path protection | Root validation, ancestor/reparse checks, escape prevention |
+| Power-loss durability | UNVERIFIED (F3b) — never upgrade |
+| Directory-entry durability | UNVERIFIED (F3b) — never upgrade |
 
 ## Required behaviour
 
-1. **F3c-1 — Publication intent identity**: Establish directly: the intent has one canonical identity; stored bytes/digest bind the exact intended installation operation; conflicting intent cannot silently replace an existing different intent; exact duplicate/retry behaviour is deterministic; the singleton `current.json` contract is correctly enforced; malformed or duplicate intent state fails closed.
-2. **F3c-2 — Exact-match removal**: Directly prove that intent removal occurs only when the persisted intent exactly matches the expected operation/identity. Required negative properties: wrong digest cannot remove; wrong installation identity cannot remove; stale intent cannot remove a newer/different intent; malformed state cannot be converted into absence; missing intent is distinguished from mismatched intent.
-3. **F3c-3 — Publication ordering**: Map and test the exact normal publication sequence. Identify the points at which: intent exists; staging exists; final destination exists; durable installed-record exists; intent has been removed. Prove the permitted ordering directly.
-4. **F3c-4 — Recovery state matrix**: Audit `classify_installation_recovery` against every materially distinct observable combination of intent/staging/destination/record presence and matching/mismatching identity. For every state, prove one explicit outcome.
-5. **F3c-5 — Recovery must not destroy evidence**: Directly prove negative properties: mismatching destination is never deleted; mismatching installed record is never overwritten; unrelated staging is never removed; wrong intent is never cleared; corruption/tamper evidence is preserved; recovery does not silently normalise an ambiguous state into success.
-6. **F3c-6 — Canonical bytes / digest truth**: Directly prove: digest is computed over the intended canonical representation; persisted/read-back identity is checked; filename/record identity disagreement fails closed; recovery decisions use validated persisted state.
+1. F3d-1 — Immutable create contract: For each immutable store, characterize create conflict, canonical identity, duplicate behaviour, malformed/torn state, filename/content agreement.
+
+2. F3d-2 — Restart/readback truth: For each store, characterize close/reopen survival, corruption detection, chain validation.
+
+3. F3d-3 — Unsafe-path protection: For each store, characterize root validation, reparse checks, escape prevention. PROVEN only with direct negative test.
+
+4. F3d-4 — Chain/history stores: For Publisher Trust and Enablement, characterize predecessor chain and restart reconstruction.
+
+5. F3d-5 — Installed Plug Registry record boundary: Characterize record identity, create/conflict, digest validation, filename agreement, corruption classification. No publication sequencing changes.
+
+6. F3d-6 — Local Anchor journal contract: Characterize event/admission identity, duplicate semantics, completion/evaluation, restart reconstruction, malformed handling, path safety.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/installation_publication_intent.rs`
-- `tethers-0.1/host-rust/src/installation_publication_intent_tests.rs`
-- `tethers-0.1/host-rust/src/installed.rs`
-- `tethers-0.1/host-rust/src/installation_execution.rs`
-- `tethers-0.1/host-rust/src/installation_plan.rs`
-- `tethers-0.1/host-rust/src/installation_publication_preparation.rs`
-- `tethers-0.1/host-rust/src/installation_publication_mutation.rs`
-- `tethers-0.1/host-rust/src/installation_publication_mutation_tests.rs`
-- `tethers-0.1/host-rust/src/installation_recovery.rs`
-- `tethers-0.1/host-rust/src/installation_recovery_execution.rs`
-- `tethers-0.1/host-rust/src/installation_recovery_plan.rs`
-- `tethers-0.1/host-rust/src/installation_recovery_tests.rs`
-- `tethers-0.1/host-rust/src/installation_recovery_evidence.rs`
+All files under `tethers-0.1/host-rust/src/`:
+- `candidate.rs`
+- `installation_trust.rs`
+- `trust.rs`
+- `launch_profile.rs`
+- `conformance.rs`
+- `installed.rs`
+- `enablement.rs`
+- `local_anchor.rs`
+- `m3_store.rs`
+- `f3d_bounded_persistence_stores_evidence.rs` (new)
+
+Existing test files:
+- `candidate.rs` inline tests
+- `installation_trust.rs` (no inline tests; tested via `current_trust_tests.rs`)
+- `trust.rs` inline tests
+- `launch_profile.rs` (no inline tests)
+- `conformance.rs` (no inline tests)
+- `current_trust_tests.rs`
+- `enablement.rs` inline tests
+- `local_anchor.rs` inline tests
+
+Documentation:
+- `docs/architecture/TETHERS_FOUNDATION_PASS.md`
+- `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
+- `docs/foundation-pass/DEBT_LEDGER.md`
+
+## Relevant background and existing behaviour
+
+F3a established the persistence inventory (4 classes: Immutable Atomic Record, Replaceable Current-State Record, Append-Only Causal Log, Multi-Step Intent/Recovery Journal). F3b characterized Windows primitive behaviour (sync_all + rename survival, parent-directory flush feasibility, power-loss UNVERIFIED). F3c audited Installation Publication Intent and Recovery.
+
+The 9 remaining stores vary in maturity of existing test coverage:
+- Candidate Registry has inline tests for torn .tmp, filename mismatch, duplicate identity, unsafe path
+- Publisher Trust Store has chain validation, torn state, restart tests in trust.rs
+- Developer Approval Store has basic approve/find test in trust.rs
+- Launch Profile Evidence has comprehensive inline tests in j24h_installation_evidence_access.rs
+- Conformance Evidence has tests in m3_lifecycle.rs and j24j_installation_reconciliation.rs
+- Installation Approval is exercised through integration tests (j24k2, m3_lifecycle)
+- Installed Plug Registry record contract is exercised through m3_lifecycle.rs and CLI tests
+- Enablement Records have inline enable/disable/availability test
+- Local Anchor Admission Store has comprehensive inline tests for duplicate, conflict, restart, corruption
+
+Seven stores are StoreRoot-backed and share the StoreRoot contract for torn state, filename/id agreement, close/reopen, reparse protection, and digest validation. Candidate Registry and Local Anchor have custom filesystem access.
+
+All files under `tethers-0.1/host-rust/src/`:
+- `candidate.rs`
+- `installation_trust.rs`
+- `trust.rs`
+- `launch_profile.rs`
+- `conformance.rs`
+- `installed.rs`
+- `enablement.rs`
+- `local_anchor.rs`
+- `m3_store.rs`
+- `f3d_bounded_persistence_stores_evidence.rs` (new)
+
+Existing test files:
+- `candidate.rs` inline tests
+- `installation_trust.rs` (no inline tests; tested via `current_trust_tests.rs`)
+- `trust.rs` inline tests
+- `launch_profile.rs` (no inline tests)
+- `conformance.rs` (no inline tests)
+- `current_trust_tests.rs`
+- `installation_recovery_*.rs` test files
+- `enablement.rs` inline tests
+- `local_anchor.rs` inline tests
+
+Documentation:
 - `docs/architecture/TETHERS_FOUNDATION_PASS.md`
 - `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
 - `docs/foundation-pass/DEBT_LEDGER.md`
 
 ## Frozen decisions and invariants
 
-- Accepted main is `71f79f7c80b2a09921ee59ac4b1acfa3926bf834` (F3b merged).
-- F3c is audit and evidence. Do not redesign the intent format, publication
-  flow, recovery, or any other persistence store.
-- Every PROVEN claim must map to a hard assertion.
-- Document UNVERIFIED properties from F3b without upgrading them.
-- One implementation owner per task. Do not begin F3d or F3e.
-
-## Expected pre-existing changes
-
-None. Branch is created from accepted F3b main. Only the files listed in this packet, the F3c characterization tests, and documentation updates should change.
+- Accepted main: `40ec42eb2aac108901d428af3cbfe264d3edd6dc` (F3c merged)
+- F3d is audit and characterization. Repair only directly demonstrated defects.
+- No global persistence redesign. No StoreRoot rewrite.
+- F3b UNVERIFIED platform properties preserved.
+- No F3c architecture reopened.
+- Trail, Replay untouched.
 
 ## Acceptance criteria
 
-1. F3c-1 through F3c-6 each have direct characterization tests proving the
-   named properties. Every property uses PROVEN, DISPROVEN, or UNVERIFIED.
-2. PERSISTENCE_INVENTORY.md updated with F3c evidence tags.
-3. DEBT_LEDGER.md updated only for directly demonstrated defects/clarifications.
-4. F1 fixtures are byte-identical.
-5. Complete branch diff: characterization tests + documentation only.
-6. F3c worker note records exact evidence and findings.
+1. F3d characterization tests covering all 9 stores, with evidence matrix.
+2. PERSISTENCE_INVENTORY.md updated with F3d evidence.
+3. DEBT_LEDGER.md updated only for demonstrated defects.
+4. F1 fixtures byte-identical.
+5. Complete branch diff: tests + documentation only (unless a repair required).
+6. F3d worker note records exact evidence and findings.
 
 ## Forbidden changes
 
-Do not:
-- create a universal persistence layer;
-- redesign StoreRoot globally;
-- add parent-directory flushing;
-- repair Candidate Registry or Local Anchor;
-- redesign Trail or Replay;
-- begin F3d or F3e;
-- change public CLI shape, JSON envelopes, exit codes, protocol semantics, or
-  F1 compatibility fixtures;
-- delete or weaken an existing direct negative-property test.
+- Universal persistence abstraction
+- StoreRoot redesign
+- Parent-directory flushing
+- Trail/Replay modification
+- F3c publication/recovery architecture changes
+- CLI, JSON, exit codes, protocol, fixture changes
+- Weakening existing negative tests
+- Beginning F3e
 
 ## Stop conditions
 
 STOP if:
-- `origin/main` differs from `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`;
-- a required property cannot be characterized;
-- a repair would require redesign outside F3c;
-- a required check fails;
-- two materially similar attempts fail.
+- `origin/main` differs from `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
+- A required property cannot be characterized
+- A repair would require redesign outside F3d
+- A required check fails
+- Two materially similar attempts fail
+
+## Expected pre-existing changes
+
+None
 
 ## Required verification
 
@@ -180,5 +235,3 @@ git diff --check origin/main...HEAD
 git diff --name-only origin/main...HEAD
 git status --short --branch
 ```
-
-Run every focused F3c test explicitly and record it separately.
