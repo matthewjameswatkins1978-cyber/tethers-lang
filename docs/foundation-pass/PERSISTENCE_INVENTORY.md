@@ -96,6 +96,125 @@ Each entry records the observed accepted-main primitive and the question F3b mus
 
 ---
 
+## F3b Findings
+
+F3b established direct Windows evidence for the five primitive clusters identified
+by the F3a route map. Findings are recorded at `5722fe6`.
+
+### F3b-1: `sync_all()` + `fs::rename` (StoreRoot / Candidate / Local Anchor)
+
+**Test file:** `tests/f3b_windows_persistence_evidence.rs`
+
+- **File-data durability (ordinary execution):** PROVEN (F3b). Complete bytes
+  written to temporary file survive close and reopen after rename. Verified
+  via `sync_all_rename_full_cycle_observed`, `sync_all_rename_survives_close_and_reopen`.
+- **Atomic visibility (ordinary execution):** PROVEN (F3b). No partial file
+  visible under the final name — `create_new` prevents concurrent access to
+  the temporary file, and `fs::rename` makes the final name appear atomically.
+  Verified via `sync_all_rename_no_partial_file_visible`.
+- **Directory-entry durability (interruption/power-loss):** UNVERIFIED (F3b).
+  `fs::rename` after `sync_all()` on the temporary file does not flush the
+  parent directory. The post-rename directory entry may not be durable after
+  power loss. Verified via `sync_all_stale_tmp_visible_after_failure`.
+- **Properties 1-7:** All seven named observable properties are PROVEN on the
+  primary Windows target during ordinary execution with
+  `sync_all_rename_full_cycle_observed`, `sync_all_rename_survives_close_and_reopen`,
+  `sync_all_rename_no_partial_file_visible`, `sync_all_rename_multiple_records_independent`.
+
+### F3b-2: Parent-directory durability feasibility
+
+**Test file:** `tests/f3b_windows_persistence_evidence.rs`
+
+- **Directory handle open feasibility:** PROVEN (F3b). Windows permits opening
+  directories with `CreateFileW(FILE_GENERIC_WRITE | FILE_FLAG_BACKUP_SEMANTICS)`.
+- **FlushFileBuffers on directory handle:** PROVEN (F3b). `FlushFileBuffers`
+  accepted the directory handle; the OS returned success. Verified via
+  `parent_directory_flush_feasibility`.
+- **Current implementation:** The current Rust host does NOT perform any
+  parent-directory flush for any store. Replay Ledger flushes the renamed
+  file handle only (`replay_windows.rs:932-936`).
+- **Narrowest provable claim:** `FlushFileBuffers` on a directory handle is
+  technically possible on this volume and configuration. Full directory-entry
+  durability after power loss depends on volume write-cache behaviour and
+  is UNVERIFIED (F3b).
+
+### F3b-3: Replay Windows publish primitive
+
+**Test file:** `src/replay_windows.rs` inline tests
+
+- **CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH):** PROVEN (F3b). File
+  created with write-through flag. Verified via
+  `f3b3_create_write_through_open_and_write`.
+- **WriteFile:** PROVEN (F3b). All bytes written match on-disk contents
+  after handle close. Verified via `f3b3_create_write_through_open_and_write`.
+- **FlushFileBuffers before rename:** PROVEN (F3b). File-data durability for
+  the temporary file confirmed. Verified via
+  `f3b3_flush_before_rename_file_data_durability`.
+- **SetFileInformationByHandle rename (no-replace):** PROVEN (F3b). Rename
+  succeeded when destination does not exist. The `ReplaceIfExists:false`
+  defence is validated but may be bypassed on some volumes (observed).
+  Verified via `f3b3_rename_without_replacement_defence`.
+- **FlushFileBuffers on renamed handle:** PROVEN (F3b). OS accepted the flush
+  on the renamed file handle. This flushes the file metadata/data for the
+  renamed file handle — NOT the parent directory. Verified via
+  `f3b3_flush_before_rename_file_data_durability`.
+- **Reopen/re-read verification:** PROVEN (F3b). Reopened bytes match original
+  written bytes. This proves the rename landed complete file data. It does
+  NOT prove the parent directory entry is durable. Verified via
+  `f3b3_flush_before_rename_file_data_durability`.
+- **CREATE_NEW exclusion:** PROVEN (F3b). `CreateFileW(CREATE_NEW)` correctly
+  rejects an existing file. Verified via `f3b3_create_new_prevents_overwrite`.
+
+### F3b-4: Trail JSONL interruption behaviour
+
+**Test file:** `src/dispatch.rs` inline tests
+
+- **Complete line survives close/reopen:** PROVEN (F3b). Verified via
+  `trail_complete_line_survives_close_and_reopen`.
+- **Multiple lines ordered and parseable:** PROVEN (F3b). Verified via
+  `trail_multiple_complete_lines_ordered_and_parseable`.
+- **Truncated final line detection:** PROVEN (F3b). An incomplete JSONL
+  entry (no closing brace) detected as non-parseable by the JSON parser.
+  Verified via `trail_truncated_final_line_detected`.
+- **Incomplete line present in raw bytes:** PROVEN (F3b). A partial write
+  without trailing newline is present in the file and appears as a line
+  through `std::io::lines()`. The current reader receives the incomplete
+  bytes; JSON parsing will fail. Verified via
+  `trail_incomplete_line_no_newline_present_in_raw_bytes`.
+- **Current behaviour:** The Trail reader parses JSONL lines independently;
+  a truncated final line produces a parse error. No per-line digest or
+  integrity footer exists to detect truncation before parsing.
+
+### F3b-5: Local Anchor root reparse-point safety
+
+**Test file:** `tests/f3b_windows_persistence_evidence.rs`
+
+- **Junction redirect test:** Could not be completed due to `mklink`
+  requiring administrator or developer-mode privileges on the test machine.
+  Without elevated privileges, the characterization cannot determine
+  whether a reparse point on the store root subverts admission records.
+- **Verdict:** UNVERIFIED (F3b). The SHA-256 safe filenames prevent
+  traversal in individual filenames, but the absent `verify_chain()` /
+  `reject_reparse()` on the store root directory (`local_anchor.rs:288`)
+  means a reparse point on the root could redirect all writes. The test
+  tooling limitation prevents direct confirmation or rejection of the
+  exposure. Re-test with elevated privileges or an alternative junction
+  creation mechanism.
+- **Route:** If exposure is confirmed, repair belongs to a later package
+  (F3c/d/e), not F3b.
+
+### Summary of property status
+
+| Property | StoreRoot/Candidate/Local Anchor | Replay Ledger | Trail |
+|---|---|---|---|
+| File-data durability (ordinary) | PROVEN (F3b) | PROVEN (F3b) | PROVEN (F3b) |
+| Atomic visibility (ordinary) | PROVEN (F3b) | PROVEN (F3b) | N/A (no rename) |
+| Directory-entry durability | UNVERIFIED (F3b) | UNVERIFIED (F3b) | UNVERIFIED (F3b) |
+| Interruption behaviour | UNVERIFIED (F3b) | UNVERIFIED (F3b) | Truncated line detected (F3b) |
+| Reparse-point defence | N/A (StoreRoot verifies chain) | N/A (ValidatedHostRoot) | UNVERIFIED (F3b, Local Anchor) |
+
+---
+
 ## Changes Made in F3a
 
 ### Initial F3a pass

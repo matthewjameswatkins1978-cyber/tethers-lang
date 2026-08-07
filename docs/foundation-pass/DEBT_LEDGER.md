@@ -20,9 +20,9 @@ All items cite live evidence. No repair attempted.
 
 ### A1: Directory Durability Not Explicitly Tested
 - **Classification:** Contract ambiguity
-- **Evidence:** `PERSISTENCE_INVENTORY.md` — no store has confirmed directory-entry durability. The Replay Ledger calls `FlushFileBuffers` after rename on the renamed file handle and verifies byte equality by reopening and comparing, but the parent directory entry is not explicitly flushed. All 7 `StoreRoot`-backed stores, the Trail, and the Admission Store lack any directory-level durability even at the file-handle level. F3b (Windows primitive evidence) is tasked with establishing the supported Windows guarantee for every store.
-- **Disposition:** F3b
-- **Notes:** NTFS metadata durability requires explicit directory handle flush after rename when `FILE_FLAG_WRITE_THROUGH` is not used on the parent. Replay's post-rename `FlushFileBuffers` flushes the renamed file handle, not the parent directory. Current tests may pass but the contract is ambiguous for all stores.
+- **Evidence:** `PERSISTENCE_INVENTORY.md` — no store has confirmed directory-entry durability. The Replay Ledger calls `FlushFileBuffers` after rename on the renamed file handle and verifies byte equality by reopening and comparing, but the parent directory entry is not explicitly flushed. All 7 `StoreRoot`-backed stores, the Trail, and the Admission Store lack any directory-level durability even at the file-handle level. F3b established that `FlushFileBuffers` on a directory handle is technically feasible (the OS accepts the flush), but full directory-entry durability after power loss remains UNVERIFIED and depends on volume write-cache behaviour.
+- **Disposition:** F3b (investigated), durability UNVERIFIED
+- **Notes:** F3b characterization shows that (a) Windows permits directory handle opens with `FILE_FLAG_BACKUP_SEMANTICS`, (b) `FlushFileBuffers` succeeds on that handle, and (c) the current Rust implementation performs no parent-directory flush for any store. A1 is now narrowed: the mechanism exists but production does not use it, and power-loss durability cannot be proven without destructive testing.
 
 ---
 
