@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `OpenCode`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `f295daa288f4d3dc48181888d6655df798675033`
 
-Implementation checkpoint: `0b02c4343fd488ad7aef37ea4fd58b45ac275f34`
+Implementation checkpoint: `130a760c3c8c7e8ad3599f5b2f333ea02b91e119`
 
 ## Checkpoints
 
@@ -21,10 +21,11 @@ Implementation checkpoint: `0b02c4343fd488ad7aef37ea4fd58b45ac275f34`
 | F2a repair | `c8cc0fe` | Stderr capture fix + 6 sub-tests |
 | F2b repair r1 | `54216d7` | WaitForSingleObject approach (superseded) |
 | F2 corrections | `0b02c43` | Object-identity test, exact-bound test, cleanup result |
+| F2 correction r2 | `130a760` | Truthful wait, reaped logic, cleanup assertions, 5 helper tests |
 
 ## Requested outcome
 
-Repaired two F1-confirmed operational defects: truthful live stderr capture (F2a) and nondeterministic M3 handle allow-list test (F2b). Added structured cleanup accounting. All public contracts preserved.
+Repaired two F1-confirmed operational defects: truthful live stderr capture (F2a) and nondeterministic M3 handle allow-list test (F2b). Added structured cleanup accounting, truthful wait classification, and deterministic unit tests for Windows wait-result interpretation. All public contracts preserved.
 
 ## Changes made
 
@@ -78,30 +79,37 @@ If `SetEvent` succeeds on a colliding handle of a different type (file, key), th
 ### Focused tests
 
 ```
-cargo test --locked f2a_ -- --nocapture        → 6/6 PASS
+cargo test --locked f2a_ -- --nocapture        → 11/11 PASS (6 stderr/cleanup + 5 interpret_process_wait)
 cargo test --locked m3_windows_handle_allow_list_excludes_unrelated_inheritable_handle -- --exact → PASS
 ```
+
+### R2 corrections (`130a760`)
+
+| Correction | What changed |
+|---|---|
+| Truthful wait | `ManagedChild::wait()` inspects `WaitForSingleObject` return (`WAIT_OBJECT_0`) and rejects `STILL_ACTIVE` exit code |
+| Helper + tests | `interpret_process_wait(wait_result, exit_code)` factored for deterministic unit test coverage of all four failure modes |
+| Reaped logic | `self.reaped = cleanup.child_waited` — kill is not reaping |
+| Cleanup test | New assertions: `job_terminated`, `child_waited`, `reaped`, `stdout_thread_joined`, `stderr_thread_joined`, process no longer exists |
 
 ### Final verification matrix
 
 | # | Command | Result |
 |---|---|---|
 | 1 | `git fetch origin --prune` → `rev-parse origin/main` | PASS (`f295daa...`) |
-| 2 | `git rev-parse HEAD` | PASS (`0b02c43...`) |
+| 2 | `git rev-parse HEAD` | PASS (`130a760...`) |
 | 3 | `git status --short --branch` | PASS (clean) |
-| 4 | `rustup show` | PASS (1.97.1) |
-| 5 | `cargo --version` | PASS (1.97.1) |
-| 6 | `cargo fmt --all -- --check` | PASS |
-| 7 | `cargo check --all-targets --all-features --locked` | PASS |
-| 8 | `cargo test --all-targets --all-features --locked` | PASS (1510 tests) |
-| 9 | `cargo clippy --all-targets --all-features --locked -- -W clippy::all` | PASS (pre-existing only) |
-| 10 | `just verify` | PASS |
-| 11 | `just verify-agent` | PASS (includes cargo-deny, cargo-nextest) |
-| 12 | `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | PASS |
-| 13 | `git diff --exit-code origin/main...HEAD -- docs/foundation-pass/fixtures` | PASS (byte-identical) |
-| 14 | `git diff --check origin/main...HEAD` | PASS (clean) |
-| 15 | `git diff --name-only origin/main...HEAD` | PASS (7 files) |
-| 16 | `git status --short --branch` | PASS (clean) |
+| 4 | `cargo fmt --all -- --check` | PASS |
+| 5 | `cargo check --all-targets --all-features --locked` | PASS |
+| 6 | `cargo test --all-targets --all-features --locked` | PASS (1515 tests) |
+| 7 | `cargo clippy --all-targets --all-features --locked -- -W clippy::all` | PASS (pre-existing only) |
+| 8 | `just verify` | PASS |
+| 9 | `just verify-agent` | PASS (1515 tests, cargo-deny, cargo-nextest) |
+| 10 | `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | PASS |
+| 11 | `git diff --exit-code origin/main...HEAD -- docs/foundation-pass/fixtures` | PASS (byte-identical) |
+| 12 | `git diff --check origin/main...HEAD` | PASS (clean) |
+| 13 | `git diff --name-only origin/main...HEAD` | PASS (7 files) |
+| 14 | `git status --short --branch` | PASS (clean) |
 
 ## Branch diff
 
@@ -118,7 +126,7 @@ Zero fixture changes. Zero public contract changes. No new dependencies.
 
 1. M3 handle test: `GetHandleInformation` checks handle existence, not object identity. `WaitForSingleObject` narrows but still accepts any waitable object. Only parent-side `WaitForSingleObject` on the actual event proves exclusion.
 2. Rust silently discards non-`()` return values — `shutdown()` return type change did not require caller updates.
-3. `WAIT_TIMEOUT` constant not directly exported by windows-sys 0.59 — defined locally as `const WAIT_TIMEOUT: u32 = 258;`.
+3. `WAIT_TIMEOUT` and `WAIT_OBJECT_0` not exported by windows-sys 0.61 — defined as local constants.
 
 ## Remaining risks
 
