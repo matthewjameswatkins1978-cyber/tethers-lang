@@ -47,6 +47,17 @@ evidence for one property as evidence for another.
 
 ## Required behaviour
 
+1. Characterize `sync_all()` + `fs::rename` with direct test evidence for all
+   7 named observable properties (F3b-1).
+2. Investigate parent-directory durability feasibility and record what can be
+   proven and what remains unverified (F3b-2).
+3. Characterize the Replay Windows publish primitive with direct test evidence
+   for each of the 6 observable stages (F3b-3).
+4. Characterize Trail JSONL interruption behaviour including truncated final-line
+   detection and incomplete-line handling (F3b-4).
+5. Characterize Local Anchor root reparse-point safety with a bounded
+   Windows-only test (F3b-5).
+
 ### F3b-1: `sync_all()` + `fs::rename`
 
 Build a minimal private characterization test for the primitive used by
@@ -54,13 +65,13 @@ StoreRoot/Candidate/Local Anchor style persistence. Use a temporary directory.
 
 Directly establish what can reasonably be tested on the primary Windows target:
 
-1. temporary file is fully written;
-2. `sync_all()` succeeds;
-3. rename succeeds;
-4. final path contains the complete expected bytes;
-5. temporary path disappears;
-6. no partial final file is exposed during ordinary execution;
-7. restart/reopen reads the exact expected bytes.
+- temporary file is fully written;
+- `sync_all()` succeeds;
+- rename succeeds;
+- final path contains the complete expected bytes;
+- temporary path disappears;
+- no partial final file is exposed during ordinary execution;
+- restart/reopen reads the exact expected bytes.
 
 If true power-loss durability cannot be deterministically established, report
 `UNVERIFIED`.
@@ -71,10 +82,10 @@ Investigate the exact Windows/Rust mechanisms available for flushing or
 proving directory-entry durability. Determine from direct platform/API evidence
 and a minimal experiment:
 
-1. whether Windows permits opening the relevant directory with necessary flags/access;
-2. whether `FlushFileBuffers` can meaningfully be invoked on that handle;
-3. whether the current Rust implementation performs such an operation;
-4. what narrower claim can actually be proven.
+- whether Windows permits opening the relevant directory with necessary flags/access;
+- whether `FlushFileBuffers` can meaningfully be invoked on that handle;
+- whether the current Rust implementation performs such an operation;
+- what narrower claim can actually be proven.
 
 Do not change production persistence.
 
@@ -82,12 +93,12 @@ Do not change production persistence.
 
 Characterize the accepted-main sequence in `publish_new_canonical_file_with_temporary_stem`:
 
-1. `CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH)` — test observable durability;
-2. `WriteFile` — test complete write;
-3. `FlushFileBuffers` before rename — test file-data durability;
-4. `SetFileInformationByHandle` rename — test rename properties;
-5. `FlushFileBuffers` on the renamed file handle — test what this proves;
-6. reopen/re-read exact-byte verification — test what this proves.
+- `CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH)` — test observable durability;
+- `WriteFile` — test complete write;
+- `FlushFileBuffers` before rename — test file-data durability;
+- `SetFileInformationByHandle` rename — test rename properties;
+- `FlushFileBuffers` on the renamed file handle — test what this proves;
+- reopen/re-read exact-byte verification — test what this proves.
 
 Test the observable guarantees individually. Establish exactly what the
 post-rename re-read proves and what it does not prove.
@@ -96,10 +107,10 @@ post-rename re-read proves and what it does not prove.
 
 Characterize JSONL append using `writeln!`, `flush()`, `sync_data()`:
 
-1. complete line survives close/reopen;
-2. multiple complete lines remain ordered and parseable;
-3. deliberately truncated final line is detected by the current reader;
-4. establish current behaviour when the final JSONL entry is incomplete.
+- complete line survives close/reopen;
+- multiple complete lines remain ordered and parseable;
+- deliberately truncated final line is detected by the current reader;
+- establish current behaviour when the final JSONL entry is incomplete.
 
 If current recovery accepts, ignores, or fails on a partial final line,
 record the exact behaviour. Do not redesign Trail or add per-line digests.
@@ -108,9 +119,9 @@ record the exact behaviour. Do not redesign Trail or add per-line digests.
 
 Characterize the Local Anchor Admission Store root path safety:
 
-1. determine whether a reparse point at or within the persistence root can
-   redirect admission writes despite hashed safe filenames;
-2. use a bounded Windows-only test.
+- determine whether a reparse point at or within the persistence root can
+  redirect admission writes despite hashed safe filenames;
+- use a bounded Windows-only test.
 
 If exposure is demonstrated, record it as a confirmed defect and route the
 repair to the correct later package. Do not repair root-safety behaviour in F3b.
