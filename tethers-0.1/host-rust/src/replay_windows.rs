@@ -2876,18 +2876,22 @@ mod tests {
     // F3b-3: Replay Windows publish primitive characterization
     // -----------------------------------------------------------------------
     //
-    // These tests characterize each stage of the accepted-main
-    // `publish_new_canonical_file_with_temporary_stem` sequence in
-    // isolation, using the same Win32 APIs without depending on the
-    // Tethers Replay infrastructure.
+    // Evidence labels per stage:
     //
-    // Six stages characterized:
-    //   1. CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH) — durability
-    //   2. WriteFile — complete write
-    //   3. FlushFileBuffers before rename — file-data durability
-    //   4. SetFileInformationByHandle rename — rename properties
-    //   5. FlushFileBuffers on renamed file handle — what this proves
-    //   6. reopen/re-read — exact-byte verification
+    //   a) CreateFileW accepts & file opens                — PROVEN (F3b)
+    //   b) WriteFile writes complete bytes                 — PROVEN (F3b)
+    //   c) FlushFileBuffers before rename accepted         — PROVEN (F3b)
+    //   d) SetFileInformationByHandle rename accepted      — PROVEN (F3b)
+    //   e) FlushFileBuffers on renamed handle accepted     — PROVEN (F3b)
+    //   f) exact bytes survive close/reopen                — PROVEN (F3b)
+    //   g) atomic visibility during rename (concurrent)    — UNVERIFIED (F3b)
+    //   h) file data survives sudden power loss            — UNVERIFIED (F3b)
+    //   i) CREATE_NEW rejects existing file                — PROVEN (F3b)
+    //   j) ReplaceIfExists:false blocks replacement        — PROVEN (F3b)
+    //
+    // Flush accepted ≠ power-loss durability proved.
+    // Close/reopen ≠ atomic visibility proved.
+    // No concurrent observer exists in any of these tests.
 
     fn wide_path(path: &Path) -> Vec<u16> {
         path.as_os_str().encode_wide().chain(Some(0)).collect()
@@ -2922,7 +2926,7 @@ mod tests {
         }
         assert!(
             handle != INVALID_HANDLE_VALUE && handle != std::ptr::null_mut(),
-            "F3b-3 stage 1: CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH) succeeded"
+            "F3b-3 (a): CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH) accepted"
         );
 
         let mut written = 0u32;
@@ -2947,7 +2951,7 @@ mod tests {
         let on_disk = std::fs::read(&path).expect("read back");
         assert_eq!(
             on_disk, data,
-            "F3b-3 stage 2: WriteFile bytes match on-disk contents"
+            "F3b-3 (b): WriteFile bytes match on-disk contents after close"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -2989,16 +2993,18 @@ mod tests {
             assert_eq!(written as usize, data.len());
         }
 
-        // Stage 3: FlushFileBuffers before rename
+        // Stage 3: FlushFileBuffers before rename — accepted (PROVEN)
+        // Property (c): flush operation accepted. Not power-loss durability.
         unsafe {
             let flush_ok = FlushFileBuffers(handle);
             assert_ne!(
                 flush_ok, 0,
-                "F3b-3 stage 3: FlushFileBuffers before rename succeeded"
+                "F3b-3 (c): FlushFileBuffers before rename accepted"
             );
         }
 
-        // Rename via SetFileInformationByHandle (stages 4)
+        // Rename via SetFileInformationByHandle (stage 4)
+        // Property (d): rename accepted. Not atomic-visibility proof.
         unsafe {
             let name: Vec<u16> = final_path.as_os_str().encode_wide().collect();
             let name_bytes = (name.len() * std::mem::size_of::<u16>()) as u32;
@@ -3024,18 +3030,20 @@ mod tests {
             );
             assert_ne!(
                 rename_ok, 0,
-                "F3b-3 stage 4: SetFileInformationByHandle rename succeeded"
+                "F3b-3 (d): SetFileInformationByHandle rename accepted. \
+                 Atomic visibility during rename UNVERIFIED (no concurrent observer)."
             );
         }
 
         // Stage 5: FlushFileBuffers on renamed file handle
+        // Property (e): flush on renamed handle accepted. NOT parent directory.
         unsafe {
             let flush2_ok = FlushFileBuffers(handle);
             assert_ne!(
                 flush2_ok, 0,
-                "F3b-3 stage 5: FlushFileBuffers on renamed file handle succeeded — \
-                 this flushes file metadata/data for the renamed file handle, \
-                 not the parent directory."
+                "F3b-3 (e): FlushFileBuffers on renamed file handle accepted. \
+                 This flushes file metadata/data for the renamed file handle, \
+                 not the parent directory entry."
             );
         }
 
@@ -3045,12 +3053,14 @@ mod tests {
         }
 
         // Stage 6: reopen and re-read
+        // Property (f): exact bytes survive close/reopen. NOT power-loss proof.
         let reopened_bytes = std::fs::read(&final_path).expect("reopen final");
         assert_eq!(
             reopened_bytes, data,
-            "F3b-3 stage 6: reopened bytes match original written bytes. \
-             This proves the rename landed complete file data. \
-             It does NOT prove the parent directory entry is durable."
+            "F3b-3 (f): reopened bytes match original written bytes. \
+             Exact bytes survive close/reopen PROVEN. \
+             File-data survives sudden power loss: UNVERIFIED (F3b). \
+             Parent directory entry durability: UNVERIFIED (F3b)."
         );
 
         // Temporary path should be gone (rename moved it)
@@ -3086,8 +3096,8 @@ mod tests {
         }
         assert!(
             handle == INVALID_HANDLE_VALUE,
-            "F3b-3: CREATE_NEW correctly rejects existing file. \
-             A concurrent claim cannot overwrite a published generation."
+            "F3b-3 (i): CREATE_NEW correctly rejects existing file. \
+             Concurrent overwrite of published generation prevented."
         );
 
         // Verify pre-existing content untouched
@@ -3156,23 +3166,23 @@ mod tests {
             CloseHandle(handler);
         }
 
-        if rename_result == 0 {
-            // Expected on many configurations:
-            // SetFileInformationByHandle rejects replacement when
-            // ReplaceIfExists is false and destination exists.
-            eprintln!(
-                "F3b-3: SetFileInformationByHandle(ReplaceIfExists:false) \
-                 correctly rejected rename when destination existed. \
-                 This is the non-replacing rename defence in the Replay primitive."
-            );
-        } else {
-            eprintln!(
-                "F3b-3: SetFileInformationByHandle(ReplaceIfExists:false) \
-                 succeeded despite pre-existing destination. \
-                 This platform/volume does not enforce ReplaceIfExists \
-                 exclusion for this handle type."
-            );
-        }
+        // Hard assertion on this target:
+        // ReplaceIfExists:false must block the rename when destination exists.
+        // If this fails, the Replay Ledger defence is not enforced on this volume.
+        assert_eq!(
+            rename_result, 0,
+            "F3b-3 (j): SetFileInformationByHandle(ReplaceIfExists:false) blocked \
+             rename when destination existed. Replay non-replacing rename PROVEN. \
+             If this assertion fails, ReplaceIfExists exclusion is not enforced \
+             on this volume/configuration — the finding becomes DISPROVEN."
+        );
+
+        // Verify destination unchanged
+        assert_eq!(
+            std::fs::read(&dst).expect("read dst"),
+            b"pre-existing-destination",
+            "destination bytes unchanged after blocked rename"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

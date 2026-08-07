@@ -1465,11 +1465,18 @@ mod tests {
     // F3b-4: Trail JSONL interruption characterization
     // -----------------------------------------------------------------------
     //
-    // Characterize the current FileTrail append behaviour for:
-    //   1. complete line survives close/reopen
-    //   2. multiple complete lines remain ordered and parseable
-    //   3. deliberately truncated final line is detected by the current reader
-    //   4. current behaviour when the final JSONL entry is incomplete
+    // Evidence labels:
+    //   a) complete line survives close/reopen              — PROVEN (F3b)
+    //   b) multiple complete lines ordered and parseable    — PROVEN (F3b)
+    //   c) truncated final line present and non-parseable   — PROVEN (F3b)
+    //   d) incomplete-line raw bytes present in file        — PROVEN (F3b)
+    //   e) production Trail reader classification of
+    //      truncated final entry                            — UNVERIFIED (F3b)
+    //
+    // Properties (a)-(d) are tested directly here.
+    // Property (e) requires exercising the production Trail reader
+    // (trail_command.rs:run_trail()). That is NOT done here —
+    // this test uses raw serde_json::from_str, not the production reader.
 
     use std::io::Write as IoWrite;
 
@@ -1497,9 +1504,7 @@ mod tests {
             })
             .expect("append");
         }
-        // trail dropped (file closed)
 
-        // Reopen and read back
         let contents = std::fs::read_to_string(&trail_path).expect("read");
         let lines: Vec<_> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
         assert_eq!(lines.len(), 1, "one complete line survives close/reopen");
@@ -1519,12 +1524,12 @@ mod tests {
 
             for i in 0..3u32 {
                 ft.append_and_flush_intent(&IntentEntry {
-                    execution_id: format!("exec-{}", ('a' as u8 + i as u8) as char),
+                    execution_id: format!("exec-{}", (b'a' + i as u8) as char),
                     action_id: format!("act-{i}"),
                     capability_name: "multi.op".into(),
                     capability_version: 1,
                     provider_identity: "prov-m".into(),
-                    manifest_digest: format!("sha256:multi{:x}", i),
+                    manifest_digest: format!("sha256:multi{i:x}"),
                     arguments: serde_json::json!({"idx": i}),
                 })
                 .expect("append");
@@ -1544,11 +1549,7 @@ mod tests {
     }
 
     #[test]
-    fn trail_truncated_final_line_detected() {
-        // Simulate a truncated final JSONL line: write a complete line,
-        // then write an incomplete second line without trailing newline.
-        // Use raw fs::File to control exactly what bytes go to disk,
-        // then test that the reader receives the incomplete bytes.
+    fn trail_truncated_final_line_present_and_non_parseable() {
         let dir = temp_trail_dir();
         let trail_path = dir.join("truncated.jsonl");
 
@@ -1558,40 +1559,45 @@ mod tests {
                 .append(true)
                 .open(&trail_path)
                 .expect("create file");
-            // Complete first line
             let line1 = serde_json::json!({"idx": 1, "msg": "complete"});
             writeln!(f, "{}", serde_json::to_string(&line1).unwrap()).expect("write line1");
             f.flush().expect("flush");
             f.sync_data().expect("sync");
-            // Truncated second line — no newline, no flush
             write!(f, "{{\"idx\": 2, \"msg\": \"bro").expect("write truncated");
         }
 
-        // Read back: the truncated line is present but not parseable
         let raw = std::fs::read_to_string(&trail_path).expect("read");
         let lines: Vec<&str> = raw.lines().collect();
 
-        // Line 1 should parse, line 2 should be present but fail to parse
-        if lines.len() >= 2 && !lines[1].is_empty() {
-            let parse_result: Result<serde_json::Value, _> = serde_json::from_str(lines[1]);
-            if parse_result.is_err() {
-                // Expected: incomplete JSONL entry is not valid JSON
-                eprintln!(
-                    "F3b-4: truncated final line detected as non-parseable — \
-                     reader returns parse error. Trail needs a corruption \
-                     classification for this case."
-                );
-            }
-        }
+        // Hard assertion: exactly 2 logical lines
+        assert_eq!(
+            lines.len(),
+            2,
+            "F3b-4: expected 2 logical lines (1 complete + 1 truncated)"
+        );
+
+        // Hard assertion: truncated line is non-empty
+        assert!(
+            !lines[1].is_empty(),
+            "F3b-4: truncated final line is non-empty"
+        );
+
+        // Hard assertion: truncated line fails JSON parse
+        let parse_result: Result<serde_json::Value, _> = serde_json::from_str(lines[1]);
+        assert!(
+            parse_result.is_err(),
+            "F3b-4: truncated final line detected as non-parseable by serde_json. \
+             Raw bytes are present; JSON parsing fails. \
+             Note: this is a raw parse, not the production Trail reader \
+             (trail_command.rs:run_trail()). Production reader classification \
+             of a truncated final entry is UNVERIFIED unless tested separately."
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn trail_incomplete_line_no_newline_present_in_raw_bytes() {
-        // Write a complete line, then a partial line without newline.
-        // Check that the raw bytes of the file contain the incomplete
-        // data and that lines() treats it as a line.
+    fn trail_incomplete_line_bytes_present_in_file() {
         let dir = temp_trail_dir();
         let trail_path = dir.join("incomplete.jsonl");
 
@@ -1609,29 +1615,20 @@ mod tests {
             .expect("write line1");
             f.flush().expect("flush");
             f.sync_data().expect("sync");
-            // Incomplete write without newline, flush, or sync
-            write!(f, r#"{{"partial": true, "trun"#).expect("write partial");
+            write!(f, "{{\"partial\": true, \"trun").expect("write partial");
         }
 
         let raw_bytes = std::fs::read(&trail_path).expect("read raw");
         let raw_str = String::from_utf8_lossy(&raw_bytes);
 
-        // The incomplete bytes are present in the file
         assert!(
-            raw_str.contains(r#"{"partial": true, "trun"#),
-            "F3b-4: incomplete line bytes are present in raw file contents.\n\
-             Trail does not strip or sanitize a truncated trailing line.\n\
-             Current behavior: the file contains the incomplete bytes;\n\
-             std::fs::read_to_string returns the partial entry as a\n\
-             trailing line without newline."
+            raw_str.contains("{\"partial\": true, \"trun"),
+            "F3b-4: incomplete line bytes are present in raw file contents"
         );
 
-        // Current reader behaviour (lines()) will include the incomplete line
+        // Hard assertion: lines() returns at least 2 lines
         let line_count = raw_str.lines().count();
-        assert!(
-            line_count >= 2,
-            "incomplete entry appears as a line via lines()"
-        );
+        assert_eq!(line_count, 2, "exactly 2 lines (1 complete + 1 incomplete)");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -99,119 +99,109 @@ Each entry records the observed accepted-main primitive and the question F3b mus
 ## F3b Findings
 
 F3b established direct Windows evidence for the five primitive clusters identified
-by the F3a route map. Findings are recorded at `5722fe6`.
+by the F3a route map. Findings are recorded at `bedf96a` (initial) with corrections
+at the branch tip.
+
+Every PROVEN label corresponds to a hard assertion that would FAIL if the property
+were false on the tested target. No PROVEN label is inferred from API names alone.
 
 ### F3b-1: `sync_all()` + `fs::rename` (StoreRoot / Candidate / Local Anchor)
 
 **Test file:** `tests/f3b_windows_persistence_evidence.rs`
 
-- **File-data durability (ordinary execution):** PROVEN (F3b). Complete bytes
-  written to temporary file survive close and reopen after rename. Verified
-  via `sync_all_rename_full_cycle_observed`, `sync_all_rename_survives_close_and_reopen`.
-- **Atomic visibility (ordinary execution):** PROVEN (F3b). No partial file
-  visible under the final name — `create_new` prevents concurrent access to
-  the temporary file, and `fs::rename` makes the final name appear atomically.
-  Verified via `sync_all_rename_no_partial_file_visible`.
-- **Directory-entry durability (interruption/power-loss):** UNVERIFIED (F3b).
-  `fs::rename` after `sync_all()` on the temporary file does not flush the
-  parent directory. The post-rename directory entry may not be durable after
-  power loss. Verified via `sync_all_stale_tmp_visible_after_failure`.
-- **Properties 1-7:** All seven named observable properties are PROVEN on the
-  primary Windows target during ordinary execution with
-  `sync_all_rename_full_cycle_observed`, `sync_all_rename_survives_close_and_reopen`,
-  `sync_all_rename_no_partial_file_visible`, `sync_all_rename_multiple_records_independent`.
+| Property | Status | Test Evidence |
+|---|---|---|
+| `sync_all()` returns success | PROVEN (F3b) | `sync_all_rename_flush_accepted` |
+| Exact bytes survive close/reopen | PROVEN (F3b) | `sync_all_rename_bytes_survive_close_and_reopen` |
+| Final path absent before rename | PROVEN (F3b) | `sync_all_rename_final_absent_before_rename` |
+| Final path complete bytes after rename | PROVEN (F3b) | `sync_all_rename_final_absent_before_rename` |
+| Temporary path disappears after rename | PROVEN (F3b) | `sync_all_rename_temporary_disappears_after_rename` |
+| Multiple records independent | PROVEN (F3b) | `sync_all_rename_multiple_records_independent` |
+| Stale .tmp visible after rename failure | PROVEN (F3b) | `sync_all_stale_tmp_visible_after_failure` |
+| Atomic visibility during rename (concurrent) | UNVERIFIED (F3b) | No concurrent observer in any test |
+| File data survives sudden power loss | UNVERIFIED (F3b) | Not tested; would require destructive simulation |
+| Directory entry durable after power loss | UNVERIFIED (F3b) | `fs::rename` does not flush parent directory |
 
 ### F3b-2: Parent-directory durability feasibility
 
 **Test file:** `tests/f3b_windows_persistence_evidence.rs`
 
-- **Directory handle open feasibility:** PROVEN (F3b). Windows permits opening
-  directories with `CreateFileW(FILE_GENERIC_WRITE | FILE_FLAG_BACKUP_SEMANTICS)`.
-- **FlushFileBuffers on directory handle:** PROVEN (F3b). `FlushFileBuffers`
-  accepted the directory handle; the OS returned success. Verified via
-  `parent_directory_flush_feasibility`.
-- **Current implementation:** The current Rust host does NOT perform any
-  parent-directory flush for any store. Replay Ledger flushes the renamed
-  file handle only (`replay_windows.rs:932-936`).
-- **Narrowest provable claim:** `FlushFileBuffers` on a directory handle is
-  technically possible on this volume and configuration. Full directory-entry
-  durability after power loss depends on volume write-cache behaviour and
-  is UNVERIFIED (F3b).
+| Property | Status | Test Evidence |
+|---|---|---|
+| CreateFileW opens directory with FILE_GENERIC_WRITE | PROVEN (F3b) | `parent_directory_flush_feasibility` (hard assertion) |
+| FlushFileBuffers on directory handle accepted | PROVEN (F3b) | `parent_directory_flush_feasibility` (hard assertion) |
+| Current implementation performs parent-directory flush | DISPROVEN (F3b) | Source audit: no store calls FlushFileBuffers on a directory |
+| Directory entry survives power loss after flush | UNVERIFIED (F3b) | Depends on volume write-cache behaviour |
+
+The test directly asserts that both directory-open and FlushFileBuffers succeed.
+If either fails, the test FAILS and the F3b-2 route is UNVERIFIED for this target.
+Windows accepted the flush on this opened directory handle on the tested primary target.
+This does NOT mean the directory entry would survive sudden power loss.
 
 ### F3b-3: Replay Windows publish primitive
 
 **Test file:** `src/replay_windows.rs` inline tests
 
-- **CreateFileW(CREATE_NEW | FILE_FLAG_WRITE_THROUGH):** PROVEN (F3b). File
-  created with write-through flag. Verified via
-  `f3b3_create_write_through_open_and_write`.
-- **WriteFile:** PROVEN (F3b). All bytes written match on-disk contents
-  after handle close. Verified via `f3b3_create_write_through_open_and_write`.
-- **FlushFileBuffers before rename:** PROVEN (F3b). File-data durability for
-  the temporary file confirmed. Verified via
-  `f3b3_flush_before_rename_file_data_durability`.
-- **SetFileInformationByHandle rename (no-replace):** PROVEN (F3b). Rename
-  succeeded when destination does not exist. The `ReplaceIfExists:false`
-  defence is validated but may be bypassed on some volumes (observed).
-  Verified via `f3b3_rename_without_replacement_defence`.
-- **FlushFileBuffers on renamed handle:** PROVEN (F3b). OS accepted the flush
-  on the renamed file handle. This flushes the file metadata/data for the
-  renamed file handle — NOT the parent directory. Verified via
-  `f3b3_flush_before_rename_file_data_durability`.
-- **Reopen/re-read verification:** PROVEN (F3b). Reopened bytes match original
-  written bytes. This proves the rename landed complete file data. It does
-  NOT prove the parent directory entry is durable. Verified via
-  `f3b3_flush_before_rename_file_data_durability`.
-- **CREATE_NEW exclusion:** PROVEN (F3b). `CreateFileW(CREATE_NEW)` correctly
-  rejects an existing file. Verified via `f3b3_create_new_prevents_overwrite`.
+| Property | Status | Test Evidence |
+|---|---|---|
+| CreateFileW(CREATE_NEW \| FILE_FLAG_WRITE_THROUGH) accepted | PROVEN (F3b) | `f3b3_create_write_through_open_and_write` |
+| WriteFile writes complete bytes | PROVEN (F3b) | `f3b3_create_write_through_open_and_write` |
+| FlushFileBuffers before rename accepted | PROVEN (F3b) | `f3b3_flush_before_rename_file_data_durability` |
+| SetFileInformationByHandle rename accepted | PROVEN (F3b) | `f3b3_flush_before_rename_file_data_durability` |
+| FlushFileBuffers on renamed handle accepted | PROVEN (F3b) | `f3b3_flush_before_rename_file_data_durability` |
+| Exact bytes survive close/reopen | PROVEN (F3b) | `f3b3_flush_before_rename_file_data_durability` |
+| CREATE_NEW rejects existing file | PROVEN (F3b) | `f3b3_create_new_prevents_overwrite` |
+| ReplaceIfExists:false blocks replacement | PROVEN (F3b) | `f3b3_rename_without_replacement_defence` |
+| Atomic visibility during rename (concurrent) | UNVERIFIED (F3b) | No concurrent observer in any test |
+| File data survives sudden power loss | UNVERIFIED (F3b) | Not tested |
+| Parent directory entry durable after power loss | UNVERIFIED (F3b) | Post-rename FlushFileBuffers on file handle, not parent dir |
 
 ### F3b-4: Trail JSONL interruption behaviour
 
 **Test file:** `src/dispatch.rs` inline tests
 
-- **Complete line survives close/reopen:** PROVEN (F3b). Verified via
-  `trail_complete_line_survives_close_and_reopen`.
-- **Multiple lines ordered and parseable:** PROVEN (F3b). Verified via
-  `trail_multiple_complete_lines_ordered_and_parseable`.
-- **Truncated final line detection:** PROVEN (F3b). An incomplete JSONL
-  entry (no closing brace) detected as non-parseable by the JSON parser.
-  Verified via `trail_truncated_final_line_detected`.
-- **Incomplete line present in raw bytes:** PROVEN (F3b). A partial write
-  without trailing newline is present in the file and appears as a line
-  through `std::io::lines()`. The current reader receives the incomplete
-  bytes; JSON parsing will fail. Verified via
-  `trail_incomplete_line_no_newline_present_in_raw_bytes`.
-- **Current behaviour:** The Trail reader parses JSONL lines independently;
-  a truncated final line produces a parse error. No per-line digest or
-  integrity footer exists to detect truncation before parsing.
+| Property | Status | Test Evidence |
+|---|---|---|
+| Complete line survives close/reopen | PROVEN (F3b) | `trail_complete_line_survives_close_and_reopen` |
+| Multiple complete lines ordered and parseable | PROVEN (F3b) | `trail_multiple_complete_lines_ordered_and_parseable` |
+| Truncated final line present and non-parseable (raw serde_json) | PROVEN (F3b) | `trail_truncated_final_line_present_and_non_parseable` |
+| Incomplete-line raw bytes present in file | PROVEN (F3b) | `trail_incomplete_line_bytes_present_in_file` |
+| Production Trail reader classification of truncated entry | UNVERIFIED (F3b) | Tested with raw `serde_json::from_str` only; production reader at `trail_command.rs:run_trail()` not exercised here |
 
 ### F3b-5: Local Anchor root reparse-point safety
 
 **Test file:** `tests/f3b_windows_persistence_evidence.rs`
 
-- **Junction redirect test:** Could not be completed due to `mklink`
-  requiring administrator or developer-mode privileges on the test machine.
-  Without elevated privileges, the characterization cannot determine
-  whether a reparse point on the store root subverts admission records.
-- **Verdict:** UNVERIFIED (F3b). The SHA-256 safe filenames prevent
-  traversal in individual filenames, but the absent `verify_chain()` /
-  `reject_reparse()` on the store root directory (`local_anchor.rs:288`)
-  means a reparse point on the root could redirect all writes. The test
-  tooling limitation prevents direct confirmation or rejection of the
-  exposure. Re-test with elevated privileges or an alternative junction
-  creation mechanism.
-- **Route:** If exposure is confirmed, repair belongs to a later package
-  (F3c/d/e), not F3b.
+| Property | Status | Test Evidence |
+|---|---|---|
+| Reparse point on root redirects admission writes | UNVERIFIED (F3b) | `mklink /J` requires admin/dev-mode; test tooling limitation prevents characterization on this host |
+| SHA-256 safe filenames prevent traversal in individual names | PROVEN (F3b) | `safe_filename()` uses SHA-256 hash; no path separators possible |
+| Root has `verify_chain()` / `reject_reparse()` protection | DISPROVEN (F3b) | Source audit: `AdmissionStore::open()` calls `fs::create_dir_all()` without chain verification (`local_anchor.rs:288`) |
 
-### Summary of property status
+If the junction test succeeds on an elevated-privilege re-run, the exposure would be
+DISPROVEN (defect confirmed). The test currently passes (returns UNVERIFIED due to
+tooling limitation) rather than silently claiming safety.
 
-| Property | StoreRoot/Candidate/Local Anchor | Replay Ledger | Trail |
+### Corrected evidence matrix
+
+For every primitive on the primary Windows target:
+
+| Property | StoreRoot-style | Replay | Trail |
 |---|---|---|---|
-| File-data durability (ordinary) | PROVEN (F3b) | PROVEN (F3b) | PROVEN (F3b) |
-| Atomic visibility (ordinary) | PROVEN (F3b) | PROVEN (F3b) | N/A (no rename) |
-| Directory-entry durability | UNVERIFIED (F3b) | UNVERIFIED (F3b) | UNVERIFIED (F3b) |
-| Interruption behaviour | UNVERIFIED (F3b) | UNVERIFIED (F3b) | Truncated line detected (F3b) |
-| Reparse-point defence | N/A (StoreRoot verifies chain) | N/A (ValidatedHostRoot) | UNVERIFIED (F3b, Local Anchor) |
+| Flush accepted/succeeded | PROVEN (F3b) | PROVEN (F3b) | PROVEN (F3b) |
+| Exact bytes survive close/reopen | PROVEN (F3b) | PROVEN (F3b) | PROVEN (F3b) |
+| Final-name absent before rename | PROVEN (F3b) | PROVEN (F3b) | N/A |
+| Final-name complete after rename | PROVEN (F3b) | PROVEN (F3b) | N/A |
+| Atomic visibility during rename | **UNVERIFIED** | **UNVERIFIED** | N/A |
+| File data survives power loss | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
+| Directory entry durable after power loss | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
+| Truncated line raw present & non-parseable | N/A | N/A | PROVEN (F3b) |
+| Production reader classification of truncation | N/A | N/A | UNVERIFIED (F3b) |
+| CREATE_NEW exclusion | N/A | PROVEN (F3b) | N/A |
+| ReplaceIfExists:false blocks replacement | N/A | PROVEN (F3b) | N/A |
+| Parent-directory flush feasible | PROVEN (F3b) | N/A | N/A |
+| Production performs parent-directory flush | DISPROVEN (F3b) | DISPROVEN (F3b) | DISPROVEN (F3b) |
+| Reparse-point defence on root | N/A | N/A | UNVERIFIED (F3b) |
 
 ---
 
