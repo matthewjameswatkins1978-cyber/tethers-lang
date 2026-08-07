@@ -1,58 +1,70 @@
 # Tethers Project Dashboard
 
-Updated: 2026-08-01
+Updated: 2026-08-07
 
 ## Current Milestone
 
-J18I: First Plug Kit Implementation Roadmap, documentation-only and pending Lucy
-roadmap review. Architecture freeze: `a5fd63593a9d9acd397030ecd2e27b4f318c87fd`.
-Implementation remains unauthorised.
+Foundation Pass — bounded strengthening after the accepted J24K/J24L Plug
+installation slice. The programme adds no product capability and advances only
+through separately reviewed evidence packages.
 
-## Published Baseline
+## Verified Checkpoint
 
-- Release: Tethers 0.2.0
-- SHA: `b5546411661dcbcb53e1cf2538eaec594c6f76f2`
-- Tag: `v0.2.0`
-- Language semantics: 0.1
+Latest accepted implementation:
+`83eec98a0f33f964623f4cbbf4548a76bbdf5255`
+(`docs: mark F2 COMPLETE with correction r2 evidence`), now `origin/main`.
 
-## Accepted 0.2 Verification
-
-- Rust: 797 passed, 0 failed, 0 ignored.
-- MCP transcript suite: 15/15.
-- J14C: 9/9 rows, 196 assertions.
-- Consolidated matrix: 6/6 suites, 79 accepted cases/rows.
-- Runner contract: 6/6 rows, 49 assertions.
-- Clean native Windows checkout, build, restart, and replay proof complete.
-
-J17 independently verified all 17 ROAD_TO_0_2 acceptance claims and signed off
-the release.
+F2 preserved F1’s literal compatibility fixtures and repaired two confirmed
+operational issues: live stderr tail visibility during a running child process,
+and the M3 Windows handle test’s numeric-handle aliasing false positive.
 
 ## Active Task
 
-J18I - First Plug Kit Implementation Roadmap
+- Task: F3a — Persistence inventory and vocabulary
+- State: READY; packet prepared only, not begun
+- Owner: Codex
+- Risk: Red (persistence contract evidence)
+
+## Last Accepted Result
+
+F2 is accepted and merged. Its evidence branch
+`foundation/f2-operational-correctness` remains retained at the same SHA as
+main; it has not been deleted.
+
+## Matthew Decision Required
+
+None.
 
 ## Next Route
 
-J18B through J18H are accepted; architecture freeze is final. J18I is active and
-pending Lucy roadmap review. The first implementation packet follows only after
-J18I acceptance.
-
-Plug implementation remains unauthorised. Plugs remain outside Tethers Core;
-host-owned permissions, credentials, canonical outcomes, and Trails remain
-unchanged.
+Codex performs the bounded F3a documentation/evidence pass from
+`foundation/f3a-persistence-vocabulary`; Lucy independently reviews it before
+any F3b Windows primitive evidence work. No persistence repair or F3b work is
+authorised by the F3a packet.
 
 ## Operating Mode
 
-- Lucy: architecture, task compilation, and independent review.
-- Luna on OpenCode: bounded Green and ordinary Amber implementation.
-- DeepSeek Pro V4: thicker middle implementation requiring review.
-- Codex Terra High: Red work, machine failures, and release gates.
-- Matthew: product authority and report-routing bridge.
+**Gorilla Coding 🦄**
+
+- Lucy: architecture, task compilation, GitHub review, acceptance, continuation.
+- Cline: ordinary Green and Amber implementation, checks, report, worker note.
+- Codex: Red work, difficult local diagnosis, Git/environment/recovery, and
+  machine-required verification.
+- Matthew: product authority and the short report-routing bridge.
+- Copilot: not in the active workflow.
+
+## Cost And Drift
+
+- Use one implementation owner per bounded package.
+- F3a documents what the accepted mainline proves; it must not infer Windows
+  directory durability or repair persistence behaviour.
+- F3b remains the only route for Windows primitive evidence.
+- Preserve the F1 compatibility fixtures unchanged.
 
 ## Where Details Live
 
 - Present goal and boundaries: `docs/CURRENT_GOAL.md`
 - Active task contract: `docs/CURRENT_CLINE_TASK.md`
-- Release programme: `docs/ROAD_TO_0_2.md`
-- Detailed queue and completed milestones: `docs/TASK_QUEUE.md`
+- Foundation Pass architecture: `docs/architecture/TETHERS_FOUNDATION_PASS.md`
+- Persistence inventory: `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
 - Evidence and reviews: `docs/worker-notes/`

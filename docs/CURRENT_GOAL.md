@@ -4,19 +4,29 @@ Updated: 2026-08-07
 
 ## Goal
 
-Continue the Tethers Foundation Pass through F2, repairing only demonstrated
-operational-correctness defects from the F1 baseline evidence. The pass adds
-no product capability; it raises the existing host and engine to a consistent,
-evidence-backed engineering standard.
+Continue the Tethers Foundation Pass from the accepted F2 operational
+correctness handover into F3a, the bounded persistence inventory and vocabulary
+checkpoint. The pass adds no product capability; it makes existing contracts
+explicit and evidence-backed before any persistence repair is considered.
 
-The accepted main is `f295daa288f4d3dc48181888d6655df798675033`.
+The accepted main is `83eec98a0f33f964623f4cbbf4548a76bbdf5255`.
+
+## Last accepted increment
+
+F2 — Operational correctness defects — is accepted and merged. It repaired
+truthful live stderr visibility and the M3 handle allow-list test’s
+handle-value-aliasing false positive without changing F1 fixtures, public
+contracts, or dependencies. Its retained evidence branch is
+`foundation/f2-operational-correctness` at the same accepted SHA; do not delete
+that branch yet.
 
 ## Active increment
 
-F2 — Operational correctness defects — repairs two F1-confirmed defects:
-truthful live stderr capture in `child_process.rs` and nondeterministic M3
-handle allow-list test behaviour. The work is one review gate with two serial
-subpackages (F2a and F2b) on branch `foundation/f2-operational-correctness`.
+F3a — Persistence inventory and vocabulary — is `READY` on
+`foundation/f3a-persistence-vocabulary`. It is documentation/evidence only:
+classify every store, record its actual write/recovery/durability/path-safety
+evidence, and identify uncertainty honestly. It does not authorise F3b Windows
+primitive experiments or any persistence repair.
 
 ## Foundation Pass boundaries
 
@@ -27,13 +37,15 @@ subpackages (F2a and F2b) on branch `foundation/f2-operational-correctness`.
   by the implementation being tested.
 - Every package reports each required command as PASS, FAIL, or NOT RUN; a
   mandatory NOT RUN blocks COMPLETE.
-- Final package verification is serial after the last code or test change.
+- Final package verification is serial after the last permitted edit.
 
 ## Authoritative references
 
 - Foundation Pass plan: `docs/architecture/TETHERS_FOUNDATION_PASS.md`
 - Current task: `docs/CURRENT_CLINE_TASK.md`
+- F1 persistence/debt evidence: `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
+  and `docs/foundation-pass/DEBT_LEDGER.md`
 - F1 worker note: `docs/worker-notes/2026-08-06-f1-baseline.md`
-- J24L/OpenCode lessons: `docs/working-guides/DEEPSEEK_PRO_OPENCODE_JOB_PLAYBOOK.md`
+- F2 worker note: `docs/worker-notes/2026-08-07-f2-operational-correctness.md`
 - Enduring principles: `docs/CONSTITUTION.md`
 - Language semantics: `tethers-0.1/SPEC.md`
