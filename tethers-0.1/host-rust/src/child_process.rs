@@ -201,6 +201,18 @@ impl ChildConfig {
     }
 }
 
+/// Truthful accounting for every explicit shutdown step.
+#[derive(Debug, Clone)]
+pub struct ChildCleanup {
+    pub graceful_exited: bool,
+    pub job_terminated: bool,
+    pub child_killed: bool,
+    pub child_waited: bool,
+    pub reaped: bool,
+    pub stdout_thread_joined: bool,
+    pub stderr_thread_joined: bool,
+}
+
 /// A protocol line or error from the stdout reader thread.
 type LineResult = Result<String, ChildError>;
 
@@ -533,12 +545,25 @@ impl SupervisedChild {
         matches!(self.child.try_wait(), Ok(Some(_)))
     }
 
-    /// Full shutdown sequence.
-    pub fn shutdown(mut self) {
-        self.shutdown_inner();
+    /// Full shutdown sequence.  Returns truthful accounting of every step.
+    pub fn shutdown(mut self) -> ChildCleanup {
+        self.shutdown_inner()
     }
 
-    fn shutdown_inner(&mut self) {
+    fn shutdown_inner(&mut self) -> ChildCleanup {
+        let mut cleanup = ChildCleanup {
+            graceful_exited: false,
+            #[cfg(windows)]
+            job_terminated: false,
+            #[cfg(not(windows))]
+            job_terminated: true,
+            child_killed: false,
+            child_waited: false,
+            reaped: false,
+            stdout_thread_joined: false,
+            stderr_thread_joined: false,
+        };
+
         // 1. Close stdin.
         drop(self.stdin.take());
 
@@ -546,7 +571,10 @@ impl SupervisedChild {
         let deadline = Instant::now() + self.graceful_close_timeout;
         loop {
             match self.child.try_wait() {
-                Ok(Some(_)) => break,
+                Ok(Some(_)) => {
+                    cleanup.graceful_exited = true;
+                    break;
+                }
                 Ok(None) => {
                     if Instant::now() >= deadline {
                         break;
@@ -561,15 +589,14 @@ impl SupervisedChild {
         #[cfg(windows)]
         {
             use windows_sys::Win32::System::JobObjects::TerminateJobObject;
-            unsafe {
-                TerminateJobObject(self.job_handle, 1);
-            }
+            cleanup.job_terminated = unsafe { TerminateJobObject(self.job_handle, 1) } != 0;
         }
 
         // 4. Reap direct child.
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        self.reaped = true;
+        cleanup.child_killed = self.child.kill().is_ok();
+        cleanup.child_waited = self.child.wait().is_ok();
+        self.reaped = cleanup.child_killed || cleanup.child_waited;
+        cleanup.reaped = self.reaped;
 
         // 5. Close Job Object handle.
         #[cfg(windows)]
@@ -582,18 +609,20 @@ impl SupervisedChild {
 
         // 6. Join reader threads.
         if let Some(h) = self.stdout_thread.take() {
-            let _ = h.join();
+            cleanup.stdout_thread_joined = h.join().is_ok();
         }
         if let Some(h) = self.stderr_thread.take() {
-            let _ = h.join();
+            cleanup.stderr_thread_joined = h.join().is_ok();
         }
+
+        cleanup
     }
 }
 
 impl Drop for SupervisedChild {
     fn drop(&mut self) {
         if !self.reaped {
-            self.shutdown_inner();
+            let _cleanup = self.shutdown_inner();
         }
     }
 }
@@ -1188,7 +1217,7 @@ mod tests {
     #[test]
     fn j13a_child_launch_and_shutdown() {
         let child = launch_fixture("valid", 5, 2).expect("launch");
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
@@ -1203,7 +1232,7 @@ mod tests {
             .read_protocol_line(Duration::from_secs(5))
             .expect("read initialize response");
         assert!(response.contains(r#""id":1"#), "response: {response}");
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
@@ -1233,7 +1262,7 @@ mod tests {
             tail.contains("exiting before initialization"),
             "stderr: {tail}"
         );
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
@@ -1311,34 +1340,34 @@ mod tests {
     fn j13a_independent_job_objects() {
         let c1 = launch_fixture("valid", 5, 2).expect("c1");
         let c2 = launch_fixture("valid", 5, 2).expect("c2");
-        c1.shutdown();
-        c2.shutdown();
+        let _ = c1.shutdown();
+        let _ = c2.shutdown();
     }
 
     #[test]
     fn j13a_direct_child_terminated() {
         let mut child = launch_fixture("valid", 5, 2).expect("launch");
         assert!(!child.has_exited());
-        child.shutdown_inner();
+        let _cleanup = child.shutdown_inner();
         assert!(child.reaped);
     }
 
     #[test]
     fn j13a_descendant_terminated() {
         let child = launch_fixture("descendant-alive", 5, 2).expect("launch");
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
     fn j13a_job_handle_closed_on_shutdown() {
         let child = launch_fixture("valid", 5, 2).expect("launch");
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
     fn j13a_reader_threads_join() {
         let child = launch_fixture("valid", 5, 2).expect("launch");
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     // ── F2a: live stderr visibility ─────────────────────────────────
@@ -1387,7 +1416,7 @@ mod tests {
             "stderr must be visible while child is alive; got: {tail}"
         );
 
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
@@ -1409,12 +1438,14 @@ mod tests {
             "child must still be alive during stderr observation"
         );
 
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
     fn f2a_bounded_stderr_tail() {
         let small_tail: usize = 100;
+        // Emit 200 'X' bytes to stderr (no newlines for deterministic byte
+        // counting), then a ready line on stdout and stay alive.
         let config = ChildConfig {
             stderr_tail_bytes: small_tail,
             ..ChildConfig::test_config(
@@ -1422,7 +1453,7 @@ mod tests {
                 vec![
                     "-NoProfile".to_owned(),
                     "-Command".to_owned(),
-                    "& { 1..50 | ForEach-Object { [Console]::Error.WriteLine(('LINE_' + ($_ -as [string]).PadLeft(4,'0') + '_MARKER')); Start-Sleep -Milliseconds 1 }; [Console]::Error.Flush(); [Console]::Out.WriteLine('READY'); [Console]::Out.Flush(); Start-Sleep -Seconds 30 }"
+                    "& { [Console]::Error.Write('X'*200); [Console]::Error.Flush(); [Console]::Out.WriteLine('READY'); [Console]::Out.Flush(); Start-Sleep -Seconds 30 }"
                         .to_owned(),
                 ],
                 Duration::from_secs(10),
@@ -1435,23 +1466,26 @@ mod tests {
             .expect("stdout ready");
         assert!(line.contains("READY"), "expected READY, got: {line}");
 
+        // Poll until stderr picks up the marker bytes.
         let deadline = Instant::now() + Duration::from_secs(5);
-        let tail = poll_stderr_tail(&child, "LINE_0050_MARKER", deadline);
+        let tail = poll_stderr_tail(&child, "XXX", deadline);
         assert!(
-            tail.contains("LINE_0050_MARKER"),
-            "newest stderr line must be retained; got: {tail}"
+            !child.has_exited(),
+            "child must still be alive during stderr inspection"
         );
-        assert!(
-            tail.len() <= small_tail + 64,
-            "tail must respect configured byte limit ({small_tail}); actual: {}",
+        assert!(!tail.is_empty(), "stderr tail must not be empty");
+
+        // The configured limit is 100 bytes; the child emitted 200 'X' bytes.
+        // The tail must be exactly the final 100 bytes.
+        let expected: String = "X".repeat(small_tail);
+        assert_eq!(
+            tail,
+            expected,
+            "tail must be exactly the final {small_tail} bytes; got tail.len()={}",
             tail.len()
         );
-        assert!(
-            !tail.contains("LINE_0001_MARKER"),
-            "oldest stderr must be evicted; got: {tail}"
-        );
 
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
@@ -1474,7 +1508,7 @@ mod tests {
             "stderr emitted before timeout must remain available; got: {tail}"
         );
 
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
@@ -1503,7 +1537,7 @@ mod tests {
         );
 
         assert!(child.has_exited(), "child must be reaped after exit");
-        child.shutdown();
+        let _ = child.shutdown();
     }
 
     #[test]
@@ -1511,7 +1545,17 @@ mod tests {
         let child = launch_live_stderr_fixture(5, 2).expect("launch");
         let child_id = child.child.id();
         assert!(child_id > 0, "child must have a valid PID");
-        child.shutdown();
+        let cleanup = child.shutdown();
+
+        assert!(cleanup.reaped, "child must be reaped");
+        assert!(
+            cleanup.stdout_thread_joined,
+            "stdout reader thread must be joined"
+        );
+        assert!(
+            cleanup.stderr_thread_joined,
+            "stderr reader thread must be joined"
+        );
 
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
@@ -1525,14 +1569,23 @@ mod tests {
                 ])
                 .status();
             match state {
-                Ok(status) if status.code() == Some(0) => break,
-                Ok(_) => {
+                Ok(status) => {
+                    if status.code() == Some(0) {
+                        break;
+                    }
                     if Instant::now() >= deadline {
-                        panic!("child process {child_id} still alive after shutdown");
+                        panic!(
+                            "child process {child_id} still alive after shutdown (pwsh exited {})",
+                            status
+                                .code()
+                                .map_or_else(|| "unknown".to_owned(), |c| c.to_string())
+                        );
                     }
                     thread::sleep(Duration::from_millis(50));
                 }
-                Err(_) => break,
+                Err(e) => {
+                    panic!("failed to launch process-inspection command: {e}");
+                }
             }
         }
     }

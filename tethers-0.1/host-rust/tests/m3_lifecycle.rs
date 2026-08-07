@@ -29,7 +29,8 @@ use tethers_reference_host::trust::{
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
-use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent};
+use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+const WAIT_TIMEOUT: u32 = 258;
 
 fn make_writable(path: &Path) {
     let mut permissions = fs::metadata(path).unwrap().permissions();
@@ -848,10 +849,9 @@ fn m3_windows_handle_allow_list_excludes_unrelated_inheritable_handle() {
     // fixture has attempted to inspect it inside the supervised child.
     let canary = unsafe { CreateEventW(&security, 1, 0, std::ptr::null()) };
     assert!(!canary.is_null(), "test canary event must be created");
-    // SAFETY: signal the event before the supervised child starts so the
-    // child can distinguish the inherited event from an unrelated handle
-    // sharing the same numeric value.
-    unsafe { SetEvent(canary) };
+    // SAFETY: the event starts unsignalled.  After conformance the parent
+    // checks it is still unsignalled, proving the child could not signal
+    // it through the excluded handle.
     let (candidate, quarantine_root) = candidate_fixture_with_extra_arguments(
         &base,
         "valid",
@@ -886,6 +886,16 @@ fn m3_windows_handle_allow_list_excludes_unrelated_inheritable_handle() {
     )
     .unwrap();
     assert_eq!(conformance.disposition, ConformanceDisposition::Passed);
+    // SAFETY: the child must not be able to signal the parent's event
+    // because the CreateProcessW handle allow-list excludes it.
+    // This is the authoritative object-identity check — raw handle numbers
+    // can alias unrelated objects in the child, but WaitForSingleObject on
+    // the actual event proves the child could not change its state.
+    let object_state = unsafe { WaitForSingleObject(canary, 0) };
+    assert_eq!(
+        object_state, WAIT_TIMEOUT,
+        "parent event must remain unsignalled; child signaled it (state={object_state})"
+    );
     // SAFETY: this process still owns the canary event and no child endpoint
     // aliases it after the CreateProcessW allow-list launch has returned.
     unsafe { CloseHandle(canary) };

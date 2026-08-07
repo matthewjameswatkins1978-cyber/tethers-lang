@@ -16,15 +16,16 @@ fn unrelated_inheritable_handle_accessible(arguments: &[String]) -> Option<bool>
     #[cfg(windows)]
     {
         use windows_sys::Win32::Foundation::HANDLE;
-        use windows_sys::Win32::System::Threading::WaitForSingleObject;
+        use windows_sys::Win32::System::Threading::SetEvent;
         let Ok(raw) = raw.parse::<isize>() else {
             return Some(false);
         };
-        // Use WaitForSingleObject to test whether the raw handle value maps
-        // to a waitable handle object.  The parent signals the event before
-        // launch, so WAIT_OBJECT_0 proves the test-handle was inherited
-        // (a colliding file-handle or registry-key would return WAIT_FAILED).
-        Some(unsafe { WaitForSingleObject(raw as HANDLE, 0) } != 0xFFFF_FFFF)
+        // Try to signal the contained event through the raw handle value.
+        // The parent owns the authoritative check — it verifies its own event
+        // remained unsignalled through WaitForSingleObject.  If SetEvent
+        // succeeds here on a colliding handle of a different type, the parent
+        // check guarantees the correct answer.
+        Some(unsafe { SetEvent(raw as HANDLE) != 0 })
     }
     #[cfg(not(windows))]
     {

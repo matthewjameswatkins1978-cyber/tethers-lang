@@ -6,7 +6,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `OpenCode`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Base commit: `f295daa288f4d3dc48181888d6655df798675033`
 

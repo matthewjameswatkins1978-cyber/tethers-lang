@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `F2 - Operational correctness defects`
 Owner: `OpenCode`
 Model: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
 Route: `OpenCode implements both subpackages; Lucy performs one bounded review`
 Worker note: `docs/worker-notes/2026-08-07-f2-operational-correctness.md`
