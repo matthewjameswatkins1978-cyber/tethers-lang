@@ -305,6 +305,33 @@ Executor-level (existing j24k3d2_* tests): the recovery executor (`execute_valid
 
 No defects found in the installation intent/publication/recovery contract. All F3c properties are PROVEN with hard assertions.
 
+## F3d Evidence — Remaining bounded persistence stores
+
+Date: 2026-08-07
+Baseline: `40ec42eb2aac108901d428af3cbfe264d3edd6dc` (accepted F3c)
+
+F3d corrects the evidence presentation, not production behaviour. A property is
+`PROVEN` below only when the cited test contains the stated hard assertion. A
+shared `StoreRoot` implementation is not itself evidence for a consuming store.
+Every dimension not named in the `PROVEN` column is `UNVERIFIED`; that includes
+power-loss and directory-entry durability from F3b. No F3d test upgrades Local
+Anchor root reparse safety, which remains `UNVERIFIED (F3b)`.
+
+| Store | PROVEN — exact hard assertion | UNVERIFIED in F3d |
+|---|---|---|
+| Candidate Registry | `torn_temporary_record_fails_closed`: `load_all()` returns `record_invalid` for `.candidate.tmp`; `filename_disagreement_and_duplicate_identity_evidence_fail_closed`: a wrong filename returns `record_invalid` and duplicate logical evidence returns `Err`; `preexisting_staging_target_and_escape_destination_fail_closed_without_write`: existing staging returns `already_exists`, an escaping destination returns `unsafe_destination`, and no outside marker exists. | Close/reopen, record-digest corruption, and root reparse protection are not claimed without another direct assertion. |
+| Publisher Trust Store (`PublisherTrustStore` in `trust.rs`) | `trust_transitions_restart_and_revocation_fail_closed`: after reopen, a revoked key makes `require_trusted` return `trust_not_current`; duplicate append returns `trust_conflict`; `.torn.tmp` makes `current()` return `trust_store_invalid`; the stored publisher identity is asserted distinct from package presentation text. | Filename/content disagreement and unsafe-path protection have no F3d-cited direct negative test. `ExactCandidateTrustStore` is a separate installation-evidence store, not Publisher Trust. |
+| Developer Approval Store | `f3d_dev_approval_duplicate_digest_is_conflict`: second approval returns `developer_approval_conflict`; `f3d_dev_approval_torn_tmp_detected_in_find`: `.tmp` makes `find` return `developer_approval_invalid`; `f3d_dev_approval_filename_mismatch_detected`: renamed record makes `find` return `developer_approval_invalid`; `f3d_dev_approval_reopen_preserves_record`: reopened `find` returns the exact digest and `visibly_unsigned`. | Unsafe-path protection and power-loss/directory-entry durability. |
+| Launch Profile Evidence | `launch_profile_round_trip_is_exact`: one loaded record equals the created evidence; `launch_profile_duplicate_create_returns_record_conflict_and_no_mutation`: duplicate returns `record_conflict` and the snapshot is unchanged; `launch_profile_torn_tmp_rejected`: `.tmp` returns `launch_profile_store_invalid`; `launch_profile_filename_mismatch_rejected`: renamed evidence returns `launch_profile_store_invalid`; `launch_profile_malformed_evidence_rejected`: malformed bytes make `load_all` fail. | Unsafe-path protection and power-loss/directory-entry durability. |
+| Conformance Evidence | `corrupt_conformance_evidence_fails_closed`: both `.tmp` and a non-JSON entry make planning return an `invalid` error and preserve the filesystem snapshot. | Create conflict, canonical filename, close/reopen, and unsafe-path protection have no F3d-cited direct assertion. |
+| Installation Approval | `current_installation_approval_returns_publish_disabled_installation`: after `open_existing`, the persisted approval produces `PublishDisabledInstallation` with the exact approval ID and digest pins; `corrupt_approval_evidence_fails_closed`: `.tmp` makes planning return `invalid` and preserves the snapshot. | Create conflict, filename/content agreement, and unsafe-path protection have no F3d-cited direct assertion. |
+| Installed Plug Registry | `corrupt_installed_evidence_fails_closed`: `.tmp` in the record root makes planning return `invalid` and preserves the snapshot; `j24k3c4_windows_junction_tracked_destination_load_all_refused`: a real Windows junction produces `unsafe_store_path`; `j24k3c4_record_destination_not_exact_plug_id_fails_closed` covers mismatched record/destination identity. | Close/reopen and exact duplicate-create behaviour have no F3d-cited direct assertion. |
+| Enablement Records | `f3d_enablement_record_filename_mismatch_detected`: a syntactically valid record renamed to the wrong stem makes `load_all()` return `Err`; `enablement_is_explicit_and_disable_removes_availability`: availability is false before enable, true after enable, and false after disable. | Chain predecessor/sequence, close/reopen, corruption, and unsafe-path protection have no F3d-cited direct assertion. |
+| Local Anchor Admission Store | `durable_local_anchor_restart_duplicate_conflict_and_scope`: after restart, the same event returns `DuplicateCompleted` with `sha256:terminal`, the duplicate keeps the anchor event ID, and different event content returns `Err`; `f3d_local_anchor_conflicting_evaluation_result_is_corrupt`: a second distinct result returns `EventError::Corrupt`. | Root reparse safety remains `UNVERIFIED (F3b)`; power-loss and directory-entry durability remain `UNVERIFIED (F3b)`. |
+
+No directly demonstrated production defect arose from this evidence pass, so
+`DEBT_LEDGER.md` is intentionally unchanged.
+
 ## Changes Made in F3a
 
 ### Initial F3a pass

@@ -3,11 +3,9 @@
 //! Every test directly proves one F3d property with a hard assertion.
 //! Tests are added only where no existing test provides the exact assertion.
 //!
-//! StoreRoot-backed stores share a common contract (torn `.tmp` rejection,
-//! filename/id agreement, close/reopen survival, reparse protection, digest
-//! validation, duplicate id detection). These properties are PROVEN by the
-//! StoreRoot implementation and its existing exercised tests. Per-store tests
-//! here cover only store-specific behaviour beyond the StoreRoot contract.
+//! This module does not infer any store-specific property from `StoreRoot`.
+//! `PERSISTENCE_INVENTORY.md` names the exact hard assertion for each F3d
+//! PROVEN claim; dimensions without one remain UNVERIFIED.
 
 use crate::enablement::EnablementStore;
 use crate::installed::InstalledPlugRecord;
@@ -25,7 +23,7 @@ fn temp_dir(label: &str) -> std::path::PathBuf {
 
 // =========================================================================
 // Developer Approval Store (trust.rs)
-// Store-specific properties beyond the StoreRoot contract:
+// Store-specific properties characterized here:
 // - duplicate digest create conflict (store-specific check in approve_exact_digest)
 // - torn .tmp detection in find() (store-specific error path)
 // - filename/content disagreement in find() (store-specific error path)
@@ -95,9 +93,8 @@ fn f3d_dev_approval_reopen_preserves_record() {
 // =========================================================================
 // Enablement Records (enablement.rs)
 // Store-specific chain validation: filename/id agreement.
-// Torn .tmp and close/reopen are covered by StoreRoot contract.
-// Chain predecessor/sequence validation is PROVEN by existing tests in
-// j24c_plug_disable_cli.rs (forked chain, sequence ordering).
+// This module proves filename/id agreement only. Other enablement properties
+// are cited individually in the F3d evidence map.
 // =========================================================================
 
 #[test]
@@ -217,8 +214,7 @@ fn f3d_enablement_record_filename_mismatch_detected() {
 // Store-specific journal property:
 // - duplicate evaluation completion with different result → Corrupt
 // - conflict recording on same ID different digest
-// Other properties (dup detection, restart survival, corrupt record, admit-order)
-// are PROVEN by existing inline tests.
+// Other Local Anchor properties are cited individually in the F3d evidence map.
 // =========================================================================
 
 #[test]

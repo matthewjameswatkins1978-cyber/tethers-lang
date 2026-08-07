@@ -2,11 +2,11 @@
 
 Control contract: `1`
 Task: `F3d - Remaining bounded persistence stores`
-Owner: `OpenCode`
-Model: `DeepSeek Pro`
-Status: `IN_PROGRESS`
+Owner: `Codex`
+Model: `GPT-5.6`
+Status: `COMPLETE`
 Task colour: `Amber`
-Route: `DeepSeek Pro performs the bounded F3d persistence store characterization; Lucy independently reviews before F3e`
+Route: `Codex completed the bounded F3d evidence correction; Lucy independently reviews before F3e`
 Worker note: `docs/worker-notes/2026-08-07-f3d-bounded-persistence-stores.md`
 Base branch: `main`
 Base commit: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
@@ -14,7 +14,7 @@ Implementation branch: `foundation/f3d-bounded-persistence-stores`
 Parent branch: `main`
 Parent tip: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
 Preparation checkpoint: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
-Implementation checkpoint: `(TBD after first commit)`
+Implementation checkpoint: `c9fbe555f9c6dd8f72d857dedaf5ca4954c248e2`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
@@ -44,7 +44,7 @@ Do not infer correctness from comments, function names, or nearby tests.
 ### Immutable records (StoreRoot-backed)
 
 1. **Candidate Registry** (`candidate.rs`)
-2. **Publisher Trust Store** (`installation_trust.rs`)
+2. **Publisher Trust Store** (`trust.rs`, `PublisherTrustStore`)
 3. **Developer Approval Store** (`trust.rs`)
 4. **Launch Profile Evidence** (`launch_profile.rs`)
 5. **Conformance Evidence** (`conformance.rs`)
@@ -100,7 +100,6 @@ For each store, characterize across these dimensions:
 
 All files under `tethers-0.1/host-rust/src/`:
 - `candidate.rs`
-- `installation_trust.rs`
 - `trust.rs`
 - `launch_profile.rs`
 - `conformance.rs`
@@ -131,7 +130,7 @@ F3a established the persistence inventory (4 classes: Immutable Atomic Record, R
 
 The 9 remaining stores vary in maturity of existing test coverage:
 - Candidate Registry has inline tests for torn .tmp, filename mismatch, duplicate identity, unsafe path
-- Publisher Trust Store has chain validation, torn state, restart tests in trust.rs
+- Publisher Trust Store (`PublisherTrustStore` in `trust.rs`) has chain validation, torn-state, and restart tests in `trust.rs`; `ExactCandidateTrustStore` in `installation_trust.rs` is a separate installation-evidence store and is not Publisher Trust.
 - Developer Approval Store has basic approve/find test in trust.rs
 - Launch Profile Evidence has comprehensive inline tests in j24h_installation_evidence_access.rs
 - Conformance Evidence has tests in m3_lifecycle.rs and j24j_installation_reconciliation.rs
@@ -140,11 +139,13 @@ The 9 remaining stores vary in maturity of existing test coverage:
 - Enablement Records have inline enable/disable/availability test
 - Local Anchor Admission Store has comprehensive inline tests for duplicate, conflict, restart, corruption
 
-Seven stores are StoreRoot-backed and share the StoreRoot contract for torn state, filename/id agreement, close/reopen, reparse protection, and digest validation. Candidate Registry and Local Anchor have custom filesystem access.
+Seven stores use StoreRoot as shared infrastructure. F3d does not treat that
+shared implementation as proof for a consuming store: each PROVEN property must
+name its own direct hard assertion. Candidate Registry and Local Anchor have
+custom filesystem access.
 
 All files under `tethers-0.1/host-rust/src/`:
 - `candidate.rs`
-- `installation_trust.rs`
 - `trust.rs`
 - `launch_profile.rs`
 - `conformance.rs`
