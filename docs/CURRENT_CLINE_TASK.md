@@ -14,7 +14,7 @@ Implementation branch: `foundation/f3c-installation-intent-publication`
 Parent branch: `main`
 Parent tip: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
 Preparation checkpoint: `71f79f7c80b2a09921ee59ac4b1acfa3926bf834`
-Implementation checkpoint: `(TBD after first commit)`
+Implementation checkpoint: `fdd216139702e38f48874f2e975db98f2abf924a`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
