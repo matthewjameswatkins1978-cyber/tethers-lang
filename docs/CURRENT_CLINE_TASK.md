@@ -41,10 +41,8 @@ Both were classified as unmeasured hypotheses requiring measurement before F6 co
 
 ## Relevant components
 
-### NEW
-- `docs/foundation-pass/PERFORMANCE_BASELINE_R1.md` — performance evidence document
-
 ### CLOSEOUT
+- `docs/foundation-pass/PERFORMANCE_BASELINE_R1.md` — performance evidence document
 - `docs/CURRENT_CLINE_TASK.md`
 - `docs/worker-notes/2026-08-08-f1-r1-performance-baseline.md`
 
