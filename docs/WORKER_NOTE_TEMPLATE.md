@@ -13,7 +13,7 @@ Status: `COMPLETE` or `BLOCKED`
 
 Base commit: `<40-character implementation checkpoint>`
 
-Implementation checkpoint: `<commit SHA, or WORKTREE when intentionally uncommitted>`
+Implementation checkpoint: `<full 40-character commit SHA for COMPLETE; WORKTREE allowed only for BLOCKED when intentionally uncommitted>`
 
 ## Requested outcome
 
@@ -32,6 +32,13 @@ architecture here.
 
 List exact commands, tests, results, relevant output locations, and diff/status
 checks. Distinguish run evidence from tests merely read or inferred.
+
+For `COMPLETE`:
+- commit implementation first
+- run final required verification against that committed checkpoint
+- then write this Evidence section from those final results
+- do not copy earlier or intermediate PASS results forward without rerunning or
+  explicitly qualifying them
 
 ## Discoveries
 

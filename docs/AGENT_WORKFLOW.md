@@ -145,17 +145,26 @@ historical interface and does not name the active owner. The packet identifies:
 4. OpenCode verifies packet state and live local Git state before editing.
 5. OpenCode implements only the authorised scope using the target language
    idiomatically.
-6. OpenCode runs every required check, inspects the complete diff and Git status,
-   writes the worker note, and marks the task `COMPLETE` or `BLOCKED`.
-7. OpenCode returns a concise report to Matthew.
-8. Matthew pastes that report to Lucy. This is an accepted handoff in Gorilla
-   Coding mode, not a process failure.
-9. Lucy checks pushed GitHub evidence where available, reads the relevant worker
-   note and diff, then records one verdict or compiles one bounded correction.
-10. Matthew routes the next task to OpenCode or Codex as Lucy directs.
+6. OpenCode runs development and focused checks, then inspects the complete diff.
+7. OpenCode commits the implementation checkpoint.
+8. OpenCode runs every required acceptance check against that exact committed
+   checkpoint. If verification changes production code, return to step 6 and
+   establish a new implementation checkpoint.
+9. Only after final verification, OpenCode writes the worker note from actual
+   final results, marks the task `COMPLETE` or `BLOCKED`, and commits/pushes
+   closeout documentation only.
+10. OpenCode returns a concise report to Matthew.
+11. Matthew pastes that report to Lucy. This is an accepted handoff in Gorilla
+    Coding mode, not a process failure.
+12. Lucy checks pushed GitHub evidence where available, reads the relevant worker
+    note and diff, then records one verdict or compiles one bounded correction.
+13. Matthew routes the next task to OpenCode or Codex as Lucy directs.
 
 OpenCode must not invent, authorise, or begin the next task. Lucy controls
 continuation.
+
+Do not write or finalise `COMPLETE` evidence before the implementation checkpoint
+exists. A check result is stale if code affecting that check changed afterward.
 
 ## Report Contract
 

@@ -84,8 +84,17 @@ recorded through Lucy. Only the named implementation owner uses `IN_PROGRESS`,
 `COMPLETE` to `ACCEPTED` or `REJECTED`.
 
 A task is not `COMPLETE` merely because code was written or one test passed.
-Completion requires the authorised work, required evidence, concise return
-report, and named worker note.
+Completion requires:
+
+- the authorised implementation exists
+- a committed implementation checkpoint exists
+- required verification was run against that checkpoint
+- the final worker note records those actual results
+- only closeout documentation may follow the checkpoint
+
+`BLOCKED` may reference `WORKTREE` when intentionally uncommitted.
+
+`COMPLETE` may not.
 
 ## Compiled Context Packet
 
@@ -191,7 +200,8 @@ pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 ```
 
 The checker validates packet structure, task state, ownership, base and dirty
-state, acceptance-to-verification mapping, and required worker-note state.
+state, acceptance-to-verification mapping, required worker-note state,
+implementation-checkpoint ancestry, and post-checkpoint closeout scope.
 
 ## Improvement Rule
 

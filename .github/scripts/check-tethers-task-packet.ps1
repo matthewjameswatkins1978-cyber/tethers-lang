@@ -251,6 +251,62 @@ if ($controlV1) {
             -ExpectedBaseCommit $baseCommit `
             -ExpectedPacketPath $PacketPath
     }
+
+    if ($taskStatus -in @("COMPLETE", "ACCEPTED", "REJECTED")) {
+        $checkpoint = Get-Field `
+            -Content (Get-Content -LiteralPath (Join-Path $repositoryRoot $workerNotePath) -Raw) `
+            -Name "Implementation checkpoint"
+
+        if ($checkpoint -eq "WORKTREE") {
+            throw (
+                "COMPLETE/ACCEPTED/REJECTED tasks must record a committed " +
+                "implementation checkpoint SHA, not WORKTREE."
+            )
+        }
+
+        & git cat-file -e "$checkpoint`^{commit}"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Implementation checkpoint does not identify a local commit: $checkpoint"
+        }
+
+        & git merge-base --is-ancestor $baseCommit $checkpoint
+        if ($LASTEXITCODE -ne 0) {
+            throw (
+                "Base commit $baseCommit is not an ancestor of " +
+                "implementation checkpoint $checkpoint."
+            )
+        }
+
+        & git merge-base --is-ancestor $checkpoint $headCommit
+        if ($LASTEXITCODE -ne 0) {
+            throw (
+                "Implementation checkpoint $checkpoint is not an ancestor " +
+                "of HEAD $headCommit."
+            )
+        }
+
+        $closeoutPaths = @(
+            $PacketPath,
+            $workerNotePath,
+            "docs/PROJECT_DASHBOARD.md"
+        ) | ForEach-Object { $_.Replace('\', '/') }
+
+        $postCheckpointPaths = @(
+            Invoke-Git diff --name-only "$checkpoint..$headCommit" --
+        ) | Where-Object { $_ -ne "" }
+
+        $nonCloseoutPaths = @(
+            $postCheckpointPaths | Where-Object { $_ -notin $closeoutPaths }
+        )
+        if ($nonCloseoutPaths.Count -gt 0) {
+            throw (
+                "Implementation changed after recorded evidence checkpoint; " +
+                "establish a new implementation checkpoint and verify again. " +
+                "Non-closeout paths after checkpoint: " +
+                ($nonCloseoutPaths -join ", ")
+            )
+        }
+    }
 }
 else {
     $legacyStatusMatch = [regex]::Match(
