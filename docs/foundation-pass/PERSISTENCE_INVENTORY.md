@@ -453,8 +453,8 @@ Zero characterization tests added. All 14 dimensions are PROVEN by existing test
 | 10 | Restart reconstruction (6 state variants) | PROVEN | ledger_21–26 (replay_windows.rs:2516–2614) | Claim-only → `ClaimedNoState`; G0 → `IntentRecorded`; G1 → `InvocationArmed`; G2 → `Succeeded`/`Failed`/`Uncertain` each asserted |
 | 11 | Recovered admissions cannot advance history | PROVEN | `recovered_claim_g0_and_g1_admissions_cannot_advance_or_mutate` (replay_windows.rs:2616); `recovered_terminal_admission_cannot_publish_or_mutate` (replay_windows.rs:2653) | All mutation attempts → `Err(PersistenceUnavailable)`; `assert_eq!(tree_snapshot(&root), before)` — filesystem unchanged |
 | 12 | Malformed/corrupt Generation-chain fail-closed | PROVEN | `ledger_28_malformed_chain_fails_closed`, `ledger_27_orphan_chain_fails_whole_ledger_closed`, ledger_17, ledger_18 (replay_windows.rs) | Malformed JSON → open err; orphan chain (no claim) → open err; tampered state/predecessor → open err |
-| 13 | Filename/content agreement for Generations | PROVEN | Reconstruction pipeline: `read_generation_directory` + `validate_chain` (all ledger_15–30 tests) | `read_generation_directory` rejects non-sequential filenames; `validate_chain` rejects mismatched generation number, logical_key, execution_id |
-| 14 | Exact bytes / close-reopen | PROVEN | `ledger_30_restart_never_generates_new_uuid_for_existing_tuple` (replay_windows.rs:2741); `ledger_populated_valid_subtrees_reopen_without_reprovisioning` (replay_windows.rs:2769) | `assert_eq!(claim_bytes, claim_before)` after 2 restarts; full chain reopens with correct state and tree unchanged |
+| 13 | Filename/content agreement for Generations | PROVEN | `f3e2b_generation_filename_content_disagreement_fails_closed` (replay_windows.rs) NEW | Publish G0+G1, swap filenames (G0↔G1), reopen → `assert!(ReplayLedger::open(&root).is_err())` |
+| 14 | Exact bytes / close-reopen | PROVEN | `f3e2b_generation_exact_bytes_survive_close_and_reopen` (replay_windows.rs) NEW; `ledger_30_restart_never_generates_new_uuid_for_existing_tuple` (replay_windows.rs:2741); `ledger_populated_valid_subtrees_reopen_without_reprovisioning` (replay_windows.rs:2769) | G0/G1/G2 bytes read before and after close/reopen, `assert_eq!(g0_after, g0_before)` etc. for all 3 |
 
 ### Remaining UNVERIFIED
 
@@ -466,12 +466,13 @@ Zero characterization tests added. All 14 dimensions are PROVEN by existing test
 ### F3e2b findings
 
 - All 14 Generation/reconstruction dimensions are PROVEN by existing tests with hard assertions.
-- Zero characterization tests added.
+- Two characterization tests added (F3e2b-R1):
+  - `f3e2b_generation_exact_bytes_survive_close_and_reopen` — publishes G0/G1/G2, reads file bytes, drops/reopens ledger, asserts all three generation files have identical bytes.
+  - `f3e2b_generation_filename_content_disagreement_fails_closed` — publishes G0+G1, swaps filenames (G0↔G1), asserts ledger open returns `PersistenceUnavailable`.
 - No production code changed.
 - No defect found in the Replay Generation slice.
 - Replay Claim evidence from F3e2a preserved (not re-audited).
-- Replay Generation canonical bytes/filename/content/completeness is fully proven by existing tests.
-- 122 Replay tests pass (all existing; 0 new).
+- 124 Replay tests pass (122 existing + 2 new F3e2b-R1 characterization tests).
 
 ---
 

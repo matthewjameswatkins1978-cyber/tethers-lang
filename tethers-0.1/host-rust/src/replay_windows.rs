@@ -3216,4 +3216,68 @@ mod tests {
             Err(ReplayError::PersistenceUnavailable)
         ));
     }
+
+    #[test]
+    fn f3e2b_generation_exact_bytes_survive_close_and_reopen() {
+        let Some(root) = provisioned_test_root("f3e2b-exact-bytes") else {
+            return;
+        };
+        let key = test_key("exact-bytes");
+        let binding = test_binding("exact-bytes");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap();
+        admission.publish_intent().unwrap();
+        admission.publish_armed().unwrap();
+        admission
+            .publish_terminal(ReplayState::Succeeded, test_digest("outcome"))
+            .unwrap();
+        let dir = execution_directory(&root, admission.execution_id());
+        let g0_path = dir.join("g0000000000000000.json");
+        let g1_path = dir.join("g0000000000000001.json");
+        let g2_path = dir.join("g0000000000000002.json");
+        let g0_before = std::fs::read(&g0_path).unwrap();
+        let g1_before = std::fs::read(&g1_path).unwrap();
+        let g2_before = std::fs::read(&g2_path).unwrap();
+        drop(admission);
+        drop(ledger);
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        assert_eq!(recovered.state(), ReplayState::Succeeded);
+        let g0_after = std::fs::read(&g0_path).unwrap();
+        let g1_after = std::fs::read(&g1_path).unwrap();
+        let g2_after = std::fs::read(&g2_path).unwrap();
+        assert_eq!(g0_after, g0_before);
+        assert_eq!(g1_after, g1_before);
+        assert_eq!(g2_after, g2_before);
+    }
+
+    #[test]
+    fn f3e2b_generation_filename_content_disagreement_fails_closed() {
+        let Some(root) = provisioned_test_root("f3e2b-filename-content") else {
+            return;
+        };
+        let key = test_key("filename-content");
+        let binding = test_binding("filename-content");
+        let ledger = ReplayLedger::open(&root).unwrap();
+        let mut admission = ledger
+            .admit_or_recover(key.clone(), binding.clone())
+            .unwrap();
+        admission.publish_intent().unwrap();
+        admission.publish_armed().unwrap();
+        let dir = execution_directory(&root, admission.execution_id());
+        let g0_path = dir.join("g0000000000000000.json");
+        let g1_path = dir.join("g0000000000000001.json");
+        assert!(g0_path.exists());
+        assert!(g1_path.exists());
+        drop(admission);
+        drop(ledger);
+        let temp = dir.join("g0000000000000000.json.tmp");
+        std::fs::rename(&g0_path, &temp).unwrap();
+        std::fs::rename(&g1_path, &g0_path).unwrap();
+        std::fs::rename(&temp, &g1_path).unwrap();
+        assert!(!g0_path.with_file_name("g0000000000000000.json.tmp").exists());
+        assert!(ReplayLedger::open(&root).is_err());
+    }
 }

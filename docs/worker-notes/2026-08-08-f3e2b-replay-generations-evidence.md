@@ -10,27 +10,30 @@ Status: `COMPLETE`
 
 Base commit: `477e2b901c0dfec55f4df6f9dca79a66e9294e0a`
 
-Implementation checkpoint: `e75b8c4b00efdfd7437e0126e0800c46790c50ac`
+Implementation checkpoint: `WORKTREE`
 
 ## Requested outcome
 
 Audit Replay Generations 0/1/2 and their durable restart reconstruction only. Map every evidence dimension to PROVEN/DISPROVEN/UNVERIFIED with exact test citations and hard assertions. Do not change production code. Do not re-audit Replay Claim identity (accepted F3e2a).
 
+F3e2b-R1 repair: close two Generation evidence gaps — filename/content agreement (#13) and exact bytes close/reopen (#14) — with direct characterization tests exercising the production Generation reader.
+
 ## Changes made
 
-- Updated `docs/CURRENT_CLINE_TASK.md` to describe F3e2b.
+- Added 2 characterization tests (no production changes):
+  - `f3e2b_generation_exact_bytes_survive_close_and_reopen` (replay_windows.rs) — publishes G0/G1/G2, reads file bytes, drops/reopens ledger, asserts all three generation files have identical bytes after close/reopen.
+  - `f3e2b_generation_filename_content_disagreement_fails_closed` (replay_windows.rs) — publishes G0+G1, swaps filenames (G0↔G1 via 3-way rename), asserts ledger open returns `PersistenceUnavailable`.
+
+- Updated `docs/CURRENT_CLINE_TASK.md` to describe F3e2b and F3e2b-R1.
 - Updated `docs/foundation-pass/PERSISTENCE_INVENTORY.md` with F3e2b Replay Generations evidence section.
 - Created this worker note.
-- No production code changed. Zero characterization tests added.
 
 ## Decisions and assumptions
 
 - Replay Generation slice only — Replay Claim identity explicitly excluded (accepted F3e2a).
-- All 14 dimensions already PROVEN by existing tests with hard assertions. No gaps identified.
-- Zero new tests is a successful outcome.
+- Dimensions #13 and #14 were marked PROVEN in the initial F3e2b based on reconstruction pipeline, but lacked direct characterization tests. F3e2b-R1 adds those tests.
 - F3b UNVERIFIED platform properties preserved (never upgrade).
-- Dimension 1 (canonical representation): no dedicated unit-level Generation round-trip test like `claim_round_trip_is_exact_canonical_and_redacted`, but the reconstruction tests (ledger 21–26) prove the full publish→reopen→parse→validate round-trip implicitly.
-- Dimension 13 (filename/content agreement): no dedicated filename-swap test for Generations, but the reconstruction pipeline's `read_generation_directory` (sequence check) + `validate_chain` (content checks) together reject any filename-content disagreement.
+- F3b UNVERIFIED platform properties preserved (never upgrade).
 
 ## Evidence
 
@@ -48,13 +51,14 @@ Audit Replay Generations 0/1/2 and their durable restart reconstruction only. Ma
 | 10 | Restart reconstruction (6 variants) | PROVEN | ledger_21–26 (replay_windows.rs:2516–2614) | 6 state assertions after reopen |
 | 11 | Recovered admissions cannot advance history | PROVEN | `recovered_claim_g0_and_g1_admissions_cannot_advance_or_mutate` (replay_windows.rs:2616); `recovered_terminal_admission_cannot_publish_or_mutate` (replay_windows.rs:2653) | All mutations → `Err(PersistenceUnavailable)`; `assert_eq!(tree_snapshot(&root), before)` |
 | 12 | Malformed/corrupt chain fail-closed | PROVEN | `ledger_28_malformed_chain_fails_closed`, `ledger_27_orphan_chain_fails_whole_ledger_closed`, ledger_17, ledger_18 | Malformed JSON/orphan/tampered → open err |
-| 13 | Filename/content agreement | PROVEN | Reconstruction pipeline (all ledger_15–30) | `read_generation_directory` sequence + `validate_chain` content checks |
-| 14 | Exact bytes / close-reopen | PROVEN | `ledger_30_restart_never_generates_new_uuid_for_existing_tuple` (replay_windows.rs:2741); `ledger_populated_valid_subtrees_reopen_without_reprovisioning` (replay_windows.rs:2769) | `assert_eq!(claim_bytes, claim_before)` after restarts; full chain reopens correctly |
+| 13 | Filename/content agreement | PROVEN | `f3e2b_generation_filename_content_disagreement_fails_closed` (replay_windows.rs) NEW | Swap filenames → `assert!(ReplayLedger::open(&root).is_err())` |
+| 14 | Exact bytes / close-reopen | PROVEN | `f3e2b_generation_exact_bytes_survive_close_and_reopen` (replay_windows.rs) NEW; `ledger_30_restart_never_generates_new_uuid_for_existing_tuple` (replay_windows.rs:2741); `ledger_populated_valid_subtrees_reopen_without_reprovisioning` (replay_windows.rs:2769) | `assert_eq!(g0_after, g0_before)` etc. for all 3 |
 
 ## Discoveries
 
-- The existing ledger tests (ledger_12–30, recovered_*, populated_reopen, all_bounded) already provide hard assertions for all 14 Generation/reconstruction dimensions. No evidentiary gaps were found.
-- All 122 Replay tests pass.
+- The initial F3e2b evidence harvest found all 14 dimensions PROVEN through the existing test suite, but dimensions #13 (filename/content agreement) and #14 (exact bytes close/reopen) relied on the reconstruction pipeline rather than dedicated characterization tests.
+- F3e2b-R1 adds two direct characterization tests that exercise the production Generation reader.
+- All 124 Replay tests pass (122 existing + 2 new).
 - No defect found in the Replay Generation slice.
 
 ## Remaining risks

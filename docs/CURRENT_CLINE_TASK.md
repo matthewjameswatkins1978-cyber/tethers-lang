@@ -11,7 +11,7 @@ Worker note: `docs/worker-notes/2026-08-08-f3e2b-replay-generations-evidence.md`
 Base branch: `main`
 Base commit: `477e2b901c0dfec55f4df6f9dca79a66e9294e0a`
 Implementation branch: `foundation/f3e2b-replay-generations-evidence`
-Implementation checkpoint: `e75b8c4b00efdfd7437e0126e0800c46790c50ac`
+Implementation checkpoint: `WORKTREE`
 Parent branch: `foundation/f3e2a-replay-claim-evidence`
 Parent tip: `477e2b901c0dfec55f4df6f9dca79a66e9294e0a`
 OCaml switch path: `N/A`
@@ -44,7 +44,7 @@ F3b characterized Windows flush/sync primitives for Replay (F3b-3): CreateFileW(
 
 1. F3e2b-1 — Harvest existing Replay Generation tests and map every property to PROVEN/DISPROVEN/UNVERIFIED with exact test citations and hard assertions.
 2. F3e2b-2 — Identify genuine gaps where no existing hard assertion proves the exact Generation statement.
-3. F3e2b-3 — Add ≤3 characterization tests to close identified gaps (0 added — no gaps found).
+3. F3e2b-3 — Add ≤3 characterization tests to close identified gaps (2 added).
 4. F3e2b-4 — Record exact remaining UNVERIFIED properties. Do not upgrade F3b claims.
 5. F3e2b-5 — No production code change unless an exact characterization test demonstrates a production defect inside the Generation slice.
 
@@ -102,8 +102,8 @@ F3b characterized Windows flush/sync primitives for Replay (F3b-3): CreateFileW(
 | 12a | Malformed record fails closed | PROVEN | `ledger_28_malformed_chain_fails_closed` (replay_windows.rs:2704) | `g0000000000000000.json` = `b"{"` → `assert!(ReplayLedger::open(&root).is_err())` |
 | 12b | Orphan chain fails closed | PROVEN | `ledger_27_orphan_chain_fails_whole_ledger_closed` (replay_windows.rs:2684) | Empty execution dir (no claim) → `assert!(matches!(ReplayLedger::open(&root), Err(ReplayError::PersistenceUnavailable)))` |
 | 12c | Digest/state corruption (via items 6–8 above) | PROVEN | ledger_17, ledger_18 | Tampered state or predecessor → open err |
-| 13 | Filename/content agreement for Generations | PROVEN | Reconstruction pipeline: `read_generation_directory` sequence check + `validate_chain` content check (all ledger_15–30 tests) | `read_generation_directory` rejects non-sequential filenames (`number != expected` → unavailable); `validate_chain` rejects mismatched content generation number, logical_key, execution_id. Any filename-content disagreement is caught before state reconstruction succeeds. |
-| 14 | Exact bytes / close-reopen | PROVEN | `ledger_30_restart_never_generates_new_uuid_for_existing_tuple` (replay_windows.rs:2741) claim bytes; `ledger_populated_valid_subtrees_reopen_without_reprovisioning` (replay_windows.rs:2769) full chain | `assert_eq!(claim_bytes, claim_before)` after 2 restarts; `tree_snapshot` unchanged after reopen + reprovision, state correctly reconstructed |
+| 13 | Filename/content agreement for Generations | PROVEN | `f3e2b_generation_filename_content_disagreement_fails_closed` (replay_windows.rs) NEW | Publish G0+G1, swap filenames (G0↔G1), reopen → `assert!(ReplayLedger::open(&root).is_err())` |
+| 14 | Exact bytes / close-reopen | PROVEN | `f3e2b_generation_exact_bytes_survive_close_and_reopen` (replay_windows.rs) NEW; `ledger_30_restart_never_generates_new_uuid_for_existing_tuple` (replay_windows.rs:2741) claim bytes; `ledger_populated_valid_subtrees_reopen_without_reprovisioning` (replay_windows.rs:2769) full chain | G0/G1/G2 bytes read before and after close/reopen, `assert_eq!(g0_after, g0_before)` etc. for all 3; `assert_eq!(claim_bytes, claim_before)` after 2 restarts; full chain reopens with correct state and tree unchanged |
 
 ### Remaining UNVERIFIED
 
@@ -112,7 +112,7 @@ F3b characterized Windows flush/sync primitives for Replay (F3b-3): CreateFileW(
 - Atomic visibility during rename: UNVERIFIED (F3b) — never upgrade
 - Parent-directory flush in production: DISPROVEN (F3b)
 
-No defect found. Zero characterization tests added — all 14 dimensions already PROVEN by existing tests with hard assertions.
+No defect found. Two characterization tests added — `f3e2b_generation_filename_content_disagreement_fails_closed` (closes filename/content agreement gap) and `f3e2b_generation_exact_bytes_survive_close_and_reopen` (closes exact bytes close/reopen gap). All 14 dimensions PROVEN.
 
 ## Forbidden changes
 
@@ -120,7 +120,7 @@ No defect found. Zero characterization tests added — all 14 dimensions already
 - No Claim re-audit (accepted F3e2a)
 - No application dispatch changes
 - No public contract changes
-- No more than 3 characterization tests (0 added)
+- No more than 3 characterization tests (2 added)
 - No upgrading F3b atomic/power-loss claims
 - No calling implementation inspection as proof
 - No calling all Replay complete
