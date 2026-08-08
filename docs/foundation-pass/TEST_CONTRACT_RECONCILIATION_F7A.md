@@ -4,7 +4,7 @@ Control task: F7a
 Base: `2a2417f5d943a5c1ca27d6c646746cfaf7b93a86`
 Audit checkpoint: `4946629f31c6156e66d187e432f64e55297c7233`
 Packet fix commit: `31479d9`
-Final HEAD: (to be recorded at closeout)
+Final HEAD: `532126810ad51dfbf6d75472854c9cb49d8d0811`
 
 ## 1. Exact Base SHA
 
@@ -59,7 +59,7 @@ Final HEAD: (to be recorded at closeout)
 | `opam exec -- dune runtest` | PASS | No tests found (none configured) |
 | `test-engine.ps1` | PASS | 29 fixture cases matched |
 | `test-mcp-transcripts.ps1` | PASS | 15 transcript cases passed |
-| `check-fixtures.ps1` | PASS | 46 JSON + 30 JSONL valid |
+| `tethers-0.1/scripts/check-fixtures.ps1` | PASS | 46 JSON + 30 JSONL valid |
 | `cargo fmt --all -- --check` | KNOWN FAILURE | `replay_windows.rs:3277` formatting diff (pre-existing) |
 | `git diff --check` | PASS | Clean whitespace |
 | `check-tethers-task-packet.ps1` | PASS | control-v1/IN_PROGRESS |
@@ -68,13 +68,22 @@ Final HEAD: (to be recorded at closeout)
 
 **Zero failures.**
 
-The F1-R1 evidence reported 6 failures under `cargo test --all-targets --all-features --locked` at both the historical baseline (`24428139`) and the current-F5 target (`ea7426d`). At the current base (`2a2417f5`), all 1331 tests pass. The 6 previously-observed failures have been resolved by intervening Foundation work between `ea7426d` and `2a2417f5`.
+The F1-R1 evidence reported 6 failures under `cargo test --all-targets --all-features --locked` at both the historical baseline (`24428139`) and the current-F5 target (`ea7426dbeb1934cf336673d03ae2abf76146ea7d`). At the current base (`2a2417f5d943a5c1ca27d6c646746cfaf7b93a86`), all 1331 tests pass (0 failed, 2 ignored).
+
+**Classification: CURRENTLY NOT REPRODUCED — PRIOR CAUSE UNVERIFIED.**
+
+Git comparison `ea7426d..2a2417f5` contains documentation changes only. No production, test, fixture, build, or dependency change exists in that range that could causally explain the changed all-features result. The three commits from `ea7426d` to `2a2417f5` are:
+- `227c579` — restructure closeout docs for packet checker compliance
+- `28670e4` — add missing task section for packet checker compliance
+- `5e31f1f` — closeout documentation (task packet + worker note)
+
+Therefore no production/test change can account for the differing result. Environment, timing, feature state, or another cause has not been investigated. Cause remains UNVERIFIED. Do not claim the failures are fixed.
 
 The 2 ignored tests (`#[ignore]`) are intentional and were also present in the F1-R1 baseline.
 
 ## 5. Failure Classifications
 
-No failures to classify. The all-features test surface is green.
+No failures to classify. The all-features test surface currently returns zero failures at the observed state. Prior F1-R1 failures are currently not reproduced; cause unverified.
 
 The `cargo fmt --all -- --check` failure in `replay_windows.rs:3277` is **PRE-EXISTING** and **OUT OF F7 SCOPE**. It does not block test consolidation.
 
@@ -146,7 +155,7 @@ The following evidence categories are protected and amply evidenced:
 | Trust/tamper/fail-closed tests | 17 `trust.rs`, 17 `trusted_store.rs`, 16 `policy.rs` fail-closed | Full |
 | test-engine.ps1 behavioural fixture execution | 29 cases | Full |
 | test-mcp-transcripts.ps1 behavioural transcript execution | 15 cases | Full |
-| Fixture file integrity | 46 JSON + 30 JSONL valid (check-fixtures.ps1) | Full |
+| Fixture file integrity | 46 JSON + 30 JSONL valid (tethers-0.1/scripts/check-fixtures.ps1) | Full |
 
 **No protected evidence is weak or missing.** All categories have strong, independent proof.
 
@@ -167,16 +176,16 @@ Extensive review of the 1331-test surface identified zero genuine duplicate prop
 
 | # | Candidate property | Module | Justification | F7b authorised? |
 |---|-------------------|--------|---------------|----------------|
-| 1 | `Tethers_error.fail` raises `Tethers_error` with correct fields | Tethers_error | Single-pattern constructor not tested in isolation | YES (Green: trivial) |
-| 2 | `tethers_outcome.error_response` produces `Request_error` variant | Tethers_outcome | Response construction only indirectly tested | YES (Green: narrow) |
-| 3 | `tethers_outcome.json_of_response` round-trips all variants | Tethers_outcome | JSON serialization exercised through cross-process comparison only | YES (Amber: needs fixture) |
-| 4 | `Tether_parser.drop_prefix` correctness | Tether_parser | Utility not exercised through engine boundary | YES (Green: narrow) |
-| 5 | Parser rejects specific malformed Tether shapes | Tether_parser | 13 error cases already tested externally; native test would be supplementary | DEFER (external coverage sufficient) |
-| 6 | Evaluator maps condition operators (Is, Contains, Gt, Gte) | Tethers_evaluator | Operator semantics tested indirectly through engine | DEFER (consider GADT-based condition operator type safety in F8+) |
-| 7 | `parse_capability` rejects invalid JSON shapes | Tethers_protocol | Capability parsing errors untested outside full integration | YES (Green: narrow, but Tethers_protocol has no .mli, consider adding one first) |
-| 8 | `check_unique_capabilities` detects duplicates | Tethers_protocol | Duplicate detection has no native test | YES (Green: narrow, same .mli note) |
+| 1 | `Tethers_error.fail` raises `Tethers_error` with correct fields | Tethers_error | Single-pattern constructor not tested in isolation | NO (F7b not authorised) |
+| 2 | `tethers_outcome.error_response` produces `Request_error` variant | Tethers_outcome | Response construction only indirectly tested | NO (F7b not authorised) |
+| 3 | `tethers_outcome.json_of_response` round-trips all variants | Tethers_outcome | JSON serialization exercised through cross-process comparison only | NO (F7b not authorised) |
+| 4 | `Tether_parser.drop_prefix` correctness | Tether_parser | Utility not exercised through engine boundary | NO (F7b not authorised) |
+| 5 | Parser rejects specific malformed Tether shapes | Tether_parser | 13 error cases already tested externally; native test would be supplementary | NO (F7b not authorised) |
+| 6 | Evaluator maps condition operators (Is, Contains, Gt, Gte) | Tethers_evaluator | Operator semantics tested indirectly through engine | NO (F7b not authorised) |
+| 7 | `parse_capability` rejects invalid JSON shapes | Tethers_protocol | Capability parsing errors untested outside full integration | NO (F7b not authorised; Tethers_protocol has no .mli) |
+| 8 | `check_unique_capabilities` detects duplicates | Tethers_protocol | Duplicate detection has no native test | NO (F7b not authorised; Tethers_protocol has no .mli) |
 
-**Recommended F7b scope (if authorised):** Items 1, 2, 3, and 4 only — narrow, existing-pattern, objectively verifiable. Items 7 and 8 should defer until Tethers_protocol acquires an `.mli`.
+**F7b authorisation: NONE.** F7 completes as NO-OP. M7 is deferred.
 
 ## 12. Causal/Contract Limits
 
@@ -190,27 +199,32 @@ Extensive review of the 1331-test surface identified zero genuine duplicate prop
 
 | Item | Current reality | Evidence | F7 actionable? | Smallest next move |
 |------|----------------|----------|---------------|-------------------|
-| M7 — No OCaml-native tests | Confirmed: zero native tests | dune runtest passes with no tests; no test stanzas | YES — limited OCaml native tests (F7b) | Authorise F7b for items 1-4 only; 1-2 dune test files, 0 new deps |
+| M7 — No OCaml-native tests | Confirmed: zero native tests | dune runtest passes with no tests; no test stanzas | NO — DEFER | Deferred — no native OCaml tests remain a maintainability observation, not a correctness defect. Current Dune topology has two executables sharing engine modules with no library seam; introducing native tests would require structural Dune/library work whose benefit is not justified by the proposed trivial direct properties. External engine/MCP compatibility evidence remains strong. |
 | M8 — Test modules inside src/ | Confirmed: 15 cfg(test) files + 33 inline blocks | All properly conditioned; zero pub(crate) test modules | NO | No action — correct private ownership |
 | M9 — pub(crate) test infrastructure | Resolved: zero pub(crate) mod declarations | Complete lib.rs and full-tree grep | NO | No action — resolved by intervening work |
-| All-features test failures (F1-R1 report of 6) | Resolved: 0 failures | cargo test --all-targets --all-features --locked PASS | NO | No action — resolved by intervening Foundation work |
+| All-features test failures (F1-R1 report of 6) | Currently not reproduced: 0 failures | cargo test --all-targets --all-features --locked PASS at 2a2417f5; ea7426d..2a2417f5 is documentation-only | NO | No action — prior cause unverified |
 | cargo fmt pre-existing failure | Unresolved but independent | replay_windows.rs:3277 formatting diff | NO | Owned by separate formatting decision |
 | Test consolidation | No genuine duplicates found | Full property-level audit of 1331 tests | NO | No consolidation authorised |
 
-## 14. Smallest Recommended F7b Package
+## 14. Final F7 Verdict
 
-**Verdict: NO TEST CONSOLIDATION AUTHORISED.**
+**NO TEST CONSOLIDATION AUTHORISED.**
 
-If a F7b OCaml test task is separately authorised:
+**NO F7b AUTHORISED.**
 
-- **Scope:** Add native OCaml tests for items 1-4 only (Tethers_error.fail, tethers_outcome.error_response, json_of_response round-trip, Tether_parser.drop_prefix)
-- **Framework:** `dune` `(library ...)` + `(test ...)` stanzas, OUnit2 or Alcotest (candidate: use the simplest available, possibly just assert-based)
-- **Dependencies:** Yojson (already present) only; no additional test framework unless approved
-- **Forbidden:** No production code changes; no fixture changes; no dependency on unreviewed external test frameworks
-- **File count:** 1-2 new test `.ml` files
-- **Risk:** Green (existing pattern, narrow, objectively verifiable)
+**F7 COMPLETES AS NO-OP after F7a-R1 acceptance.**
 
-This F7a audit recommends **NO-OP for F7 consolidation** and optionally a narrow F7b for limited OCaml native tests as described above.
+### M7 — DEFER
+
+No native OCaml tests remain a maintainability observation, not a correctness defect. F7's authorised purpose is test-contract consolidation; no genuine duplicate tests were found. The current OCaml Dune topology has two executables sharing engine modules and no library seam; introducing clean native tests would require structural Dune/library work whose benefit is not justified by the proposed trivial direct properties. External engine/MCP compatibility evidence remains strong.
+
+### M7 deferred to a future separately justified OCaml test/build architecture decision.
+
+### M8 and M9 — NO ACTION
+
+M8: All test modules correctly use `#[cfg(test)]` at private boundaries. M9: Already resolved by intervening Foundation work (zero `pub(crate) mod` declarations).
+
+### No test consolidation is authorised. No F7b. No F8 from F7.
 
 ---
 
