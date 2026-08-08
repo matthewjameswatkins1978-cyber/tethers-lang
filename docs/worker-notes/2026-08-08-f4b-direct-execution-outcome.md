@@ -87,7 +87,7 @@ All reads are in test assertions verifying frozen presentation JSON. **No produc
 | Check | Result |
 |-------|--------|
 | `cargo test --locked` | 1331 PASS, 0 FAIL, 2 ignored |
-| `cargo fmt --manifest-path Cargo.toml -- --check` | PASS (application.rs clean; replay_windows.rs pre-existing discrepancy) |
+| `cargo fmt --manifest-path Cargo.toml -- --check` | FAIL solely on unchanged accepted-base `replay_windows.rs` formatting discrepancy; `application.rs` is rustfmt-clean; F4b-introduced formatting defect DISPROVEN |
 | `git diff --check` | PASS |
 | `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | PASS (post-closeout) |
 | OCaml untouched | confirmed |
