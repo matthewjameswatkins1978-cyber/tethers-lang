@@ -85,13 +85,17 @@ None
 7. unknown string status -> InvalidData proved at host boundary
 8. Exact correlation semantics preserved for matched/not_matched/error
 9. Extra-field tolerance maintained
-10. All 1331 host tests pass, formatting clean
+10. All 1331 host tests pass; formatting clean in all F4a2 production files (accepted-base `replay_windows.rs` line 3280 has a proven pre-existing rustfmt discrepancy unrelated to F4a2)
 
 ## Required verification
 
 ```powershell
 cargo test --locked --manifest-path tethers-0.1/host-rust/Cargo.toml
 cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check
+  # Accepted-base replay_windows.rs:3280 has a proven pre-existing rustfmt
+  # discrepancy not caused by F4a2. The check may report it; that is expected.
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 git diff --check
+git diff <accepted-base>..HEAD -- tethers-0.1/host-rust/src/replay_windows.rs
+  # Must be empty — replay_windows.rs has zero net F4a2 diff
 ```

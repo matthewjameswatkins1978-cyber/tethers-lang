@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `8a2ef5fdafb56faca59e47370c3d6e7892f5a437`
 
-Implementation checkpoint: `d33932a60972d2021a1b58abf8c935236c86ed4d`
+Implementation checkpoint: `9c0fd4908cd7b5d90280695c2431868e7bd6441b`
 
 ## Requested outcome
 
@@ -34,10 +34,15 @@ Replace the Rust host's repeated interpretation of raw planner `serde_json::Valu
 
 ## Evidence
 
+Verification run against committed implementation checkpoint `9c0fd4908cd7b5d90280695c2431868e7bd6441b`:
+
 - `cargo test --locked` — 1331 passed, 0 failed, 2 ignored (pre-existing)
-- `cargo fmt -- --check` — PASS
+- `cargo fmt -- --check` — FAIL solely on unchanged accepted-base `replay_windows.rs:3280` (one-line assertion that rustfmt prefers wrapped across three lines)
+- F4a2-introduced formatting defect — DISPROVEN (no F4a2 production file fails fmt)
+- accepted-base rustfmt discrepancy — PROVEN (`replay_windows.rs` assertion at line 3280)
 - `check-tethers-task-packet.ps1` — PASS (control-v1/COMPLETE, from accepted F4a1 base)
 - `git diff --check` — PASS (whitespace clean)
+- `git diff 8a2ef5f..9c0fd49 -- tethers-0.1/host-rust/src/replay_windows.rs` — empty (zero net diff from accepted base)
 - Production files changed: 2 (`engine_stdio.rs`, `host_execution.rs`)
 
 ### Test evidence
