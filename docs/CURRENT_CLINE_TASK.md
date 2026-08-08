@@ -80,7 +80,7 @@ F3b characterized Windows flush/sync primitives for Replay (F3b-3): CreateFileW(
 | # | Property | Status | Exact test | Exact assertion |
 |---|---|---|---|---|
 | 1 | Canonical logical-key identity | PROVEN | `sibling_actions_are_distinct` (replay.rs:589), `different_evaluations_are_distinct` (replay.rs:600) | `assert_ne!(key1.as_digest(), key2.as_digest())` |
-| 2 | Fresh immutable Claim creation | PROVEN | `claim_round_trip_is_exact_canonical_and_redacted` (replay.rs:613) | `assert_eq!(recovered, claim)` and no `raw_argument` in output bytes |
+| 2 | Fresh immutable Claim creation | PROVEN | `ledger_05_fresh_claim_creates_one_host_execution_identity` (replay_windows.rs:2145): durable creation. `claim_round_trip_is_exact_canonical_and_redacted` (replay.rs:613): canonical form, redaction | `assert!(admission.is_fresh()); assert_eq!(dir.len(), 1)` — store-level durable creation; `assert_eq!(recovered, claim)` — canonical round-trip, no `raw_argument` |
 | 3 | Execution identity creation | PROVEN | `ledger_05_fresh_claim_creates_one_host_execution_identity` (replay_windows.rs:2145) | `assert!(admission.is_fresh()); assert!(ExecutionId::parse(admission.execution_id().to_owned()).is_ok())` |
 | 4 | Close/reopen recovery of same Claim identity | PROVEN | `ledger_06_restart_recovers_same_execution_identity` (replay_windows.rs:2162) | `assert!(!recovered.is_fresh()); assert_eq!(recovered.execution_id(), first)` |
 | 5 | Existing Claim behaviour (collision) | PROVEN | `ledger_08_exact_claim_collision_recovers_only_valid_winner` (replay_windows.rs:2206) | `assert!(!recovered.is_fresh()); assert_eq!(recovered.execution_id(), winner)` |

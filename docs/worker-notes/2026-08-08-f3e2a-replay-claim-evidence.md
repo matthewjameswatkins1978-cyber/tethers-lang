@@ -44,7 +44,7 @@ remaining gaps with characterization tests. Do not change production code.
 | # | Property | Status | Test |
 |---|---|---|---|
 | 1 | Canonical logical-key identity | PROVEN | `sibling_actions_are_distinct`, `different_evaluations_are_distinct` (replay.rs) |
-| 2 | Fresh immutable Claim creation | PROVEN | `claim_round_trip_is_exact_canonical_and_redacted` (replay.rs) |
+| 2 | Fresh immutable Claim creation | PROVEN | `ledger_05_fresh_claim_creates_one_host_execution_identity` (replay_windows.rs), `claim_round_trip_is_exact_canonical_and_redacted` (replay.rs) |
 | 3 | Execution identity creation | PROVEN | `ledger_05_fresh_claim_creates_one_host_execution_identity` (replay_windows.rs) |
 | 4 | Close/reopen recovery of same Claim identity | PROVEN | `ledger_06_restart_recovers_same_execution_identity` (replay_windows.rs) |
 | 5 | Existing Claim behaviour (collision) | PROVEN | `ledger_08_exact_claim_collision_recovers_only_valid_winner` (replay_windows.rs) |
