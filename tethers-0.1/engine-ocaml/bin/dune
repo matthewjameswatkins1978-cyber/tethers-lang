@@ -1,11 +1,11 @@
 (executable
  (name main)
  (public_name tethers_engine)
- (modules main tether_parser tethers_protocol tethers_evaluator)
+ (modules main tethers_error tethers_outcome tether_parser tethers_protocol tethers_evaluator)
  (libraries yojson))
 
 (executable
  (name tethers_mcp_main)
  (public_name tethers_mcp_server)
- (modules tethers_mcp_main tethers_mcp_server tether_parser tethers_protocol tethers_evaluator)
+ (modules tethers_mcp_main tethers_mcp_server tethers_error tethers_outcome tether_parser tethers_protocol tethers_evaluator)
  (libraries yojson))

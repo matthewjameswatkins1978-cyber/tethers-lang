@@ -1,4 +1,5 @@
 open Tether_parser
+open Tethers_error
 
 type capability = {
   name : string;

@@ -1,4 +1,5 @@
 open Tether_parser
+open Tethers_error
 
 type server_state =
   | Uninitialized
@@ -165,15 +166,15 @@ let handle_tools_call id fields =
               let response =
                 try Tethers_evaluator.evaluate_request request with
                 | Tethers_error (code, message) ->
-                    Tethers_evaluator.error_response code message
+                    Tethers_outcome.error_response code message
                 | Yojson.Json_error message ->
-                    Tethers_evaluator.error_response "invalid_json" message
+                    Tethers_outcome.error_response "invalid_json" message
                 | exn ->
-                    Tethers_evaluator.error_response "internal_error"
+                    Tethers_outcome.error_response "internal_error"
                       (Printexc.to_string exn)
               in
               let tethers_response =
-                Tethers_evaluator.json_of_response response
+                Tethers_outcome.json_of_response response
               in
               let compact_json = Yojson.Safe.to_string tethers_response in
               let result =

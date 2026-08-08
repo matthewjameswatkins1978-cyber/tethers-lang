@@ -1,4 +1,4 @@
-exception Tethers_error of string * string
+open Tethers_error
 
 type value =
   | String_value of string
@@ -26,8 +26,6 @@ type tether = {
   conditions : condition list;
   actions : action list;
 }
-
-let fail code message = raise (Tethers_error (code, message))
 
 let trim = String.trim
 
