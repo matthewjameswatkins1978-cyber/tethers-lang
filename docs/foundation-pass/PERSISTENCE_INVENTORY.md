@@ -375,6 +375,55 @@ F3e1 was an evidence harvest only. Three characterization tests were added to cl
 
 ---
 
+## F3e2a Evidence — Replay Claim evidence harvest
+
+Date: 2026-08-08
+Baseline: `dfae673407ecef38a9dcf8376b06ddbad4a97abc` (accepted F3e1)
+Branch: `foundation/f3e2a-replay-claim-evidence`
+Evidence sources:
+- `tethers-0.1/host-rust/src/replay.rs` inline tests (unit-level Claim identity)
+- `tethers-0.1/host-rust/src/replay_windows.rs` inline tests (ledger 01–30, F3b-3 primitives, F3e2a characterization)
+
+F3e2a was an evidence harvest limited to the Replay Claim slice (LogicalExecutionKey, ExecutionId, ExecutionBinding, Claim, publication, scan, recovery). Replay Generations (0/1/2) are explicitly deferred to the next slice.
+
+One characterization test added to close the filename/content identity disagreement gap. No production code changed and no defect was found.
+
+### Replay Claim evidence summary
+
+| # | Property | Status | Test | Exact Hard Assertion |
+|---|---|---|---|---|
+| 1 | Canonical logical-key identity | PROVEN | `sibling_actions_are_distinct` (replay.rs:589), `different_evaluations_are_distinct` (replay.rs:600) | `assert_ne!(key1.as_digest(), key2.as_digest())` — different action/eval IDs → different SHA-256 digests |
+| 2 | Fresh immutable Claim creation | PROVEN | `claim_round_trip_is_exact_canonical_and_redacted` (replay.rs:613) | `assert_eq!(recovered, claim)` — round-trip preserves identity; redaction confirmed: no `raw_argument` in canonical bytes |
+| 3 | Execution identity creation | PROVEN | `ledger_05_fresh_claim_creates_one_host_execution_identity` (replay_windows.rs:2145) | `assert!(admission.is_fresh())`; `ExecutionId::parse` returns `Ok` — fresh claim creates parseable UUIDv4 execution_id |
+| 4 | Close/reopen recovery of same Claim identity | PROVEN | `ledger_06_restart_recovers_same_execution_identity` (replay_windows.rs:2162) | `assert!(!recovered.is_fresh())`; `assert_eq!(recovered.execution_id(), first)` — ledger drop/reopen preserves identity |
+| 5 | Existing Claim behaviour (collision) | PROVEN | `ledger_08_exact_claim_collision_recovers_only_valid_winner` (replay_windows.rs:2206) | `assert!(!recovered.is_fresh())`; `assert_eq!(recovered.execution_id(), winner)` — same tuple → same execution_id |
+| 6 | Conflicting binding behaviour | PROVEN | `ledger_09_binding_mismatch_fails_closed` (replay_windows.rs:2226) | `assert!(matches!(result, Err(ReplayError::BindingMismatch)))` — different argument_digest → fail-closed |
+| 7 | Malformed/noncanonical Claim handling | PROVEN | `non_canonical_or_unknown_claim_is_rejected` (replay.rs:635) | Spaced JSON and unknown-field JSON: `assert!(Claim::from_canonical_bytes(...).is_err())` |
+| 8 | Claim digest corruption handling | PROVEN | `ledger_10_malformed_or_digest_invalid_claim_fails_closed` (replay_windows.rs:2246) | Forged `claim_digest` → `assert!(matches!(ReplayLedger::open(&root), Err(ReplayError::PersistenceUnavailable)))` |
+| 9 | Filename/content identity agreement | PROVEN | `f3e2a_claim_filename_content_disagreement_fails_closed` (replay_windows.rs) NEW | Claim renamed to different-hex filename → `assert!(matches!(ReplayLedger::open(&root), Err(ReplayError::PersistenceUnavailable)))` — `from_canonical_bytes` checks `record.logical_key_digest == expected_logical_key.as_digest()` |
+| 10 | Collision/non-replacement at Claim boundary | PROVEN | `native_publication_survives_reopen_and_never_replaces` (replay_windows.rs:1868) | Second publish → `Err(PersistenceUnavailable)`; original bytes preserved; `.tmp` debris retained |
+| 11 | Unexpected temporary/debris handling | PROVEN | `ledger_29_unexpected_ledger_entry_fails_closed` (replay_windows.rs:2722) | `.tmp` file in claims dir → `assert!(matches!(ReplayLedger::open(&root), Err(ReplayError::PersistenceUnavailable)))` |
+| 12 | Unsafe-path protection at Claim boundary | PROVEN | `relative_root_is_rejected_before_win32` (replay_windows.rs:1777), `unc_roots_are_rejected_before_win32` (replay_windows.rs:1780), `traversal_ads_and_separator_final_filenames_are_rejected` (replay_windows.rs:1771), `validated_child_retains_complete_independent_handle_chain` (replay_windows.rs:1833) | Relative/UNC/reparse/device names rejected; `ValidatedLeafName` constrains Claim filenames to hex-only; handle chain prevents TOCTOU ancestor substitution |
+| 13 | Exact bytes/readback | PROVEN | `claim_round_trip_is_exact_canonical_and_redacted` (replay.rs:613), `ledger_30_restart_never_generates_new_uuid_for_existing_tuple` (replay_windows.rs:2742) | `assert_eq!(recovered, claim)` unit-level; `assert_eq!(claim_bytes, claim_before)` after 2 restarts |
+
+### Remaining UNVERIFIED
+
+- Power-loss durability: UNVERIFIED (F3b) — never upgrade
+- Directory-entry durability: UNVERIFIED (F3b) — never upgrade
+- Atomic visibility during rename: UNVERIFIED (F3b) — never upgrade
+- Parent-directory flush in production: DISPROVEN (F3b)
+
+### F3e2a findings
+
+- One characterization test added: `f3e2a_claim_filename_content_disagreement_fails_closed` — publishes a valid claim, renames the file to a different logical-key hex digest, verifies ledger open returns `PersistenceUnavailable`. Filename/content identity agreement moved from UNVERIFIED to PROVEN.
+- All 12 other dimensions are PROVEN by existing tests with hard assertions.
+- No production code changed.
+- No defect found in the Replay Claim slice.
+- Replay Generations are explicitly deferred to F3e2b/F3e3.
+- 122 Replay tests pass (121 existing + 1 new F3e2a characterization test).
+
+---
+
 ## Changes Made in F3a
 
 ### Initial F3a pass

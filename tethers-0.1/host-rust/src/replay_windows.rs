@@ -3186,4 +3186,34 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn f3e2a_claim_filename_content_disagreement_fails_closed() {
+        let Some(root) = provisioned_test_root("f3e2a-filename-disagree") else {
+            return;
+        };
+        let key_a = test_key("claim-a");
+        let key_b = test_key("claim-b");
+        assert_ne!(key_a.as_digest(), key_b.as_digest());
+        let ledger = ReplayLedger::open(&root).unwrap();
+        drop(
+            ledger
+                .admit_or_recover(key_a.clone(), test_binding("claim-a"))
+                .unwrap(),
+        );
+        drop(ledger);
+
+        let path_a = claim_path(&root, &key_a);
+        let path_b = claim_path(&root, &key_b);
+        assert!(path_a.exists());
+        assert!(!path_b.exists());
+        std::fs::rename(&path_a, &path_b).unwrap();
+        assert!(!path_a.exists());
+        assert!(path_b.exists());
+
+        assert!(matches!(
+            ReplayLedger::open(&root),
+            Err(ReplayError::PersistenceUnavailable)
+        ));
+    }
 }
