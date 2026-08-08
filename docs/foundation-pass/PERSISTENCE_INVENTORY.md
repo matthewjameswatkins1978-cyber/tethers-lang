@@ -424,6 +424,57 @@ One characterization test added to close the filename/content identity disagreem
 
 ---
 
+## F3e2b Evidence — Replay Generations & Recovery evidence harvest
+
+Date: 2026-08-08
+Baseline: `477e2b901c0dfec55f4df6f9dca79a66e9294e0a` (accepted F3e2a-R1)
+Branch: `foundation/f3e2b-replay-generations-evidence`
+Evidence sources:
+- `tethers-0.1/host-rust/src/replay.rs` inline tests (Generation model, validate_chain)
+- `tethers-0.1/host-rust/src/replay_windows.rs` inline tests (ledger 12–30, all_bounded, recovered_*, populated_reopen)
+
+F3e2b was an evidence harvest limited to the Replay Generation slice (Generation 0/1/2, publication, readback, chain validation, restart reconstruction, recovered-admission mutation blocking). Replay Claim identity was accepted in F3e2a and was not re-audited.
+
+Zero characterization tests added. All 14 dimensions are PROVEN by existing tests with hard assertions. No production code changed and no defect was found.
+
+### Generation evidence summary
+
+| # | Property | Status | Test | Exact Hard Assertion |
+|---|---|---|---|---|
+| 1 | Canonical Generation representation | PROVEN | `generation_three_is_not_representable_or_parseable` (replay.rs:657) negative; reconstruction tests (ledger 21–26) positive | G3 bytes → `assert!(Generation::from_canonical_bytes(&bytes).is_err())`; reconstruction: publish G0→G1→G2, reopen, state matches expected — publish→reopen→parse round-trip |
+| 2 | Generation 0 publication | PROVEN | `ledger_12_valid_generation_zero_publication` (replay_windows.rs:2287) | `assert_eq!(admission.state(), ReplayState::IntentRecorded)`; `assert_eq!(directory_names(&path), vec!["g0000000000000000.json"])` |
+| 3 | G0 → G1 transition | PROVEN | `ledger_13_valid_generation_zero_to_one_transition` (replay_windows.rs:2302) | `assert_eq!(admission.state(), ReplayState::InvocationArmed)` |
+| 4 | G2 terminal states (all 3) | PROVEN | `ledger_14_each_valid_generation_two_terminal_state` (replay_windows.rs:2316) | Loop over `[Succeeded, Failed, Uncertain]`: `assert_eq!(admission.state(), state)` for each |
+| 5 | Missing-generation rejection (G1 without G0, G2 without G1) | PROVEN | `ledger_15_generation_one_without_zero_is_rejected` (replay_windows.rs:2340), `ledger_16_generation_two_without_one_is_rejected` (replay_windows.rs:2363) | G1-only → `assert!(ReplayLedger::open(&root).is_err())`; G0+G2 skip G1 → `assert!(ReplayLedger::open(&root).is_err())` |
+| 6 | Illegal state-at-generation | PROVEN | `ledger_17_illegal_state_transition_is_rejected` (replay_windows.rs:2398); `chain_cannot_skip_armed` (replay.rs:644) | G0 with "succeeded" → open err; G0→G2 direct → `assert!(validate_chain(...).is_err())` |
+| 7 | Predecessor-digest linkage | PROVEN | `ledger_18_predecessor_mismatch_is_rejected` (replay_windows.rs:2428) | G1 with tampered predecessor_digest → `assert!(ReplayLedger::open(&root).is_err())` |
+| 8 | Generation immutability / non-replacement | PROVEN | `ledger_19_generation_collision_never_replaces_bytes` (replay_windows.rs:2463) | Pre-existing conflicting file → `publish_armed().is_err()`; `assert_eq!(std::fs::read(collision).unwrap(), b"different-immutable-bytes")` |
+| 9 | Generation upper bound (model, filename, persistence) | PROVEN | `generation_three_is_not_representable_or_parseable` (replay.rs:657), `generation_filename(3)` (replay_windows.rs:1213), `ledger_20_generation_three_is_rejected` (replay_windows.rs:2493) | `from_canonical_bytes` rejects generation=3; filename rejects number>2; second terminal publish after G2 → err |
+| 10 | Restart reconstruction (6 state variants) | PROVEN | ledger_21–26 (replay_windows.rs:2516–2614) | Claim-only → `ClaimedNoState`; G0 → `IntentRecorded`; G1 → `InvocationArmed`; G2 → `Succeeded`/`Failed`/`Uncertain` each asserted |
+| 11 | Recovered admissions cannot advance history | PROVEN | `recovered_claim_g0_and_g1_admissions_cannot_advance_or_mutate` (replay_windows.rs:2616); `recovered_terminal_admission_cannot_publish_or_mutate` (replay_windows.rs:2653) | All mutation attempts → `Err(PersistenceUnavailable)`; `assert_eq!(tree_snapshot(&root), before)` — filesystem unchanged |
+| 12 | Malformed/corrupt Generation-chain fail-closed | PROVEN | `ledger_28_malformed_chain_fails_closed`, `ledger_27_orphan_chain_fails_whole_ledger_closed`, ledger_17, ledger_18 (replay_windows.rs) | Malformed JSON → open err; orphan chain (no claim) → open err; tampered state/predecessor → open err |
+| 13 | Filename/content agreement for Generations | PROVEN | Reconstruction pipeline: `read_generation_directory` + `validate_chain` (all ledger_15–30 tests) | `read_generation_directory` rejects non-sequential filenames; `validate_chain` rejects mismatched generation number, logical_key, execution_id |
+| 14 | Exact bytes / close-reopen | PROVEN | `ledger_30_restart_never_generates_new_uuid_for_existing_tuple` (replay_windows.rs:2741); `ledger_populated_valid_subtrees_reopen_without_reprovisioning` (replay_windows.rs:2769) | `assert_eq!(claim_bytes, claim_before)` after 2 restarts; full chain reopens with correct state and tree unchanged |
+
+### Remaining UNVERIFIED
+
+- Power-loss durability: UNVERIFIED (F3b) — never upgrade
+- Directory-entry durability: UNVERIFIED (F3b) — never upgrade
+- Atomic visibility during rename: UNVERIFIED (F3b) — never upgrade
+- Parent-directory flush in production: DISPROVEN (F3b)
+
+### F3e2b findings
+
+- All 14 Generation/reconstruction dimensions are PROVEN by existing tests with hard assertions.
+- Zero characterization tests added.
+- No production code changed.
+- No defect found in the Replay Generation slice.
+- Replay Claim evidence from F3e2a preserved (not re-audited).
+- Replay Generation canonical bytes/filename/content/completeness is fully proven by existing tests.
+- 122 Replay tests pass (all existing; 0 new).
+
+---
+
 ## Changes Made in F3a
 
 ### Initial F3a pass
