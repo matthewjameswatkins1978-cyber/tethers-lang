@@ -19,6 +19,14 @@ Rust toolchain: `N/A`
 
 Perform the bounded Foundation F5 structural extraction: make existing ownership boundaries visible in the OCaml module structure. No product capability, no semantic redesign, no protocol migration, no Rust changes.
 
+## Relevant background and existing behaviour
+
+F2-F4 stabilised the Tethers 0.1 semantic contracts: evaluation, response JSON, Trail, plan identity, and idempotency_key generation. F5 is a pure structural extraction from that stable base.
+
+Previously `tether_parser.ml` owned the engine-wide `exception Tethers_error` and `fail` helper, creating incidental dependency on a leaf parsing module. `tethers_evaluator.ml` owned evaluation, outcome domain types, JSON encoding, error construction, and stdin transport — too many distinct responsibilities.
+
+F5 extracts the stable error boundary to `Tethers_error` and the stable outcome boundary to `Tethers_outcome`, adds `.mli` interfaces to enforce ownership, and moves transport to `main.ml`. No semantic changes.
+
 ## Demonstrated ownership defects resolved
 
 1. **Parser owned engine-wide error mechanism** — `tether_parser.ml` declared `exception Tethers_error` and `fail`, used by evaluator, protocol, and MCP server. Extracted to `Tethers_error`.
