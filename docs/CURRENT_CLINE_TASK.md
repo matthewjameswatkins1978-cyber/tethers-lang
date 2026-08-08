@@ -11,7 +11,7 @@ Worker note: `docs/worker-notes/2026-08-08-f3e2b-replay-generations-evidence.md`
 Base branch: `main`
 Base commit: `477e2b901c0dfec55f4df6f9dca79a66e9294e0a`
 Implementation branch: `foundation/f3e2b-replay-generations-evidence`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `e75b8c4b00efdfd7437e0126e0800c46790c50ac`
 Parent branch: `foundation/f3e2a-replay-claim-evidence`
 Parent tip: `477e2b901c0dfec55f4df6f9dca79a66e9294e0a`
 OCaml switch path: `N/A`
