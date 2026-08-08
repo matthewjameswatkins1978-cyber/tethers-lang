@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `ea7426dbeb1934cf336673d03ae2abf76146ea7d`
-Implementation checkpoint: `2495238d9118a6af88651d1cd26fa7786b39795d`
+Implementation checkpoint: `41242a4fd6f8e85d3497a9e2f5eada92e1d33e8a`
 
 ## Requested outcome
 
