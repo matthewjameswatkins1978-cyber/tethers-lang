@@ -1,115 +1,110 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F4b — Direct Typed Shared Execution Result`
+Task: `F5 — OCaml Semantic and Error Boundary Extraction`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
 Status: `COMPLETE`
 Task colour: `Amber`
-Route: `OpenCode implements shared-boundary semantic hardening; no new types`
-Worker note: `docs/worker-notes/2026-08-08-f4b-direct-execution-outcome.md`
-Base branch: `foundation/control-worker-evidence-finalization`
-Base commit: `ee86b57f557516bb0ee14b52a295718d66dae2a1`
-Implementation branch: `foundation/f4b-direct-execution-outcome`
-Implementation checkpoint: `0dc2f56c8262aab16cc3272086a3232a2442d982`
-OCaml switch path: `N/A`
-Rust toolchain: `1.97.1`
+Route: `OpenCode implements OCaml module ownership extraction; no semantic redesign`
+Worker note: `docs/worker-notes/2026-08-08-f5-ocaml-boundaries.md`
+Base branch: `foundation/f4b-direct-execution-outcome`
+Base commit: `9b5fdd47a885309ac04575065ba7cb0e6cf48693`
+Implementation branch: `foundation/f5-ocaml-boundaries`
+Implementation checkpoint: `bcd0e09d4384b61d74cce4f5a5b823a237618eeb`
+OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
+Rust toolchain: `N/A`
 
 ## Objective
 
-Remove the remaining internal semantic round-trip in the shared Rust execution boundary. `authorise_and_execute_inner` now returns `SharedExecutionResult` directly. `execute_boundary_impl` constructs the typed outcome at each terminal branch. Presentation JSON continues to be written for compatibility but is never read back for internal semantic truth.
+Perform the bounded Foundation F5 structural extraction: make existing ownership boundaries visible in the OCaml module structure. No product capability, no semantic redesign, no protocol migration, no Rust changes.
 
-## Relevant background and existing behaviour
+## Demonstrated ownership defects resolved
 
-F4a2 established the typed planner boundary. F4b finishes Foundation F4 by removing the last internal JSON string reconstruction (`from_response_and_evidence` reading `execution_status`). The JSON remains frozen as presentation/wire state.
+1. **Parser owned engine-wide error mechanism** — `tether_parser.ml` declared `exception Tethers_error` and `fail`, used by evaluator, protocol, and MCP server. Extracted to `Tethers_error`.
 
-Previously, `execute_shared_boundary` called `execute_boundary_impl` which returned `ExecutionBoundaryEvidence` (only the execution_id), then used `from_response_and_evidence` to read `response["execution_status"]` and reconstruct `SharedExecutionOutcome`. This internal JSON round-trip was the last dependency on JSON-as-semantic-truth in the shared execution boundary.
-
-## Required behaviour
-
-1. `authorise_and_execute_inner` returns `SharedExecutionResult` directly.
-2. `execute_boundary_impl` constructs `SharedExecutionResult { outcome, execution_id }` at every terminal branch.
-3. `execute_shared_boundary` performs audit-failure override on typed result.
-4. `ExecutionBoundaryEvidence` and `from_response_and_evidence` are removed from production.
-5. Frozen response JSON (`execution_status`) is still written for presentation compatibility but never read for semantic truth.
-6. `SharedExecutionOutcome` unchanged.
-7. `ExecutionServiceResult` and `ExecutionServiceError` untouched.
-8. No `InternalExecutionResult` or equivalent wrapper introduced.
-9. All existing `execution_id` Some/None semantics preserved at every terminal branch.
+2. **Evaluator owned too many distinct responsibilities** — `tethers_evaluator.ml` contained evaluation logic, outcome domain types, frozen response JSON encoder, request-error construction, and stdin transport. Outcome types extracted to `Tethers_outcome`. Transport moved to `main.ml`.
 
 ## Relevant components
 
-`tethers-0.1/host-rust/src/application.rs` — 1 production file (122 insertions, 120 deletions)
+### NEW
+- `tethers-0.1/engine-ocaml/bin/tethers_error.ml` — engine-wide exception + fail
+- `tethers-0.1/engine-ocaml/bin/tethers_error.mli` — interface
+- `tethers-0.1/engine-ocaml/bin/tethers_outcome.ml` — response types + JSON encoder + error_response
+- `tethers-0.1/engine-ocaml/bin/tethers_outcome.mli` — transparent interface
+- `tethers-0.1/engine-ocaml/bin/tether_parser.mli` — transparent AST surface
+- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.mli` — single-entrypoint interface
 
-Key changes:
+### MODIFIED
+- `tethers-0.1/engine-ocaml/bin/tether_parser.ml` — removed exception/fail, opens Tethers_error
+- `tethers-0.1/engine-ocaml/bin/tethers_protocol.ml` — opens Tethers_error
+- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml` — removed outcome types/encoder/transport, opens Tethers_outcome + Tethers_error
+- `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` — uses Tethers_outcome.error_response and Tethers_outcome.json_of_response
+- `tethers-0.1/engine-ocaml/bin/main.ml` — now owns process_line
+- `tethers-0.1/engine-ocaml/bin/dune` — adds tethers_error and tethers_outcome to both executables
 
-- `execute_boundary_impl` return type: `ExecutionBoundaryEvidence` → `SharedExecutionResult`
-- Every terminal branch constructs precise `SharedExecutionOutcome` at point of semantic truth
-- `execute_shared_boundary`: audit-failure override on typed result (no JSON read-back)
-- `authorise_and_execute_inner` returns `SharedExecutionResult` directly (no `map(|_| ())`)
-- Removed `ExecutionBoundaryEvidence` struct
-- Removed `from_response_and_evidence` method
-- Wrapper functions (`authorise_and_execute`, etc.) retain `Result<(), ...>` with `.map(|_| ())`
+## Post-F5 module dependency shape
 
-## Frozen decisions and invariants
+```
+Tethers_error
+    -> Tether_parser
+    -> Tethers_protocol
+    -> Tethers_evaluator
+    -> Tethers_outcome
 
-- `SharedExecutionOutcome` variant set is frozen: Completed, Failed, Uncertain, Unattempted, Denied, AuditFailed, Replay(ReplayDispatchResult).
-- `SharedExecutionResult { outcome, execution_id }` is the single typed internal return channel.
-- `ExecutionServiceResult` and `ExecutionServiceError` are not redesigned.
-- No `InternalExecutionResult` or equivalent.
-- Frozen response JSON continues to be written but never read for internal semantic truth.
-- No other production file changed.
-- No OCaml changed.
+main -> evaluator/outcome/error
+MCP server -> evaluator/outcome/error/parser
+```
 
 ## Acceptance criteria
 
-1. All terminal branches in `execute_boundary_impl` return `SharedExecutionResult` with correct outcome and execution_id — verified by `cargo test --locked` (1331 PASS).
-2. `from_response_and_evidence` removed from production — confirmed by grep (zero production references).
-3. `ExecutionBoundaryEvidence` removed — confirmed by grep (zero production references, only one comment updated).
-4. No production path reads `response["execution_status"]` for semantic truth — confirmed by execution_status inventory (all production references are writes).
-5. Frozen JSON presentation preserved — all existing `response["execution_status"]` writes retained; all test assertions on presentation JSON pass.
-6. `SharedExecutionOutcome` unchanged — structure identical to base.
-7. `ExecutionServiceResult` and `ExecutionServiceError` untouched — confirmed via diff.
-8. No OCaml changed — confirmed via diff.
-9. No F5 started — confirmed.
+1. New OCaml interfaces compile — `dune build` PASS
+2. Parser no longer defines `Tethers_error` — grep confirms only `tethers_error.ml`/`.mli`
+3. `Tethers_error` is shared owner — single definition site
+4. `Tethers_outcome` owns response types — single definition site
+5. `Tethers_outcome` owns JSON encoder — `json_of_response` only in `tethers_outcome.ml`
+6. `Tethers_evaluator` exposes only `evaluate_request` — `.mli` has 1 line
+7. `process_line` no longer in evaluator — grep confirms only in `main.ml`
+8. Legacy line engine output unchanged — all fixtures valid (46 JSON + 30 JSONL)
+9. MCP output unchanged — all fixtures valid
+10. Response JSON expectations unchanged — zero fixture diffs
+11. Rust host tests pass — `cargo test --locked` 1331 PASS, 0 FAIL, 2 ignored
+12. No Rust file changed — diff confirms zero
+13. No compatibility fixture changed — diff confirms zero
 
 ## Required verification
 
+- `opam exec -- dune build`: PASS
+- `opam exec -- dune runtest`: PASS (0 OCaml native tests; engine behaviour covered by integration scripts + Rust host tests)
+- `pwsh -NoProfile -File scripts/check-fixtures.ps1`: 46 JSON + 30 JSONL valid
 - `cargo test --locked`: 1331 PASS, 0 FAIL, 2 ignored
-- `cargo fmt --manifest-path Cargo.toml -- --check`: application.rs clean; replay_windows.rs:3277 pre-existing discrepancy (proven, not F4b-introduced)
 - `git diff --check`: PASS
-- `check-tethers-task-packet.ps1`: PASS (post-closeout)
-- `execution_status` inventory: zero production reads for semantic truth
+- `check-tethers-task-packet.ps1`: pending closeout
 
-## Forbidden changes
+## Forbidden changes confirmed not made
 
-- No `SharedExecutionOutcome` variant changes
-- No `ExecutionServiceResult` redesign
-- No `ExecutionServiceError` redesign
-- No `InternalExecutionResult` or equivalent
-- No OCaml changes
-- No F4a1/F4a2 code changes (beyond the F4b semantic boundary change)
-- No F5 structural extraction
-- No new dependencies
-- No `replay_windows.rs` changes
+- No Tethers language syntax changes
+- No evaluator semantics changes
+- No request/response JSON changes
+- No JSON field ordering changes
+- No error code/message changes
+- No variant/field renames
+- No `tethers_evaluation`, `tethers_response`, `tethers_types` modules
+- No functors, module types, or abstraction
+- No typed evaluator-input redesign (evaluation_id semantics preserved)
+- No Rust changes
+- No fixture changes
+- No F6+ work started
+
+## Implementation style
+
+Pure structural extraction: move types, add narrow interfaces, qualify module ownership. No rewrites, no generalizations, no abstractions.
 
 ## Stop conditions
-
-STOP if:
-- Exact JSON compatibility requires keeping semantic read-back
-- Removing read-back changes replay classification
-- Removing read-back changes execution identity behaviour
-- Audit failure cannot preserve current precedence
-- Another production module must change
-- ExecutionServiceResult must change
-- SharedExecutionOutcome must change
-- More than two genuinely new focused tests appear necessary
-- OCaml changes appear necessary
 
 NONE triggered.
 
 ## Expected pre-existing changes
 
-1. Pre-existing `cargo fmt` discrepancy in `replay_windows.rs:3277` (proven, not F4b-introduced).
-2. Implementation checkpoint `0dc2f56c` covers all production/test changes.
-3. Closeout docs (`CURRENT_CLINE_TASK.md`, worker note) are the only files after checkpoint.
+1. Implementation checkpoint `bcd0e09d` covers all production/build changes.
+2. Closeout docs (`CURRENT_CLINE_TASK.md`, worker note) are the only files after checkpoint.
