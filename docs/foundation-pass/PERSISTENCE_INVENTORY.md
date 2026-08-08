@@ -505,3 +505,66 @@ These differences from the original F1 inventory remain after F3a review:
 - **No store uses the "Replaceable Current-State Record" pattern for direct overwrite**: Only Installation Publication Intent fits this class, using an explicit remove-then-recreate pattern. Previous version incorrectly classified Candidate Registry as replaceable.
 - **Installation Recovery Plan is NOT a store**: It is a read-only planner that coordinates through the intent store and installed registry. Previous version classified it as a store.
 - **Installation Execution Lock is a filesystem coordination artifact**: It creates an empty file anchor solely to hold an exclusive OS handle. It encodes no durable intent, recovery state, or causal history and is not classified under the four persistence-store vocabulary.
+
+---
+
+## F3-GATE — Combined Persistence Contract Reconciliation
+
+Date: 2026-08-08
+Baseline: `ab58c83ba44680f3003db333f1e1ffd091aa5b3f` (accepted F3e2b-R1)
+Branch: `foundation/f3-persistence-gate`
+
+This is the final combined review required to close Foundation Pass F3. It answers one question: "Taken together, does the accepted F3 evidence describe one internally consistent persistence contract?"
+
+### Verdict: READY FOR INDEPENDENT GATE REVIEW
+
+The accepted F3 evidence corpus (F3a through F3e2b) describes one internally consistent persistence contract. Twelve audit areas were examined; zero material contradictions were found.
+
+### Store vocabulary — consistent
+
+14 classified persistence stores:
+- 9 immutable atomic records (Candidate Registry, Publisher Trust Store, Developer Approval Store, Launch Profile Evidence, Conformance Evidence, Installation Approval, Installed Plug Registry, Enablement Records, Replay Claim)
+- 1 replaceable current-state record (Installation Publication Intent)
+- 1 append-only causal log (Trail)
+- 3 multi-step intent/recovery journals (Replay Generations, Installation Recovery Staging, Local Anchor Admission Store)
+
+Plus 1 filesystem coordination artifact (Installation Execution Lock) and 6 in-memory entries. No later F3 section reclassifies any store. Count is verified consistent across all F3 sections.
+
+### Key contract properties — consistent
+
+| Property | Final F3 status | Scope |
+|---|---|---|
+| Atomic visibility during rename | UNVERIFIED (F3b) | All stores using rename |
+| File data survives sudden power loss | UNVERIFIED (F3b) | All stores |
+| Directory entry survives power loss | UNVERIFIED (F3b) | All stores |
+| Parent-directory flush in production | DISPROVEN (F3b) | All stores |
+| Exact bytes survive ordinary close/reopen | PROVEN where directly tested (F3b/F3e2a/F3e2b); UNVERIFIED otherwise | Varies by store |
+| Root reparse-point defence | PROVEN (StoreRoot/Replay); DISPROVEN (Local Anchor); UNVERIFIED (Candidate Registry) | Varies by store |
+| Malformed input fail-closed | PROVEN (all tested stores) | Bounded to tested stores |
+| Digest corruption rejected | PROVEN (stores with digests); N/A (Trail) | Bounded to tested stores |
+| Orphan/partial state rejected | PROVEN (Trail, Replay, Candidate, Installation, Local Anchor) | Bounded to tested stores |
+| Recovery correct state reconstruction | PROVEN (Replay G0/G1/G2, Installation Recovery, Local Anchor) | Bounded to tested stores |
+
+### Contradiction ledger
+
+| # | Area | Verdict |
+|---|---|---|
+| 1 | Store vocabulary — count and classification | No contradiction |
+| 2 | Atomic visibility — never claimed PROVEN | No contradiction |
+| 3 | File data power-loss durability — never claimed PROVEN | No contradiction |
+| 4 | Directory-entry durability — never claimed PROVEN | No contradiction |
+| 5 | Parent-directory flush DISPROVEN — consistently recorded | No contradiction |
+| 6 | Ordinary close/reopen — not conflated with power-loss | No contradiction |
+| 7 | Trail semantics — remains append-only causal log | No contradiction |
+| 8 | Replay semantics — Claim/Generations retain distinct meaning | No contradiction |
+| 9 | Installation semantics — remains installation-specific | No contradiction |
+| 10 | Corruption/fail-closed — bounded to tested stores | No contradiction |
+| 11 | Path safety — attributed to correct protection layer | No contradiction |
+| 12 | Combined contract alignment — F3 subpackages have independent consistent evidence | No contradiction |
+
+### Changes in this gate
+
+- F3 combined-gate section added to PERSISTENCE_INVENTORY.md (this section).
+- CURRENT_CLINE_TASK.md updated with F3-GATE task and findings.
+- F3-GATE worker note created.
+- No production code changed. No tests added. No earlier worker notes edited.
