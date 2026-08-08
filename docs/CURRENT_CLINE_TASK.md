@@ -83,8 +83,8 @@ F5 extracts the stable error boundary to `Tethers_error` and the stable outcome 
 5. `Tethers_outcome` owns JSON encoder — `json_of_response` only in `tethers_outcome.ml`
 6. `Tethers_evaluator` exposes only `evaluate_request` — `.mli` has 1 line
 7. `process_line` no longer in evaluator — grep confirms only in `main.ml`
-8. Legacy line engine output unchanged — all fixtures valid (46 JSON + 30 JSONL)
-9. MCP output unchanged — all fixtures valid
+8. Legacy line-engine behaviour unchanged — `test-engine.ps1` PASS (23 fixture cases + determinism + line-ending validation)
+9. MCP transcript/output behaviour unchanged — `test-mcp-transcripts.ps1` PASS (15 cases)
 10. Response JSON expectations unchanged — zero fixture diffs
 11. Rust host tests pass — `cargo test --locked` 1331 PASS, 0 FAIL, 2 ignored
 12. No Rust file changed — diff confirms zero
@@ -93,11 +93,13 @@ F5 extracts the stable error boundary to `Tethers_error` and the stable outcome 
 ## Required verification
 
 - `opam exec -- dune build`: PASS
-- `opam exec -- dune runtest`: PASS (0 OCaml native tests; engine behaviour covered by integration scripts + Rust host tests)
-- `pwsh -NoProfile -File scripts/check-fixtures.ps1`: 46 JSON + 30 JSONL valid
+- `opam exec -- dune runtest`: PASS (0 OCaml native tests)
+- `pwsh -NoProfile -File tethers-0.1/scripts/test-engine.ps1`: PASS (23 fixture cases + determinism repeat + LF/CRLF/mixed line-ending validation)
+- `pwsh -NoProfile -File tethers-0.1/scripts/test-mcp-transcripts.ps1`: PASS (15 MCP transcript cases)
+- `pwsh -NoProfile -File scripts/check-fixtures.ps1`: 46 JSON + 30 JSONL valid (fixture-integrity evidence only; does not execute engine/MCP code)
 - `cargo test --locked`: 1331 PASS, 0 FAIL, 2 ignored
 - `git diff --check`: PASS
-- `check-tethers-task-packet.ps1`: pending closeout
+- `check-tethers-task-packet.ps1`: PASS
 
 ## Forbidden changes confirmed not made
 

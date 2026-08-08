@@ -33,7 +33,7 @@ Extract the stable error boundary to `Tethers_error` and the stable outcome boun
 - Outcome types remain transparent (no abstract types, no smart constructors). The evaluator is the legitimate producer; exhaustive variants and structural records are useful compiler-visible contracts.
 - `condition_result` and `action_planning_result` remain internal to the evaluator — they are implementation detail of `check_conditions` and `plan_actions`, not the public outcome contract.
 - No `tethers_protocol.mli` created. Compilation contradiction did not arise.
-- No OCaml native tests exist in the repository. Engine behaviour coverage is through integration fixture scripts and Rust host tests.
+- No OCaml native tests exist in the repository. Engine and MCP behaviour is covered by `test-engine.ps1` (23 cases + determinism + line-ending), `test-mcp-transcripts.ps1` (15 cases), and Rust host tests (1331 cases).
 
 ## Evidence
 
@@ -41,7 +41,9 @@ Extract the stable error boundary to `Tethers_error` and the stable outcome boun
 |-------|--------|
 | `opam exec -- dune build` | PASS |
 | `opam exec -- dune runtest` | PASS (0 native tests) |
-| `pwsh -NoProfile -File scripts/check-fixtures.ps1` | PASS (46 JSON, 30 JSONL) |
+| `test-engine.ps1` | PASS (23 fixture cases + determinism repeat + LF/CRLF/mixed validation) |
+| `test-mcp-transcripts.ps1` | PASS (15 MCP transcript cases) |
+| `check-fixtures.ps1` | PASS (46 JSON + 30 JSONL; fixture-integrity only) |
 | `cargo test --locked` | 1331 PASS, 0 FAIL, 2 ignored |
 | `git diff --check` | PASS |
 | `rg "exception Tethers_error"` in bin/ | Only `tethers_error.ml` + `.mli` |
@@ -52,6 +54,8 @@ Extract the stable error boundary to `Tethers_error` and the stable outcome boun
 | `tethers_evaluator.mli` line count | 1 line |
 | `git diff --name-only -- tethers-0.1/host-rust/` | (empty) |
 | `git diff --name-only -- tethers-0.1/protocol/` | (empty) |
+
+`check-fixtures.ps1` validates that JSON/JSONL fixtures are syntactically well-formed; it does not execute the engine or MCP server. `test-engine.ps1` and `test-mcp-transcripts.ps1` provide direct behavioural evidence that the extracted engine/MCP code produces identical output.
 
 All 13 acceptance criteria have hard proof. No expected JSON changed. No fixtures changed. No Rust changed.
 
