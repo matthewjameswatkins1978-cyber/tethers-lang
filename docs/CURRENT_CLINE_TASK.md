@@ -1,120 +1,92 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F5 — OCaml Semantic and Error Boundary Extraction`
+Task: `F1-R1 — Missing Performance Baseline Reconciliation`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
 Status: `COMPLETE`
 Task colour: `Amber`
-Route: `OpenCode implements OCaml module ownership extraction; no semantic redesign`
-Worker note: `docs/worker-notes/2026-08-08-f5-ocaml-boundaries.md`
-Base branch: `foundation/f4b-direct-execution-outcome`
-Base commit: `9b5fdd47a885309ac04575065ba7cb0e6cf48693`
-Implementation branch: `foundation/f5-ocaml-boundaries`
-Implementation checkpoint: `bcd0e09d4384b61d74cce4f5a5b823a237618eeb`
-OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
-Rust toolchain: `N/A`
+Route: `OpenCode measures historical and current-F5 build/test timings; no production changes; evidence only`
+Worker note: `docs/worker-notes/2026-08-08-f1-r1-performance-baseline.md`
+Base branch: `foundation/f5-ocaml-boundaries`
+Base commit: `ea7426dbeb1934cf336673d03ae2abf76146ea7d`
+Implementation branch: `foundation/f1-r1-performance-baseline`
+Implementation checkpoint: `WORKTREE`
+OCaml switch path: `N/A`
+Rust toolchain: `1.97.1`
 
 ## Objective
 
-Perform the bounded Foundation F5 structural extraction: make existing ownership boundaries visible in the OCaml module structure. No product capability, no semantic redesign, no protocol migration, no Rust changes.
+Produce reproducible performance/operational-cost measurements sufficient to decide whether either F1 performance hypothesis becomes an actual F6 optimisation candidate. No optimisation, no production changes, no test changes, no fixture changes, no dependency additions.
 
 ## Relevant background and existing behaviour
 
-F2-F4 stabilised the Tethers 0.1 semantic contracts: evaluation, response JSON, Trail, plan identity, and idempotency_key generation. F5 is a pure structural extraction from that stable base.
+The F1 baseline reported two unmeasured F6 optimisation candidates:
+- **P1:** `application.rs` compile-time hypothesis (large file may slow compilation)
+- **P2:** `result_large_err` hypothesis (Clippy reports ~160+ byte Err variant)
 
-Previously `tether_parser.ml` owned the engine-wide `exception Tethers_error` and `fail` helper, creating incidental dependency on a leaf parsing module. `tethers_evaluator.ml` owned evaluation, outcome domain types, JSON encoding, error construction, and stdin transport — too many distinct responsibilities.
-
-F5 extracts the stable error boundary to `Tethers_error` and the stable outcome boundary to `Tethers_outcome`, adds `.mli` interfaces to enforce ownership, and moves transport to `main.ml`. No semantic changes.
+Both were classified as unmeasured hypotheses requiring measurement before F6 could begin.
 
 ## Required behaviour
 
-1. Create `Tethers_error` module owning the engine-wide exception and fail helper, extracted from `Tether_parser`.
-2. Create `Tethers_outcome` module owning response types, JSON encoder, and error_response, extracted from `Tethers_evaluator`.
-3. Remove error ownership from `Tether_parser`.
-4. Remove outcome ownership from `Tethers_evaluator`.
-5. Move `process_line` from `Tethers_evaluator` to `main.ml`.
-6. Create `Tether_parser.mli` exposing parser AST + parse_tether + drop_prefix.
-7. Create `Tethers_evaluator.mli` exposing only evaluate_request.
-8. Update `tethers_protocol.ml` to use `Tethers_error` for fail.
-9. Update `tethers_mcp_server.ml` to use `Tethers_outcome` for error_response and json_of_response.
-10. Update `dune` to include new modules.
-11. Preserve all existing JSON/output/error semantics.
-12. Zero Rust changes.
-13. Zero fixture changes.
+1. Establish separate detached worktrees for historical baseline (`24428139`) and current F5 (`ea7426d`).
+2. Collect cold and warm timings for `cargo check`, `cargo test`, `cargo clippy`, `just verify`, `just verify-agent`.
+3. Record machine environment (OS, CPU, RAM, filesystem, Rust/Cargo/PowerShell versions, cargo cache state).
+4. Gather P1 evidence: application.rs line counts, cold/warm check timings, attribute or note inability to attribute per-file compile cost.
+5. Gather P2 evidence: locate `result_large_err` sites, note whether still present at F5, classify hot vs cold path.
+6. Classify each hypothesis: MEASURED COST, UNATTRIBUTED COST, UNMEASURED HYPOTHESIS, NO MATERIAL COST, or UNVERIFIED.
+7. Produce F6 authorisation table.
+8. No production/build/test/fixture file changes.
+9. Document results in `docs/foundation-pass/PERFORMANCE_BASELINE_R1.md`.
 
 ## Relevant components
 
 ### NEW
-- `tethers-0.1/engine-ocaml/bin/tethers_error.ml` — engine-wide exception + fail
-- `tethers-0.1/engine-ocaml/bin/tethers_error.mli` — interface
-- `tethers-0.1/engine-ocaml/bin/tethers_outcome.ml` — response types + JSON encoder + error_response
-- `tethers-0.1/engine-ocaml/bin/tethers_outcome.mli` — transparent interface
-- `tethers-0.1/engine-ocaml/bin/tether_parser.mli` — transparent AST surface
-- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.mli` — single-entrypoint interface
+- `docs/foundation-pass/PERFORMANCE_BASELINE_R1.md` — performance evidence document
 
-### MODIFIED
-- `tethers-0.1/engine-ocaml/bin/tether_parser.ml` — removed exception/fail, opens Tethers_error
-- `tethers-0.1/engine-ocaml/bin/tethers_protocol.ml` — opens Tethers_error
-- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml` — removed outcome types/encoder/transport, opens Tethers_outcome + Tethers_error
-- `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` — uses Tethers_outcome.error_response and Tethers_outcome.json_of_response
-- `tethers-0.1/engine-ocaml/bin/main.ml` — now owns process_line
-- `tethers-0.1/engine-ocaml/bin/dune` — adds tethers_error and tethers_outcome to both executables
+### CLOSEOUT
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/worker-notes/2026-08-08-f1-r1-performance-baseline.md`
 
 ## Frozen decisions and invariants
 
-- `Tethers_error` is the shared owner of engine-wide exception and fail.
-- `Tethers_outcome` is the shared owner of response types and JSON encoder.
-- `Tethers_evaluator` exposes only `evaluate_request` in its interface.
-- No typed evaluator-input redesign; `evaluation_id` semantics preserved.
-- `plan.id` and `idempotency_key` generation unchanged.
-- Outcome types remain transparent; no abstract types or smart constructors.
-- `json_of_response` and `error_response` names preserved.
-- No `tethers_evaluation`, `tethers_response`, `tethers_types` modules.
-- No functors, module types, or abstraction layers.
-- Zero Rust changes; zero fixture changes.
+- No production code changes.
+- No test changes.
+- No fixture changes.
+- No dependency additions (no benchmarking crates, no unstable compiler features).
+- Measurement worktrees are temporary; no repository mutations to either measurement target.
+- Rust toolchain locked at 1.97.1.
 
 ## Acceptance criteria
 
-1. New OCaml interfaces compile — `dune build` PASS
-2. Parser no longer defines `Tethers_error` — grep confirms only `tethers_error.ml`/`.mli`
-3. `Tethers_error` is shared owner — single definition site
-4. `Tethers_outcome` owns response types — single definition site
-5. `Tethers_outcome` owns JSON encoder — `json_of_response` only in `tethers_outcome.ml`
-6. `Tethers_evaluator` exposes only `evaluate_request` — `.mli` has 1 line
-7. `process_line` no longer in evaluator — grep confirms only in `main.ml`
-8. Legacy line-engine behaviour unchanged — `test-engine.ps1` PASS (23 fixture cases + determinism + line-ending validation)
-9. MCP transcript/output behaviour unchanged — `test-mcp-transcripts.ps1` PASS (15 cases)
-10. Response JSON expectations unchanged — zero fixture diffs
-11. Rust host tests pass — `cargo test --locked` 1331 PASS, 0 FAIL, 2 ignored
-12. No Rust file changed — diff confirms zero
-13. No compatibility fixture changed — diff confirms zero
+1. Historical and F5 timings collected for cargo check, cargo test, cargo clippy — proven by raw timing table
+2. Environment recorded — proven by environment table
+3. P1 evidence gathered (application.rs line counts, cold/warm timings) — proven
+4. P2 evidence gathered (result_large_err sites, hot/cold path assessment) — proven
+5. Each hypothesis classified with honest causal limits — proven
+6. F6 authorisation table produced — proven
+7. Zero production/build/test/fixture changes — proven by git diff
+8. PERFORMANCE_BASELINE_R1.md exists with complete evidence — proven
 
 ## Required verification
 
-- `opam exec -- dune build`: PASS
-- `opam exec -- dune runtest`: PASS (0 OCaml native tests)
-- `pwsh -NoProfile -File tethers-0.1/scripts/test-engine.ps1`: PASS (23 fixture cases + determinism repeat + LF/CRLF/mixed line-ending validation)
-- `pwsh -NoProfile -File tethers-0.1/scripts/test-mcp-transcripts.ps1`: PASS (15 MCP transcript cases)
-- `pwsh -NoProfile -File scripts/check-fixtures.ps1`: 46 JSON + 30 JSONL valid (fixture-integrity evidence only; does not execute engine/MCP code)
-- `cargo test --locked`: 1331 PASS, 0 FAIL, 2 ignored
 - `git diff --check`: PASS
 - `check-tethers-task-packet.ps1`: PASS
+- `git diff --name-only -- tethers-0.1/host-rust/`: (empty)
+- `git diff --name-only -- tethers-0.1/engine-ocaml/`: (empty)
+- `git diff --name-only -- tethers-0.1/protocol/`: (empty)
+- `git diff --name-only HEAD~1..HEAD`: only authorised closeout files
 
 ## Forbidden changes confirmed not made
 
-- No Tethers language syntax changes
-- No evaluator semantics changes
-- No request/response JSON changes
-- No JSON field ordering changes
-- No error code/message changes
-- No variant/field renames
-- No `tethers_evaluation`, `tethers_response`, `tethers_types` modules
-- No functors, module types, or abstraction
-- No typed evaluator-input redesign (evaluation_id semantics preserved)
-- No Rust changes
-- No fixture changes
-- No F6+ work started
+- No production code modifications
+- No test modifications
+- No fixture modifications
+- No build file modifications
+- No dependency additions
+- No benchmarking crate installations
+- No refactoring to test hypotheses
+- No F6 optimisation work
 
 ## Stop conditions
 
@@ -122,5 +94,4 @@ NONE triggered.
 
 ## Expected pre-existing changes
 
-1. Implementation checkpoint `bcd0e09d` covers all production/build changes.
-2. Closeout docs (`CURRENT_CLINE_TASK.md`, worker note) are the only files after checkpoint.
+None. All changes are documentation/evidence only. Implementation checkpoint is WORKTREE because this task produces no implementation commits.
