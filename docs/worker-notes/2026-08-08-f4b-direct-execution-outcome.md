@@ -34,7 +34,17 @@ Remove the internal semantic round-trip where `execute_shared_boundary` called `
 
 **No other production file changed.** No OCaml. No `SharedExecutionOutcome` change. No `ExecutionServiceResult` change. No `ExecutionServiceError` change. No `InternalExecutionResult`.
 
-## execution_status inventory (application.rs)
+## Decisions and assumptions
+
+- `SharedExecutionResult { outcome, execution_id }` is the single typed return channel. A second `{ outcome, execution_id }` type would add no invariant.
+- The audit-failure override stays in `execute_shared_boundary` (the single outer point); `execute_boundary_impl` returns the execution-level semantic outcome unchanged.
+- `session_outcome` variable in `execute_boundary_impl` carries the provider-outcome classification through all post-execution terminal branches rather than re-matching each time.
+- `execution_status` writes continue for frozen presentation compatibility; they are never used as internal truth.
+- `ReplayDispatchResult` is `Copy`, so it can be used in both `set_replay_result` and the `SharedExecutionResult` construction without cloning.
+
+## Evidence
+
+### execution_status inventory (application.rs)
 
 All production references to `"execution_status"` are WRITES:
 
@@ -49,7 +59,7 @@ All production references to `"execution_status"` are WRITES:
 
 All reads are in test assertions verifying frozen presentation JSON. **No production path reads `execution_status` for internal semantic truth.**
 
-## Tests changed/added/removed
+### Tests changed/added/removed
 
 **Removed (2):**
 - `j14a_from_response_and_evidence_ignores_host_id_in_json` — tested removed `from_response_and_evidence`
@@ -63,7 +73,7 @@ All reads are in test assertions verifying frozen presentation JSON. **No produc
 - `j14a_direct_result_construction_requires_no_json` — proves `SharedExecutionResult` constructed without any JSON input
 - `j14a_response_execution_status_does_not_alter_typed_outcome` — proves `response["execution_status"]` value ("denied") does not alter the typed `SharedExecutionOutcome::Completed` in the result
 
-## Preserved behaviour confirmed
+### Preserved behaviour confirmed
 
 - Frozen response JSON (`execution_status` values): preserved
 - `execution_id` Some/None at each terminal branch: preserved
@@ -72,7 +82,7 @@ All reads are in test assertions verifying frozen presentation JSON. **No produc
 - All existing J14/J14B/J09 tests: passing
 - `map_shared_result` in `host_execution.rs`: unchanged
 
-## Verification against committed checkpoint `0dc2f56`
+### Verification against committed checkpoint `0dc2f56`
 
 | Check | Result |
 |-------|--------|

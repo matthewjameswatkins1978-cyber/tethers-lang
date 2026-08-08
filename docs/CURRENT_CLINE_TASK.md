@@ -19,15 +19,29 @@ Rust toolchain: `1.97.1`
 
 Remove the remaining internal semantic round-trip in the shared Rust execution boundary. `authorise_and_execute_inner` now returns `SharedExecutionResult` directly. `execute_boundary_impl` constructs the typed outcome at each terminal branch. Presentation JSON continues to be written for compatibility but is never read back for internal semantic truth.
 
-## Relevant background
+## Relevant background and existing behaviour
 
 F4a2 established the typed planner boundary. F4b finishes Foundation F4 by removing the last internal JSON string reconstruction (`from_response_and_evidence` reading `execution_status`). The JSON remains frozen as presentation/wire state.
 
-## Files changed
+Previously, `execute_shared_boundary` called `execute_boundary_impl` which returned `ExecutionBoundaryEvidence` (only the execution_id), then used `from_response_and_evidence` to read `response["execution_status"]` and reconstruct `SharedExecutionOutcome`. This internal JSON round-trip was the last dependency on JSON-as-semantic-truth in the shared execution boundary.
+
+## Required behaviour
+
+1. `authorise_and_execute_inner` returns `SharedExecutionResult` directly.
+2. `execute_boundary_impl` constructs `SharedExecutionResult { outcome, execution_id }` at every terminal branch.
+3. `execute_shared_boundary` performs audit-failure override on typed result.
+4. `ExecutionBoundaryEvidence` and `from_response_and_evidence` are removed from production.
+5. Frozen response JSON (`execution_status`) is still written for presentation compatibility but never read for semantic truth.
+6. `SharedExecutionOutcome` unchanged.
+7. `ExecutionServiceResult` and `ExecutionServiceError` untouched.
+8. No `InternalExecutionResult` or equivalent wrapper introduced.
+9. All existing `execution_id` Some/None semantics preserved at every terminal branch.
+
+## Relevant components
 
 `tethers-0.1/host-rust/src/application.rs` — 1 production file (122 insertions, 120 deletions)
 
-## Key changes
+Key changes:
 
 - `execute_boundary_impl` return type: `ExecutionBoundaryEvidence` → `SharedExecutionResult`
 - Every terminal branch constructs precise `SharedExecutionOutcome` at point of semantic truth
@@ -35,32 +49,67 @@ F4a2 established the typed planner boundary. F4b finishes Foundation F4 by remov
 - `authorise_and_execute_inner` returns `SharedExecutionResult` directly (no `map(|_| ())`)
 - Removed `ExecutionBoundaryEvidence` struct
 - Removed `from_response_and_evidence` method
-- Removed `execution_status` read-back from production shared execution flow
 - Wrapper functions (`authorise_and_execute`, etc.) retain `Result<(), ...>` with `.map(|_| ())`
-- `SharedExecutionOutcome` unchanged
-- `ExecutionServiceResult` and `ExecutionServiceError` untouched
-- `map_shared_result` in `host_execution.rs` unchanged (still receives typed `SharedExecutionResult`)
 
-## Tests
+## Frozen decisions and invariants
 
-- Removed: `j14a_from_response_and_evidence_ignores_host_id_in_json`, `j14a_from_response_and_evidence_no_id_when_evidence_is_none` (tested removed function)
-- Replaced: `j14a_audit_failure_without_evidence_has_no_id` → `j14a_audit_failure_without_id_is_none`, `j14a_audit_failure_with_evidence_carries_id` → `j14a_audit_failure_carries_trusted_id` (no longer use `ExecutionBoundaryEvidence`)
-- Added: `j14a_direct_result_construction_requires_no_json` (SharedExecutionResult constructed without any JSON), `j14a_response_execution_status_does_not_alter_typed_outcome` (proves JSON execution_status does not alter typed outcome)
+- `SharedExecutionOutcome` variant set is frozen: Completed, Failed, Uncertain, Unattempted, Denied, AuditFailed, Replay(ReplayDispatchResult).
+- `SharedExecutionResult { outcome, execution_id }` is the single typed internal return channel.
+- `ExecutionServiceResult` and `ExecutionServiceError` are not redesigned.
+- No `InternalExecutionResult` or equivalent.
+- Frozen response JSON continues to be written but never read for internal semantic truth.
+- No other production file changed.
+- No OCaml changed.
 
-## execution_status inventory
+## Acceptance criteria
 
-No production path reads `execution_status` for semantic truth. All production references are WRITES for frozen presentation. Test reads are all assertions on presentation JSON.
+1. All terminal branches in `execute_boundary_impl` return `SharedExecutionResult` with correct outcome and execution_id — verified by `cargo test --locked` (1331 PASS).
+2. `from_response_and_evidence` removed from production — confirmed by grep (zero production references).
+3. `ExecutionBoundaryEvidence` removed — confirmed by grep (zero production references, only one comment updated).
+4. No production path reads `response["execution_status"]` for semantic truth — confirmed by execution_status inventory (all production references are writes).
+5. Frozen JSON presentation preserved — all existing `response["execution_status"]` writes retained; all test assertions on presentation JSON pass.
+6. `SharedExecutionOutcome` unchanged — structure identical to base.
+7. `ExecutionServiceResult` and `ExecutionServiceError` untouched — confirmed via diff.
+8. No OCaml changed — confirmed via diff.
+9. No F5 started — confirmed.
 
-## Verification
+## Required verification
 
 - `cargo test --locked`: 1331 PASS, 0 FAIL, 2 ignored
 - `cargo fmt --manifest-path Cargo.toml -- --check`: application.rs clean; replay_windows.rs:3277 pre-existing discrepancy (proven, not F4b-introduced)
 - `git diff --check`: PASS
 - `check-tethers-task-packet.ps1`: PASS (post-closeout)
-- OCaml untouched
-- F5 not started
-- `SharedExecutionOutcome` unchanged
-- `ExecutionServiceResult` untouched
-- `ExecutionServiceError` untouched
-- No `InternalExecutionResult` or equivalent wrapper
-- No other production file changed
+- `execution_status` inventory: zero production reads for semantic truth
+
+## Forbidden changes
+
+- No `SharedExecutionOutcome` variant changes
+- No `ExecutionServiceResult` redesign
+- No `ExecutionServiceError` redesign
+- No `InternalExecutionResult` or equivalent
+- No OCaml changes
+- No F4a1/F4a2 code changes (beyond the F4b semantic boundary change)
+- No F5 structural extraction
+- No new dependencies
+- No `replay_windows.rs` changes
+
+## Stop conditions
+
+STOP if:
+- Exact JSON compatibility requires keeping semantic read-back
+- Removing read-back changes replay classification
+- Removing read-back changes execution identity behaviour
+- Audit failure cannot preserve current precedence
+- Another production module must change
+- ExecutionServiceResult must change
+- SharedExecutionOutcome must change
+- More than two genuinely new focused tests appear necessary
+- OCaml changes appear necessary
+
+NONE triggered.
+
+## Expected pre-existing changes
+
+1. Pre-existing `cargo fmt` discrepancy in `replay_windows.rs:3277` (proven, not F4b-introduced).
+2. Implementation checkpoint `0dc2f56c` covers all production/test changes.
+3. Closeout docs (`CURRENT_CLINE_TASK.md`, worker note) are the only files after checkpoint.
