@@ -26,7 +26,7 @@ F6 optimisation is constrained to "Address only F1-measured costs." The accepted
 | Cargo | cargo 1.97.1 (c980f4866 2026-06-30) |
 | PowerShell | 7.6.4 |
 | Cargo caches | Populated before each command (cargo fetch --locked) |
-| AC power | Likely (laptop, not on battery) |
+| AC power | Desktop system, always mains-powered (no battery detected) |
 | Workload | No obvious heavy competing workload |
 | Timestamp | 2026-08-08 18:58 +01:00 |
 
@@ -57,8 +57,8 @@ All commands measured from host-rust directory root unless otherwise noted.
 | `cargo check --all-targets --all-features --locked` | 21,356 | 298 | 258 | 259 | 259 | 0 |
 | `cargo test --all-targets --all-features --locked` | 51,554 | 13,083 | 13,050 | 12,959 | 13,050 | 101 (6 pre-existing failures) |
 | `cargo clippy --all-targets --all-features --locked -- -W clippy::all` | 21,215 | 426 | 364 | 377 | 377 | 0 (79 warnings) |
-| `just verify` | 67,955 | — | — | — | — | 1 (6 test failures) |
-| `just verify-agent` | 67,793 | — | — | — | — | 1 (6 test failures) |
+| `just verify` | 62,140 | 16,733 | 16,689 | 16,718 | 16,718 | 1 (6 test failures) |
+| `just verify-agent` | 59,832 | 16,935 | 16,855 | 16,675 | 16,855 | 1 (6 test failures) |
 
 ### Current F5 (`ea7426d`)
 
@@ -67,9 +67,10 @@ All commands measured from host-rust directory root unless otherwise noted.
 | `cargo check --all-targets --all-features --locked` | 19,083 | 284 | 254 | 255 | 255 | 0 (16 warnings) |
 | `cargo test --all-targets --all-features --locked` | 51,216 | 14,384 | 13,776 | 14,041 | 14,041 | 101 (6 failures) |
 | `cargo clippy --all-targets --all-features --locked -- -W clippy::all` | 22,485 | 403 | 381 | 371 | 381 | 0 (81 warnings) |
-| `just verify` | 3,385* | — | — | — | — | 1 (fmt check fail) |
+| `just verify` | 4,552 | 3,183 | 3,259 | 3,242 | 3,242 | 1 (fmt check short-circuit) |
+| `just verify-agent` | 3,203 | 3,258 | 3,367 | 3,424 | 3,367 | 1 (fmt check short-circuit) |
 
-**Note:** `just verify` at F5 fails quickly on `cargo fmt --check` (pre-existing `replay_windows.rs:3277` formatting discrepancy) before reaching the test stage, hence the anomalously low cold timing.
+**Note:** `just verify` and `just verify-agent` at F5 both fail on `cargo fmt --check` (pre-existing `replay_windows.rs:3277` formatting discrepancy) before reaching the cargo test stage. The timings represent this observed short-circuit path.
 
 ## Comparison
 
@@ -79,7 +80,7 @@ All commands measured from host-rust directory root unless otherwise noted.
 | cargo test | −338ms (−0.7%) | +991ms (+7.6%) |
 | cargo clippy | +1,270ms (+6.0%) | +4ms (+1.1%) |
 
-Warm timings are within noise. Cold check shows a small ~2.3s improvement at F5; this correlates with Foundation cleanup reducing warning count from 79 to 16, not specifically with any single file.
+Warm timings are within noise. The F5 cold cargo-check observation was ~2.3s lower in this run. These measurements do not attribute that difference to any specific Foundation change, warning count, file, or compiler behaviour.
 
 ## Variance notes
 
@@ -108,7 +109,7 @@ The very large `application.rs` may impose meaningful compile-time cost.
 
 - Crate-level timing cannot be attributed to a single file without per-file profiling. `cargo check` compiles all dependencies plus the crate; `application.rs` is one of many files.
 - The Foundation did not meaningfully change application.rs line count (4-line difference).
-- The ~2.3s cold-check improvement at F5 more likely reflects reduced warning count (79→16) and removed dead code rather than any change to application.rs specifically.
+- The F5 cold cargo-check observation was ~2.3s lower. These measurements do not attribute this difference to any specific change.
 - No profiling tool or `cargo -Z timings` was employed, as adding unstable features would require a dependency/configuration change.
 
 ### Classification

@@ -43,10 +43,10 @@ Measure cold/warm timings at the historical pre-Foundation baseline (`24428139`)
 | cargo check | 21,356 / 259 | 19,083 / 255 |
 | cargo test | 51,554 / 13,050 | 51,216 / 14,041 |
 | cargo clippy | 21,215 / 377 | 22,485 / 381 |
-| just verify | 67,955 / — | 3,385* / — |
-| just verify-agent | 67,793 / — | — |
+| just verify | 62,140 / 16,718 | 4,552 / 3,242 |
+| just verify-agent | 59,832 / 16,855 | 3,203 / 3,367 |
 
-*F5 just verify fails on fmt check before test stage.
+All commands have one cold run and three warm runs. F5 wrapper commands short-circuit on `cargo fmt --check` (pre-existing `replay_windows.rs:3277` discrepancy) before reaching the test stage.
 
 ### P1 (application.rs compile-time)
 
@@ -72,7 +72,8 @@ Measure cold/warm timings at the historical pre-Foundation baseline (`24428139`)
 ## Discoveries
 
 - The Foundation Pass did not materially change the cold test timing (~51s at both SHAs).
-- F5 reduced the clippy/cargo check warning count from 79 to 16, correlating with a ~10% cold check improvement.
+- F5 cold cargo check was ~2.3s lower. These measurements do not attribute this difference to any specific change, warning count, file, or compiler behaviour.
+- The F5 `just` wrapper commands short-circuit on `cargo fmt --check` before reaching the test stage.
 - Neither F1 hypothesis has measured evidence supporting F6 optimisation.
 
 ## Remaining risks

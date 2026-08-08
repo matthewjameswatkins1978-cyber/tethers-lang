@@ -59,8 +59,8 @@ Both were classified as unmeasured hypotheses requiring measurement before F6 co
 
 ## Acceptance criteria
 
-1. Historical timings collected for cargo check, cargo test, cargo clippy — proven by raw timing table
-2. Current-F5 timings collected for cargo check, cargo test, cargo clippy — proven by raw timing table
+1. Historical timings collected for cargo check, cargo test, cargo clippy, just verify, just verify-agent — proven by raw timing table
+2. Current-F5 timings collected for cargo check, cargo test, cargo clippy, just verify, just verify-agent — proven by raw timing table
 3. Environment recorded — proven by environment table
 4. P1 evidence gathered (application.rs line counts, cold/warm timings) — proven
 5. P2 evidence gathered (result_large_err sites, hot/cold path assessment) — proven
