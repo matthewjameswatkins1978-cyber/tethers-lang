@@ -72,10 +72,98 @@ type action_planning_result =
   | Actions_planned of Yojson.Safe.t list * string list * Yojson.Safe.t list
   | Action_planning_error of string * string * Yojson.Safe.t list
 
+type error_details = {
+  code : string;
+  message : string;
+}
+
+type planned_action = Yojson.Safe.t
+
+type trail_entry = Yojson.Safe.t
+
+type plan = {
+  id : string;
+  required_effects : string list;
+  actions : planned_action list;
+}
+
+type evaluation_context = {
+  evaluation_id : string;
+  event_id : string;
+  tether_id : string;
+  tether_version : string;
+}
+
+type status_payload =
+  | Matched of plan
+  | Not_matched
+  | Evaluation_error of error_details
+
+type contextual_result = {
+  context : evaluation_context;
+  payload : status_payload;
+  trail : trail_entry list;
+}
+
+type response =
+  | Contextual of contextual_result
+  | Request_error of error_details
+
 let unique values =
   List.fold_left
     (fun acc value -> if List.mem value acc then acc else acc @ [ value ])
     [] values
+
+let json_of_response = function
+  | Contextual
+      {
+        context = { evaluation_id; event_id; tether_id; tether_version };
+        payload;
+        trail;
+      } ->
+      let fields =
+        [
+          ("protocol_version", `String "0.1");
+          ("evaluation_id", `String evaluation_id);
+          ("event_id", `String event_id);
+          ("tether_id", `String tether_id);
+          ("tether_version", `String tether_version);
+        ]
+      in
+      let status, plan, error_field, trail_field =
+        match payload with
+        | Matched { id; required_effects; actions } ->
+            ( "matched",
+              `Assoc
+                [
+                  ("id", `String id);
+                  ( "required_effects",
+                    `List (List.map (fun e -> `String e) required_effects) );
+                  ("actions", `List actions);
+                ],
+              [],
+              [ ("trail", `List trail) ] )
+        | Not_matched ->
+            ("not_matched", `Null, [], [ ("trail", `List trail) ])
+        | Evaluation_error { code; message } ->
+            ( "error",
+              `Null,
+              [
+                ( "error",
+                  `Assoc
+                    [ ("code", `String code); ("message", `String message) ] );
+              ],
+              [ ("trail", `List trail) ] )
+      in
+      `Assoc (fields @ [ ("status", `String status); ("plan", plan) ] @ error_field @ trail_field)
+  | Request_error { code; message } ->
+      `Assoc
+        [
+          ("protocol_version", `String "0.1");
+          ("status", `String "error");
+          ( "error",
+            `Assoc [ ("code", `String code); ("message", `String message) ] );
+        ]
 
 let evaluate_request request =
   let protocol_version = json_string "protocol_version" request in
@@ -99,6 +187,7 @@ let evaluate_request request =
     json_list "capabilities" request |> List.map parse_capability
   in
   let () = check_unique_capabilities capabilities in
+  let context = { evaluation_id; event_id; tether_id; tether_version } in
   let base =
     [
       trail_entry 1 "reception" "event_received" "accepted"
@@ -109,35 +198,8 @@ let evaluate_request request =
         ^ if parsed.anchor = event_name then " matched" else " did not match");
     ]
   in
-  let response status plan trail =
-    `Assoc
-      [
-        ("protocol_version", `String "0.1");
-        ("evaluation_id", `String evaluation_id);
-        ("event_id", `String event_id);
-        ("tether_id", `String tether_id);
-        ("tether_version", `String tether_version);
-        ("status", `String status);
-        ("plan", plan);
-        ("trail", `List trail);
-      ]
-  in
-  let contextual_error_response code message trail =
-    `Assoc
-      [
-        ("protocol_version", `String "0.1");
-        ("evaluation_id", `String evaluation_id);
-        ("event_id", `String event_id);
-        ("tether_id", `String tether_id);
-        ("tether_version", `String tether_version);
-        ("status", `String "error");
-        ("plan", `Null);
-        ( "error",
-          `Assoc [ ("code", `String code); ("message", `String message) ] );
-        ("trail", `List trail);
-      ]
-  in
-  if parsed.anchor <> event_name then response "not_matched" `Null base
+  if parsed.anchor <> event_name then
+    Contextual { context; payload = Not_matched; trail = base }
   else
     let rec check_conditions sequence trail = function
       | [] -> Conditions_matched (sequence, trail)
@@ -162,8 +224,10 @@ let evaluate_request request =
     in
     match check_conditions 3 base parsed.conditions with
     | Condition_error (code, message, trail) ->
-        contextual_error_response code message trail
-    | Condition_not_matched (_, trail) -> response "not_matched" `Null trail
+        Contextual
+          { context; payload = Evaluation_error { code; message }; trail }
+    | Condition_not_matched (_, trail) ->
+        Contextual { context; payload = Not_matched; trail }
     | Conditions_matched (next_sequence, condition_trail) -> (
         let plan_result =
           try
@@ -264,31 +328,22 @@ let evaluate_request request =
         in
         match plan_result with
         | Action_planning_error (code, message, trail) ->
-            contextual_error_response code message trail
+            Contextual
+              { context; payload = Evaluation_error { code; message }; trail }
         | Actions_planned (actions, required_effects, trail) ->
-            let plan =
-              `Assoc
-                [
-                  ("id", `String (evaluation_id ^ "/plan"));
-                  ( "required_effects",
-                    `List (List.map (fun item -> `String item) required_effects)
-                  );
-                  ("actions", `List actions);
-                ]
-            in
-            response "matched" plan trail)
+            let plan = { id = evaluation_id ^ "/plan"; required_effects; actions } in
+            Contextual { context; payload = Matched plan; trail })
 
-let error_response code message =
-  `Assoc
-    [
-      ("protocol_version", `String "0.1");
-      ("status", `String "error");
-      ( "error",
-        `Assoc [ ("code", `String code); ("message", `String message) ] );
-    ]
+let error_response code message = Request_error { code; message }
 
 let process_line line =
-  try Yojson.Safe.from_string line |> evaluate_request with
-  | Tethers_error (code, message) -> error_response code message
-  | Yojson.Json_error message -> error_response "invalid_json" message
-  | exn -> error_response "internal_error" (Printexc.to_string exn)
+  try
+    let response = Yojson.Safe.from_string line |> evaluate_request in
+    json_of_response response
+  with
+  | Tethers_error (code, message) ->
+      json_of_response (error_response code message)
+  | Yojson.Json_error message ->
+      json_of_response (error_response "invalid_json" message)
+  | exn ->
+      json_of_response (error_response "internal_error" (Printexc.to_string exn))

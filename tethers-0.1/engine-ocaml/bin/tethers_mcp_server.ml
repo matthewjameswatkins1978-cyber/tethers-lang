@@ -162,7 +162,7 @@ let handle_tools_call id fields =
       | Some (`Assoc args) -> (
           match json_member_opt "request" args with
           | Some request ->
-              let tethers_response =
+              let response =
                 try Tethers_evaluator.evaluate_request request with
                 | Tethers_error (code, message) ->
                     Tethers_evaluator.error_response code message
@@ -171,6 +171,9 @@ let handle_tools_call id fields =
                 | exn ->
                     Tethers_evaluator.error_response "internal_error"
                       (Printexc.to_string exn)
+              in
+              let tethers_response =
+                Tethers_evaluator.json_of_response response
               in
               let compact_json = Yojson.Safe.to_string tethers_response in
               let result =
