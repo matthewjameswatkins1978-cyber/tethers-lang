@@ -59,14 +59,15 @@ Both were classified as unmeasured hypotheses requiring measurement before F6 co
 
 ## Acceptance criteria
 
-1. Historical and F5 timings collected for cargo check, cargo test, cargo clippy — proven by raw timing table
-2. Environment recorded — proven by environment table
-3. P1 evidence gathered (application.rs line counts, cold/warm timings) — proven
-4. P2 evidence gathered (result_large_err sites, hot/cold path assessment) — proven
-5. Each hypothesis classified with honest causal limits — proven
-6. F6 authorisation table produced — proven
-7. Zero production/build/test/fixture changes — proven by git diff
-8. PERFORMANCE_BASELINE_R1.md exists with complete evidence — proven
+1. Historical timings collected for cargo check, cargo test, cargo clippy — proven by raw timing table
+2. Current-F5 timings collected for cargo check, cargo test, cargo clippy — proven by raw timing table
+3. Environment recorded — proven by environment table
+4. P1 evidence gathered (application.rs line counts, cold/warm timings) — proven
+5. P2 evidence gathered (result_large_err sites, hot/cold path assessment) — proven
+6. Each hypothesis classified with honest causal limits — proven
+7. F6 authorisation table produced — proven
+8. Zero production/build/test/fixture changes — proven by git diff
+9. PERFORMANCE_BASELINE_R1.md exists with complete evidence — proven
 
 ## Required verification
 
