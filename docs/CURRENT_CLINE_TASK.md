@@ -11,7 +11,7 @@ Worker note: `docs/worker-notes/2026-08-08-f1-r1-performance-baseline.md`
 Base branch: `foundation/f5-ocaml-boundaries`
 Base commit: `ea7426dbeb1934cf336673d03ae2abf76146ea7d`
 Implementation branch: `foundation/f1-r1-performance-baseline`
-Implementation checkpoint: `41242a4fd6f8e85d3497a9e2f5eada92e1d33e8a`
+Implementation checkpoint: `41242a45963c8a7f751b6f6a93f1ad3fe2ae7320`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 
