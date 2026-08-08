@@ -4,13 +4,14 @@ Control contract: `1`
 Task: `F3e2a - Replay Claim evidence harvest`
 Owner: `DeepSeek Pro HIGH`
 Model: `DeepSeek Pro HIGH`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode implements F3e2a Replay Claim evidence harvest; do not describe all F3e or Replay as complete`
 Worker note: `docs/worker-notes/2026-08-08-f3e2a-replay-claim-evidence.md`
 Base branch: `main`
 Base commit: `dfae673407ecef38a9dcf8376b06ddbad4a97abc`
 Implementation branch: `foundation/f3e2a-replay-claim-evidence`
+Implementation checkpoint: `5248af24cca2eab6306d77c870ed63bc08ef3592`
 Parent branch: `main`
 Parent tip: `dfae673407ecef38a9dcf8376b06ddbad4a97abc`
 OCaml switch path: `N/A`
