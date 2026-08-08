@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `8a2ef5fdafb56faca59e47370c3d6e7892f5a437`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `d33932a60972d2021a1b58abf8c935236c86ed4d`
 
 ## Requested outcome
 
@@ -20,7 +20,6 @@ Replace the Rust host's repeated interpretation of raw planner `serde_json::Valu
 
 - `tethers-0.1/host-rust/src/engine_stdio.rs` — Added `PlannerResponseWire` enum (Matched, NotMatched, Error, Unknown). Added private `classify_wire_response` helper. Changed `evaluate_tether` return from `Result<Value, EngineError>` to `Result<PlannerResponseWire, EngineError>`. Added `j13b_wire_missing_or_non_string_status_is_engine_error` test.
 - `tethers-0.1/host-rust/src/host_execution.rs` — Added `PlannerErrorOutcome` enum (Contextual, Request) and `PlannerOutcome` enum (Matched, NotMatched, Error). Replaced `PlannerResponseRoute` with new types. Changed `classify_planner_response` to accept `PlannerResponseWire`, return `Result<PlannerOutcome, ExecutionServiceResult>`. Replaced `route_planner_response` with `route_planner_outcome`. Inlined `validate_planner_error_correlation` into `classify_planner_response`. Updated `evaluate_one` to stage through wire. Adapted all j13b tests. Added `j13b_extra_planner_response_fields_are_tolerated` test.
-- `tethers-0.1/host-rust/src/replay_windows.rs` — fmt-only line-break.
 
 ## Decisions and assumptions
 
@@ -55,18 +54,18 @@ Replace the Rust host's repeated interpretation of raw planner `serde_json::Valu
 
 ## Discoveries
 
-- `cargo fmt` corrected a pre-existing line-break in `replay_windows.rs` (unrelated assertion call).
+- `cargo fmt` attempted to normalise an unrelated pre-existing assertion line-break in `replay_windows.rs`; deliberately reverted to preserve F4a2 scope.
 - `wire_from_response` test helper added but not strictly needed; retained because it simplifies the correlation-mismatch loop.
 
 ## Remaining risks
 
 - `ExecutionServiceResult::PlannerError` still carries raw `code`/`message` strings rather than an enum; that is F4b scope.
-- Plan and Actions remain as raw `Value`; that is F5 scope.
-- `PlannerErrorOutcome` and `PlannerOutcome` are not `pub`; they remain private to `host_execution.rs`. Public exposure is F5 scope.
+- Plan and Actions remain raw `Value` by deliberate F4a2 scope. Further typing is deferred and not assigned by this task.
+- `PlannerErrorOutcome` and `PlannerOutcome` are not `pub`; they remain private to `host_execution.rs`. Public exposure is deferred.
 
 ## Smallest next action
 
-F4b: clean up `ExecutionServiceResult` sizing/clarity — DO NOT BEGIN without separate packet.
+F4b: inspect the broader ExecutionServiceResult/outcome boundary and tighten only if warranted by the Foundation F4 contract. DO NOT BEGIN without separate packet.
 
 ## References
 

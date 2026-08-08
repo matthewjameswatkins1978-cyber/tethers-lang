@@ -15,10 +15,8 @@ const DEFAULT_ENGINE_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Typed wire classification from the OCaml Tethers planner.
 ///
-/// Distinguishes the four legal MCP `structuredContent` statuses at the
-/// session boundary before the host performs correlation and shape
-/// validation.  An unknown string status is carried here as a valid wire
-/// variant; the host, not the session, decides its semantic meaning.
+/// Classifies known planner statuses and preserves an unknown string
+/// status for host-level semantic rejection.
 #[derive(Debug)]
 pub enum PlannerResponseWire {
     Matched(Value),
