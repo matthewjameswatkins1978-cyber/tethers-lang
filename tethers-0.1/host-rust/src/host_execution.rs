@@ -25,7 +25,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tethers_reference_host::child_process;
-use tethers_reference_host::engine_stdio::{EngineError, EngineSession};
+use tethers_reference_host::engine_stdio::{EngineError, EngineSession, PlannerResponseWire};
 
 // ===========================================================================
 // Prepared evaluation input
@@ -157,9 +157,26 @@ pub enum ExecutionServiceResult {
 }
 
 #[derive(Debug)]
-enum PlannerResponseRoute {
+enum PlannerErrorOutcome {
+    Contextual {
+        evaluation_id: String,
+        code: String,
+        message: String,
+    },
+    Request {
+        code: String,
+        message: String,
+    },
+}
+
+#[derive(Debug)]
+enum PlannerOutcome {
     Matched(Value),
-    Terminal(ExecutionServiceResult),
+    NotMatched {
+        evaluation_id: String,
+        response: Value,
+    },
+    Error(PlannerErrorOutcome),
 }
 
 // ===========================================================================
@@ -557,13 +574,13 @@ impl<'a> HostExecutionService<'a> {
         };
 
         // Call tethers.evaluate.
-        let tethers_response = match engine.evaluate_tether(&input.evaluation_id, &envelope) {
+        let wire_response = match engine.evaluate_tether(&input.evaluation_id, &envelope) {
             Ok(resp) => resp,
             Err(error) => return Self::classify_engine_evaluation_failure(input, error),
         };
 
-        let route = Self::classify_planner_response(input, tethers_response);
-        Self::route_planner_response(route, |matched| {
+        let outcome = Self::classify_planner_response(input, wire_response);
+        Self::route_planner_outcome(outcome, |matched| {
             self.dispatch_matched_response(
                 input,
                 matched,
@@ -613,13 +630,39 @@ impl<'a> HostExecutionService<'a> {
         Ok(request)
     }
 
-    fn route_planner_response<F>(route: PlannerResponseRoute, dispatch: F) -> ExecutionServiceResult
+    fn route_planner_outcome<F>(
+        outcome: Result<PlannerOutcome, ExecutionServiceResult>,
+        dispatch: F,
+    ) -> ExecutionServiceResult
     where
         F: FnOnce(Value) -> ExecutionServiceResult,
     {
-        match route {
-            PlannerResponseRoute::Matched(response) => dispatch(response),
-            PlannerResponseRoute::Terminal(result) => result,
+        match outcome {
+            Ok(PlannerOutcome::Matched(response)) => dispatch(response),
+            Ok(PlannerOutcome::NotMatched {
+                evaluation_id,
+                response,
+            }) => ExecutionServiceResult::NoActions {
+                evaluation_id,
+                response,
+            },
+            Ok(PlannerOutcome::Error(PlannerErrorOutcome::Contextual {
+                evaluation_id,
+                code,
+                message,
+            })) => ExecutionServiceResult::PlannerError {
+                evaluation_id: Some(evaluation_id),
+                code,
+                message,
+            },
+            Ok(PlannerOutcome::Error(PlannerErrorOutcome::Request { code, message })) => {
+                ExecutionServiceResult::PlannerError {
+                    evaluation_id: None,
+                    code,
+                    message,
+                }
+            }
+            Err(result) => result,
         }
     }
 
@@ -639,78 +682,88 @@ impl<'a> HostExecutionService<'a> {
 
     fn classify_planner_response(
         input: &PreparedEvaluationInput,
-        response: Value,
-    ) -> PlannerResponseRoute {
-        let Some(status) = response.get("status").and_then(Value::as_str) else {
-            return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
-                message: "planner response requires string status".to_owned(),
-            });
-        };
-        match status {
-            "matched" => match Self::validate_planner_correlation(input, &response) {
-                Ok(()) => PlannerResponseRoute::Matched(response),
-                Err(message) => {
-                    PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData { message })
-                }
-            },
-            "not_matched" => match Self::validate_planner_correlation(input, &response) {
-                Ok(()) => PlannerResponseRoute::Terminal(ExecutionServiceResult::NoActions {
+        wire: PlannerResponseWire,
+    ) -> Result<PlannerOutcome, ExecutionServiceResult> {
+        match wire {
+            PlannerResponseWire::Matched(response) => {
+                Self::validate_planner_correlation(input, &response)
+                    .map_err(|msg| ExecutionServiceResult::InvalidData { message: msg })?;
+                Ok(PlannerOutcome::Matched(response))
+            }
+            PlannerResponseWire::NotMatched(response) => {
+                Self::validate_planner_correlation(input, &response)
+                    .map_err(|msg| ExecutionServiceResult::InvalidData { message: msg })?;
+                Ok(PlannerOutcome::NotMatched {
                     evaluation_id: input.evaluation_id.clone(),
                     response,
-                }),
-                Err(message) => {
-                    PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData { message })
-                }
-            },
-            "error" => {
-                if let Err(message) = Self::validate_planner_error_correlation(input, &response) {
-                    return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
-                        message,
-                    });
-                }
-                let Some(error) = response.get("error").and_then(Value::as_object) else {
-                    return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
-                        message: "planner error response requires error object".to_owned(),
-                    });
-                };
-                let Some(code) = error.get("code").and_then(Value::as_str) else {
-                    return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
-                        message: "planner error response requires string error.code".to_owned(),
-                    });
-                };
-                let Some(message) = error.get("message").and_then(Value::as_str) else {
-                    return PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
-                        message: "planner error response requires string error.message".to_owned(),
-                    });
-                };
-                PlannerResponseRoute::Terminal(ExecutionServiceResult::PlannerError {
-                    evaluation_id: response
-                        .get("evaluation_id")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
-                    code: code.to_owned(),
-                    message: message.to_owned(),
                 })
             }
-            other => PlannerResponseRoute::Terminal(ExecutionServiceResult::InvalidData {
-                message: format!("planner response has unknown status '{other}'"),
-            }),
-        }
-    }
-
-    fn validate_planner_error_correlation(
-        input: &PreparedEvaluationInput,
-        response: &Value,
-    ) -> Result<(), String> {
-        Self::require_planner_field(response, "protocol_version", "0.1")?;
-        let correlation_fields = ["evaluation_id", "event_id", "tether_id", "tether_version"];
-        if correlation_fields
-            .iter()
-            .any(|field| response.get(*field).is_some())
-        {
-            Self::validate_planner_correlation(input, response)
-        } else {
-            Ok(())
+            PlannerResponseWire::Error(response) => {
+                Self::require_planner_field(&response, "protocol_version", "0.1")
+                    .map_err(|msg| ExecutionServiceResult::InvalidData { message: msg })?;
+                let correlation_fields =
+                    ["evaluation_id", "event_id", "tether_id", "tether_version"];
+                if correlation_fields
+                    .iter()
+                    .any(|field| response.get(*field).is_some())
+                {
+                    Self::validate_planner_correlation(input, &response)
+                        .map_err(|msg| ExecutionServiceResult::InvalidData { message: msg })?;
+                    let error = response
+                        .get("error")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| ExecutionServiceResult::InvalidData {
+                            message: "planner error response requires error object".to_owned(),
+                        })?;
+                    let code = error.get("code").and_then(Value::as_str).ok_or_else(|| {
+                        ExecutionServiceResult::InvalidData {
+                            message: "planner error response requires string error.code".to_owned(),
+                        }
+                    })?;
+                    let message =
+                        error
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| ExecutionServiceResult::InvalidData {
+                                message: "planner error response requires string error.message"
+                                    .to_owned(),
+                            })?;
+                    Ok(PlannerOutcome::Error(PlannerErrorOutcome::Contextual {
+                        evaluation_id: input.evaluation_id.clone(),
+                        code: code.to_owned(),
+                        message: message.to_owned(),
+                    }))
+                } else {
+                    let error = response
+                        .get("error")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| ExecutionServiceResult::InvalidData {
+                            message: "planner error response requires error object".to_owned(),
+                        })?;
+                    let code = error.get("code").and_then(Value::as_str).ok_or_else(|| {
+                        ExecutionServiceResult::InvalidData {
+                            message: "planner error response requires string error.code".to_owned(),
+                        }
+                    })?;
+                    let message =
+                        error
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| ExecutionServiceResult::InvalidData {
+                                message: "planner error response requires string error.message"
+                                    .to_owned(),
+                            })?;
+                    Ok(PlannerOutcome::Error(PlannerErrorOutcome::Request {
+                        code: code.to_owned(),
+                        message: message.to_owned(),
+                    }))
+                }
+            }
+            PlannerResponseWire::Unknown { status, .. } => {
+                Err(ExecutionServiceResult::InvalidData {
+                    message: format!("planner response has unknown status '{status}'"),
+                })
+            }
         }
     }
 
@@ -1401,15 +1454,25 @@ mod tests {
         })
     }
 
+    fn wire_from_response(status: &str, response: Value) -> PlannerResponseWire {
+        match status {
+            "matched" => PlannerResponseWire::Matched(response),
+            "not_matched" => PlannerResponseWire::NotMatched(response),
+            "error" => PlannerResponseWire::Error(response),
+            other => PlannerResponseWire::Unknown {
+                status: other.to_owned(),
+                response,
+            },
+        }
+    }
+
     #[test]
     fn j13b_matched_response_validates_every_correlation_before_dispatch() {
         let input = planner_input();
-        let route = HostExecutionService::classify_planner_response(
-            &input,
-            correlated_planner_response("matched"),
-        );
+        let wire = PlannerResponseWire::Matched(correlated_planner_response("matched"));
+        let outcome = HostExecutionService::classify_planner_response(&input, wire);
         let mut dispatch_calls = 0;
-        let result = HostExecutionService::route_planner_response(route, |response| {
+        let result = HostExecutionService::route_planner_outcome(outcome, |response| {
             dispatch_calls += 1;
             assert_eq!(response["status"], "matched");
             ExecutionServiceResult::InvalidData {
@@ -1423,12 +1486,10 @@ mod tests {
     #[test]
     fn j13b_not_matched_is_no_actions_without_dispatch() {
         let input = planner_input();
-        let route = HostExecutionService::classify_planner_response(
-            &input,
-            correlated_planner_response("not_matched"),
-        );
+        let wire = PlannerResponseWire::NotMatched(correlated_planner_response("not_matched"));
+        let outcome = HostExecutionService::classify_planner_response(&input, wire);
         let mut dispatch_calls = 0;
-        let result = HostExecutionService::route_planner_response(route, |_| {
+        let result = HostExecutionService::route_planner_outcome(outcome, |_| {
             dispatch_calls += 1;
             ExecutionServiceResult::Interrupted
         });
@@ -1452,8 +1513,11 @@ mod tests {
             "error": {"code": "parse_error", "message": "invalid Tether source"}
         });
 
-        let correlated_result = HostExecutionService::route_planner_response(
-            HostExecutionService::classify_planner_response(&input, correlated),
+        let correlated_result = HostExecutionService::route_planner_outcome(
+            HostExecutionService::classify_planner_response(
+                &input,
+                PlannerResponseWire::Error(correlated),
+            ),
             |_| ExecutionServiceResult::Interrupted,
         );
         assert!(matches!(
@@ -1465,8 +1529,11 @@ mod tests {
             } if evaluation_id == "eval-correlation-1" && code == "type_error"
         ));
 
-        let minimal_result = HostExecutionService::route_planner_response(
-            HostExecutionService::classify_planner_response(&input, minimal),
+        let minimal_result = HostExecutionService::route_planner_outcome(
+            HostExecutionService::classify_planner_response(
+                &input,
+                PlannerResponseWire::Error(minimal),
+            ),
             |_| ExecutionServiceResult::Interrupted,
         );
         assert!(matches!(
@@ -1526,8 +1593,11 @@ mod tests {
                 wrong["error"] =
                     serde_json::json!({"code": "type_error", "message": "invalid condition"});
                 wrong[field] = Value::String("wrong".to_owned());
-                let wrong_result = HostExecutionService::route_planner_response(
-                    HostExecutionService::classify_planner_response(&input, wrong),
+                let wrong_result = HostExecutionService::route_planner_outcome(
+                    HostExecutionService::classify_planner_response(
+                        &input,
+                        wire_from_response(status, wrong),
+                    ),
                     |_| ExecutionServiceResult::Interrupted,
                 );
                 assert!(
@@ -1539,8 +1609,11 @@ mod tests {
                 missing["error"] =
                     serde_json::json!({"code": "type_error", "message": "invalid condition"});
                 missing.as_object_mut().unwrap().remove(field);
-                let missing_result = HostExecutionService::route_planner_response(
-                    HostExecutionService::classify_planner_response(&input, missing),
+                let missing_result = HostExecutionService::route_planner_outcome(
+                    HostExecutionService::classify_planner_response(
+                        &input,
+                        wire_from_response(status, missing),
+                    ),
                     |_| ExecutionServiceResult::Interrupted,
                 );
                 assert!(
@@ -1552,18 +1625,17 @@ mod tests {
     }
 
     #[test]
-    fn j13b_missing_or_unknown_planner_status_is_invalid_data() {
+    fn j13b_unknown_planner_status_is_invalid_data() {
         let input = planner_input();
-        let mut missing = correlated_planner_response("matched");
-        missing.as_object_mut().unwrap().remove("status");
-        let unknown = correlated_planner_response("completed");
-        for response in [missing, unknown] {
-            let result = HostExecutionService::route_planner_response(
-                HostExecutionService::classify_planner_response(&input, response),
-                |_| ExecutionServiceResult::Interrupted,
-            );
-            assert!(matches!(result, ExecutionServiceResult::InvalidData { .. }));
-        }
+        let unknown = PlannerResponseWire::Unknown {
+            status: "completed".to_owned(),
+            response: correlated_planner_response("completed"),
+        };
+        let result = HostExecutionService::route_planner_outcome(
+            HostExecutionService::classify_planner_response(&input, unknown),
+            |_| ExecutionServiceResult::Interrupted,
+        );
+        assert!(matches!(result, ExecutionServiceResult::InvalidData { .. }));
     }
 
     #[test]
@@ -1598,20 +1670,21 @@ mod tests {
         });
         let mut mismatch = correlated_planner_response("matched");
         mismatch["event_id"] = Value::String("wrong-event".to_owned());
-        let mut missing_status = correlated_planner_response("matched");
-        missing_status.as_object_mut().unwrap().remove("status");
+        let unknown = PlannerResponseWire::Unknown {
+            status: "unknown".to_owned(),
+            response: correlated_planner_response("unknown"),
+        };
 
-        for response in [
-            correlated_planner_response("not_matched"),
-            correlated_error,
-            minimal_error,
-            mismatch,
-            missing_status,
-            correlated_planner_response("unknown"),
+        for wire in [
+            PlannerResponseWire::NotMatched(correlated_planner_response("not_matched")),
+            PlannerResponseWire::Error(correlated_error),
+            PlannerResponseWire::Error(minimal_error),
+            PlannerResponseWire::Matched(mismatch),
+            unknown,
         ] {
-            let route = HostExecutionService::classify_planner_response(&input, response);
+            let outcome = HostExecutionService::classify_planner_response(&input, wire);
             let mut dispatch_calls = 0;
-            let _ = HostExecutionService::route_planner_response(route, |_| {
+            let _ = HostExecutionService::route_planner_outcome(outcome, |_| {
                 dispatch_calls += 1;
                 ExecutionServiceResult::Interrupted
             });
@@ -1620,6 +1693,18 @@ mod tests {
                 "planner terminal route must stop before replay/provider dispatch"
             );
         }
+    }
+
+    #[test]
+    fn j13b_extra_planner_response_fields_are_tolerated() {
+        let input = planner_input();
+        let mut response = correlated_planner_response("matched");
+        response["extra_field"] = serde_json::json!("unrelated");
+        let outcome = HostExecutionService::classify_planner_response(
+            &input,
+            PlannerResponseWire::Matched(response),
+        );
+        assert!(matches!(outcome, Ok(PlannerOutcome::Matched(_))));
     }
 
     /// Structured scope without binding-owned WithinScope evidence cannot

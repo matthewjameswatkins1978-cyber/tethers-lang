@@ -1,71 +1,74 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F4a1 — OCaml Typed Evaluation Outcome Boundary`
+Task: `F4a2 — Rust Typed Planner Response Boundary`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
 Status: `COMPLETE`
 Task colour: `Amber`
-Route: `OpenCode implements F4a1 OCaml typed evaluation outcome boundary; do not begin F4a2`
-Worker note: `docs/worker-notes/2026-08-08-f4a1-ocaml-evaluation-outcome.md`
-Base branch: `main`
-Base commit: `5a3ce59a2d6840fb083b5b6ec1a405962e9cddd2`
-Implementation branch: `foundation/f4a1-ocaml-evaluation-outcome`
-OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
+Route: `OpenCode implements F4a2 Rust typed planner response boundary; do not begin F4b or F5`
+Worker note: `docs/worker-notes/2026-08-08-f4a2-rust-planner-boundary.md`
+Base branch: `foundation/f4a1-ocaml-evaluation-outcome`
+Base commit: `8a2ef5fdafb56faca59e47370c3d6e7892f5a437`
+F4a1 implementation checkpoint: `6326e5672b1bd34cc3054a9b42488727de61b7e1`
+Implementation branch: `foundation/f4a2-rust-planner-boundary`
+OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
 
 ## Objective
 
-Replace direct construction of semantically significant Tethers planner JSON inside the OCaml evaluator with a small typed evaluation-result model and ONE exhaustive JSON encoder.
-
-Preserve the exact existing Tethers 0.1 protocol behaviour.
+Replace the Rust host's repeated interpretation of raw planner `serde_json::Value` status strings with a deliberately staged typed boundary: MCP structuredContent -> PlannerResponseWire -> host correlation/protocol validation -> PlannerOutcome -> existing execution machinery. Rust counterpart to accepted F4a1.
 
 ## Relevant background and existing behaviour
 
-The current `tethers_evaluator.ml` constructs JSON response envelopes directly via inner functions `response` and `contextual_error_response`. These construct `Yojson.Safe.t` using string statuses (`"matched"`, `"not_matched"`, `"error"`) within evaluation branches. The `evaluate_request` function returns `Yojson.Safe.t` directly, and `error_response` separately builds request-level error JSON. This means the evaluator leaves its typed OCaml domain at evaluation boundaries, permitting impossible semantic combinations.
+`EngineSession::evaluate_tether` returned raw `serde_json::Value` and required status to exist as a string. `HostExecutionService::classify_planner_response` switched on raw status strings ("matched", "not_matched", "error") and performed correlation validation inline. `PlannerResponseRoute` had two variants: Matched(Value) and Terminal(ExecutionServiceResult).
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml` — primary edit target
-- `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` — caller update for new typed interface
-- `tethers-0.1/scripts/test-engine.ps1` — protocol fixture validation
-- `tethers-0.1/scripts/test-mcp-transcripts.ps1` — MCP transcript validation
+- `tethers-0.1/host-rust/src/engine_stdio.rs` — Stage 1 wire boundary
+- `tethers-0.1/host-rust/src/host_execution.rs` — Stage 2 validated outcome boundary
 
 ## Required behaviour
 
-1. Introduce semantic types (error_details, planned_action, trail_entry, plan, evaluation_context, status_payload, contextual_result, response) in tethers_evaluator.ml
-2. Create json_of_response encoder
-3. evaluate_request returns response type
-4. error_response returns response type
-5. Update process_line to use json_of_response
-6. Update MCP server to use json_of_response
-7. Preserve exact wire shapes for all four response variants
-8. Preserve field ordering
-9. Preserve empty-array rule
-10. Preserve exception topology (protocol/language version checks still raise Tethers_error)
+1. Introduce PlannerResponseWire enum in engine_stdio.rs
+2. Change evaluate_tether to return PlannerResponseWire
+3. Add missing/non-string status proof at engine boundary
+4. Introduce PlannerOutcome and PlannerErrorOutcome enums in host_execution.rs
+5. classify_planner_response stages from wire to validated outcome
+6. route_planner_outcome exhaustively routes all variants
+7. Preserve exact correlation semantics
+8. Preserve error validation order
+9. Preserve unknown extra-field tolerance
+10. Adapt all existing tests without weakening assertions
 
 ## Frozen decisions and invariants
 
-- Do not change protocol wire shapes
-- Do not modify tethers_protocol.ml or tether_parser.ml
-- Do not change fixture files
-- Do not begin Rust-side decoder
-- Preserve exception topology
+- No strict Serde tagged decoder
+- No deny_unknown_fields
+- Raw matched Value deliberately retained
+- No CorrelatedPlannerResponse wrapper
+- No ExecutionServiceResult redesign
+- No OCaml changes (F4a1 accepted)
+- Missing/non-string status stays at engine boundary
+- Unknown string status stays at host boundary
 
 ## Forbidden changes
 
-- No production code changes outside tethers_evaluator.ml and tethers_mcp_server.ml
-- No fixture changes
-- No Rust changes
-- No new dependencies
+- No production changes outside engine_stdio.rs and host_execution.rs
+- No OCaml changes
+- No Strict Serde decoding
+- No fully typing Plan or Actions
+- No beginning F4b or F5
 
 ## Stop conditions
 
 STOP if:
-- Protocol fixtures fail after correct implementation
+- Missing-status behaviour conflicts with wire enum
+- Exact correlation semantics cannot be retained
+- New module becomes necessary
+- Production changes spread beyond two files
 - Two materially similar attempts fail
-- A contradiction between frozen wire contract and type model emerges
 
 ## Expected pre-existing changes
 
@@ -73,21 +76,22 @@ None
 
 ## Acceptance criteria
 
-1. Semantic types (error_details, planned_action, plan, evaluation_context, status_payload, contextual_result, response) compile and are used in tethers_evaluator.ml
-2. json_of_response encoder exists and is the single encoding path from response to Yojson.Safe.t
-3. evaluate_request returns response type, not Yojson.Safe.t
-4. error_response returns response type, not Yojson.Safe.t
-5. process_line calls json_of_response on the typed response
-6. MCP server calls Tethers_evaluator.json_of_response on the typed response
-7. All four response variants produce exact wire shapes matching the frozen protocol contract
-8. Field ordering matches the current JSON output
-9. Empty arrays (required_effects, actions) serialize as `[]` not `null`
-10. Protocol/language version mismatches still raise Tethers_error, caught as Request_error by callers
+1. PlannerResponseWire enum with four variants (Matched, NotMatched, Error, Unknown)
+2. PlannerOutcome enum with three variants (Matched, NotMatched, Error)
+3. PlannerErrorOutcome enum with Contextual and Request variants
+4. evaluate_tether returns PlannerResponseWire
+5. classify_planner_response returns Result<PlannerOutcome, ExecutionServiceResult>
+6. missing/non-string status -> EngineError::EvaluationFailed proved at engine boundary
+7. unknown string status -> InvalidData proved at host boundary
+8. Exact correlation semantics preserved for matched/not_matched/error
+9. Extra-field tolerance maintained
+10. All 1331 host tests pass, formatting clean
 
 ## Required verification
 
 ```powershell
+cargo test --locked --manifest-path tethers-0.1/host-rust/Cargo.toml
+cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
 git diff --check
-powShell -ExecutionPolicy Bypass -File tethers-0.1\scripts\test-engine.ps1
 ```

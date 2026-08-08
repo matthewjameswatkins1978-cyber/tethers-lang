@@ -3277,7 +3277,9 @@ mod tests {
         std::fs::rename(&g0_path, &temp).unwrap();
         std::fs::rename(&g1_path, &g0_path).unwrap();
         std::fs::rename(&temp, &g1_path).unwrap();
-        assert!(!g0_path.with_file_name("g0000000000000000.json.tmp").exists());
+        assert!(!g0_path
+            .with_file_name("g0000000000000000.json.tmp")
+            .exists());
         assert!(ReplayLedger::open(&root).is_err());
     }
 }

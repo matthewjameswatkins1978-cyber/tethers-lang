@@ -13,6 +13,20 @@ const ENGINE_INITIALIZE_ID: u64 = 1;
 const VALIDATION_REQUEST_BASE_ID: u64 = 100;
 const DEFAULT_ENGINE_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Typed wire classification from the OCaml Tethers planner.
+///
+/// Distinguishes the four legal MCP `structuredContent` statuses at the
+/// session boundary before the host performs correlation and shape
+/// validation.  An unknown string status is carried here as a valid wire
+/// variant; the host, not the session, decides its semantic meaning.
+#[derive(Debug)]
+pub enum PlannerResponseWire {
+    Matched(Value),
+    NotMatched(Value),
+    Error(Value),
+    Unknown { status: String, response: Value },
+}
+
 /// Errors from engine session operations.
 #[derive(Debug)]
 pub enum EngineError {
@@ -218,15 +232,14 @@ impl EngineSession {
     /// Evaluate a fully-formed Tethers 0.1 request through the retained engine.
     ///
     /// Sends `tools/call` with `tethers.evaluate` and the complete request
-    /// envelope.  Returns the Tethers planner response from
-    /// `result.structuredContent`.  A Tethers response with `status: "error"`
-    /// is valid planner data and is returned normally; only MCP transport
-    /// errors are treated as failures.
+    /// envelope.  Returns a typed wire classification; a Tethers response
+    /// with `status: "error"` is valid planner data and is classified as
+    /// `PlannerResponseWire::Error`, not an engine transport failure.
     pub fn evaluate_tether(
         &mut self,
         evaluation_id: &str,
         request_envelope: &Value,
-    ) -> Result<Value, EngineError> {
+    ) -> Result<PlannerResponseWire, EngineError> {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
 
@@ -245,21 +258,11 @@ impl EngineSession {
         Self::write_json(&mut self.child, &request)?;
         let result = Self::read_json(&mut self.child, request_id, "tools/call", self.read_timeout)?;
 
-        // Extract structuredContent.  The Tethers planner response lives here.
-        // A `status: "error"` inside structuredContent is planner data, not an
-        // MCP transport failure.
         let structured = result.get("structuredContent").cloned().ok_or_else(|| {
             EngineError::ProtocolError("tools/call result missing structuredContent".to_owned())
         })?;
 
-        // Validate that we got a recognizable Tethers response with a status field.
-        match structured.get("status").and_then(Value::as_str) {
-            Some(_) => Ok(structured),
-            None => Err(EngineError::EvaluationFailed {
-                evaluation_id: evaluation_id.to_owned(),
-                message: "Tethers response missing status field".to_owned(),
-            }),
-        }
+        classify_wire_response(evaluation_id, structured)
     }
 
     pub fn stderr_tail(&self) -> String {
@@ -333,6 +336,25 @@ impl EngineSession {
             .get("result")
             .cloned()
             .unwrap_or(Value::Object(Default::default())))
+    }
+}
+
+fn classify_wire_response(
+    evaluation_id: &str,
+    response: Value,
+) -> Result<PlannerResponseWire, EngineError> {
+    match response.get("status").and_then(Value::as_str) {
+        Some("matched") => Ok(PlannerResponseWire::Matched(response)),
+        Some("not_matched") => Ok(PlannerResponseWire::NotMatched(response)),
+        Some("error") => Ok(PlannerResponseWire::Error(response)),
+        Some(other) => Ok(PlannerResponseWire::Unknown {
+            status: other.to_owned(),
+            response,
+        }),
+        None => Err(EngineError::EvaluationFailed {
+            evaluation_id: evaluation_id.to_owned(),
+            message: "Tethers response missing status field".to_owned(),
+        }),
     }
 }
 
@@ -441,9 +463,12 @@ mod tests {
                 "reversibility": "compensatable"
             }]
         });
-        let response = session
+        let wire = session
             .evaluate_tether("eval_j13b_real_001", &request)
             .expect("real retained tethers.evaluate call");
+        let PlannerResponseWire::Matched(response) = wire else {
+            panic!("expected Matched wire, got {wire:?}");
+        };
         assert_eq!(response["evaluation_id"], "eval_j13b_real_001");
         assert_eq!(response["event_id"], "evt_j13b_real_001");
         assert_eq!(response["status"], "matched");
@@ -451,12 +476,30 @@ mod tests {
         let mut second_request = request;
         second_request["evaluation_id"] = Value::String("eval_j13b_real_002".to_owned());
         second_request["event"]["id"] = Value::String("evt_j13b_real_002".to_owned());
-        let second = session
+        let second_wire = session
             .evaluate_tether("eval_j13b_real_002", &second_request)
             .expect("second real retained tethers.evaluate call");
+        let PlannerResponseWire::Matched(second) = second_wire else {
+            panic!("expected Matched wire, got {second_wire:?}");
+        };
         assert_eq!(second["evaluation_id"], "eval_j13b_real_002");
         assert_eq!(second["event_id"], "evt_j13b_real_002");
         assert_eq!(second["status"], "matched");
         session.shutdown();
+    }
+
+    #[test]
+    fn j13b_wire_missing_or_non_string_status_is_engine_error() {
+        let missing = serde_json::json!({"protocol_version": "0.1", "evaluation_id": "eval-1"});
+        let result = classify_wire_response("eval-1", missing);
+        assert!(matches!(result, Err(EngineError::EvaluationFailed { .. })));
+
+        let non_string = serde_json::json!({"status": 42, "protocol_version": "0.1"});
+        let result = classify_wire_response("eval-1", non_string);
+        assert!(matches!(result, Err(EngineError::EvaluationFailed { .. })));
+
+        let unknown_string = serde_json::json!({"status": "completed", "evaluation_id": "eval-1"});
+        let result = classify_wire_response("eval-1", unknown_string);
+        assert!(matches!(result, Ok(PlannerResponseWire::Unknown { .. })));
     }
 }
