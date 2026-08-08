@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `OpenCode`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `a9c2862adfd3bca5c7c253609c397ad9a59c5ac8`
 
-Implementation checkpoint: `PLACEHOLDER_WILL_BE_REPLACED_AFTER_COMMIT`
+Implementation checkpoint: `e4f7f098e89053fa2fb4f61b1a0b94147b22ebe4`
 
 ## Requested outcome
 
@@ -33,7 +33,12 @@ Fix the demonstrated process defect where COMPLETE tasks could pass the packet c
 
 ## Evidence
 
-Final verification to be run against the committed implementation checkpoint. Documents the committed checkpoint SHA below.
+Verification run against committed implementation checkpoint `e4f7f098e89053fa2fb4f61b1a0b94147b22ebe4`:
+
+- `pwsh -NoProfile -File .github/scripts/test-check-tethers-task-packet.ps1` — 7/7 passed (A: COMPLETE+WORKTREE rejected, B: BLOCKED+WORKTREE allowed, C: nonexistent SHA rejected, D: valid checkpoint+closeout-only passes, E: production-after-checkpoint rejected, F: arbitrary-doc-after-checkpoint rejected, G: packet+worker-note closeout passes)
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` — PASS (control-v1/IN_PROGRESS at checkpoint; destined for COMPLETE after closeout docs)
+- `git diff --check` — PASS (whitespace clean)
+- No Rust or OCaml product code changed
 
 ## Discoveries
 

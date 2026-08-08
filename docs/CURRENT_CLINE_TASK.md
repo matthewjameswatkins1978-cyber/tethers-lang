@@ -4,7 +4,7 @@ Control contract: `1`
 Task: `Control — Permanent Worker-Evidence Hardening`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode implements control-system hardening; no product semantics`
 Worker note: `docs/worker-notes/2026-08-08-control-worker-evidence-finalization.md`
