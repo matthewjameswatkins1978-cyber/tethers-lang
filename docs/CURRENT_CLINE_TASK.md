@@ -95,4 +95,4 @@ NONE triggered.
 
 ## Expected pre-existing changes
 
-None. All changes are documentation/evidence only. Implementation checkpoint is WORKTREE because this task produces no implementation commits.
+This evidence-only task uses the committed evidence checkpoint recorded above; it contains no production/build/test/fixture changes.

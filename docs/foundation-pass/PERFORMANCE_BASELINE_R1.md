@@ -162,4 +162,4 @@ A type-size warning alone is not an operational performance measurement. No evid
 
 ## Conclusion
 
-Neither F1 performance hypothesis is supported by measured evidence. The operational costs at F5 are comparable to or better than the historical baseline. F6 has no authorised production optimisation.
+Neither F1 performance hypothesis is supported by measured evidence. The directly comparable cargo measurements show no attributed material cost authorising F6 optimisation. The F5 just-wrapper observations short-circuit on the pre-existing formatting failure and therefore are not performance-comparable with the historical full-path wrapper runs. F6 has no authorised production optimisation.

@@ -51,7 +51,7 @@ All commands have one cold run and three warm runs. F5 wrapper commands short-ci
 ### P1 (application.rs compile-time)
 
 - application.rs: 8,260 (hist) vs 8,264 (F5) lines — effectively unchanged
-- Cold check: 21.4s (hist) / 19.1s (F5) — small improvement, likely from Foundation cleanup
+- Cold check: 21.4s (hist) / 19.1s (F5) — ~2.3s lower in this observation; no cause is attributed
 - Warm check: essentially identical (~255ms)
 - **Classification: UNATTRIBUTED COST — NOT AUTHORISED FOR F6**
 
