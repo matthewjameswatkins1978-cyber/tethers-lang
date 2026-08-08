@@ -10,7 +10,7 @@ Status: `COMPLETE`
 
 Base commit: `5a3ce59a2d6840fb083b5b6ec1a405962e9cddd2`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `6326e5672b1bd34cc3054a9b42488727de61b7e1`
 
 ## Requested outcome
 
@@ -21,6 +21,7 @@ Replace direct construction of semantically significant Tethers planner JSON ins
 - `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml` — Introduced typed evaluation outcome model (error_details, planned_action, plan, evaluation_context, status_payload, contextual_result, response). Replaced inner JSON-constructing `response` and `contextual_error_response` functions with direct construction of typed `response` values. Changed `evaluate_request` return from `Yojson.Safe.t` to `response`. Changed `error_response` return from `Yojson.Safe.t` to `response`. Added `json_of_response` as the single exhaustive encoder from `response` to `Yojson.Safe.t`. Updated `process_line` to compose through `json_of_response`.
 - `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` — Updated `handle_tools_call` to call `Tethers_evaluator.json_of_response` on the typed `response` before serialization.
 - `docs/CURRENT_CLINE_TASK.md` — Updated to F4a1 task packet.
+- `docs/worker-notes/2026-08-08-f4a1-ocaml-evaluation-outcome.md` — This worker note.
 
 ## Decisions and assumptions
 
@@ -34,9 +35,9 @@ Replace direct construction of semantically significant Tethers planner JSON ins
 - `dune build` — PASS (no warnings)
 - `test-engine.ps1` — PASS (28/28 cases, including deterministic repeat, LF/CRLF)
 - `test-mcp-transcripts.ps1` — PASS (15/15 cases)
-- `check-tethers-task-packet.ps1` — PASS (control-v1/IN_PROGRESS)
+- `check-tethers-task-packet.ps1` — PASS (control-v1/COMPLETE)
 - `git diff --check` — PASS (whitespace clean)
-- `git status --short` — 3 files modified: task packet, evaluator, MCP server
+- Committed implementation checkpoint `6326e5672b1bd34cc3054a9b42488727de61b7e1` contains 4 changed files from the accepted F3 base: 2 production (`tethers_evaluator.ml`, `tethers_mcp_server.ml`) and 2 documentation (`CURRENT_CLINE_TASK.md`, worker note)
 
 ## Discoveries
 
@@ -55,4 +56,7 @@ F4a2: Rust-side typed response decoder boundary (DO NOT BEGIN without separate p
 - `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml` — modified
 - `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` — modified
 - `docs/CURRENT_CLINE_TASK.md` — F4a1 task packet
-- Branch: `foundation/f4a1-ocaml-evaluation-outcome` at `5a3ce59a2d6840fb083b5b6ec1a405962e9cddd2`
+- `docs/worker-notes/2026-08-08-f4a1-ocaml-evaluation-outcome.md` — this note
+- Branch: `foundation/f4a1-ocaml-evaluation-outcome`
+- Implementation checkpoint: `6326e5672b1bd34cc3054a9b42488727de61b7e1`
+- Base commit: `5a3ce59a2d6840fb083b5b6ec1a405962e9cddd2`
