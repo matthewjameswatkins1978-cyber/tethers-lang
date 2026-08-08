@@ -4,14 +4,14 @@ Control contract: `1`
 Task: `F7a-R1 — Evidence Repair`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode repairs F7a evidence defects only; no production changes`
 Worker note: `docs/worker-notes/2026-08-08-f7a-r1-evidence-repair.md`
 Base branch: `foundation/f7a-test-contract-reconciliation`
 Base commit: `532126810ad51dfbf6d75472854c9cb49d8d0811`
 Implementation branch: `foundation/f7a-r1-evidence-repair`
-Implementation checkpoint: `N/A`
+Implementation checkpoint: `fd0149ffbf83f677534ae0bbf58fdf767381584c`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 
