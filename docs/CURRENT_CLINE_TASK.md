@@ -19,6 +19,15 @@ Rust toolchain: `1.97.1`
 
 Reconcile the F1 test/debt inventory against the current accepted Foundation state before any F7 test-suite modification. This is an EVIDENCE-ONLY audit.
 
+## Relevant background and existing behaviour
+
+The F1 baseline audit identified three ledger debts:
+- M7: No OCaml-native tests exist.
+- M8: Test modules inside Rust `src/` — dedicated `*_tests.rs` files under `src/` blur the production/test boundary.
+- M9: Test infrastructure had `pub(crate)` visibility at the time of F1.
+
+Since F1, Foundation pass F5 introduced stable `.mli` boundaries for `Tether_parser`, `Tethers_error`, `Tethers_outcome`, and `Tethers_evaluator`. Intervening Rust host work restructured test module declarations. This audit reconciles the current state against each debt.
+
 ## Required behaviour
 
 1. Determine which F1 F7 debts still exist.
@@ -77,6 +86,17 @@ DO NOT consolidate, move, add, delete, rename, or rewrite tests.
 - `git diff --name-only -- tethers-0.1/protocol/`: (empty)
 - `git diff --name-only HEAD~1..HEAD`: only authorised closeout files
 
+## Forbidden changes
+
+- No production code modifications
+- No test modifications
+- No fixture modifications
+- No build file modifications
+- No dependency additions
+- No F7b implementation work
+- No F8 work
+- No test consolidation/move/rename
+
 ## Stop conditions
 
 STOP if the audit demonstrates:
@@ -86,6 +106,10 @@ STOP if the audit demonstrates:
 - a language/protocol/Trail/replay semantic change;
 - a dependency addition;
 - a production/test/build modification.
+
+## Expected pre-existing changes
+
+None — this evidence-only task starts from the exact base commit with a clean tree; only task-packet and documentation updates are permitted after the audit checkpoint.
 
 ## Output document
 
