@@ -332,6 +332,49 @@ Anchor root reparse safety, which remains `UNVERIFIED (F3b)`.
 No directly demonstrated production defect arose from this evidence pass, so
 `DEBT_LEDGER.md` is intentionally unchanged.
 
+---
+
+## F3e1 Evidence — Trail evidence harvest
+
+Date: 2026-08-07
+Baseline: `c9332bab072ce273db3aecc367faf64be71a8586` (accepted F3d)
+Branch: `foundation/f3e1-trail-evidence`
+Implementation checkpoint: `fb07c607a5c938d326489a03a7e1b474d6e88461`
+Evidence sources:
+- `tethers-0.1/host-rust/src/dispatch.rs` inline tests (F3b Trail characterization + F3e1 path safety)
+- `tethers-0.1/host-rust/src/trail_command.rs` inline tests (production reader)
+
+F3e1 was an evidence harvest only. Three characterization tests were added to close the remaining F3b UNVERIFIED gaps. No production code changed and no defect was found.
+
+### Trail evidence summary
+
+| Property | Status | Test | Exact Hard Assertion |
+|---|---|---|---|
+| Append order preserved | PROVEN | `trail_multiple_complete_lines_ordered_and_parseable` (dispatch.rs) | `assert_eq!(parsed[i]["arguments"]["idx"], i as u64)` |
+| One JSONL record per completed write | PROVEN | `trail_complete_line_survives_close_and_reopen` (dispatch.rs) | `assert_eq!(lines.len(), 1)` |
+| Flush/sync accepted | PROVEN (F3b) | F3b-1: `sync_all_rename_bytes_survive_close_and_reopen` (f3b_windows_persistence_evidence.rs) — sync survival proven at primitive level | Exact bytes survive close/reopen after sync |
+| Close/reopen readback | PROVEN | 4 tests: `trail_complete_line_survives_close_and_reopen`, `trail_multiple_complete_lines_ordered_and_parseable`, `file_trail_writes_durable_jsonl_intent`, `file_trail_writes_durable_intent_and_outcome` (dispatch.rs) | Hard line-count and content assertions |
+| Truncated final line: raw bytes present and non-parseable | PROVEN (F3b) | `trail_truncated_final_line_present_and_non_parseable` (dispatch.rs) | `assert!(parse_result.is_err())` |
+| Production reader classification of truncated final line | PROVEN | `f3e1_truncated_final_line_maps_to_audit_failed` (trail_command.rs) | `assert_eq!(envelope["status"], "audit_failed"); assert_eq!(envelope["error"]["code"], "TRAIL_INVALID")` |
+| Malformed complete line fails entire file | PROVEN | 6 `j13c_*_maps_to_audit_failed` tests (trail_command.rs): bad JSON, blank line, non-object, duplicate keys, non-string execution_id, oversize line | `assert_eq!(envelope["status"], "audit_failed")` |
+| Fail-closed: later malformed line prevents all output | PROVEN | `j13c_malformed_later_prevents_all_output` (trail_command.rs) | `assert!(result.is_err())` |
+| Execution_id filtering | PROVEN | 5 tests: `j13c_matching_entries_returned_in_original_order`, `j13c_unrelated_execution_ids_omitted`, `j13c_valid_audit_entries_without_execution_id_skipped`, `j13c_zero_matches_maps_to_not_found`, `j13c_non_string_execution_id_maps_to_audit_failed` (trail_command.rs) | Exact entry counts, content, and not-found assertions |
+| FileTrail::open accepts relative paths | PROVEN | `f3e1_file_trail_open_accepts_relative_path` (dispatch.rs) | `assert!(abs_path.exists())` |
+| Path validation inside FileTrail::open | DISPROVEN | `f3e1_file_trail_open_accepts_relative_path` (dispatch.rs) — relative path accepted without validation | Relative path succeeds; file created |
+| Power-loss durability | UNVERIFIED (F3b) | Never upgrade | — |
+| Directory-entry durability | UNVERIFIED (F3b) | Never upgrade | — |
+| Parent-directory flush in production | DISPROVEN (F3b) | Source audit: no store performs parent-directory flush | — |
+
+### F3e1 findings
+
+- Production reader correctly fail-closes on truncated final line (TRAIL_INVALID, entire file rejected).
+- FileTrail::open() provides no root/reparse/chain/absolute-path validation; callers (application.rs, run_trail()) enforce path safety independently.
+- No production defect found.
+- Replay was untouched.
+- 58 Trail tests pass (55 existing + 3 new F3e1 characterization tests).
+
+---
+
 ## Changes Made in F3a
 
 ### Initial F3a pass

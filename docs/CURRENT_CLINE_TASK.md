@@ -1,211 +1,107 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F3d - Remaining bounded persistence stores`
-Owner: `Codex`
-Model: `GPT-5.6`
+Task: `F3e1 - Trail evidence harvest`
+Owner: `DeepSeek Pro HIGH`
+Model: `DeepSeek Pro HIGH`
 Status: `COMPLETE`
 Task colour: `Amber`
-Route: `Codex completed the bounded F3d evidence correction; Lucy independently reviews before F3e`
-Worker note: `docs/worker-notes/2026-08-07-f3d-bounded-persistence-stores.md`
+Route: `OpenCode completed F3e1 Trail evidence harvest; do not describe all F3e as complete`
+Worker note: `docs/worker-notes/2026-08-07-f3e1-trail-evidence.md`
 Base branch: `main`
-Base commit: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
-Implementation branch: `foundation/f3d-bounded-persistence-stores`
+Base commit: `c9332bab072ce273db3aecc367faf64be71a8586`
+Implementation branch: `foundation/f3e1-trail-evidence`
 Parent branch: `main`
-Parent tip: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
-Preparation checkpoint: `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
-Implementation checkpoint: `c9fbe555f9c6dd8f72d857dedaf5ca4954c248e2`
+Parent tip: `c9332bab072ce273db3aecc367faf64be71a8586`
+Implementation checkpoint: `fb07c607a5c938d326489a03a7e1b474d6e88461`
 OCaml switch path: `N/A`
 Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
 
 ## Objective
 
-Complete the persistence contract audit for the remaining bounded non-Trail/non-Replay stores.
+Audit Trail/FileTrail only as the append-only causal-log persistence store.
+This was an evidence harvest, not a redesign and not a general persistence task.
 
-For each store, determine whether the current implementation already satisfies its intended immutable/current-state/journal contract. Add characterization tests for untested properties. Repair only a directly demonstrated defect.
+First answer: what is already directly proved about Trail, and what remains genuinely unverified?
 
-## Central evidence rule
+## F3e1 scope
 
-For every claimed property separate:
-
-1. **Observed implementation**
-2. **Directly tested property**
-3. **Remaining uncertainty**
-
-And:
-
-**PROVEN means there is a hard assertion that fails if that exact statement is false.**
-
-Do not infer correctness from comments, function names, or nearby tests.
-
-## F3d scope — 9 stores
-
-### Immutable records (StoreRoot-backed)
-
-1. **Candidate Registry** (`candidate.rs`)
-2. **Publisher Trust Store** (`trust.rs`, `PublisherTrustStore`)
-3. **Developer Approval Store** (`trust.rs`)
-4. **Launch Profile Evidence** (`launch_profile.rs`)
-5. **Conformance Evidence** (`conformance.rs`)
-6. **Installation Approval** (`installed.rs`, lines 46-320)
-7. **Installed Plug Registry** — record-store contract only (`installed.rs`, lines 322-1474)
-8. **Enablement Records** (`enablement.rs`)
-
-### Remaining bounded journal (own filesystem access)
-
-9. **Local Anchor Admission Store** (`local_anchor.rs`)
-
-### Already closed elsewhere
-
-- Installation Publication Intent: accepted F3c
-- Installation Recovery Staging/journal: accepted F3c
-- Trail: F3e
-- Replay: F3e
-- Installation Execution Lock: coordination artifact
-
-## F3d evidence dimensions
-
-For each store, characterize across these dimensions:
-
-| Dimension | What to prove |
-|---|---|
-| Create conflict | Cannot silently overwrite different record; duplicate behaviour deterministic |
-| Canonical identity | One canonical filename/path; record digest or identity validated on read |
-| Duplicate behaviour | Exact duplicate create deterministic; duplicate logical identity fails closed |
-| Malformed/torn state | Malformed bytes fail closed; .tmp remnants surfaced |
-| Close/reopen | Valid record survives ordinary close/reopen |
-| Corruption detection | Digest mismatch detected; corrupt record not treated as absence |
-| Filename/content agreement | Filename identity disagreement fails closed |
-| Chain/history validation | Where applicable: predecessor chain, ordering, restart reconstruction |
-| Unsafe-path protection | Root validation, ancestor/reparse checks, escape prevention |
-| Power-loss durability | UNVERIFIED (F3b) — never upgrade |
-| Directory-entry durability | UNVERIFIED (F3b) — never upgrade |
-
-## Required behaviour
-
-1. F3d-1 — Immutable create contract: For each immutable store, characterize create conflict, canonical identity, duplicate behaviour, malformed/torn state, filename/content agreement.
-
-2. F3d-2 — Restart/readback truth: For each store, characterize close/reopen survival, corruption detection, chain validation.
-
-3. F3d-3 — Unsafe-path protection: For each store, characterize root validation, reparse checks, escape prevention. PROVEN only with direct negative test.
-
-4. F3d-4 — Chain/history stores: For Publisher Trust and Enablement, characterize predecessor chain and restart reconstruction.
-
-5. F3d-5 — Installed Plug Registry record boundary: Characterize record identity, create/conflict, digest validation, filename agreement, corruption classification. No publication sequencing changes.
-
-6. F3d-6 — Local Anchor journal contract: Characterize event/admission identity, duplicate semantics, completion/evaluation, restart reconstruction, malformed handling, path safety.
+Trail only — `FileTrail` (dispatch.rs:320-405) as writer and `run_trail()` (trail_command.rs:27) as production reader. Replay was not touched.
 
 ## Relevant components
 
-All files under `tethers-0.1/host-rust/src/`:
-- `candidate.rs`
-- `trust.rs`
-- `launch_profile.rs`
-- `conformance.rs`
-- `installed.rs`
-- `enablement.rs`
-- `local_anchor.rs`
-- `m3_store.rs`
-- `f3d_bounded_persistence_stores_evidence.rs` (new)
+- `tethers-0.1/host-rust/src/dispatch.rs` — FileTrail, Trail trait, inline tests
+- `tethers-0.1/host-rust/src/trail_command.rs` — production reader, inline tests
+- `docs/foundation-pass/PERSISTENCE_INVENTORY.md` — F3b Trail row
 
-Existing test files:
-- `candidate.rs` inline tests
-- `installation_trust.rs` (no inline tests; tested via `current_trust_tests.rs`)
-- `trust.rs` inline tests
-- `launch_profile.rs` (no inline tests)
-- `conformance.rs` (no inline tests)
-- `current_trust_tests.rs`
-- `enablement.rs` inline tests
-- `local_anchor.rs` inline tests
+## Evidence dimensions checked
 
-Documentation:
-- `docs/architecture/TETHERS_FOUNDATION_PASS.md`
-- `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
-- `docs/foundation-pass/DEBT_LEDGER.md`
+1. Append order
+2. One JSONL record per completed write
+3. Flush/sync behaviour already established by F3b
+4. Ordinary close/reopen readback
+5. Truncated final-line behaviour
+6. Malformed complete-line behaviour
+7. Production reader classification of malformed/truncated records
+8. Execution_id filtering behaviour
+9. Whether previous valid lines remain readable when the final line is damaged
+10. Path safety actually provided by FileTrail::open()
 
 ## Relevant background and existing behaviour
 
-F3a established the persistence inventory (4 classes: Immutable Atomic Record, Replaceable Current-State Record, Append-Only Causal Log, Multi-Step Intent/Recovery Journal). F3b characterized Windows primitive behaviour (sync_all + rename survival, parent-directory flush feasibility, power-loss UNVERIFIED). F3c audited Installation Publication Intent and Recovery.
+F3a classified Trail as an append-only causal log. F3b characterized Windows flush/sync primitives and established that truncated final lines are present and non-parseable by raw serde_json, but the production Trail reader (trail_command.rs:run_trail()) was not exercised. F3d explicitly excluded Trail and Replay.
 
-The 9 remaining stores vary in maturity of existing test coverage:
-- Candidate Registry has inline tests for torn .tmp, filename mismatch, duplicate identity, unsafe path
-- Publisher Trust Store (`PublisherTrustStore` in `trust.rs`) has chain validation, torn-state, and restart tests in `trust.rs`; `ExactCandidateTrustStore` in `installation_trust.rs` is a separate installation-evidence store and is not Publisher Trust.
-- Developer Approval Store has basic approve/find test in trust.rs
-- Launch Profile Evidence has comprehensive inline tests in j24h_installation_evidence_access.rs
-- Conformance Evidence has tests in m3_lifecycle.rs and j24j_installation_reconciliation.rs
-- Installation Approval is exercised through integration tests (j24k2, m3_lifecycle)
-- Installed Plug Registry record contract is exercised through m3_lifecycle.rs and CLI tests
-- Enablement Records have inline enable/disable/availability test
-- Local Anchor Admission Store has comprehensive inline tests for duplicate, conflict, restart, corruption
+## Required behaviour
 
-Seven stores use StoreRoot as shared infrastructure. F3d does not treat that
-shared implementation as proof for a consuming store: each PROVEN property must
-name its own direct hard assertion. Candidate Registry and Local Anchor have
-custom filesystem access.
-
-All files under `tethers-0.1/host-rust/src/`:
-- `candidate.rs`
-- `trust.rs`
-- `launch_profile.rs`
-- `conformance.rs`
-- `installed.rs`
-- `enablement.rs`
-- `local_anchor.rs`
-- `m3_store.rs`
-- `f3d_bounded_persistence_stores_evidence.rs` (new)
-
-Existing test files:
-- `candidate.rs` inline tests
-- `installation_trust.rs` (no inline tests; tested via `current_trust_tests.rs`)
-- `trust.rs` inline tests
-- `launch_profile.rs` (no inline tests)
-- `conformance.rs` (no inline tests)
-- `current_trust_tests.rs`
-- `installation_recovery_*.rs` test files
-- `enablement.rs` inline tests
-- `local_anchor.rs` inline tests
-
-Documentation:
-- `docs/architecture/TETHERS_FOUNDATION_PASS.md`
-- `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
-- `docs/foundation-pass/DEBT_LEDGER.md`
+1. F3e1-1 — Harvest existing Trail tests and map every property to PROVEN/DISPROVEN/UNVERIFIED with exact test citations and hard assertions.
+2. F3e1-2 — Exercise the production reader with a truncated final line to close the remaining F3b UNVERIFIED gap.
+3. F3e1-3 — Characterize path safety actually provided by FileTrail::open().
+4. F3e1-4 — Record exact remaining UNVERIFIED properties. Do not upgrade F3b claims.
+5. F3e1-5 — No production code changed. Replay untouched.
 
 ## Frozen decisions and invariants
 
-- Accepted main: `40ec42eb2aac108901d428af3cbfe264d3edd6dc` (F3c merged)
-- F3d is audit and characterization. Repair only directly demonstrated defects.
-- No global persistence redesign. No StoreRoot rewrite.
-- F3b UNVERIFIED platform properties preserved.
-- No F3c architecture reopened.
-- Trail, Replay untouched.
+- Accepted F3d main: `c9332bab072ce273db3aecc367faf64be71a8586`
+- F3b UNVERIFIED platform properties preserved
+- Trail is append-only causal log — no conversion to atomic records
+- No production code redesign
+- Replay untouched
 
-## Acceptance criteria
+## F3e1 findings
 
-1. F3d characterization tests covering all 9 stores, with evidence matrix.
-2. PERSISTENCE_INVENTORY.md updated with F3d evidence.
-3. DEBT_LEDGER.md updated only for demonstrated defects.
-4. F1 fixtures byte-identical.
-5. Complete branch diff: tests + documentation only (unless a repair required).
-6. F3d worker note records exact evidence and findings.
+Three characterization tests added (tests only, no production changes):
+
+1. `f3e1_truncated_final_line_maps_to_audit_failed` (trail_command.rs) — production reader classifies truncated final line as TRAIL_INVALID (fail-closed). Was F3b UNVERIFIED; now PROVEN.
+2. `f3e1_file_trail_open_has_no_path_validation` (dispatch.rs) — FileTrail::open() has no root/reparse/chain validation.
+3. `f3e1_file_trail_open_accepts_relative_path` (dispatch.rs) — FileTrail::open() accepts relative paths without validation. Path validation inside FileTrail::open is DISPROVEN.
+
+No defect found. Replay untouched. 58 Trail tests pass.
+
+## Remaining UNVERIFIED
+
+- Power-loss durability: UNVERIFIED (F3b) — never upgrade
+- Directory-entry durability: UNVERIFIED (F3b) — never upgrade
+- Parent-directory flush in production: DISPROVEN (F3b)
 
 ## Forbidden changes
 
-- Universal persistence abstraction
-- StoreRoot redesign
-- Parent-directory flushing
-- Trail/Replay modification
-- F3c publication/recovery architecture changes
-- CLI, JSON, exit codes, protocol, fixture changes
-- Weakening existing negative tests
-- Beginning F3e
+- Touch Replay
+- Redesign Trail
+- Convert Trail to atomic records
+- Add checksums/digests
+- Add persistence abstraction
+- Modify CLI/JSON/Trail public shape
+- Change F1 fixtures
+- Upgrade F3b UNVERIFIED claims
+- Begin F4 or F3e2
 
 ## Stop conditions
 
 STOP if:
-- `origin/main` differs from `40ec42eb2aac108901d428af3cbfe264d3edd6dc`
+- `origin/main` differs from `c9332bab072ce273db3aecc367faf64be71a8586`
 - A required property cannot be characterized
-- A repair would require redesign outside F3d
+- A repair would require redesign outside F3e1
 - A required check fails
 - Two materially similar attempts fail
 
@@ -213,26 +109,20 @@ STOP if:
 
 None
 
+## Acceptance criteria
+
+1. Trail evidence map across 10 dimensions.
+2. Exact remaining UNVERIFIED properties recorded.
+3. PERSISTENCE_INVENTORY.md updated with F3e1 Trail evidence.
+4. F3e1 worker note records exact evidence and findings.
+5. No production code changed.
+6. Replay untouched.
+
 ## Required verification
 
 ```powershell
-git fetch origin --prune
-git rev-parse origin/main
-git rev-parse HEAD
-git status --short --branch
-
 cargo fmt --all -- --check
-cargo check --all-targets --all-features --locked
-cargo test --all-targets --all-features --locked
-cargo clippy --all-targets --all-features --locked -- -W clippy::all
-
-just verify
-just verify-agent
-
+cargo test --lib -- trail
 pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
-
-git diff --exit-code origin/main...HEAD -- docs/foundation-pass/fixtures
-git diff --check origin/main...HEAD
-git diff --name-only origin/main...HEAD
-git status --short --branch
+git diff --check
 ```
