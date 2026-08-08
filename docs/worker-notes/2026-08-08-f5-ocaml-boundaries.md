@@ -1,136 +1,77 @@
-# F5 — OCaml Semantic and Error Boundary Extraction
+# Worker Note — F5 OCaml Semantic and Error Boundary Extraction
 
-**Status:** COMPLETE
-**Date:** 2026-08-08
-**Owner:** OpenCode
+Task: `F5 — OCaml Semantic and Error Boundary Extraction`
+Task packet: `docs/CURRENT_CLINE_TASK.md`
+Owner: `OpenCode`
+Status: `COMPLETE`
+Base commit: `9b5fdd47a885309ac04575065ba7cb0e6cf48693`
+Implementation checkpoint: `bcd0e09d4384b61d74cce4f5a5b823a237618eeb`
 
-## Git references
+## Requested outcome
 
-- Accepted base SHA: `9b5fdd47a885309ac04575065ba7cb0e6cf48693`
-- Branch: `foundation/f5-ocaml-boundaries`
-- Implementation checkpoint: `bcd0e09d4384b61d74cce4f5a5b823a237618eeb`
+Extract the stable error boundary to `Tethers_error` and the stable outcome boundary to `Tethers_outcome`, add `.mli` interfaces to enforce ownership, move transport to `main.ml`, with no product capability, no semantic redesign, no protocol migration, no Rust changes.
 
-## Changed files
+## Changes made
 
-### NEW (6)
-- `tethers-0.1/engine-ocaml/bin/tethers_error.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_error.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_outcome.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_outcome.mli`
-- `tethers-0.1/engine-ocaml/bin/tether_parser.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.mli`
+### New modules (6)
+- `tethers_error.ml` + `.mli` — engine-wide `exception Tethers_error` and `fail` helper
+- `tethers_outcome.ml` + `.mli` — response types (`error_details`, `planned_action`, `trail_entry`, `plan`, `evaluation_context`, `status_payload`, `contextual_result`, `response`), `json_of_response`, `error_response`
+- `tether_parser.mli` — transparent AST: `value`, `operator`, `condition`, `action`, `tether`, `drop_prefix`, `parse_tether`
+- `tethers_evaluator.mli` — single line: `val evaluate_request : Yojson.Safe.t -> Tethers_outcome.response`
 
-### MODIFIED (6)
-- `tethers-0.1/engine-ocaml/bin/tether_parser.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_protocol.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml`
-- `tethers-0.1/engine-ocaml/bin/main.ml`
-- `tethers-0.1/engine-ocaml/bin/dune`
+### Modified modules (6)
+- `tether_parser.ml` — removed `exception Tethers_error` and `fail`; added `open Tethers_error`; `fail` now resolved from shared module
+- `tethers_protocol.ml` — added `open Tethers_error` for `fail`
+- `tethers_evaluator.ml` — removed outcome types (37 lines), `json_of_response` (50 lines), `error_response` (1 line), `process_line` (14 lines); added `open Tethers_outcome` and `open Tethers_error`; internal types `condition_result` and `action_planning_result` preserved
+- `tethers_mcp_server.ml` — added `open Tethers_error`; `Tethers_evaluator.error_response` → `Tethers_outcome.error_response`; `Tethers_evaluator.json_of_response` → `Tethers_outcome.json_of_response`
+- `main.ml` — now owns `process_line` with exact same catch logic; calls `Tethers_evaluator.evaluate_request`, uses `Tethers_outcome.*`
+- `dune` — added `tethers_error` and `tethers_outcome` to both executable module lists
 
-## Interfaces
+## Decisions and assumptions
 
-### Tethers_error.mli
-```ocaml
-exception Tethers_error of string * string
-val fail : string -> string -> 'a
-```
+- Evaluator input model preserved: complete `Yojson.Safe.t` -> `Tethers_outcome.response`. No typed evaluator-input redesign. Reason: `evaluation_id` participates directly in deterministic `plan.id` and `idempotency_key` generation.
+- Outcome types remain transparent (no abstract types, no smart constructors). The evaluator is the legitimate producer; exhaustive variants and structural records are useful compiler-visible contracts.
+- `condition_result` and `action_planning_result` remain internal to the evaluator — they are implementation detail of `check_conditions` and `plan_actions`, not the public outcome contract.
+- No `tethers_protocol.mli` created. Compilation contradiction did not arise.
+- No OCaml native tests exist in the repository. Engine behaviour coverage is through integration fixture scripts and Rust host tests.
 
-### Tethers_outcome.mli
-Transparent semantic model with `error_details`, `planned_action`, `trail_entry`, `plan`, `evaluation_context`, `status_payload`, `contextual_result`, `response`.
-Exposes `error_response` and `json_of_response`.
-
-### Tether_parser.mli
-Transparent AST: `value`, `operator`, `condition`, `action`, `tether`.
-Exposes `drop_prefix` and `parse_tether`.
-No longer exposes `Tethers_error` or `fail`.
-
-### Tethers_evaluator.mli
-Single entrypoint: `val evaluate_request : Yojson.Safe.t -> Tethers_outcome.response`
-
-## External parser-symbol inventory
-
-Symbols used outside `tether_parser.ml`:
-
-| Symbol | Used by |
-|--------|---------|
-| `value` type + constructors | protocol, evaluator |
-| `operator` type + constructors | evaluator |
-| `condition` type + fields | evaluator |
-| `action` type + fields | evaluator |
-| `tether` type + fields | evaluator, MCP server |
-| `parse_tether` | evaluator, MCP server |
-| `drop_prefix` | evaluator |
-| `Tethers_error` exception | (moved to Tethers_error) |
-| `fail` | (moved to Tethers_error) |
-
-All required symbols exposed in `.mli`. No additional symbols needed.
-
-## Ownership proofs
-
-- **Shared Tethers_error ownership:** `tethers_error.ml` is the single definition site. Grep confirms only `tethers_error.ml:1` and `tethers_error.mli:1` declare `exception Tethers_error`. Parser no longer owns it.
-- **`fail` ownership:** Single definition at `tethers_error.ml:3`.
-- **Outcome type ownership:** `Tethers_outcome` is the single definition site for all response types.
-- **JSON encoder ownership:** `json_of_response` defined only in `tethers_outcome.ml:38`.
-- **process_line ownership:** Only in `main.ml:1`.
-- **Evaluator entrypoint:** `.mli` has exactly 1 line: `evaluate_request`.
-
-## Preserved invariants
-
-- Evaluator input remains complete `Yojson.Safe.t` request JSON
-- `evaluation_id` semantics unchanged
-- `plan.id` generation unchanged (`evaluation_id ^ "/plan"`)
-- `idempotency_key` generation unchanged (`evaluation_id ^ "/" ^ action_id`)
-- Outcome types remain transparent (no abstract types, no smart constructors)
-- `response` name preserved
-- `json_of_response` name preserved
-- `error_response` name preserved
-- `process_line` moved to `main.ml`, exact behaviour preserved
-- No `tethers_evaluation` module created
-- No `tethers_types` module created
-- No `tethers_protocol.mli` created
-- No typed evaluator-input redesign
-
-## Compatibility tests harvested
-
-1. `pwsh -NoProfile -File scripts/check-fixtures.ps1` — validates 46 JSON + 30 JSONL fixture files
-2. `cargo test --locked` — 1331 Rust host tests exercise engine integration
-3. `dune build` — compiles both executables
-4. `dune runtest` — 0 OCaml native tests (recorded honestly)
-
-## Verification results
+## Evidence
 
 | Check | Result |
 |-------|--------|
 | `opam exec -- dune build` | PASS |
 | `opam exec -- dune runtest` | PASS (0 native tests) |
-| `check-fixtures.ps1` | PASS (46 JSON, 30 JSONL) |
+| `pwsh -NoProfile -File scripts/check-fixtures.ps1` | PASS (46 JSON, 30 JSONL) |
 | `cargo test --locked` | 1331 PASS, 0 FAIL, 2 ignored |
 | `git diff --check` | PASS |
+| `rg "exception Tethers_error"` in bin/ | Only `tethers_error.ml` + `.mli` |
+| `rg "let fail "` in bin/ | Only `tethers_error.ml` |
+| `rg "process_line"` in bin/ | Only `main.ml` |
+| `rg "let json_of_response"` in bin/ | Only `tethers_outcome.ml` |
+| `rg "let error_response"` in bin/ | Only `tethers_outcome.ml` |
+| `tethers_evaluator.mli` line count | 1 line |
 | `git diff --name-only -- tethers-0.1/host-rust/` | (empty) |
 | `git diff --name-only -- tethers-0.1/protocol/` | (empty) |
-| `rg "exception Tethers_error"` (in bin/) | Only `tethers_error.ml` + `.mli` |
-| `rg "let fail "` (in bin/) | Only `tethers_error.ml` |
-| `rg "process_line"` (in bin/) | Only `main.ml` |
-| `rg "let json_of_response"` (in bin/) | Only `tethers_outcome.ml` |
-| `rg "let error_response"` (in bin/) | Only `tethers_outcome.ml` |
 
-## UNVERIFIED properties
+All 13 acceptance criteria have hard proof. No expected JSON changed. No fixtures changed. No Rust changed.
 
-None. All 13 acceptance criteria have hard proof.
+## Discoveries
 
-## Defects found
+- The OCaml module system handles transparent type re-exports cleanly — opening `Tethers_outcome` in the evaluator brings all variant constructors (`Contextual`, `Request_error`, `Matched`, `Not_matched`, `Evaluation_error`) into scope without qualification changes in `evaluate_request`.
+- `drop_prefix` is used by the evaluator for `anchor.*` reference resolution and must remain in the parser's public interface.
+- `unique` helper stayed in the evaluator — it is internal to plan construction.
 
-None.
+## Remaining risks
 
-## Later Foundation phases
-
-Not started. F6, F7, F8, F9, F10 not touched.
-
-## Deferred decision recorded
-
-"Typed/purified evaluator input was considered during architecture review and deliberately deferred because evaluation_id participates directly in deterministic plan/action identity generation."
+None. Pure structural extraction with zero semantic or output changes, proven by identical fixture and test results.
 
 ## Smallest next action
 
 Lucy reviews F5 evidence. F6 awaits compilation.
+
+## References
+
+- Implementation branch: `foundation/f5-ocaml-boundaries`
+- Implementation checkpoint: `bcd0e09d4384b61d74cce4f5a5b823a237618eeb`
+- Base: F4b accepted tip `9b5fdd47a885309ac04575065ba7cb0e6cf48693`
+- F5 task specification: inline user instructions

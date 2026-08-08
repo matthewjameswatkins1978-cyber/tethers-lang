@@ -27,11 +27,21 @@ Previously `tether_parser.ml` owned the engine-wide `exception Tethers_error` an
 
 F5 extracts the stable error boundary to `Tethers_error` and the stable outcome boundary to `Tethers_outcome`, adds `.mli` interfaces to enforce ownership, and moves transport to `main.ml`. No semantic changes.
 
-## Demonstrated ownership defects resolved
+## Required behaviour
 
-1. **Parser owned engine-wide error mechanism** — `tether_parser.ml` declared `exception Tethers_error` and `fail`, used by evaluator, protocol, and MCP server. Extracted to `Tethers_error`.
-
-2. **Evaluator owned too many distinct responsibilities** — `tethers_evaluator.ml` contained evaluation logic, outcome domain types, frozen response JSON encoder, request-error construction, and stdin transport. Outcome types extracted to `Tethers_outcome`. Transport moved to `main.ml`.
+1. Create `Tethers_error` module owning the engine-wide exception and fail helper, extracted from `Tether_parser`.
+2. Create `Tethers_outcome` module owning response types, JSON encoder, and error_response, extracted from `Tethers_evaluator`.
+3. Remove error ownership from `Tether_parser`.
+4. Remove outcome ownership from `Tethers_evaluator`.
+5. Move `process_line` from `Tethers_evaluator` to `main.ml`.
+6. Create `Tether_parser.mli` exposing parser AST + parse_tether + drop_prefix.
+7. Create `Tethers_evaluator.mli` exposing only evaluate_request.
+8. Update `tethers_protocol.ml` to use `Tethers_error` for fail.
+9. Update `tethers_mcp_server.ml` to use `Tethers_outcome` for error_response and json_of_response.
+10. Update `dune` to include new modules.
+11. Preserve all existing JSON/output/error semantics.
+12. Zero Rust changes.
+13. Zero fixture changes.
 
 ## Relevant components
 
@@ -51,18 +61,18 @@ F5 extracts the stable error boundary to `Tethers_error` and the stable outcome 
 - `tethers-0.1/engine-ocaml/bin/main.ml` — now owns process_line
 - `tethers-0.1/engine-ocaml/bin/dune` — adds tethers_error and tethers_outcome to both executables
 
-## Post-F5 module dependency shape
+## Frozen decisions and invariants
 
-```
-Tethers_error
-    -> Tether_parser
-    -> Tethers_protocol
-    -> Tethers_evaluator
-    -> Tethers_outcome
-
-main -> evaluator/outcome/error
-MCP server -> evaluator/outcome/error/parser
-```
+- `Tethers_error` is the shared owner of engine-wide exception and fail.
+- `Tethers_outcome` is the shared owner of response types and JSON encoder.
+- `Tethers_evaluator` exposes only `evaluate_request` in its interface.
+- No typed evaluator-input redesign; `evaluation_id` semantics preserved.
+- `plan.id` and `idempotency_key` generation unchanged.
+- Outcome types remain transparent; no abstract types or smart constructors.
+- `json_of_response` and `error_response` names preserved.
+- No `tethers_evaluation`, `tethers_response`, `tethers_types` modules.
+- No functors, module types, or abstraction layers.
+- Zero Rust changes; zero fixture changes.
 
 ## Acceptance criteria
 
@@ -103,10 +113,6 @@ MCP server -> evaluator/outcome/error/parser
 - No Rust changes
 - No fixture changes
 - No F6+ work started
-
-## Implementation style
-
-Pure structural extraction: move types, add narrow interfaces, qualify module ownership. No rewrites, no generalizations, no abstractions.
 
 ## Stop conditions
 
