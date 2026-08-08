@@ -11,7 +11,7 @@ Worker note: `docs/worker-notes/2026-08-08-f3-persistence-gate.md`
 Base branch: `main`
 Base commit: `ab58c83ba44680f3003db333f1e1ffd091aa5b3f`
 Implementation branch: `foundation/f3-persistence-gate`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `3215bdcadfcde5ec1ef49c5076e758da6744a374`
 Parent branch: `foundation/f3e2b-replay-generations-evidence`
 Parent tip: `ab58c83ba44680f3003db333f1e1ffd091aa5b3f`
 OCaml switch path: `N/A`
