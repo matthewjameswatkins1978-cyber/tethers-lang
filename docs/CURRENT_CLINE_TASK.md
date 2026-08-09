@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-D5+D6+D10 — Dead Exact-Approval Translation/Resume Layer`
 Owner: `Codex`
-Status: `IN_PROGRESS`
+Status: `BLOCKED`
 Task colour: `Amber`
-Route: `Codex removes the classified dead exact-approval translation/resume layer`
+Route: `Codex stopped after the final regression found a missing current-worktree engine binary`
 Worker note: `docs/worker-notes/2026-08-09-f8-d5-d6-d10-exact-approval-cleanup.md`
 Base branch: `foundation/f8-d3-event-admission-probe-cleanup`
 Base commit: `17b60df43b6c32ec8040952e4f7b1a99eb16b1d3`
 Implementation branch: `foundation/f8-d5-d6-d10-exact-approval-cleanup`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `5a728d6956a288cafa69a84d0be50f7ffafaa1ea`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `RUST`
