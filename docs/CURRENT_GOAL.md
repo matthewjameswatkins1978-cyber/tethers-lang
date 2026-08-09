@@ -5,9 +5,10 @@ Updated: 2026-08-09
 ## Goal
 
 Complete the Tethers Foundation Pass through separately reviewed evidence
-packages. F1–F8 are complete through warning enforcement. F9 is the current
-documentation/operator-truth phase. F10 remains the sole Foundation
-completion gate.
+packages. F1–F9 are complete through operator truth reconciliation. A bounded
+pre-F10 consistency repair is correcting the verification-path warning gate
+discovered during the independent pre-F10 sweep. F10 remains the sole
+Foundation completion gate.
 
 No new product capability is being added.
 
@@ -21,8 +22,9 @@ advisory policy is not globally denied.
 
 ## Active increment
 
-F9 — Operator truth reconciliation — updates the current/operator-facing
-documents to reflect the completed Foundation work through F8.
+Pre-F10 — Final gate consistency repair — corrects the verification-path
+warning gate and reconciles dashboard truth. F9-FINAL implementation has
+completed on the Foundation branch lineage.
 
 ## Foundation Pass boundaries
 

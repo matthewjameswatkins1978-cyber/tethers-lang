@@ -34,7 +34,7 @@ test-m5:
 verify:
     scripts/invoke-timed.ps1 -Label "task-packet" -Executable "pwsh" -- -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
     scripts/invoke-timed.ps1 -Label "cargo-fmt" -Executable "cargo" -- fmt --manifest-path {{_manifest}} --all -- --check
-    scripts/invoke-timed.ps1 -Label "cargo-check" -Executable "cargo" -- check --manifest-path {{_manifest}} --all-targets --all-features --locked
+    @just check
     scripts/invoke-timed.ps1 -Label "cargo-test" -Executable "cargo" -- test --manifest-path {{_manifest}} --all-targets --all-features --locked
 
 agent-tools:

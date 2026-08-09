@@ -4,30 +4,30 @@ Updated: 2026-08-09
 
 ## Current Milestone
 
-Foundation F9 — operator truth reconciliation. F1–F8 are complete through
-warning enforcement. This programme adds no product capability and advances
-only through separately reviewed evidence packages. F10 remains the sole
-Foundation completion gate.
+Foundation pre-F10 — final gate consistency repair. F1–F9 are complete through
+operator truth reconciliation. This programme adds no product capability and
+advances only through separately reviewed evidence packages. F10 remains the
+sole Foundation completion gate.
 
 ## Verified Checkpoint
 
-Latest accepted implementation: F8 warning enforcement at
-`5e616357963e70b86f59c870f6c00b7fbc94cb0a` (Foundation branch lineage).
-F1–F8 have not yet been merged to `origin/main`; live `main` remains
+Latest accepted implementation: F9-FINAL operator truth reconciliation at
+`fc33dba435a87833a6f0f53642326697a246694b` (Foundation branch lineage).
+F1–F9 have not yet been merged to `origin/main`; live `main` remains
 `40ec42eb2aac108901d428af3cbfe264d3edd6dc`.
 
 ## Active Task
 
-- Task: F9 — Operator truth reconciliation
+- Task: PRE-F10 — Final gate consistency repair
 - State: IN_PROGRESS
 - Owner: OpenCode
-- Risk: Green (documentation-only)
+- Risk: Green
 
 ## Last Accepted Result
 
-F8 warning enforcement is accepted and merged. The all-target Rust Cargo
-check is warning-free and compiler warnings are now denied in the repository
-`just check` / `just verify` path.
+F9-FINAL operator truth reconciliation has completed on the Foundation branch
+lineage. The all-target Rust Cargo check is warning-free and compiler warnings
+are now denied in the repository `just check` / `just verify` path.
 
 ## Matthew Decision Required
 
@@ -35,8 +35,8 @@ None.
 
 ## Next Route
 
-Complete F9 documentation updates. Lucy reviews and prepares F10
-clean-checkout proof.
+Complete pre-F10 gate repair. Lucy reviews and prepares F10 clean-checkout
+proof.
 
 ## Operating Mode
 
