@@ -10,7 +10,7 @@ fmt:
     scripts/invoke-timed.ps1 -Label "cargo-fmt" -Executable "cargo" -- fmt --manifest-path {{_manifest}} --all -- --check
 
 check:
-    scripts/invoke-timed.ps1 -Label "cargo-check" -Executable "cargo" -- check --manifest-path {{_manifest}} --all-targets --all-features --locked
+    $env:RUSTFLAGS="-D warnings"; scripts/invoke-timed.ps1 -Label "cargo-check" -Executable "cargo" -- check --manifest-path {{_manifest}} --all-targets --all-features --locked
 
 test-rust:
     scripts/invoke-timed.ps1 -Label "cargo-test" -Executable "cargo" -- test --manifest-path {{_manifest}} --all-targets --all-features --locked
