@@ -2,7 +2,7 @@
 
 ## Rust Host (`tethers-0.1/host-rust/`)
 
-Crate: `tethers-reference-host` v0.2.0, Rust edition 2021, MSRV 1.97
+Crate: `tethers-reference-host` v0.2.2, Rust edition 2021, MSRV 1.97
 
 ### External Dependencies
 

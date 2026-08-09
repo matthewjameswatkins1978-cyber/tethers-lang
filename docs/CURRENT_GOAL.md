@@ -4,27 +4,29 @@ Updated: 2026-08-09
 
 ## Goal
 
-Complete the Tethers Foundation Pass through separately reviewed evidence
-packages. F1–F9 are complete through operator truth reconciliation. A bounded
-pre-F10 consistency repair is correcting the verification-path warning gate
-discovered during the independent pre-F10 sweep. F10 remains the sole
-Foundation completion gate.
+Prepare the complete Tethers 0.2.2 release candidate for Lucy review and
+publication.
 
-No new product capability is being added.
+Foundation F1–F10 is COMPLETE and ACCEPTED. The accepted F10 final evidence
+is at `5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1`.
+
+0.2.2 is a patch release-hardening release. It adds no new product capability.
+Language semantics remain 0.1.
+
+`main` has NOT yet been advanced. `v0.2.2` has NOT yet been created.
+Publication requires Lucy review after the candidate completes.
 
 ## Last accepted increment
 
-F8 warning enforcement is accepted at
-`5e616357963e70b86f59c870f6c00b7fbc94cb0a` on the Foundation branch lineage.
-The all-target Rust Cargo check is warning-free and compiler warnings are
-denied in the repository `just check` / `just verify` path. Broader Clippy
-advisory policy is not globally denied.
+Foundation F10 clean-checkout proof independently accepted at
+`5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1` (Foundation branch lineage).
+F1–F10 have not yet been merged to `origin/main`; live `main` remains
+`40ec42eb2aac108901d428af3cbfe264d3edd6dc`.
 
 ## Active increment
 
-Pre-F10 — Final gate consistency repair — corrects the verification-path
-warning gate and reconciles dashboard truth. F9-FINAL implementation has
-completed on the Foundation branch lineage.
+Tethers 0.2.2 release preparation — version identity, Cargo single-source,
+fixture migration, release notes, README front door, and Foundation recording.
 
 ## Foundation Pass boundaries
 

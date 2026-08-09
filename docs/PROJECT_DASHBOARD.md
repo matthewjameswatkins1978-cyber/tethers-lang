@@ -4,29 +4,28 @@ Updated: 2026-08-09
 
 ## Current Milestone
 
-Foundation F10 clean-checkout proof is complete on the Foundation branch
-lineage. F1–F9 and the pre-F10 gate repair remain complete; Lucy's independent
-acceptance is still required before Foundation completion may be declared.
+Tethers 0.2.2 release candidate preparation. Foundation F1–F10 is COMPLETE and
+ACCEPTED. This programme adds no product capability and advances only through
+separately reviewed evidence packages.
 
 ## Verified Checkpoint
 
-Latest accepted implementation: F9-FINAL operator truth reconciliation at
-`fc33dba435a87833a6f0f53642326697a246694b` (Foundation branch lineage).
-F1–F9 have not yet been merged to `origin/main`; live `main` remains
+Latest accepted implementation: F10 clean-checkout proof at
+`5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1` (Foundation branch lineage).
+F1–F10 have not yet been merged to `origin/main`; live `main` remains
 `40ec42eb2aac108901d428af3cbfe264d3edd6dc`.
 
 ## Active Task
 
-- Task: F10 — Foundation Clean-Checkout Completion Proof
-- State: COMPLETE — pending Lucy independent acceptance
-- Owner: Codex
+- Task: RELEASE-0.2.2-PREP — Tethers 0.2.2 Release Candidate
+- State: IN_PROGRESS
+- Owner: OpenCode
 - Risk: Amber
 
 ## Last Accepted Result
 
-F10 independently completed the clean Windows checkout and complete programme
-evidence. Foundation is not self-declared complete; Lucy makes the acceptance
-decision from the pushed evidence.
+Foundation F10 clean-checkout proof independently completed and accepted.
+F1–F9 and pre-F10 gate repair remain accepted on the Foundation branch lineage.
 
 ## Matthew Decision Required
 
@@ -34,8 +33,7 @@ None.
 
 ## Next Route
 
-F10 clean-checkout proof is complete. Lucy independently reviews the pushed
-F10 evidence; Codex does not declare Foundation accepted.
+Complete 0.2.2 release candidate. Lucy reviews and decides publication.
 
 ## Operating Mode
 
@@ -50,7 +48,7 @@ F10 evidence; Codex does not declare Foundation accepted.
 ## Cost And Drift
 
 - One implementation owner per bounded task.
-- F8 cleanup removed 15 dead-code items. Warning enforcement is now active.
+- Rust compiler-warning gate is clean and enforced.
 - Broader Clippy advisory diagnostics remain separate from the denied-warning
   gate.
 - No speculative post-Foundation plans are authorised.

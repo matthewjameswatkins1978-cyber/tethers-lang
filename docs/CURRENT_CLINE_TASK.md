@@ -1,102 +1,144 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F10 — Foundation Clean-Checkout Completion Proof`
-Owner: `Codex`
-Status: `COMPLETE`
+Task packet: `RELEASE-0.2.2-PREP — Tethers 0.2.2 Release Candidate`
+Owner: `OpenCode`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `Codex performs independent Windows clean-checkout evidence and sign-off`
-Worker note: `docs/worker-notes/2026-08-09-f10-clean-checkout-proof.md`
-Base branch: `foundation/pre-f10-gate-consistency`
-Base commit: `f1fcf6c1af380bb8a787d725ac83d7faae5bc17c`
-Implementation branch: `foundation/f10-clean-checkout-proof`
-Implementation checkpoint: `6abde58cdd51b602ecdc221d3703a99cbcc80f60`
+Route: `OpenCode prepares complete 0.2.2 release candidate`
+Worker note: `docs/worker-notes/2026-08-09-release-0.2.2-prep.md`
+Base branch: `foundation/f10-clean-checkout-proof`
+Base commit: `5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1`
+Implementation branch: `release/v0.2.2-prep`
+Implementation checkpoint: `WORKTREE`
 OCaml switch path: `resolve from existing machine state only`
-Rust toolchain: `repository-pinned`
-Rust change class: `DOCS`
+Rust toolchain: `1.97.1`
+Rust change class: `PRODUCT`
 
 ## Objective
 
-Produce an independent, disposable Windows clean-checkout proof for the
-accepted pre-F10 Foundation target. This is evidence and sign-off only; it must
-not repair product, test, toolchain, fixture, dependency, or programme issues.
+Prepare the complete Tethers 0.2.2 release candidate: version identity, Cargo
+single-source-of-truth, fixture migration, release notes, README front door,
+and Foundation completion recording.
 
 ## Relevant background and existing behaviour
 
-The accepted target is `f1fcf6c1af380bb8a787d725ac83d7faae5bc17c` on
-`origin/foundation/pre-f10-gate-consistency`; Foundation begins at
-`24428139807cac0adeb0b62264547e61ca809d16`. The accepted F1 fixture evidence
-tip is `f295daa288f4d3dc48181888d6655df798675033`. A fresh worktree lacks
-ignored OCaml outputs by design; an existing compatible switch may build them,
-but no install, switch creation, or source repair is authorised.
+Foundation F1–F10 has been independently accepted. The previous published
+version is v0.2.0. 0.2.1 was never separately published. The CLi has a
+hard-coded version string separate from Cargo.toml.
 
 ## Required behaviour
 
-1. Commit a control-start task-packet/dashboard checkpoint from the exact
-   accepted target and prove non-control files are byte-identical.
-2. Create and prove a cold disposable Windows worktree at that checkpoint.
-3. Review Foundation ancestry and complete programme diff before expensive
-   verification; stop on unauthorised semantic/dependency/fixture change.
-4. Prove F1 fixture/manifest byte integrity, validate fixtures, recover the
-   existing compatible cross-language environment, and run engine/MCP tests.
-5. Run serial environment identity, advisory Clippy, and exactly one final
-   `just verify-agent`; record actual outputs and final clean proof state.
-6. Close out only if every mandatory command passed; push normally and remove
-   only the purpose-created clean proof worktree after evidence is captured.
+1. Complete version-surface inventory: search all `0.2.0`/`v0.2.0` occurrences,
+   classify as CURRENT/HISTORICAL/FIXTURE/UNRELATED.
+2. Change `Cargo.toml` product version from `0.2.0` to `0.2.2`.
+3. Update `Cargo.lock` directly: only local `tethers-reference-host` package
+   identity changes `0.2.0 → 0.2.2`; no dependency version, checksum, source,
+   or graph change.
+4. Replace hard-coded `version = "0.2.0"` in `cli.rs` with
+   `env!("CARGO_PKG_VERSION")`; no new dependency, no envelope/exit change.
+5. Recapture `docs/foundation-pass/fixtures/cli-output/version.txt` from real
+   0.2.2 binary output; envelope/schema/status/exit unchanged.
+6. Update `docs/foundation-pass/FIXTURE_MANIFEST.md` with post-Foundation
+   migration record; preserve F1 provenance.
+7. Update `README.md`: opening introduces Tethers to first-time visitors with
+   "Make things happen. Keep the receipts."; current release section describes
+   0.2.2 as release candidate.
+8. Create `docs/releases/v0.2.2.md` with release candidate status, highlights,
+   version history, known limitations; use v0.2.0.md as structural precedent.
+9. Update `docs/CURRENT_GOAL.md`: F1-F10 COMPLETE/ACCEPTED, 0.2.2 prep active,
+   F10 accepted SHA recorded, main not advanced.
+10. Update `docs/PROJECT_DASHBOARD.md`: Foundation COMPLETE/ACCEPTED, 0.2.2
+    release candidate prep active, F10 checkpoint recorded.
+11. Update `docs/foundation-pass/MODULE_DEPENDENCY_MAP.md`: crate version
+    `v0.2.0` → `v0.2.2`.
+12. Prove Cargo metadata reports product version exactly `0.2.2`.
+13. Prove binary `--version` reports `0.2.2` with envelope/schema/status/exit
+    unchanged.
+14. Prove captured output matches fixture byte-for-byte, only `0.2.0→0.2.2`
+    differs.
+15. Run `just verify-agent` once; all Rust tests, formatting, dependencies pass.
+16. Run engine tests, MCP transcripts, fixture validator — all pass.
 
 ## Relevant components
 
 ### AUTHORISED PATHS
-- `docs/CURRENT_CLINE_TASK.md`
+- `tethers-0.1/host-rust/Cargo.toml`
+- `tethers-0.1/host-rust/Cargo.lock`
+- `tethers-0.1/host-rust/src/cli.rs`
+- `docs/foundation-pass/fixtures/cli-output/version.txt`
+- `docs/foundation-pass/FIXTURE_MANIFEST.md`
+- `README.md`
+- `docs/releases/v0.2.2.md`
+- `docs/CURRENT_GOAL.md`
 - `docs/PROJECT_DASHBOARD.md`
-- `docs/worker-notes/2026-08-09-f10-clean-checkout-proof.md`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/PROJECT_DASHBOARD.md`
-- `docs/worker-notes/2026-08-09-f10-clean-checkout-proof.md`
+- `docs/worker-notes/2026-08-09-release-0.2.2-prep.md`
 
 ## Frozen decisions and invariants
 
-- F10 proves Foundation; it does not self-declare Foundation accepted or merge
-  to main. Lucy independently accepts or rejects the pushed evidence.
-- No production/test/tooling/fixture/specification/dependency/toolchain/CI or
-  Clippy cleanup change. No fixture regeneration or environment installation.
-- The clean worktree begins cold; only its own ignored build artefacts may be
-  created. The control-start commit is the sole verified checkpoint.
+- Product version: 0.2.2 (patch release).
+- Language semantics: 0.1 (unchanged).
+- No new product capability.
+- No dependency update.
+- No broad fixture refresh.
+- v0.2.0 history preserved as historical.
+- No invented 0.2.1 release.
+- No main advance, no tag, no GitHub Release, no publication.
 
 ## Acceptance criteria
 
-1. Remote target, control-start lineage, clean worktree state, programme
-   ancestry/diff, and F1 byte integrity are all proven.
-2. Existing OCaml 5.5.0 compatible switch and repository environment probe pass.
-3. Fixture validator, engine tests, MCP transcripts, Clippy, and one complete
-   verify-agent matrix pass with recorded actual results.
-4. The proof checkout has no tracked modifications after verification.
-5. COMPLETE-state checker passes, only authorised docs are committed/pushed,
-   remote equals local, and the disposable worktree is safely removed.
-6. Every required command is recorded exactly once with its actual PASS, FAIL,
-   or NOT RUN result in the worker evidence.
+1. Cargo product version is exactly 0.2.2.
+2. CLI reports 0.2.2 from Cargo-owned product metadata.
+3. No duplicate hard-coded live CLI product version remains.
+4. Cargo.lock changes only the local package identity.
+5. Version fixture migration matches real binary output.
+6. All other Foundation fixtures unchanged.
+7. Public version envelope/schema/status/exit semantics unchanged.
+8. Foundation F1–F10 recorded COMPLETE/ACCEPTED.
+9. README opens with "Make things happen. Keep the receipts."
+10. README and v0.2.2.md agree this is a release candidate.
+11. Historical v0.2.0 evidence remains historical.
+12. No fictional 0.2.1 release.
+13. Focused/version/cross-language checks pass.
+14. One complete `just verify-agent` passes.
+15. COMPLETE-state task checker passes.
+16. Branch is pushed and clean.
 
 ## Required verification
 
-1. Every command and pre/post-clean-checkout capture required by F10 packet.
-2. Exact complete programme and F1 fixture Git comparisons.
-3. Repository-owned environment/fixture/engine/MCP scripts, Clippy, and one
-   serial `just verify-agent`.
-4. COMPLETE packet checker, diff/status, remote equality, and cleanup proof.
+1. Version inventory sweep.
+2. Cargo metadata reports 0.2.2.
+3. Binary `--version` reports 0.2.2 with unchanged envelope.
+4. Captured output == fixture byte-for-byte.
+5. Directly affected CLI/version tests.
+6. Cargo.lock diff: only local package identity.
+7. Fixture validator.
+8. Final `0.2.0`/`v0.2.0` sweep: all remaining are historical.
+9. No duplicate live 0.2.2 constant; CLI derives from Cargo.
+10. `just verify-agent` once.
+11. Engine tests, MCP transcripts, fixture checks.
+12. COMPLETE-state packet checker.
 
 ## Forbidden changes
 
-- No repair, product/test/tooling/fixture/dependency/spec/toolchain/CI change,
-  warning cleanup, merge to main, tag, release, installation, or fixture refresh.
+- No new product capability.
+- No language-semantic change.
+- No dependency update.
+- No broad fixture refresh.
+- No rewriting v0.2.0 history.
+- No invented 0.2.1 release.
+- No Clippy cleanup.
+- No workflow redesign.
+- No unrelated README rewrite.
+- No main update, no tag, no GitHub Release, no publication.
 
 ## Stop conditions
 
-STOP and record BLOCKED if target/ref or clean state differs, required switch is
-absent, programme/fixture integrity differs, a mandatory command fails or is
-unrun, tracked proof files change, complete checker fails, or push cannot be
-proven normally. Do not repair and continue.
+STOP if version identity, envelope semantics, or fixture-pinning differs from
+the packet contract.
 
 ## Expected pre-existing changes
 

@@ -1,5 +1,34 @@
 # Tethers Lang
 
+**Tethers is a small deterministic automation language for connecting events to actions across tools, services and AI.**
+
+A Tether describes what should happen in a form designed to be readable, predictable and inspectable:
+
+```text
+event → conditions → actions → result
+```
+
+The language stays deliberately small. The runtime handles capabilities, permissions, providers, durable execution, recovery and Trails. Planning is separate from permission and execution, effects are explicit, and uncertain outcomes stay uncertain.
+
+**Make things happen. Keep the receipts.**
+
+## Tethers 0.2.2
+
+- Tethers product version: 0.2.2
+- Status: release candidate
+- Tag: pending `v0.2.2`
+- Language semantics: 0.1
+- Release notes: [`docs/releases/v0.2.2.md`](docs/releases/v0.2.2.md)
+
+Tethers 0.2.2 is the Foundation-hardened, independently verified 0.2 runtime.
+It adds no new major product capability; Foundation makes the existing system
+more trustworthy, maintainable and reproducible.
+
+The previous published release was Tethers 0.2.0.
+Plug functionality is not part of this release.
+
+## Repository Map
+
 Tethers uses a layered set of authoritative and operational documents:
 
 - `docs/CONSTITUTION.md` records the enduring Tethers language principles.
@@ -25,17 +54,6 @@ Tethers uses a layered set of authoritative and operational documents:
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
 - `docs/ROAD_TO_0_2.md` is the dependency-ordered release programme through
   Tethers 0.2.
-
-## Tethers 0.2.0
-
-- Tethers product version: 0.2.0
-- Status: released
-- Tag: `v0.2.0`
-- Language semantics: 0.1
-- Release notes: [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md)
-
-The next design programme concerns universal external capabilities through
-plugs. Plug functionality is not part of Tethers 0.2.0.
 
 Current operating route:
 

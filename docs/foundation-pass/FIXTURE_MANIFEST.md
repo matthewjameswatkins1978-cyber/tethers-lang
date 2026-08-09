@@ -97,3 +97,18 @@ All fixtures were captured or copied from:
 5. **Production API (replay)**: Scratch Rust program (`f1-replay-gen`, not committed) using the accepted host crate as a path dependency. Called `Claim::new`, `Generation::intent`, `Generation::armed`, `Generation::terminal`, and `canonical_bytes()` with fixed deterministic inputs. All records passed production parse, chain validation, terminal=Succeeded check, and byte-for-byte re-serialisation before output.
 
 No `update-fixtures` script, golden-file refresh command, or auto-regeneration mechanism exists or was added.
+
+## Post-Foundation Migration Record
+
+The `fixtures/cli-output/version.txt` fixture was originally captured at
+Foundation baseline `24428139807cac0adeb0b62264547e61ca809d16` as part of
+F1 evidence, recording the product version `0.2.0`.
+
+Tethers 0.2.2 intentionally changes the product version identity from `0.2.0`
+to `0.2.2`. The version fixture was recaptured from the real 0.2.2 binary at
+the 0.2.2 release-candidate checkpoint. The only semantic difference is the
+version text: `0.2.0` → `0.2.2`. Schema (`tethers.cli/1`), status
+(`invalid_cli_usage`), exit code (`2`), error code (`INVALID_CLI_USAGE`),
+and envelope structure remain unchanged.
+
+No other Foundation fixture was refreshed or affected by this migration.
