@@ -15,6 +15,17 @@ Implementation checkpoint: `TO BE SET`
 OCaml switch path: `N/A (no switch set)`
 Rust toolchain: `1.97.1`
 
+## Relevant background and existing behaviour
+
+F1 originally recorded a large Clippy warning inventory. F1-R1 later observed at
+accepted F5: cargo check 16 warnings, cargo clippy 81 warnings, cargo fmt FAIL
+at `replay_windows.rs` ~line 3277, and `just verify`/`verify-agent` short-circuited
+at formatting. These numbers are historical only and may have changed.
+
+The project has no active OCaml switch configured. Rust toolchain is pinned to
+1.97.1 via `rust-toolchain.toml`. No CI/workflow warning enforcement currently
+exists. No `[lints]` configuration exists in Cargo.toml.
+
 ## Objective
 
 Establish the exact current warning, formatting, and verification-tooling state
