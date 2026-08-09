@@ -1,16 +1,16 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `TETHERS-0.3-P1 — Generic Operational Scope Evidence`
+Task: `TETHERS-0.3-P1 — Generic Operational Scope Evidence`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Red`
 Route: `OpenCode implements core architectural boundary; Codex reviews`
 Worker note: `docs/worker-notes/2026-08-09-0.3-p1-generic-operational-scope.md`
 Base branch: `origin/main`
 Base commit: `c0fd57780156bee023d8dcff884737ea470d096c`
 Implementation branch: `feature/0.3-p1-generic-operational-scope`
-Implementation checkpoint: `aa53c0900bf2ddd3e3126ed88e8d6b8781b4bddb`
+Implementation checkpoint: `a2d7000afc24c31ea3f97c3542bba33b1e50446d`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
 Rust change class: `RED_ARCHITECTURE`
