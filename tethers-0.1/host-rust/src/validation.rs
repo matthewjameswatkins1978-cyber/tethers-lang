@@ -65,11 +65,58 @@ pub fn validate_against_schema(schema: &Value, value: &Value) -> Result<(), Vali
 /// Validate a plug-supplied operational scope against the installed
 /// operational-scope schema.
 ///
-/// Thin wrapper around [`validate_against_schema`] that applies the same
-/// conservative, explicitly-rejecting schema subset.  Call this in `run_enable`
-/// after the installed schema is obtained from the installed record.
+/// Preprocesses the schema to recognise and remove `x-tethers-path`
+/// annotations (value must be `"canonical-directory"`), rejects any other
+/// `x-tethers-*` extension, then delegates to [`validate_against_schema`]
+/// with the cleaned schema.  This keeps the annotation scope-only without
+/// affecting ordinary capability input/output schema validation.
 pub fn validate_operational_scope(schema: &Value, scope: &Value) -> Result<(), ValidationError> {
-    validate_against_schema(schema, scope)
+    let mut schema = schema.clone();
+    preprocess_scope_schema(&mut schema, "$")?;
+    validate_against_schema(&schema, scope)
+}
+
+fn preprocess_scope_schema(schema: &mut Value, path: &str) -> Result<(), ValidationError> {
+    let obj = match schema.as_object_mut() {
+        Some(o) => o,
+        None => return Ok(()),
+    };
+    if let Some(val) = obj.remove("x-tethers-path") {
+        let s = val.as_str().ok_or_else(|| {
+            ValidationError::new(format!("{}: x-tethers-path must be a string", path))
+        })?;
+        if s != "canonical-directory" {
+            return Err(ValidationError::new(format!(
+                "{}: unsupported x-tethers-path value '{}'; only 'canonical-directory' is supported",
+                path, s
+            )));
+        }
+    }
+    for key in obj.keys() {
+        if key.starts_with("x-tethers-") {
+            return Err(ValidationError::new(format!(
+                "{}: unsupported annotation '{}'",
+                path, key
+            )));
+        }
+    }
+    if let Some(props) = obj.get_mut("properties").and_then(|v| v.as_object_mut()) {
+        for (name, child) in props.iter_mut() {
+            let child_path = format!("{}.properties.{}", path, escape_json_pointer(name));
+            preprocess_scope_schema(child, &child_path)?;
+        }
+    }
+    if let Some(items) = obj.get_mut("items") {
+        let child_path = format!("{}.items", path);
+        preprocess_scope_schema(items, &child_path)?;
+    }
+    if let Some(additional) = obj.get_mut("additionalProperties") {
+        if additional.is_object() {
+            let child_path = format!("{}.additionalProperties", path);
+            preprocess_scope_schema(additional, &child_path)?;
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +536,6 @@ fn reject_unsupported_keywords(
         "deprecated",
         "readOnly",
         "writeOnly",
-        "x-tethers-path",
     ];
 
     for keyword in schema.keys() {
@@ -931,5 +977,76 @@ mod tests {
         let err1 = validate_output(&schema, &result).unwrap_err();
         let err2 = validate_output(&schema, &result).unwrap_err();
         assert_eq!(err1.message, err2.message);
+    }
+
+    // ── R1B-FIX: x-tethers-path must be scope-only ──
+
+    #[test]
+    fn r1b_fix_ordinary_validator_rejects_x_tethers_path() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "q": {"type": "string", "x-tethers-path": "canonical-directory"}
+            },
+            "required": ["q"]
+        });
+        let value = json!({"q": "hello"});
+        let err = validate_against_schema(&schema, &value).unwrap_err();
+        assert!(
+            err.message.contains("x-tethers-path"),
+            "expected rejection of x-tethers-path, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1b_fix_scope_validator_accepts_canonical_directory() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-path": "canonical-directory"}
+            },
+            "required": ["root"],
+            "additionalProperties": false
+        });
+        let scope = json!({"root": "C:\\data"});
+        validate_operational_scope(&schema, &scope).unwrap();
+    }
+
+    #[test]
+    fn r1b_fix_scope_validator_rejects_wrong_x_tethers_path_value() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-path": "banana"}
+            },
+            "required": ["root"]
+        });
+        let scope = json!({"root": "C:\\data"});
+        let err = validate_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("unsupported x-tethers-path value"),
+            "expected rejection of banana, got: {}",
+            err.message
+        );
+        assert!(err.message.contains("canonical-directory"));
+    }
+
+    #[test]
+    fn r1b_fix_scope_validator_rejects_arbitrary_x_tethers_extension() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-whatever": "anything"}
+            },
+            "required": ["root"]
+        });
+        let scope = json!({"root": "C:\\data"});
+        let err = validate_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("x-tethers-whatever"),
+            "expected rejection of x-tethers-whatever, got: {}",
+            err.message
+        );
     }
 }
