@@ -6,7 +6,7 @@
 use crate::candidate::CandidateRecord;
 use crate::child_process::{ChildConfig, ChildError, SupervisedChild};
 use crate::conformance::{ConformanceDisposition, ConformanceEvidence};
-use crate::current_trust::{CurrentTrustAuthority, PublisherDeveloperTrustAuthority};
+use crate::current_trust::CurrentTrustAuthority;
 use crate::enablement::EnablementRecord;
 use crate::installed::{InstallationApprovalRecord, InstalledPlugRecord};
 use crate::m3_store::{
@@ -538,17 +538,6 @@ fn approved_environment(scratch: &Path) -> Result<BTreeMap<String, String>> {
 }
 
 impl PreparedSupervisedLaunch {
-    pub(crate) fn revalidate_current_trust(
-        &self,
-        candidate: &CandidateRecord,
-        trust: &PackageTrustEvidence,
-        publisher_trust: &PublisherTrustStore,
-        developer_approvals: &DeveloperApprovalStore,
-    ) -> Result<()> {
-        let authority = PublisherDeveloperTrustAuthority::new(publisher_trust, developer_approvals);
-        self.revalidate_current_trust_with(candidate, trust, &authority)
-    }
-
     pub(crate) fn revalidate_current_trust_with(
         &self,
         candidate: &CandidateRecord,
@@ -634,17 +623,6 @@ impl PreparedSupervisedLaunch {
             environment,
             scratch_directory,
         })
-    }
-
-    pub(crate) fn launch_for_candidate(
-        &self,
-        candidate: &CandidateRecord,
-        trust: &PackageTrustEvidence,
-        publisher_trust: &PublisherTrustStore,
-        developer_approvals: &DeveloperApprovalStore,
-    ) -> std::result::Result<SupervisedChild, ChildError> {
-        let authority = PublisherDeveloperTrustAuthority::new(publisher_trust, developer_approvals);
-        self.launch_for_candidate_with(candidate, trust, &authority)
     }
 
     pub(crate) fn launch_for_candidate_with(

@@ -236,7 +236,6 @@ pub struct SupervisedChild {
     #[cfg(windows)]
     job_handle: windows_sys::Win32::Foundation::HANDLE,
     graceful_close_timeout: Duration,
-    max_line_bytes: usize,
 
     // Channel from stdout reader thread.
     line_rx: Receiver<LineResult>,
@@ -465,7 +464,6 @@ impl SupervisedChild {
             #[cfg(windows)]
             job_handle,
             graceful_close_timeout: config.graceful_close_timeout,
-            max_line_bytes: config.max_protocol_line_bytes,
             line_rx,
             stdout_thread: Some(stdout_thread),
             stderr_buffer,

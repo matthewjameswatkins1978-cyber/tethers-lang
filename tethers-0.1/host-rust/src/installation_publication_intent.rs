@@ -121,6 +121,7 @@ impl InstallationPublicationIntentStore {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn open_existing(executor_state_root: &Path) -> Result<Self> {
         let state_root = StoreRoot::open_existing(executor_state_root).map_err(to_intent_error)?;
         Ok(Self {
@@ -176,6 +177,7 @@ impl InstallationPublicationIntentStore {
         Ok(Some(intent))
     }
 
+    #[cfg(test)]
     pub(crate) fn root_path(&self) -> &Path {
         self.root.path()
     }

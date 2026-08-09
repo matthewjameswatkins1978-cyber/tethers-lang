@@ -38,10 +38,6 @@ use serde::Serialize;
 pub enum ResultAnchorKind {
     /// Valid successful output.
     Succeeded(serde_json::Value),
-    /// Executor returned an error.
-    ProviderError(String),
-    /// Executor returned output that failed validation.
-    ResultValidationFailed(String),
     /// A provider invocation may have begun but no trustworthy final evidence
     /// was observed before the host deadline.
     Uncertain { code: String, message: String },
@@ -135,22 +131,6 @@ impl ResultAnchor {
             ResultAnchorKind::Succeeded(value) => {
                 ("capability.succeeded".to_string(), Some(value), None)
             }
-            ResultAnchorKind::ProviderError(message) => (
-                "capability.failed".to_string(),
-                None,
-                Some(ResultAnchorError {
-                    code: "provider_error".to_string(),
-                    message,
-                }),
-            ),
-            ResultAnchorKind::ResultValidationFailed(message) => (
-                "capability.failed".to_string(),
-                None,
-                Some(ResultAnchorError {
-                    code: "result_validation_failed".to_string(),
-                    message,
-                }),
-            ),
             ResultAnchorKind::Uncertain { code, message } => (
                 "capability.uncertain".to_string(),
                 None,
@@ -294,7 +274,10 @@ mod tests {
     #[test]
     fn provider_error_anchor_has_error_code_and_nested_capability() {
         let anchor = ResultAnchor::new(
-            ResultAnchorKind::ProviderError("executor failed as requested".to_string()),
+            ResultAnchorKind::Failed {
+                code: "provider_error".to_string(),
+                message: "executor failed as requested".to_string(),
+            },
             "eval_001",
             "action_1",
             "lantern.task.record",
@@ -320,9 +303,10 @@ mod tests {
     #[test]
     fn result_validation_failed_anchor_has_error_code_and_no_result() {
         let anchor = ResultAnchor::new(
-            ResultAnchorKind::ResultValidationFailed(
-                "output validation failed: missing required field 'status'".to_string(),
-            ),
+            ResultAnchorKind::Failed {
+                code: "result_validation_failed".to_string(),
+                message: "output validation failed: missing required field 'status'".to_string(),
+            },
             "eval_001",
             "action_1",
             "lantern.task.record",
@@ -350,7 +334,10 @@ mod tests {
     #[test]
     fn serialized_failed_anchor_omits_result_field() {
         let anchor = ResultAnchor::new(
-            ResultAnchorKind::ProviderError("boom".to_string()),
+            ResultAnchorKind::Failed {
+                code: "provider_error".to_string(),
+                message: "boom".to_string(),
+            },
             "eval_001",
             "action_1",
             "lantern.task.record",
