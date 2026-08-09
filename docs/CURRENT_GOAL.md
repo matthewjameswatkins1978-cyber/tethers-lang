@@ -1,29 +1,28 @@
 # Current Goal
 
-Updated: 2026-08-07
+Updated: 2026-08-09
 
 ## Goal
 
 Complete the Tethers Foundation Pass through separately reviewed evidence
-packages. F3a established the persistence vocabulary, F3b established direct
-Windows primitive evidence, F3c covered installation intent/publication, and
-F3d has completed the remaining bounded-store characterization without a
-production repair.
+packages. F1–F8 are complete through warning enforcement. F9 is the current
+documentation/operator-truth phase. F10 remains the sole Foundation
+completion gate.
 
-The accepted main is `40ec42eb2aac108901d428af3cbfe264d3edd6dc` (F3c).
+No new product capability is being added.
 
 ## Last accepted increment
 
-F3c — Installation intent and publication contract — is accepted and merged.
-Its evidence branch `foundation/f3c-installation-intent-publication` is retained
-at the same accepted SHA.
+F8 warning enforcement is accepted at
+`5e616357963e70b86f59c870f6c00b7fbc94cb0a` on `origin/main`. The all-target
+Rust Cargo check is warning-free and compiler warnings are denied in the
+repository `just check` / `just verify` path. Broader Clippy advisory policy
+is not globally denied.
 
 ## Active increment
 
-F3d — Remaining bounded persistence stores — is `COMPLETE` on
-`foundation/f3d-bounded-persistence-stores`, pending Lucy's independent Amber
-review. It adds and cites characterization evidence only; no production
-persistence behaviour was repaired or redesigned.
+F9 — Operator truth reconciliation — updates the current/operator-facing
+documents to reflect the completed Foundation work through F8.
 
 ## Foundation Pass boundaries
 
@@ -42,6 +41,5 @@ persistence behaviour was repaired or redesigned.
 - Current task: `docs/CURRENT_CLINE_TASK.md`
 - F3a persistence inventory: `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
 - F1 debt ledger: `docs/foundation-pass/DEBT_LEDGER.md`
-- F3d worker note: `docs/worker-notes/2026-08-07-f3d-bounded-persistence-stores.md`
 - Enduring principles: `docs/CONSTITUTION.md`
 - Language semantics: `tethers-0.1/SPEC.md`

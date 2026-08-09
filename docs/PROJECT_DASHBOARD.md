@@ -1,36 +1,31 @@
 # Tethers Project Dashboard
 
-Updated: 2026-08-07
+Updated: 2026-08-09
 
 ## Current Milestone
 
-Foundation Pass — bounded strengthening after the accepted J24K/J24L Plug
-installation slice. The programme adds no product capability and advances only
-through separately reviewed evidence packages.
+Foundation F9 — operator truth reconciliation. F1–F8 are complete through
+warning enforcement. This programme adds no product capability and advances
+only through separately reviewed evidence packages. F10 remains the sole
+Foundation completion gate.
 
 ## Verified Checkpoint
 
-Latest accepted implementation:
-`40ec42eb2aac108901d428af3cbfe264d3edd6dc`
-(F3c merged to main), now `origin/main`.
-
-F3d has characterized the remaining nine bounded stores. Its evidence map
-cites an exact hard assertion for every PROVEN claim; F3b power-loss and
-directory-entry labels remain UNVERIFIED, and Local Anchor root reparse safety
-remains UNVERIFIED.
+Latest accepted implementation: F8 warning enforcement at
+`5e616357963e70b86f59c870f6c00b7fbc94cb0a` (`origin/main`).
 
 ## Active Task
 
-- Task: F3d — Remaining bounded persistence stores
-- State: COMPLETE, pending independent Amber review
-- Owner: Codex
-- Risk: Amber (persistence contract evidence)
+- Task: F9 — Operator truth reconciliation
+- State: IN_PROGRESS
+- Owner: OpenCode
+- Risk: Green (documentation-only)
 
 ## Last Accepted Result
 
-F3c is accepted and merged. Its evidence branch
-`foundation/f3c-installation-intent-publication` remains retained at the same
-SHA as main; it has not been deleted.
+F8 warning enforcement is accepted and merged. The all-target Rust Cargo
+check is warning-free and compiler warnings are now denied in the repository
+`just check` / `just verify` path.
 
 ## Matthew Decision Required
 
@@ -38,9 +33,8 @@ None.
 
 ## Next Route
 
-Lucy independently reviews the completed F3d branch
-`foundation/f3d-bounded-persistence-stores`. F3e is not authorised or begun;
-no persistence repair is implied by the F3d evidence pass.
+Complete F9 documentation updates. Lucy reviews and prepares F10
+clean-checkout proof.
 
 ## Operating Mode
 
@@ -54,14 +48,11 @@ no persistence repair is implied by the F3d evidence pass.
 
 ## Cost And Drift
 
-- Use one implementation owner per bounded package.
-- F3d does not infer per-store proof from shared infrastructure; every PROVEN
-  claim names its direct hard assertion.
-- Preserve F3b's power-loss and directory-entry UNVERIFIED labels, and Local
-  Anchor root reparse UNVERIFIED status.
-- Preserve the F1 compatibility fixtures unchanged.
-- Separate every property: file-data durability, atomic visibility, directory
-  entry durability, interruption behaviour, reparse-point defence.
+- One implementation owner per bounded task.
+- F8 cleanup removed 15 dead-code items. Warning enforcement is now active.
+- Broader Clippy advisory diagnostics remain separate from the denied-warning
+  gate.
+- No speculative post-Foundation plans are authorised.
 
 ## Where Details Live
 

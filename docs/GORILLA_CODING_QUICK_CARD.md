@@ -1,6 +1,6 @@
 # Gorilla Coding Quick Card 🦄
 
-Keep this beside the computer. The normal team is **Lucy + Cline**, with **Codex** used for Red work, machine problems, Git recovery, or when Cline cannot proceed cleanly.
+Keep this beside the computer. The normal team is **Lucy + OpenCode**, with **Codex** used for Red work, machine problems, Git recovery, or when OpenCode cannot proceed cleanly.
 
 ## 1. Before Starting Anything
 
@@ -17,7 +17,7 @@ If it is dirty, diverged, or not on main, do not stash, reset, switch branches,
 or pull. Return the exact Git state and stop.
 ```
 
-You may give that to Cline for ordinary work or Codex when Git is already confused.
+You may give that to OpenCode for ordinary work or Codex when Git is already confused.
 
 ## 2. Start The Next Job
 
@@ -27,45 +27,35 @@ Tell Lucy:
 Inspect Tethers and prepare the next job.
 ```
 
-Lucy will inspect GitHub, decide the risk, compile one bounded task, and tell you whether it goes to Cline or Codex.
+Lucy will inspect GitHub, decide the risk, compile one bounded task, and tell you whether it goes to OpenCode or Codex.
 
-For a Cline task:
+For an OpenCode task:
 
 1. Pull the latest GitHub state safely.
 2. Open the Tethers workspace in VS Code.
-3. Open Cline and type:
+3. Open OpenCode and give it the task.
 
-```text
-/tethers-task.md
-```
-
-If Cline is in Plan mode, read the short plan, switch to Act mode, and say:
-
-```text
-Implement the approved current task.
-```
-
-Do not give Cline several jobs at once. One task, one owner, one finish.
+Do not give OpenCode several jobs at once. One task, one owner, one finish.
 
 ## 3. While The Job Is Running
 
-Let Cline solve ordinary compiler, type, ownership, formatting, and test problems inside the agreed task.
+Let OpenCode solve ordinary compiler, type, ownership, formatting, and test problems inside the agreed task.
 
 Stop and return to Lucy when:
 
-- Cline says a design, permission, trust, or compatibility decision is missing;
+- OpenCode says a design, permission, trust, or compatibility decision is missing;
 - the same kind of failure happens twice;
-- Cline starts widening the task or redesigning neighbouring systems;
+- OpenCode starts widening the task or redesigning neighbouring systems;
 - Git, the environment, or the local machine becomes the actual problem;
 - the task is Red or Lucy has asked for Codex.
 
-Do not let Cline and Codex edit the same checkout or task at the same time.
+Do not let OpenCode and Codex edit the same checkout or task at the same time.
 
 ## 4. Stop Properly
 
 A proper stop is either `COMPLETE` or `BLOCKED`.
 
-Cline should:
+The worker should:
 
 - stop after the authorised task;
 - run the required checks;
@@ -74,11 +64,11 @@ Cline should:
 - mark the task `COMPLETE` or `BLOCKED`;
 - not invent or begin the next task.
 
-Do not ask it to “keep going while it is there.” That is how one bounded job grows antlers.
+Do not ask it to "keep going while it is there." That is how one bounded job grows antlers.
 
 ## 5. What To Give Lucy
 
-Paste Cline's final report to Lucy. It should contain:
+Paste the worker's final report to Lucy. It should contain:
 
 - `COMPLETE` or `BLOCKED`;
 - files changed;
@@ -90,19 +80,19 @@ Paste Cline's final report to Lucy. It should contain:
 - final Git status;
 - pushed commit or branch reference, when available.
 
-When something goes wrong, include the exact error text and what Cline already tried. Screenshots are useful when the terminal or UI itself is the problem.
+When something goes wrong, include the exact error text and what the worker already tried. Screenshots are useful when the terminal or UI itself is the problem.
 
 Lucy will inspect GitHub and reply with exactly one route:
 
 1. accepted;
-2. one bounded correction for Cline;
+2. one bounded correction for OpenCode;
 3. escalate to Codex.
 
 ## The Rule To Remember
 
 ```text
 Lucy chooses and reviews.
-Cline normally builds.
+OpenCode normally builds.
 Codex enters for Red work or real trouble.
 Matthew routes the message, not the architecture.
 ```
