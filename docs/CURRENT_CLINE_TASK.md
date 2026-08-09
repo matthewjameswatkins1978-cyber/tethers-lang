@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-D7+D8+D9 — Dead Local-Notification Host Integration Seam`
 Owner: `Codex`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
-Route: `Codex classified the unused local-notification wrapper chain before removal`
+Route: `Codex removed the classified dead local-notification wrapper chain and retained the independent M5 coordinator`
 Worker note: `docs/worker-notes/2026-08-09-f8-d7-d8-d9-local-notification-cleanup.md`
 Base branch: `foundation/f8-d5-d6-d10-exact-approval-cleanup`
 Base commit: `aa01766dc269338b07b4302bc70d6dc9ecaf1037`
 Implementation branch: `foundation/f8-d7-d8-d9-local-notification-cleanup`
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `f138496db8339875971159e50617286d80aea63a`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `RUST`
