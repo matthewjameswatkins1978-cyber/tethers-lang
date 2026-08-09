@@ -227,17 +227,29 @@ During work:
 
 After work:
 
-1. Run the required formatter, compiler, focused checks, relevant regression
+1. For a Rust-changing task, before the implementation checkpoint, run the
+   packet's Cargo formatter command and inspect its immediate diff. Stop if
+   rustfmt changes any file outside the authorised Rust paths. For a non-Rust
+   or evidence-only task, run `cargo fmt --all -- --check` only; never use a
+   mutating formatter or change Rust source.
+2. Run the required compiler, focused checks, relevant regression
    suite, integration scripts, and whitespace checks.
-2. Inspect the complete diff and final Git status.
-3. Write the worker note at the exact path named by the packet.
-4. Update the packet to `COMPLETE` or `BLOCKED` with honest evidence.
-5. Return the concise report defined by `docs/CLINE_HANDOFF.md`; that historical
+3. Inspect the complete diff and final Git status.
+4. Write the worker note at the exact path named by the packet.
+5. Update the packet to `COMPLETE` or `BLOCKED` with honest evidence.
+6. For `COMPLETE`, push the finished branch normally to `origin`, resolve the
+   remote branch HEAD, confirm that it exactly equals local `HEAD`, and confirm
+   clean Git status. Include the full remote SHA, equality result, and status in
+   the completion report.
+7. Return the concise report defined by `docs/CLINE_HANDOFF.md`; that historical
    filename applies to every named implementation owner.
-6. Stop. Do not select, compile, authorise, or begin the next task.
+8. Stop. Do not select, compile, authorise, or begin the next task.
 
-Do not commit, push, merge, amend, tag, publish, install, or open a pull request
-unless the current task explicitly authorises it.
+Do not merge, amend, tag, publish beyond the required normal branch push,
+install, or open a pull request unless the current task explicitly authorises
+it. Every `COMPLETE` task requires its finished branch to be pushed normally to
+`origin`; this does not authorise force-pushes, direct updates to `main`, or any
+other publication.
 
 ## Development Environment
 

@@ -40,6 +40,15 @@ For `COMPLETE`:
 - do not copy earlier or intermediate PASS results forward without rerunning or
   explicitly qualifying them
 
+## Publication evidence
+
+For `COMPLETE`, name the branch that was pushed. The completion report must also
+state the full remote HEAD SHA resolved after the normal push, confirm local
+`HEAD == remote HEAD`, and record clean `git status --short --branch`. Do not
+claim remote publication from an unverified local tracking ref. A failed or
+rejected push is a stop condition, not permission to force-push or alter the
+branch history.
+
 ## Discoveries
 
 Record unexpected behaviour or project facts that could affect later work. Say

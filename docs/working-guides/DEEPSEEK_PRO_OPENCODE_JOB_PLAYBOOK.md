@@ -376,8 +376,16 @@ executor package, planner package, and related CLI tests.
 
 ## Phase F: Format and lint
 
-Run formatting before final verification. Any change made after formatting,
-Clippy, or tests invalidates the prior checkpoint evidence; rerun affected gates.
+For a Rust-changing packet, before the implementation checkpoint run the
+packet's Cargo formatter command, immediately inspect the diff, and STOP if
+rustfmt touches any file outside the authorised Rust paths. Do not absorb
+pre-existing formatting debt.
+
+For a non-Rust or evidence-only packet, run `cargo fmt --all -- --check` only.
+Do not run a mutating formatter or modify Rust source.
+
+Any change made after formatting, Clippy, or tests invalidates the prior
+checkpoint evidence; rerun affected gates.
 
 ## Phase G: Final serial verification
 
@@ -405,6 +413,11 @@ git show --stat --oneline $documentation
 
 Never type the expanded SHA manually.
 
+For every `COMPLETE` task, then push the finished branch normally to `origin`,
+resolve its full remote HEAD SHA, confirm it equals local `HEAD`, and confirm
+clean Git status. A rejected push is a stop condition; do not force-push, merge,
+or rewrite history to make it succeed.
+
 ---
 
 # 7. Completion Report Contract
@@ -418,7 +431,8 @@ One of `COMPLETE`, `BLOCKED`, or `FAILED`.
 ## Exact ancestry
 
 Report accepted main, parent package tip, implementation checkpoint,
-documentation checkpoint, and branch tip.
+documentation checkpoint, branch tip, remote branch, full remote HEAD SHA, and
+confirmation that local HEAD equals remote HEAD with clean Git status.
 
 ## Changed files
 
