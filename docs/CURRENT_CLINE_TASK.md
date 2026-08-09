@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-D12+D13+D14+D15 — Final Dead-Member / Test-Only Tail`
 Owner: `Codex`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
-Route: `Codex independently classified each final warning before a bounded batch`
+Route: `Codex resolved the independently classified final warning tail without changing live contracts`
 Worker note: `docs/worker-notes/2026-08-09-f8-d12-d15-final-warning-tail.md`
 Base branch: `foundation/f8-d11-authorise-wrapper-cleanup`
 Base commit: `f804759043eaa087a6f358fca9781716ac42bfb7`
 Implementation branch: `foundation/f8-d12-d15-final-warning-tail`
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `a029e6117846f2fbfeca78693ef2336b5f5c0317`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `RUST`
