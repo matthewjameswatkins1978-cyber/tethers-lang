@@ -75,6 +75,8 @@ but no install, switch creation, or source repair is authorised.
 4. The proof checkout has no tracked modifications after verification.
 5. COMPLETE-state checker passes, only authorised docs are committed/pushed,
    remote equals local, and the disposable worktree is safely removed.
+6. Every required command is recorded exactly once with its actual PASS, FAIL,
+   or NOT RUN result in the worker evidence.
 
 ## Required verification
 
