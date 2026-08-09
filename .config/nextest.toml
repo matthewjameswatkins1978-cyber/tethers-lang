@@ -3,4 +3,15 @@ nextest-version = { required = "0.9.140" }
 [profile.default]
 retries = 0
 fail-fast = true
-test-threads = 1
+test-threads = "num-cpus"
+
+[test-groups]
+j24k2-serial = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(j24k2_locked_single_step_executor)'
+test-group = 'j24k2-serial'
+
+[[profile.default.overrides]]
+filter = 'test(=child_process::tests::f2a_exit_distinguishable_from_timeout_and_disconnect)'
+threads-required = "num-test-threads"
