@@ -4,11 +4,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `OpenCode`
 
-Status: `COMPLETE` — measured NO-OP
+Status: `COMPLETE`
 
 Base commit: `5b679b4f799d47ee0e5a76e247678c246baa3057`
 
-Implementation checkpoint: `NONE` — justfile was reverted after measured NO-OP result
+Implementation checkpoint: `5b679b4f799d47ee0e5a76e247678c246baa3057`
 
 ## Requested outcome
 

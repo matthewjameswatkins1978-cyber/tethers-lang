@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-09-f8-verify-parallel.md`
 Base branch: `foundation/f8-t1-test-warning-cleanup`
 Base commit: `5b679b4f799d47ee0e5a76e247678c246baa3057`
 Implementation branch: `foundation/f8-verify-parallel`
-Implementation checkpoint: `NONE` — measured NO-OP, justfile reverted to pre-candidate state
+Implementation checkpoint: `5b679b4f799d47ee0e5a76e247678c246baa3057`
 Rust change class: `NON_RUST`
 
 ## Objective
