@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-09-0.3-p1-r1b-scope-validation.md`
 Base branch: `feature/0.3-p1-r1a-schema-evidence`
 Base commit: `6da96996c303338474623b0d0e774271549b4ed4`
 Implementation branch: `feature/0.3-p1-r1b-scope-validation`
-Implementation checkpoint: `5e69ca08e3ffc1cf33453a5fae2f35c52d78d7be`
+Implementation checkpoint: `47a2cbc1202e3a5581977c88d82d686005cf2758`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
 Rust change class: `AMBER_ARCHITECTURE_CORRECTION`
