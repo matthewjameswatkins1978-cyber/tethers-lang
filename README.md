@@ -15,8 +15,8 @@ The language stays deliberately small. The runtime handles capabilities, permiss
 ## Tethers 0.2.2
 
 - Tethers product version: 0.2.2
-- Status: release candidate
-- Tag: pending `v0.2.2`
+- Status: released
+- Tag: `v0.2.2`
 - Language semantics: 0.1
 - Release notes: [`docs/releases/v0.2.2.md`](docs/releases/v0.2.2.md)
 

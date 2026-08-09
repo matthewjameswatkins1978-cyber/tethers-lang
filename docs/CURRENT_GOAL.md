@@ -4,29 +4,25 @@ Updated: 2026-08-09
 
 ## Goal
 
-Prepare the complete Tethers 0.2.2 release candidate for Lucy review and
-publication.
+Tethers 0.2.2 has been released. The verified implementation checkpoint is
+`c6ea1e1652fa2785a1f06e0ace2fcd5e826ee6ec`, published by advancing `main`
+and tagging `v0.2.2`.
 
 Foundation F1–F10 is COMPLETE and ACCEPTED. The accepted F10 final evidence
 is at `5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1`.
 
-0.2.2 is a patch release-hardening release. It adds no new product capability.
-Language semantics remain 0.1.
-
-`main` has NOT yet been advanced. `v0.2.2` has NOT yet been created.
-Publication requires Lucy review after the candidate completes.
+The next programme is Tethers 0.3 public Plug authoring. The first 0.3
+implementation packet will be compiled by Lucy from the published `v0.2.2` tag.
 
 ## Last accepted increment
 
-Foundation F10 clean-checkout proof independently accepted at
-`5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1` (Foundation branch lineage).
-F1–F10 have not yet been merged to `origin/main`; live `main` remains
-`40ec42eb2aac108901d428af3cbfe264d3edd6dc`.
+Tethers 0.2.2 published. Foundation F1–F10 merge and tagged `v0.2.2`
+complete. Verified implementation checkpoint:
+`c6ea1e1652fa2785a1f06e0ace2fcd5e826ee6ec`.
 
 ## Active increment
 
-Tethers 0.2.2 release preparation — version identity, Cargo single-source,
-fixture migration, release notes, README front door, and Foundation recording.
+None — awaiting Lucy compilation of the first Tethers 0.3 implementation packet.
 
 ## Foundation Pass boundaries
 

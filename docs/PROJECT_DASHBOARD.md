@@ -4,28 +4,26 @@ Updated: 2026-08-09
 
 ## Current Milestone
 
-Tethers 0.2.2 release candidate preparation. Foundation F1–F10 is COMPLETE and
-ACCEPTED. This programme adds no product capability and advances only through
-separately reviewed evidence packages.
+Tethers 0.2.2 released. Foundation F1–F10 is COMPLETE and ACCEPTED. The next
+programme is Tethers 0.3 public Plug authoring.
 
 ## Verified Checkpoint
 
-Latest accepted implementation: F10 clean-checkout proof at
-`5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1` (Foundation branch lineage).
-F1–F10 have not yet been merged to `origin/main`; live `main` remains
-`40ec42eb2aac108901d428af3cbfe264d3edd6dc`.
+0.2.2 release published at verified implementation checkpoint
+`c6ea1e1652fa2785a1f06e0ace2fcd5e826ee6ec`. Tagged as `v0.2.2`.
 
 ## Active Task
 
-- Task: RELEASE-0.2.2-PREP — Tethers 0.2.2 Release Candidate
-- State: COMPLETE — pending Lucy review and publication
-- Owner: OpenCode
-- Risk: Amber
+- Task: None — awaiting Lucy compilation of the first Tethers 0.3 implementation
+  packet from the published `v0.2.2` tag.
+- State: None
+- Owner: None
+- Risk: N/A
 
 ## Last Accepted Result
 
-Foundation F10 clean-checkout proof independently completed and accepted.
-F1–F9 and pre-F10 gate repair remain accepted on the Foundation branch lineage.
+Tethers 0.2.2 release candidate independently reviewed and accepted by Lucy.
+Foundation F1–F10 remain accepted on the Foundation branch lineage.
 
 ## Matthew Decision Required
 
@@ -33,7 +31,8 @@ None.
 
 ## Next Route
 
-Complete 0.2.2 release candidate. Lucy reviews and decides publication.
+Lucy compiles the first Tethers 0.3 implementation packet from `v0.2.2`.
+OpenCode or Codex implements as routed by Lucy.
 
 ## Operating Mode
 
