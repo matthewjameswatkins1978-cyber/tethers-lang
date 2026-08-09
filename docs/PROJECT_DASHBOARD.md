@@ -4,10 +4,9 @@ Updated: 2026-08-09
 
 ## Current Milestone
 
-Foundation pre-F10 — final gate consistency repair. F1–F9 are complete through
-operator truth reconciliation. This programme adds no product capability and
-advances only through separately reviewed evidence packages. F10 remains the
-sole Foundation completion gate.
+Foundation F10 — clean-checkout completion proof. F1–F9 and the pre-F10 gate
+repair are complete on Foundation branch lineage. F10 is independent evidence
+only; Foundation is not yet self-declared complete.
 
 ## Verified Checkpoint
 
@@ -18,16 +17,16 @@ F1–F9 have not yet been merged to `origin/main`; live `main` remains
 
 ## Active Task
 
-- Task: PRE-F10 — Final gate consistency repair
-- State: COMPLETE (pending Lucy review)
-- Owner: OpenCode
-- Risk: Green
+- Task: F10 — Foundation Clean-Checkout Completion Proof
+- State: IN_PROGRESS
+- Owner: Codex
+- Risk: Amber
 
 ## Last Accepted Result
 
-F9-FINAL operator truth reconciliation has completed on the Foundation branch
-lineage. The all-target Rust Cargo check is warning-free and compiler warnings
-are now denied in the repository `just check` / `just verify` path.
+Pre-F10 gate consistency repair completed on the Foundation branch lineage.
+F10 independently proves the clean Windows checkout and complete programme
+evidence before Lucy's acceptance decision.
 
 ## Matthew Decision Required
 
@@ -35,8 +34,8 @@ None.
 
 ## Next Route
 
-Complete pre-F10 gate repair (pending Lucy review). F10 clean-checkout proof
-follows.
+F10 clean-checkout proof is active. Lucy independently reviews the pushed F10
+evidence afterward; Codex does not declare Foundation accepted.
 
 ## Operating Mode
 

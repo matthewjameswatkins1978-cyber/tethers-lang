@@ -1,126 +1,100 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `PRE-F10 — Final Gate Consistency Repair`
-Owner: `OpenCode`
-Status: `COMPLETE`
-Task colour: `Green`
-Route: `OpenCode fixes justfile verify warning gate and reconciles current-state docs`
-Worker note: `docs/worker-notes/2026-08-09-pre-f10-gate-consistency.md`
-Base branch: `foundation/f9-final-reconciliation`
-Base commit: `fc33dba435a87833a6f0f53642326697a246694b`
-Implementation branch: `foundation/pre-f10-gate-consistency`
-Implementation checkpoint: `2a69d71bff9e01d53f8f785573ff795b2057d00f`
-OCaml switch path: `N/A`
-Rust toolchain: `1.97.1`
+Task packet: `F10 — Foundation Clean-Checkout Completion Proof`
+Owner: `Codex`
+Status: `IN_PROGRESS`
+Task colour: `Amber`
+Route: `Codex performs independent Windows clean-checkout evidence and sign-off`
+Worker note: `docs/worker-notes/2026-08-09-f10-clean-checkout-proof.md`
+Base branch: `foundation/pre-f10-gate-consistency`
+Base commit: `f1fcf6c1af380bb8a787d725ac83d7faae5bc17c`
+Implementation branch: `foundation/f10-clean-checkout-proof`
+Implementation checkpoint: `PENDING`
+OCaml switch path: `resolve from existing machine state only`
+Rust toolchain: `repository-pinned`
 Rust change class: `DOCS`
 
 ## Objective
 
-Correct every remaining demonstrated inconsistency found by the independent pre-F10 sweep:
-1. make `just verify` / `just verify-agent` enforce zero Rust compiler warnings;
-2. reconcile current goal/dashboard truth now that F9-FINAL has completed.
+Produce an independent, disposable Windows clean-checkout proof for the
+accepted pre-F10 Foundation target. This is evidence and sign-off only; it must
+not repair product, test, toolchain, fixture, dependency, or programme issues.
 
 ## Relevant background and existing behaviour
 
-F8-W2 added `RUSTFLAGS="-D warnings"` to the canonical `just check` recipe, but
-`just verify` runs its own separate non-strict Cargo check invocation, bypassing
-the warning gate. `CURRENT_GOAL.md` still describes F9 as the active documentation
-phase. `PROJECT_DASHBOARD.md` contains a false "accepted and merged" claim for F8.
+The accepted target is `f1fcf6c1af380bb8a787d725ac83d7faae5bc17c` on
+`origin/foundation/pre-f10-gate-consistency`; Foundation begins at
+`24428139807cac0adeb0b62264547e61ca809d16`. The accepted F1 fixture evidence
+tip is `f295daa288f4d3dc48181888d6655df798675033`. A fresh worktree lacks
+ignored OCaml outputs by design; an existing compatible switch may build them,
+but no install, switch creation, or source repair is authorised.
 
 ## Required behaviour
 
-### Part A — Fix the warning gate
-1. In `justfile`, replace `just verify`'s separate Cargo-check invocation with
-   `just check`, so that `just verify` and `just verify-agent` genuinely enforce
-   zero Rust compiler warnings.
-2. Preserve ordering: task-packet check, formatting check, strict `just check`,
-   Cargo tests.
-3. No justfile redesign, no new scripts, no Clippy policy change.
-
-### Part B — Current state truth
-4. Update `CURRENT_GOAL.md`: F9-FINAL completed, pre-F10 consistency repair active,
-   F10 remains sole gate, live main unchanged.
-5. Update `PROJECT_DASHBOARD.md`: remove false "accepted and merged" claim for F8,
-   record pre-F10 repair as active task, Foundation work on branch lineage.
-6. At closeout: update dashboard to pre-F10 COMPLETE, pending Lucy review.
+1. Commit a control-start task-packet/dashboard checkpoint from the exact
+   accepted target and prove non-control files are byte-identical.
+2. Create and prove a cold disposable Windows worktree at that checkpoint.
+3. Review Foundation ancestry and complete programme diff before expensive
+   verification; stop on unauthorised semantic/dependency/fixture change.
+4. Prove F1 fixture/manifest byte integrity, validate fixtures, recover the
+   existing compatible cross-language environment, and run engine/MCP tests.
+5. Run serial environment identity, advisory Clippy, and exactly one final
+   `just verify-agent`; record actual outputs and final clean proof state.
+6. Close out only if every mandatory command passed; push normally and remove
+   only the purpose-created clean proof worktree after evidence is captured.
 
 ## Relevant components
 
 ### AUTHORISED PATHS
-- `justfile`
-- `docs/CURRENT_GOAL.md`
+- `docs/CURRENT_CLINE_TASK.md`
 - `docs/PROJECT_DASHBOARD.md`
+- `docs/worker-notes/2026-08-09-f10-clean-checkout-proof.md`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-pre-f10-gate-consistency.md`
-- final closeout update to `docs/PROJECT_DASHBOARD.md`
+- `docs/PROJECT_DASHBOARD.md`
+- `docs/worker-notes/2026-08-09-f10-clean-checkout-proof.md`
 
 ## Frozen decisions and invariants
 
-- No Rust source change in final tree.
-- No OCaml change.
-- No dependency or lockfile change.
-- No Clippy cleanup.
-- No new script.
-- No new CI.
-- No workflow redesign.
-- No merge to main.
-- No F10 verification yet.
-- F10 remains sole Foundation completion gate.
+- F10 proves Foundation; it does not self-declare Foundation accepted or merge
+  to main. Lucy independently accepts or rejects the pushed evidence.
+- No production/test/tooling/fixture/specification/dependency/toolchain/CI or
+  Clippy cleanup change. No fixture regeneration or environment installation.
+- The clean worktree begins cold; only its own ignored build artefacts may be
+  created. The control-start commit is the sole verified checkpoint.
 
 ## Acceptance criteria
 
-1. `just verify` uses canonical strict `just check`.
-2. A deliberate temporary warning causes `just verify` to fail before Cargo tests.
-3. Clean `just check` passes with zero warnings.
-4. Temporary Rust change is restored exactly.
-5. Dashboard contains no false "F8 merged" claim.
-6. F9 is no longer described as IN_PROGRESS.
-7. F10 remains the sole completion gate.
-8. COMPLETE-state packet checker passes.
-9. Branch is pushed and clean.
+1. Remote target, control-start lineage, clean worktree state, programme
+   ancestry/diff, and F1 byte integrity are all proven.
+2. Existing OCaml 5.5.0 compatible switch and repository environment probe pass.
+3. Fixture validator, engine tests, MCP transcripts, Clippy, and one complete
+   verify-agent matrix pass with recorded actual results.
+4. The proof checkout has no tracked modifications after verification.
+5. COMPLETE-state checker passes, only authorised docs are committed/pushed,
+   remote equals local, and the disposable worktree is safely removed.
 
 ## Required verification
 
-### Positive proof
-1. Inspect `just verify` recipe and prove it invokes canonical `just check`.
-2. Run `just check`; require zero warnings / PASS.
-
-### Negative proof
-3. Temporarily introduce one harmless unused Rust import.
-4. Run `just verify`; require failure at strict `just check` stage (unused-import
-   warning promoted to error; Cargo tests not reached).
-5. Restore source file byte-for-byte; prove no Rust diff remains.
-6. Do not commit the temporary warning.
-
-### Cheap final checks
-7. `just fmt`
-8. `git diff --check`
-9. Inspect full diff; prove only authorised tooling/docs remain.
-10. Do NOT run `just verify-agent`.
-11. Do NOT rerun the full Rust suite.
-
-### Closeout
-12. COMPLETE-state packet checker must report `control-v1/COMPLETE`.
+1. Every command and pre/post-clean-checkout capture required by F10 packet.
+2. Exact complete programme and F1 fixture Git comparisons.
+3. Repository-owned environment/fixture/engine/MCP scripts, Clippy, and one
+   serial `just verify-agent`.
+4. COMPLETE packet checker, diff/status, remote equality, and cleanup proof.
 
 ## Forbidden changes
 
-- No Rust source change in final tree.
-- No OCaml change.
-- No dependency or lockfile change.
-- No Clippy cleanup.
-- No new script.
-- No new CI.
-- No workflow redesign.
-- No merge to main.
-- No F10 verification yet.
+- No repair, product/test/tooling/fixture/dependency/spec/toolchain/CI change,
+  warning cleanup, merge to main, tag, release, installation, or fixture refresh.
 
 ## Stop conditions
 
-STOP if any stale claim persists, if diff touches non-authorised files, or if
-COMPLETE-state packet checker fails.
+STOP and record BLOCKED if target/ref or clean state differs, required switch is
+absent, programme/fixture integrity differs, a mandatory command fails or is
+unrun, tracked proof files change, complete checker fails, or push cannot be
+proven normally. Do not repair and continue.
 
 ## Expected pre-existing changes
 
