@@ -1,6 +1,7 @@
 # Worker Note — F8-WORKFLOW-CARRY
 
 Task: `F8-WORKFLOW-CARRY — Worker Lifecycle Documentation Carry`
+Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `5e5ec4f6f8afd8aa06ed49569038dd80c8d18940`
