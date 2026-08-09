@@ -1269,16 +1269,6 @@ impl CapabilityExecutor for FailingExecutor {
 // J05 exact Ask orchestration seam
 // ---------------------------------------------------------------------------
 
-/// The only host-facing approval operations.  These are deliberately separate
-/// from planner and provider input: a caller cannot supply an already-approved
-/// policy result or manufacture a human decision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HumanApprovalDecision {
-    Approve,
-    Deny,
-    Cancel,
-}
-
 fn approval_trail_entry(
     proof: &approval::ApprovalProof,
     kind: &str,
@@ -1335,34 +1325,6 @@ pub(crate) fn request_exact_approval(
         return Err(error.into());
     }
     Ok(Some(record))
-}
-
-/// This is the host-recognised decision boundary.  The state transition is
-/// performed first; a failed Trail append cannot claim a transition that did
-/// not happen, and the caller must not resume after its error.
-fn record_human_approval_decision(
-    approval_id: &str,
-    decision: HumanApprovalDecision,
-    approvals: &mut approval::ApprovalStore,
-    trail: &mut dyn dispatch::Trail,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (next, kind) = match decision {
-        HumanApprovalDecision::Approve => (approval::ApprovalState::Approved, "approval_granted"),
-        HumanApprovalDecision::Deny => (approval::ApprovalState::Denied, "approval_denied"),
-        HumanApprovalDecision::Cancel => (approval::ApprovalState::Cancelled, "approval_cancelled"),
-    };
-    let record = approvals.decide(approval_id, next)?;
-    if let Err(error) =
-        trail.append_authorisation(&approval_trail_entry(&record.proof, kind, "human_decision"))
-    {
-        // A failed grant audit must not leave dispatchable authority.  Denial
-        // and cancellation remain terminal, so neither can be reused.
-        if next == approval::ApprovalState::Approved {
-            approvals.invalidate_live(approval_id)?;
-        }
-        return Err(error.into());
-    }
-    Ok(())
 }
 
 /// Re-resolve every ordinary policy input inside the resume seam.  An
@@ -1842,40 +1804,6 @@ impl ApprovalConsumption for ExactApprovalConsumption<'_> {
             ))
             .map_err(|_| ())
     }
-}
-
-/// Approved-Ask orchestration performs complete fresh checks first, but defers
-/// the one-shot consume until a new replay claim is durably admitted.
-#[allow(clippy::too_many_arguments)]
-fn resume_and_execute_exact_approval(
-    response: &mut Value,
-    approval_id: &str,
-    requirements: &[policy::CapabilityRequirement],
-    store: &trusted_store::TrustedManifestStore,
-    availability: &resolver::ProviderAvailability,
-    host_policy: &policy::HostLocalPolicy,
-    scope: policy::ScopeAssessment,
-    approvals: &mut approval::ApprovalStore,
-    trail: &mut dyn dispatch::Trail,
-    executor: &mut dyn CapabilityExecutor,
-    original_event_id: &str,
-    host_data_root: Option<&Path>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut replay_authority = replay_runtime::FileReplayAuthority::new(host_data_root);
-    resume_and_execute_exact_approval_with_authority(
-        response,
-        approval_id,
-        requirements,
-        store,
-        availability,
-        host_policy,
-        scope,
-        approvals,
-        trail,
-        executor,
-        original_event_id,
-        &mut replay_authority,
-    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4986,13 +4914,16 @@ mod tests {
         .unwrap();
         assert_eq!(request.approval_id, duplicate.approval_id);
         assert_eq!(trail.authorisation_entries.len(), 1);
-        record_human_approval_decision(
-            &request.approval_id,
-            HumanApprovalDecision::Approve,
-            &mut approvals,
-            &mut trail,
-        )
-        .unwrap();
+        let approved = approvals
+            .decide(&request.approval_id, approval::ApprovalState::Approved)
+            .unwrap();
+        trail
+            .append_authorisation(&approval_trail_entry(
+                &approved.proof,
+                "approval_granted",
+                "human_decision",
+            ))
+            .unwrap();
         let mut executor = FixtureExecutor { calls: 0 };
         resume_and_execute_exact_approval_with_test_replay(
             &mut response,
@@ -5051,13 +4982,16 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        record_human_approval_decision(
-            &request.approval_id,
-            HumanApprovalDecision::Approve,
-            &mut approvals,
-            &mut trail,
-        )
-        .unwrap();
+        let approved = approvals
+            .decide(&request.approval_id, approval::ApprovalState::Approved)
+            .unwrap();
+        trail
+            .append_authorisation(&approval_trail_entry(
+                &approved.proof,
+                "approval_granted",
+                "human_decision",
+            ))
+            .unwrap();
         let mut executor = MockExecutor::new();
         let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
         resume_and_execute_exact_approval_with_authority(
@@ -5100,7 +5034,10 @@ mod tests {
         let availability = ProviderAvailability::from_identities(["lantern-local"]);
         let requirements = vec![CapabilityRequirement::new("fixture.ask", 1)];
         let policy = HostLocalPolicy::new(PolicyRule::Allow);
-        for decision in [HumanApprovalDecision::Deny, HumanApprovalDecision::Cancel] {
+        for decision in [
+            approval::ApprovalState::Denied,
+            approval::ApprovalState::Cancelled,
+        ] {
             let response = make_bridge_matched_response(&resolved);
             let action = extract_proposed_action(&response).unwrap();
             let mut approvals = approval::ApprovalStore::default();
@@ -5117,13 +5054,7 @@ mod tests {
             )
             .unwrap()
             .unwrap();
-            record_human_approval_decision(
-                &request.approval_id,
-                decision,
-                &mut approvals,
-                &mut trail,
-            )
-            .unwrap();
+            approvals.decide(&request.approval_id, decision).unwrap();
             assert!(matches!(
                 approvals.record(&request.approval_id).unwrap().state,
                 approval::ApprovalState::Denied | approval::ApprovalState::Cancelled
@@ -5173,50 +5104,56 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        for decision in [
-            HumanApprovalDecision::Approve,
-            HumanApprovalDecision::Deny,
-            HumanApprovalDecision::Cancel,
-        ] {
-            let mut trial = approval::ApprovalStore::default();
-            let mut trial_trail = RecordingTrail::new();
-            let record = request_exact_approval(
-                &action,
-                &requirements,
-                &store,
-                &availability,
-                &policy,
-                policy::ScopeAssessment::ScopeNotEstablished,
-                &mut trial,
-                &mut trial_trail,
-            )
-            .unwrap()
+        let approved = approvals
+            .decide(&request.approval_id, approval::ApprovalState::Approved)
             .unwrap();
-            trial_trail.injected_authorisation_error =
-                Some(dispatch::TrailError::WriteFailed("full".into()));
-            assert!(record_human_approval_decision(
-                &record.approval_id,
-                decision,
-                &mut trial,
-                &mut trial_trail
-            )
-            .is_err());
-            let state = trial.record(&record.approval_id).unwrap().state;
-            assert!(matches!(
-                state,
-                approval::ApprovalState::Invalidated
-                    | approval::ApprovalState::Denied
-                    | approval::ApprovalState::Cancelled
-            ));
-        }
-
-        record_human_approval_decision(
+        trail
+            .append_authorisation(&approval_trail_entry(
+                &approved.proof,
+                "approval_granted",
+                "human_decision",
+            ))
+            .unwrap();
+        trail.injected_authorisation_error = Some(dispatch::TrailError::WriteFailed("full".into()));
+        assert!(precheck_exact_approval(
+            &action,
             &request.approval_id,
-            HumanApprovalDecision::Approve,
+            &requirements,
+            &store,
+            &availability,
+            &HostLocalPolicy::new(PolicyRule::Deny),
+            policy::ScopeAssessment::ScopeNotEstablished,
             &mut approvals,
             &mut trail,
         )
+        .is_err());
+        assert_eq!(
+            approvals.record(&request.approval_id).unwrap().state,
+            approval::ApprovalState::Invalidated
+        );
+
+        let request = request_exact_approval(
+            &action,
+            &requirements,
+            &store,
+            &availability,
+            &policy,
+            policy::ScopeAssessment::ScopeNotEstablished,
+            &mut approvals,
+            &mut trail,
+        )
+        .unwrap()
         .unwrap();
+        let approved = approvals
+            .decide(&request.approval_id, approval::ApprovalState::Approved)
+            .unwrap();
+        trail
+            .append_authorisation(&approval_trail_entry(
+                &approved.proof,
+                "approval_granted",
+                "human_decision",
+            ))
+            .unwrap();
         trail.injected_authorisation_error = Some(dispatch::TrailError::WriteFailed("full".into()));
         let mut response = make_bridge_matched_response(&resolved);
         let mut executor = MockExecutor::new();
@@ -6594,15 +6531,19 @@ mod tests {
             )
             .unwrap()
             .unwrap();
-            record_human_approval_decision(
-                &request.approval_id,
-                HumanApprovalDecision::Approve,
-                &mut approvals,
-                &mut trail,
-            )
-            .unwrap();
+            let approved = approvals
+                .decide(&request.approval_id, approval::ApprovalState::Approved)
+                .unwrap();
+            trail
+                .append_authorisation(&approval_trail_entry(
+                    &approved.proof,
+                    "approval_granted",
+                    "human_decision",
+                ))
+                .unwrap();
             let mut executor = FixtureExecutor { calls: 0 };
-            resume_and_execute_exact_approval(
+            let mut replay_authority = replay_runtime::FileReplayAuthority::new(None);
+            resume_and_execute_exact_approval_with_authority(
                 &mut response,
                 &request.approval_id,
                 &requirements,
@@ -6614,7 +6555,7 @@ mod tests {
                 &mut trail,
                 &mut executor,
                 "evt-j09-approved-missing-root",
-                None,
+                &mut replay_authority,
             )
             .unwrap();
             assert_eq!(
