@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-D1 — First Production Dead-Code Warning Cleanup`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode removes D1 (PROVISION_USAGE) dead-code constant`
 Worker note: `docs/worker-notes/2026-08-09-f8-d1-provision-usage-cleanup.md`
 Base branch: `foundation/f8-t15-test-warning-cleanup`
 Base commit: `66da0492d0bc681defefa66a92cdb40287dcb05c`
 Implementation branch: `foundation/f8-d1-provision-usage-cleanup`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `9717b32bc264fd3d50c8f43eea854a7507e528fb`
 Rust change class: `RUST`
 
 ## Objective
