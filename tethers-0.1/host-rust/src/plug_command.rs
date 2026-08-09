@@ -855,20 +855,24 @@ pub fn run_enable(
             );
         }
     };
-    if let Err(error) =
-        crate::validation::validate_operational_scope(&schema, &scope_request.scope.0)
-    {
-        return enable_error(
-            M3Error::new("scope_request_invalid", error.message),
-            OutcomeStatus::InvalidData,
-        );
-    }
+    let canonical_scope = match crate::validation::validate_and_canonicalize_operational_scope(
+        &schema,
+        &scope_request.scope.0,
+    ) {
+        Ok(cs) => cs,
+        Err(error) => {
+            return enable_error(
+                M3Error::new("scope_request_invalid", error.message),
+                OutcomeStatus::InvalidData,
+            );
+        }
+    };
     let evidence = match OperationalScopeEvidence::create(
         installed_id_str,
         &target.package_id,
         &target.provider_id,
         &scope_schema_digest,
-        &scope_request.scope.0,
+        &canonical_scope,
         "tethers-reference-host-cli",
     ) {
         Ok(e) => e,
@@ -1173,5 +1177,181 @@ mod tests {
         assert_eq!(evidence.scope_schema_digest, schema_digest);
         assert!(evidence.scope_schema_digest.starts_with("sha256:"));
         assert_eq!(evidence.scope_schema_digest.len(), 71);
+    }
+
+    // ── R1C canonical-directory integration tests ──
+
+    #[test]
+    fn r1c_evidence_stores_canonical_path_not_original() {
+        use std::env;
+        let temp = env::temp_dir();
+        let canonical = fs::canonicalize(&temp).unwrap();
+        let schema = pdf_schema();
+        let schema_bytes = serde_json_canonicalizer::to_vec(&schema).unwrap();
+        let schema_digest = sha256(&schema_bytes);
+        let with_redundant = temp.join("..").join(temp.file_name().unwrap());
+        let scope =
+            serde_json::json!({"query_root": with_redundant.to_str().unwrap(), "max_bytes": 4096});
+        let canonical_scope =
+            crate::validation::validate_and_canonicalize_operational_scope(&schema, &scope)
+                .unwrap();
+        let evidence = OperationalScopeEvidence::create(
+            "00000000-0000-0000-0000-000000000010",
+            "tethers.pdf-tools",
+            "tethers-pdf-provider",
+            &schema_digest,
+            &canonical_scope,
+            "R1C-test",
+        )
+        .unwrap();
+        let stored: serde_json::Value =
+            serde_json::from_str(&evidence.canonical_scope_json).unwrap();
+        assert_eq!(
+            stored.get("query_root").unwrap().as_str().unwrap(),
+            canonical.to_str().unwrap()
+        );
+    }
+
+    #[test]
+    fn r1c_schema_digest_unchanged_by_canonicalization() {
+        use std::env;
+        let temp = env::temp_dir();
+        let schema = pdf_schema();
+        let schema_bytes = serde_json_canonicalizer::to_vec(&schema).unwrap();
+        let schema_digest = sha256(&schema_bytes);
+        let scope = serde_json::json!({"query_root": temp.to_str().unwrap(), "max_bytes": 4096});
+        let canonical_scope =
+            crate::validation::validate_and_canonicalize_operational_scope(&schema, &scope)
+                .unwrap();
+        let evidence = OperationalScopeEvidence::create(
+            "00000000-0000-0000-0000-000000000011",
+            "tethers.pdf-tools",
+            "tethers-pdf-provider",
+            &schema_digest,
+            &canonical_scope,
+            "R1C-test",
+        )
+        .unwrap();
+        assert_eq!(evidence.scope_schema_digest, schema_digest);
+    }
+
+    #[test]
+    fn r1c_deterministic_canonical_evidence() {
+        use std::env;
+        let temp = env::temp_dir();
+        let schema = pdf_schema();
+        let schema_bytes = serde_json_canonicalizer::to_vec(&schema).unwrap();
+        let schema_digest = sha256(&schema_bytes);
+        let scope = serde_json::json!({"query_root": temp.to_str().unwrap(), "max_bytes": 4096});
+        let canonical_a =
+            crate::validation::validate_and_canonicalize_operational_scope(&schema, &scope)
+                .unwrap();
+        let canonical_b =
+            crate::validation::validate_and_canonicalize_operational_scope(&schema, &scope)
+                .unwrap();
+        assert_eq!(canonical_a, canonical_b);
+        let evidence_a = OperationalScopeEvidence::create(
+            "00000000-0000-0000-0000-000000000012",
+            "tethers.pdf-tools",
+            "tethers-pdf-provider",
+            &schema_digest,
+            &canonical_a,
+            "R1C-test",
+        )
+        .unwrap();
+        let evidence_b = OperationalScopeEvidence::create(
+            "00000000-0000-0000-0000-000000000012",
+            "tethers.pdf-tools",
+            "tethers-pdf-provider",
+            &schema_digest,
+            &canonical_b,
+            "R1C-test",
+        )
+        .unwrap();
+        assert_eq!(evidence_a.integrity_digest, evidence_b.integrity_digest);
+        assert_eq!(
+            evidence_a.canonical_scope_json,
+            evidence_b.canonical_scope_json
+        );
+    }
+
+    // ── R1C Windows reparse/junction tests ──
+
+    #[cfg(windows)]
+    #[test]
+    fn r1c_junction_directory_is_refused() {
+        let target =
+            std::env::temp_dir().join(format!("tethers-r1c-target-{}", uuid::Uuid::new_v4()));
+        let junction =
+            std::env::temp_dir().join(format!("tethers-r1c-junction-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&target).unwrap();
+        let status = std::process::Command::new("cmd")
+            .args([
+                "/C",
+                "mklink",
+                "/J",
+                junction.to_str().unwrap(),
+                target.to_str().unwrap(),
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success(), "could not create Windows junction");
+        let schema = pdf_schema();
+        let scope =
+            serde_json::json!({"query_root": junction.to_str().unwrap(), "max_bytes": 4096});
+        let err = crate::validation::validate_and_canonicalize_operational_scope(&schema, &scope)
+            .unwrap_err();
+        assert!(
+            err.message.contains("reparse") || err.message.contains("symbolic link"),
+            "expected reparse/link error, got: {}",
+            err.message
+        );
+        fs::remove_dir(&junction).unwrap();
+        fs::remove_dir(&target).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn r1c_path_through_junction_ancestor_is_refused() {
+        let target = std::env::temp_dir().join(format!(
+            "tethers-r1c-ancestor-target-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let junction = std::env::temp_dir().join(format!(
+            "tethers-r1c-ancestor-link-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir(&target).unwrap();
+        let child = target.join("subdir");
+        fs::create_dir(&child).unwrap();
+        let status = std::process::Command::new("cmd")
+            .args([
+                "/C",
+                "mklink",
+                "/J",
+                junction.to_str().unwrap(),
+                target.to_str().unwrap(),
+            ])
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "could not create Windows ancestor junction"
+        );
+        let path_through_junction = junction.join("subdir");
+        let schema = pdf_schema();
+        let scope = serde_json::json!({
+            "query_root": path_through_junction.to_str().unwrap(),
+            "max_bytes": 4096
+        });
+        let err = crate::validation::validate_and_canonicalize_operational_scope(&schema, &scope)
+            .unwrap_err();
+        assert!(
+            err.message.contains("reparse") || err.message.contains("symbolic link"),
+            "expected ancestor reparse/link error, got: {}",
+            err.message
+        );
+        fs::remove_dir(&junction).unwrap();
+        fs::remove_dir_all(&target).unwrap();
     }
 }

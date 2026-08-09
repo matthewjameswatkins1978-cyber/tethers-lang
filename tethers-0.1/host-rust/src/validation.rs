@@ -20,6 +20,7 @@
 
 use serde_json::Value;
 use std::cmp::Ordering;
+use std::{fs, path::Path};
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -74,6 +75,133 @@ pub fn validate_operational_scope(schema: &Value, scope: &Value) -> Result<(), V
     let mut schema = schema.clone();
     preprocess_scope_schema(&mut schema, "$")?;
     validate_against_schema(&schema, scope)
+}
+
+/// Validate the operational scope and canonicalize `x-tethers-path` fields.
+///
+/// Returns the canonical scope with paths hardened and replaced.
+pub fn validate_and_canonicalize_operational_scope(
+    schema: &Value,
+    scope: &Value,
+) -> Result<Value, ValidationError> {
+    let mut cleaned_schema = schema.clone();
+    preprocess_scope_schema(&mut cleaned_schema, "$")?;
+    validate_against_schema(&cleaned_schema, scope)?;
+    let canonical_scope = canonicalize_scope_value(schema, scope)?;
+    validate_against_schema(&cleaned_schema, &canonical_scope)?;
+    Ok(canonical_scope)
+}
+
+fn canonicalize_directory_path(raw: &str) -> Result<String, ValidationError> {
+    let path = Path::new(raw);
+    if !path.is_absolute() {
+        return Err(ValidationError::new(format!(
+            "canonical-directory: path must be absolute: {raw}"
+        )));
+    }
+    let exists = path.try_exists().map_err(|e| {
+        ValidationError::new(format!(
+            "canonical-directory: cannot access path: {raw}: {e}"
+        ))
+    })?;
+    if !exists {
+        return Err(ValidationError::new(format!(
+            "canonical-directory: directory does not exist: {raw}"
+        )));
+    }
+    if !path.is_dir() {
+        return Err(ValidationError::new(format!(
+            "canonical-directory: path is not a directory: {raw}"
+        )));
+    }
+    crate::m3_store::verify_chain(path)
+        .map_err(|e| ValidationError::new(format!("canonical-directory: {raw}: {}", e.message)))?;
+    crate::m3_store::reject_reparse(path)
+        .map_err(|e| ValidationError::new(format!("canonical-directory: {raw}: {}", e.message)))?;
+    let canonical = fs::canonicalize(path).map_err(|e| {
+        ValidationError::new(format!(
+            "canonical-directory: cannot canonicalize {raw}: {e}"
+        ))
+    })?;
+    crate::m3_store::verify_chain(&canonical).map_err(|e| {
+        ValidationError::new(format!(
+            "canonical-directory: canonical path {}: {}",
+            canonical.display(),
+            e.message
+        ))
+    })?;
+    crate::m3_store::reject_reparse(&canonical).map_err(|e| {
+        ValidationError::new(format!(
+            "canonical-directory: canonical path {}: {}",
+            canonical.display(),
+            e.message
+        ))
+    })?;
+    canonical.to_str().map_or_else(
+        || {
+            Err(ValidationError::new(format!(
+                "canonical-directory: canonical path is not valid UTF-8: {}",
+                canonical.display()
+            )))
+        },
+        |s| Ok(s.to_owned()),
+    )
+}
+
+fn canonicalize_scope_value(schema: &Value, scope: &Value) -> Result<Value, ValidationError> {
+    if let Some(schema_obj) = schema.as_object() {
+        if let Some(x_tp) = schema_obj.get("x-tethers-path") {
+            if let Some(val) = x_tp.as_str() {
+                if val == "canonical-directory" {
+                    if let Some(s) = scope.as_str() {
+                        return canonicalize_directory_path(s).map(Value::String);
+                    }
+                    return Err(ValidationError::new(
+                        "x-tethers-path: canonical-directory requires a string value",
+                    ));
+                }
+            }
+        }
+    }
+    match (schema, scope) {
+        (Value::Object(schema_obj), Value::Object(scope_obj)) => {
+            let mut result = scope_obj.clone();
+            if let Some(props) = schema_obj.get("properties") {
+                if let Some(props_obj) = props.as_object() {
+                    for (name, prop_schema) in props_obj {
+                        if let Some(prop_value) = scope_obj.get(name) {
+                            let canonicalized = canonicalize_scope_value(prop_schema, prop_value)?;
+                            result.insert(name.clone(), canonicalized);
+                        }
+                    }
+                }
+            }
+            if let Some(addl) = schema_obj.get("additionalProperties") {
+                if addl.is_object() {
+                    let declared = schema_obj.get("properties").and_then(|p| p.as_object());
+                    for (name, val) in scope_obj {
+                        if !declared.is_some_and(|props| props.contains_key(name)) {
+                            let canonicalized = canonicalize_scope_value(addl, val)?;
+                            result.insert(name.clone(), canonicalized);
+                        }
+                    }
+                }
+            }
+            Ok(Value::Object(result))
+        }
+        (Value::Object(schema_obj), Value::Array(scope_arr)) => {
+            if let Some(items) = schema_obj.get("items") {
+                let result: Vec<Value> = scope_arr
+                    .iter()
+                    .map(|item| canonicalize_scope_value(items, item))
+                    .collect::<Result<_, _>>()?;
+                Ok(Value::Array(result))
+            } else {
+                Ok(scope.clone())
+            }
+        }
+        _ => Ok(scope.clone()),
+    }
 }
 
 fn preprocess_scope_schema(schema: &mut Value, path: &str) -> Result<(), ValidationError> {
@@ -1048,5 +1176,196 @@ mod tests {
             "expected rejection of x-tethers-whatever, got: {}",
             err.message
         );
+    }
+
+    // ── R1C canonical-directory tests ──
+
+    #[test]
+    fn r1c_relative_path_refused() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-path": "canonical-directory"}
+            },
+            "required": ["root"]
+        });
+        let scope = json!({"root": "relative/path"});
+        let err = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("must be absolute"),
+            "expected absolute-path error, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1c_nonexistent_directory_refused() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-path": "canonical-directory"}
+            },
+            "required": ["root"]
+        });
+        let scope = json!({"root": "C:\\nonexistent-directory-xyzzy"});
+        let err = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("does not exist"),
+            "expected does-not-exist error, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1c_non_string_value_refused() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-path": "canonical-directory"}
+            },
+            "required": ["root"]
+        });
+        let scope = json!({"root": 42});
+        let err = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("type mismatch")
+                || err.message.contains("requires a string value"),
+            "expected type error, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1c_nested_property_canonicalised() {
+        use std::env;
+        let temp = env::temp_dir();
+        let path_str = temp.to_string_lossy().to_string();
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "outer": {
+                    "type": "object",
+                    "properties": {
+                        "root": {"type": "string", "x-tethers-path": "canonical-directory"}
+                    },
+                    "required": ["root"]
+                }
+            },
+            "required": ["outer"]
+        });
+        let scope = json!({"outer": {"root": path_str}});
+        let canonical = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap();
+        let outer = canonical.get("outer").unwrap();
+        let root = outer.get("root").unwrap().as_str().unwrap();
+        let expected = fs::canonicalize(&path_str).unwrap();
+        assert_eq!(root, expected.to_str().unwrap());
+    }
+
+    #[test]
+    fn r1c_array_items_canonicalised() {
+        use std::env;
+        let temp = env::temp_dir();
+        let path_str = temp.to_string_lossy().to_string();
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "roots": {
+                    "type": "array",
+                    "items": {"type": "string", "x-tethers-path": "canonical-directory"}
+                }
+            },
+            "required": ["roots"]
+        });
+        let scope = json!({"roots": [path_str]});
+        let canonical = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap();
+        let roots = canonical.get("roots").unwrap().as_array().unwrap();
+        let expected = fs::canonicalize(&path_str).unwrap();
+        assert_eq!(roots[0].as_str().unwrap(), expected.to_str().unwrap());
+    }
+
+    #[test]
+    fn r1c_canonical_result_passes_revalidation() {
+        use std::env;
+        let temp = env::temp_dir();
+        let path_str = temp.to_string_lossy().to_string();
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-path": "canonical-directory"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100}
+            },
+            "required": ["root", "limit"],
+            "additionalProperties": false
+        });
+        let scope = json!({"root": path_str, "limit": 50});
+        let canonical = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap();
+        assert!(canonical.get("root").unwrap().is_string());
+        assert_eq!(canonical.get("limit").unwrap().as_i64().unwrap(), 50);
+        let canonical_root = canonical.get("root").unwrap().as_str().unwrap();
+        let expected = fs::canonicalize(&path_str).unwrap();
+        assert_eq!(canonical_root, expected.to_str().unwrap());
+    }
+
+    #[test]
+    fn r1c_existing_file_is_refused() {
+        use std::env;
+        use std::io::Write;
+        let dir = env::temp_dir().join(format!("tethers-r1c-file-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("not-a-dir.txt");
+        let mut f = fs::File::create(&file_path).unwrap();
+        f.write_all(b"hello").unwrap();
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-path": "canonical-directory"}
+            },
+            "required": ["root"]
+        });
+        let scope = json!({"root": file_path.to_str().unwrap()});
+        let err = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("is not a directory"),
+            "expected not-a-directory error, got: {}",
+            err.message
+        );
+        fs::remove_file(&file_path).unwrap();
+        fs::remove_dir(&dir).unwrap();
+    }
+
+    #[test]
+    fn r1c_redundant_components_resolve_to_same_canonical() {
+        use std::env;
+        let temp = env::temp_dir();
+        let canonical = fs::canonicalize(&temp).unwrap();
+        let canonical_str = canonical.to_str().unwrap();
+        let with_redundant = temp.join("..").join(temp.file_name().unwrap());
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "x-tethers-path": "canonical-directory"}
+            },
+            "required": ["root"]
+        });
+        let scope = json!({"root": with_redundant.to_str().unwrap()});
+        let result = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap();
+        assert_eq!(result.get("root").unwrap().as_str().unwrap(), canonical_str);
+    }
+
+    #[test]
+    fn r1c_without_annotation_passes_unchanged() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "label": {"type": "string"},
+                "count": {"type": "integer"}
+            },
+            "required": ["label", "count"],
+            "additionalProperties": false
+        });
+        let scope = json!({"label": "hello", "count": 1});
+        let canonical = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap();
+        assert_eq!(canonical.get("label").unwrap().as_str().unwrap(), "hello");
+        assert_eq!(canonical.get("count").unwrap().as_i64().unwrap(), 1);
     }
 }
