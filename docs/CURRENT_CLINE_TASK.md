@@ -1,64 +1,78 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F8-T1 — Test-Only Dead Warning Cleanup`
+Task packet: `F8-VERIFY-PARALLEL — Bounded Verifier Parallelism`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Task colour: `Green`
-Route: `OpenCode removes proven test-only dead-code warnings T1–T14`
-Worker note: `docs/worker-notes/2026-08-09-f8-t1-test-warning-cleanup.md`
-Base branch: `foundation/f8-worker-lifecycle-carry`
-Base commit: `f6c7401f2034da79c609ff25b84e651bd001f80a`
-Implementation branch: `foundation/f8-t1-test-warning-cleanup`
-Implementation checkpoint: `183874812e6d422cf568783f0dbc56997197d2ba`
-Rust change class: `RUST_CHANGING`
+Route: `OpenCode parallelises just verify-agent independent lanes`
+Worker note: `docs/worker-notes/2026-08-09-f8-verify-parallel.md`
+Base branch: `foundation/f8-t1-test-warning-cleanup`
+Base commit: `5b679b4f799d47ee0e5a76e247678c246baa3057`
+Implementation branch: `foundation/f8-verify-parallel`
+Implementation checkpoint: `NONE` — measured NO-OP, justfile reverted to pre-candidate state
+Rust change class: `NON_RUST`
 
 ## Objective
 
-Remove only the proven test-only compiler/dead-code warnings T1–T14 from the
-F8a inventory without weakening any test. No production code changes.
+Reduce wall-clock time of `just verify-agent` by parallelising only independent
+verification lanes, without removing, weakening, or changing any verification.
 
 ## Relevant background and existing behaviour
 
-Current baseline: ~33 cargo check warnings, ~45 distinct Clippy warnings.
-T1–T14 are test-only unused imports, unused bindings, unread struct fields,
-and unused helper functions in the 8 authorised test files. None contribute
-assertions, setup, cleanup, or failure-path evidence.
+Current `verify-agent` runs all five sub-recipes sequentially:
+verify → agent-tools → deps-policy → deps-advisories → test-agent.
+`verify` itself runs packet checker, fmt check, cargo check, and cargo test
+sequentially. `agent-tools`, `deps-policy`, `deps-advisories`, and `test-agent`
+are independent of verify's per-recipe Cargo work. Parallelising the three
+independent lanes reduces wall-clock time without changing any verification.
 
 ## Required behaviour
 
-1. Remove T1–T14 warnings from the 8 authorised test files only.
-2. For each item, confirm the unused element contributes no test assertion,
-   setup, cleanup, compatibility evidence, or failure-path evidence.
-3. Leave unchanged any item whose intent is uncertain.
-4. Run `cargo fmt` before the implementation checkpoint.
-5. All existing tests must continue to pass.
+1. Baseline: 1 warm-up + 3 timed `just verify-agent` runs, record median.
+2. Implement target topology in justfile.
+3. Candidate: 1 warm-up + 3 timed `just verify-agent` runs, record median.
+4. Keep change only if candidate median >= 10% faster than baseline AND all
+   verification passes.
+5. If improvement < 10%, revert justfile and close as measured NO-OP.
+
+## Target topology
+
+```
+[private] verify-deps: deps-policy deps-advisories
+[private] verify-agent-preflight: verify || agent-tools || verify-deps (parallel)
+verify-agent: verify-agent-preflight && test-agent
+```
+
+`verify` runs sequentially (packet checker, fmt check, cargo check, cargo test).
+In parallel: `agent-tools` and `verify-deps`.
+After all parallel lanes complete: `test-agent` (cargo nextest).
 
 ## Frozen decisions and invariants
 
-- T1–T14 are proven test-only dead code. No redesign is needed.
-- Do not touch T15 `FailingResultAnchorWriter` in `src/application.rs`.
-- Do not touch production code, `src/application.rs`, `src/bin/*`, or lint config.
-- Do not weaken any test.
-- Do not blindly prefix with `_` — remove genuinely unused items.
+- Do not run cargo test and cargo nextest concurrently.
+- Do not change any Rust source, test, script, dependency policy, CI, or tool version.
+- Do not remove, weaken, or change any verification.
+- `test-agent` MUST still run after the parallel preflight join.
+- Only `justfile` may be changed (plus task packet + worker note for closeout).
 
 ## Acceptance criteria
 
-1. Cargo check warning count decreases from baseline
-2. Clippy distinct warning count decreases from baseline
-3. `cargo test --all-targets --all-features --locked` passes with same test count
-4. `cargo fmt --all -- --check` passes
-5. `git diff --check` passes
-6. Packet checker passes
-7. Diff touches only the 8 authorised Rust paths + task packet + worker note
-8. No production files changed
+1. All existing verification still runs
+2. All verification passes
+3. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check` passes
+4. `just --fmt --check` passes
+5. `just verify` passes
+6. `just verify-agent` passes
+7. Candidate median >= 10% faster than baseline median
+8. `git diff --check` passes
+9. Packet checker passes
+10. Diff touches only justfile + task packet + worker note
 
 ## Required verification
 
-- `cargo fmt --all -- --check`
-- `cargo check --all-targets --all-features --locked`
-- `cargo test --all-targets --all-features --locked`
-- `cargo clippy --all-targets --all-features --locked -- -W clippy::all`
+- `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`
+- `just --fmt --check`
 - `just verify`
 - `just verify-agent`
 - `git diff --check`
@@ -66,54 +80,31 @@ assertions, setup, cleanup, or failure-path evidence.
 
 ## Relevant components
 
-### AUTHORISED RUST PATHS
-- `tethers-0.1/host-rust/tests/j13a_cli.rs`
-- `tethers-0.1/host-rust/tests/j23b_pdf_package.rs`
-- `tethers-0.1/host-rust/tests/j23c3_installed_pdf_execution.rs`
-- `tethers-0.1/host-rust/tests/j24d_plug_enable_scope_file.rs`
-- `tethers-0.1/host-rust/src/installation_publication_mutation_tests.rs`
-- `tethers-0.1/host-rust/src/installation_publication_preparation_tests.rs`
-- `tethers-0.1/host-rust/src/installation_execution_tests.rs`
-- `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs`
-
-### TARGET WARNINGS
-- T1: unused `std::io::Write` — j13a_cli.rs
-- T2: unused `code` bindings (3) — j13a_cli.rs
-- T3: unused `envelope` — j13a_cli.rs
-- T4: unused `serde_json::Value` — j23b_pdf_package.rs
-- T5: unused `Write` / `PathBuf` / `MAX_PDF_BYTES` — j23c3_installed_pdf_execution.rs
-- T6: unused `before` — j24d_plug_enable_scope_file.rs
-- T7: unused `canonical` helper — j24d_plug_enable_scope_file.rs
-- T8: unused `InstallationPlanAction` / `DisabledBindingRecord` imports
-- T9: unused `error` binding
-- T10: unused `PayloadEvidence` import
-- T11: unused `empty_plan` helper
-- T12: unused `plan_with` helper
-- T13: unread fixture struct fields
-- T14: unread `FullFixture` struct fields
+### AUTHORISED PATH
+- `justfile`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-t1-test-warning-cleanup.md`
+- `docs/worker-notes/2026-08-09-f8-verify-parallel.md`
 
 ## Forbidden changes
 
-- No production code changes
-- No `src/application.rs`
-- No `src/bin/*`
-- No `suspicious_open_options`
-- No preference lints
-- No Clippy architecture changes
-- No lint configuration / CI / warning gates
-- No T15 `FailingResultAnchorWriter`
-- No other F8 warning families
+- No Rust source changes
+- No test changes
+- No script changes
+- No dependency policy changes
+- No warning inventory changes
+- No F8 warning cleanup
+- No CI changes
+- No tool version changes
 
 ## Stop conditions
 
-STOP if `cargo fmt` changes any Rust file outside the 8 authorised paths.
-STOP if a test fails after cleanup.
-STOP if an unused item appears to be intentional test evidence.
-STOP if two materially similar cleanup attempts fail.
+STOP if `just --fmt --check` changes any file outside justfile.
+STOP if a verification fails.
+STOP if candidate improvement < 10% (revert, close as NO-OP).
+STOP if new flaky/interleaved failure appears.
+STOP if two materially similar implementation attempts fail.
 
 ## Expected pre-existing changes
 
