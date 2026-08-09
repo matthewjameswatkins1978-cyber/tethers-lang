@@ -33,6 +33,9 @@ architecture here.
 List exact commands, tests, results, relevant output locations, and diff/status
 checks. Distinguish run evidence from tests merely read or inferred.
 
+When a required command emits elapsed timing, record that timing with its
+result. Never rerun a command solely to obtain timing.
+
 For `COMPLETE`:
 - commit implementation first
 - run final required verification against that committed checkpoint
