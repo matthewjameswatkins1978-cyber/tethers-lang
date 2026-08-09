@@ -1,59 +1,62 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F8-ELAPSED-EVIDENCE — Automatic Command Timing`
+Task packet: `F8-T15 — Final Test Dead-Code Warning Cleanup`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Green`
-Route: `OpenCode implements elapsed timing instrumentation`
-Worker note: `docs/worker-notes/2026-08-09-f8-elapsed-evidence.md`
-Base branch: `foundation/f8-nextest-concurrency`
-Base commit: `10c5db45dd29192bb274f03d6b720f922171da38`
-Implementation branch: `foundation/f8-elapsed-evidence`
-Implementation checkpoint: `7173a99d61b838ec5150220a13c3fee88edae15d`
-Rust change class: `NON_RUST`
+Route: `OpenCode removes last F8 test dead-code item`
+Worker note: `docs/worker-notes/2026-08-09-f8-t15-test-warning-cleanup.md`
+Base branch: `foundation/f8-elapsed-evidence`
+Base commit: `9d19bc5e121d00da65b27d167183a7c6fe99e5b0`
+Implementation branch: `foundation/f8-t15-test-warning-cleanup`
+Implementation checkpoint: `db6dbcc76cd24856324ca2bcdbd0737d67318abd`
+Rust change class: `RUST`
 
 ## Objective
 
-Make elapsed time ordinary project evidence. Whenever routine
-verification/build/test commands run, record how long they took without
-requiring extra runs and without changing their behaviour.
+Remove the final known F8 test dead-code item: `FailingResultAnchorWriter` from
+`tethers-0.1/host-rust/src/application.rs`.
 
 ## Relevant background and existing behaviour
 
-Routine verification commands (verify, test, fmt, check, etc.) already run
-through `just`. No elapsed timing is captured today. There is no instrumentation
-wrapper.
+`FailingResultAnchorWriter` is a `#[cfg(test)]` struct with a
+`ResultAnchorWriter` implementation that always returns `Err(())`. It was used
+to prove that a failed Anchor write enqueues nothing. It is never constructed
+in any test or production code. It contributes one `dead_code` warning (T15),
+the last remaining F8 test dead-code item.
 
 ## Required behaviour
 
-1. Create `scripts/invoke-timed.ps1` timing wrapper.
-2. Update `justfile` to wrap routine commands.
-3. Add `.tethers/timings.jsonl` to `.gitignore`.
-4. Update `docs/WORKER_NOTE_TEMPLATE.md` Evidence guidance.
+1. Search repository for `FailingResultAnchorWriter` references.
+2. Prove the struct and its impl are the only code occurrences.
+3. Delete the struct and its impl.
+4. Run `cargo fmt` on the changed file only.
+5. Confirm zero `FailingResultAnchorWriter` occurrences in Rust source.
+6. Confirm the T15 warning is gone from `cargo check`.
+7. Run full `just verify-agent` once.
 
 ## Frozen decisions and invariants
 
-- Do not change Rust or OCaml.
-- Do not change tests.
-- Do not change Nextest configuration.
-- Do not change verification meaning.
-- Do not change command arguments.
-- Do not add a database, service, telemetry framework, benchmark, or dashboard.
-- Do not modify the task-packet checker.
+- Do not touch production dead-code D1-D15.
+- Do not add `#[allow(...)]` suppression.
+- Do not rename or refactor.
+- Do not change any test.
+- Preserve all runtime, Result Anchor, approval, event admission, queue, Trail,
+  replay/recovery, CLI, JSON/protocol, and compatibility behaviour.
 
 ## Acceptance criteria
 
-1. Commands behave exactly as before.
-2. Native exit codes are preserved.
-3. Normal stdout/stderr remains visible.
-4. Timing appears automatically.
-5. Timing JSONL is valid.
-6. Timing history does not dirty Git.
-7. Telemetry failure cannot fail successful work.
-8. `just verify-agent` passes once.
-9. Worker note records observed timings.
-10. No extra benchmark/test runs created merely for timing.
+1. Pre-change search proves T15 genuinely unused in code.
+2. `FailingResultAnchorWriter` declaration removed.
+3. Its implementation removed.
+4. No replacement suppression added.
+5. No tests weakened.
+6. No production semantics changed.
+7. T15 warning absent afterward.
+8. `cargo fmt` only touches `application.rs`.
+9. `just verify-agent` passes once.
+10. Branch pushed and local == remote.
 
 ## Required verification
 
@@ -61,33 +64,34 @@ wrapper.
 - `git diff --check`
 - Packet checker
 - `just verify-agent` (full regression)
+- Repository search for `FailingResultAnchorWriter` returns zero Rust source matches
 
 ## Relevant components
 
 ### AUTHORISED PATHS
-- `scripts/invoke-timed.ps1`
-- `justfile`
-- `.gitignore`
-- `docs/WORKER_NOTE_TEMPLATE.md`
+- `tethers-0.1/host-rust/src/application.rs`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-elapsed-evidence.md`
+- `docs/worker-notes/2026-08-09-f8-t15-test-warning-cleanup.md`
 
 ## Forbidden changes
 
-- No Rust source changes
+- No other Rust source changes
 - No OCaml source changes
 - No test changes
 - No Nextest configuration changes
 - No CI changes
 - No dependency policy changes
 - No tool version changes
-- No task-packet checker changes
+- No `#[allow(...)]` suppression additions
+- No production dead-code cleanup
 
 ## Stop conditions
 
-STOP if a verification fails.
+STOP if `FailingResultAnchorWriter` has any live code use.
+STOP if rustfmt touches any file other than `application.rs`.
+STOP if verification fails.
 STOP if two materially similar implementation attempts fail.
 
 ## Expected pre-existing changes
