@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-09-f9-operator-truth.md`
 Base branch: `foundation/f8-warning-enforcement`
 Base commit: `5e616357963e70b86f59c870f6c00b7fbc94cb0a`
 Implementation branch: `foundation/f9-operator-truth`
-Implementation checkpoint: `3dc85fe989ca53619f17e525431c5726e6d73079`
+Implementation checkpoint: `3dc85fe6bb4e19a5228ad81afa67bf3930c3e277`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `DOCS`
