@@ -1,19 +1,19 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P1 — Generic Operational Scope Evidence`
+Task: `TETHERS-0.3-P1-R1A — Pin Operational Scope Schema Evidence`
 Owner: `OpenCode`
 Status: `COMPLETE`
-Task colour: `Red`
-Route: `OpenCode implements core architectural boundary; Codex reviews`
-Worker note: `docs/worker-notes/2026-08-09-0.3-p1-generic-operational-scope.md`
+Task colour: `Amber`
+Route: `OpenCode implements bounded correction`
+Worker note: `docs/worker-notes/2026-08-09-0.3-p1-r1a-schema-evidence.md`
 Base branch: `origin/main`
 Base commit: `c0fd57780156bee023d8dcff884737ea470d096c`
-Implementation branch: `feature/0.3-p1-generic-operational-scope`
-Implementation checkpoint: `a2d7000afc24c31ea3f97c3542bba33b1e50446d`
+Implementation branch: `feature/0.3-p1-r1a-schema-evidence`
+Implementation checkpoint: `a2cb38a67be89abf104b67ad09ebf85d1e0d0f94`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
-Rust change class: `RED_ARCHITECTURE`
+Rust change class: `AMBER_ARCHITECTURE_CORRECTION`
 
 ## Relevant background and existing behaviour
 
