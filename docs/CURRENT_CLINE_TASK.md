@@ -1,40 +1,61 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F7a-R1 — Evidence Repair`
+Task: `F8a — Current Warning and Tooling Reconciliation`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `OpenCode repairs F7a evidence defects only; no production changes`
-Worker note: `docs/worker-notes/2026-08-08-f7a-r1-evidence-repair.md`
-Base branch: `foundation/f7a-test-contract-reconciliation`
-Base commit: `532126810ad51dfbf6d75472854c9cb49d8d0811`
-Implementation branch: `foundation/f7a-r1-evidence-repair`
-Implementation checkpoint: `fd0149ffbf83f677534ae0bbf58fdf767381584c`
-OCaml switch path: `N/A`
+Route: `OpenCode performs evidence-only warning and tooling audit; no production changes`
+Worker note: `docs/worker-notes/2026-08-09-f8a-warning-tooling-reconciliation.md`
+Base branch: `foundation/f8a-warning-tooling-reconciliation`
+Base commit: `5ecf54e17752096e7c553e059d014ef263cbb136`
+Implementation branch: `foundation/f8a-warning-tooling-reconciliation`
+Implementation checkpoint: `TO BE SET`
+OCaml switch path: `N/A (no switch set)`
 Rust toolchain: `1.97.1`
 
 ## Objective
 
-Repair F7a evidence/closeout defects only. No production, test, fixture, build, protocol, script, or dependency changes.
+Establish the exact current warning, formatting, and verification-tooling state
+before any F8 cleanup. This is EVIDENCE-ONLY.
 
-## Relevant background and existing behaviour
+Do not fix warnings. Do not format files. Do not alter production code. Do not
+alter tests. Do not alter fixtures. Do not alter scripts/tooling. Do not add
+warning denial. Do not add CI enforcement. Do not start F8b.
 
-Lucy has independently reviewed F7a. F7 DECISION: NO TEST CONSOLIDATION AUTHORISED. M7 is DEFERRED. F7 will close as NO-OP if this evidence repair passes.
+## FOUNDATION F8 CONTRACT
 
-F7a had three evidence defects:
-1. The fixture verification path was incorrectly recorded as `scripts/check-fixtures.ps1` — correct path is `tethers-0.1/scripts/check-fixtures.ps1`.
-2. The all-features failure analysis claimed the six F1-R1 failures were "resolved by intervening Foundation work" — the correct finding is "CURRENTLY NOT REPRODUCED — PRIOR CAUSE UNVERIFIED" since `ea7426d..2a2417f5` contains only documentation changes.
-3. The F7 authorisation table recommended F7b for limited OCaml native tests — Lucy's decision is M7 DEFER, NO F7b AUTHORISED.
+F8 must:
+1. reconcile the live warning/tooling inventory;
+2. remove or explicitly justify warnings in bounded cleanup work;
+3. reach zero INTENDED warnings;
+4. record a documentation-only checkpoint proving that state;
+5. only AFTER that, in a separate bounded change, activate warning denial /
+   CI/tooling enforcement.
+
+Never combine warning repair with gate activation.
 
 ## Required behaviour
 
-1. Prepare F7a-R1 repaired evidence document.
-2. Correct fixture verification path everywhere.
-3. Correct all-features failure analysis to "CURRENTLY NOT REPRODUCED — PRIOR CAUSE UNVERIFIED".
-4. Record F7a final HEAD `532126810ad51dfbf6d75472854c9cb49d8d0811` in the evidence document.
-5. Amend F7 authorisation: M7 DEFER, NO F7b AUTHORISED, F7 COMPLETES AS NO-OP.
+1. Determine what exact warnings exist now.
+2. Separate warnings by command: cargo check, cargo clippy, tests/builds.
+3. Classify every distinct warning site: ACTIONABLE CLEANUP, JUSTIFIED WARNING,
+   STALE/NO LONGER PRESENT, TOOLING/CONFIGURATION ISSUE, UNVERIFIED.
+4. Group repeated warnings by root cause.
+5. Determine exact cargo fmt failure: file, region, whether rustfmt would make
+   formatting-only changes, whether any semantic/source interaction makes it
+   unsafe to treat as simple formatting.
+6. Determine current behaviour of just verify and just verify-agent.
+7. Inspect warning/tooling configuration (read-only): Cargo.toml lint config,
+   workspace lint settings, rustfmt config, clippy config, justfile verification
+   commands, CI/workflow warning enforcement.
+8. Identify warnings whose cleanup would require: public API change,
+   protocol/Trail/replay change, visibility widening, structural redesign,
+   dependency change, test weakening.
+9. Produce the smallest serial F8 cleanup packages, if any.
+10. Decide whether existing formatting failure should be its own tiny package,
+    bundled, or deferred.
 
 ## Frozen decisions and invariants
 
@@ -44,40 +65,46 @@ F7a had three evidence defects:
 - No test changes.
 - No fixture changes.
 - No build changes.
-- No protocol changes.
-- No script changes.
-- No dependency additions.
-- No F7b implementation.
-- No F8 work.
-- F7 DECISION: NO TEST CONSOLIDATION AUTHORISED. M7 DEFERRED.
-- The `ea7426d..2a2417f5` range contains documentation only — no production/test change can causally explain changed all-features results.
+- No script/tooling changes.
+- No formatting changes.
+- No warning denial additions.
+- No CI enforcement additions.
+- No F8b work.
+- Do not turn Clippy preferences into architecture mandates.
 
 ## Acceptance criteria
 
-1. Fixture verification path corrected everywhere — proven by grep
-2. All-features failure analysis corrected to UNVERIFIED — proven
-3. Final HEAD recorded in evidence document — proven
-4. F7 authorisation amended: M7 DEFER, NO F7b — proven
-5. Task packet is a valid F7a-R1 packet — proven by checker
-6. Zero production/build/test/fixture changes — proven by git diff
+1. Full command-result table in evidence document — proven
+2. Warning counts by command — proven
+3. Distinct warning/root-cause inventory with classifications — proven
+4. Current rustfmt failure characterization — proven
+5. just verify / verify-agent behaviour recorded — proven
+6. Configuration inventory (read-only) — proven
+7. Protected contracts identified — proven
+8. Proposed bounded F8 packages — proven
+9. Explicit non-authorisations — proven
+10. Audit checkpoint committed — proven by git log
 
 ## Required verification
 
-- `git status --short`: clean
-- `cargo test --locked`: PASS
-- `cargo test --all-targets --all-features --locked`: PASS
-- `pwsh -NoProfile -File tethers-0.1/scripts/check-fixtures.ps1`: PASS
-- `git diff --check`: PASS
-- `git diff --name-only 532126810ad51dfbf6d75472854c9cb49d8d0811..HEAD`: documentation only
-- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`: PASS at R1 checkpoint
-- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`: PASS at COMPLETE
+- All required commands run; results captured regardless of pass/fail
+- Evidence document exists at `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md`
+- Worker note created
+- Task packet checker passes at checkpoint and at completion
+- git diff from base shows documentation only
 
 ## Relevant components
 
-### CLOSEOUT
-- `docs/foundation-pass/TEST_CONTRACT_RECONCILIATION_F7A.md` — repaired evidence
+### EVIDENCE-ONLY
+- `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md`
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-08-f7a-r1-evidence-repair.md`
+- `docs/worker-notes/2026-08-09-f8a-warning-tooling-reconciliation.md`
+
+### READ-ONLY INSPECTION
+- `justfile`
+- `tethers-0.1/host-rust/Cargo.toml`
+- `rust-toolchain.toml`
+- CI/workflow files
 
 ## Forbidden changes
 
@@ -87,16 +114,16 @@ F7a had three evidence defects:
 - No test modifications
 - No fixture modifications
 - No build file modifications
-- No protocol changes
 - No script modifications
-- No dependency additions
-- No F7b implementation work
-- No F8 work
+- No formatting
+- No warning denial or CI enforcement additions
 
 ## Stop conditions
 
 STOP if the audit demonstrates an actual current production correctness defect.
+Flag Lucy instead.
 
 ## Expected pre-existing changes
 
-None — this evidence-only task starts from the exact base commit `532126810ad51dfbf6d75472854c9cb49d8d0811` with a clean tree.
+None — this evidence-only task starts from the exact base commit
+`5ecf54e17752096e7c553e059d014ef263cbb136` with a clean tree.
