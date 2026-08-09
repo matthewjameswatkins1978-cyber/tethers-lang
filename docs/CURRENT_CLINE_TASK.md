@@ -21,6 +21,16 @@ Remove the dead D7-D9 host-local-notification integration seam only, while
 retaining the independent M5 local-anchor admission coordinator and every live
 event-processing, protocol, Trail, queue, and acknowledgement contract.
 
+## Relevant background and existing behaviour
+
+The Job A closeout at `aa01766dc269338b07b4302bc70d6dc9ecaf1037` left eight
+production-library dead-code warnings: D7-D9 and D11-D15. D7-D9 were written
+as an optional host bridge from a local provider notification to existing J11
+admission and J10 event processing, but the current Rust tree has never wired
+that bridge into a command, provider, socket, public API, or test. The actual
+M5 admission module is independently public and directly tested without this
+unused application-level seam.
+
 ## Classification evidence
 
 `submit_local_root_anchor`, `short_event_digest`, and
