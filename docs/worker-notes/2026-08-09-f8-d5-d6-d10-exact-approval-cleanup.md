@@ -6,7 +6,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `BLOCKED`
+Status: `COMPLETE`
 
 Base commit: `17b60df43b6c32ec8040952e4f7b1a99eb16b1d3`
 
@@ -14,10 +14,10 @@ Implementation checkpoint: `5a728d6956a288cafa69a84d0be50f7ffafaa1ea`
 
 ## Requested outcome
 
-Remove the dead exact-approval translation/resume layer D5, D6, and D10 while
+Removed the dead exact-approval translation/resume layer D5, D6, and D10 while
 retaining the state, fresh-precheck, replay-authority, dispatch, and Trail
-contracts at their existing surviving seams. The job requires a final
-`just verify-agent` regression before it can be complete.
+contracts at their existing surviving seams. The repaired local engine build
+allowed the final `just verify-agent` regression to complete.
 
 ## Changes made
 
@@ -59,30 +59,28 @@ contracts at their existing surviving seams. The job requires a final
 - `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked j05_` — PASS: 4 J05 tests.
 - `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked j09_runtime_39_approved_ask_missing_root_consumes_zero_approvals` — PASS: 1 test.
 - `cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked` — PASS (existing non-F8 Clippy warnings remain).
-- `just verify-agent` at implementation checkpoint — BLOCKED at full `cargo test`: packet (0.8s), formatter (1.1s), and cargo check (4.1s) passed; then 1329 passed, 5 failed, 2 ignored because the five retained-engine tests panic with `engine binary not found; build with opam exec -- dune build`.
+- First `just verify-agent` attempt — correctly exposed the local missing-engine prerequisite: packet (0.8s), formatter (1.1s), and cargo check (4.1s) passed before five retained-engine tests could not find the executable.
+- `pwsh -NoProfile -File .github/scripts/check-tethers-toolchains.ps1 -OcamlSwitchPath "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml"` — PASS: the existing switch is OCaml 5.5.0, Dune 3.24.0, Yojson 2.2.2, and matches the pinned lock/toolchain contracts.
+- `opam exec --switch="D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml" -- dune build` from this worktree's `tethers-0.1/engine-ocaml` — PASS: regenerated ignored `_build/default/bin/main.exe` and `tethers_mcp_main.exe`; no tracked source/configuration changed.
+- Final `just verify-agent` — PASS (103s): packet checker, formatter, full Cargo check/test, Rust toolchain check, dependency licences/bans/sources, dependency advisories, and nextest. Nextest: 1592 passed, 2 skipped.
 - `git diff --check` — PASS before the implementation checkpoint.
 
 ## Discoveries
 
-- This worktree has no built OCaml engine binary for the retained-engine Rust
-  tests. The F8-D5+D6+D10 packet names no authorised absolute OCaml switch or
-  current-worktree engine-build command, so worktree safety rules prohibit
-  inferring or borrowing a switch from another checkout.
-- Because `verify` failed at `cargo test`, the remaining `verify-agent`
-  dependencies (toolchain, dependency-policy/advisory, and nextest gates) did
-  not run.
+- The source worktree can lack the ignored engine `_build` output while the
+  existing pinned directory switch remains valid. Rebuilding the current
+  worktree through that switch restores the retained-engine Rust test
+  prerequisite without changing tracked product files.
 
 ## Remaining risks
 
-- The source checkpoint has focused evidence and the intended warning reduction,
-  but it is not completion evidence until the final umbrella regression runs in
-  a current-worktree environment with the authorised engine binary.
+- None known within Job A scope. D7-D9 and D11-D15 remain intentionally
+  unresolved for their separately classified jobs.
 
 ## Smallest next action
 
-Issue a bounded continuation packet that supplies the explicit OCaml switch and
-authorises building the current worktree's engine, then rerun the required final
-umbrella regression against `5a728d6956a288cafa69a84d0be50f7ffafaa1ea`.
+Begin Job B's independent local-notification seam classification from this
+accepted Job A tip.
 
 ## References
 
