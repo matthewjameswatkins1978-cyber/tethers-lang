@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8 — Zero-Warning Checkpoint`
 Owner: `Codex`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
-Route: `Codex is recording the verified zero intended production-warning checkpoint`
+Route: `Codex recorded the verified F8 zero intended production-warning checkpoint`
 Worker note: `docs/worker-notes/2026-08-09-f8-zero-warning-checkpoint.md`
 Base branch: `foundation/f8-d12-d15-final-warning-tail`
 Base commit: `78e188bc4a065bdabe5400c0d06b97705a5d8574`
 Implementation branch: `foundation/f8-zero-warning-checkpoint`
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `3409ed0729ffd2b54e878d9752062422797f78ce`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `DOCS`
