@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-D2 — Legacy parse_provision_args Cleanup`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode removes D2 (parse_provision_args) dead parser`
 Worker note: `docs/worker-notes/2026-08-09-f8-d2-parse-provision-args-cleanup.md`
 Base branch: `foundation/f8-d1-provision-usage-cleanup`
 Base commit: `38708d2294ccd0df4bc468c0a6edc856643ba0e4`
 Implementation branch: `foundation/f8-d2-parse-provision-args-cleanup`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `45dba36dc4ea1b088b4cc5ba09e412046b1cc37c`
 Rust change class: `RUST`
 
 ## Objective
