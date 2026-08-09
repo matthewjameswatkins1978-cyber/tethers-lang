@@ -4,14 +4,14 @@ Control contract: `1`
 Task: `F8-WORKFLOW — Worker Formatting and Publication Defaults`
 Owner: `Codex`
 Model: `GPT-5.6`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `Codex updates documentation and task templates only`
 Worker note: `docs/worker-notes/2026-08-09-f8-worker-formatting-publication-defaults.md`
 Base branch: `foundation/f8a-r1-evidence-repair`
 Base commit: `bfb47ced813d8ec227f8828bbf66c7ecd1110d2f`
 Implementation branch: `foundation/f8-worker-lifecycle`
-Implementation checkpoint: `TO BE SET`
+Implementation checkpoint: `30b26d1959138176dbf1481b267adc1791f0bc09`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `NON_RUST`
