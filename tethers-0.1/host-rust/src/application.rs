@@ -84,21 +84,6 @@ fn parse_normal_args(args: &[String]) -> Result<NormalArgs, String> {
     })
 }
 
-fn parse_provision_args(args: &[String]) -> Result<PathBuf, String> {
-    if args.len() != 2 || args.first().map(String::as_str) != Some("provision-replay") {
-        return Err(
-            "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>".to_owned(),
-        );
-    }
-    let root = PathBuf::from(&args[1]);
-    if !root.is_absolute() {
-        return Err(
-            "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>".to_owned(),
-        );
-    }
-    Ok(root)
-}
-
 fn event_admission_rejection_value(rejection: &EventAdmissionRejection, generation: u32) -> Value {
     match rejection {
         EventAdmissionRejection::DuplicateEventId { event_id } => {
@@ -6722,29 +6707,6 @@ mod tests {
             assert!(!public.contains("secret-replay-root-token"));
             assert!(!public.contains("PersistenceUnavailable"));
             assert!(!public.contains("win32"));
-        }
-
-        #[test]
-        fn j09_runtime_42_provisioning_wrong_shapes_are_rejected_without_mutation() {
-            let cases = [
-                vec!["provision-replay".to_owned()],
-                vec![
-                    "provision-replay".to_owned(),
-                    "--host-data-root".to_owned(),
-                    r"C:\host-data".to_owned(),
-                ],
-                vec![
-                    "provision-replay".to_owned(),
-                    r"C:\host-data".to_owned(),
-                    "extra".to_owned(),
-                ],
-            ];
-            for args in cases {
-                assert_eq!(
-                    parse_provision_args(&args).unwrap_err(),
-                    "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>"
-                );
-            }
         }
 
         macro_rules! native_recovered_runtime_test {

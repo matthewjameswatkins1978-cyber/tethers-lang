@@ -402,6 +402,32 @@ mod tests {
     }
 
     #[test]
+    fn j13a_provision_replay_valid_parse() {
+        let cli = parse_cli(&["provision-replay", "C:\\host-data"]).unwrap();
+        match cli.command {
+            Some(Command::ProvisionReplay { root }) => {
+                assert_eq!(root, PathBuf::from("C:\\host-data"))
+            }
+            _ => panic!("expected ProvisionReplay"),
+        }
+    }
+
+    #[test]
+    fn j13a_provision_replay_missing_root_rejected() {
+        assert!(parse_cli(&["provision-replay"]).is_err());
+    }
+
+    #[test]
+    fn j13a_provision_replay_extra_positional_rejected() {
+        assert!(parse_cli(&["provision-replay", "C:\\host-data", "extra"]).is_err());
+    }
+
+    #[test]
+    fn j13a_provision_replay_unknown_option_rejected() {
+        assert!(parse_cli(&["provision-replay", "--host-data-root", "C:\\host-data"]).is_err());
+    }
+
+    #[test]
     fn j13a_no_command() {
         assert!(parse_cli(&[]).is_ok()); // returns Ok with command=None
     }
