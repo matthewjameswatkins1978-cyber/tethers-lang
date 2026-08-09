@@ -1,78 +1,90 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F8-D3 — Legacy run_event_admission_probe Cleanup`
+Task packet: `F8-D4 — Legacy Event Admission Trail Probe Cleanup`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Green`
-Route: `OpenCode removes D3 (run_event_admission_probe) dead legacy parser`
-Worker note: `docs/worker-notes/2026-08-09-f8-d3-event-admission-probe-cleanup.md`
-Base branch: `foundation/f8-d2-parse-provision-args-cleanup`
-Base commit: `f674ac669f38c3557fff43af873ba9bbd7b5bbd0`
+Route: `OpenCode removes D4 (run_event_admission_trail_probe) dead legacy parser`
+Worker note: `docs/worker-notes/2026-08-09-f8-d4-event-admission-trail-probe-cleanup.md`
+Base branch: `foundation/f8-d3-event-admission-probe-cleanup`
+Base commit: `9a7dc9ea46fd82c25ab0fbf58e468ab8fc15412a`
 Implementation branch: `foundation/f8-d3-event-admission-probe-cleanup`
-Implementation checkpoint: `29f0ac6f45829d5148997c1147d6ed8fe54722c7`
+Implementation checkpoint: `f3b646f`
 Rust change class: `RUST`
 
 ## Objective
 
-Remove production dead-code warning D3: the unused `run_event_admission_probe`
+Resolve production dead-code warning D4: the unused `run_event_admission_trail_probe`
 legacy manual argument parser from `application.rs`.
 
 ## Relevant background and existing behaviour
 
-`run_event_admission_probe` (line 364, `#[cfg(debug_assertions)]`) is a legacy
-manual argument parser for the `event-admission-probe` debug subcommand. It
-manually validates argument count and the `"event-admission-probe"` token.
-It calls the shared function `build_event_admission_probe_response`.
+`run_event_admission_trail_probe` (line 488, `#[cfg(debug_assertions)]`) is a legacy
+manual argument parser for the `event-admission-trail-probe` debug subcommand. It
+manually validates argument count (3), the `"event-admission-trail-probe"` token,
+and absolute path requirement. It calls the shared function
+`build_event_admission_trail_probe_response` and writes a JSONL probe trail to disk.
 
-The live Clap-based dispatch at line 685 uses `run_event_admission_probe_clap`
-(line 783), which takes a pre-parsed `mode` parameter from Clap and calls the
-same shared `build_event_admission_probe_response`. The Clap-based wrapper
-leverages Clap's built-in argument validation.
+The live Clap-based dispatch at line 691 uses `run_event_admission_trail_probe_clap`
+(line 781), which takes pre-parsed `mode` and `trail_path` parameters from Clap and
+calls the same shared `build_event_admission_trail_probe_response`. The Clap-based
+wrapper leverages Clap's built-in argument validation.
 
-The test `j11_packet3_invalid_scenario_and_argument_counts_fail_closed` at
-line 8243 has four assertions:
-1. `build_event_admission_probe_response("nonexistent")` — tests live shared logic (KEEP)
-2-4. `run_event_admission_probe(...)` with wrong shapes — tests dead parser (REMOVE)
+Tests J13A (lines 8524-8555) call `run_event_admission_trail_probe_clap` directly,
+covering relative-path rejection and absolute-path acceptance. No tests exist for
+the dead legacy manual parser.
 
-Classification: **DEAD** — genuinely unused in production. The Clap-based
-`EventAdmissionProbe` command handles all argument parsing. The shared logic
-`build_event_admission_probe_response` remains tested.
+Relationship to D3: independent. D3 was `run_event_admission_probe` (event probe,
+not trail). D4 is `run_event_admission_trail_probe` (trail probe). They share
+a pattern but are separate dead wrappers. D4 was correctly resolved independently.
+
+Classification: **DEAD** — zero callers, zero test references. The Clap-based
+`EventAdmissionTrailProbe` command handles all argument parsing. The shared logic
+`build_event_admission_trail_probe_response` and live tests remain intact.
 
 ## Required behaviour
 
-1. Delete `run_event_admission_probe` function (lines 363-372).
-2. Remove the 3 dead-parser assertions from the test, keeping only the
-   `build_event_admission_probe_response("nonexistent")` assertion.
-3. Optionally add Clap parse tests for `EventAdmissionProbe` argument shapes.
-4. Run `cargo fmt` on changed files.
-5. Confirm D3 warning is gone from `cargo check --all-targets --all-features --locked`.
-6. Confirm D4-D15 warnings remain otherwise unchanged.
-7. Run full `just verify-agent` once.
+1. Delete `run_event_admission_trail_probe` function (old lines 487-506).
+2. Preserve `run_event_admission_trail_probe_clap` and its live dispatch.
+3. Preserve `build_event_admission_trail_probe_response` shared logic.
+4. Preserve `EVENT_ADMISSION_TRAIL_PROBE_USAGE` constant (still used by live paths).
+5. Preserve J13A tests (already use `_clap` directly).
+6. No test assertions to remove (none targeted the dead wrapper).
+7. Run `cargo fmt` on changed files.
+8. Confirm D4 warning is gone from `cargo check --all-targets --all-features --locked`.
+9. Confirm D5-D15 warnings remain otherwise unchanged (11 lib warnings).
+10. Run full `just verify-agent` once.
 
 ## Frozen decisions and invariants
 
-- Do not resolve or suppress D4-D15.
+- Do not resolve or suppress D5-D15.
 - Do not add `#[allow(dead_code)]` suppression.
-- Do not rename, refactor, or opportunistically clean code outside D3.
+- Do not rename, refactor, or opportunistically clean code outside D4.
 - Preserve all runtime, event admission, Trail, replay/recovery, CLI behaviour.
-- `build_event_admission_probe_response` must remain tested and unchanged.
-- `run_event_admission_probe_clap` live dispatch must remain unchanged.
+- `build_event_admission_trail_probe_response` must remain unchanged.
+- `run_event_admission_trail_probe_clap` live dispatch must remain unchanged.
+- `EVENT_ADMISSION_TRAIL_PROBE_USAGE` constant survives (used by live paths).
+- Durable FileTrail behaviour preserved.
 
 ## Acceptance criteria
 
-1. D3 warning absent from `cargo check` lib target.
-2. `run_event_admission_probe` function removed from `application.rs`.
-3. Dead-parser test assertions removed; shared-logic assertion retained.
-4. No replacement suppression added.
-5. D4-D15 warnings remain otherwise unchanged.
-6. No production semantics changed.
-7. `cargo fmt` only touches `application.rs`.
-8. `just verify-agent` passes once.
-9. Branch pushed and local == remote.
+1. D4 warning absent from `cargo check` lib target.
+2. `run_event_admission_trail_probe` function removed from `application.rs`.
+3. `run_event_admission_trail_probe_clap` still present and dispatch-connected.
+4. `build_event_admission_trail_probe_response` still present.
+5. `EVENT_ADMISSION_TRAIL_PROBE_USAGE` still present.
+6. J13A tests pass unchanged.
+7. No replacement suppression added.
+8. D5-D15 warnings remain otherwise unchanged.
+9. No production semantics changed.
+10. `cargo fmt` only touches `application.rs`.
+11. `just verify-agent` passes once.
+12. Branch pushed and local == remote.
 
 ## Required verification
 
+- `rg "run_event_admission_trail_probe\b" --type rust` → zero matches
 - `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`
 - `cargo check --all-targets --all-features --locked`
 - `cargo clippy --all-targets --all-features --locked`
@@ -84,22 +96,26 @@ Classification: **DEAD** — genuinely unused in production. The Clap-based
 ## Relevant components
 
 ### AUTHORISED PATHS
-- `tethers-0.1/host-rust/src/application.rs` — remove dead function, trim test
+- `tethers-0.1/host-rust/src/application.rs` — remove dead function
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-d3-event-admission-probe-cleanup.md`
+- `docs/worker-notes/2026-08-09-f8-d4-event-admission-trail-probe-cleanup.md`
 
 ## Forbidden changes
 
-- No D4-D15 resolution or suppression
+- No D5-D15 resolution or suppression
 - No OCaml source changes
 - No other Rust source changes outside authorised paths
 - No `#[allow(...)]` suppression additions
+- No removing `build_event_admission_trail_probe_response`
+- No removing `run_event_admission_trail_probe_clap`
+- No removing `EVENT_ADMISSION_TRAIL_PROBE_USAGE`
+- No FileTrail behaviour changes
 
 ## Stop conditions
 
-STOP if removing `run_event_admission_probe` would break any live code path.
+STOP if removing `run_event_admission_trail_probe` would break any live code path.
 STOP if rustfmt touches any file other than `application.rs`.
 STOP if verification fails.
 
