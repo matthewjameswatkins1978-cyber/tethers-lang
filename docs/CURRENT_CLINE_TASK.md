@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-D3 — Legacy run_event_admission_probe Cleanup`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode removes D3 (run_event_admission_probe) dead legacy parser`
 Worker note: `docs/worker-notes/2026-08-09-f8-d3-event-admission-probe-cleanup.md`
 Base branch: `foundation/f8-d2-parse-provision-args-cleanup`
 Base commit: `f674ac669f38c3557fff43af873ba9bbd7b5bbd0`
 Implementation branch: `foundation/f8-d3-event-admission-probe-cleanup`
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `29f0ac6f45829d5148997c1147d6ed8fe54722c7`
 Rust change class: `RUST`
 
 ## Objective
