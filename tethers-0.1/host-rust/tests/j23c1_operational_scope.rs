@@ -2,7 +2,7 @@ use std::fs;
 use tethers_reference_host::enablement::{EnablementState, EnablementStore};
 use tethers_reference_host::installed::{DisabledBindingRecord, InstalledPlugRecord};
 use tethers_reference_host::operational_scope::OperationalScopeEvidence;
-use tethers_reference_host::trust::{PackageTrustEvidence, TrustModeEvidence};
+use tethers_reference_host::trust::TrustModeEvidence;
 use uuid::Uuid;
 
 fn local_sha256(data: &[u8]) -> String {
