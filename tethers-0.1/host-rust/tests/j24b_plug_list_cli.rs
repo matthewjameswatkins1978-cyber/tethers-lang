@@ -11,7 +11,20 @@ use tethers_reference_host::installed::{
     DisabledBindingRecord, InstallationApprovalStore, InstalledPlugRegistry,
 };
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
-use tethers_reference_host::pdf_tools::{self, PdfOperationalScopeBinding};
+use tethers_reference_host::operational_scope::OperationalScopeEvidence;
+use tethers_reference_host::pdf_tools::{self};
+
+fn make_scope(installed_id: &str, root: &Path) -> OperationalScopeEvidence {
+    OperationalScopeEvidence::create(
+        installed_id,
+        "tethers.pdf-tools",
+        "tethers-pdf-provider",
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        &serde_json::json!({"query_root": root.to_string_lossy(), "max_bytes": 1024}),
+        "Matthew",
+    )
+    .unwrap()
+}
 use tethers_reference_host::trust::{
     DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore,
 };
@@ -251,9 +264,7 @@ fn real_pdf_lifecycle_list_is_deterministic_read_only_and_fail_closed() {
     assert_read_only(&root, &before, &snapshot(&root));
 
     fs::create_dir_all(&scope_root).unwrap();
-    let scope =
-        PdfOperationalScopeBinding::create(&installed.installed_id, &scope_root, 1024, "Matthew")
-            .unwrap();
+    let scope = make_scope(&installed.installed_id, &scope_root);
     let enablements = EnablementStore::open(&root.join("enablements")).unwrap();
     let enabled = enablements.enable(&installed, scope, "Matthew").unwrap();
     let before = snapshot(&root);
@@ -295,11 +306,9 @@ fn real_pdf_lifecycle_list_is_deterministic_read_only_and_fail_closed() {
     unknown.sequence = 1;
     unknown.previous_record_digest = None;
     unknown.state = EnablementState::Disabled;
-    let unknown_scope =
-        PdfOperationalScopeBinding::create(&unknown_id, &unknown_scope_root, 1024, "Matthew")
-            .unwrap();
-    unknown.operational_scope_digest = unknown_scope.integrity_digest.clone();
-    unknown.operational_scope = unknown_scope.into();
+    let unknown_scope = make_scope(&unknown_id, &unknown_scope_root);
+    unknown.operational_scope_digest = unknown_scope.integrity_digest.to_owned();
+    unknown.operational_scope = unknown_scope;
     resign(&mut unknown);
     write_record(&root, &unknown);
     let before = snapshot(&root);

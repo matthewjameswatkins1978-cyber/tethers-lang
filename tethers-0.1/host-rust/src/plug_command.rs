@@ -3,9 +3,9 @@ use crate::candidate_preparation::{
 };
 use crate::cli::{CliEnvelope, OutcomeStatus};
 use crate::enablement::{EnablementRecord, EnablementState, EnablementStore};
-use crate::installed::InstalledPlugRegistry;
+use crate::installed::{InstalledPlugRecord, InstalledPlugRegistry};
 use crate::m3_store::M3Error;
-use crate::operational_scope::OperationalScope;
+use crate::operational_scope::OperationalScopeEvidence;
 use crate::package::{self, CapabilityEvidence, PackageError};
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -499,22 +499,9 @@ pub fn run_disable(host_data_root: &Path, installed_id_str: &str) -> PlugCommand
 const SCOPE_FILE_MAX_BYTES: u64 = 16 * 1024;
 
 #[derive(Debug)]
-struct PlugScopeRequest {
+struct GenericScopeRequest {
     schema: String,
-    capability: CapabilityRequest,
-    permissions: PermissionRequest,
-}
-
-#[derive(Debug)]
-struct CapabilityRequest {
-    name: String,
-    version: u32,
-}
-
-#[derive(Debug)]
-struct PermissionRequest {
-    query_root: String,
-    max_bytes: u64,
+    scope: serde_json::Value,
 }
 
 fn reject_duplicate_keys<'de, M: MapAccess<'de>>(
@@ -528,21 +515,20 @@ fn reject_duplicate_keys<'de, M: MapAccess<'de>>(
     Ok(())
 }
 
-impl<'de> Deserialize<'de> for PlugScopeRequest {
+impl<'de> Deserialize<'de> for GenericScopeRequest {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct RequestVisitor;
         impl<'de> Visitor<'de> for RequestVisitor {
-            type Value = PlugScopeRequest;
+            type Value = GenericScopeRequest;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 write!(f, "a plug scope request object")
             }
             fn visit_map<A: MapAccess<'de>>(
                 self,
                 mut map: A,
-            ) -> Result<PlugScopeRequest, A::Error> {
+            ) -> Result<GenericScopeRequest, A::Error> {
                 let mut schema = None;
-                let mut capability = None;
-                let mut permissions = None;
+                let mut scope = None;
                 let mut seen = std::collections::BTreeSet::new();
                 while let Some(key) = map.next_key::<String>()? {
                     reject_duplicate_keys(&mut map, &key, &mut seen)?;
@@ -553,136 +539,25 @@ impl<'de> Deserialize<'de> for PlugScopeRequest {
                             }
                             schema = Some(map.next_value()?);
                         }
-                        "capability" => {
-                            if capability.is_some() {
-                                return Err(de::Error::duplicate_field("capability"));
+                        "scope" => {
+                            if scope.is_some() {
+                                return Err(de::Error::duplicate_field("scope"));
                             }
-                            capability = Some(map.next_value()?);
+                            scope = Some(map.next_value()?);
                         }
-                        "permissions" => {
-                            if permissions.is_some() {
-                                return Err(de::Error::duplicate_field("permissions"));
-                            }
-                            permissions = Some(map.next_value()?);
-                        }
-                        _ => {
-                            return Err(de::Error::unknown_field(
-                                &key,
-                                &["schema", "capability", "permissions"],
-                            ))
-                        }
+                        _ => return Err(de::Error::unknown_field(&key, &["schema", "scope"])),
                     }
                 }
                 let schema = schema.ok_or_else(|| de::Error::missing_field("schema"))?;
-                let capability =
-                    capability.ok_or_else(|| de::Error::missing_field("capability"))?;
-                let permissions =
-                    permissions.ok_or_else(|| de::Error::missing_field("permissions"))?;
-                Ok(PlugScopeRequest {
-                    schema,
-                    capability,
-                    permissions,
-                })
+                let scope = scope.ok_or_else(|| de::Error::missing_field("scope"))?;
+                Ok(GenericScopeRequest { schema, scope })
             }
         }
         deserializer.deserialize_map(RequestVisitor)
     }
 }
 
-impl<'de> Deserialize<'de> for CapabilityRequest {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct CapabilityVisitor;
-        impl<'de> Visitor<'de> for CapabilityVisitor {
-            type Value = CapabilityRequest;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "a capability object")
-            }
-            fn visit_map<A: MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<CapabilityRequest, A::Error> {
-                let mut name = None;
-                let mut version = None;
-                let mut seen = std::collections::BTreeSet::new();
-                while let Some(key) = map.next_key::<String>()? {
-                    reject_duplicate_keys(&mut map, &key, &mut seen)?;
-                    match key.as_str() {
-                        "name" => {
-                            if name.is_some() {
-                                return Err(de::Error::duplicate_field("name"));
-                            }
-                            name = Some(map.next_value()?);
-                        }
-                        "version" => {
-                            if version.is_some() {
-                                return Err(de::Error::duplicate_field("version"));
-                            }
-                            version = Some(map.next_value()?);
-                        }
-                        _ => return Err(de::Error::unknown_field(&key, &["name", "version"])),
-                    }
-                }
-                let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
-                let version = version.ok_or_else(|| de::Error::missing_field("version"))?;
-                Ok(CapabilityRequest { name, version })
-            }
-        }
-        deserializer.deserialize_map(CapabilityVisitor)
-    }
-}
-
-impl<'de> Deserialize<'de> for PermissionRequest {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct PermissionsVisitor;
-        impl<'de> Visitor<'de> for PermissionsVisitor {
-            type Value = PermissionRequest;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "a permissions object")
-            }
-            fn visit_map<A: MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<PermissionRequest, A::Error> {
-                let mut query_root = None;
-                let mut max_bytes = None;
-                let mut seen = std::collections::BTreeSet::new();
-                while let Some(key) = map.next_key::<String>()? {
-                    reject_duplicate_keys(&mut map, &key, &mut seen)?;
-                    match key.as_str() {
-                        "query_root" => {
-                            if query_root.is_some() {
-                                return Err(de::Error::duplicate_field("query_root"));
-                            }
-                            query_root = Some(map.next_value()?);
-                        }
-                        "max_bytes" => {
-                            if max_bytes.is_some() {
-                                return Err(de::Error::duplicate_field("max_bytes"));
-                            }
-                            max_bytes = Some(map.next_value()?);
-                        }
-                        _ => {
-                            return Err(de::Error::unknown_field(
-                                &key,
-                                &["query_root", "max_bytes"],
-                            ))
-                        }
-                    }
-                }
-                let query_root =
-                    query_root.ok_or_else(|| de::Error::missing_field("query_root"))?;
-                let max_bytes = max_bytes.ok_or_else(|| de::Error::missing_field("max_bytes"))?;
-                Ok(PermissionRequest {
-                    query_root,
-                    max_bytes,
-                })
-            }
-        }
-        deserializer.deserialize_map(PermissionsVisitor)
-    }
-}
-
-fn parse_scope_file(path: &Path) -> Result<PlugScopeRequest, M3Error> {
+fn parse_scope_file(path: &Path) -> Result<GenericScopeRequest, M3Error> {
     if !path.is_absolute() {
         return Err(M3Error::new(
             "scope_request_invalid",
@@ -705,7 +580,7 @@ fn parse_scope_file(path: &Path) -> Result<PlugScopeRequest, M3Error> {
     std::str::from_utf8(&bytes)
         .map_err(|_| M3Error::new("scope_request_invalid", "scope file is not valid UTF-8"))?;
     let mut de = serde_json::Deserializer::from_slice(&bytes);
-    let request = PlugScopeRequest::deserialize(&mut de)
+    let request = GenericScopeRequest::deserialize(&mut de)
         .map_err(|error| M3Error::new("scope_request_invalid", error.to_string()))?;
     de.end().map_err(|error| {
         M3Error::new(
@@ -716,22 +591,10 @@ fn parse_scope_file(path: &Path) -> Result<PlugScopeRequest, M3Error> {
     if request.schema != "tethers.plug-scope/1" {
         return Err(M3Error::new("scope_request_invalid", "unsupported schema"));
     }
-    if request.capability.name != "pdf.inspect" || request.capability.version != 1 {
+    if !request.scope.is_object() {
         return Err(M3Error::new(
             "scope_request_invalid",
-            "unsupported capability in scope request",
-        ));
-    }
-    if request.permissions.max_bytes == 0 || request.permissions.max_bytes > 67108864 {
-        return Err(M3Error::new(
-            "scope_request_invalid",
-            "max_bytes must be 1..=67108864",
-        ));
-    }
-    if !Path::new(&request.permissions.query_root).is_absolute() {
-        return Err(M3Error::new(
-            "scope_request_invalid",
-            "query_root must be an absolute path",
+            "scope must be a JSON object",
         ));
     }
     Ok(request)
@@ -766,6 +629,49 @@ fn scope_error(message: &str) -> PlugCommandResult {
         exit_code: envelope.exit_code,
         envelope,
     }
+}
+
+fn read_scope_schema_digest(target: &InstalledPlugRecord, host_data_root: &Path) -> String {
+    let installed_dir = host_data_root
+        .join("install")
+        .join(&target.installed_id)
+        .join(&target.installation_relative_path);
+    let plug_json_path = installed_dir.join("plug.json");
+    let bytes = match fs::read(&plug_json_path) {
+        Ok(b) => b,
+        Err(_) => {
+            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
+        }
+    };
+    let text = match std::str::from_utf8(&bytes) {
+        Ok(t) => t,
+        Err(_) => {
+            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
+        }
+    };
+    let value: serde_json::Value = match serde_json::from_str(text) {
+        Ok(v) => v,
+        Err(_) => {
+            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
+        }
+    };
+    let schema = match value
+        .get("provider")
+        .and_then(|p| p.get("operational_scope_schema"))
+    {
+        Some(s) => s,
+        None => {
+            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
+        }
+    };
+    let canonical = match serde_json_canonicalizer::to_vec(schema) {
+        Ok(b) => b,
+        Err(_) => {
+            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
+        }
+    };
+    use sha2::{Digest, Sha256};
+    format!("sha256:{:x}", Sha256::digest(canonical))
 }
 
 pub fn run_enable(
@@ -874,21 +780,6 @@ pub fn run_enable(
             )
         }
     };
-    if target.package_id != "tethers.pdf-tools"
-        || target.provider_id != "tethers-pdf-provider"
-        || !target
-            .disabled_bindings
-            .iter()
-            .any(|b| b.capability_name == "pdf.inspect" && b.capability_version == 1)
-    {
-        return enable_error(
-            M3Error::new(
-                "scope_unsupported",
-                "installed Plug does not support pdf.inspect@1",
-            ),
-            OutcomeStatus::InvalidData,
-        );
-    }
     let enablements =
         match EnablementStore::open_existing(&paths[2]).and_then(|store| store.load_all()) {
             Ok(records) => records,
@@ -921,7 +812,7 @@ pub fn run_enable(
             return enable_error(error, OutcomeStatus::InvalidData);
         }
     }
-    let scope = match parse_scope_file(scope_path) {
+    let scope_request = match parse_scope_file(scope_path) {
         Ok(request) => request,
         Err(error) => {
             if error.code == "store_io" {
@@ -930,29 +821,26 @@ pub fn run_enable(
             return scope_error(&error.message);
         }
     };
-    let binding = match crate::pdf_tools::PdfOperationalScopeBinding::create(
+    let scope_schema_digest = read_scope_schema_digest(target, host_data_root);
+    let evidence = match OperationalScopeEvidence::create(
         installed_id_str,
-        Path::new(&scope.permissions.query_root),
-        scope.permissions.max_bytes,
+        &target.package_id,
+        &target.provider_id,
+        &scope_schema_digest,
+        &scope_request.scope,
         "tethers-reference-host-cli",
     ) {
-        Ok(binding) => binding,
+        Ok(e) => e,
         Err(error) => {
-            return enable_error(
-                M3Error::new(error.code, error.message),
-                OutcomeStatus::InvalidData,
-            )
+            return enable_error(error, OutcomeStatus::InvalidData);
         }
     };
     let store = match EnablementStore::open_existing(&paths[2]) {
         Ok(store) => store,
         Err(error) => return enable_store_error(error),
     };
-    let enabled = match store.enable(
-        target,
-        OperationalScope::Pdf(binding.clone()),
-        "tethers-reference-host-cli",
-    ) {
+    let scope_digest = evidence.integrity_digest().to_owned();
+    let enabled = match store.enable(target, evidence, "tethers-reference-host-cli") {
         Ok(record) => record,
         Err(error) => return enable_store_error(error),
     };
@@ -964,7 +852,7 @@ pub fn run_enable(
             "state": "enabled",
             "sequence": enabled.sequence,
             "record_digest": enabled.record_digest,
-            "scope_digest": binding.integrity_digest,
+            "scope_digest": scope_digest,
         }),
     );
     PlugCommandResult {

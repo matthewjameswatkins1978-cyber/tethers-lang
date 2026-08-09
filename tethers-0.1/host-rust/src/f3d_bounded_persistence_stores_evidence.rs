@@ -101,7 +101,6 @@ fn f3d_dev_approval_reopen_preserves_record() {
 fn f3d_enablement_record_filename_mismatch_detected() {
     // EnablementStore::load_all checks file_stem == record.enablement_id.
     // Write a syntactically-valid record with wrong filename to trigger the check.
-    use crate::file_tools::OperationalScopeBinding;
     let digest = format!("sha256:{}", "e".repeat(64));
     let installed = {
         use crate::installed::DisabledBindingRecord;
@@ -177,14 +176,17 @@ fn f3d_enablement_record_filename_mismatch_detected() {
     fs::create_dir_all(scope_root.join("source")).unwrap();
     fs::create_dir_all(scope_root.join("destination")).unwrap();
 
-    let scope = OperationalScopeBinding::create(
+    let scope = crate::operational_scope::OperationalScopeEvidence::create(
         &installed.installed_id,
-        "file.move",
-        1,
-        &scope_root.join("query"),
-        &scope_root.join("source"),
-        &scope_root.join("destination"),
-        crate::file_tools::MAX_CONTENT_BYTES,
+        &installed.package_id,
+        &installed.provider_id,
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        &serde_json::json!({
+            "query_root": scope_root.join("query").to_string_lossy(),
+            "move_source_root": scope_root.join("source").to_string_lossy(),
+            "move_destination_root": scope_root.join("destination").to_string_lossy(),
+            "max_content_bytes": crate::file_tools::MAX_CONTENT_BYTES,
+        }),
         "f3d",
     )
     .unwrap();

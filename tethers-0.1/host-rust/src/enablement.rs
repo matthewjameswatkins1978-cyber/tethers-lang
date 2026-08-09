@@ -6,7 +6,7 @@
 
 use crate::installed::InstalledPlugRecord;
 use crate::m3_store::{canonical, sha256, unix_ms, M3Error, Result, StoreRoot};
-use crate::operational_scope::OperationalScope;
+use crate::operational_scope::OperationalScopeEvidence;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -26,7 +26,7 @@ pub struct EnablementRecord {
     pub provider_version: String,
     pub conformance_evidence_digest: String,
     pub installation_approval_id: String,
-    pub operational_scope: OperationalScope,
+    pub operational_scope: OperationalScopeEvidence,
     pub operational_scope_digest: String,
     pub capabilities: Vec<EnabledCapability>,
     pub state: EnablementState,
@@ -81,15 +81,6 @@ impl EnablementRecord {
             ));
         }
         self.operational_scope.validate()?;
-        if !self.capabilities.iter().any(|cap| {
-            cap.name == self.operational_scope.capability_name()
-                && cap.version == self.operational_scope.capability_version()
-        }) {
-            return Err(M3Error::new(
-                "enablement_invalid",
-                "operational scope capability not found in enabled bindings",
-            ));
-        }
         let mut identities = BTreeSet::new();
         if self
             .capabilities
@@ -189,15 +180,12 @@ impl EnablementStore {
         })
     }
 
-    pub fn enable<S>(
+    pub fn enable(
         &self,
         installed: &InstalledPlugRecord,
-        scope: S,
+        scope: OperationalScopeEvidence,
         authority: &str,
-    ) -> Result<EnablementRecord>
-    where
-        S: Into<OperationalScope>,
-    {
+    ) -> Result<EnablementRecord> {
         installed.validate()?;
         if installed.state != "present_disabled" || authority.is_empty() {
             return Err(M3Error::new(
@@ -211,14 +199,14 @@ impl EnablementStore {
                 "installed Plug is already enabled",
             ));
         }
-        let scope = scope.into();
-        if scope.installed_id() != installed.installed_id || scope.capability_name().is_empty() {
+        if scope.installed_id() != installed.installed_id {
             return Err(M3Error::new(
                 "enablement_refused",
-                "scope binding does not match installed Plug",
+                "scope evidence does not match installed Plug",
             ));
         }
         let previous = self.current_record(&installed.installed_id)?;
+        let scope_digest = scope.integrity_digest().to_owned();
         let mut record = EnablementRecord {
             schema_version: 1,
             enablement_id: Uuid::new_v4().to_string(),
@@ -231,7 +219,7 @@ impl EnablementStore {
             provider_version: installed.provider_version.clone(),
             conformance_evidence_digest: installed.conformance_evidence_digest.clone(),
             installation_approval_id: installed.installation_approval_id.clone(),
-            operational_scope_digest: scope.integrity_digest().to_owned(),
+            operational_scope_digest: scope_digest,
             operational_scope: scope,
             capabilities: installed
                 .disabled_bindings
@@ -282,8 +270,6 @@ impl EnablementStore {
         record.authority = authority.to_owned();
         record.changed_unix_ms = unix_ms()?;
         record.record_digest = sha256(&record.covered_bytes()?);
-        // The enabled record remains immutable historical evidence.  A separate
-        // disabled record is the fail-closed current transition.
         self.root.create_json(&record.enablement_id, &record)?;
         Ok(record)
     }
@@ -393,6 +379,18 @@ mod tests {
     use crate::trust::{PackageTrustEvidence, TrustModeEvidence};
     use std::fs;
 
+    fn make_scope_evidence(installed_id: &str) -> OperationalScopeEvidence {
+        OperationalScopeEvidence::create(
+            installed_id,
+            "example.package",
+            "example-provider",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            &serde_json::json!({"query": null}),
+            "Matthew",
+        )
+        .unwrap()
+    }
+
     #[test]
     fn enablement_is_explicit_and_disable_removes_availability() {
         let digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -459,24 +457,8 @@ mod tests {
         installed.record_digest =
             crate::m3_store::sha256(&crate::m3_store::canonical(&covered).unwrap());
         let root = std::env::temp_dir().join(format!("tethers-m4-enablement-{}", Uuid::new_v4()));
-        let scope_root = root.with_file_name(format!(
-            "{}-scope",
-            root.file_name().unwrap().to_string_lossy()
-        ));
-        fs::create_dir_all(scope_root.join("query")).unwrap();
-        fs::create_dir_all(scope_root.join("source")).unwrap();
-        fs::create_dir_all(scope_root.join("destination")).unwrap();
-        let scope = crate::file_tools::OperationalScopeBinding::create(
-            &installed.installed_id,
-            "file.move",
-            1,
-            &scope_root.join("query"),
-            &scope_root.join("source"),
-            &scope_root.join("destination"),
-            crate::file_tools::MAX_CONTENT_BYTES,
-            "Matthew",
-        )
-        .unwrap();
+        fs::create_dir_all(&root).unwrap();
+        let scope = make_scope_evidence(&installed.installed_id);
         let store = EnablementStore::open(&root).unwrap();
         assert!(!store.is_available(&installed.installed_id).unwrap());
         store.enable(&installed, scope, "Matthew").unwrap();
@@ -484,6 +466,5 @@ mod tests {
         store.disable(&installed, "Matthew").unwrap();
         assert!(!store.is_available(&installed.installed_id).unwrap());
         fs::remove_dir_all(root).unwrap();
-        fs::remove_dir_all(scope_root).unwrap();
     }
 }

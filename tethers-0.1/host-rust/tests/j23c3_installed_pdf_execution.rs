@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 use tethers_reference_host::candidate::{extract_to_quarantine, CandidateRegistry};
@@ -10,11 +11,25 @@ use tethers_reference_host::enablement::EnablementStore;
 use tethers_reference_host::host_execution::execute_enabled_installed_action;
 use tethers_reference_host::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
-use tethers_reference_host::operational_scope::OperationalScope;
+use tethers_reference_host::operational_scope::OperationalScopeEvidence;
 use tethers_reference_host::package;
-use tethers_reference_host::pdf_tools::{
-    self, InstalledPdfToolsExecutor, PdfOperationalScopeBinding,
-};
+use tethers_reference_host::pdf_tools::{self, InstalledPdfToolsExecutor};
+
+fn make_pdf_scope(
+    installed_id: &str,
+    query_root: &Path,
+    max_bytes: u64,
+) -> OperationalScopeEvidence {
+    OperationalScopeEvidence::create(
+        installed_id,
+        "tethers.pdf-tools",
+        "tethers-pdf-provider",
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        &serde_json::json!({"query_root": query_root.to_string_lossy(), "max_bytes": max_bytes}),
+        "Matthew",
+    )
+    .unwrap()
+}
 use tethers_reference_host::policy::CapabilityRequirement;
 use tethers_reference_host::resolver;
 use tethers_reference_host::trust::{
@@ -156,17 +171,9 @@ fn installed_pdf_plug_lifecycle() {
     let operational_max: u64 = 1024;
     fs::write(&big_path, oversized_bytes).unwrap();
 
-    let scope = PdfOperationalScopeBinding::create(
-        &installed.installed_id,
-        &query_dir,
-        operational_max,
-        "Matthew",
-    )
-    .unwrap();
-    assert!(matches!(
-        OperationalScope::from(scope.clone()),
-        OperationalScope::Pdf(_)
-    ));
+    let scope = make_pdf_scope(&installed.installed_id, &query_dir, operational_max);
+    assert_eq!(scope.schema_version, 1);
+    assert_eq!(scope.installed_id(), &installed.installed_id);
 
     // -- Enablement --
     let enablements = EnablementStore::open(&base.join("enablements")).unwrap();
@@ -193,13 +200,7 @@ fn installed_pdf_plug_lifecycle() {
     // -- Wrong scope refused --
     let alt_dir = base.join("alt-scope");
     fs::create_dir_all(&alt_dir).unwrap();
-    let alt_scope = PdfOperationalScopeBinding::create(
-        &installed.installed_id,
-        &alt_dir,
-        operational_max,
-        "Matthew",
-    )
-    .unwrap();
+    let alt_scope = make_pdf_scope(&installed.installed_id, &alt_dir, operational_max);
     assert_ne!(alt_scope.integrity_digest, scope.integrity_digest);
     let alt_launch = InstalledPdfToolsExecutor::launch_from_installed(
         &installed,
@@ -215,8 +216,7 @@ fn installed_pdf_plug_lifecycle() {
     assert!(alt_launch.is_err());
 
     // -- Mismatched operational scope refused --
-    let mut mismatched_scope = scope.clone();
-    mismatched_scope.max_bytes = operational_max + 1;
+    let mismatched_scope = make_pdf_scope(&installed.installed_id, &query_dir, operational_max + 1);
     assert_eq!(mismatched_scope.integrity_digest, scope.integrity_digest);
     let mismatched_launch = InstalledPdfToolsExecutor::launch_from_installed(
         &installed,

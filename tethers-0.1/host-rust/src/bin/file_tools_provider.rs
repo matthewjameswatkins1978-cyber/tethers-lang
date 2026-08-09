@@ -1,19 +1,15 @@
 //! Credential-free native reference provider for the M4 File Tools Plug.
+//!
+//! In installed operational mode, scope is delivered through
+//! `TETHERS_OPERATIONAL_SCOPE_JSON`. During host conformance the provider
+//! falls back to the TEMP scratch directory.
 
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 use tethers_reference_host::file_tools::{self, FileScope};
 
-fn argument(name: &str) -> Option<String> {
-    let mut args = std::env::args().skip(1);
-    while let Some(value) = args.next() {
-        if value == name {
-            return args.next();
-        }
-    }
-    None
-}
+const OPERATIONAL_SCOPE_JSON_ENV: &str = "TETHERS_OPERATIONAL_SCOPE_JSON";
 
 fn response(id: &Value, result: Value) -> Value {
     json!({"jsonrpc":"2.0","id":id,"result":result})
@@ -22,22 +18,26 @@ fn error(id: &Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
 }
 
+fn resolve_root(field: &str) -> PathBuf {
+    let json = match std::env::var(OPERATIONAL_SCOPE_JSON_ENV) {
+        Ok(v) if !v.is_empty() => v,
+        _ => return std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    };
+    let value: Value = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(_) => return std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    };
+    match value.get(field).and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => PathBuf::from(s),
+        _ => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    }
+}
+
 fn main() {
-    let fallback = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let root = argument("--query-root")
-        .or_else(|| argument("--provider-root"))
-        .filter(|value| !value.starts_with("__TETHERS_FILE_"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| fallback.clone());
-    let source = argument("--source-root")
-        .filter(|value| !value.starts_with("__TETHERS_FILE_"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.clone());
-    let destination = argument("--destination-root")
-        .filter(|value| !value.starts_with("__TETHERS_FILE_"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.clone());
-    let scope = match FileScope::new(&root, &PathBuf::from(source), &PathBuf::from(destination)) {
+    let root = resolve_root("query_root");
+    let source = resolve_root("move_source_root");
+    let destination = resolve_root("move_destination_root");
+    let scope = match FileScope::new(&root, &PathBuf::from(&source), &PathBuf::from(&destination)) {
         Ok(scope) => scope,
         Err(error) => {
             eprintln!("file-tools provider configuration refused: {error}");

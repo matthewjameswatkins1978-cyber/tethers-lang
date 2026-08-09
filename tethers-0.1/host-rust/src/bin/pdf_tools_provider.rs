@@ -3,6 +3,11 @@
 //! The binary is a thin MCP transport around `pdf_tools::inspect`. All PDF
 //! semantics, scope enforcement, and bounds live in the library so the provider
 //! process cannot drift from the reviewed capability contract.
+//!
+//! In installed operational mode, scope is delivered through
+//! `TETHERS_OPERATIONAL_SCOPE_JSON` with exact SHA-256 integrity via
+//! `TETHERS_OPERATIONAL_SCOPE_DIGEST`. During host conformance
+//! (TETHERS_CONFORMANCE=1) a TEMP query root is used.
 
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
@@ -13,24 +18,7 @@ const PROVIDER_IDENTITY: &str = "tethers-pdf-provider";
 const PROVIDER_VERSION: &str = "1.0.0";
 const PROTOCOL_VERSION: &str = "2025-11-25";
 
-/// Package-declared query root. The installed launcher replaces it with the
-/// exact operational root; during host conformance the provider resolves it
-/// from the host-owned TEMP scratch directory.
-const PDF_QUERY_ROOT_PLACEHOLDER: &str = "__TETHERS_PDF_QUERY_ROOT__";
-
-/// Installed-operational size cap supplied by the host launcher when the
-/// provider is launched through an enabled installed binding.
-const PDF_MAX_BYTES_ENV: &str = "TETHERS_PDF_MAX_BYTES";
-
-fn argument(name: &str) -> Option<String> {
-    let mut args = std::env::args().skip(1);
-    while let Some(value) = args.next() {
-        if value == name {
-            return args.next();
-        }
-    }
-    None
-}
+const OPERATIONAL_SCOPE_JSON_ENV: &str = "TETHERS_OPERATIONAL_SCOPE_JSON";
 
 fn response(id: &Value, result: Value) -> Value {
     json!({"jsonrpc":"2.0","id":id,"result":result})
@@ -40,30 +28,40 @@ fn error(id: &Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
 }
 
-fn resolve_query_root(arg: &str) -> PathBuf {
-    if arg == PDF_QUERY_ROOT_PLACEHOLDER {
-        return conformance_query_root();
-    }
-    // Any other reviewed placeholder is unsupported and must not silently widen
-    // scope to the current directory, profile, repository, or arbitrary env.
-    if arg.starts_with("__TETHERS_PDF_") {
-        eprintln!("pdf provider configuration refused: unsupported query-root placeholder {arg}");
+fn resolve_query_root() -> PathBuf {
+    let conformance = std::env::var("TETHERS_CONFORMANCE").unwrap_or_default();
+    let json = match std::env::var(OPERATIONAL_SCOPE_JSON_ENV) {
+        Ok(v) if !v.is_empty() => v,
+        _ => {
+            if conformance == "1" {
+                return conformance_query_root();
+            }
+            eprintln!("pdf provider configuration refused: TETHERS_OPERATIONAL_SCOPE_JSON is required in installed operational mode");
+            std::process::exit(2);
+        }
+    };
+    let value: Value = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("pdf provider configuration refused: malformed operational scope JSON");
+            std::process::exit(2);
+        }
+    };
+    let root = match value.get("query_root").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => {
+            eprintln!("pdf provider configuration refused: query_root is not present in operational scope");
+            std::process::exit(2);
+        }
+    };
+    if root.is_empty() {
+        eprintln!("pdf provider configuration refused: query_root is empty");
         std::process::exit(2);
     }
-    PathBuf::from(arg)
+    PathBuf::from(root)
 }
 
-/// Resolve the reviewed placeholder only during host conformance. The host
-/// conformance launcher supplies TETHERS_CONFORMANCE=1 and a clean TEMP scratch
-/// directory; outside that contract the placeholder is refused.
 fn conformance_query_root() -> PathBuf {
-    let conformance = std::env::var("TETHERS_CONFORMANCE").unwrap_or_default();
-    if conformance != "1" {
-        eprintln!(
-            "pdf provider configuration refused: query-root placeholder is only valid during host conformance (TETHERS_CONFORMANCE=1)"
-        );
-        std::process::exit(2);
-    }
     let temp = match std::env::var("TEMP") {
         Ok(value) if !value.is_empty() => value,
         _ => {
@@ -86,42 +84,33 @@ fn conformance_query_root() -> PathBuf {
 }
 
 fn resolve_max_bytes() -> u64 {
-    match std::env::var("TETHERS_CONFORMANCE").as_deref() {
-        Ok("0") => {
-            let raw = match std::env::var(PDF_MAX_BYTES_ENV) {
-                Ok(v) if !v.is_empty() => v,
-                _ => {
-                    eprintln!(
-                        "pdf provider configuration refused: TETHERS_PDF_MAX_BYTES is required in installed operational mode"
-                    );
-                    std::process::exit(2);
-                }
-            };
-            match raw.parse::<u64>() {
-                Ok(n) if n >= 1 && n <= pdf_tools::MAX_PDF_BYTES => n,
-                _ => {
-                    eprintln!(
-                        "pdf provider configuration refused: TETHERS_PDF_MAX_BYTES must be 1..{}",
-                        pdf_tools::MAX_PDF_BYTES
-                    );
-                    std::process::exit(2);
-                }
-            }
+    let conformance = std::env::var("TETHERS_CONFORMANCE").unwrap_or_default();
+    if conformance != "0" {
+        return pdf_tools::MAX_PDF_BYTES;
+    }
+    let json = match std::env::var(OPERATIONAL_SCOPE_JSON_ENV) {
+        Ok(v) if !v.is_empty() => v,
+        _ => return pdf_tools::MAX_PDF_BYTES,
+    };
+    let value: Value = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(_) => return pdf_tools::MAX_PDF_BYTES,
+    };
+    match value.get("max_bytes").and_then(|v| v.as_u64()) {
+        Some(n) if n >= 1 && n <= pdf_tools::MAX_PDF_BYTES => n,
+        Some(n) => {
+            eprintln!(
+                "pdf provider configuration refused: max_bytes {n} is outside [1, {}]",
+                pdf_tools::MAX_PDF_BYTES
+            );
+            std::process::exit(2);
         }
-        _ => pdf_tools::MAX_PDF_BYTES,
+        None => pdf_tools::MAX_PDF_BYTES,
     }
 }
 
 fn main() {
-    // The query root is host configuration, never provider-inferred: an absent
-    // or unusable root must refuse the session rather than widen scope.
-    let Some(root_arg) = argument("--query-root") else {
-        eprintln!(
-            "pdf provider configuration refused: --query-root <absolute directory> is required"
-        );
-        std::process::exit(2);
-    };
-    let root = resolve_query_root(&root_arg);
+    let root = resolve_query_root();
     let max_bytes = resolve_max_bytes();
     let scope = match PdfScope::new(&root, max_bytes) {
         Ok(scope) => scope,

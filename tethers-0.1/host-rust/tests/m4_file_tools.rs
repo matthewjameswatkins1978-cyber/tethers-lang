@@ -16,6 +16,7 @@ use tethers_reference_host::file_tools::{
 use tethers_reference_host::host_execution::execute_enabled_file_tools_action;
 use tethers_reference_host::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
+use tethers_reference_host::operational_scope::OperationalScopeEvidence;
 use tethers_reference_host::package;
 use tethers_reference_host::policy::CapabilityRequirement;
 use tethers_reference_host::resolver;
@@ -210,14 +211,17 @@ fn installed_state_drives_native_operational_launch_and_disable() {
     fs::create_dir_all(scope_root.join("destination")).unwrap();
     fs::write(scope_root.join("query/read.txt"), b"query").unwrap();
     fs::write(scope_root.join("source/move.txt"), b"move").unwrap();
-    let scope = OperationalScopeBinding::create(
+    let scope = OperationalScopeEvidence::create(
         &installed.installed_id,
-        "file.move",
-        1,
-        &scope_root.join("query"),
-        &scope_root.join("source"),
-        &scope_root.join("destination"),
-        4096,
+        "tethers.file-tools",
+        "tethers-file-tools",
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        &serde_json::json!({
+            "query_root": scope_root.join("query").to_string_lossy(),
+            "move_source_root": scope_root.join("source").to_string_lossy(),
+            "move_destination_root": scope_root.join("destination").to_string_lossy(),
+            "max_content_bytes": 4096,
+        }),
         "Matthew",
     )
     .unwrap();

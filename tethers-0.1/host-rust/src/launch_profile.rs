@@ -12,7 +12,7 @@ use crate::installed::{InstallationApprovalRecord, InstalledPlugRecord};
 use crate::m3_store::{
     canonical, reject_reparse, sha256, verify_chain, M3Error, Result, StoreRoot,
 };
-use crate::operational_scope::OperationalScope;
+use crate::operational_scope::OperationalScopeEvidence;
 use crate::package::PayloadEvidence;
 use crate::trust::{DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore};
 use serde::{Deserialize, Serialize};
@@ -200,7 +200,7 @@ pub fn launch_installed_provider(
     conformance: &ConformanceEvidence,
     approval: &InstallationApprovalRecord,
     enablement: &EnablementRecord,
-    scope: &OperationalScope,
+    scope: &OperationalScopeEvidence,
 ) -> std::result::Result<SupervisedChild, ChildError> {
     record.validate().map_err(map_installed_error)?;
     trust
@@ -252,14 +252,10 @@ pub fn launch_installed_provider(
             message: "enablement scope does not match supplied scope".into(),
         });
     }
-    if scope.installed_id() != record.installed_id
-        || !enablement.capabilities.iter().any(|binding| {
-            binding.name == scope.capability_name() && binding.version == scope.capability_version()
-        })
-    {
+    if scope.installed_id() != record.installed_id {
         return Err(ChildError::LaunchFailed {
             command: record.launch_path.clone(),
-            message: "enabled capability binding does not match scope".into(),
+            message: "scope evidence does not match installed Plug".into(),
         });
     }
     scope.validate().map_err(map_installed_error)?;
@@ -288,40 +284,7 @@ pub fn launch_installed_provider(
             message: "installed working directory escaped".into(),
         });
     }
-    let mut args = record.launch_arguments.clone();
-    match scope {
-        OperationalScope::FileTools(s) => {
-            let replacements = [
-                (
-                    "__TETHERS_FILE_QUERY_ROOT__",
-                    s.query_root.to_string_lossy().into_owned(),
-                ),
-                (
-                    "__TETHERS_FILE_SOURCE_ROOT__",
-                    s.move_source_root.to_string_lossy().into_owned(),
-                ),
-                (
-                    "__TETHERS_FILE_DESTINATION_ROOT__",
-                    s.move_destination_root.to_string_lossy().into_owned(),
-                ),
-            ];
-            for arg in &mut args {
-                for (placeholder, value) in &replacements {
-                    if arg == placeholder {
-                        *arg = value.clone();
-                    }
-                }
-            }
-        }
-        OperationalScope::Pdf(s) => {
-            let replacement = s.query_root.to_string_lossy().into_owned();
-            for arg in &mut args {
-                if arg == "__TETHERS_PDF_QUERY_ROOT__" {
-                    *arg = replacement.clone();
-                }
-            }
-        }
-    }
+    let args = record.launch_arguments.clone();
     if args.iter().any(|arg| arg.contains("__TETHERS_")) {
         return Err(ChildError::LaunchFailed {
             command: executable.to_string_lossy().into_owned(),
@@ -343,29 +306,14 @@ pub fn launch_installed_provider(
     environment.insert("TEMP".into(), scratch.to_string_lossy().into_owned());
     environment.insert("TMP".into(), scratch.to_string_lossy().into_owned());
     environment.insert("TETHERS_CONFORMANCE".into(), "0".into());
-    match scope {
-        OperationalScope::FileTools(s) => {
-            environment.insert(
-                "TETHERS_FILE_QUERY_ROOT".into(),
-                s.query_root.to_string_lossy().into_owned(),
-            );
-            environment.insert(
-                "TETHERS_FILE_SOURCE_ROOT".into(),
-                s.move_source_root.to_string_lossy().into_owned(),
-            );
-            environment.insert(
-                "TETHERS_FILE_DESTINATION_ROOT".into(),
-                s.move_destination_root.to_string_lossy().into_owned(),
-            );
-        }
-        OperationalScope::Pdf(s) => {
-            environment.insert(
-                "TETHERS_PDF_QUERY_ROOT".into(),
-                s.query_root.to_string_lossy().into_owned(),
-            );
-            environment.insert("TETHERS_PDF_MAX_BYTES".into(), s.max_bytes.to_string());
-        }
-    }
+    environment.insert(
+        "TETHERS_OPERATIONAL_SCOPE_JSON".into(),
+        scope.canonical_scope_json.clone(),
+    );
+    environment.insert(
+        "TETHERS_OPERATIONAL_SCOPE_DIGEST".into(),
+        scope.integrity_digest().to_owned(),
+    );
     let mut config = ChildConfig::production(executable.to_string_lossy().into_owned(), args);
     config.current_dir = Some(working_directory);
     config.clear_environment = true;

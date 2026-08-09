@@ -9,7 +9,20 @@ use tethers_reference_host::conformance::{run_host_conformance, ConformanceEvide
 use tethers_reference_host::enablement::{EnablementRecord, EnablementState, EnablementStore};
 use tethers_reference_host::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
-use tethers_reference_host::pdf_tools::{self, PdfOperationalScopeBinding};
+use tethers_reference_host::operational_scope::OperationalScopeEvidence;
+use tethers_reference_host::pdf_tools::{self};
+
+fn make_scope(installed_id: &str, root: &Path, max_bytes: u64) -> OperationalScopeEvidence {
+    OperationalScopeEvidence::create(
+        installed_id,
+        "tethers.pdf-tools",
+        "tethers-pdf-provider",
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        &serde_json::json!({"query_root": root.to_string_lossy(), "max_bytes": max_bytes}),
+        "Matthew",
+    )
+    .unwrap()
+}
 use tethers_reference_host::trust::{
     DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore,
 };
@@ -215,9 +228,7 @@ fn enable_pdf(
     scope_root: &Path,
 ) {
     fs::create_dir_all(scope_root).unwrap();
-    let scope =
-        PdfOperationalScopeBinding::create(&installed.installed_id, scope_root, 1024, "Matthew")
-            .unwrap();
+    let scope = make_scope(&installed.installed_id, scope_root, 1024);
     let enablements = EnablementStore::open_existing(&root.join("enablements")).unwrap();
     enablements.enable(installed, scope, "Matthew").unwrap();
 }

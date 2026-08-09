@@ -133,6 +133,9 @@ struct Provider {
     launch: Launch,
     working_directory: String,
     capability_operation_namespace: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    operational_scope_schema: Option<serde_json::Value>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

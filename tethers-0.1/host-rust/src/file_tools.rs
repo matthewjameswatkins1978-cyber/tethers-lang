@@ -125,6 +125,47 @@ impl OperationalScopeBinding {
         )?
         .with_max_content_bytes(self.max_content_bytes)
     }
+
+    pub fn from_canonical_scope_json(
+        json: &str,
+        installed_id: &str,
+        capability_name: &str,
+        capability_version: u32,
+    ) -> Result<Self, FileToolsError> {
+        let value: serde_json::Value = serde_json::from_str(json)
+            .map_err(|e| FileToolsError::new("scope_invalid", format!("parse scope JSON: {e}")))?;
+        let obj = value
+            .as_object()
+            .ok_or_else(|| FileToolsError::new("scope_invalid", "scope must be a JSON object"))?;
+        let query_root = obj
+            .get("query_root")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| FileToolsError::new("scope_invalid", "query_root is required"))?;
+        let move_source_root = obj
+            .get("move_source_root")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| FileToolsError::new("scope_invalid", "move_source_root is required"))?;
+        let move_destination_root = obj
+            .get("move_destination_root")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                FileToolsError::new("scope_invalid", "move_destination_root is required")
+            })?;
+        let max_content_bytes: u64 = obj
+            .get("max_content_bytes")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| FileToolsError::new("scope_invalid", "max_content_bytes is required"))?;
+        Self::create(
+            installed_id,
+            capability_name,
+            capability_version,
+            Path::new(query_root),
+            Path::new(move_source_root),
+            Path::new(move_destination_root),
+            max_content_bytes,
+            "generic-scope",
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -590,7 +631,7 @@ pub fn build_reference_package(provider_bytes: &[u8]) -> Result<Vec<u8>, FileToo
     let plug = json!({
         "package_format_version":"1","package_id":"tethers.file-tools","package_version":"1.1.0","display_name":"Tethers File Tools","description":"Credential-free bounded local File Tools reference Plug","publisher":"Tethers reference material","licence":"MIT","socket_major":1,
         "protocol_bindings":[{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],"platforms":[{"os":"windows","architecture":"x86_64"}],
-        "provider":{"provider_id":"tethers-file-tools","provider_version":"1.0.0","launch":{"path":"provider/file_tools_provider.exe","arguments":["--query-root","__TETHERS_FILE_QUERY_ROOT__","--source-root","__TETHERS_FILE_SOURCE_ROOT__","--destination-root","__TETHERS_FILE_DESTINATION_ROOT__"]},"working_directory":"provider","capability_operation_namespace":"file"},
+        "provider":{"provider_id":"tethers-file-tools","provider_version":"1.0.0","launch":{"path":"provider/file_tools_provider.exe","arguments":[]},"working_directory":"provider","capability_operation_namespace":"file","operational_scope_schema":{"type":"object","properties":{"query_root":{"type":"string","x-tethers-path":"canonical-directory"},"move_source_root":{"type":"string","x-tethers-path":"canonical-directory"},"move_destination_root":{"type":"string","x-tethers-path":"canonical-directory"},"max_content_bytes":{"type":"integer","minimum":1,"maximum":65536}},"required":["query_root","move_source_root","move_destination_root","max_content_bytes"],"additionalProperties":false}},
         "capabilities":[{"capability_name":"file.metadata","capability_version":1,"manifest_path":"manifests/file-metadata-local.json","manifest_digest":"sha256:369f4034f702847bb82d1ef82e93f2c5661cad4ad2d7496c3685b406747db09a","provider_operation_name":"file_metadata"},{"capability_name":"file.metadata","capability_version":2,"manifest_path":"manifests/file-metadata-v2.json","manifest_digest":v2_manifest["digest"].as_str().unwrap(),"provider_operation_name":"file_metadata_v2"},{"capability_name":"file.move","capability_version":1,"manifest_path":"manifests/file-move-m4.json","manifest_digest":"sha256:2ac3793d4b61725fd130dac531d9690b93881341245f0c2f7c3aca2fd2dd2311","provider_operation_name":"file_move"}],
         "payload_index":[{"path":"manifests/file-metadata-local.json","sha256":digest(&metadata),"size_bytes":metadata.len(),"role":"capability_manifest"},{"path":"manifests/file-metadata-v2.json","sha256":digest(&metadata_v2),"size_bytes":metadata_v2.len(),"role":"capability_manifest"},{"path":"manifests/file-move-m4.json","sha256":digest(&movement),"size_bytes":movement.len(),"role":"capability_manifest"},{"path":"provider/file_tools_provider.exe","sha256":digest(provider_bytes),"size_bytes":provider_bytes.len(),"role":"provider_executable"}]
     });
@@ -640,10 +681,8 @@ impl FileToolsExecutor {
         conformance: &crate::conformance::ConformanceEvidence,
         approval: &crate::installed::InstallationApprovalRecord,
         enablement: &crate::enablement::EnablementRecord,
-        scope: &OperationalScopeBinding,
+        scope: &crate::operational_scope::OperationalScopeEvidence,
     ) -> Result<Self, FileToolsError> {
-        let operational_scope: crate::operational_scope::OperationalScope =
-            OperationalScopeBinding::clone(scope).into();
         let mut provider = crate::launch_profile::launch_installed_provider(
             record,
             installed_directory,
@@ -653,7 +692,7 @@ impl FileToolsExecutor {
             conformance,
             approval,
             enablement,
-            &operational_scope,
+            scope,
         )
         .map_err(|e| FileToolsError::new("provider_launch", e.to_string()))?;
         let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tethers-reference-host","version":"0.2.0"}}});

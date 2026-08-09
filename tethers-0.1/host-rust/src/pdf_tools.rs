@@ -11,7 +11,7 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::operational_scope::OperationalScope;
+use crate::operational_scope::OperationalScopeEvidence;
 
 pub const INSPECT_CAPABILITY: &str = "pdf.inspect";
 pub const INSPECT_OPERATION: &str = "pdf_inspect";
@@ -369,6 +369,31 @@ impl PdfOperationalScopeBinding {
         self.validate()?;
         PdfScope::new(&self.query_root, self.max_bytes)
     }
+
+    pub fn from_canonical_scope_json(
+        json: &str,
+        installed_id: &str,
+    ) -> Result<Self, PdfToolsError> {
+        let value: serde_json::Value = serde_json::from_str(json)
+            .map_err(|e| PdfToolsError::new("scope_invalid", format!("parse scope JSON: {e}")))?;
+        let obj = value
+            .as_object()
+            .ok_or_else(|| PdfToolsError::new("scope_invalid", "scope must be a JSON object"))?;
+        let query_root = obj
+            .get("query_root")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| PdfToolsError::new("scope_invalid", "query_root is required"))?;
+        let max_bytes: u64 = obj
+            .get("max_bytes")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| PdfToolsError::new("scope_invalid", "max_bytes is required"))?;
+        Self::create(
+            installed_id,
+            Path::new(query_root),
+            max_bytes,
+            "generic-scope",
+        )
+    }
 }
 
 // -- Manifest builders --
@@ -431,7 +456,7 @@ pub fn build_reference_package(provider_bytes: &[u8]) -> Result<Vec<u8>, PdfTool
         "socket_major":1,
         "protocol_bindings":[{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],
         "platforms":[{"os":"windows","architecture":"x86_64"}],
-        "provider":{"provider_id":"tethers-pdf-provider","provider_version":"1.0.0","launch":{"path":"provider/pdf_tools_provider.exe","arguments":["--query-root","__TETHERS_PDF_QUERY_ROOT__"]},"working_directory":"provider","capability_operation_namespace":"pdf"},
+        "provider":{"provider_id":"tethers-pdf-provider","provider_version":"1.0.0","launch":{"path":"provider/pdf_tools_provider.exe","arguments":[]},"working_directory":"provider","capability_operation_namespace":"pdf","operational_scope_schema":{"type":"object","properties":{"query_root":{"type":"string","x-tethers-path":"canonical-directory"},"max_bytes":{"type":"integer","minimum":1,"maximum":67108864}},"required":["query_root","max_bytes"],"additionalProperties":false}},
         "capabilities":[{"capability_name":"pdf.inspect","capability_version":1,"manifest_path":"manifests/pdf-inspect-v1.json","manifest_digest":manifest_digest,"provider_operation_name":"pdf_inspect"}],
         "payload_index":[{"path":"manifests/pdf-inspect-v1.json","sha256":digest(&manifest_bytes),"size_bytes":manifest_bytes.len(),"role":"capability_manifest"},{"path":"provider/pdf_tools_provider.exe","sha256":digest(provider_bytes),"size_bytes":provider_bytes.len(),"role":"provider_executable"}]
     });
@@ -514,9 +539,8 @@ impl InstalledPdfToolsExecutor {
         conformance: &crate::conformance::ConformanceEvidence,
         approval: &crate::installed::InstallationApprovalRecord,
         enablement: &crate::enablement::EnablementRecord,
-        scope: &PdfOperationalScopeBinding,
+        scope: &OperationalScopeEvidence,
     ) -> Result<Self, PdfToolsError> {
-        let operational_scope = OperationalScope::Pdf(scope.clone());
         let mut provider = crate::launch_profile::launch_installed_provider(
             record,
             installed_directory,
@@ -526,7 +550,7 @@ impl InstalledPdfToolsExecutor {
             conformance,
             approval,
             enablement,
-            &operational_scope,
+            scope,
         )
         .map_err(|e| PdfToolsError::new("provider_launch", e.to_string()))?;
         let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tethers-reference-host","version":"0.2.0"}}});
@@ -921,13 +945,7 @@ mod tests {
             report.provider_launch_path,
             "provider/pdf_tools_provider.exe"
         );
-        assert_eq!(
-            report.provider_launch_arguments,
-            vec![
-                "--query-root".to_string(),
-                "__TETHERS_PDF_QUERY_ROOT__".to_string()
-            ]
-        );
+        assert_eq!(report.provider_launch_arguments, Vec::<String>::new());
         assert_eq!(report.provider_working_directory, "provider");
         assert_eq!(report.provider_operation_namespace, "pdf");
         assert_eq!(report.capabilities.len(), 1);
