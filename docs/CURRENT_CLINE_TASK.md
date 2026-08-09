@@ -1,7 +1,7 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F8-WORKFLOW-CARRY — Worker Lifecycle Documentation Carry`
+Task packet: `F8-WORKFLOW-CARRY — Worker Lifecycle Documentation Carry`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Task colour: `Green`
