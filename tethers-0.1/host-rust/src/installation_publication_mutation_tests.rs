@@ -5,7 +5,7 @@ use crate::conformance::{
     ConformanceEvidence, ConformanceEvidenceStore,
 };
 use crate::current_trust::ExactCandidateTrustAuthority;
-use crate::installation_plan::{plan_installation, InstallationPlan, InstallationPlanAction};
+use crate::installation_plan::{plan_installation, InstallationPlan};
 use crate::installation_publication_intent::{
     InstallationPublicationIntent, InstallationPublicationIntentStore,
 };
@@ -25,8 +25,8 @@ use crate::installation_request::{
 };
 use crate::installation_trust::ExactCandidateTrustStore;
 use crate::installed::{
-    DisabledBindingRecord, InstallationApprovalRecord, InstallationApprovalStore,
-    InstalledPlugRecord, InstalledPlugRegistry,
+    InstallationApprovalRecord, InstallationApprovalStore, InstalledPlugRecord,
+    InstalledPlugRegistry,
 };
 use crate::launch_profile::{
     LaunchProfileEvidence, LaunchProfileEvidenceStore, PreparedSupervisedLaunch,
@@ -131,10 +131,6 @@ struct Fixture {
     approvals: InstallationApprovalStore,
     request: InstallationRequest,
     candidate: CandidateRecord,
-    trust: PackageTrustEvidence,
-    launch: LaunchProfileEvidence,
-    conformance_evidence: ConformanceEvidence,
-    approval: InstallationApprovalRecord,
 }
 
 impl Fixture {
@@ -175,7 +171,7 @@ impl Fixture {
         conformance.create(&conformance_evidence).unwrap();
         let authority = ExactCandidateTrustAuthority::new(&exact_trust);
         let approvals = InstallationApprovalStore::open(&base.join("approvals")).unwrap();
-        let approval = approvals
+        let _ = approvals
             .approve_with_authority(
                 &candidate,
                 &quarantine_root,
@@ -204,10 +200,6 @@ impl Fixture {
             approvals,
             request,
             candidate,
-            trust,
-            launch,
-            conformance_evidence,
-            approval,
         }
     }
 
@@ -965,7 +957,7 @@ fn j24k3e2_staging_cleanup_failure_retains_intent() {
             crate::installation_recovery::InstallationRecoveryDisposition::RemoveStagingThenIntent
         )
     );
-    let error =
+    let _ =
         execute_validated_installation_recovery(&fix.request, &fix.context(), plan).unwrap_err();
     drop(locked);
 

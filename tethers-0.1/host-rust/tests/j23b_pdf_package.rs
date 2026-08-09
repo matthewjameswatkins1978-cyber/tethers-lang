@@ -10,7 +10,6 @@ use std::fs;
 use std::io::{Cursor, Read};
 use std::path::Path;
 
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tethers_reference_host::manifest;
 use tethers_reference_host::package;

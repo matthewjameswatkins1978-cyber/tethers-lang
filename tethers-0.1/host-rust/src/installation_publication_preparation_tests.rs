@@ -25,7 +25,7 @@ use crate::launch_profile::{
     LaunchProfileEvidence, LaunchProfileEvidenceStore, PreparedSupervisedLaunch,
 };
 use crate::m3_store::{canonical, sha256};
-use crate::package::{self, PayloadEvidence};
+use crate::package;
 use crate::trust::PackageTrustEvidence;
 use std::collections::BTreeMap;
 use std::fs;

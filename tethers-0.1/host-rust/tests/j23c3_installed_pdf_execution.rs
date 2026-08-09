@@ -2,8 +2,6 @@
 
 use serde_json::Value;
 use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 use tethers_reference_host::candidate::{extract_to_quarantine, CandidateRegistry};
@@ -15,7 +13,7 @@ use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
 use tethers_reference_host::operational_scope::OperationalScope;
 use tethers_reference_host::package;
 use tethers_reference_host::pdf_tools::{
-    self, InstalledPdfToolsExecutor, PdfOperationalScopeBinding, MAX_PDF_BYTES,
+    self, InstalledPdfToolsExecutor, PdfOperationalScopeBinding,
 };
 use tethers_reference_host::policy::CapabilityRequirement;
 use tethers_reference_host::resolver;

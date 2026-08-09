@@ -1,96 +1,119 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F8-WORKFLOW-CARRY — Worker Lifecycle Documentation Carry`
+Task packet: `F8-T1 — Test-Only Dead Warning Cleanup`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Green`
-Route: `OpenCode copies accepted lifecycle docs onto current F8 tip`
-Worker note: `docs/worker-notes/2026-08-09-f8-worker-lifecycle-carry.md`
-Base branch: `foundation/f8-fmt`
-Base commit: `5e5ec4f6f8afd8aa06ed49569038dd80c8d18940`
-Implementation branch: `foundation/f8-worker-lifecycle-carry`
-Implementation checkpoint: `106fb3239a8868c8417d62d3ed5529e602472986`
-Source commit: `30b26d1959138176dbf1481b267adc1791f0bc09`
+Route: `OpenCode removes proven test-only dead-code warnings T1–T14`
+Worker note: `docs/worker-notes/2026-08-09-f8-t1-test-warning-cleanup.md`
+Base branch: `foundation/f8-worker-lifecycle-carry`
+Base commit: `f6c7401f2034da79c609ff25b84e651bd001f80a`
+Implementation branch: `foundation/f8-t1-test-warning-cleanup`
+Implementation checkpoint: `TO BE SET`
+Rust change class: `RUST_CHANGING`
 
 ## Objective
 
-Carry the already-reviewed worker formatting/publication rules from commit
-`30b26d1959138176dbf1481b267adc1791f0bc09` onto the current accepted
-F8-FMT lineage at `5e5ec4f6f8afd8aa06ed49569038dd80c8d18940`.
+Remove only the proven test-only compiler/dead-code warnings T1–T14 from the
+F8a inventory without weakening any test. No production code changes.
 
 ## Relevant background and existing behaviour
 
-The 7 guidance/template files were reviewed and accepted in commit `30b26d`. The F8-FMT
-tip at `5e5ec4f` needs them carried forward to ensure task packets, worker notes, and
-agent workflows follow the updated lifecycle rules. No redesign is needed.
+Current baseline: ~33 cargo check warnings, ~45 distinct Clippy warnings.
+T1–T14 are test-only unused imports, unused bindings, unread struct fields,
+and unused helper functions in the 8 authorised test files. None contribute
+assertions, setup, cleanup, or failure-path evidence.
 
 ## Required behaviour
 
-1. Copy exactly these 7 files from source commit `30b26d`:
-   - `AGENTS.md`
-   - `docs/PROJECT_CONTROL.md`
-   - `docs/AGENT_WORKFLOW.md`
-   - `docs/TASK_PACKET_TEMPLATE.md`
-   - `docs/WORKER_NOTE_TEMPLATE.md`
-   - `docs/CLINE_HANDOFF.md`
-   - `docs/working-guides/DEEPSEEK_PRO_OPENCODE_JOB_PLAYBOOK.md`
-2. Do NOT copy `docs/CURRENT_CLINE_TASK.md` from the source commit.
-3. Do NOT copy the old lifecycle worker note.
-4. Create a fresh task packet and worker note.
-5. No Rust/source/test/build/warning changes.
-6. Do not redesign the documents.
+1. Remove T1–T14 warnings from the 8 authorised test files only.
+2. For each item, confirm the unused element contributes no test assertion,
+   setup, cleanup, compatibility evidence, or failure-path evidence.
+3. Leave unchanged any item whose intent is uncertain.
+4. Run `cargo fmt` before the implementation checkpoint.
+5. All existing tests must continue to pass.
 
 ## Frozen decisions and invariants
 
-- The 7 documents are accepted as-is from the source commit.
-- Zero redesign, rewording, or editorial changes.
-- No Rust or test file changes.
-- The carry is documentation-only.
+- T1–T14 are proven test-only dead code. No redesign is needed.
+- Do not touch T15 `FailingResultAnchorWriter` in `src/application.rs`.
+- Do not touch production code, `src/application.rs`, `src/bin/*`, or lint config.
+- Do not weaken any test.
+- Do not blindly prefix with `_` — remove genuinely unused items.
 
 ## Acceptance criteria
 
-1. Diff from base contains only the 7 guidance files + CURRENT_CLINE_TASK.md + worker note
-2. `cargo fmt --all -- --check` passes
-3. `git diff --check` passes
-4. Packet checker passes
-5. Clean git status
-6. No Rust/source/test/build/warning changes in diff
+1. Cargo check warning count decreases from baseline
+2. Clippy distinct warning count decreases from baseline
+3. `cargo test --all-targets --all-features --locked` passes with same test count
+4. `cargo fmt --all -- --check` passes
+5. `git diff --check` passes
+6. Packet checker passes
+7. Diff touches only the 8 authorised Rust paths + task packet + worker note
+8. No production files changed
 
 ## Required verification
 
-- `cargo fmt --all -- --check`: PASS
-- `git diff --check`: PASS
-- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`: PASS
+- `cargo fmt --all -- --check`
+- `cargo check --all-targets --all-features --locked`
+- `cargo test --all-targets --all-features --locked`
+- `cargo clippy --all-targets --all-features --locked -- -W clippy::all`
+- `just verify`
+- `just verify-agent`
+- `git diff --check`
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
 
 ## Relevant components
 
-### DOCUMENTATION
-- `AGENTS.md`
-- `docs/PROJECT_CONTROL.md`
-- `docs/AGENT_WORKFLOW.md`
-- `docs/TASK_PACKET_TEMPLATE.md`
-- `docs/WORKER_NOTE_TEMPLATE.md`
-- `docs/CLINE_HANDOFF.md`
-- `docs/working-guides/DEEPSEEK_PRO_OPENCODE_JOB_PLAYBOOK.md`
+### AUTHORISED RUST PATHS
+- `tethers-0.1/host-rust/tests/j13a_cli.rs`
+- `tethers-0.1/host-rust/tests/j23b_pdf_package.rs`
+- `tethers-0.1/host-rust/tests/j23c3_installed_pdf_execution.rs`
+- `tethers-0.1/host-rust/tests/j24d_plug_enable_scope_file.rs`
+- `tethers-0.1/host-rust/src/installation_publication_mutation_tests.rs`
+- `tethers-0.1/host-rust/src/installation_publication_preparation_tests.rs`
+- `tethers-0.1/host-rust/src/installation_execution_tests.rs`
+- `tethers-0.1/host-rust/src/installation_recovery_plan_tests.rs`
+
+### TARGET WARNINGS
+- T1: unused `std::io::Write` — j13a_cli.rs
+- T2: unused `code` bindings (3) — j13a_cli.rs
+- T3: unused `envelope` — j13a_cli.rs
+- T4: unused `serde_json::Value` — j23b_pdf_package.rs
+- T5: unused `Write` / `PathBuf` / `MAX_PDF_BYTES` — j23c3_installed_pdf_execution.rs
+- T6: unused `before` — j24d_plug_enable_scope_file.rs
+- T7: unused `canonical` helper — j24d_plug_enable_scope_file.rs
+- T8: unused `InstallationPlanAction` / `DisabledBindingRecord` imports
+- T9: unused `error` binding
+- T10: unused `PayloadEvidence` import
+- T11: unused `empty_plan` helper
+- T12: unused `plan_with` helper
+- T13: unread fixture struct fields
+- T14: unread `FullFixture` struct fields
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-worker-lifecycle-carry.md`
+- `docs/worker-notes/2026-08-09-f8-t1-test-warning-cleanup.md`
 
 ## Forbidden changes
 
-- No `docs/CURRENT_CLINE_TASK.md` from source commit
-- No old lifecycle worker note
-- No Rust/source/test/build/warning changes
-- No redesign of the 7 documents
-- No F8-T1 work
+- No production code changes
+- No `src/application.rs`
+- No `src/bin/*`
+- No `suspicious_open_options`
+- No preference lints
+- No Clippy architecture changes
+- No lint configuration / CI / warning gates
+- No T15 `FailingResultAnchorWriter`
+- No other F8 warning families
 
 ## Stop conditions
 
-STOP if any file not in the authorised set appears in the diff.
-STOP if `cargo fmt --check` fails.
-STOP if packet checker fails.
+STOP if `cargo fmt` changes any Rust file outside the 8 authorised paths.
+STOP if a test fails after cleanup.
+STOP if an unused item appears to be intentional test evidence.
+STOP if two materially similar cleanup attempts fail.
 
 ## Expected pre-existing changes
 

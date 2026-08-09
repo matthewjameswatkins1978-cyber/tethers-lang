@@ -29,10 +29,6 @@ fn host_binary() -> PathBuf {
         .expect("compiled reference host binary")
 }
 
-fn canonical<T: serde::Serialize>(value: &T) -> Vec<u8> {
-    serde_json_canonicalizer::to_vec(value).unwrap()
-}
-
 fn sha256(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("sha256:{:x}", Sha256::digest(bytes))
@@ -312,7 +308,6 @@ fn disabled_pdf_plug_is_re_enabled_with_correct_predecessor_linkage() {
     run_disable(&root, &installed.installed_id);
     let scope_file = write_scope_file(&root, scope_root.to_str().unwrap(), 1048576);
 
-    let before = snapshot(&root);
     let before_json = json_records(&root);
     let (code, envelope) = run_enable(&root, &installed.installed_id, &scope_file);
     assert_eq!(code, 0, "{envelope}");

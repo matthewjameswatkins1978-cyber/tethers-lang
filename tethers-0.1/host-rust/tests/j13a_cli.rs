@@ -1,7 +1,6 @@
 // J13A focused tests: CLI parsing, path resolution, engine session,
 // provider availability, process supervision, and output envelope.
 
-use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -81,7 +80,7 @@ fn j13a_misspelled_runn_never_enters_legacy() {
 
 #[test]
 fn j13a_check_missing_config_emits_error() {
-    let (code, stdout, _) = run_host(&["check", "--engine", "nonexistent.exe"]);
+    let (_, stdout, _) = run_host(&["check", "--engine", "nonexistent.exe"]);
     let env = assert_envelope(&stdout, "invalid_cli_usage", 2);
     // The error should mention missing config
     assert!(
@@ -95,7 +94,7 @@ fn j13a_check_missing_config_emits_error() {
 
 #[test]
 fn j13a_check_missing_engine_emits_error() {
-    let (code, stdout, _) = run_host(&["check", "--config", "nonexistent.json"]);
+    let (_, stdout, _) = run_host(&["check", "--config", "nonexistent.json"]);
     let env = assert_envelope(&stdout, "invalid_cli_usage", 2);
     assert!(
         env["error"]["message"]
@@ -185,7 +184,7 @@ fn j13a_explicit_legacy_reaches_parser() {
 
 #[test]
 fn j13a_hidden_commands_not_in_help() {
-    let (code, stdout, _) = run_host(&["--help"]);
+    let (_, stdout, _) = run_host(&["--help"]);
     // help output should not contain hidden commands
     let output = format!("{stdout}");
     assert!(!output.contains("__legacy"), "help must hide __legacy");
@@ -274,14 +273,13 @@ fn j13a_directory_config_rejected() {
 fn j13a_directory_engine_rejected() {
     let tmp = std::env::temp_dir().join(format!("j13a-dir-engine-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).unwrap();
-    let (code, stdout, _) = run_host(&[
+    let (code, _, _) = run_host(&[
         "check",
         "--config",
         "nonexistent.json",
         "--engine",
         &tmp.to_string_lossy(),
     ]);
-    let envelope: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     // Config not found comes first (invalid_data)
     assert_eq!(code, 3);
     let _ = std::fs::remove_dir_all(&tmp);
