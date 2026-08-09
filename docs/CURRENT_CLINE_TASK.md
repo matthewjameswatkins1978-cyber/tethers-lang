@@ -55,6 +55,7 @@ agent workflows follow the updated lifecycle rules. No redesign is needed.
 3. `git diff --check` passes
 4. Packet checker passes
 5. Clean git status
+6. No Rust/source/test/build/warning changes in diff
 
 ## Required verification
 
