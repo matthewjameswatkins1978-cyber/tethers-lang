@@ -2,7 +2,7 @@ use crate::*;
 
 use crate::executor::CapabilityExecutor;
 use clap::Parser;
-use dispatch::{DispatchReadyAction, Trail};
+use dispatch::DispatchReadyAction;
 use event_admission::{EventAdmissionGate, EventAdmissionRejection};
 use policy::PermissionDecision;
 use resolver::ResolvedCapability;
@@ -1687,102 +1687,6 @@ fn process_one_event(
     Ok(response)
 }
 
-/// Submit a host-created generation-zero local Anchor through the existing J11
-/// admission, Trail, engine, queue, policy, dispatch, replay, outcome and
-/// Result Anchor machinery.  This is intentionally kept beside
-/// `process_one_event`; the M5 admission store only decides whether this
-/// function may be called and never evaluates a provider notification itself.
-pub(crate) fn submit_local_root_anchor(
-    pristine_request: &serde_json::Value,
-    anchor: &crate::local_anchor::RootAnchor,
-    runtime: &mut RuntimeResources<'_>,
-    queue: &mut event_queue::ResultEventQueue,
-    admission_gate: &mut EventAdmissionGate,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    admission_gate
-        .admit(&anchor.event_id, anchor.generation)
-        .map_err(|error| format!("root Anchor rejected by J11 admission: {error:?}"))?;
-
-    if let Some(parent) = PathBuf::from(&runtime.trail_path).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let entry = build_event_admission_entry(
-        &anchor.event_id,
-        &anchor.event_name,
-        "local_provider",
-        &anchor.event_id,
-        None,
-        anchor.generation,
-        &Ok(()),
-        now_unix_ms(),
-    );
-    let mut trail = dispatch::FileTrail::open(&runtime.trail_path)?;
-    trail.append_event_admission(&entry)?;
-
-    let mut request = pristine_request.clone();
-    request["evaluation_id"] = json!(format!(
-        "eval_root_{}",
-        short_event_digest(&anchor.event_id)
-    ));
-    request["event"] = json!({
-        "id": anchor.event_id,
-        "name": anchor.event_name,
-        "facts": anchor.facts,
-    });
-    request["facts"] = json!({});
-    let context = InputEventContext::for_initial(&anchor.event_id);
-    (process_one_event)(request, context, runtime, queue)
-}
-
-fn short_event_digest(event_id: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(event_id.as_bytes());
-    hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>()
-}
-
-/// Host integration seam for a local notification.  The evaluator below is
-/// the existing `process_one_event` route, not a provider-specific executor or
-/// a second event engine.
-pub(crate) fn process_local_notification(
-    event_json: &str,
-    admission_root: &Path,
-    binding: local_anchor::AdmissionBinding,
-    pristine_request: &serde_json::Value,
-    runtime: &mut RuntimeResources<'_>,
-    queue: &mut event_queue::ResultEventQueue,
-    admission_gate: &mut EventAdmissionGate,
-    acknowledge: impl FnOnce(&str) -> Result<(), local_anchor::EventError>,
-) -> Result<(local_anchor::AdmissionResult, local_anchor::RootAnchor), Box<dyn std::error::Error>> {
-    let mut coordinator = local_anchor::LocalAnchorCoordinator::open(admission_root, binding)?;
-    coordinator
-        .admit_notification_with_evaluation(
-            event_json,
-            now_unix_ms(),
-            |_, _| Ok(()),
-            |anchor| {
-                let response = submit_local_root_anchor(
-                    pristine_request,
-                    anchor,
-                    runtime,
-                    queue,
-                    admission_gate,
-                )
-                .map_err(|error| local_anchor::EventError::Invalid(error.to_string()))?;
-                let bytes = serde_json_canonicalizer::to_vec(&response)
-                    .map_err(|error| local_anchor::EventError::Invalid(error.to_string()))?;
-                let mut hasher = Sha256::new();
-                hasher.update(bytes);
-                Ok(format!("sha256:{:x}", hasher.finalize()))
-            },
-            acknowledge,
-        )
-        .map_err(Into::into)
-}
-
 #[allow(dead_code)]
 struct ExactApprovalConsumption<'a> {
     approval_id: &'a str,
@@ -2753,7 +2657,7 @@ fn trail_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dispatch::{self, ActionId, ExecutionId, RecordingTrail};
+    use crate::dispatch::{self, ActionId, ExecutionId, RecordingTrail, Trail};
     use crate::policy::{self, CapabilityRequirement, HostLocalPolicy, PolicyRule};
     use crate::resolver::{self, ProviderAvailability};
     use crate::trusted_store::TrustedManifestStore;
@@ -5460,6 +5364,7 @@ mod tests {
 
     mod replay_runtime_integration {
         use super::*;
+        use crate::dispatch::Trail;
         use std::cell::{Cell, RefCell};
         use std::rc::Rc;
 
