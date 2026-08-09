@@ -21,8 +21,6 @@ use tethers_reference_host::child_process;
 use tethers_reference_host::cli::{Cli, CliEnvelope, Command as CliCommand, OutcomeStatus};
 const NORMAL_USAGE: &str = "usage: tethers-reference-host ENGINE REQUEST_JSON [POLICY] \
 [TRAIL_PATH] [EXECUTOR_MODE] [--host-data-root <ABSOLUTE_PATH>]";
-const PROVISION_USAGE: &str =
-    "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>";
 #[cfg(debug_assertions)]
 const EVENT_ADMISSION_PROBE_USAGE: &str =
     "usage: tethers-reference-host event-admission-probe <duplicate-initial|duplicate-sibling|causal-depth|clean>";
@@ -88,11 +86,15 @@ fn parse_normal_args(args: &[String]) -> Result<NormalArgs, String> {
 
 fn parse_provision_args(args: &[String]) -> Result<PathBuf, String> {
     if args.len() != 2 || args.first().map(String::as_str) != Some("provision-replay") {
-        return Err(PROVISION_USAGE.to_owned());
+        return Err(
+            "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>".to_owned(),
+        );
     }
     let root = PathBuf::from(&args[1]);
     if !root.is_absolute() {
-        return Err(PROVISION_USAGE.to_owned());
+        return Err(
+            "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>".to_owned(),
+        );
     }
     Ok(root)
 }
@@ -6738,7 +6740,10 @@ mod tests {
                 ],
             ];
             for args in cases {
-                assert_eq!(parse_provision_args(&args).unwrap_err(), PROVISION_USAGE);
+                assert_eq!(
+                    parse_provision_args(&args).unwrap_err(),
+                    "usage: tethers-reference-host provision-replay <ABSOLUTE_HOST_DATA_ROOT>"
+                );
             }
         }
 
