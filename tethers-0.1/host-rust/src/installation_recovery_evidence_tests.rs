@@ -169,8 +169,8 @@ fn build_installed_record(
         platform: candidate.selected_platform.os.clone(),
         architecture: candidate.selected_platform.architecture.clone(),
         disabled_bindings,
-        operational_scope_schema: None,
-        operational_scope_schema_digest: None,
+        operational_scope_schema: candidate.operational_scope_schema.clone(),
+        operational_scope_schema_digest: candidate.operational_scope_schema_digest.clone(),
         created_unix_ms: 1,
         record_digest: String::new(),
     };
@@ -885,6 +885,69 @@ fn j24k3c3_installed_record_architecture_drift_fails_stale() {
         .require_for_recovery(
             &fixture.intent,
             &synthetic_candidate,
+            &fixture.trust,
+            &fixture.launch,
+            &fixture.conformance_evidence,
+            &fixture.approval,
+        )
+        .unwrap_err();
+    assert_eq!(err.code, "installed_record_invalid");
+}
+
+#[test]
+fn j24k3c3_scope_schema_match_passes_recovery() {
+    let fixture = RecoveryFixture::new();
+    fixture
+        .intent
+        .installed_record
+        .require_for_recovery(
+            &fixture.intent,
+            &fixture.candidate,
+            &fixture.trust,
+            &fixture.launch,
+            &fixture.conformance_evidence,
+            &fixture.approval,
+        )
+        .expect("matching scope schema/digest must pass recovery");
+}
+
+#[test]
+fn j24k3c3_changed_scope_schema_with_valid_digest_fails_stale() {
+    let fixture = RecoveryFixture::new();
+    let mut synthetic = fixture.candidate.clone();
+    let changed = serde_json::json!({"type":"object","properties":{"other":{"type":"string"}},"required":["other"],"additionalProperties":false});
+    let canonical = crate::m3_store::canonical(&changed).unwrap();
+    let digest = crate::m3_store::sha256(&canonical);
+    synthetic.operational_scope_schema = Some(changed);
+    synthetic.operational_scope_schema_digest = Some(digest);
+    let err = fixture
+        .intent
+        .installed_record
+        .require_for_recovery(
+            &fixture.intent,
+            &synthetic,
+            &fixture.trust,
+            &fixture.launch,
+            &fixture.conformance_evidence,
+            &fixture.approval,
+        )
+        .unwrap_err();
+    assert_eq!(err.code, "installed_record_invalid");
+}
+
+#[test]
+fn j24k3c3_changed_scope_digest_fails_stale() {
+    let fixture = RecoveryFixture::new();
+    let mut synthetic = fixture.candidate.clone();
+    synthetic.operational_scope_schema_digest = Some(
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+    );
+    let err = fixture
+        .intent
+        .installed_record
+        .require_for_recovery(
+            &fixture.intent,
+            &synthetic,
             &fixture.trust,
             &fixture.launch,
             &fixture.conformance_evidence,

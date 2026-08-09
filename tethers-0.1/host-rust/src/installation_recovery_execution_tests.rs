@@ -232,8 +232,8 @@ fn build_installed_record(
                 provider_operation_name: capability.operation.clone(),
             })
             .collect(),
-        operational_scope_schema: None,
-        operational_scope_schema_digest: None,
+        operational_scope_schema: candidate.operational_scope_schema.clone(),
+        operational_scope_schema_digest: candidate.operational_scope_schema_digest.clone(),
         created_unix_ms: 1,
         record_digest: String::new(),
     };
