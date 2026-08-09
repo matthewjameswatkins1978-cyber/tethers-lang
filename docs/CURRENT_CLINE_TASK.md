@@ -11,7 +11,7 @@ Worker note: `docs/worker-notes/2026-08-09-f8a-warning-tooling-reconciliation.md
 Base branch: `foundation/f8a-warning-tooling-reconciliation`
 Base commit: `5f98c31f4bf51b806222c7f3722997d74fbe5a5b`
 Implementation branch: `foundation/f8a-r1-evidence-repair`
-Implementation checkpoint: `TO BE SET`
+Implementation checkpoint: `4b26455e6b731b15a5ea51322b190a0d611e48e8`
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 Rust toolchain: `1.97.1`
 
