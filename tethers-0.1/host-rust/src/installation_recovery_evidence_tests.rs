@@ -939,9 +939,8 @@ fn j24k3c3_changed_scope_schema_with_valid_digest_fails_stale() {
 fn j24k3c3_changed_scope_digest_fails_stale() {
     let fixture = RecoveryFixture::new();
     let mut synthetic = fixture.candidate.clone();
-    synthetic.operational_scope_schema_digest = Some(
-        "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
-    );
+    synthetic.operational_scope_schema_digest =
+        Some("sha256:0000000000000000000000000000000000000000000000000000000000000000".into());
     let err = fixture
         .intent
         .installed_record

@@ -277,10 +277,7 @@ impl Fixture {
                 })
                 .collect(),
             operational_scope_schema: self.candidate.operational_scope_schema.clone(),
-            operational_scope_schema_digest: self
-                .candidate
-                .operational_scope_schema_digest
-                .clone(),
+            operational_scope_schema_digest: self.candidate.operational_scope_schema_digest.clone(),
             created_unix_ms: 1,
             record_digest: String::new(),
         };

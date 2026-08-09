@@ -62,6 +62,16 @@ pub fn validate_against_schema(schema: &Value, value: &Value) -> Result<(), Vali
     validate_schema(schema, value, "$", true)
 }
 
+/// Validate a plug-supplied operational scope against the installed
+/// operational-scope schema.
+///
+/// Thin wrapper around [`validate_against_schema`] that applies the same
+/// conservative, explicitly-rejecting schema subset.  Call this in `run_enable`
+/// after the installed schema is obtained from the installed record.
+pub fn validate_operational_scope(schema: &Value, scope: &Value) -> Result<(), ValidationError> {
+    validate_against_schema(schema, scope)
+}
+
 // ---------------------------------------------------------------------------
 // Internal validation
 // ---------------------------------------------------------------------------
@@ -479,6 +489,7 @@ fn reject_unsupported_keywords(
         "deprecated",
         "readOnly",
         "writeOnly",
+        "x-tethers-path",
     ];
 
     for keyword in schema.keys() {

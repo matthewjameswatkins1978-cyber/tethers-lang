@@ -7,7 +7,7 @@ use crate::installed::InstalledPlugRegistry;
 use crate::m3_store::M3Error;
 use crate::operational_scope::OperationalScopeEvidence;
 use crate::package::{self, CapabilityEvidence, PackageError};
-use serde::de::{self, MapAccess, Visitor};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -499,9 +499,71 @@ pub fn run_disable(host_data_root: &Path, installed_id_str: &str) -> PlugCommand
 const SCOPE_FILE_MAX_BYTES: u64 = 16 * 1024;
 
 #[derive(Debug)]
+struct ScopeValue(serde_json::Value);
+
+impl<'de> Deserialize<'de> for ScopeValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct DupRejectingVisitor;
+        impl<'de2> Visitor<'de2> for DupRejectingVisitor {
+            type Value = ScopeValue;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "a JSON value with no duplicate object keys")
+            }
+            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                Ok(ScopeValue(serde_json::Value::Bool(v)))
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                Ok(ScopeValue(serde_json::Value::Number(v.into())))
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                Ok(ScopeValue(serde_json::Value::Number(v.into())))
+            }
+            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
+                use serde_json::Number;
+                let n = Number::from_f64(v)
+                    .ok_or_else(|| de::Error::custom(format!("invalid JSON number: {v}")))?;
+                Ok(ScopeValue(serde_json::Value::Number(n)))
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(ScopeValue(serde_json::Value::String(v.to_owned())))
+            }
+            fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
+                Ok(ScopeValue(serde_json::Value::String(v)))
+            }
+            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(ScopeValue(serde_json::Value::Null))
+            }
+            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(ScopeValue(serde_json::Value::Null))
+            }
+            fn visit_seq<A: SeqAccess<'de2>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut arr = Vec::new();
+                while let Some(elem) = seq.next_element::<ScopeValue>()? {
+                    arr.push(elem.0);
+                }
+                Ok(ScopeValue(serde_json::Value::Array(arr)))
+            }
+            fn visit_map<A: MapAccess<'de2>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut seen = std::collections::BTreeSet::new();
+                let mut obj = serde_json::Map::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    if !seen.insert(key.clone()) {
+                        return Err(de::Error::custom(format!("duplicate key: {key}")));
+                    }
+                    let value = map.next_value::<ScopeValue>()?;
+                    obj.insert(key, value.0);
+                }
+                Ok(ScopeValue(serde_json::Value::Object(obj)))
+            }
+        }
+        deserializer.deserialize_any(DupRejectingVisitor)
+    }
+}
+
+#[derive(Debug)]
 struct GenericScopeRequest {
     schema: String,
-    scope: serde_json::Value,
+    scope: ScopeValue,
 }
 
 fn reject_duplicate_keys<'de, M: MapAccess<'de>>(
@@ -591,7 +653,7 @@ fn parse_scope_file(path: &Path) -> Result<GenericScopeRequest, M3Error> {
     if request.schema != "tethers.plug-scope/1" {
         return Err(M3Error::new("scope_request_invalid", "unsupported schema"));
     }
-    if !request.scope.is_object() {
+    if !request.scope.0.is_object() {
         return Err(M3Error::new(
             "scope_request_invalid",
             "scope must be a JSON object",
@@ -778,9 +840,12 @@ pub fn run_enable(
             return scope_error(&error.message);
         }
     };
-    let scope_schema_digest = match &target.operational_scope_schema_digest {
-        Some(d) => d.clone(),
-        None => {
+    let (schema, scope_schema_digest) = match (
+        &target.operational_scope_schema,
+        &target.operational_scope_schema_digest,
+    ) {
+        (Some(s), Some(d)) => (s.clone(), d.clone()),
+        _ => {
             return enable_error(
                 M3Error::new(
                     "scope_schema_missing",
@@ -790,12 +855,20 @@ pub fn run_enable(
             );
         }
     };
+    if let Err(error) =
+        crate::validation::validate_operational_scope(&schema, &scope_request.scope.0)
+    {
+        return enable_error(
+            M3Error::new("scope_request_invalid", error.message),
+            OutcomeStatus::InvalidData,
+        );
+    }
     let evidence = match OperationalScopeEvidence::create(
         installed_id_str,
         &target.package_id,
         &target.provider_id,
         &scope_schema_digest,
-        &scope_request.scope,
+        &scope_request.scope.0,
         "tethers-reference-host-cli",
     ) {
         Ok(e) => e,
@@ -832,6 +905,8 @@ pub fn run_enable(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::m3_store::sha256;
+    use std::path::PathBuf;
 
     #[test]
     fn j24a_invalid_extension_maps_to_invalid_data() {
@@ -911,5 +986,192 @@ mod tests {
             package.envelope.error.as_ref().unwrap().field.as_deref(),
             Some("/package")
         );
+    }
+
+    // ── R1B scope validation tests ──
+    use crate::validation::validate_operational_scope;
+
+    const PDF_OPERATIONAL_SCOPE_SCHEMA: &str = r#"{
+        "type": "object",
+        "properties": {
+            "query_root": {"type": "string", "x-tethers-path": "canonical-directory"},
+            "max_bytes": {"type": "integer", "minimum": 1, "maximum": 67108864}
+        },
+        "required": ["query_root", "max_bytes"],
+        "additionalProperties": false
+    }"#;
+
+    fn pdf_schema() -> serde_json::Value {
+        serde_json::from_str(PDF_OPERATIONAL_SCOPE_SCHEMA).unwrap()
+    }
+
+    fn write_temp_scope_json(content: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tethers-r1b-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("scope.json");
+        std::fs::write(&path, content.as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn r1b_valid_scope_passes() {
+        let schema = pdf_schema();
+        let scope = serde_json::json!({"query_root": "C:\\pdf", "max_bytes": 4096});
+        let result = validate_operational_scope(&schema, &scope);
+        assert!(result.is_ok(), "valid scope should pass: {result:?}");
+    }
+
+    #[test]
+    fn r1b_wrong_property_type_fails() {
+        let schema = pdf_schema();
+        let scope = serde_json::json!({"query_root": "C:\\pdf", "max_bytes": "not-a-number"});
+        let err = validate_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("type mismatch"),
+            "expected type mismatch, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1b_missing_required_property_fails() {
+        let schema = pdf_schema();
+        let scope = serde_json::json!({"query_root": "C:\\pdf"});
+        let err = validate_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("missing required property"),
+            "expected missing required property, got: {}",
+            err.message
+        );
+        assert!(err.message.contains("max_bytes"));
+    }
+
+    #[test]
+    fn r1b_unknown_property_fails_when_additional_properties_false() {
+        let schema = pdf_schema();
+        let scope = serde_json::json!({
+            "query_root": "C:\\pdf",
+            "max_bytes": 4096,
+            "bogus": true
+        });
+        let err = validate_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("additional property not allowed"),
+            "expected additional property error, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1b_numeric_minimum_fails() {
+        let schema = pdf_schema();
+        let scope = serde_json::json!({"query_root": "C:\\pdf", "max_bytes": 0});
+        let err = validate_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("below minimum"),
+            "expected below minimum, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1b_numeric_maximum_fails() {
+        let schema = pdf_schema();
+        let scope = serde_json::json!({"query_root": "C:\\pdf", "max_bytes": 99999999});
+        let err = validate_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message.contains("above maximum"),
+            "expected above maximum, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1b_unsupported_schema_keyword_fails() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer"}
+            },
+            "minProperties": 1
+        });
+        let scope = serde_json::json!({"limit": 1});
+        let err = validate_operational_scope(&schema, &scope).unwrap_err();
+        assert!(
+            err.message
+                .contains("unsupported output_schema keyword 'minProperties'"),
+            "expected unsupported keyword error, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn r1b_nested_duplicate_scope_key_fails() {
+        let path = write_temp_scope_json(
+            r#"{
+                "schema": "tethers.plug-scope/1",
+                "scope": {
+                    "limit": 100,
+                    "limit": 200
+                }
+            }"#,
+        );
+        let result = parse_scope_file(&path);
+        assert!(result.is_err(), "nested duplicate should fail: {result:?}");
+        let err_msg = result.as_ref().unwrap_err().message.clone();
+        assert!(
+            err_msg.contains("duplicate key"),
+            "expected duplicate key error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn r1b_valid_scope_creates_deterministic_evidence() {
+        let schema = pdf_schema();
+        let scope = serde_json::json!({"query_root": "C:\\pdf", "max_bytes": 4096});
+        validate_operational_scope(&schema, &scope).unwrap();
+        let schema_bytes = serde_json_canonicalizer::to_vec(&schema).unwrap();
+        let schema_digest = sha256(&schema_bytes);
+        let a = OperationalScopeEvidence::create(
+            "00000000-0000-0000-0000-000000000001",
+            "tethers.pdf-tools",
+            "tethers-pdf-provider",
+            &schema_digest,
+            &scope,
+            "R1B-test",
+        )
+        .unwrap();
+        let b = OperationalScopeEvidence::create(
+            "00000000-0000-0000-0000-000000000001",
+            "tethers.pdf-tools",
+            "tethers-pdf-provider",
+            &schema_digest,
+            &scope,
+            "R1B-test",
+        )
+        .unwrap();
+        assert_eq!(a.integrity_digest, b.integrity_digest);
+        assert_eq!(a.canonical_scope_json, b.canonical_scope_json);
+    }
+
+    #[test]
+    fn r1b_schema_digest_from_installed_evidence_remains_unchanged() {
+        let schema = pdf_schema();
+        let schema_bytes = serde_json_canonicalizer::to_vec(&schema).unwrap();
+        let schema_digest = sha256(&schema_bytes);
+        let scope = serde_json::json!({"query_root": "C:\\pdf", "max_bytes": 4096});
+        let evidence = OperationalScopeEvidence::create(
+            "00000000-0000-0000-0000-000000000001",
+            "tethers.pdf-tools",
+            "tethers-pdf-provider",
+            &schema_digest,
+            &scope,
+            "R1B-test",
+        )
+        .unwrap();
+        assert_eq!(evidence.scope_schema_digest, schema_digest);
+        assert!(evidence.scope_schema_digest.starts_with("sha256:"));
+        assert_eq!(evidence.scope_schema_digest.len(), 71);
     }
 }

@@ -418,8 +418,7 @@ impl InstalledPlugRecord {
             || self.platform != candidate.selected_platform.os
             || self.architecture != candidate.selected_platform.architecture
             || self.operational_scope_schema != candidate.operational_scope_schema
-            || self.operational_scope_schema_digest
-                != candidate.operational_scope_schema_digest
+            || self.operational_scope_schema_digest != candidate.operational_scope_schema_digest
         {
             return Err(M3Error::new(
                 "installed_record_invalid",
