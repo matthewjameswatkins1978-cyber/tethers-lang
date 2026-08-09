@@ -1,82 +1,89 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F8 — Zero-Warning Checkpoint`
-Owner: `Codex`
+Task packet: `F8-W1 — Remove Final Two Test Import Warnings`
+Owner: `OpenCode`
 Status: `COMPLETE`
 Task colour: `Green`
-Route: `Codex recorded the verified F8 zero intended production-warning checkpoint`
-Worker note: `docs/worker-notes/2026-08-09-f8-zero-warning-checkpoint.md`
-Base branch: `foundation/f8-d12-d15-final-warning-tail`
-Base commit: `78e188bc4a065bdabe5400c0d06b97705a5d8574`
-Implementation branch: `foundation/f8-zero-warning-checkpoint`
-Implementation checkpoint: `3409ed0729ffd2b54e878d9752062422797f78ce`
+Route: `OpenCode removes the two pre-existing test-module unused-import warnings`
+Worker note: `docs/worker-notes/2026-08-09-f8-final-test-import-warnings.md`
+Base branch: `foundation/f8-zero-warning-checkpoint`
+Base commit: `15b792e32afa83bfd9bc2b5c64451202df15a794`
+Implementation branch: `foundation/f8-final-test-import-warnings`
+Implementation checkpoint: `27021c3ed24f204c37f1c4ca0ceabe6be4db5004`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
-Rust change class: `DOCS`
+Rust change class: `RUST`
 
 ## Objective
 
-Create the separate documentation-only F8 zero-warning checkpoint after live
-evidence confirms zero intended production-library warnings.
+Remove only the two pre-existing test-module unused-import warnings recorded
+by the accepted F8 zero-production-warning checkpoint.
 
 ## Relevant background and existing behaviour
 
-Jobs D1-D4, A-C, and D have removed or accurately cfg-test-scoped every
-original D1-D15 item. T15 was separately removed in the existing test-warning
-cleanup. The expected remaining Cargo diagnostics are non-F8 test-module
-imports and broader Clippy advisory warnings; this job does not alter them or
-enable warnings-as-errors.
+The accepted F8 checkpoint records zero intended production-library warnings
+and exactly two pre-existing test-module unused-import diagnostics:
+- `InstallationPlan` in `installation_execution_tests.rs:11`
+- `InstallationApprovalRecord` in `installation_publication_mutation_tests.rs:28`
+
+This job removes only those imports and does not activate warnings-as-errors.
 
 ## Required behaviour
 
-1. Make no Rust, toolchain, dependency, CI, or warning-denial change.
-2. Record exact predecessor, cargo check, Clippy, intended warning count zero,
-   D1-D15/T15 dispositions, retained warnings, and verification elapsed data.
-3. Run final cargo check and Clippy plus one `just verify-agent` umbrella
-   snapshot before the closeout commit.
-4. Commit and normally push only the zero-warning documentation checkpoint.
+1. Remove the genuinely unused `InstallationPlan` import.
+2. Remove the genuinely unused `InstallationApprovalRecord` import.
+3. Add no `#[allow(...)]`, suppression, or cfg tricks.
+4. Change no production semantics, tests, or nearby code.
+5. Do not activate warnings-as-errors or clean unrelated Clippy advice.
 
 ## Relevant components
 
 ### AUTHORISED PATHS
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-zero-warning-checkpoint.md`
+- `tethers-0.1/host-rust/src/installation_execution_tests.rs`
+- `tethers-0.1/host-rust/src/installation_publication_mutation_tests.rs`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-zero-warning-checkpoint.md`
+- `docs/worker-notes/2026-08-09-f8-final-test-import-warnings.md`
 
 ## Frozen decisions and invariants
 
-- This job documents evidence only; it neither fixes remaining non-F8 warnings
-  nor enables warning denial.
-- The D13 cfg-test designation and retained generic Result Anchor error codes
-  are intentional recorded dispositions, not suppression.
+- Accepted F8 production cleanup remains unchanged.
+- No warning denial yet.
+- No Clippy debt cleanup.
+- No CI introduction.
+- No product semantics changes.
+- No dependency/toolchain changes.
+- No test behaviour changes beyond removal of unused imports.
 
 ## Acceptance criteria
 
-1. The documentation lists all D1-D15 and T15 dispositions.
-2. Cargo check demonstrates zero intended production-library warnings.
-3. Clippy and `just verify-agent` pass with their existing broader diagnostics
-   explicitly distinguished from the F8 target.
-4. No Rust source changes occur; completed checkpoint is pushed and clean.
+1. The two accepted residual compiler warnings are absent.
+2. Existing all-target Cargo check reports zero warnings.
+3. Affected tests pass.
+4. No warning suppression was introduced.
+5. Only authorised paths changed.
+6. Branch pushed normally with clean status.
 
 ## Required verification
 
-1. Full-target locked cargo check and Clippy.
-2. One final `just verify-agent` before closeout.
-3. Packet checker, diff/status, remote equality after normal push.
+1. `cargo fmt` on authorised Rust files.
+2. Locked all-target `cargo check` — zero warnings.
+3. Affected test modules pass.
+4. `git diff --check`.
+5. Packet checker.
 
 ## Forbidden changes
 
-- No Rust source, dependency, toolchain, fixture, CI, lint-policy, warning
-  denial, merge, amend, tag, force-push, direct-main, or pull-request change.
+- No `#[allow(...)]` or suppression.
+- No other Rust files.
+- No production semantics, dependency, toolchain, or CI changes.
 
 ## Stop conditions
 
-STOP if cargo check shows an intended production warning, a verification gate
-fails, or documentation would require an unverified disposition.
+STOP if cargo check reports any warning after edits, if formatter touches
+unauthorised files, or if any required check fails.
 
 ## Expected pre-existing changes
 
