@@ -1,105 +1,87 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F8-NEXTEST-CONCURRENCY-R3 — Single-Test Exclusion`
+Task packet: `F8-ELAPSED-EVIDENCE — Automatic Command Timing`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Green`
-Route: `OpenCode probes Nextest concurrency for test suite wall-clock`
-Worker note: `docs/worker-notes/2026-08-09-f8-nextest-concurrency.md`
-Base branch: `foundation/f8-verify-parallel`
-Base commit: `154997e82a391cc8d7f23da985fb55311d35a465`
-Implementation branch: `foundation/f8-nextest-concurrency`
-Implementation checkpoint: `cc5258224706a47172f85426bd1f1c46c9ec0377`
+Route: `OpenCode implements elapsed timing instrumentation`
+Worker note: `docs/worker-notes/2026-08-09-f8-elapsed-evidence.md`
+Base branch: `foundation/f8-nextest-concurrency`
+Base commit: `10c5db45dd29192bb274f03d6b720f922171da38`
+Implementation branch: `foundation/f8-elapsed-evidence`
+Implementation checkpoint: `7173a99d61b838ec5150220a13c3fee88edae15d`
 Rust change class: `NON_RUST`
 
 ## Objective
 
-Enable Nextest `num-cpus` parallelism for the 1589-test suite with serial groups
-for J24K2 integration tests and single-test thread-exclusive scheduling for one
-timing-sensitive child_process test.
-
-## Relevant background and existing behaviour
-
-R1: Serial baseline ran 1589 tests in 192.4s.
-R2: `num-cpus` + J24K2 serial group — 1588 passed, 1 failed
-(`f2a_exit_distinguishable_from_timeout_and_disconnect` — process-exit race).
-All other tests, including all J24K2, passed under parallelism.
+Make elapsed time ordinary project evidence. Whenever routine
+verification/build/test commands run, record how long they took without
+requiring extra runs and without changing their behaviour.
 
 ## Required behaviour
 
-1. Apply `num-cpus` parallelism with J24K2 serial group (proven in R2).
-2. Add `threads-required = "num-test-threads"` override for the single
-   failing child_process test.
-3. Run full suite once with `--no-fail-fast`.
-4. Keep if all 1589 pass.
-
-## Target config
-
-```
-[profile.default]
-retries = 0
-fail-fast = true
-test-threads = "num-cpus"
-
-[test-groups]
-j24k2-serial = { max-threads = 1 }
-
-[[profile.default.overrides]]
-filter = 'binary(j24k2_locked_single_step_executor)'
-test-group = 'j24k2-serial'
-
-[[profile.default.overrides]]
-filter = 'test(=child_process::tests::f2a_exit_distinguishable_from_timeout_and_disconnect)'
-threads-required = "num-test-threads"
-```
+1. Create `scripts/invoke-timed.ps1` timing wrapper.
+2. Update `justfile` to wrap routine commands.
+3. Add `.tethers/timings.jsonl` to `.gitignore`.
+4. Update `docs/WORKER_NOTE_TEMPLATE.md` Evidence guidance.
 
 ## Frozen decisions and invariants
 
-- Do not change any Rust source, test, script, dependency policy, CI, or tool version.
-- Do not remove, weaken, or change any verification.
-- J24K2 integration binary MUST remain serialized.
-- Only `.config/nextest.toml` may be changed (plus task packet + worker note for closeout).
+- Do not change Rust or OCaml.
+- Do not change tests.
+- Do not change Nextest configuration.
+- Do not change verification meaning.
+- Do not change command arguments.
+- Do not add a database, service, telemetry framework, benchmark, or dashboard.
+- Do not modify the task-packet checker.
 
 ## Acceptance criteria
 
-1. All 1589 tests pass under candidate config
-2. J24K2 remains serialized (confirmed via `show-config`)
-3. `threads-required` override matches exactly one test
-4. Full suite `--no-fail-fast` run completes without failure
+1. Commands behave exactly as before.
+2. Native exit codes are preserved.
+3. Normal stdout/stderr remains visible.
+4. Timing appears automatically.
+5. Timing JSONL is valid.
+6. Timing history does not dirty Git.
+7. Telemetry failure cannot fail successful work.
+8. `just verify-agent` passes once.
+9. Worker note records observed timings.
+10. No extra benchmark/test runs created merely for timing.
 
 ## Required verification
 
 - `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`
-- `cargo nextest show-config test-groups` (confirm J24K2 group)
-- `cargo nextest list -E '...'` (confirm single-test override match)
 - `git diff --check`
 - Packet checker
+- `just verify-agent` (full regression)
 
 ## Relevant components
 
-### AUTHORISED PATH
-- `.config/nextest.toml`
+### AUTHORISED PATHS
+- `scripts/invoke-timed.ps1`
+- `justfile`
+- `.gitignore`
+- `docs/WORKER_NOTE_TEMPLATE.md`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-nextest-concurrency.md`
+- `docs/worker-notes/2026-08-09-f8-elapsed-evidence.md`
 
 ## Forbidden changes
 
 - No Rust source changes
+- No OCaml source changes
 - No test changes
-- No justfile changes
-- No PowerShell script changes
+- No Nextest configuration changes
 - No CI changes
 - No dependency policy changes
-- No warning inventory changes
 - No tool version changes
+- No task-packet checker changes
 
 ## Stop conditions
 
 STOP if a verification fails.
-STOP if any test failure or concurrency-related instability appears.
 STOP if two materially similar implementation attempts fail.
 
 ## Expected pre-existing changes
