@@ -1,4 +1,4 @@
-Task: `F8-NEXTEST-CONCURRENCY — Quick Probe`
+Task: `F8-NEXTEST-CONCURRENCY-R3 — Single-Test Exclusion`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
@@ -8,70 +8,79 @@ Status: `COMPLETE`
 
 Base commit: `154997e82a391cc8d7f23da985fb55311d35a465`
 
-Implementation checkpoint: `154997e82a391cc8d7f23da985fb55311d35a465`
+Implementation checkpoint: `cc5258224706a47172f85426bd1f1c46c9ec0377`
 
 ## Requested outcome
 
-Probe whether allowing normal Nextest parallelism materially reduces the 1589-test
-suite runtime while preserving serialization only for J24K2 integration tests.
+Enable Nextest `num-cpus` parallelism for the 1589-test suite, with J24K2
+integration tests serialized and one timing-sensitive test given exclusive
+thread access.
 
 ## Changes made
 
-`.config/nextest.toml` was trialled with `num-cpus` parallelism and a `j24k2-serial`
-test group (`max-threads = 1`) isolating only the `j24k2_locked_single_step_executor`
-binary. Candidate failed with a concurrency-sensitive test in `child_process`
-(`f2a_exit_distinguishable_from_timeout_and_disconnect`). Config was immediately
-reverted to `test-threads = 1`. `.config/nextest.toml` is byte-identical to base.
+`.config/nextest.toml`: configured `test-threads = "num-cpus"`, added
+`j24k2-serial` test group (`max-threads = 1`) for the `j24k2_locked_single_step_executor`
+integration binary, and added `threads-required = "num-test-threads"` override
+for `child_process::tests::f2a_exit_distinguishable_from_timeout_and_disconnect`.
 
 No Rust source, tests, scripts, dependency policy, CI, or tool versions were changed.
-The probe is a measured NO-OP.
 
 ## Evidence
 
-**Baseline (serial, test-threads=1):**
+### R1 — Baseline (serial, test-threads=1)
 - Wall-clock: 192.4s
 - Tests: 1589 passed, 2 skipped
 
-**Candidate (num-cpus parallelism, J24K2 serial group only):**
-- Wall-clock: 7.2s (did not complete)
-- Tests: 316 passed, 1 failed, 2 skipped, 1272 not run (fail-fast)
-- Failed test: `child_process::tests::f2a_exit_distinguishable_from_timeout_and_disconnect`
-- J24K2 serial group: confirmed via `cargo nextest show-config test-groups` — 9 tests in `j24k2-serial` (max-threads=1)
+### R2 — Failure map (num-cpus, J24K2 serial group, --no-fail-fast)
+- Wall-clock: 35.1s
+- Tests: 1588 passed, 1 failed, 2 skipped
+- Failed: `child_process::tests::f2a_exit_distinguishable_from_timeout_and_disconnect`
+  (process-exit/protocol-line race)
 
-**Verification (retained base state):**
+### R3 — Candidate (num-cpus, J24K2 serial group, single-test threads-required)
+- Wall-clock: **39.5s** (79.5% faster than baseline)
+- Tests: **1589 passed**, 2 skipped, 0 failed
+
+### Verification (against implementation checkpoint)
+- `cargo nextest list -E 'test(=child_process::tests::f2a_exit_distinguishable_from_timeout_and_disconnect)'`: matches exactly **1 test**
+- `cargo nextest show-config test-groups`: J24K2 serial group confirmed (9 tests, max-threads=1)
 - `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`: PASS
+- `cargo nextest run --no-fail-fast`: PASS (1589/1589)
 - `git diff --check`: PASS
 - Packet checker: PASS
 
 ## Decisions and assumptions
 
-The candidate failed immediately on a non-J24K2 test involving process exit,
-timeout, and disconnect detection — a known concurrency-sensitive test. Per
-the packet's stop condition, the config was reverted immediately. The test suite
-contains process-level concurrency dependencies beyond J24K2 that prevent
-trivial Nextest parallelism. Further investigation would require identifying and
-grouping all concurrency-sensitive tests.
+The single failing test is a genuine timing sensitivity: under concurrent CPU
+load, the child process's exit notification and the protocol-line read timeout
+race. `threads-required = "num-test-threads"` gives the test exclusive access
+to the global Nextest thread pool, preventing interference from parallel tests
+while allowing all other tests to run at full parallelism.
 
 ## Discoveries
 
-The candidate failed on a non-J24K2 concurrency-sensitive test
-(`f2a_exit_distinguishable_from_timeout_and_disconnect` in `child_process`).
-The test suite contains process-level concurrency dependencies beyond J24K2 that
-prevent trivial Nextest parallelism. The J24K2 serial group was correctly
-configured and isolated; the failure was elsewhere.
+Only 1 of 1589 tests (`f2a_exit_distinguishable_from_timeout_and_disconnect`)
+is sensitive to Nextest-level parallelism. All J24K2, M3 lifecycle, conformance,
+and other process-heavy tests pass correctly under `num-cpus` as long as the
+J24K2 integration binary is isolated. The `threads-required` override is the
+narrowest possible fix — a serial group would have been unnecessary for a
+single test.
 
 ## Remaining risks
 
-None within packet scope. `.config/nextest.toml` is unchanged from base.
+None within packet scope. The test suite passes consistently under the candidate
+config. The `threads-required` override may add marginal wall-clock overhead if
+the test pool is large, but the measured 39.5s is well within acceptable range.
 
 ## Smallest next action
 
-Lucy may decide whether to explore finer-grained test-group isolation in a future
-packet, or accept the current serial configuration.
+Lucy may accept this as the new default Nextest configuration.
 
 ## References
 
 - Baseline commit: `154997e82a391cc8d7f23da985fb55311d35a465`
+- Implementation checkpoint: `cc5258224706a47172f85426bd1f1c46c9ec0377`
 - Branch: `foundation/f8-nextest-concurrency`
-- Baseline run: 1589 passed, 2 skipped, 192.4s
-- Candidate: failed at test 294/1589 (f2a_exit_distinguishable_from_timeout_and_disconnect)
+- R1 baseline: 1589 passed, 2 skipped, 192.4s
+- R2 failure map: 1588 passed, 1 failed (f2a_exit), 35.1s
+- R3 candidate: **1589 passed**, 0 failed, **39.5s** (79.5% improvement)
