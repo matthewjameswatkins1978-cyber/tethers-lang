@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-D4 — Legacy Event Admission Trail Probe Cleanup`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode removes D4 (run_event_admission_trail_probe) dead legacy parser`
 Worker note: `docs/worker-notes/2026-08-09-f8-d4-event-admission-trail-probe-cleanup.md`
 Base branch: `foundation/f8-d3-event-admission-probe-cleanup`
 Base commit: `9a7dc9ea46fd82c25ab0fbf58e468ab8fc15412a`
 Implementation branch: `foundation/f8-d3-event-admission-probe-cleanup`
-Implementation checkpoint: `f3b646f`
+Implementation checkpoint: `f3b646f553b0f5a5e70f4c496dc96642f71477e6`
 Rust change class: `RUST`
 
 ## Objective
