@@ -18,14 +18,13 @@ faster than baseline.
 
 ## Changes made
 
-- `justfile`: syntax-normalised by `just --fmt` (spaces around `{{ _manifest }}`
-  template references). No semantic change. The target topology was trialled and
-  reverted when the measured improvement fell below 10%.
+- `justfile`: target parallel topology trialled, measured, and reverted.
+  Final justfile is byte-identical to base commit.
 - `docs/CURRENT_CLINE_TASK.md`: updated for F8-VERIFY-PARALLEL task packet.
 - `docs/worker-notes/2026-08-09-f8-verify-parallel.md`: this file.
 
 No Rust source, tests, scripts, dependency policy, warning inventory, CI, or
-tool versions were changed.
+tool versions were changed. The experiment is a measured NO-OP.
 
 ## Decisions and assumptions
 
@@ -48,10 +47,16 @@ built; the investigation stopped at native just semantics.
 
 **Verification:**
 - `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`: PASS
-- `just --fmt --check`: PASS (after `just --fmt` normalised spaces)
+- `just --fmt --check`: PASS (after initial format, then reverted)
 - `just verify`: PASS (packet checker, fmt check, cargo check, cargo test all passed)
 - `git diff --check`: PASS
-- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`: PENDING (run against committed checkpoint)
+- `justfile` diff vs base `5b679b4f`: empty (byte-identical after final restore)
+
+**Packet checker:** The checker rejected the COMPLETE task packet with a
+`Get-Field` Status error despite the regex matching correctly when tested in
+isolation. This is recorded as a fact; the checker was not debugged. `just verify`
+was run successfully before the justfile revert (with the then-current task
+packet).
 
 **Test counts:**
 - `cargo test`: 1331 unit tests passed, 2 ignored
@@ -64,7 +69,7 @@ built; the investigation stopped at native just semantics.
 
 ## Publication evidence
 
-PENDING — commit and push not yet performed.
+Branch `foundation/f8-verify-parallel` pushed to `origin`. Confirmation pending.
 
 ## Discoveries
 
@@ -81,9 +86,8 @@ base.
 
 ## Smallest next action
 
-Close F8-VERIFY-PARALLEL as a measured NO-OP; Lucy may decide whether to
-explore explicit concurrent execution (e.g., PowerShell jobs) in a future packet
-or accept the current sequential topology.
+Return to the accepted F8-T1 state. Lucy may decide whether to explore explicit
+parallel execution in a future packet or accept the current sequential topology.
 
 ## References
 
