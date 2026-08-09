@@ -31,7 +31,9 @@ and return a concise report containing:
 - unresolved risks or smallest blocker;
 - worker-note path;
 - final Git status;
-- pushed commit or branch reference when available.
+- pushed branch;
+- full remote HEAD SHA;
+- local HEAD equals remote HEAD confirmation.
 
 Paste that report to Lucy in ordinary chat.
 
@@ -76,7 +78,9 @@ task or routes the work to Codex.
 
 - The repository and Git are the source of evidence.
 - `READY` authorises only the named bounded implementation.
-- Cline does not commit or push unless the task explicitly authorises it.
+- Cline pushes every completed branch normally to `origin`, then resolves the
+  full remote HEAD SHA and confirms it equals local HEAD with clean Git status.
+- No force-push, direct `main` update, merge, or other publication is implied.
 - Existing unrelated changes must be preserved.
 - Tests, compiler output, fixtures, Trails, and Git decide completion.
 - Work, evidence, report, and worker note are required before `COMPLETE`.

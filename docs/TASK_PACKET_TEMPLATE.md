@@ -22,6 +22,8 @@ Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (
 
 Toolchain preflight: `<required or N/A>`
 
+Rust change class: `<RUST_CHANGING or NON_RUST>`
+
 ## Objective
 
 State one independently testable outcome.
@@ -59,11 +61,32 @@ representative check.
 List exact focused and regression commands in the order they must run. Include
 complete diff and final Git status inspection.
 
+## Formatting and checkpoint sequence
+
+For `RUST_CHANGING` tasks, list the authorised Rust paths and the exact Cargo
+formatter command. Before the implementation checkpoint, the worker must run
+that command and inspect the immediate diff. STOP if rustfmt changes any file
+outside the authorised Rust paths; do not fold unrelated formatting debt into
+the task.
+
+For `NON_RUST` tasks, require `cargo fmt --all -- --check` only. The worker must
+not run a mutating formatter or modify Rust source, even if the check reports a
+pre-existing formatting failure.
+
+## Completion and publication
+
+For every `COMPLETE` task, require a normal push of the finished branch to
+`origin` after the closeout commit. The completion report must state the remote
+branch, full remote HEAD SHA, confirmation that local `HEAD` equals that remote
+SHA, and clean `git status --short --branch` output. This authorises neither a
+force-push nor a direct update to `main`.
+
 ## Forbidden changes
 
 - No scope expansion.
-- No commit, push, merge, amend, tag, or publication unless explicitly
-  authorised here.
+- No merge, amend, tag, force-push, direct `main` update, or other publication
+  unless explicitly authorised here. The required normal push of a completed
+  branch is already authorised by the Completion and publication section.
 
 ## Stop conditions
 

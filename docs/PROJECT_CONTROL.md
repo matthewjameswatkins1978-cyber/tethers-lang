@@ -91,6 +91,9 @@ Completion requires:
 - required verification was run against that checkpoint
 - the final worker note records those actual results
 - only closeout documentation may follow the checkpoint
+- the finished branch was pushed normally to `origin`, its full remote HEAD SHA
+  was resolved, local `HEAD` was confirmed equal to it, and final Git status was
+  confirmed clean
 
 `BLOCKED` may reference `WORKTREE` when intentionally uncommitted.
 

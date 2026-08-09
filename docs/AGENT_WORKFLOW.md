@@ -145,20 +145,28 @@ historical interface and does not name the active owner. The packet identifies:
 4. OpenCode verifies packet state and live local Git state before editing.
 5. OpenCode implements only the authorised scope using the target language
    idiomatically.
-6. OpenCode runs development and focused checks, then inspects the complete diff.
-7. OpenCode commits the implementation checkpoint.
-8. OpenCode runs every required acceptance check against that exact committed
+6. For a Rust-changing task, OpenCode runs the packet's Cargo formatter command
+   before the implementation checkpoint, immediately inspects the formatter
+   diff, and stops if rustfmt touched any file outside the authorised Rust paths.
+   For a non-Rust or evidence-only task, OpenCode runs
+   `cargo fmt --all -- --check` only and does not modify Rust source.
+7. OpenCode runs development and focused checks, then inspects the complete diff.
+8. OpenCode commits the implementation checkpoint.
+9. OpenCode runs every required acceptance check against that exact committed
    checkpoint. If verification changes production code, return to step 6 and
    establish a new implementation checkpoint.
-9. Only after final verification, OpenCode writes the worker note from actual
+10. Only after final verification, OpenCode writes the worker note from actual
    final results, marks the task `COMPLETE` or `BLOCKED`, and commits/pushes
    closeout documentation only.
-10. OpenCode returns a concise report to Matthew.
-11. Matthew pastes that report to Lucy. This is an accepted handoff in Gorilla
+11. For `COMPLETE`, OpenCode pushes the finished branch normally to `origin`,
+    resolves the full remote HEAD SHA, confirms local `HEAD` equals that SHA,
+    and confirms clean Git status before reporting.
+12. OpenCode returns a concise report to Matthew.
+13. Matthew pastes that report to Lucy. This is an accepted handoff in Gorilla
     Coding mode, not a process failure.
-12. Lucy checks pushed GitHub evidence where available, reads the relevant worker
+14. Lucy checks pushed GitHub evidence where available, reads the relevant worker
     note and diff, then records one verdict or compiles one bounded correction.
-13. Matthew routes the next task to OpenCode or Codex as Lucy directs.
+15. Matthew routes the next task to OpenCode or Codex as Lucy directs.
 
 OpenCode must not invent, authorise, or begin the next task. Lucy controls
 continuation.
@@ -178,7 +186,10 @@ The implementation owner's return report should contain only:
 - unresolved risks or the smallest blocker;
 - worker-note path;
 - final Git status;
-- commit or pushed branch reference when one exists.
+- implementation checkpoint and final branch reference;
+- remote branch;
+- full remote HEAD SHA;
+- local `HEAD == remote HEAD` confirmation.
 
 The report may be pasted into chat. Durable decisions and evidence still belong
 in the packet, worker note, code, tests, dashboard, and Git.
@@ -192,8 +203,10 @@ in the packet, worker note, code, tests, dashboard, and Git.
 - Do not turn a missing semantic, permission, or trust decision into code.
 - Do not use repeated audit loops without new evidence.
 - Do not begin cleanup or the next task after completion.
-- Commit, push, merge, amend, tag, installation, and publication require explicit
-  authority in the task or from Matthew.
+- Commit, merge, amend, tag, installation, and publication require explicit
+  authority in the task or from Matthew. A normal non-force push of every
+  `COMPLETE` branch to `origin` is required by this workflow; it does not
+  authorise a force-push, direct `main` update, or merge.
 - Never claim an unrun check passed.
 
 ## Cost Posture
