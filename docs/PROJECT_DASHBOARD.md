@@ -4,9 +4,9 @@ Updated: 2026-08-09
 
 ## Current Milestone
 
-Foundation F10 — clean-checkout completion proof. F1–F9 and the pre-F10 gate
-repair are complete on Foundation branch lineage. F10 is independent evidence
-only; Foundation is not yet self-declared complete.
+Foundation F10 clean-checkout proof is complete on the Foundation branch
+lineage. F1–F9 and the pre-F10 gate repair remain complete; Lucy's independent
+acceptance is still required before Foundation completion may be declared.
 
 ## Verified Checkpoint
 
@@ -18,15 +18,15 @@ F1–F9 have not yet been merged to `origin/main`; live `main` remains
 ## Active Task
 
 - Task: F10 — Foundation Clean-Checkout Completion Proof
-- State: IN_PROGRESS
+- State: COMPLETE — pending Lucy independent acceptance
 - Owner: Codex
 - Risk: Amber
 
 ## Last Accepted Result
 
-Pre-F10 gate consistency repair completed on the Foundation branch lineage.
-F10 independently proves the clean Windows checkout and complete programme
-evidence before Lucy's acceptance decision.
+F10 independently completed the clean Windows checkout and complete programme
+evidence. Foundation is not self-declared complete; Lucy makes the acceptance
+decision from the pushed evidence.
 
 ## Matthew Decision Required
 
@@ -34,8 +34,8 @@ None.
 
 ## Next Route
 
-F10 clean-checkout proof is active. Lucy independently reviews the pushed F10
-evidence afterward; Codex does not declare Foundation accepted.
+F10 clean-checkout proof is complete. Lucy independently reviews the pushed
+F10 evidence; Codex does not declare Foundation accepted.
 
 ## Operating Mode
 

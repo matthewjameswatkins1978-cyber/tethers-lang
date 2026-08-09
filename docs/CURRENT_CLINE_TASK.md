@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F10 — Foundation Clean-Checkout Completion Proof`
 Owner: `Codex`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `Codex performs independent Windows clean-checkout evidence and sign-off`
 Worker note: `docs/worker-notes/2026-08-09-f10-clean-checkout-proof.md`
 Base branch: `foundation/pre-f10-gate-consistency`
 Base commit: `f1fcf6c1af380bb8a787d725ac83d7faae5bc17c`
 Implementation branch: `foundation/f10-clean-checkout-proof`
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `6abde58cdd51b602ecdc221d3703a99cbcc80f60`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `repository-pinned`
 Rust change class: `DOCS`
