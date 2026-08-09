@@ -3,6 +3,16 @@ name: tethers-task
 description: Run or review the current bounded Tethers implementation task. Use when Matthew invokes /tethers-task.md, pastes an approved Lucy handover, or wants Cline to continue from docs/CURRENT_CLINE_TASK.md. Do not use this skill to invent or compile the next task.
 ---
 
+**INACTIVE / HISTORICAL INTEGRATION.** Cline is not part of the current
+active Tethers route. This skill file does not authorise repository mutation.
+Current authority is `AGENTS.md`, `docs/PROJECT_CONTROL.md`,
+`docs/AGENT_WORKFLOW.md`, and the current packet. Reactivation of Cline
+requires an explicitly authorised future task.
+
+The remaining content is preserved as historical integration detail.
+
+---
+
 # Tethers Task
 
 This skill is the low-friction Cline entry point for Gorilla Coding 🦄.

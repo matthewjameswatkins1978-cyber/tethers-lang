@@ -8,10 +8,10 @@ The active operating model is **Gorilla Coding 🦄**:
 
 - Lucy controls architecture, task compilation, GitHub-visible review,
   acceptance, and continuation.
-- Cline is the default Green and Amber implementation owner.
+- OpenCode is the normal Green and Amber implementation owner.
 - Codex handles Red work, difficult local failure, Git/environment/recovery, and
   machine-required diagnosis.
-- Matthew routes Cline reports back to Lucy.
+- Matthew routes worker reports back to Lucy.
 
 Do not use `/next-tethers-task`, compile a new task, alter the dashboard, route
 work, implement code, or claim an active project role through Copilot.

@@ -18,7 +18,8 @@ Tethers uses a layered set of authoritative and operational documents:
 - `docs/PROJECT_CONTROL.md` defines task ownership, evidence, worker notes, and
   review.
 - `docs/AGENT_WORKFLOW.md` defines the current **Gorilla Coding 🦄** route.
-- `docs/CLINE_HANDOFF.md` defines the short Cline-to-Lucy return journey.
+- `docs/CLINE_HANDOFF.md` is the current worker-neutral Gorilla handoff guide
+  (historical filename).
 - `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the
   two durable sides of each implementation handoff.
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
@@ -40,13 +41,13 @@ Current operating route:
 
 ```text
 Lucy controls architecture, tasks, review, and continuation
--> Luna on OpenCode implements bounded Green and ordinary Amber work
--> DeepSeek Pro V4 handles thicker middle implementation requiring review
--> Codex Terra High handles Red work, machine failures, and release gates
--> Matthew routes concise worker reports back to Lucy
+    -> OpenCode implements bounded Green and ordinary Amber work
+    -> Codex handles Red work, machine failures, and release gates
+    -> Matthew routes concise worker reports back to Lucy
 ```
 
-Copilot is not part of the active workflow.
+Copilot, Cline, and Goose are not part of the current active workflow.
+Transient model names are not encoded in durable repository guidance.
 
 The active prototype and runtime development tree is `tethers-0.1/`.
 

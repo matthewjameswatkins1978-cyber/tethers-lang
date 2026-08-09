@@ -12,7 +12,9 @@ Foundation completion gate.
 ## Verified Checkpoint
 
 Latest accepted implementation: F8 warning enforcement at
-`5e616357963e70b86f59c870f6c00b7fbc94cb0a` (`origin/main`).
+`5e616357963e70b86f59c870f6c00b7fbc94cb0a` (Foundation branch lineage).
+F1–F8 have not yet been merged to `origin/main`; live `main` remains
+`40ec42eb2aac108901d428af3cbfe264d3edd6dc`.
 
 ## Active Task
 

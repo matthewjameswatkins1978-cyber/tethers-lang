@@ -152,21 +152,29 @@ historical interface and does not name the active owner. The packet identifies:
    `cargo fmt --all -- --check` only and does not modify Rust source.
 7. OpenCode runs development and focused checks, then inspects the complete diff.
 8. OpenCode commits the implementation checkpoint.
-9. OpenCode runs every required acceptance check against that exact committed
-   checkpoint. If verification changes production code, return to step 6 and
-   establish a new implementation checkpoint.
-10. Only after final verification, OpenCode writes the worker note from actual
-   final results, marks the task `COMPLETE` or `BLOCKED`, and commits/pushes
-   closeout documentation only.
-11. For `COMPLETE`, OpenCode pushes the finished branch normally to `origin`,
+9. OpenCode captures the exact full implementation SHA directly from Git
+   (e.g. `git rev-parse HEAD`). The SHA must never be reconstructed by expanding
+   a short SHA or fabricating digits; a short commit SHA shown in terminal output
+   is not the full 40-character SHA.
+10. OpenCode runs every required acceptance check against that exact committed
+    checkpoint. If verification changes production code, return to step 6 and
+    establish a new implementation checkpoint.
+11. Only after final verification, OpenCode writes the worker note from actual
+    final results using that exact captured SHA, sets `Implementation checkpoint`
+    in both the worker note and the task packet to that SHA, marks the task
+    `COMPLETE` or `BLOCKED`, and runs the task-packet checker **again in the new
+    state**. If the packet is now `COMPLETE`, the checker output must identify
+    `control-v1/COMPLETE`. An `IN_PROGRESS` or earlier PASS is not closeout
+    evidence. Only then may OpenCode commit and push the closeout documentation.
+12. For `COMPLETE`, OpenCode pushes the finished branch normally to `origin`,
     resolves the full remote HEAD SHA, confirms local `HEAD` equals that SHA,
     and confirms clean Git status before reporting.
-12. OpenCode returns a concise report to Matthew.
-13. Matthew pastes that report to Lucy. This is an accepted handoff in Gorilla
+13. OpenCode returns a concise report to Matthew.
+14. Matthew pastes that report to Lucy. This is an accepted handoff in Gorilla
     Coding mode, not a process failure.
-14. Lucy checks pushed GitHub evidence where available, reads the relevant worker
+15. Lucy checks pushed GitHub evidence where available, reads the relevant worker
     note and diff, then records one verdict or compiles one bounded correction.
-15. Matthew routes the next task to OpenCode or Codex as Lucy directs.
+16. Matthew routes the next task to OpenCode or Codex as Lucy directs.
 
 OpenCode must not invent, authorise, or begin the next task. Lucy controls
 continuation.

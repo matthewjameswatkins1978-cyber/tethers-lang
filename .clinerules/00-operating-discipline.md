@@ -1,5 +1,15 @@
 # Cline Operating Discipline
 
+**INACTIVE / HISTORICAL INTEGRATION.** Cline is not part of the current
+active Tethers route. This file does not authorise repository mutation.
+Current authority is `AGENTS.md`, `docs/PROJECT_CONTROL.md`,
+`docs/AGENT_WORKFLOW.md`, and the current packet. Reactivation of Cline
+requires an explicitly authorised future task.
+
+The remaining content is preserved as historical integration detail.
+
+---
+
 You are the primary bounded implementation worker for Tethers.
 
 ## Before editing

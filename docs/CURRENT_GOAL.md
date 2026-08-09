@@ -14,10 +14,10 @@ No new product capability is being added.
 ## Last accepted increment
 
 F8 warning enforcement is accepted at
-`5e616357963e70b86f59c870f6c00b7fbc94cb0a` on `origin/main`. The all-target
-Rust Cargo check is warning-free and compiler warnings are denied in the
-repository `just check` / `just verify` path. Broader Clippy advisory policy
-is not globally denied.
+`5e616357963e70b86f59c870f6c00b7fbc94cb0a` on the Foundation branch lineage.
+The all-target Rust Cargo check is warning-free and compiler warnings are
+denied in the repository `just check` / `just verify` path. Broader Clippy
+advisory policy is not globally denied.
 
 ## Active increment
 

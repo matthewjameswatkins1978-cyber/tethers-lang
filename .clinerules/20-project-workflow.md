@@ -1,5 +1,15 @@
 # Project Workflow
 
+**INACTIVE / HISTORICAL INTEGRATION.** Cline is not part of the current
+active Tethers route. This file does not authorise repository mutation.
+Current authority is `AGENTS.md`, `docs/PROJECT_CONTROL.md`,
+`docs/AGENT_WORKFLOW.md`, and the current packet. Reactivation of Cline
+requires an explicitly authorised future task.
+
+The remaining content is preserved as historical integration detail.
+
+---
+
 ## Authority
 
 Follow, in order:
@@ -20,8 +30,8 @@ code is expressed. A narrow task does not require primitive code.
   publication, and irreversible actions.
 - Lucy in ordinary chat controls architecture, task compilation, continuation,
   GitHub-visible review, and acceptance.
-- Cline is the default implementation owner for ordinary Green and Amber work.
-- Codex enters for Red work, difficult local failure, Git/environment/recovery
+- Historically Cline was the default implementation owner for ordinary Green and Amber work.
+- Codex entered for Red work, difficult local failure, Git/environment/recovery
   work, or machine-required diagnosis.
 
 Copilot is not part of the current route. Do not tell Matthew to open Copilot or

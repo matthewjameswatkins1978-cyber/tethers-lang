@@ -15,6 +15,11 @@ Base commit: `<40-character implementation checkpoint>`
 
 Implementation checkpoint: `<full 40-character commit SHA for COMPLETE; WORKTREE allowed only for BLOCKED when intentionally uncommitted>`
 
+The implementation checkpoint SHA must be copied directly from Git (e.g.
+`git rev-parse HEAD`). Never reconstruct or expand a short SHA manually.
+For `COMPLETE`, the final task-packet checker must run after this field and
+the `COMPLETE` packet state are populated, and must report `control-v1/COMPLETE`.
+
 ## Requested outcome
 
 State what the packet required in two or three sentences.

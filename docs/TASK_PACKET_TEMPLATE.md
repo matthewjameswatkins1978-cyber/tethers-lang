@@ -75,11 +75,25 @@ pre-existing formatting failure.
 
 ## Completion and publication
 
-For every `COMPLETE` task, require a normal push of the finished branch to
-`origin` after the closeout commit. The completion report must state the remote
-branch, full remote HEAD SHA, confirmation that local `HEAD` equals that remote
-SHA, and clean `git status --short --branch` output. This authorises neither a
-force-push nor a direct update to `main`.
+For every `COMPLETE` task:
+
+1. The `Implementation checkpoint` in the packet and the worker note must be
+   captured directly from Git (e.g. `git rev-parse HEAD`) and must never be
+   reconstructed or expanded manually.
+
+2. After populating the checkpoint SHA and setting the packet to `COMPLETE`,
+   run the task-packet checker again. The checker must report
+   `control-v1/COMPLETE`. A checker PASS at `IN_PROGRESS` is not final
+   closeout evidence; it cannot validate the checkpoint SHA ancestry until
+   the packet state is `COMPLETE`.
+
+3. Only after that PASS, create the closeout documentation commit.
+
+4. Require a normal push of the finished branch to `origin` after the
+   closeout commit. The completion report must state the remote branch,
+   full remote HEAD SHA, confirmation that local `HEAD` equals that remote
+   SHA, and clean `git status --short --branch` output. This authorises
+   neither a force-push nor a direct update to `main`.
 
 ## Forbidden changes
 
