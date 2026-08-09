@@ -19,6 +19,12 @@ Carry the already-reviewed worker formatting/publication rules from commit
 `30b26d1959138176dbf1481b267adc1791f0bc09` onto the current accepted
 F8-FMT lineage at `5e5ec4f6f8afd8aa06ed49569038dd80c8d18940`.
 
+## Relevant background and existing behaviour
+
+The 7 guidance/template files were reviewed and accepted in commit `30b26d`. The F8-FMT
+tip at `5e5ec4f` needs them carried forward to ensure task packets, worker notes, and
+agent workflows follow the updated lifecycle rules. No redesign is needed.
+
 ## Required behaviour
 
 1. Copy exactly these 7 files from source commit `30b26d`:
@@ -84,3 +90,7 @@ F8-FMT lineage at `5e5ec4f6f8afd8aa06ed49569038dd80c8d18940`.
 STOP if any file not in the authorised set appears in the diff.
 STOP if `cargo fmt --check` fails.
 STOP if packet checker fails.
+
+## Expected pre-existing changes
+
+None.
