@@ -1,97 +1,94 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F8-W2 — Enforce Zero Rust Compiler Warnings`
+Task packet: `F9-A — Current Operator Truth Reconciliation`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Task colour: `Green`
-Route: `OpenCode adds warning denial to the existing just verify path`
-Worker note: `docs/worker-notes/2026-08-09-f8-warning-enforcement.md`
-Base branch: `foundation/f8-final-test-import-warnings`
-Base commit: `26a93cb26f48a88018c6f621624fed78969f1db1`
-Implementation branch: `foundation/f8-warning-enforcement`
-Implementation checkpoint: `bec1024fe96cec194207c3d2cce5196ac34bed90`
+Route: `OpenCode updates stale operator-facing documentation`
+Worker note: `docs/worker-notes/2026-08-09-f9-operator-truth.md`
+Base branch: `foundation/f8-warning-enforcement`
+Base commit: `5e616357963e70b86f59c870f6c00b7fbc94cb0a`
+Implementation branch: `foundation/f9-operator-truth`
+Implementation checkpoint: `3dc85fe989ca53619f17e525431c5726e6d73079`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
-Rust change class: `TOOLING`
+Rust change class: `DOCS`
 
 ## Objective
 
-Make future Rust compiler warnings fail the repository's normal verification
-path now that the accepted all-target Cargo check is warning-free.
+Update the small set of current human/operator-facing documents that are
+demonstrably stale after the completed Foundation work through F8.
 
 ## Relevant background and existing behaviour
 
-The accepted F8-W1 checkpoint removed the two residual test-module unused-import
-warnings. The locked all-target `cargo check --all-targets --all-features --locked`
-is now warning-free.
-
-The existing `just verify` recipe runs `cargo check` (without warning denial),
-`cargo fmt --check`, `cargo test`, and the packet checker via
-`scripts/invoke-timed.ps1`.
-
-`just verify-agent` extends `verify` with agent tools, dependency policy,
-dependency advisories, and Nextest.
+F1-F8 are complete through warning enforcement at
+`5e616357963e70b86f59c870f6c00b7fbc94cb0a`. Three current/operator-facing
+documents still describe F3c/F3d as the active phase and Cline as the
+normal implementation worker — both are obsolete.
 
 ## Required behaviour
 
-1. Add `RUSTFLAGS="-D warnings"` to the `check` recipe in `justfile` so
-   Rust compiler warnings are fatal during `cargo check`.
-2. `just verify` and `just verify-agent` inherit this enforcement.
-3. No Clippy lint-policy changes.
-4. No Rust source changes.
-5. No GitHub Actions or CI introduction.
+1. `docs/CURRENT_GOAL.md` — update to reflect F9 truth (F1-F8 complete,
+   F8 warning enforcement is latest accepted checkpoint).
+2. `docs/PROJECT_DASHBOARD.md` — update milestone, checkpoint, active task,
+   and remove obsolete F3 drift notes.
+3. `docs/GORILLA_CODING_QUICK_CARD.md` — update to OpenCode/Lucy/Codex/Matthew
+   operating reality; remove Cline as active worker.
+4. F10 remains the sole Foundation completion gate.
 
 ## Relevant components
 
 ### AUTHORISED PATHS
-- `justfile`
+- `docs/CURRENT_GOAL.md`
+- `docs/PROJECT_DASHBOARD.md`
+- `docs/GORILLA_CODING_QUICK_CARD.md`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-warning-enforcement.md`
+- `docs/worker-notes/2026-08-09-f9-operator-truth.md`
 
 ## Frozen decisions and invariants
 
-- No Clippy cleanup or denial.
-- No global `[lints]` in Cargo.toml.
-- No Rust source changes.
-- No dependency, toolchain, or CI changes.
-- No warning suppression.
-- No weakened existing verification.
+- No Rust, OCaml, justfile, task-checker, architecture, or workflow changes.
+- No speculative post-Foundation plans.
+- No rewriting historical worker notes.
+- No polishing unrelated documentation.
 
 ## Acceptance criteria
 
-1. `RUSTFLAGS="-D warnings" cargo check` passes on clean tree.
-2. Deliberate temporary warning proves the gate fails.
-3. `just verify` uses the strict check.
-4. `just verify-agent` passes once at implementation checkpoint.
-5. Existing Clippy policy unchanged.
-6. Final diff contains only authorised tooling/docs.
-7. Branch pushed normally with clean status.
+1. Current goal reflects F9 rather than F3.
+2. Dashboard reflects the live Foundation state.
+3. Gorilla quick card reflects OpenCode/Codex/Lucy/Matthew operating reality.
+4. No abandoned context/workflow redesign introduced.
+5. F8 warning enforcement described accurately where relevant.
+6. F10 remains sole Foundation completion gate.
+7. No implementation/tooling tree changed.
+8. Branch pushed with clean status.
 
 ## Required verification
 
-1. `git diff --check`.
-2. Packet checker.
-3. Negative proof (temporary warning → gate fails → restore → clean).
-4. `just verify-agent` once.
+1. Inspect all authorised document diffs.
+2. Search updated docs for stale claims (F3c accepted, F3d active, Cline active).
+3. Confirm new F8 checkpoint SHA is exact.
+4. Confirm F10 remains Foundation completion gate.
+5. Packet checker.
+6. `git diff --check`.
+7. Prove final diff is docs-only.
 
 ## Forbidden changes
 
-- No Clippy cleanup or denial.
-- No global lint-policy redesign.
-- No Rust source change in final tree.
-- No OCaml change.
+- No Rust/OCaml/justfile/task-checker changes.
+- No architecture/workflow redesign.
+- No Cline-file renaming.
 - No GitHub Actions.
-- No new dependency.
-- No warning suppression.
-- No unrelated justfile cleanup.
+- No speculative plans.
+- No rewriting historical worker notes.
 
 ## Stop conditions
 
-STOP if strict check does not pass on clean tree, if negative proof fails,
-or if `just verify-agent` fails.
+STOP if any stale claim persists in updated documents, if diff touches
+non-docs files, or if packet checker fails.
 
 ## Expected pre-existing changes
 
