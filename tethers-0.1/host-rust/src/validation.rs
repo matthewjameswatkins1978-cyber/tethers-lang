@@ -71,6 +71,10 @@ pub fn validate_against_schema(schema: &Value, value: &Value) -> Result<(), Vali
 /// `x-tethers-*` extension, then delegates to [`validate_against_schema`]
 /// with the cleaned schema.  This keeps the annotation scope-only without
 /// affecting ordinary capability input/output schema validation.
+///
+/// R1C replaced production use with [`validate_and_canonicalize_operational_scope`].
+/// Kept test-only for R1B regression coverage.
+#[cfg(test)]
 pub fn validate_operational_scope(schema: &Value, scope: &Value) -> Result<(), ValidationError> {
     let mut schema = schema.clone();
     preprocess_scope_schema(&mut schema, "$")?;
@@ -1367,5 +1371,27 @@ mod tests {
         let canonical = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap();
         assert_eq!(canonical.get("label").unwrap().as_str().unwrap(), "hello");
         assert_eq!(canonical.get("count").unwrap().as_i64().unwrap(), 1);
+    }
+
+    #[test]
+    fn r1c_additional_properties_schema_canonicalised() {
+        use std::env;
+        let temp = env::temp_dir();
+        let path_str = temp.to_string_lossy().to_string();
+        let expected = fs::canonicalize(&path_str).unwrap();
+        let schema = json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {
+                "type": "string",
+                "x-tethers-path": "canonical-directory"
+            }
+        });
+        let scope = json!({"my_dir": path_str});
+        let canonical = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap();
+        assert_eq!(
+            canonical.get("my_dir").unwrap().as_str().unwrap(),
+            expected.to_str().unwrap()
+        );
     }
 }
