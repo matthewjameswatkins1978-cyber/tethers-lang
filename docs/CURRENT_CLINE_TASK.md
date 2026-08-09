@@ -1,71 +1,69 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P1-R1B — Enforce Operational Scope Schema`
+Task: `TETHERS-0.3-P1-R1C — Canonical Operational Scope Directories`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode implements bounded correction`
-Worker note: `docs/worker-notes/2026-08-09-0.3-p1-r1b-scope-validation.md`
-Base branch: `feature/0.3-p1-r1a-schema-evidence`
-Base commit: `6da96996c303338474623b0d0e774271549b4ed4`
-Implementation branch: `feature/0.3-p1-r1b-scope-validation`
-Implementation checkpoint: `47a2cbc1202e3a5581977c88d82d686005cf2758`
+Worker note: `docs/worker-notes/2026-08-09-0.3-p1-r1c-canonical-directory.md`
+Base branch: `feature/0.3-p1-r1b-scope-validation`
+Base commit: `f18d211523de953d260417e67abbadf766412037`
+Implementation branch: `feature/0.3-p1-r1c-canonical-directory`
+Implementation checkpoint: `bb4ba228f8812703bb06bcf9970de42f4a9eee44`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
 Rust change class: `AMBER_ARCHITECTURE_CORRECTION`
 
 ## Relevant background and existing behaviour
 
-R1A pinned the operational-scope schema as verified package evidence through the full evidence chain. `run_enable()` reads the scope-schema digest from the installed record but does not validate the supplied scope against the schema. The schema is carried inertly through inspection, candidate, and installed records but is not enforced at enablement time.
+R1A pinned the operational-scope schema as verified package evidence. R1B enforced the schema against the supplied scope at enablement time, using `validate_operational_scope`. The `x-tethers-path` annotation was recognised but left inert — validation succeeded against the cleaned schema, but no path hardening was performed. OperationalScopeEvidence stored the supplied scope values verbatim.
 
 ## Objective
 
-Complete one missing P1 correctness property:
+Implement the actual meaning of `x-tethers-path: canonical-directory`:
 
-> A scope supplied to `plug enable` must conform to the exact operational-scope schema pinned in the installed Plug evidence.
-
-Do not implement path canonicalisation.
+> The host must turn an authorised directory path into exact, hardened, canonical scope evidence before enablement.
 
 ## Required behaviour
 
-1. In `run_enable()`, validate the supplied scope against the installed `operational_scope_schema`.
-2. Require both `operational_scope_schema` and `operational_scope_schema_digest` as a coherent pair.
-3. Add a small dedicated `validate_operational_scope()` wrapper using the existing schema-validation machinery.
-4. Recognise `x-tethers-path` as an operational-scope annotation (ignore semantics, not a rejection).
-5. Do NOT permit arbitrary `x-tethers-*`.
-6. Fix scope-file parsing so duplicate keys are rejected at every depth, including inside `scope`.
+1. `validate_and_canonicalize_operational_scope()` replaces `validate_operational_scope()` in `run_enable()`.
+2. The function validates against the cleaned schema, canonicalises `x-tethers-path` fields, then re-validates the canonical result.
+3. Reuses `m3_store::verify_chain()` and `m3_store::reject_reparse()` for path hardening.
+4. Supports nested canonical-directory annotations in `properties`, `items`, and schema-valued `additionalProperties`.
+5. The canonical scope (not the original) is stored in `OperationalScopeEvidence`.
+6. The schema and schema digest remain unchanged.
 
 ## Frozen decisions and invariants
 
 1. Existing conservative JSON Schema validator reused.
-2. `x-tethers-path` keyword recognised but not interpreted (R1C).
+2. `x-tethers-path` keyword value must be `"canonical-directory"`.
 3. No arbitrary `x-tethers-*`.
 4. No new dependency.
 5. No reopening `plug.json`.
 6. No fallback schema.
-7. No path canonicalisation, filesystem checks, symlink/reparse work.
+7. No path canonicalisation of non-annotated values.
 8. No synthetic Plug.
 9. No conformance repair, P2, migration tool.
 10. Overall P1 remains `completion repair in progress`.
 
 ## Acceptance criteria
 
-1. Supplied scope validated against exact installed operational-scope schema. — DONE (10 focused tests pass, validation in run_enable)
-2. Wrong types refused. — DONE (r1b_wrong_property_type_fails)
-3. Required fields enforced. — DONE (r1b_missing_required_property_fails)
-4. Additional properties enforced. — DONE (r1b_unknown_property_fails_when_additional_properties_false)
-5. Numeric bounds enforced. — DONE (r1b_numeric_minimum_fails, r1b_numeric_maximum_fails)
-6. Unsupported schema keywords fail closed. — DONE (r1b_unsupported_schema_keyword_fails)
-7. Nested duplicate JSON keys refused. — DONE (r1b_nested_duplicate_scope_key_fails)
-8. No schema rediscovered from disk. — DONE (reads from installed record)
-9. No dependency changes. — PRESERVED
-10. Focused checks pass. — PASS (10 R1B tests, full lib: 1353/0/2, clippy pass, fmt clean)
+1. Supplied scope validated against exact installed operational-scope schema. — DONE (first validation pass)
+2. `x-tethers-path: canonical-directory` triggers real filesystem hardening. — DONE (14 focused tests pass)
+3. Only absolute existing directories accepted. — DONE (relative, nonexistent, file-all refuse)
+4. Symlink/reparse paths and ancestors refused. — DONE (junction + ancestor-via-junction tests pass on Windows)
+5. Canonical filesystem path replaces supplied value. — DONE (evidence stores canonical)
+6. Canonical result validated again. — DONE (second validation pass)
+7. OperationalScopeEvidence stores only canonical scope. — DONE (r1c_evidence_stores_canonical_path_not_original)
+8. Schema/schema digest remain exact and unchanged. — DONE (r1c_schema_digest_unchanged_by_canonicalization)
+9. No ordinary capability-schema semantics broadened. — DONE (validate_against_schema unchanged)
+10. Focused verification passes. — PASS (14 R1C tests, full lib: 1371/0/2, clippy pass, fmt clean)
 11. Branch pushed, remote == local, clean worktree. — DONE (see worker note)
 
 ## Stop conditions
 
-Already resolved: scope schema enforcement at enablement time.
+None. All acceptance criteria verified.
 
 ## Expected pre-existing changes
 
@@ -79,11 +77,11 @@ None.
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-0.3-p1-r1b-scope-validation.md`
+- `docs/worker-notes/2026-08-09-0.3-p1-r1c-canonical-directory.md`
 
 ## Required verification
 
-1. 10 focused R1B tests pass.
+1. 14 focused R1C tests pass.
 2. Full lib test suite passes.
 3. `cargo fmt --all -- --check` clean.
 4. `cargo check --all-targets --all-features --locked` clean.
@@ -98,8 +96,6 @@ None.
 - No registry, marketplace, HTTP/WebSocket/gRPC, SDK, secret store, OAuth, OS sandbox
 - No dependency update
 - No physical extraction into `reference-plugs/`
-- No path canonicalisation
-- No filesystem checks, symlink/reparse work
 - No synthetic Plug
 - No provider changes except to keep existing focused tests compiling
 - No conformance repair, P2, migration tool
