@@ -4,14 +4,14 @@ Control contract: `1`
 Task: `F8a — Current Warning and Tooling Reconciliation`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode performs evidence-only warning and tooling audit; no production changes`
 Worker note: `docs/worker-notes/2026-08-09-f8a-warning-tooling-reconciliation.md`
 Base branch: `foundation/f8a-warning-tooling-reconciliation`
 Base commit: `5ecf54e17752096e7c553e059d014ef263cbb136`
 Implementation branch: `foundation/f8a-warning-tooling-reconciliation`
-Implementation checkpoint: `TO BE SET`
+Implementation checkpoint: `cb0e1512fa3403c752d6c9bf8518ecd305bdf554`
 OCaml switch path: `N/A (no switch set)`
 Rust toolchain: `1.97.1`
 
