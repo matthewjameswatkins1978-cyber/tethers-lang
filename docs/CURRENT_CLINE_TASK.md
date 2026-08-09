@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-09-0.3-p1-r1a-schema-evidence.md`
 Base branch: `origin/main`
 Base commit: `809a245e83b77604788853ee6e18a3ecaa9e1f30`
 Implementation branch: `feature/0.3-p1-r1a-schema-evidence`
-Implementation checkpoint: `a2cb38a67be89abf104b67ad09ebf85d1e0d0f94`
+Implementation checkpoint: `58fd0a53cc15f216c4d69dce25606df6fe487dd3`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
 Rust change class: `AMBER_ARCHITECTURE_CORRECTION`
