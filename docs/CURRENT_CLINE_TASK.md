@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-T1 — Test-Only Dead Warning Cleanup`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode removes proven test-only dead-code warnings T1–T14`
 Worker note: `docs/worker-notes/2026-08-09-f8-t1-test-warning-cleanup.md`
 Base branch: `foundation/f8-worker-lifecycle-carry`
 Base commit: `f6c7401f2034da79c609ff25b84e651bd001f80a`
 Implementation branch: `foundation/f8-t1-test-warning-cleanup`
-Implementation checkpoint: `TO BE SET`
+Implementation checkpoint: `183874812e6d422cf568783f0dbc56997197d2ba`
 Rust change class: `RUST_CHANGING`
 
 ## Objective
