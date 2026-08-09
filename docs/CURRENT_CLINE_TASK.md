@@ -19,6 +19,12 @@ Make elapsed time ordinary project evidence. Whenever routine
 verification/build/test commands run, record how long they took without
 requiring extra runs and without changing their behaviour.
 
+## Relevant background and existing behaviour
+
+Routine verification commands (verify, test, fmt, check, etc.) already run
+through `just`. No elapsed timing is captured today. There is no instrumentation
+wrapper.
+
 ## Required behaviour
 
 1. Create `scripts/invoke-timed.ps1` timing wrapper.
