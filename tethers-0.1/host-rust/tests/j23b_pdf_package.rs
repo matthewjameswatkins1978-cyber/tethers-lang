@@ -71,13 +71,7 @@ fn package_build_is_deterministic_and_matches_contract() {
         report.provider_launch_path,
         "provider/pdf_tools_provider.exe"
     );
-    assert_eq!(
-        report.provider_launch_arguments,
-        vec![
-            "--query-root".to_string(),
-            "__TETHERS_PDF_QUERY_ROOT__".to_string()
-        ]
-    );
+    assert_eq!(report.provider_launch_arguments, Vec::<String>::new());
     assert_eq!(report.provider_working_directory, "provider");
     assert_eq!(report.provider_operation_namespace, "pdf");
 

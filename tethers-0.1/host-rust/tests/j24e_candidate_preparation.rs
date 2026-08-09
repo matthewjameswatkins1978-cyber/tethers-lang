@@ -298,10 +298,7 @@ fn candidate_output_pins_pdf_evidence() {
     assert_eq!(candidate.capabilities[0].version, 1);
     assert_eq!(candidate.capabilities[0].operation, "pdf_inspect");
     assert_eq!(candidate.launch_path, "provider/pdf_tools_provider.exe");
-    assert_eq!(
-        candidate.launch_arguments,
-        vec!["--query-root", "__TETHERS_PDF_QUERY_ROOT__"]
-    );
+    assert_eq!(candidate.launch_arguments, Vec::<String>::new());
     assert_eq!(candidate.provider_working_directory, "provider");
     assert_eq!(candidate.capability_operation_namespace, "pdf");
     assert_eq!(

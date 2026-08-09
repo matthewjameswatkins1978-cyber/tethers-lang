@@ -66,10 +66,7 @@ fn installed_pdf_plug_lifecycle() {
     let candidates =
         CandidateRegistry::open(&base.join("candidates"), &base.join("quarantine")).unwrap();
     let candidate = candidates.create(&quarantined).unwrap();
-    assert_eq!(
-        candidate.launch_arguments,
-        vec!["--query-root", "__TETHERS_PDF_QUERY_ROOT__"]
-    );
+    assert_eq!(candidate.launch_arguments, Vec::<String>::new());
 
     // -- Developer trust --
     let developers = DeveloperApprovalStore::open(&base.join("developer")).unwrap();
@@ -87,10 +84,7 @@ fn installed_pdf_plug_lifecycle() {
         Duration::from_secs(10),
     )
     .unwrap();
-    assert_eq!(
-        prepared.evidence.arguments,
-        vec!["--query-root", "__TETHERS_PDF_QUERY_ROOT__"]
-    );
+    assert_eq!(prepared.evidence.arguments, Vec::<String>::new());
     let conformance = run_host_conformance(
         &prepared,
         &candidate,

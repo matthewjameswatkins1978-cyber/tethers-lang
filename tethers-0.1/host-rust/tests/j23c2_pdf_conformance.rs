@@ -46,7 +46,11 @@ fn spawn_session(
     env: &[(&str, &str)],
 ) -> (std::process::Child, BufReader<std::process::ChildStdout>) {
     let mut command = provider_bin();
-    command.args(["--query-root", query_root]);
+    let scope = serde_json::json!({"query_root": query_root, "max_bytes": 67108864});
+    command.env(
+        "TETHERS_OPERATIONAL_SCOPE_JSON",
+        serde_json::to_string(&scope).unwrap(),
+    );
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());

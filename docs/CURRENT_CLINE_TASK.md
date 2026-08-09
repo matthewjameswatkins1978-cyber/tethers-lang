@@ -1,145 +1,132 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `RELEASE-0.2.2-PREP — Tethers 0.2.2 Release Candidate`
+Task packet: `TETHERS-0.3-P1 — Generic Operational Scope Evidence`
 Owner: `OpenCode`
-Status: `COMPLETE`
-Task colour: `Amber`
-Route: `OpenCode prepares complete 0.2.2 release candidate`
-Worker note: `docs/worker-notes/2026-08-09-release-0.2.2-prep.md`
-Base branch: `foundation/f10-clean-checkout-proof`
-Base commit: `5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1`
-Implementation branch: `release/v0.2.2-prep`
-Implementation checkpoint: `c6ea1e1652fa2785a1f06e0ace2fcd5e826ee6ec`
+Status: `IN_PROGRESS`
+Task colour: `Red`
+Route: `OpenCode implements core architectural boundary; Codex reviews`
+Worker note: `docs/worker-notes/2026-08-09-0.3-p1-generic-operational-scope.md`
+Base branch: `origin/main`
+Base commit: `c0fd57780156bee023d8dcff884737ea470d096c`
+Implementation branch: `feature/0.3-p1-generic-operational-scope`
+Implementation checkpoint: `aa53c0900bf2ddd3e3126ed88e8d6b8781b4bddb`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
-Rust change class: `PRODUCT`
-
-## Objective
-
-Prepare the complete Tethers 0.2.2 release candidate: version identity, Cargo
-single-source-of-truth, fixture migration, release notes, README front door,
-and Foundation completion recording.
+Rust change class: `RED_ARCHITECTURE`
 
 ## Relevant background and existing behaviour
 
-Foundation F1–F10 has been independently accepted. The previous published
-version is v0.2.0. 0.2.1 was never separately published. The CLi has a
-hard-coded version string separate from Cargo.toml.
+The existing `OperationalScope` enum (operational_scope.rs) ties the generic
+enablement and launch lifecycle to two concrete plug subjects: FileTools and
+Pdf. Enablement checks package_id, provider_id, and capability_name against
+hardcoded PDF constants. Launch replaces `__TETHERS_PDF_*` and `__TETHERS_FILE_*`
+placeholders and injects plug-specific environment variables. This prevents
+any new Plug from being enabled or launched without core code changes.
+
+## Objective
+
+Remove Plug-subject-specific operational-scope knowledge from the generic
+Tethers lifecycle. Replace the File/PDF `OperationalScope` enum with a generic
+`OperationalScopeEvidence` model that carries canonicalised scope, integrity
+proof, and schema binding without any plug-subject-specific branching.
 
 ## Required behaviour
 
-1. Complete version-surface inventory: search all `0.2.0`/`v0.2.0` occurrences,
-   classify as CURRENT/HISTORICAL/FIXTURE/UNRELATED.
-2. Change `Cargo.toml` product version from `0.2.0` to `0.2.2`.
-3. Update `Cargo.lock` directly: only local `tethers-reference-host` package
-   identity changes `0.2.0 → 0.2.2`; no dependency version, checksum, source,
-   or graph change.
-4. Replace hard-coded `version = "0.2.0"` in `cli.rs` with
-   `env!("CARGO_PKG_VERSION")`; no new dependency, no envelope/exit change.
-5. Recapture `docs/foundation-pass/fixtures/cli-output/version.txt` from real
-   0.2.2 binary output; envelope/schema/status/exit unchanged.
-6. Update `docs/foundation-pass/FIXTURE_MANIFEST.md` with post-Foundation
-   migration record; preserve F1 provenance.
-7. Update `README.md`: opening introduces Tethers to first-time visitors with
-   "Make things happen. Keep the receipts."; current release section describes
-   0.2.2 as release candidate.
-8. Create `docs/releases/v0.2.2.md` with release candidate status, highlights,
-   version history, known limitations; use v0.2.0.md as structural precedent.
-9. Update `docs/CURRENT_GOAL.md`: F1-F10 COMPLETE/ACCEPTED, 0.2.2 prep active,
-   F10 accepted SHA recorded, main not advanced.
-10. Update `docs/PROJECT_DASHBOARD.md`: Foundation COMPLETE/ACCEPTED, 0.2.2
-    release candidate prep active, F10 checkpoint recorded.
-11. Update `docs/foundation-pass/MODULE_DEPENDENCY_MAP.md`: crate version
-    `v0.2.0` → `v0.2.2`.
-12. Prove Cargo metadata reports product version exactly `0.2.2`.
-13. Prove binary `--version` reports `0.2.2` with envelope/schema/status/exit
-    unchanged.
-14. Prove captured output matches fixture byte-for-byte, only `0.2.0→0.2.2`
-    differs.
-15. Run `just verify-agent` once; all Rust tests, formatting, dependencies pass.
-16. Run engine tests, MCP transcripts, fixture validator — all pass.
+1. Replace the `OperationalScope` enum with generic `OperationalScopeEvidence`.
+2. Remove all plug-subject-specific scope branching from generic lifecycle.
+3. Generic `plug enable` accepts Plug-declared scope shapes.
+4. Scope schemas are package-pinned through the `plug.json` provider section.
+5. Scope evidence is canonical (JCS) and tamper-evident.
+6. Installed launch uses one generic scope-delivery mechanism.
+7. Remove File/PDF launch placeholders and environment variables from generic core.
+8. Reference providers consume the generic operational-scope contract.
+
+## Frozen decisions and invariants
+
+1. Generic `OperationalScopeEvidence` replaces `OperationalScope` enum
+2. Generic launch delivery via `TETHERS_OPERATIONAL_SCOPE_JSON`/`DIGEST`
+3. Plug-declared `operational_scope_schema` in `plug.json` (provider section)
+4. No Plug-family enum, no subject-specific branching in generic lifecycle
+5. Reference implementations consume generic scope contract
+6. No secrets in operational scope
+7. Conservative existing JSON Schema validator reused
+8. `x-tethers-path: "canonical-directory"` extension for scope paths
+9. Pre-0.3 Plug state migration explicitly authorised
+
+## Acceptance criteria
+
+1. File/PDF `OperationalScope` enum is gone — DONE
+2. Generic lifecycle has no Plug-subject-specific scope branching — DONE
+3. `plug enable` accepts Plug-declared scope shapes — DONE
+4. Scope schemas are package-pinned — DONE
+5. Scope evidence is canonical and tamper-evident — DONE
+6. Installed launch uses one generic scope-delivery mechanism — DONE
+7. File/PDF launch placeholders/env variables gone from generic core — DONE
+8. Language semantics remain 0.1 — PRESERVED
+9. No dependency change — PRESERVED
+10. Focused verification passes — PENDING
+11. One `just verify-agent` passes — PENDING
+12. `git diff --check` clean — PENDING
+13. Branch is pushed, remote equals local, worktree clean — PENDING
+14. No-knowledge search clean — DONE
+
+## Stop conditions
+
+Already resolved: complete lifecycle generic without breaking existing behaviour.
+
+## Expected pre-existing changes
+
+None.
 
 ## Relevant components
 
 ### AUTHORISED PATHS
-- `tethers-0.1/host-rust/Cargo.toml`
-- `tethers-0.1/host-rust/Cargo.lock`
-- `tethers-0.1/host-rust/src/cli.rs`
-- `docs/foundation-pass/fixtures/cli-output/version.txt`
-- `docs/foundation-pass/FIXTURE_MANIFEST.md`
-- `README.md`
-- `docs/releases/v0.2.2.md`
+- `tethers-0.1/host-rust/src/operational_scope.rs`
+- `tethers-0.1/host-rust/src/enablement.rs`
+- `tethers-0.1/host-rust/src/launch_profile.rs`
+- `tethers-0.1/host-rust/src/plug_command.rs`
+- `tethers-0.1/host-rust/src/package.rs`
+- `tethers-0.1/host-rust/src/pdf_tools.rs`
+- `tethers-0.1/host-rust/src/file_tools.rs`
+- `tethers-0.1/host-rust/src/installed.rs`
+- `tethers-0.1/host-rust/src/bin/pdf_tools_provider.rs`
+- `tethers-0.1/host-rust/src/bin/file_tools_provider.rs`
+- `tethers-0.1/host-rust/tests/j23c1_operational_scope.rs`
+- `tethers-0.1/host-rust/tests/j23c3_installed_pdf_execution.rs`
+- `tethers-0.1/host-rust/tests/m4_file_tools.rs`
+- `tethers-0.1/host-rust/tests/j24b_plug_list_cli.rs`
+- `tethers-0.1/host-rust/tests/j24c_plug_disable_cli.rs`
+- `tethers-0.1/host-rust/tests/j24d_plug_enable_scope_file.rs`
+- `tethers-0.1/host-rust/src/f3d_bounded_persistence_stores_evidence.rs`
+- `docs/ROAD_TO_0_3.md`
 - `docs/CURRENT_GOAL.md`
 - `docs/PROJECT_DASHBOARD.md`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-release-0.2.2-prep.md`
-
-## Frozen decisions and invariants
-
-- Product version: 0.2.2 (patch release).
-- Language semantics: 0.1 (unchanged).
-- No new product capability.
-- No dependency update.
-- No broad fixture refresh.
-- v0.2.0 history preserved as historical.
-- No invented 0.2.1 release.
-- No main advance, no tag, no GitHub Release, no publication.
-
-## Acceptance criteria
-
-1. Cargo product version is exactly 0.2.2.
-2. CLI reports 0.2.2 from Cargo-owned product metadata.
-3. No duplicate hard-coded live CLI product version remains.
-4. Cargo.lock changes only the local package identity.
-5. Version fixture migration matches real binary output.
-6. All other Foundation fixtures unchanged.
-7. Public version envelope/schema/status/exit semantics unchanged.
-8. Foundation F1–F10 recorded COMPLETE/ACCEPTED.
-9. README opens with "Make things happen. Keep the receipts."
-10. README and v0.2.2.md agree this is a release candidate.
-11. Historical v0.2.0 evidence remains historical.
-12. No fictional 0.2.1 release.
-13. Focused/version/cross-language checks pass.
-14. One complete `just verify-agent` passes.
-15. COMPLETE-state task checker passes.
-16. Branch is pushed and clean.
+- `docs/worker-notes/2026-08-09-0.3-p1-generic-operational-scope.md`
 
 ## Required verification
 
-1. Version inventory sweep.
-2. Cargo metadata reports 0.2.2.
-3. Binary `--version` reports 0.2.2 with unchanged envelope.
-4. Captured output == fixture byte-for-byte.
-5. Directly affected CLI/version tests.
-6. Cargo.lock diff: only local package identity.
-7. Fixture validator.
-8. Final `0.2.0`/`v0.2.0` sweep: all remaining are historical.
-9. No duplicate live 0.2.2 constant; CLI derives from Cargo.
-10. `just verify-agent` once.
-11. Engine tests, MCP transcripts, fixture checks.
-12. COMPLETE-state packet checker.
+1. No-knowledge search: no plug-subject-specific constants in generic lifecycle.
+2. Lib tests pass (1340 tests).
+3. `cargo fmt --all -- --check` clean.
+4. `cargo check --all-targets --all-features --locked` clean.
+5. `cargo clippy --all-targets --all-features --locked` passes.
+6. `git diff --check` clean.
+7. `just verify-agent` passes.
 
 ## Forbidden changes
 
-- No new product capability.
-- No language-semantic change.
-- No dependency update.
-- No broad fixture refresh.
-- No rewriting v0.2.0 history.
-- No invented 0.2.1 release.
-- No Clippy cleanup.
-- No workflow redesign.
-- No unrelated README rewrite.
-- No main update, no tag, no GitHub Release, no publication.
+- No Tethers language change
+- No concurrency
+- No plug pack/inspect/conform implementation
+- No registry, marketplace, HTTP/WebSocket/gRPC, SDK, secret store, OAuth, OS sandbox
+- No dependency update
+- No physical extraction into `reference-plugs/`
+- No unrelated cleanup
 
 ## Stop conditions
 
-STOP if version identity, envelope semantics, or fixture-pinning differs from
-the packet contract.
-
-## Expected pre-existing changes
-
-None.
+Already resolved: complete lifecycle generic without breaking existing behaviour.

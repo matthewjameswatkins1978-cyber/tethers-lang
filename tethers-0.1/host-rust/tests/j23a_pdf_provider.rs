@@ -21,8 +21,13 @@ struct Session {
 
 impl Session {
     fn start(query_root: &Path) -> Self {
+        let scope_json = serde_json::json!({"query_root": query_root, "max_bytes": 67108864});
         let mut child = Command::new(env!("CARGO_BIN_EXE_pdf_tools_provider"))
-            .args(["--query-root", query_root.to_str().unwrap()])
+            .env(
+                "TETHERS_OPERATIONAL_SCOPE_JSON",
+                serde_json::to_string(&scope_json).unwrap(),
+            )
+            .env("TETHERS_CONFORMANCE", "0")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -212,7 +217,12 @@ fn invalid_arguments_and_directory_paths_are_refused() {
 fn an_unusable_query_root_refuses_to_start_the_request_loop() {
     let absent = std::env::temp_dir().join(format!("tethers-j23a-absent-{}", Uuid::new_v4()));
     let refused = Command::new(env!("CARGO_BIN_EXE_pdf_tools_provider"))
-        .args(["--query-root", absent.to_str().unwrap()])
+        .env(
+            "TETHERS_OPERATIONAL_SCOPE_JSON",
+            serde_json::json!({"query_root": absent.to_str().unwrap(), "max_bytes": 1024})
+                .to_string(),
+        )
+        .env("TETHERS_CONFORMANCE", "0")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
