@@ -1,105 +1,110 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task packet: `F8-D11 — Obsolete authorise_and_execute Wrapper`
+Task packet: `F8-D12+D13+D14+D15 — Final Dead-Member / Test-Only Tail`
 Owner: `Codex`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `Codex removed the classified obsolete one-shot authorisation wrapper and retained live execution seams`
-Worker note: `docs/worker-notes/2026-08-09-f8-d11-authorise-wrapper-cleanup.md`
-Base branch: `foundation/f8-d7-d8-d9-local-notification-cleanup`
-Base commit: `b1bf419223a154c7f1094d1d5dd64a352095a6c4`
-Implementation branch: `foundation/f8-d11-authorise-wrapper-cleanup`
-Implementation checkpoint: `93e50b786e48949c2e9bf6649546618a148b48be`
+Route: `Codex independently classified each final warning before a bounded batch`
+Worker note: `docs/worker-notes/2026-08-09-f8-d12-d15-final-warning-tail.md`
+Base branch: `foundation/f8-d11-authorise-wrapper-cleanup`
+Base commit: `f804759043eaa087a6f358fca9781716ac42bfb7`
+Implementation branch: `foundation/f8-d12-d15-final-warning-tail`
+Implementation checkpoint: `PENDING`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `RUST`
 
 ## Objective
 
-Remove only the obsolete D11 one-shot `authorise_and_execute` wrapper while
-retaining the live writer-aware path, test adapters, shared execution boundary,
-and all authorization, replay, Result Anchor, dispatch, and zero-call failure
-contracts.
+Resolve the remaining D12-D15 production-library warnings only where each
+independent classification preserves the existing product and test contract.
 
 ## Relevant background and existing behaviour
 
-The Job B closeout at `b1bf419223a154c7f1094d1d5dd64a352095a6c4` left five
-production-library warnings: D11-D15. The current J10 event coordinator calls
-`authorise_and_execute_with_writer`, which creates the production clock and
-file replay authority before delegating to `authorise_and_execute_inner`. The
-D11 wrapper independently performs the same one-shot setup, but complete Rust
-searches find no caller. Existing `#[cfg(test)]` adapters directly exercise the
-shared inner boundary with explicit replay or bridge-pin choices.
+Job C left four warnings. D12 is an unread `SupervisedChild` copy of the
+protocol line limit; the reader thread uses a separate local capture. D13
+methods are exercised solely by cfg-test modules and preserve important
+non-creating/test-inspection semantics. D14 wrappers only construct the
+ordinary trust authority; real conformance calls the injectable `_with`
+methods. D15 variants are only matched by `ResultAnchor::new` and constructed
+by local tests; the generic `Failed { code, message }` already serializes the
+same `capability.failed`, `provider_error`, and `result_validation_failed`
+external contract.
 
 ## Required behaviour
 
-1. Remove D11 `authorise_and_execute` without replacement or suppression.
-2. Retain `authorise_and_execute_with_writer`,
-   `authorise_and_execute_inner`, the explicit test adapters, and their
-   existing callers.
-3. Preserve replay admission, Result Anchor generation, dispatch-proof
-   boundary, and executor zero-call-on-failure guarantees.
-4. Reduce the intended production-library warning count from five to four,
-   leaving D12-D15 unresolved.
-5. Run focused execution-boundary checks and exactly one final
-   `just verify-agent` after the implementation checkpoint.
+1. Remove only D12's redundant stored field and constructor assignment, while
+   preserving the configured reader-thread line limit and LineTooLarge paths.
+2. Mark D13 `open_existing` and `root_path` cfg-test-only, retaining all their
+   semantics and tests.
+3. Remove only D14's unused non-injectable wrappers; retain current-trust and
+   launch `_with` methods and their authority-injection behavior.
+4. Replace D15 test constructions with generic `Failed` values, then remove
+   the obsolete variants and constructor match arms without changing serialized
+   failed result-anchor codes or event names.
+5. Demonstrate zero intended production-library warnings, run focused checks
+   for each component, and run exactly one final `just verify-agent`.
 
 ## Relevant components
 
 ### AUTHORISED PATHS
-- `tethers-0.1/host-rust/src/application.rs` — remove D11 only
+- `tethers-0.1/host-rust/src/child_process.rs`
+- `tethers-0.1/host-rust/src/installation_publication_intent.rs`
+- `tethers-0.1/host-rust/src/launch_profile.rs`
+- `tethers-0.1/host-rust/src/result_anchor.rs`
 
 ### CLOSEOUT
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-f8-d11-authorise-wrapper-cleanup.md`
+- `docs/worker-notes/2026-08-09-f8-d12-d15-final-warning-tail.md`
 
 ## Frozen decisions and invariants
 
-- D11 is dead only because its exact Rust caller search is empty; the live
-  writer-aware J10 route remains retained.
-- Preserve all current `_with_writer`, `_inner`, test-replay, and
-  without-bridge-pins adapter behavior.
-- No unrelated execution refactor, D12-D15 cleanup, dead-code suppression,
-  protocol change, dependency/toolchain change, or source outside the
-  authorised Rust path.
+- D12 retains `ChildConfig.max_protocol_line_bytes`, the local reader-thread
+  capture, and LineTooLarge behavior.
+- D13 remains available to cfg-test code; no open_existing behavior is changed
+  into creating behavior.
+- D14 retains `_with` authority injection, candidate pinning, launch
+  environment, suspended Job assignment, and process/memory/protocol limits.
+- D15 retains generic Failed serialization with exact existing external codes
+  and `capability.failed` event name.
+- No suppression, unrelated refactor, protocol, dependency/toolchain, CI,
+  merge, amend, tag, force-push, direct-main, or pull-request change.
 
 ## Acceptance criteria
 
-1. Exact Rust search has zero `fn authorise_and_execute(` definition/caller
-   matches after removal.
-2. The retained writer-aware and inner execution seams remain reachable from
-   their existing production and test callers.
-3. Focused execution-boundary tests preserve dispatch, replay, Result Anchor,
-   and failure zero-call evidence.
-4. Full-target locked cargo check reports exactly four remaining
-   production-library warnings and no D11 warning.
-5. Formatter, whitespace check, and Clippy pass; the one final umbrella
-   verification passes after the implementation checkpoint.
+1. D12 field/assignment are absent and focused child-process limit evidence
+   passes.
+2. D13 methods are cfg-test-only and existing no-create/current.json tests
+   pass.
+3. D14 wrappers are absent while `_with` callers/tests remain and pass.
+4. D15 obsolete variants/match arms are absent; tests directly prove the exact
+   provider and validation serialized codes remain.
+5. Full-target locked cargo check reports zero production-library warnings;
+   formatter, whitespace, Clippy, and final umbrella verification pass.
 
 ## Required verification
 
-1. Exact Rust searches for D11 and all retained authorisation seams.
-2. Named focused `authorise_and_execute` / J10 tests selected from
-   `application.rs`.
-3. Full-target locked `cargo check`, formatter diff/check, `git diff --check`,
+1. Per-target Rust reference searches after each change.
+2. Focused child-process, installation-publication, current-trust/launch, and
+   result-anchor tests.
+3. Full-target locked cargo check, formatter diff/check, `git diff --check`,
    and Clippy.
-4. One final `just verify-agent`, then complete range-diff, remote equality,
-   and clean-status evidence.
+4. One final `just verify-agent`, then complete diff/range, remote equality,
+   and clean status checks.
 
 ## Forbidden changes
 
-- No removal or modification of the writer-aware, inner, or explicit test
-  execution seams; no D12-D15 cleanup or lint suppression.
-- No OCaml, fixture, protocol, dependency, CI, lint-policy, merge, amend,
-  tag, force-push, direct `main`, or pull-request change.
+- No change to current-trust, process limit, publication-intent, Result Anchor
+  public protocol, queue, external error-code, or event-name semantics.
+- No dead-code suppression or work outside listed paths and closeout docs.
 
 ## Stop conditions
 
-STOP if an actual caller or sole live-contract representation is found, a test
-migration would weaken evidence, an architectural choice is required,
-formatter output leaves the authorised Rust path, or verification is
-untrustworthy. Do not begin Job D without a verified and pushed Job C tip.
+STOP the affected item if a real production caller, sole live representation,
+weakened test contract, or architectural choice is found. Do not use another
+item's classification as justification. Do not begin Job E without a verified
+and pushed Job D tip.
 
 ## Expected pre-existing changes
 
