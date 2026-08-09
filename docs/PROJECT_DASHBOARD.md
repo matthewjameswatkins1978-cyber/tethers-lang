@@ -19,7 +19,7 @@ F1–F9 have not yet been merged to `origin/main`; live `main` remains
 ## Active Task
 
 - Task: PRE-F10 — Final gate consistency repair
-- State: IN_PROGRESS
+- State: COMPLETE (pending Lucy review)
 - Owner: OpenCode
 - Risk: Green
 
@@ -35,8 +35,8 @@ None.
 
 ## Next Route
 
-Complete pre-F10 gate repair. Lucy reviews and prepares F10 clean-checkout
-proof.
+Complete pre-F10 gate repair (pending Lucy review). F10 clean-checkout proof
+follows.
 
 ## Operating Mode
 
