@@ -11,7 +11,7 @@ Worker note: `docs/worker-notes/2026-08-09-f8a-warning-tooling-reconciliation.md
 Base branch: `foundation/f8a-warning-tooling-reconciliation`
 Base commit: `5ecf54e17752096e7c553e059d014ef263cbb136`
 Implementation branch: `foundation/f8a-warning-tooling-reconciliation`
-Implementation checkpoint: `74904309d9af04024cd1a0b60c4cf654b8617481`
+Implementation checkpoint: `1618c44c398aff4a93840bd074c18d941b2fd186`
 OCaml switch path: `N/A (no switch set)`
 Rust toolchain: `1.97.1`
 

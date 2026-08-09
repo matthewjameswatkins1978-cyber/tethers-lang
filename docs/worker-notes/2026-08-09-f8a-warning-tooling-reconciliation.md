@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `5ecf54e17752096e7c553e059d014ef263cbb136`
-Implementation checkpoint: `74904309d9af04024cd1a0b60c4cf654b8617481`
+Implementation checkpoint: `1618c44c398aff4a93840bd074c18d941b2fd186`
 
 ## Requested outcome
 
@@ -79,5 +79,5 @@ Apply F8-FMT: single `cargo fmt` on `replay_windows.rs:3277`. This unblocks `jus
 - Evidence document: `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md`
 - Task packet: `docs/CURRENT_CLINE_TASK.md`
 - Base: `5ecf54e17752096e7c553e059d014ef263cbb136`
-- Audit checkpoint: `74904309d9af04024cd1a0b60c4cf654b8617481`
+- Audit checkpoint: `1618c44c398aff4a93840bd074c18d941b2fd186`
 - Branch: `foundation/f8a-warning-tooling-reconciliation`
