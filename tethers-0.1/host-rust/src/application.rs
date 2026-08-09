@@ -1865,18 +1865,6 @@ pub(crate) fn process_local_notification(
         .map_err(Into::into)
 }
 
-/// Test-only Result Anchor writer that always returns `Err(())`.  Used to
-/// prove that a failed Anchor write enqueues nothing.
-#[cfg(test)]
-struct FailingResultAnchorWriter;
-
-#[cfg(test)]
-impl ResultAnchorWriter for FailingResultAnchorWriter {
-    fn write(&mut self, _response: &mut Value, _anchor: &ResultAnchor) -> Result<(), ()> {
-        Err(())
-    }
-}
-
 #[allow(dead_code)]
 struct ExactApprovalConsumption<'a> {
     approval_id: &'a str,
