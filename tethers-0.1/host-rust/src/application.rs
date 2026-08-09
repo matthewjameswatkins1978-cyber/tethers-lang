@@ -1814,43 +1814,6 @@ fn resume_and_execute_exact_approval_with_test_replay(
 // authorise_and_execute ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the enforced proof boundary
 // ---------------------------------------------------------------------------
 
-/// Authorise and execute one Action from the engine response.
-///
-/// Requires exactly one Action in the Plan.  Every route to the executor
-/// passes through `dispatch::prepare_and_record()`, which durably records
-/// intent before returning a `DispatchReadyAction` proof token.
-///
-/// On any preparation failure (Ask, Deny, Unavailable, identity mismatch,
-/// write failure, flush failure): zero executor calls occur.
-fn authorise_and_execute(
-    response: &mut Value,
-    decision: PermissionDecision,
-    resolved: &ResolvedCapability,
-    trail: &mut dyn dispatch::Trail,
-    executor: &mut dyn CapabilityExecutor,
-    original_event_id: &str,
-    host_data_root: Option<&Path>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let clock = outcome::ProductionMonotonicClock::new();
-    let mut replay_authority = replay_runtime::FileReplayAuthority::new(host_data_root);
-    let mut anchor_writer = ResponseResultAnchorWriter;
-    let context = InputEventContext::for_initial(original_event_id);
-    authorise_and_execute_inner(
-        response,
-        decision,
-        resolved,
-        trail,
-        executor,
-        &context,
-        true,
-        &clock,
-        &mut replay_authority,
-        None,
-        &mut anchor_writer,
-    )
-    .map(|_| ())
-}
-
 #[cfg(test)]
 fn authorise_and_execute_with_test_replay(
     response: &mut Value,
