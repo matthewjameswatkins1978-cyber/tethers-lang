@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `RELEASE-0.2.2-PREP — Tethers 0.2.2 Release Candidate`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode prepares complete 0.2.2 release candidate`
 Worker note: `docs/worker-notes/2026-08-09-release-0.2.2-prep.md`
 Base branch: `foundation/f10-clean-checkout-proof`
 Base commit: `5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1`
 Implementation branch: `release/v0.2.2-prep`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `c6ea1e1652fa2785a1f06e0ace2fcd5e826ee6ec`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
 Rust change class: `PRODUCT`

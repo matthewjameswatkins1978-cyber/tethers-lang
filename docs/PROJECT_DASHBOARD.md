@@ -18,7 +18,7 @@ F1–F10 have not yet been merged to `origin/main`; live `main` remains
 ## Active Task
 
 - Task: RELEASE-0.2.2-PREP — Tethers 0.2.2 Release Candidate
-- State: IN_PROGRESS
+- State: COMPLETE — pending Lucy review and publication
 - Owner: OpenCode
 - Risk: Amber
 
