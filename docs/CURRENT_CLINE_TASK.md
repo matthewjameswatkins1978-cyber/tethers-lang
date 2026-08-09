@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-09-f8-worker-lifecycle-carry.md`
 Base branch: `foundation/f8-fmt`
 Base commit: `5e5ec4f6f8afd8aa06ed49569038dd80c8d18940`
 Implementation branch: `foundation/f8-worker-lifecycle-carry`
-Implementation checkpoint: `0ff67a09ec947e08f34688b61252f11e0a9bb7bb`
+Implementation checkpoint: `106fb3239a8868c8417d62d3ed5529e602472986`
 Source commit: `30b26d1959138176dbf1481b267adc1791f0bc09`
 
 ## Objective
