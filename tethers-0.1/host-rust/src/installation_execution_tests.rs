@@ -8,7 +8,7 @@ use crate::current_trust::ExactCandidateTrustAuthority;
 use crate::installation_execution::{
     execute_next_installation_action, InstallationExecutionContext, InstallationStepOutcome,
 };
-use crate::installation_plan::{plan_installation, InstallationPlan, InstallationPlanAction};
+use crate::installation_plan::{plan_installation, InstallationPlanAction};
 use crate::installation_publication_intent::InstallationPublicationIntentStore;
 use crate::installation_publication_mutation::install_post_intent_failure_once_for_test;
 use crate::installation_recovery_evidence::InstallationRecoveryEvidenceContext;

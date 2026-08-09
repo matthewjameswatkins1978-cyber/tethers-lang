@@ -24,10 +24,7 @@ use crate::installation_request::{
     INSTALLATION_REQUEST_SCHEMA,
 };
 use crate::installation_trust::ExactCandidateTrustStore;
-use crate::installed::{
-    InstallationApprovalRecord, InstallationApprovalStore, InstalledPlugRecord,
-    InstalledPlugRegistry,
-};
+use crate::installed::{InstallationApprovalStore, InstalledPlugRecord, InstalledPlugRegistry};
 use crate::launch_profile::{
     LaunchProfileEvidence, LaunchProfileEvidenceStore, PreparedSupervisedLaunch,
 };
