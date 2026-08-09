@@ -484,27 +484,6 @@ fn build_event_admission_trail_probe_response(
     Ok(response)
 }
 
-#[cfg(debug_assertions)]
-fn run_event_admission_trail_probe(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    if args.len() != 3 || args.first().map(String::as_str) != Some("event-admission-trail-probe") {
-        return Err(EVENT_ADMISSION_TRAIL_PROBE_USAGE.into());
-    }
-
-    let trail_path = PathBuf::from(&args[2]);
-    if !trail_path.is_absolute() {
-        return Err(EVENT_ADMISSION_TRAIL_PROBE_USAGE.into());
-    }
-
-    // Create parent directories.
-    if let Some(parent) = trail_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let response = build_event_admission_trail_probe_response(&args[1], &trail_path)?;
-    println!("{}", serde_json::to_string_pretty(&response)?);
-    Ok(())
-}
-
 pub fn run() {
     // Install Ctrl+C handler before anything else.
     let _ = child_process::install_ctrl_handler();
