@@ -4,14 +4,14 @@ Control contract: `1`
 Task: `F8-FMT — Single Formatting Repair`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode applies single formatting-only rustfmt fix to replay_windows.rs`
 Worker note: `docs/worker-notes/2026-08-09-f8-fmt-formatting-repair.md`
 Base branch: `foundation/f8a-r1-evidence-repair`
 Base commit: `bfb47ced813d8ec227f8828bbf66c7ecd1110d2f`
 Implementation branch: `foundation/f8-fmt`
-Implementation checkpoint: `TO BE SET`
+Implementation checkpoint: `109acae33aecd3c070b06bd42c8c45e2e35f5247`
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 Rust toolchain: `1.97.1`
 
