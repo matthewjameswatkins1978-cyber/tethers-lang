@@ -3,14 +3,14 @@
 Control contract: `1`
 Task packet: `F8-D11 — Obsolete authorise_and_execute Wrapper`
 Owner: `Codex`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
-Route: `Codex classified the unused one-shot authorisation wrapper before removal`
+Route: `Codex removed the classified obsolete one-shot authorisation wrapper and retained live execution seams`
 Worker note: `docs/worker-notes/2026-08-09-f8-d11-authorise-wrapper-cleanup.md`
 Base branch: `foundation/f8-d7-d8-d9-local-notification-cleanup`
 Base commit: `b1bf419223a154c7f1094d1d5dd64a352095a6c4`
 Implementation branch: `foundation/f8-d11-authorise-wrapper-cleanup`
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `93e50b786e48949c2e9bf6649546618a148b48be`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `RUST`
