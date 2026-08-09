@@ -361,6 +361,10 @@ pub struct InstalledPlugRecord {
     pub platform: String,
     pub architecture: String,
     pub disabled_bindings: Vec<DisabledBindingRecord>,
+    #[serde(default)]
+    pub operational_scope_schema: Option<serde_json::Value>,
+    #[serde(default)]
+    pub operational_scope_schema_digest: Option<String>,
     pub created_unix_ms: u64,
     pub record_digest: String,
 }
@@ -461,6 +465,39 @@ impl InstalledPlugRecord {
                 "installed_record_invalid",
                 "invalid installed Plug record",
             ));
+        }
+        match (
+            &self.operational_scope_schema,
+            &self.operational_scope_schema_digest,
+        ) {
+            (None, None) => {}
+            (Some(schema), Some(digest)) => {
+                if !crate::operational_scope::is_strict_lowercase_hex_digest(digest) {
+                    return Err(M3Error::new(
+                        "installed_record_invalid",
+                        "scope schema digest is malformed",
+                    ));
+                }
+                let canonical = canonical(schema).map_err(|_| {
+                    M3Error::new(
+                        "installed_record_invalid",
+                        "scope schema canonicalisation failed",
+                    )
+                })?;
+                let recomputed = sha256(&canonical);
+                if *digest != recomputed {
+                    return Err(M3Error::new(
+                        "installed_record_invalid",
+                        "scope schema digest mismatch",
+                    ));
+                }
+            }
+            _ => {
+                return Err(M3Error::new(
+                    "installed_record_invalid",
+                    "scope schema and digest must both be present or both absent",
+                ));
+            }
         }
         Ok(())
     }
@@ -615,6 +652,8 @@ fn build_disabled_installed_record(
         mcp_protocol_version: "2025-11-25".into(),
         platform: candidate.selected_platform.os.clone(),
         architecture: candidate.selected_platform.architecture.clone(),
+        operational_scope_schema: candidate.operational_scope_schema.clone(),
+        operational_scope_schema_digest: candidate.operational_scope_schema_digest.clone(),
         disabled_bindings,
         created_unix_ms,
         record_digest: String::new(),

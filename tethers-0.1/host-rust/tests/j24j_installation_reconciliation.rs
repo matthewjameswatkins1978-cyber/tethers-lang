@@ -332,6 +332,8 @@ fn build_installed_record(
         platform: "windows".into(),
         architecture: "x86_64".into(),
         disabled_bindings,
+        operational_scope_schema: None,
+        operational_scope_schema_digest: None,
         created_unix_ms,
         record_digest: String::new(),
     };

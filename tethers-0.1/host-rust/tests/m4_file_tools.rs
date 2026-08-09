@@ -211,11 +211,25 @@ fn installed_state_drives_native_operational_launch_and_disable() {
     fs::create_dir_all(scope_root.join("destination")).unwrap();
     fs::write(scope_root.join("query/read.txt"), b"query").unwrap();
     fs::write(scope_root.join("source/move.txt"), b"move").unwrap();
+    let ft_schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "query_root": {"type": "string", "x-tethers-path": "canonical-directory"},
+            "move_source_root": {"type": "string", "x-tethers-path": "canonical-directory"},
+            "move_destination_root": {"type": "string", "x-tethers-path": "canonical-directory"},
+            "max_content_bytes": {"type": "integer", "minimum": 1, "maximum": 65536}
+        },
+        "required": ["query_root", "move_source_root", "move_destination_root", "max_content_bytes"],
+        "additionalProperties": false
+    });
+    let ft_schema_bytes = serde_json_canonicalizer::to_vec(&ft_schema).unwrap();
+    use sha2::{Digest, Sha256};
+    let ft_schema_digest = format!("sha256:{:x}", Sha256::digest(ft_schema_bytes));
     let scope = OperationalScopeEvidence::create(
         &installed.installed_id,
         "tethers.file-tools",
         "tethers-file-tools",
-        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        &ft_schema_digest,
         &serde_json::json!({
             "query_root": scope_root.join("query").to_string_lossy(),
             "move_source_root": scope_root.join("source").to_string_lossy(),

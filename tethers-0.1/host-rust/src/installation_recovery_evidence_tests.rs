@@ -169,6 +169,8 @@ fn build_installed_record(
         platform: candidate.selected_platform.os.clone(),
         architecture: candidate.selected_platform.architecture.clone(),
         disabled_bindings,
+        operational_scope_schema: None,
+        operational_scope_schema_digest: None,
         created_unix_ms: 1,
         record_digest: String::new(),
     };

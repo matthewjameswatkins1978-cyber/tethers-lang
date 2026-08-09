@@ -86,6 +86,8 @@ pub struct InspectionReport {
     pub capabilities: Vec<CapabilityEvidence>,
     pub signature_files: Vec<PayloadEvidence>,
     pub signatures_present: bool,
+    pub operational_scope_schema: Option<serde_json::Value>,
+    pub operational_scope_schema_digest: Option<String>,
     #[serde(skip)]
     archive_path: PathBuf,
 }
@@ -134,7 +136,6 @@ struct Provider {
     working_directory: String,
     capability_operation_namespace: String,
     #[serde(default)]
-    #[allow(dead_code)]
     operational_scope_schema: Option<serde_json::Value>,
 }
 #[derive(Deserialize)]
@@ -634,6 +635,20 @@ pub fn inspect(path: &Path) -> Result<InspectionReport> {
             role: "signature_evidence".to_owned(),
         })
         .collect::<Vec<_>>();
+    let (operational_scope_schema, operational_scope_schema_digest) =
+        match model.provider.operational_scope_schema {
+            Some(schema) => {
+                let canonical_bytes = serde_json_canonicalizer::to_vec(&schema).map_err(|e| {
+                    refusal(
+                        "invalid_scope_schema",
+                        format!("cannot canonicalise operational scope schema: {e}"),
+                    )
+                })?;
+                let digest = digest(&canonical_bytes);
+                (Some(schema), Some(digest))
+            }
+            None => (None, None),
+        };
     let mut report = InspectionReport {
         inspection_format_version: 1,
         inspection_evidence_digest: String::new(),
@@ -659,6 +674,8 @@ pub fn inspect(path: &Path) -> Result<InspectionReport> {
         capabilities,
         signatures_present: !signature_files.is_empty(),
         signature_files,
+        operational_scope_schema,
+        operational_scope_schema_digest,
         archive_path: path.to_path_buf(),
     };
     let evidence = serde_json::json!({
@@ -677,6 +694,8 @@ pub fn inspect(path: &Path) -> Result<InspectionReport> {
         "payloads": &report.payloads,
         "capabilities": &report.capabilities,
         "signature_files": &report.signature_files,
+        "operational_scope_schema": &report.operational_scope_schema,
+        "operational_scope_schema_digest": &report.operational_scope_schema_digest,
     });
     let evidence_bytes = serde_json_canonicalizer::to_vec(&evidence)
         .map_err(|e| refusal("invalid_json", e.to_string()))?;

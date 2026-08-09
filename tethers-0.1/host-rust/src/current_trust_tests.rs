@@ -220,6 +220,8 @@ fn quarantine_fixture() -> (CandidateRecord, PathBuf, PathBuf) {
         signatures_present: false,
         inspection_report_format_version: 1,
         inspection_evidence_digest: format!("sha256:{}", "b".repeat(64)),
+        operational_scope_schema: None,
+        operational_scope_schema_digest: None,
         created_unix_ms: 1,
         record_digest: String::new(),
     };

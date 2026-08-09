@@ -66,6 +66,8 @@ fn valid_record() -> InstalledPlugRecord {
             manifest_digest: digest.into(),
             provider_operation_name: "file_move".into(),
         }],
+        operational_scope_schema: None,
+        operational_scope_schema_digest: None,
         created_unix_ms: 1,
         record_digest: String::new(),
     };
@@ -287,6 +289,8 @@ fn j24k3b_same_installed_id_different_fields_still_conflicts() {
             manifest_digest: digest.into(),
             provider_operation_name: "file_move".into(),
         }],
+        operational_scope_schema: None,
+        operational_scope_schema_digest: None,
         created_unix_ms: 1,
         record_digest: String::new(),
     };

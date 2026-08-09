@@ -340,6 +340,10 @@ pub struct CandidateRecord {
     pub signatures_present: bool,
     pub inspection_report_format_version: u32,
     pub inspection_evidence_digest: String,
+    #[serde(default)]
+    pub operational_scope_schema: Option<serde_json::Value>,
+    #[serde(default)]
+    pub operational_scope_schema_digest: Option<String>,
     pub created_unix_ms: u64,
     pub record_digest: String,
 }
@@ -365,7 +369,28 @@ impl CandidateRecord {
         {
             Err(err("record_invalid", "invalid immutable candidate record"))
         } else {
-            Ok(())
+            match (
+                &self.operational_scope_schema,
+                &self.operational_scope_schema_digest,
+            ) {
+                (None, None) => Ok(()),
+                (Some(schema), Some(digest)) => {
+                    if !crate::operational_scope::is_strict_lowercase_hex_digest(digest) {
+                        return Err(err("record_invalid", "scope schema digest is malformed"));
+                    }
+                    let canonical = serde_json_canonicalizer::to_vec(schema).map_err(|_| {
+                        err("record_invalid", "scope schema canonicalisation failed")
+                    })?;
+                    if *digest != sha(&canonical) {
+                        return Err(err("record_invalid", "scope schema digest mismatch"));
+                    }
+                    Ok(())
+                }
+                _ => Err(err(
+                    "record_invalid",
+                    "scope schema and digest must both be present or both absent",
+                )),
+            }
         }
     }
 }
@@ -486,6 +511,11 @@ impl CandidateRegistry {
             signatures_present: quarantined.report.signatures_present,
             inspection_report_format_version: quarantined.report.inspection_format_version,
             inspection_evidence_digest: quarantined.report.inspection_evidence_digest.clone(),
+            operational_scope_schema: quarantined.report.operational_scope_schema.clone(),
+            operational_scope_schema_digest: quarantined
+                .report
+                .operational_scope_schema_digest
+                .clone(),
             created_unix_ms: now,
             record_digest: String::new(),
         };

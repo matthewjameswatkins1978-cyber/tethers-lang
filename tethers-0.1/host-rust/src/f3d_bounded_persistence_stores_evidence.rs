@@ -161,6 +161,8 @@ fn f3d_enablement_record_filename_mismatch_detected() {
                 manifest_digest: digest.clone(),
                 provider_operation_name: "file_move".into(),
             }],
+            operational_scope_schema: None,
+            operational_scope_schema_digest: None,
             created_unix_ms: 1,
             record_digest: String::new(),
         };
@@ -176,11 +178,25 @@ fn f3d_enablement_record_filename_mismatch_detected() {
     fs::create_dir_all(scope_root.join("source")).unwrap();
     fs::create_dir_all(scope_root.join("destination")).unwrap();
 
+    let ft_schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "query_root": {"type": "string", "x-tethers-path": "canonical-directory"},
+            "move_source_root": {"type": "string", "x-tethers-path": "canonical-directory"},
+            "move_destination_root": {"type": "string", "x-tethers-path": "canonical-directory"},
+            "max_content_bytes": {"type": "integer", "minimum": 1, "maximum": 65536}
+        },
+        "required": ["query_root", "move_source_root", "move_destination_root", "max_content_bytes"],
+        "additionalProperties": false
+    });
+    let ft_schema_bytes = serde_json_canonicalizer::to_vec(&ft_schema).unwrap();
+    let ft_digest = sha256(&ft_schema_bytes);
+
     let scope = crate::operational_scope::OperationalScopeEvidence::create(
         &installed.installed_id,
         &installed.package_id,
         &installed.provider_id,
-        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        &ft_digest,
         &serde_json::json!({
             "query_root": scope_root.join("query").to_string_lossy(),
             "move_source_root": scope_root.join("source").to_string_lossy(),

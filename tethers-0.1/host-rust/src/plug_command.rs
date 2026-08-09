@@ -3,7 +3,7 @@ use crate::candidate_preparation::{
 };
 use crate::cli::{CliEnvelope, OutcomeStatus};
 use crate::enablement::{EnablementRecord, EnablementState, EnablementStore};
-use crate::installed::{InstalledPlugRecord, InstalledPlugRegistry};
+use crate::installed::InstalledPlugRegistry;
 use crate::m3_store::M3Error;
 use crate::operational_scope::OperationalScopeEvidence;
 use crate::package::{self, CapabilityEvidence, PackageError};
@@ -631,49 +631,6 @@ fn scope_error(message: &str) -> PlugCommandResult {
     }
 }
 
-fn read_scope_schema_digest(target: &InstalledPlugRecord, host_data_root: &Path) -> String {
-    let installed_dir = host_data_root
-        .join("install")
-        .join(&target.installed_id)
-        .join(&target.installation_relative_path);
-    let plug_json_path = installed_dir.join("plug.json");
-    let bytes = match fs::read(&plug_json_path) {
-        Ok(b) => b,
-        Err(_) => {
-            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
-        }
-    };
-    let text = match std::str::from_utf8(&bytes) {
-        Ok(t) => t,
-        Err(_) => {
-            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
-        }
-    };
-    let value: serde_json::Value = match serde_json::from_str(text) {
-        Ok(v) => v,
-        Err(_) => {
-            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
-        }
-    };
-    let schema = match value
-        .get("provider")
-        .and_then(|p| p.get("operational_scope_schema"))
-    {
-        Some(s) => s,
-        None => {
-            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
-        }
-    };
-    let canonical = match serde_json_canonicalizer::to_vec(schema) {
-        Ok(b) => b,
-        Err(_) => {
-            return "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into()
-        }
-    };
-    use sha2::{Digest, Sha256};
-    format!("sha256:{:x}", Sha256::digest(canonical))
-}
-
 pub fn run_enable(
     host_data_root: &Path,
     installed_id_str: &str,
@@ -821,7 +778,18 @@ pub fn run_enable(
             return scope_error(&error.message);
         }
     };
-    let scope_schema_digest = read_scope_schema_digest(target, host_data_root);
+    let scope_schema_digest = match &target.operational_scope_schema_digest {
+        Some(d) => d.clone(),
+        None => {
+            return enable_error(
+                M3Error::new(
+                    "scope_schema_missing",
+                    "installed Plug declares no operational scope schema",
+                ),
+                OutcomeStatus::InvalidData,
+            );
+        }
+    };
     let evidence = match OperationalScopeEvidence::create(
         installed_id_str,
         &target.package_id,

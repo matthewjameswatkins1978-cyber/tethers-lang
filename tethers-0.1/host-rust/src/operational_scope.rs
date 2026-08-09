@@ -10,6 +10,15 @@ use serde_json::Value;
 const SCOPE_SCHEMA_VERSION: u32 = 1;
 const DIGEST_LEN: usize = 71;
 
+pub(crate) fn is_strict_lowercase_hex_digest(value: &str) -> bool {
+    if value.len() != DIGEST_LEN || !value.starts_with("sha256:") {
+        return false;
+    }
+    value[7..]
+        .bytes()
+        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperationalScopeEvidence {
@@ -42,7 +51,7 @@ impl OperationalScopeEvidence {
                 "required operational scope fields must not be empty",
             ));
         }
-        if scope_schema_digest.len() != DIGEST_LEN || !scope_schema_digest.starts_with("sha256:") {
+        if !is_strict_lowercase_hex_digest(scope_schema_digest) {
             return Err(crate::m3_store::M3Error::new(
                 "scope_invalid",
                 "scope_schema_digest must be sha256: hex form",
@@ -116,9 +125,7 @@ impl OperationalScopeEvidence {
                 "required scope fields missing",
             ));
         }
-        if self.scope_schema_digest.len() != DIGEST_LEN
-            || !self.scope_schema_digest.starts_with("sha256:")
-        {
+        if !is_strict_lowercase_hex_digest(&self.scope_schema_digest) {
             return Err(M3Error::new(
                 "scope_invalid",
                 "scope_schema_digest is malformed",

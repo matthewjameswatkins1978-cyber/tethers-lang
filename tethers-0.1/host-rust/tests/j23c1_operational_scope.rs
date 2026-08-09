@@ -241,6 +241,8 @@ fn installed_plug_for_pdf() -> InstalledPlugRecord {
             manifest_digest: d.clone(),
             provider_operation_name: "pdf_inspect".into(),
         }],
+        operational_scope_schema: None,
+        operational_scope_schema_digest: None,
         created_unix_ms: 1,
         record_digest: String::new(),
     };
@@ -308,6 +310,8 @@ fn installed_plug_for_ft(installed_id: &str) -> InstalledPlugRecord {
             manifest_digest: d.clone(),
             provider_operation_name: "file_move".into(),
         }],
+        operational_scope_schema: None,
+        operational_scope_schema_digest: None,
         created_unix_ms: 1,
         record_digest: String::new(),
     };

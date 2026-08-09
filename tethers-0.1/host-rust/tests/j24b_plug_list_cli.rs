@@ -15,11 +15,23 @@ use tethers_reference_host::operational_scope::OperationalScopeEvidence;
 use tethers_reference_host::pdf_tools::{self};
 
 fn make_scope(installed_id: &str, root: &Path) -> OperationalScopeEvidence {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "query_root": {"type": "string", "x-tethers-path": "canonical-directory"},
+            "max_bytes": {"type": "integer", "minimum": 1, "maximum": 67108864}
+        },
+        "required": ["query_root", "max_bytes"],
+        "additionalProperties": false
+    });
+    let schema_bytes = serde_json_canonicalizer::to_vec(&schema).unwrap();
+    use sha2::{Digest, Sha256};
+    let schema_digest = format!("sha256:{:x}", Sha256::digest(schema_bytes));
     OperationalScopeEvidence::create(
         installed_id,
         "tethers.pdf-tools",
         "tethers-pdf-provider",
-        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        &schema_digest,
         &serde_json::json!({"query_root": root.to_string_lossy(), "max_bytes": 1024}),
         "Matthew",
     )

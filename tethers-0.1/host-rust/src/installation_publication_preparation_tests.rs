@@ -276,6 +276,8 @@ impl Fixture {
                     provider_operation_name: capability.operation.clone(),
                 })
                 .collect(),
+            operational_scope_schema: None,
+            operational_scope_schema_digest: None,
             created_unix_ms: 1,
             record_digest: String::new(),
         };
