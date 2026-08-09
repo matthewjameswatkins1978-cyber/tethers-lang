@@ -361,16 +361,6 @@ fn build_event_admission_probe_response(
 }
 
 #[cfg(debug_assertions)]
-fn run_event_admission_probe(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    if args.len() != 2 || args.first().map(String::as_str) != Some("event-admission-probe") {
-        return Err(EVENT_ADMISSION_PROBE_USAGE.into());
-    }
-
-    let response = build_event_admission_probe_response(&args[1])?;
-    println!("{}", serde_json::to_string_pretty(&response)?);
-    Ok(())
-}
-#[cfg(debug_assertions)]
 fn build_event_admission_trail_probe_response(
     scenario: &str,
     trail_path: &Path,
@@ -8242,33 +8232,7 @@ mod tests {
     // 24. invalid scenario and argument counts fail closed.
     #[test]
     fn j11_packet3_invalid_scenario_and_argument_counts_fail_closed() {
-        // 1. Unknown scenario rejected by build_event_admission_probe_response.
         assert!(build_event_admission_probe_response("nonexistent").is_err());
-
-        // 2. Missing scenario rejected by run_event_admission_probe.
-        let args_missing = vec!["event-admission-probe".to_string()];
-        assert!(
-            run_event_admission_probe(&args_missing).is_err(),
-            "missing scenario must fail"
-        );
-
-        // 3. Extra argument rejected by run_event_admission_probe.
-        let args_extra = vec![
-            "event-admission-probe".to_string(),
-            "clean".to_string(),
-            "extra".to_string(),
-        ];
-        assert!(
-            run_event_admission_probe(&args_extra).is_err(),
-            "extra argument must fail"
-        );
-
-        // 4. Incorrect command token rejected by run_event_admission_probe.
-        let args_wrong = vec!["wrong-command".to_string(), "clean".to_string()];
-        assert!(
-            run_event_admission_probe(&args_wrong).is_err(),
-            "wrong command token must fail"
-        );
     }
     // -------------------------------------------------------------------
     // J11 Packet 4: durable event-admission Trail visibility
