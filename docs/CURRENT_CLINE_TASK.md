@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-09-0.3-p1-r1b-scope-validation.md`
 Base branch: `origin/main`
 Base commit: `809a245e83b77604788853ee6e18a3ecaa9e1f30`
 Implementation branch: `feature/0.3-p1-r1b-scope-validation`
-Implementation checkpoint: `pending`
+Implementation checkpoint: `5e69ca08e3ffc1cf33453a5fae2f35c52d78d7be`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
 Rust change class: `AMBER_ARCHITECTURE_CORRECTION`
@@ -60,8 +60,8 @@ Do not implement path canonicalisation.
 7. Nested duplicate JSON keys refused. — DONE (r1b_nested_duplicate_scope_key_fails)
 8. No schema rediscovered from disk. — DONE (reads from installed record)
 9. No dependency changes. — PRESERVED
-10. Focused checks pass. — PENDING (focused tests pass, full checks needed)
-11. Branch pushed, remote == local, clean worktree. — PENDING
+10. Focused checks pass. — PASS (10 R1B tests, full lib: 1353/0/2, clippy pass, fmt clean)
+11. Branch pushed, remote == local, clean worktree. — DONE (see worker note)
 
 ## Stop conditions
 
