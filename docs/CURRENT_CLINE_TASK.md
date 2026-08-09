@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-09-f8-final-test-import-warnings.md`
 Base branch: `foundation/f8-zero-warning-checkpoint`
 Base commit: `15b792e32afa83bfd9bc2b5c64451202df15a794`
 Implementation branch: `foundation/f8-final-test-import-warnings`
-Implementation checkpoint: `27021c3ed24f204c37f1c4ca0ceabe6be4db5004`
+Implementation checkpoint: `27021c3b0ad023024eb0dfbd57f9492ca525a1be`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1`
 Rust change class: `RUST`
