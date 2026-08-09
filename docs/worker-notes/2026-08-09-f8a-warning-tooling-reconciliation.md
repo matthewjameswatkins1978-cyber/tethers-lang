@@ -4,12 +4,12 @@ Task: `F8a — Current Warning and Tooling Reconciliation`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
-Base commit: `5ecf54e17752096e7c553e059d014ef263cbb136`
+Base commit: `5f98c31f4bf51b806222c7f3722997d74fbe5a5b`
 Implementation checkpoint: `4b26455e6b731b15a5ea51322b190a0d611e48e8`
 
 ## Requested outcome
 
-Evidence-only audit of current warning, formatting, and tooling state. No production changes. All commands run against unchanged source at HEAD `5ecf54e`.
+Evidence-only audit of current warning, formatting, and tooling state. No production changes. All commands run against unchanged source at base `5ecf54e`. F8a-R1 reconciles OCaml evidence.
 
 ## Changes made
 
@@ -82,6 +82,6 @@ Apply F8-FMT: single `cargo fmt` on `replay_windows.rs:3277`. This unblocks `jus
 - Evidence document: `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md`
 - Task packet: `docs/CURRENT_CLINE_TASK.md`
 - F8a-R1 evidence repair: `foundation/f8a-r1-evidence-repair`
-- Base: `5ecf54e17752096e7c553e059d014ef263cbb136`
+- Base: `5f98c31f4bf51b806222c7f3722997d74fbe5a5b`
 - Audit checkpoint (F8a): `5f98c31f4bf51b806222c7f3722997d74fbe5a5b`
 - F8a branch: `foundation/f8a-warning-tooling-reconciliation`
