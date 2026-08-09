@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `bfb47ced813d8ec227f8828bbf66c7ecd1110d2f`
-Implementation checkpoint: `109acae33aecd3c070b06bd42c8c45e2e35f5247`
+Implementation checkpoint: `109acae6928384843a124c03c5f3d71edd97646c`
 
 ## Requested outcome
 
@@ -67,5 +67,5 @@ None from F8-FMT. The F8 cleanup packages (F8-PACKAGE-1 through F8-PACKAGE-5) ar
 
 - Task packet: `docs/CURRENT_CLINE_TASK.md`
 - Base: `bfb47ced813d8ec227f8828bbf66c7ecd1110d2f`
-- Implementation checkpoint: `109acae33aecd3c070b06bd42c8c45e2e35f5247`
+- Implementation checkpoint: `109acae6928384843a124c03c5f3d71edd97646c`
 - Branch: `foundation/f8-fmt`
