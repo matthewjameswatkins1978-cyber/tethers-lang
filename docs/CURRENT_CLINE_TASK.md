@@ -3,7 +3,7 @@
 Control contract: `1`
 Task packet: `F8-ELAPSED-EVIDENCE — Automatic Command Timing`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode implements elapsed timing instrumentation`
 Worker note: `docs/worker-notes/2026-08-09-f8-elapsed-evidence.md`
