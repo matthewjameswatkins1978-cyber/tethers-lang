@@ -2,7 +2,7 @@
 
 **Status:** EVIDENCE-ONLY
 **Audit date:** 2026-08-09
-**Audit checkpoint:** `cb0e1512fa3403c752d6c9bf8518ecd305bdf554`
+**Audit checkpoint:** `74904309d9af04024cd1a0b60c4cf654b8617481`
 **Rust toolchain:** 1.97.1 (pinned via `rust-toolchain.toml`)
 **OCaml switch:** N/A (no switch set)
 
@@ -240,7 +240,7 @@ verify-agent: verify agent-tools deps-policy deps-advisories test-agent
 | --- | --- | --- |
 | ACTIONABLE CLEANUP | ~70 | Unused imports/variables, mechanical Clippy fixes (needless_borrow, cmp_owned, unnecessary_map_or, etc.), dead code removal, doc formatting |
 | JUSTIFIED WARNING | 13 | `permissions_set_readonly_false` — Windows test helpers, Unix-focused lint |
-| STALE / NO LONGER PRESENT | 0 | All warnings verified live at HEAD `cb0e151` |
+| STALE / NO LONGER PRESENT | 0 | All warnings verified live at HEAD `7490430` |
 | TOOLING/CONFIGURATION ISSUE | 2 | No OCaml switch (engine tests unavailable); fmt failure blocks verify/verify-agent |
 | UNVERIFIED | 0 | All identified warnings traced to concrete file:line |
 
@@ -346,6 +346,6 @@ Apply `cargo fmt` to `replay_windows.rs:3277` as **F8-FMT** (a single, tiny, for
 | Item | SHA |
 | --- | --- |
 | Base commit | `5ecf54e17752096e7c553e059d014ef263cbb136` |
-| Audit checkpoint | `cb0e1512fa3403c752d6c9bf8518ecd305bdf554` |
+| Audit checkpoint | `74904309d9af04024cd1a0b60c4cf654b8617481` |
 | Branch | `foundation/f8a-warning-tooling-reconciliation` |
 | Git status at checkpoint | Clean (documentation only) |
