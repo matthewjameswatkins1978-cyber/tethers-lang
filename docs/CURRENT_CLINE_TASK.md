@@ -3,9 +3,9 @@
 Control contract: `1`
 Task packet: `F8-D5+D6+D10 — Dead Exact-Approval Translation/Resume Layer`
 Owner: `Codex`
-Status: `BLOCKED`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `Codex stopped after the final regression found a missing current-worktree engine binary`
+Route: `Codex resumes with the existing pinned OCaml switch to restore ignored current-worktree engine outputs`
 Worker note: `docs/worker-notes/2026-08-09-f8-d5-d6-d10-exact-approval-cleanup.md`
 Base branch: `foundation/f8-d3-event-admission-probe-cleanup`
 Base commit: `17b60df43b6c32ec8040952e4f7b1a99eb16b1d3`
