@@ -10,7 +10,8 @@ Worker note: `docs/worker-notes/2026-08-09-0.3-p1-r1c-canonical-directory.md`
 Base branch: `feature/0.3-p1-r1b-scope-validation`
 Base commit: `f18d211523de953d260417e67abbadf766412037`
 Implementation branch: `feature/0.3-p1-r1c-canonical-directory`
-Implementation checkpoint: `bb4ba228f8812703bb06bcf9970de42f4a9eee44`
+Implementation checkpoint: `eae2e708c52cc1739113d5b2079239169541403e`
+Original R1C checkpoint: `bb4ba228f8812703bb06bcf9970de42f4a9eee44`
 Previous closeout HEAD: `942282e98761ee39f7d683d696ba72941b259835`
 OCaml switch path: `resolve from existing machine state only`
 Rust toolchain: `1.97.1`
@@ -48,7 +49,7 @@ Close two small proof gaps in the accepted R1C implementation:
 4. All 14 R1B regression tests pass. — DONE
 5. `cargo fmt --all -- --check` clean. — DONE
 6. `git diff --check` clean. — DONE
-7. Branch pushed, remote == local, clean worktree. — PENDING
+7. Branch pushed, remote == local, clean worktree. — DONE
 
 ## Relevant components
 
@@ -66,3 +67,24 @@ Close two small proof gaps in the accepted R1C implementation:
 3. `cargo test r1b` — 14/14 passed
 4. `cargo fmt --all -- --check` — clean
 5. `git diff --check` — clean
+
+## Forbidden changes
+
+- No Tethers language change
+- No concurrency
+- No plug pack/inspect/conform implementation
+- No registry, marketplace, HTTP/WebSocket/gRPC, SDK, secret store, OAuth, OS sandbox
+- No dependency update
+- No physical extraction into `reference-plugs/`
+- No synthetic Plug
+- No provider changes
+- No conformance repair, P2, migration tool
+- No `just verify-agent`, engine fixtures, MCP transcripts, fixture validator
+
+## Stop conditions
+
+None. All acceptance criteria verified.
+
+## Expected pre-existing changes
+
+None.
