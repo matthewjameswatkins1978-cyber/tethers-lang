@@ -1,72 +1,50 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `F8a — Current Warning and Tooling Reconciliation`
+Task: `F8a-R1 — Evidence Repair`
 Owner: `OpenCode`
 Model: `DeepSeek Pro HIGH`
 Status: `COMPLETE`
 Task colour: `Amber`
-Route: `OpenCode performs evidence-only warning and tooling audit; no production changes`
+Route: `OpenCode repairs F8a evidence defects only; no production changes`
 Worker note: `docs/worker-notes/2026-08-09-f8a-warning-tooling-reconciliation.md`
 Base branch: `foundation/f8a-warning-tooling-reconciliation`
-Base commit: `5ecf54e17752096e7c553e059d014ef263cbb136`
-Implementation branch: `foundation/f8a-warning-tooling-reconciliation`
-Implementation checkpoint: `1618c44c398aff4a93840bd074c18d941b2fd186`
-OCaml switch path: `N/A (no switch set)`
+Base commit: `5f98c31f4bf51b806222c7f3722997d74fbe5a5b`
+Implementation branch: `foundation/f8a-r1-evidence-repair`
+Implementation checkpoint: `TO BE SET`
+OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 Rust toolchain: `1.97.1`
 
 ## Relevant background and existing behaviour
 
-F1 originally recorded a large Clippy warning inventory. F1-R1 later observed at
-accepted F5: cargo check 16 warnings, cargo clippy 81 warnings, cargo fmt FAIL
-at `replay_windows.rs` ~line 3277, and `just verify`/`verify-agent` short-circuited
-at formatting. These numbers are historical only and may have changed.
+F8a completed a warning and tooling reconciliation audit against base `5ecf54e`.
+The evidence document at `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md`
+and worker note at `docs/worker-notes/2026-08-09-f8a-warning-tooling-reconciliation.md`
+were committed at branch tip `5f98c31`.
 
-The project has no active OCaml switch configured. Rust toolchain is pinned to
-1.97.1 via `rust-toolchain.toml`. No CI/workflow warning enforcement currently
-exists. No `[lints]` configuration exists in Cargo.toml.
+Three defects were identified:
+1. OCaml commands (`dune build`, `test-engine.ps1`) were recorded as FAIL/NOT RUN
+   because no global switch was set. An explicit switch exists at
+   `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`. The evidence table
+   and worker note contradict each other (table says FAIL, note says NOT RUN).
+2. The evidence document uses `audit checkpoint` inconsistently and attempts
+   to self-reference its own commit SHA. Terminology needs clarification.
+3. `suspicious_open_options` (2 sites) was classified as ACTIONABLE CLEANUP
+   (C24). The installation lock uses explicit non-truncation by design.
 
 ## Objective
 
-Establish the exact current warning, formatting, and verification-tooling state
-before any F8 cleanup. This is EVIDENCE-ONLY.
-
-Do not fix warnings. Do not format files. Do not alter production code. Do not
-alter tests. Do not alter fixtures. Do not alter scripts/tooling. Do not add
-warning denial. Do not add CI enforcement. Do not start F8b.
-
-## FOUNDATION F8 CONTRACT
-
-F8 must:
-1. reconcile the live warning/tooling inventory;
-2. remove or explicitly justify warnings in bounded cleanup work;
-3. reach zero INTENDED warnings;
-4. record a documentation-only checkpoint proving that state;
-5. only AFTER that, in a separate bounded change, activate warning denial /
-   CI/tooling enforcement.
-
-Never combine warning repair with gate activation.
+Repair F8a evidence defects only. No production, test, fixture, build, protocol,
+script, or dependency changes.
 
 ## Required behaviour
 
-1. Determine what exact warnings exist now.
-2. Separate warnings by command: cargo check, cargo clippy, tests/builds.
-3. Classify every distinct warning site: ACTIONABLE CLEANUP, JUSTIFIED WARNING,
-   STALE/NO LONGER PRESENT, TOOLING/CONFIGURATION ISSUE, UNVERIFIED.
-4. Group repeated warnings by root cause.
-5. Determine exact cargo fmt failure: file, region, whether rustfmt would make
-   formatting-only changes, whether any semantic/source interaction makes it
-   unsafe to treat as simple formatting.
-6. Determine current behaviour of just verify and just verify-agent.
-7. Inspect warning/tooling configuration (read-only): Cargo.toml lint config,
-   workspace lint settings, rustfmt config, clippy config, justfile verification
-   commands, CI/workflow warning enforcement.
-8. Identify warnings whose cleanup would require: public API change,
-   protocol/Trail/replay change, visibility widening, structural redesign,
-   dependency change, test weakening.
-9. Produce the smallest serial F8 cleanup packages, if any.
-10. Decide whether existing formatting failure should be its own tiny package,
-    bundled, or deferred.
+1. Reconcile OCaml command evidence: check available switches, run `dune build`
+   and `test-engine.ps1` with explicit switch, record results.
+2. Fix the evidence/worker-note contradiction about OCaml commands.
+3. Clarify checkpoint terminology: AUDIT CHECKPOINT vs EVIDENCE CHECKPOINT.
+4. Reclassify `suspicious_open_options` as INTENT REVIEW / EXPLICIT NON-TRUNCATION.
+5. Do not otherwise change the warning inventory or F8 package plan.
 
 ## Frozen decisions and invariants
 
@@ -76,46 +54,37 @@ Never combine warning repair with gate activation.
 - No test changes.
 - No fixture changes.
 - No build changes.
-- No script/tooling changes.
-- No formatting changes.
-- No warning denial additions.
-- No CI enforcement additions.
-- No F8b work.
-- Do not turn Clippy preferences into architecture mandates.
+- No protocol changes.
+- No script changes.
+- No dependency additions.
+- No F8-FMT implementation.
+- No F8 cleanup work.
+- The installation lock uses explicit non-truncation by design.
+- Do NOT add `.truncate(true)`. A possible later cleanup is explicit
+  `.truncate(false)` if focused verification proves behaviour unchanged.
+- Do not start F8-FMT.
 
 ## Acceptance criteria
 
-1. Full command-result table in evidence document — proven
-2. Warning counts by command — proven
-3. Distinct warning/root-cause inventory with classifications — proven
-4. Current rustfmt failure characterization — proven
-5. just verify / verify-agent behaviour recorded — proven
-6. Configuration inventory (read-only) — proven
-7. Protected contracts identified — proven
-8. Proposed bounded F8 packages — proven
-9. Explicit non-authorisations — proven
-10. Audit checkpoint committed — proven by git log
+1. OCaml command evidence reconciled — proven
+2. Evidence/worker-note OCaml contradiction eliminated — proven by diff
+3. Checkpoint terminology documented — proven
+4. `suspicious_open_options` reclassified to INTENT REVIEW — proven
+5. Zero production/build/test/fixture changes — proven by git diff from base
 
 ## Required verification
 
-- All required commands run; results captured regardless of pass/fail
-- Evidence document exists at `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md`
-- Worker note created
-- Task packet checker passes at checkpoint and at completion
-- git diff from base shows documentation only
+- `git status --short`: clean
+- `git diff --check`: PASS
+- `git diff --name-only 5f98c31f4bf51b806222c7f3722997d74fbe5a5b..HEAD`: documentation only
+- `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`: PASS
 
 ## Relevant components
 
-### EVIDENCE-ONLY
-- `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md`
+### CLOSEOUT
+- `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md` — repaired evidence
 - `docs/CURRENT_CLINE_TASK.md`
 - `docs/worker-notes/2026-08-09-f8a-warning-tooling-reconciliation.md`
-
-### READ-ONLY INSPECTION
-- `justfile`
-- `tethers-0.1/host-rust/Cargo.toml`
-- `rust-toolchain.toml`
-- CI/workflow files
 
 ## Forbidden changes
 
@@ -127,14 +96,14 @@ Never combine warning repair with gate activation.
 - No build file modifications
 - No script modifications
 - No formatting
-- No warning denial or CI enforcement additions
+- No F8-FMT implementation
+- No F8 cleanup packages
 
 ## Stop conditions
 
 STOP if the audit demonstrates an actual current production correctness defect.
-Flag Lucy instead.
 
 ## Expected pre-existing changes
 
 None — this evidence-only task starts from the exact base commit
-`5ecf54e17752096e7c553e059d014ef263cbb136` with a clean tree.
+`5f98c31f4bf51b806222c7f3722997d74fbe5a5b` with a clean tree.

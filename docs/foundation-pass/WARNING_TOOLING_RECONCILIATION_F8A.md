@@ -1,10 +1,11 @@
 # Warning and Tooling Reconciliation — F8a Evidence
 
-**Status:** EVIDENCE-ONLY
+**Status:** EVIDENCE-ONLY (F8a-R1 corrected)
 **Audit date:** 2026-08-09
-**Audit checkpoint:** `74904309d9af04024cd1a0b60c4cf654b8617481`
+**Audit checkpoint:** `5f98c31f4bf51b806222c7f3722997d74fbe5a5b`
 **Rust toolchain:** 1.97.1 (pinned via `rust-toolchain.toml`)
-**OCaml switch:** N/A (no switch set)
+**OCaml switch:** `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
+**F8a-R1 evidence repair:** `foundation/f8a-r1-evidence-repair`
 
 ---
 
@@ -16,7 +17,8 @@
 | Shell | PowerShell 7.6.4 |
 | Git | 2.54.0.windows.1 |
 | Rust | 1.97.1-x86_64-pc-windows-msvc |
-| OCaml (opam) | No switch set |
+| OCaml (opam) | Switch available at `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml` |
+| OCaml (opam) active | No switch set globally; requires explicit `--switch` |
 | just | 1.57.0 |
 | rg | 15.2.0 |
 | fd | 10.4.2 |
@@ -37,8 +39,8 @@
 | 5 | `cargo fmt --all -- --check` | **FAIL** | `replay_windows.rs:3277` |
 | 6 | `just verify` | **FAIL** (at fmt) | Stopped at step 2/4 |
 | 7 | `just verify-agent` | **FAIL** (at fmt) | Stopped at verify (first dep) |
-| 8 | `opam exec -- dune build` | **FAIL** | No OCaml switch set |
-| 9 | `test-engine.ps1` | **FAIL** | Depends on dune build |
+| 8 | `opam exec --switch "..." -- dune build` | PASS | Explicit switch required; no global switch set |
+| 9 | `test-engine.ps1` | PASS (28 cases) | Requires active switch set in environment |
 | 10 | `test-mcp-transcripts.ps1` | PASS | 15 cases all passed |
 | 11 | `check-fixtures.ps1` | PASS | 46 JSON, 30 JSONL valid |
 | 12 | `git diff --check` | PASS (clean) | No whitespace issues |
@@ -140,13 +142,13 @@ All in `src/application.rs` unless noted.
 | C21 | Production dead code (check D1-D15) | 15 sites | Unused items in application/child_process/launch_profile/result_anchor |
 | C22 | Test dead code (check T1-T15) | 18 sites | Unused items in tests |
 | C23 | `doc_overindented_list_items` | 1 site | Documentation formatting in `validation.rs:16` |
-| C24 | `suspicious_open_options` | 2 sites | `.create(true)` without `.truncate(true)` in `installation_execution.rs:109`, `j24k2`:324 |
 
 #### C. JUSTIFIED Warnings (Not Authorised for Change)
 
 | ID | Lint | Occurrences | Justification |
 | --- | --- | --- | --- |
 | J1 | `permissions_set_readonly_false` | 13 sites | Native Windows test helpers that need writable permissions; Windows-only code; the Clippy lint is Unix-focused |
+| J2 | `suspicious_open_options` | 2 sites | **INTENT REVIEW / EXPLICIT NON-TRUNCATION.** The installation lock intentionally: creates an empty anchor if absent; rejects a pre-existing non-empty anchor; never writes bytes while holding the handle. Adding `.truncate(true)` would be incorrect. A possible later cleanup is explicit `.truncate(false)` if focused verification proves behaviour unchanged — NOT authorised in F8a/F8a-R1. Sites: `installation_execution.rs:109`, `j24k2_locked_single_step_executor.rs:324` |
 
 ---
 
@@ -229,8 +231,10 @@ verify-agent: verify agent-tools deps-policy deps-advisories test-agent
 - Both short-circuit at `cargo fmt --check` failure.
 
 ### OCaml
-- No OCaml switch configured. `opam exec -- dune build` fails with error 50.
-- `test-engine.ps1` depends on `dune build` and fails.
+- Switch exists at `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml` (external switch).
+- No global switch is set. `opam exec -- dune build` without `--switch` fails.
+- With explicit `--switch`, `dune build` passes and `test-engine.ps1` passes all 28 engine test cases.
+- `test-engine.ps1` requires the switch to be active in the calling environment (via `opam env --set-switch`).
 
 ---
 
@@ -238,10 +242,11 @@ verify-agent: verify agent-tools deps-policy deps-advisories test-agent
 
 | Category | Count | Description |
 | --- | --- | --- |
-| ACTIONABLE CLEANUP | ~70 | Unused imports/variables, mechanical Clippy fixes (needless_borrow, cmp_owned, unnecessary_map_or, etc.), dead code removal, doc formatting |
+| ACTIONABLE CLEANUP | ~68 | Unused imports/variables, mechanical Clippy fixes (needless_borrow, cmp_owned, unnecessary_map_or, etc.), dead code removal, doc formatting |
+| INTENT REVIEW | 2 | `suspicious_open_options` — explicit non-truncation design decision; see J2 |
 | JUSTIFIED WARNING | 13 | `permissions_set_readonly_false` — Windows test helpers, Unix-focused lint |
-| STALE / NO LONGER PRESENT | 0 | All warnings verified live at HEAD `7490430` |
-| TOOLING/CONFIGURATION ISSUE | 2 | No OCaml switch (engine tests unavailable); fmt failure blocks verify/verify-agent |
+| STALE / NO LONGER PRESENT | 0 | All warnings verified live against base `5ecf54e` |
+| TOOLING/CONFIGURATION ISSUE | 1 | `cargo fmt` failure blocks `just verify` / `just verify-agent` |
 | UNVERIFIED | 0 | All identified warnings traced to concrete file:line |
 
 ---
@@ -269,7 +274,9 @@ These warnings affect code whose cleanup could require non-trivial judgement:
 ### F8-PACKAGE-1: Mechanical Test Cleanup (LOW RISK, ~30 fixes)
 **Files:** `tests/j13a_cli.rs`, `tests/j23b_pdf_package.rs`, `tests/j23c3_installed_pdf_execution.rs`, `tests/j24d_plug_enable_scope_file.rs`, `tests/j24c_plug_disable_cli.rs`, `tests/j24e_candidate_preparation.rs`, `tests/j24j_installation_reconciliation.rs`, `tests/j24k2_locked_single_step_executor.rs`, `tests/f3b_windows_persistence_evidence.rs`, `tests/m3_lifecycle.rs`, `src/bin/file_tools_provider.rs`, `src/bin/pdf_tools_provider.rs`
 
-Fixes: unused imports, unused variables (prefix `_`), `needless_borrow`, `useless_format`, `cmp_owned`, `for_kv_map`, `len_zero`, `useless_conversion`, `cmp_null`, `manual_range_contains`, `single_component_path_imports`, `collapsible_if`, `clone_on_copy`, `bind_instead_of_map`, `needless_borrows_for_generic_args`, `redundant_guards`, `excessive_precision`, `doc_overindented_list_items`, `suspicious_open_options`, `ptr_arg`, `needless_question_mark`, `field_reassign_with_default`.
+Fixes: unused imports, unused variables (prefix `_`), `needless_borrow`, `useless_format`, `cmp_owned`, `for_kv_map`, `len_zero`, `useless_conversion`, `cmp_null`, `manual_range_contains`, `single_component_path_imports`, `collapsible_if`, `clone_on_copy`, `bind_instead_of_map`, `needless_borrows_for_generic_args`, `redundant_guards`, `excessive_precision`, `doc_overindented_list_items`, `ptr_arg`, `needless_question_mark`, `field_reassign_with_default`.
+
+**Excluded:** `suspicious_open_options` (J2) — requires intent review, not mechanical fix.
 
 All changes mechanically fixable with `cargo clippy --fix` or trivial manual edits.
 
@@ -319,6 +326,7 @@ After all packages, run a final `cargo check --all-targets --all-features` and `
 - No `[lints]` workspace denial
 - No `#[deny(warnings)]` or `#![deny(clippy::all)]`
 - No `permissions_set_readonly_false` changes (justified for Windows tests)
+- No `suspicious_open_options` `.truncate(true)` additions — the installation lock uses explicit non-truncation by design; see J2
 - No `too_many_arguments` / `type_complexity` / `result_large_err` restructuring (prefence lints)
 - No OCaml switch installation
 - No public API signature changes
@@ -329,7 +337,7 @@ After all packages, run a final `cargo check --all-targets --all-features` and `
 
 ## 13. Causal Limits
 
-- **OCaml engine:** Unavailable (no switch). Engine tests cannot run. This does not block F8 Rust cleanup. The OCaml tooling state is recorded for awareness.
+- **OCaml engine:** Available via explicit switch `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`. `dune build` passes. `test-engine.ps1` passes all 28 cases when the switch is active. No global switch is set; tooling requires explicit `--switch` or `opam env --set-switch`.
 - **verify-agent sub-tools:** Not reachable until `just verify` passes. Their state is unknown (not exercised). They are expected to work once fmt is fixed and all dep/agent tool binaries are available.
 - **Historical F1/F5 numbers:** Confirmed stale. Current numbers differ (check: 33 vs 16; clippy: 45 distinct vs 81 raw).
 
@@ -346,6 +354,12 @@ Apply `cargo fmt` to `replay_windows.rs:3277` as **F8-FMT** (a single, tiny, for
 | Item | SHA |
 | --- | --- |
 | Base commit | `5ecf54e17752096e7c553e059d014ef263cbb136` |
-| Audit checkpoint | `74904309d9af04024cd1a0b60c4cf654b8617481` |
-| Branch | `foundation/f8a-warning-tooling-reconciliation` |
-| Git status at checkpoint | Clean (documentation only) |
+| Audit checkpoint (F8a) | `5f98c31f4bf51b806222c7f3722997d74fbe5a5b` |
+| F8a branch | `foundation/f8a-warning-tooling-reconciliation` |
+| F8a-R1 evidence repair branch | `foundation/f8a-r1-evidence-repair` |
+| Git status at both checkpoints | Clean (documentation only) |
+
+### Checkpoint Terminology
+
+- **AUDIT CHECKPOINT:** The committed F8a task-packet state at `5f98c31` against which unchanged source (base `5ecf54e`) was measured. All F8a commits were documentation-only; no source, test, build, or tooling file changed.
+- **EVIDENCE CHECKPOINT:** The F8a-R1 commit containing this corrected evidence document. It records corrected OCaml command results, reclassified `suspicious_open_options`, and checkpoint terminology. No production/source changes.

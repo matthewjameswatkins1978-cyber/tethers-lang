@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Base commit: `5ecf54e17752096e7c553e059d014ef263cbb136`
-Implementation checkpoint: `1618c44c398aff4a93840bd074c18d941b2fd186`
+Implementation checkpoint: `5f98c31f4bf51b806222c7f3722997d74fbe5a5b`
 
 ## Requested outcome
 
@@ -24,7 +24,7 @@ Zero production, test, fixture, build, script, or tooling source files changed.
 
 ## Decisions and assumptions
 
-- **No OCaml switch:** Recorded as "TOOLING/CONFIGURATION ISSUE" rather than a blocker. The OCaml tooling state is documented; F8 is Rust-focused.
+- **No OCaml switch:** F8a recorded "TOOLING/CONFIGURATION ISSUE" because `opam exec -- dune build` without `--switch` failed. F8a-R1 corrects: switch exists at `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`; `dune build` passes with explicit `--switch`; `test-engine.ps1` passes all 28 cases when switch is active.
 - **fmt failure is single-site, formatting-only:** Verified the diff is whitespace-only in test code at `replay_windows.rs:3277`. Safe to fix as a standalone package.
 - **permissions_set_readonly_false classified as JUSTIFIED:** This lint is Unix-specific; the 13 sites are all Windows test helpers that legitimately need writable permissions.
 - **too_many_arguments / type_complexity / result_large_err classified as preferences:** Not defects. These represent honest domain signatures. Restructuring would be architectural work not authorised by F8.
@@ -47,10 +47,13 @@ Zero production, test, fixture, build, script, or tooling source files changed.
 12. Protected contracts in §9 — identified items needing per-item judgement.
 13. Proposed F8 packages in §10 — 5 packages + F8-FMT.
 
-Commands NOT run (dependencies failed):
-- `test-engine.ps1` — depends on `dune build` (no OCaml switch)
-- `just verify-agent` sub-tools — unreachable due to fmt failure in verify
-- `opam exec -- dune build` — no switch set
+Commands NOT run (blocked by dependencies or environment):
+- `just verify-agent` sub-tools — unreachable due to `cargo fmt` failure in `verify`
+- `opam exec -- dune build` without `--switch` — fails because no global switch is set; passes with explicit `--switch` (F8a-R1 correction)
+
+Commands re-run in F8a-R1:
+- `opam exec --switch "D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml" -- dune build` — PASS
+- `test-engine.ps1` (with switch active) — PASS (28 cases)
 
 ## Discoveries
 
@@ -59,14 +62,14 @@ Commands NOT run (dependencies failed):
 3. **No rustfmt.toml or clippy.toml exists.** All formatting and linting uses defaults.
 4. **Single fmt failure site.** Only `replay_windows.rs:3277` — a whitespace-only change in test code. Everything else is properly formatted.
 5. **verify/verify-agent are fragile.** A single formatting failure blocks the entire pipeline. The fmt check should ideally be a separate gate or `verify` should continue and report, but this is a design choice for F8b.
-6. **OCaml tooling is unavailable.** Not needed for F8 Rust cleanup but recorded for completeness.
+6. **OCaml engine is available** with explicit switch `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`. F8a incorrectly recorded it as unavailable. F8a-R1 corrects: `dune build` passes, `test-engine.ps1` passes 28/28.
 7. **33 check warnings vs historical 16.** The count has grown since F5, likely due to accumulated dead code from Foundation work.
 8. **81 raw Clippy emissions vs historical 81.** The raw count is unchanged from F5, but distinct count is 45 (36 duplicates from shared compilation units).
 
 ## Remaining risks
 
 - **verify-agent sub-tools state unknown:** `cargo nextest`, `cargo deny`, `cargo machete` not exercised. Expected to work but unverified.
-- **OCaml engine tests not run:** No switch available. Recorded as TOOLING/CONFIGURATION.
+- **OCaml engine:** Available but requires explicit `--switch`. `test-engine.ps1` passes all 28 cases. F8a-R1 corrects this.
 - **Production dead code (D1-D15):** Removal of `pub(crate)` items requires per-item judgement. May break external callers or future features. Not authorised in F8a.
 - **items_after_test_module (P5):** Code reordering in `candidate_preparation.rs` and `installation_publication_mutation.rs` could introduce merge conflicts if deferred.
 
@@ -78,6 +81,7 @@ Apply F8-FMT: single `cargo fmt` on `replay_windows.rs:3277`. This unblocks `jus
 
 - Evidence document: `docs/foundation-pass/WARNING_TOOLING_RECONCILIATION_F8A.md`
 - Task packet: `docs/CURRENT_CLINE_TASK.md`
+- F8a-R1 evidence repair: `foundation/f8a-r1-evidence-repair`
 - Base: `5ecf54e17752096e7c553e059d014ef263cbb136`
-- Audit checkpoint: `1618c44c398aff4a93840bd074c18d941b2fd186`
-- Branch: `foundation/f8a-warning-tooling-reconciliation`
+- Audit checkpoint (F8a): `5f98c31f4bf51b806222c7f3722997d74fbe5a5b`
+- F8a branch: `foundation/f8a-warning-tooling-reconciliation`
