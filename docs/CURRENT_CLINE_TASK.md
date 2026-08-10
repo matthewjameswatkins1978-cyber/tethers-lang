@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-10-0.3-p1-r1e-synthetic-unrelated-plug.m
 Base branch: `feature/0.3-p1-r1d-reference-provider-scope`
 Base commit: `530e429e80dc69a777af9708be8d6d1b917b9b22`
 Implementation branch: `feature/0.3-p1-r1e-synthetic-unrelated-plug`
-Implementation checkpoint: `4bfd587f05a5e60910faea8341bc65db86a3da6f`
+Implementation checkpoint: `650f7dbf9722de96fae46f1335d0108b402b6062`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `GREEN_AMBER_SYNTHETIC_PLUG_PROOF`
