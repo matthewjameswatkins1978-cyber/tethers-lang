@@ -1,88 +1,106 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P1-R1D — Reference Providers Obey Generic Scope`
-Owner: `Codex`
-Status: `COMPLETE`
+Task: `TETHERS-0.3-P1-R1E — Synthetic Unrelated Plug Proof`
+Owner: `OpenCode`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `Codex implements bounded repair`
-Worker note: `docs/worker-notes/2026-08-10-0.3-p1-r1d-reference-provider-scope.md`
-Base branch: `feature/0.3-p1-r1c-canonical-directory`
-Base commit: `20cdb463e9c84f35b6d70997916305a1443cfd1d`
-Implementation branch: `feature/0.3-p1-r1d-reference-provider-scope`
-Implementation checkpoint: `86ab5f7a785b63feb2ddba6d80746776fc5a10e8`
+Route: `OpenCode implements proof`
+Worker note: `docs/worker-notes/2026-08-10-0.3-p1-r1e-synthetic-unrelated-plug.md`
+Base branch: `feature/0.3-p1-r1d-reference-provider-scope`
+Base commit: `530e429e80dc69a777af9708be8d6d1b917b9b22`
+Implementation branch: `feature/0.3-p1-r1e-synthetic-unrelated-plug`
+Implementation checkpoint: ``
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
-Rust change class: `AMBER_PROVIDER_CONFIGURATION_REPAIR`
+Rust change class: `GREEN_AMBER_SYNTHETIC_PLUG_PROOF`
 
 ## Objective
 
-Make the File Tools and PDF reference providers consume their existing generic Operational Scope exactly. In normal installed operation, absent, malformed, incomplete, wrong-typed, or out-of-bounds scope configuration must refuse rather than select a fallback. Host conformance is the sole exception and activates only when `TETHERS_CONFORMANCE == "1"`.
+Prove that Tethers can carry a completely unrelated Plug and Operational Scope shape without adding subject knowledge to the generic host.
 
 ## Relevant background and existing behaviour
 
-- Generic installed launch already supplies `TETHERS_OPERATIONAL_SCOPE_JSON` and sets `TETHERS_CONFORMANCE=0`.
-- Generic host conformance already supplies `TETHERS_CONFORMANCE=1` and a bounded TEMP scratch directory.
-- File Tools currently falls back to the process current directory for absent or invalid per-field scope values; PDF currently treats an unset conformance value as its maximum-byte fallback.
+- Generic installed launch, package inspection, candidate/install/enablement machinery exists and is tested via the PDF reference Plug.
+- `validate_and_canonicalize_operational_scope` in `validation.rs` provides generic scope validation with `x-tethers-path: "canonical-directory"` support.
+- `OperationalScopeEvidence::create` in `operational_scope.rs` is plug-agnostic.
+- The existing `build_reference_package` pattern in `pdf_tools.rs` shows how to construct .tetherplug packages.
 
 ## Required behaviour
 
-1. File Tools requires `query_root`, `move_source_root`, `move_destination_root`, and `max_content_bytes`, and applies its exact validated limit.
-2. PDF requires `query_root` and `max_bytes` in normal installed mode, and applies the exact validated limit.
-3. Unset `TETHERS_CONFORMANCE`, `"0"`, and every value other than exact `"1"` are normal installed mode.
-4. Exact `"1"` alone preserves the existing TEMP-based bounded conformance fallback.
-5. Configuration parsing is locally testable; startup remains the only process-exit boundary.
+Prove that a synthetic Plug (`example.text-inspector`) with capability `text.inspect@1`, operation `text_inspect`, and operational scope `{workspace (canonical-directory), limit (1-1000)}` passes through the entire generic pipeline without any production code changes.
 
 ## Frozen decisions and invariants
 
-1. The providers may understand only their own declared scope; no File/PDF knowledge moves into generic host scope, enablement, candidate/install records, schema validation, or launch machinery.
-2. No new dependency, OS sandbox, migration tool, conformance redesign, P2 work, or concurrency change.
-3. Overall P1 remains `completion repair in progress`.
+1. No production code changes expected.
+2. Test/fixture/documentation changes only.
+3. If a tiny generic bug is found, STOP and report it; do not quietly repair architecture.
+4. Overall P1 remains `completion repair in progress`.
+5. The synthetic names (`example.text-inspector`, `example-text-inspector-provider`, `text.inspect`, `text_inspect`, `workspace`, `limit`) must not appear in production Tethers code.
 
 ## Acceptance criteria
 
-1. File Tools has no normal-mode current-directory or default-limit fallback. — DONE
-2. PDF has no normal-mode `MAX_PDF_BYTES` fallback. — DONE
-3. All requested success and fail-closed configuration branches have focused tests. — DONE
-4. Existing relevant File Tools and PDF provider tests pass. — DONE
-5. `cargo check --all-targets --all-features --locked`, `cargo fmt --all -- --check`, and `git diff --check` pass. — DONE
-6. Finished branch is pushed; remote equals local; worktree is clean. — DONE (publication first confirmed at `11db4ebcc09b200ebe64ff2f0c20eae2aa543706`)
+1. package inspection accepts `example.text-inspector`
+2. inspection exposes the exact `operational_scope_schema`
+3. inspection computes the exact deterministic schema digest
+4. candidate evidence preserves the exact schema + digest
+5. installed evidence preserves the exact schema + digest
+6. enablement accepts valid scope with workspace + limit=37
+7. workspace is canonicalised using the generic `canonical-directory` machinery
+8. limit remains exactly 37
+9. `OperationalScopeEvidence` `canonical_scope_json` contains only the canonical workspace and exact limit
+10. `OperationalScopeEvidence` carries the exact installed schema digest
+11. repeated creation from equivalent input produces deterministic evidence
+12. negative: missing workspace rejected
+13. negative: missing limit rejected
+14. negative: relative workspace rejected
+15. negative: nonexistent workspace rejected
+16. negative: limit=0 rejected
+17. negative: limit=1001 rejected
+18. negative: limit wrong type rejected
+19. negative: unknown scope field rejected
+20. no production subject knowledge added (grep proof)
+21. `cargo check --all-targets --all-features --locked` clean
+22. `cargo fmt --all -- --check` clean
+23. `git diff --check` clean
+24. branch pushed; remote == local; worktree clean
 
 ## Relevant components
 
 ### Authorised paths
 
-- `tethers-0.1/host-rust/src/bin/file_tools_provider.rs`
-- `tethers-0.1/host-rust/src/bin/pdf_tools_provider.rs`
-- `tethers-0.1/host-rust/tests/m4_file_tools.rs`
+- `tethers-0.1/host-rust/tests/r1e_synthetic_unrelated_plug.rs` (new)
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-10-0.3-p1-r1d-reference-provider-scope.md`
+- `docs/worker-notes/2026-08-10-0.3-p1-r1e-synthetic-unrelated-plug.md` (new)
 
 ## Required verification
 
-1. Focused File Tools provider configuration tests.
-2. Focused PDF provider configuration tests.
-3. Relevant existing File Tools and PDF provider tests.
-4. `cargo check --all-targets --all-features --locked`
-5. `cargo fmt --all -- --check`
-6. `git diff --check`
+1. New R1E synthetic Plug tests pass
+2. Directly relevant generic package/candidate/install/enable regression tests pass
+3. `cargo check --all-targets --all-features --locked`
+4. `cargo fmt --all -- --check`
+5. `git diff --check`
+6. Bounded repository search proving synthetic names did not enter production code
 7. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
 
 ## Forbidden changes
 
-- No synthetic Plug.
-- No `j23c2` conformance repair.
-- No old placeholder repair.
-- No plug pack/inspect/conform public surface.
-- No generic Operational Scope architecture change.
-- No P2, migration tooling, concurrency, or unrelated cleanup.
-- No `just verify-agent`, engine fixture suite, MCP transcript suite, or full final P1 gate.
+- No production code changes
+- No synthetic Plug names in production code
+- No J23C2 changes
+- No PDF conformance repair
+- No File Tools changes
+- No generic provider redesign
+- No pack/inspect/conform public CLI work
+- No P2, migration tooling, concurrency, or unrelated cleanup
+- No full verify-agent, engine fixture suite, MCP transcript suite, or final P1 gate
 
 ## Stop conditions
 
-- Any need to redesign generic host scope, host conformance, provider architecture, or a concurrent execution boundary.
-- A required test or check has two materially similar failed attempts.
-- An edit causes unrelated formatting or line-ending churn.
+- Production code needs one of the synthetic names
+- A required test or check has two materially similar failed attempts
+- An edit causes unrelated formatting or line-ending churn
+- A tiny generic bug is found (report, don't fix)
 
 ## Expected pre-existing changes
 
