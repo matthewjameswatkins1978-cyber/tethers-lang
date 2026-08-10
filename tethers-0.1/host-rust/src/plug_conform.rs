@@ -78,21 +78,7 @@ pub fn run_conform(package: &Path, allow_execution: bool) -> PlugCommandResult {
 
     let workspace_cleanup_failed = cleanup_workspace(&workspace).is_err();
 
-    if scratch_cleanup_failed || workspace_cleanup_failed {
-        let envelope = CliEnvelope::error(
-            "plug conform",
-            OutcomeStatus::Failed,
-            "conformance_cleanup_failed",
-            "ephemeral conform state could not be completely removed",
-            None,
-        );
-        return PlugCommandResult {
-            exit_code: envelope.exit_code,
-            envelope,
-        };
-    }
-
-    result
+    finalise_conform_result(result, scratch_cleanup_failed, workspace_cleanup_failed)
 }
 
 struct EphemeralWorkspace {
@@ -138,10 +124,13 @@ fn run_conform_in_workspace(
             let status = candidate_error_status(&error);
             let envelope =
                 CliEnvelope::error("plug conform", status, error.code, error.message, None);
-            return (PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            }, false);
+            return (
+                PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                },
+                false,
+            );
         }
     };
 
@@ -171,10 +160,13 @@ fn run_conform_in_workspace(
                 format!("{}: {}", error.code, error.message),
                 None,
             );
-            return (PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            }, false);
+            return (
+                PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                },
+                false,
+            );
         }
     };
 
@@ -188,10 +180,13 @@ fn run_conform_in_workspace(
                 format!("{}: {}", error.code, error.message),
                 None,
             );
-            return (PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            }, false);
+            return (
+                PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                },
+                false,
+            );
         }
     };
 
@@ -205,10 +200,13 @@ fn run_conform_in_workspace(
                 format!("{}: {}", error.code, error.message),
                 None,
             );
-            return (PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            }, false);
+            return (
+                PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                },
+                false,
+            );
         }
     };
 
@@ -227,10 +225,13 @@ fn run_conform_in_workspace(
                 format!("{}: {}", error.code, error.message),
                 None,
             );
-            return (PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            }, false);
+            return (
+                PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                },
+                false,
+            );
         }
     };
 
@@ -250,7 +251,10 @@ fn run_conform_in_workspace(
     match evidence {
         Ok(evidence) => {
             let disposition = evidence.disposition;
-            (map_conformance_result(evidence, disposition), scratch_cleanup_failed)
+            (
+                map_conformance_result(evidence, disposition),
+                scratch_cleanup_failed,
+            )
         }
         Err(error) => {
             let status = if error.code == "conformance_launch" {
@@ -264,10 +268,13 @@ fn run_conform_in_workspace(
             };
             let envelope =
                 CliEnvelope::error("plug conform", status, error.code, error.message, None);
-            (PlugCommandResult {
-                exit_code: envelope.exit_code,
-                envelope,
-            }, scratch_cleanup_failed)
+            (
+                PlugCommandResult {
+                    exit_code: envelope.exit_code,
+                    envelope,
+                },
+                scratch_cleanup_failed,
+            )
         }
     }
 }
@@ -390,7 +397,6 @@ fn map_conformance_result(
     }
 }
 
-#[cfg(test)]
 fn finalise_conform_result(
     conform_result: PlugCommandResult,
     scratch_cleanup_failed: bool,
