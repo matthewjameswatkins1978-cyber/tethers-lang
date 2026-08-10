@@ -46,7 +46,7 @@ Make the File Tools and PDF reference providers consume their existing generic O
 3. All requested success and fail-closed configuration branches have focused tests. — DONE
 4. Existing relevant File Tools and PDF provider tests pass. — DONE
 5. `cargo check --all-targets --all-features --locked`, `cargo fmt --all -- --check`, and `git diff --check` pass. — DONE
-6. Finished branch is pushed; remote equals local; worktree is clean. — PENDING PUBLICATION
+6. Finished branch is pushed; remote equals local; worktree is clean. — DONE (publication first confirmed at `11db4ebcc09b200ebe64ff2f0c20eae2aa543706`)
 
 ## Relevant components
 
