@@ -208,6 +208,7 @@ fn failure(case_id: &str, code: &str, interrupted: bool) -> ConformanceCaseEvide
 
 fn parse_line(line: &str) -> Result<Value> {
     strict_json(line.as_bytes())
+        .map_err(|error| M3Error::new("conformance_protocol", error.message))
 }
 
 fn expected_tools(
@@ -258,10 +259,36 @@ fn request(
     child
         .write_line(&serde_json::to_string(&value).expect("JSON value serializes"))
         .map_err(|error| M3Error::new("conformance_protocol", error.to_string()))?;
+    let expected_id = value
+        .get("id")
+        .cloned()
+        .ok_or_else(|| M3Error::new("conformance_protocol", "request carries no JSON-RPC id"))?;
     let line = child
         .read_protocol_line(timeout)
         .map_err(|error| M3Error::new("conformance_protocol", error.to_string()))?;
-    parse_line(&line)
+    let response = parse_line(&line)?;
+    let object = response
+        .as_object()
+        .ok_or_else(|| M3Error::new("protocol_correlation", "response is not a JSON object"))?;
+    if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return Err(M3Error::new(
+            "protocol_correlation",
+            "response did not declare jsonrpc 2.0",
+        ));
+    }
+    if object.get("id") != Some(&expected_id) {
+        return Err(M3Error::new(
+            "protocol_correlation",
+            "response id did not match the request id",
+        ));
+    }
+    if object.get("error").is_some() {
+        return Err(M3Error::new(
+            "protocol_correlation",
+            "response carried a JSON-RPC error for a valid request",
+        ));
+    }
+    Ok(response)
 }
 
 pub fn run_host_conformance(
@@ -366,15 +393,16 @@ pub(crate) fn run_host_conformance_with_authority(
                     .get("name")
                     .and_then(Value::as_str)
                     .ok_or_else(|| M3Error::new("catalogue_invalid", "tool name is absent"))?;
-                let (expected_input, _) = expected_tools
+                let (expected_input, expected_output) = expected_tools
                     .get(name)
                     .ok_or_else(|| M3Error::new("catalogue_drift", "unapproved tool advertised"))?;
                 if tool.get("inputSchema") != Some(expected_input)
+                    || tool.get("outputSchema") != Some(expected_output)
                     || !discovered.insert(name.to_owned())
                 {
                     return Err(M3Error::new(
                         "catalogue_drift",
-                        "tool schema differs or operation is duplicated",
+                        "tool schema differs from the reviewed manifest or operation is duplicated",
                     ));
                 }
             }
@@ -524,8 +552,16 @@ pub(crate) fn run_host_conformance_with_authority(
     if let Err(error) = run_result {
         cases.push(failure("conformance_session", error.code, interrupted));
     }
-    child.shutdown();
-    cases.push(passed("bounded_shutdown_process_cleanup"));
+    let cleanup = child.shutdown();
+    if cleanup.graceful_exited {
+        cases.push(passed("bounded_shutdown_process_cleanup"));
+    } else {
+        cases.push(failure(
+            "bounded_shutdown_process_cleanup",
+            "provider_did_not_exit_gracefully",
+            false,
+        ));
+    }
     let disposition = if cases
         .iter()
         .any(|case| case.disposition == CaseDisposition::Interrupted)

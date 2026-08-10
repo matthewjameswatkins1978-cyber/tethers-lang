@@ -8,8 +8,9 @@
 
 P1 COMPLETE / ACCEPTED. P2 FINAL / ACCEPTED. P3 FINAL / ACCEPTED. P4 — Plug Author
 Manual — FINAL ACCEPTED at `1e1f9b8738a48f727187316dd0078b7f9435f1c6`. P5 —
-Fresh-Agent Authoring Proof — complete, awaiting Lucy review. P6 remains next
-and has NOT started.
+Fresh-Agent Authoring Proof — FINAL ACCEPTED at
+`ffbe25e1c36123301182383c97265a6174b5dd98`. P6 — The Evil Bunny Test — complete,
+awaiting Lucy review. P7 / 0.4 remains next and has NOT started.
 
 ## Sequence
 
@@ -71,7 +72,7 @@ Canonical public manual: `docs/PLUG_AUTHORING.md`.
 
 FINAL ACCEPTED at `1e1f9b8738a48f727187316dd0078b7f9435f1c6`.
 
-### P5 — Fresh-agent authoring proof ✓ (awaiting Lucy review)
+### P5 — Fresh-agent authoring proof ✓
 
 A clean agent with only released Tethers and the manual builds a new Plug.
 
@@ -84,9 +85,25 @@ manual gap surfaced (advertise both `inputSchema` and `outputSchema` in
 `tools/list`) and was fixed in the manual. Experiment log:
 `docs/p5-fresh-agent-proof.md`.
 
-### P6 — Adversarial-provider proof
+FINAL ACCEPTED at `ffbe25e1c36123301182383c97265a6174b5dd98`.
+
+### P6 — Adversarial-provider proof (awaiting Lucy review)
 
 Hostile providers must not compromise host protocol correctness.
+
+The Evil Bunny Test: a safe, deterministic adversarial protocol fixture
+(`reference-plugs/evil-bunny-proof/`, `tethers.evil-bunny-proof` /
+`tethers-evil-bunny-provider`) proved that hostile providers cannot turn bad
+evidence into conformance success. EB-00 Good Bunny control passes; EB-01
+through EB-12 are each deterministically refused. P6 surfaced three genuine
+generic conformance gaps — `outputSchema` not verified during discovery,
+no JSON-RPC response id/envelope correlation, and shutdown-refusal recorded as
+clean success — and corrected them with the smallest generic production changes
+in `tethers-0.1/host-rust/src/conformance.rs`, each backed by regression
+evidence at the real discovery/conformance seam. Experiment log:
+`docs/p6-evil-bunny-proof.md`.
+
+Complete, awaiting Lucy review. P7 / 0.4 is next and has NOT started.
 
 ## Future
 

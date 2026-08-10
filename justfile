@@ -58,4 +58,10 @@ test-pdf-reference:
     cargo build --manifest-path reference-plugs/pdf-tools/provider-rust/Cargo.toml --locked
     $env:TETHERS_PDF_REFERENCE_PROVIDER_EXE=(Resolve-Path reference-plugs/pdf-tools/provider-rust/target/debug/pdf_tools_provider.exe); cargo test --manifest-path {{_manifest}} --locked --test p3_pdf_reference_plug -- --ignored
 
+test-evil-bunny-proof:
+    cargo fmt --manifest-path reference-plugs/evil-bunny-proof/provider-rust/Cargo.toml -- --check
+    cargo test --manifest-path reference-plugs/evil-bunny-proof/provider-rust/Cargo.toml --locked
+    cargo build --manifest-path reference-plugs/evil-bunny-proof/provider-rust/Cargo.toml --locked
+    $env:TETHERS_EVIL_BUNNY_PROVIDER_EXE=(Resolve-Path reference-plugs/evil-bunny-proof/provider-rust/target/debug/tethers_evil_bunny_provider.exe); cargo test --manifest-path {{_manifest}} --locked --test p6_evil_bunny -- --ignored
+
 verify-agent: verify agent-tools deps-policy deps-advisories test-agent test-pdf-reference
