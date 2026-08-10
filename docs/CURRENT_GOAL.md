@@ -5,9 +5,12 @@ Updated: 2026-08-10
 ## Goal
 
 Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
-ACCEPTED. P2 is ACTIVE: P2A (public deterministic plug pack) is ACCEPTED at
-`3d7fd7e580d274de0a422fb78c5741a6bd1405f1`. P2B (public supervised plug
-conform) is implemented and awaiting Lucy review.
+ACCEPTED. P2 is AWAITING FINAL ACCEPTANCE: P2A (public deterministic plug pack)
+is ACCEPTED at `3d7fd7e580d274de0a422fb78c5741a6bd1405f1`. P2B (public
+supervised plug conform) is ACCEPTED at
+`061a57d4bd48e59cae2d496b889834df7fe54418`. P2C (end-to-end public author proof
++ final P2 verification gate) is COMPLETE. P2 is now awaiting Lucy final
+independent acceptance before proceeding to P3.
 
 ## Last accepted increment
 
@@ -16,9 +19,10 @@ P1 Generic Operational Scope Evidence accepted at
 
 ## Active increment
 
-P2B — Public supervised plug conform. Implementation branch:
-`feature/0.3-p2b-public-plug-conform`. Awaiting Lucy independent review.
-P2C (end-to-end author proof + final P2 verification) is next.
+P2 — Public pack / inspect / conform authoring surface. All three sub-phases
+(P2A, P2B, P2C) are now implemented with all verification gates passing. P2
+awaits Lucy final independent acceptance. P3 (PDF Tools Reference Plug Crucible)
+is next.
 
 ## Foundation Pass boundaries
 

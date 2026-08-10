@@ -5,8 +5,8 @@ Updated: 2026-08-10
 ## Current Milestone
 
 Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
-ACCEPTED. P2 is ACTIVE with P2A (public deterministic plug pack) accepted and
-P2B (public supervised plug conform) implemented.
+ACCEPTED. P2 is AWAITING FINAL ACCEPTANCE with P2A, P2B accepted and P2C proof
+complete.
 
 ## Verified Checkpoint
 
@@ -14,15 +14,16 @@ P1 accepted at `270a5913a93d64256113cca3450619c484b7ddc7`.
 
 ## Active Task
 
-- Task: TETHERS-0.3-P2B — Public Supervised Plug Conform
-- State: Implemented, awaiting Lucy independent review
-- Owner: OpenCode (implementation), Lucy (review)
+- Task: TETHERS-0.3-P2C — End-to-End Public Author Proof + Final P2 Gate
+- State: COMPLETE, awaiting Lucy final independent P2 acceptance
+- Owner: OpenCode (implementation), Lucy (final review)
 - Risk: Amber
 
 ## Last Accepted Result
 
-Tethers 0.2.2 release candidate independently reviewed and accepted by Lucy.
-Foundation F1–F10 remain accepted on the Foundation branch lineage.
+P2B (Public Supervised Plug Conform) accepted at
+`061a57d4bd48e59cae2d496b889834df7fe54418`.
+P2C proof and final P2 verification gate are complete with all gates passing.
 
 ## Matthew Decision Required
 
@@ -30,8 +31,8 @@ None.
 
 ## Next Route
 
-Lucy compiles the first Tethers 0.3 implementation packet from `v0.2.2`.
-OpenCode or Codex implements as routed by Lucy.
+Lucy performs final independent P2 acceptance review. P3 (PDF Tools Reference
+Plug Crucible) follows.
 
 ## Operating Mode
 
@@ -46,9 +47,10 @@ OpenCode or Codex implements as routed by Lucy.
 ## Cost And Drift
 
 - One implementation owner per bounded task.
+- P2C: 1 new test file, 0 production source changes, 0 dependency changes.
 - Rust compiler-warning gate is clean and enforced.
-- Broader Clippy advisory diagnostics remain separate from the denied-warning
-  gate.
+- `just verify-agent` all-pass (task-packet, fmt, check, cargo-test, agent-tools,
+  deps-policy, deps-advisories, nextest 1714/1714).
 - No speculative post-Foundation plans are authorised.
 
 ## Where Details Live

@@ -3,14 +3,14 @@
 Control contract: `1`
 Task: `TETHERS-0.3-P2C — End-to-End Public Author Proof + Final P2 Gate`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode implements proof + final gate`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p2c-public-author-proof.md`
 Base branch: `feature/0.3-p2b-fix2-wire-cleanup-proof`
 Base commit: `061a57d4bd48e59cae2d496b889834df7fe54418`
 Implementation branch: `feature/0.3-p2c-public-author-proof`
-Implementation checkpoint: `<populated at checkpoint>`
+Implementation checkpoint: `4c32b96446e7ae3e20d2994056d0fd435dcc32f3`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `TEST_AND_DOCS_ONLY`
@@ -103,13 +103,28 @@ to record P2B accepted, P2C proof complete, P3 next.
 
 ## Acceptance criteria
 
-1. P2C focused test passes: `cargo test --locked --test p2c_public_author_journey`
-2. `cargo fmt --all -- --check` — PASS
-3. `git diff --check` — PASS
-4. `cargo clippy --all-targets --all-features --locked` — PASS (no new P2/P2C warnings)
-5. `just verify-agent` — PASS from repository root
+1. Author source tree constructed with synthetic identity, `payloads` not `payload_index`, no manifest_digest
+2. Public pack exits 0 with correct identities, digest fields, one JSON envelope line
+3. Public inspect exits 0, identity unchanged, manifest digest exists, digest continuity with pack
+4. Conform without approval exits 5; provider not executed
+5. Approved conform exits 0, disposition passed, isolated=false, limitation present, evidence fields
+6. Provider marker exists after approved conform
+7. No `tethers-p2b-conform-*` directories remain in dedicated TEMP/TMP parent
+8. `pack semantic_package_digest == inspect semantic_package_digest == conform semantic_package_digest`
+9. Source and package bytes unchanged throughout journey
+10. Public output contains no internal paths, raw stderr, or M3_SECRET_CANARY
+11. `just verify-agent` — PASS from repository root
+12. Documentation closeout: `ROAD_TO_0_3.md`, `CURRENT_GOAL.md`, `PROJECT_DASHBOARD.md` updated
+
+## Required verification
+
+1. Focused P2C test: `cargo test --locked --test p2c_public_author_journey`
+2. `cargo fmt --all -- --check`
+3. `git diff --check`
+4. `cargo clippy --all-targets --all-features --locked`
+5. `just verify-agent` (once, after all code changes)
 6. Complete diff contains no src/ production changes
-7. No dependency changes from P2B base
+7. No dependency changes from P2B base (Cargo.toml + Cargo.lock unchanged)
 8. Task packet checker `control-v1/COMPLETE`
 9. Branch pushed, remote == local, genuinely clean worktree
 
