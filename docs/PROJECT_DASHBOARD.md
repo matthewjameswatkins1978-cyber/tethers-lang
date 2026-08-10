@@ -5,7 +5,8 @@ Updated: 2026-08-10
 ## Current Milestone
 
 Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
-ACCEPTED. P2 is ACTIVE with P2A (public deterministic plug pack) implemented.
+ACCEPTED. P2 is ACTIVE with P2A (public deterministic plug pack) accepted and
+P2B (public supervised plug conform) implemented.
 
 ## Verified Checkpoint
 
@@ -13,8 +14,8 @@ P1 accepted at `270a5913a93d64256113cca3450619c484b7ddc7`.
 
 ## Active Task
 
-- Task: TETHERS-0.3-P2A — Public Deterministic Plug Pack
-- State: Awaiting Lucy independent review
+- Task: TETHERS-0.3-P2B — Public Supervised Plug Conform
+- State: Implemented, awaiting Lucy independent review
 - Owner: OpenCode (implementation), Lucy (review)
 - Risk: Amber
 

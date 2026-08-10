@@ -6,7 +6,7 @@
 
 ## Status
 
-P1 COMPLETE / ACCEPTED. P2 ACTIVE (P2A pack complete).
+P1 COMPLETE / ACCEPTED. P2 ACTIVE (P2A accepted, P2B implemented).
 
 ## Sequence
 
@@ -42,8 +42,8 @@ Core must not contain knowledge such as FileTools, Pdf, Image, Audio, Git, Email
 
 Expose the generic author workflow: `plug pack`, `plug inspect`, `plug conform`.
 
-- **P2A — Public deterministic plug pack** ✓ (this packet)
-- **P2B — Public conform** — next
+- **P2A — Public deterministic plug pack** ✓ (accepted at `3d7fd7e580d274de0a422fb78c5741a6bd1405f1`)
+- **P2B — Public conform** — implemented, awaiting Lucy review
 - **P2C — End-to-end author proof + final P2 verification** — after P2B
 
 ### P3 — PDF Tools Reference Plug Crucible
