@@ -138,6 +138,16 @@ pub enum PlugCommand {
         #[arg(long = "output", value_name = "ABSOLUTE_FILE")]
         output: PathBuf,
     },
+    /// Run the host conformance suite against a packaged Plug without installing it.
+    Conform {
+        #[arg(long = "package", value_name = "ABSOLUTE_FILE.tetherplug")]
+        package: PathBuf,
+        #[arg(
+            long = "allow-non-isolated-supervised-execution",
+            default_value_t = false
+        )]
+        allow_non_isolated_supervised_execution: bool,
+    },
 }
 
 /// Outcome status vocabulary with exit codes.
@@ -826,6 +836,72 @@ mod tests {
             "00000000-0000-4000-8000-000000000000",
             "--scope",
             "C:\\scope.json",
+            "--unknown"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn p2b_plug_conform_syntax_is_strict() {
+        assert!(matches!(
+            parse_cli(&[
+                "plug",
+                "conform",
+                "--package",
+                "C:\\package.tetherplug",
+                "--allow-non-isolated-supervised-execution"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Plug {
+                command: PlugCommand::Conform {
+                    package,
+                    allow_non_isolated_supervised_execution: true,
+                }
+            }) if package == PathBuf::from("C:\\package.tetherplug")
+        ));
+        assert!(matches!(
+            parse_cli(&[
+                "plug",
+                "conform",
+                "--package=C:\\package.tetherplug",
+                "--allow-non-isolated-supervised-execution"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Plug {
+                command: PlugCommand::Conform {
+                    allow_non_isolated_supervised_execution: true,
+                    ..
+                }
+            })
+        ));
+        assert!(matches!(
+            parse_cli(&["plug", "conform", "--package", "C:\\package.tetherplug"])
+                .unwrap()
+                .command,
+            Some(Command::Plug {
+                command: PlugCommand::Conform {
+                    allow_non_isolated_supervised_execution: false,
+                    ..
+                }
+            })
+        ));
+        assert!(parse_cli(&["plug", "conform"]).is_err());
+        assert!(parse_cli(&["plug", "conform", "--package", "a", "--package", "b"]).is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "conform",
+            "--package",
+            "C:\\package.tetherplug",
+            "extra"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "conform",
+            "--package",
+            "C:\\package.tetherplug",
             "--unknown"
         ])
         .is_err());

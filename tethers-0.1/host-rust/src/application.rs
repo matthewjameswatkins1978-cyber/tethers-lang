@@ -588,6 +588,20 @@ pub fn run() {
         }
         Ok(Cli {
             command:
+                Some(CliCommand::Plug {
+                    command:
+                        crate::cli::PlugCommand::Conform {
+                            package,
+                            allow_non_isolated_supervised_execution,
+                        },
+                }),
+        }) => {
+            let result =
+                plug_conform::run_conform(&package, allow_non_isolated_supervised_execution);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
                 Some(CliCommand::Run {
                     config,
                     engine,

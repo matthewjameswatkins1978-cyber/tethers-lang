@@ -71,6 +71,7 @@ mod outcome;
 pub mod package;
 pub mod pdf_tools;
 pub mod plug_command;
+pub mod plug_conform;
 mod plug_install_command;
 pub mod plug_pack;
 pub mod policy;
