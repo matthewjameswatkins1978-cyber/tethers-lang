@@ -4,26 +4,44 @@ Updated: 2026-08-10
 
 ## Current Milestone
 
-Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
-ACCEPTED. P2 is AWAITING FINAL ACCEPTANCE with P2A, P2B accepted and P2C proof
-complete.
+Tethers 0.3 public Plug authoring. P1 and P2 are FINAL ACCEPTED. P3 — PDF Tools
+Reference Plug Crucible — is next.
 
 ## Verified Checkpoint
 
-P1 accepted at `270a5913a93d64256113cca3450619c484b7ddc7`.
+P2 final independently reviewed evidence head:
+`84f1002904dd54929fa8002d1634c42c85112f54`.
+
+Canonical P2C implementation checkpoint:
+`4c32b96446e7ae3e20d2994056d0fd435dcc32f3`.
 
 ## Active Task
 
-- Task: TETHERS-0.3-P2C — End-to-End Public Author Proof + Final P2 Gate
-- State: COMPLETE, awaiting Lucy final independent P2 acceptance
-- Owner: OpenCode (implementation), Lucy (final review)
-- Risk: Amber
+- Task: none issued yet
+- State: ready for P3 discovery / packet compilation
+- Owner: Lucy for architecture and packet compilation
+- Risk: Green until P3 implementation begins
 
 ## Last Accepted Result
 
-P2B (Public Supervised Plug Conform) accepted at
-`061a57d4bd48e59cae2d496b889834df7fe54418`.
-P2C proof and final P2 verification gate are complete with all gates passing.
+P2 — Public pack / inspect / conform authoring surface — FINAL ACCEPTED.
+
+The real public author journey is proven end to end:
+
+```text
+plug pack
+→ plug inspect
+→ explicit conform execution approval
+→ plug conform
+```
+
+Final gate evidence:
+
+- full Cargo test: 1714 passed, 0 failed, 2 ignored
+- Nextest: 1714 passed, 2 skipped
+- `just verify-agent`: PASS
+- P2C production changes: 0
+- P2C dependency changes: 0
 
 ## Matthew Decision Required
 
@@ -31,8 +49,9 @@ None.
 
 ## Next Route
 
-Lucy performs final independent P2 acceptance review. P3 (PDF Tools Reference
-Plug Crucible) follows.
+P3 discovery, then a bounded implementation packet to move PDF Tools across the
+public boundary into `reference-plugs/pdf-tools/` without PDF-specific knowledge
+in generic host machinery.
 
 ## Operating Mode
 
@@ -47,16 +66,15 @@ Plug Crucible) follows.
 ## Cost And Drift
 
 - One implementation owner per bounded task.
-- P2C: 1 new test file, 0 production source changes, 0 dependency changes.
-- Rust compiler-warning gate is clean and enforced.
-- `just verify-agent` all-pass (task-packet, fmt, check, cargo-test, agent-tools,
-  deps-policy, deps-advisories, nextest 1714/1714).
-- No speculative post-Foundation plans are authorised.
+- Broad discovery before packet compilation.
+- Cheap checks early. Expensive proof once.
+- No speculative P3 implementation before the packet is frozen.
 
 ## Where Details Live
 
 - Present goal and boundaries: `docs/CURRENT_GOAL.md`
-- Active task contract: `docs/CURRENT_CLINE_TASK.md`
+- Current completed task contract: `docs/CURRENT_CLINE_TASK.md`
+- Roadmap: `docs/ROAD_TO_0_3.md`
 - Foundation Pass architecture: `docs/architecture/TETHERS_FOUNDATION_PASS.md`
 - Persistence inventory: `docs/foundation-pass/PERSISTENCE_INVENTORY.md`
 - Evidence and reviews: `docs/worker-notes/`
