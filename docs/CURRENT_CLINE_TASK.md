@@ -3,14 +3,14 @@
 Control contract: `1`
 Task: `TETHERS-0.3-P1-R1G-FIX — Correct J23C3 Scope Digest Assertion`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode applies one-correction fix`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p1-r1g-fix-j23c3-scope-digest.md`
 Base branch: `feature/0.3-p1-r1f-j23c2-generic-scope-conformance`
 Base commit: `a0390fbfb5df439b3c000c39537d16e6ce198e7f`
 Implementation branch: `feature/0.3-p1-r1g-fix-j23c3-scope-digest`
-Implementation checkpoint: `unset — fix in progress`
+Implementation checkpoint: `83b419c5275dd6edc773eacea16dabbe4c286f7c`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `TEST_CORRECTION_ONLY`
