@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-10-0.3-p2c-public-author-proof.md`
 Base branch: `feature/0.3-p2b-fix2-wire-cleanup-proof`
 Base commit: `061a57d4bd48e59cae2d496b889834df7fe54418`
 Implementation branch: `feature/0.3-p2c-public-author-proof`
-Implementation checkpoint: `4c32b96446e7ae3e20d2994056d0fd435dcc32f3`
+Implementation checkpoint: `a61a4024ef8aafdf73f9b31cd31b759c300cd667`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `TEST_AND_DOCS_ONLY`
