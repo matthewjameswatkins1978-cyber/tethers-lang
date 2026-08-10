@@ -1,16 +1,16 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P2B-FIX — Cleanup Authority + Task Closeout`
+Task: `TETHERS-0.3-P2B-FIX2 — Wire Cleanup Proof Into Production`
 Owner: `OpenCode`
 Status: `COMPLETE`
 Task colour: `Amber`
-Route: `OpenCode implements bounded cleanup correction`
-Worker note: `docs/worker-notes/2026-08-10-0.3-p2b-fix-cleanup-authority.md`
-Base branch: `feature/0.3-p2b-public-plug-conform`
-Base commit: `532550c296efb6384c67023efeca63bac26a7bdd`
-Implementation branch: `feature/0.3-p2b-fix-cleanup-authority`
-Implementation checkpoint: `921af5eb95fbb77578af7ed516d8918c26a2c53c`
+Route: `OpenCode implements bounded structural repair`
+Worker note: `docs/worker-notes/2026-08-10-0.3-p2b-fix2-wire-cleanup-proof.md`
+Base branch: `feature/0.3-p2b-fix-cleanup-authority`
+Base commit: `26269f1edc16bc49a4ed7261263185802e3e6fdf`
+Implementation branch: `feature/0.3-p2b-fix2-wire-cleanup-proof`
+Implementation checkpoint: `e21ceefd27f1a7bee0bedbbe2f9b59845300c046`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `PRODUCTION_AND_TEST`
@@ -110,4 +110,4 @@ Report PASS — 0 matched if applicable. Do NOT report NOT RUN.
 
 ## Expected pre-existing changes
 
-None. HEAD equals `532550c296efb6384c67023efeca63bac26a7bdd`. Working tree currently has uncommitted P2B-FIX changes.
+None. HEAD equals `26269f1edc16bc49a4ed7261263185802e3e6fdf`. Working tree currently has uncommitted P2B-FIX2 changes.
