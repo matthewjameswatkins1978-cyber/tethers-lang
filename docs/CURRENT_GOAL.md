@@ -1,28 +1,22 @@
 # Current Goal
 
-Updated: 2026-08-09
+Updated: 2026-08-10
 
 ## Goal
 
-Tethers 0.2.2 has been released. The verified implementation checkpoint is
-`c6ea1e1652fa2785a1f06e0ace2fcd5e826ee6ec`, published by advancing `main`
-and tagging `v0.2.2`.
-
-Foundation F1–F10 is COMPLETE and ACCEPTED. The accepted F10 final evidence
-is at `5108b06f1f694d6523d5f3f342c08ca0f9b9cbc1`.
-
-The next programme is Tethers 0.3 public Plug authoring. The first 0.3
-implementation packet will be compiled by Lucy from the published `v0.2.2` tag.
+Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
+ACCEPTED. P2 is ACTIVE: P2A (public deterministic plug pack) is implemented
+and awaiting Lucy review.
 
 ## Last accepted increment
 
-Tethers 0.2.2 published. Foundation F1–F10 merge and tagged `v0.2.2`
-complete. Verified implementation checkpoint:
-`c6ea1e1652fa2785a1f06e0ace2fcd5e826ee6ec`.
+P1 Generic Operational Scope Evidence accepted at
+`270a5913a93d64256113cca3450619c484b7ddc7`.
 
 ## Active increment
 
-None — awaiting Lucy compilation of the first Tethers 0.3 implementation packet.
+P2A — Public deterministic plug pack. Implementation branch:
+`feature/0.3-p2a-public-plug-pack`. Awaiting Lucy independent review.
 
 ## Foundation Pass boundaries
 

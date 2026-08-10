@@ -1,24 +1,22 @@
 # Tethers Project Dashboard
 
-Updated: 2026-08-09
+Updated: 2026-08-10
 
 ## Current Milestone
 
-Tethers 0.2.2 released. Foundation F1–F10 is COMPLETE and ACCEPTED. The next
-programme is Tethers 0.3 public Plug authoring.
+Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
+ACCEPTED. P2 is ACTIVE with P2A (public deterministic plug pack) implemented.
 
 ## Verified Checkpoint
 
-0.2.2 release published at verified implementation checkpoint
-`c6ea1e1652fa2785a1f06e0ace2fcd5e826ee6ec`. Tagged as `v0.2.2`.
+P1 accepted at `270a5913a93d64256113cca3450619c484b7ddc7`.
 
 ## Active Task
 
-- Task: None — awaiting Lucy compilation of the first Tethers 0.3 implementation
-  packet from the published `v0.2.2` tag.
-- State: None
-- Owner: None
-- Risk: N/A
+- Task: TETHERS-0.3-P2A — Public Deterministic Plug Pack
+- State: Awaiting Lucy independent review
+- Owner: OpenCode (implementation), Lucy (review)
+- Risk: Amber
 
 ## Last Accepted Result
 

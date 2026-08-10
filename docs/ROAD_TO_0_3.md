@@ -6,7 +6,7 @@
 
 ## Status
 
-P1 in progress.
+P1 COMPLETE / ACCEPTED. P2 ACTIVE (P2A pack complete).
 
 ## Sequence
 
@@ -14,9 +14,11 @@ P1 in progress.
 
 Complete. Published from `c0fd57780156bee023d8dcff884737ea470d096c`.
 
-### P1 — Generic Operational Scope Evidence
+### P1 — Generic Operational Scope Evidence ✓
 
 Replace Plug-specific operational-scope types with a generic **Operational Scope Evidence** model.
+
+Accepted at `270a5913a93d64256113cca3450619c484b7ddc7`.
 
 End state:
 
@@ -39,6 +41,10 @@ Core must not contain knowledge such as FileTools, Pdf, Image, Audio, Git, Email
 ### P2 — Public pack / inspect / conform authoring surface
 
 Expose the generic author workflow: `plug pack`, `plug inspect`, `plug conform`.
+
+- **P2A — Public deterministic plug pack** ✓ (this packet)
+- **P2B — Public conform** — next
+- **P2C — End-to-end author proof + final P2 verification** — after P2B
 
 ### P3 — PDF Tools Reference Plug Crucible
 
