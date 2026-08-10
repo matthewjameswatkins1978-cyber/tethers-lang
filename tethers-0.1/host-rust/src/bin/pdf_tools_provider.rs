@@ -19,6 +19,8 @@ const PROVIDER_VERSION: &str = "1.0.0";
 const PROTOCOL_VERSION: &str = "2025-11-25";
 
 const OPERATIONAL_SCOPE_JSON_ENV: &str = "TETHERS_OPERATIONAL_SCOPE_JSON";
+const TETHERS_CONFORMANCE_ENV: &str = "TETHERS_CONFORMANCE";
+const TEMP_ENV: &str = "TEMP";
 
 fn response(id: &Value, result: Value) -> Value {
     json!({"jsonrpc":"2.0","id":id,"result":result})
@@ -28,91 +30,68 @@ fn error(id: &Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
 }
 
-fn resolve_query_root() -> PathBuf {
-    let conformance = std::env::var("TETHERS_CONFORMANCE").unwrap_or_default();
-    let json = match std::env::var(OPERATIONAL_SCOPE_JSON_ENV) {
-        Ok(v) if !v.is_empty() => v,
-        _ => {
-            if conformance == "1" {
-                return conformance_query_root();
-            }
-            eprintln!("pdf provider configuration refused: TETHERS_OPERATIONAL_SCOPE_JSON is required in installed operational mode");
-            std::process::exit(2);
-        }
-    };
-    let value: Value = match serde_json::from_str(&json) {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("pdf provider configuration refused: malformed operational scope JSON");
-            std::process::exit(2);
-        }
-    };
-    let root = match value.get("query_root").and_then(|v| v.as_str()) {
-        Some(s) => s,
+fn is_conformance_mode(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
+fn conformance_scope(temp: Option<&str>) -> Result<PdfScope, String> {
+    let temp = temp
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "TEMP is required during host conformance".to_owned())?;
+    PdfScope::new(&PathBuf::from(temp), pdf_tools::MAX_PDF_BYTES)
+        .map_err(|failure| failure.to_string())
+}
+
+fn scope_from_configuration(
+    conformance: bool,
+    operational_scope_json: Option<&str>,
+    temp: Option<&str>,
+) -> Result<PdfScope, String> {
+    let json = match operational_scope_json.filter(|value| !value.is_empty()) {
+        Some(json) => json,
+        None if conformance => return conformance_scope(temp),
         None => {
-            eprintln!("pdf provider configuration refused: query_root is not present in operational scope");
-            std::process::exit(2);
+            return Err(
+                "TETHERS_OPERATIONAL_SCOPE_JSON is required in installed operational mode".into(),
+            )
         }
     };
-    if root.is_empty() {
-        eprintln!("pdf provider configuration refused: query_root is empty");
-        std::process::exit(2);
-    }
-    PathBuf::from(root)
+    let scope: Value =
+        serde_json::from_str(json).map_err(|_| "malformed operational scope JSON".to_owned())?;
+    let query_root = scope
+        .get("query_root")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "query_root is required and must be a non-empty string".to_owned())?;
+    let max_bytes = if conformance {
+        pdf_tools::MAX_PDF_BYTES
+    } else {
+        scope
+            .get("max_bytes")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "max_bytes is required and must be an integer".to_owned())?
+    };
+    PdfScope::new(&PathBuf::from(query_root), max_bytes).map_err(|failure| failure.to_string())
 }
 
-fn conformance_query_root() -> PathBuf {
-    let temp = match std::env::var("TEMP") {
-        Ok(value) if !value.is_empty() => value,
-        _ => {
-            eprintln!(
-                "pdf provider configuration refused: TEMP is not set during host conformance"
-            );
-            std::process::exit(2);
-        }
+fn resolve_scope() -> Result<PdfScope, String> {
+    let scope = match std::env::var_os(OPERATIONAL_SCOPE_JSON_ENV) {
+        Some(value) => Some(
+            value
+                .into_string()
+                .map_err(|_| "TETHERS_OPERATIONAL_SCOPE_JSON must be valid UTF-8".to_owned())?,
+        ),
+        None => None,
     };
-    let path = PathBuf::from(temp);
-    match PdfScope::new(&path, pdf_tools::MAX_PDF_BYTES) {
-        Ok(scope) => scope.query_root,
-        Err(failure) => {
-            eprintln!(
-                "pdf provider configuration refused: TEMP is not a valid query root: {failure}"
-            );
-            std::process::exit(2);
-        }
-    }
-}
-
-fn resolve_max_bytes() -> u64 {
-    let conformance = std::env::var("TETHERS_CONFORMANCE").unwrap_or_default();
-    if conformance != "0" {
-        return pdf_tools::MAX_PDF_BYTES;
-    }
-    let json = match std::env::var(OPERATIONAL_SCOPE_JSON_ENV) {
-        Ok(v) if !v.is_empty() => v,
-        _ => return pdf_tools::MAX_PDF_BYTES,
-    };
-    let value: Value = match serde_json::from_str(&json) {
-        Ok(v) => v,
-        Err(_) => return pdf_tools::MAX_PDF_BYTES,
-    };
-    match value.get("max_bytes").and_then(|v| v.as_u64()) {
-        Some(n) if n >= 1 && n <= pdf_tools::MAX_PDF_BYTES => n,
-        Some(n) => {
-            eprintln!(
-                "pdf provider configuration refused: max_bytes {n} is outside [1, {}]",
-                pdf_tools::MAX_PDF_BYTES
-            );
-            std::process::exit(2);
-        }
-        None => pdf_tools::MAX_PDF_BYTES,
-    }
+    scope_from_configuration(
+        is_conformance_mode(std::env::var(TETHERS_CONFORMANCE_ENV).ok().as_deref()),
+        scope.as_deref(),
+        std::env::var(TEMP_ENV).ok().as_deref(),
+    )
 }
 
 fn main() {
-    let root = resolve_query_root();
-    let max_bytes = resolve_max_bytes();
-    let scope = match PdfScope::new(&root, max_bytes) {
+    let scope = match resolve_scope() {
         Ok(scope) => scope,
         Err(failure) => {
             eprintln!("pdf provider configuration refused: {failure}");
@@ -198,5 +177,74 @@ fn main() {
             serde_json::to_string(&output).expect("provider response is serializable")
         );
         io::stdout().flush().ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scope_json(root: &std::path::Path, max_bytes: Value) -> String {
+        json!({"query_root": root, "max_bytes": max_bytes}).to_string()
+    }
+
+    #[test]
+    fn valid_normal_scope_uses_exact_max_bytes() {
+        let root = std::env::temp_dir();
+        let scope =
+            scope_from_configuration(false, Some(&scope_json(&root, json!(4096))), None).unwrap();
+        assert_eq!(scope.max_bytes, 4096);
+    }
+
+    #[test]
+    fn conformance_unset_does_not_activate_fallback() {
+        assert!(!is_conformance_mode(None));
+        assert!(scope_from_configuration(is_conformance_mode(None), None, None).is_err());
+    }
+
+    #[test]
+    fn conformance_zero_does_not_activate_fallback() {
+        assert!(!is_conformance_mode(Some("0")));
+        assert!(scope_from_configuration(is_conformance_mode(Some("0")), None, None).is_err());
+    }
+
+    #[test]
+    fn other_conformance_values_do_not_activate_fallback() {
+        assert!(!is_conformance_mode(Some("true")));
+        assert!(scope_from_configuration(is_conformance_mode(Some("true")), None, None).is_err());
+    }
+
+    #[test]
+    fn missing_max_bytes_in_normal_mode_refuses() {
+        let root = std::env::temp_dir();
+        let scope = json!({"query_root": root}).to_string();
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn malformed_scope_refuses() {
+        assert!(scope_from_configuration(false, Some("{"), None).is_err());
+    }
+
+    #[test]
+    fn wrong_max_bytes_type_refuses() {
+        let root = std::env::temp_dir();
+        let scope = scope_json(&root, json!("4096"));
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn out_of_range_max_bytes_refuses() {
+        let root = std::env::temp_dir();
+        let scope = scope_json(&root, json!(pdf_tools::MAX_PDF_BYTES + 1));
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn conformance_one_preserves_maximum_bound_fallback() {
+        let temp = std::env::temp_dir();
+        let scope =
+            scope_from_configuration(is_conformance_mode(Some("1")), None, temp.to_str()).unwrap();
+        assert_eq!(scope.max_bytes, pdf_tools::MAX_PDF_BYTES);
     }
 }

@@ -48,14 +48,17 @@ fn native_file_tools_provider_performs_query_and_non_overwriting_move() {
     fs::write(query.join("hello.txt"), b"hello").unwrap();
     fs::write(source.join("move.txt"), b"move").unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_file_tools_provider"))
-        .args([
-            "--query-root",
-            query.to_str().unwrap(),
-            "--source-root",
-            source.to_str().unwrap(),
-            "--destination-root",
-            destination.to_str().unwrap(),
-        ])
+        .env(
+            "TETHERS_OPERATIONAL_SCOPE_JSON",
+            serde_json::json!({
+                "query_root": query,
+                "move_source_root": source,
+                "move_destination_root": destination,
+                "max_content_bytes": 65536,
+            })
+            .to_string(),
+        )
+        .env("TETHERS_CONFORMANCE", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

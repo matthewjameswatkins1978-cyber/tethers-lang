@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use tethers_reference_host::file_tools::{self, FileScope};
 
 const OPERATIONAL_SCOPE_JSON_ENV: &str = "TETHERS_OPERATIONAL_SCOPE_JSON";
+const TETHERS_CONFORMANCE_ENV: &str = "TETHERS_CONFORMANCE";
+const TEMP_ENV: &str = "TEMP";
 
 fn response(id: &Value, result: Value) -> Value {
     json!({"jsonrpc":"2.0","id":id,"result":result})
@@ -18,26 +20,74 @@ fn error(id: &Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
 }
 
-fn resolve_root(field: &str) -> PathBuf {
-    let json = match std::env::var(OPERATIONAL_SCOPE_JSON_ENV) {
-        Ok(v) if !v.is_empty() => v,
-        _ => return std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-    };
-    let value: Value = match serde_json::from_str(&json) {
-        Ok(v) => v,
-        Err(_) => return std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-    };
-    match value.get(field).and_then(|v| v.as_str()) {
-        Some(s) if !s.is_empty() => PathBuf::from(s),
-        _ => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+fn is_conformance_mode(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
+fn required_path<'a>(scope: &'a Value, field: &str) -> Result<&'a str, String> {
+    match scope.get(field).and_then(Value::as_str) {
+        Some(value) if !value.is_empty() => Ok(value),
+        Some(_) => Err(format!("{field} must not be empty")),
+        None => Err(format!("{field} is required and must be a string")),
     }
 }
 
+fn conformance_scope(temp: Option<&str>) -> Result<FileScope, String> {
+    let temp = temp
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "TEMP is required during host conformance".to_owned())?;
+    let root = PathBuf::from(temp);
+    FileScope::new(&root, &root, &root).map_err(|error| error.to_string())
+}
+
+fn scope_from_configuration(
+    conformance: bool,
+    operational_scope_json: Option<&str>,
+    temp: Option<&str>,
+) -> Result<FileScope, String> {
+    let json = match operational_scope_json.filter(|value| !value.is_empty()) {
+        Some(json) => json,
+        None if conformance => return conformance_scope(temp),
+        None => {
+            return Err(
+                "TETHERS_OPERATIONAL_SCOPE_JSON is required in installed operational mode".into(),
+            )
+        }
+    };
+    let scope: Value =
+        serde_json::from_str(json).map_err(|_| "malformed operational scope JSON".to_owned())?;
+    let query_root = PathBuf::from(required_path(&scope, "query_root")?);
+    let source_root = PathBuf::from(required_path(&scope, "move_source_root")?);
+    let destination_root = PathBuf::from(required_path(&scope, "move_destination_root")?);
+    let max_content_bytes = scope
+        .get("max_content_bytes")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "max_content_bytes is required and must be an integer".to_owned())?;
+
+    FileScope::new(&query_root, &source_root, &destination_root)
+        .map_err(|error| error.to_string())?
+        .with_max_content_bytes(max_content_bytes)
+        .map_err(|error| error.to_string())
+}
+
+fn resolve_scope() -> Result<FileScope, String> {
+    let scope = match std::env::var_os(OPERATIONAL_SCOPE_JSON_ENV) {
+        Some(value) => Some(
+            value
+                .into_string()
+                .map_err(|_| "TETHERS_OPERATIONAL_SCOPE_JSON must be valid UTF-8".to_owned())?,
+        ),
+        None => None,
+    };
+    scope_from_configuration(
+        is_conformance_mode(std::env::var(TETHERS_CONFORMANCE_ENV).ok().as_deref()),
+        scope.as_deref(),
+        std::env::var(TEMP_ENV).ok().as_deref(),
+    )
+}
+
 fn main() {
-    let root = resolve_root("query_root");
-    let source = resolve_root("move_source_root");
-    let destination = resolve_root("move_destination_root");
-    let scope = match FileScope::new(&root, &PathBuf::from(&source), &PathBuf::from(&destination)) {
+    let scope = match resolve_scope() {
         Ok(scope) => scope,
         Err(error) => {
             eprintln!("file-tools provider configuration refused: {error}");
@@ -124,5 +174,139 @@ fn main() {
             serde_json::to_string(&output).expect("provider response is serializable")
         );
         io::stdout().flush().ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scope_json(root: &std::path::Path, max_content_bytes: Value) -> String {
+        json!({
+            "query_root": root,
+            "move_source_root": root,
+            "move_destination_root": root,
+            "max_content_bytes": max_content_bytes,
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn valid_generic_scope_loads_exact_roots() {
+        let root = std::env::temp_dir();
+        let scope =
+            scope_from_configuration(false, Some(&scope_json(&root, json!(4096))), None).unwrap();
+        let canonical = std::fs::canonicalize(root).unwrap();
+        assert_eq!(scope.query_root, canonical);
+        assert_eq!(scope.source_root, canonical);
+        assert_eq!(scope.destination_root, canonical);
+    }
+
+    #[test]
+    fn valid_smaller_max_content_bytes_is_applied_exactly() {
+        let root = std::env::temp_dir();
+        let scope =
+            scope_from_configuration(false, Some(&scope_json(&root, json!(4096))), None).unwrap();
+        assert_eq!(scope.max_content_bytes, 4096);
+    }
+
+    #[test]
+    fn missing_scope_refuses_in_normal_mode() {
+        assert!(scope_from_configuration(false, None, None).is_err());
+    }
+
+    #[test]
+    fn malformed_scope_refuses() {
+        assert!(scope_from_configuration(false, Some("{"), None).is_err());
+    }
+
+    #[test]
+    fn missing_query_root_refuses() {
+        let root = std::env::temp_dir();
+        let scope = json!({
+            "move_source_root": root,
+            "move_destination_root": root,
+            "max_content_bytes": 4096,
+        })
+        .to_string();
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn missing_move_source_root_refuses() {
+        let root = std::env::temp_dir();
+        let scope = json!({
+            "query_root": root,
+            "move_destination_root": root,
+            "max_content_bytes": 4096,
+        })
+        .to_string();
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn missing_move_destination_root_refuses() {
+        let root = std::env::temp_dir();
+        let scope = json!({
+            "query_root": root,
+            "move_source_root": root,
+            "max_content_bytes": 4096,
+        })
+        .to_string();
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn missing_max_content_bytes_refuses() {
+        let root = std::env::temp_dir();
+        let scope = json!({
+            "query_root": root,
+            "move_source_root": root,
+            "move_destination_root": root,
+        })
+        .to_string();
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn wrong_field_type_refuses() {
+        let root = std::env::temp_dir();
+        let scope = scope_json(&root, json!("4096"));
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn invalid_max_content_bytes_refuses() {
+        let root = std::env::temp_dir();
+        let scope = scope_json(&root, json!(file_tools::MAX_CONTENT_BYTES + 1));
+        assert!(scope_from_configuration(false, Some(&scope), None).is_err());
+    }
+
+    #[test]
+    fn conformance_unset_does_not_activate_fallback() {
+        assert!(!is_conformance_mode(None));
+        assert!(scope_from_configuration(is_conformance_mode(None), None, None).is_err());
+    }
+
+    #[test]
+    fn conformance_zero_does_not_activate_fallback() {
+        assert!(!is_conformance_mode(Some("0")));
+        assert!(scope_from_configuration(is_conformance_mode(Some("0")), None, None).is_err());
+    }
+
+    #[test]
+    fn other_conformance_values_do_not_activate_fallback() {
+        assert!(!is_conformance_mode(Some("true")));
+        assert!(scope_from_configuration(is_conformance_mode(Some("true")), None, None).is_err());
+    }
+
+    #[test]
+    fn conformance_one_activates_fallback() {
+        let temp = std::env::temp_dir();
+        let scope =
+            scope_from_configuration(is_conformance_mode(Some("1")), None, temp.to_str()).unwrap();
+        let canonical = std::fs::canonicalize(temp).unwrap();
+        assert_eq!(scope.query_root, canonical);
+        assert_eq!(scope.max_content_bytes, file_tools::MAX_CONTENT_BYTES);
     }
 }

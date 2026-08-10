@@ -1,89 +1,80 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P1-R1C-FIX — Close Canonical Directory Proof`
-Owner: `OpenCode`
-Status: `COMPLETE`
+Task: `TETHERS-0.3-P1-R1D — Reference Providers Obey Generic Scope`
+Owner: `Codex`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `OpenCode implements bounded correction`
-Worker note: `docs/worker-notes/2026-08-09-0.3-p1-r1c-canonical-directory.md`
-Base branch: `feature/0.3-p1-r1b-scope-validation`
-Base commit: `f18d211523de953d260417e67abbadf766412037`
-Implementation branch: `feature/0.3-p1-r1c-canonical-directory`
-Implementation checkpoint: `eae2e708c52cc1739113d5b2079239169541403e`
-Original R1C checkpoint: `bb4ba228f8812703bb06bcf9970de42f4a9eee44`
-Previous closeout HEAD: `942282e98761ee39f7d683d696ba72941b259835`
-OCaml switch path: `resolve from existing machine state only`
+Route: `Codex implements bounded repair`
+Worker note: `docs/worker-notes/2026-08-10-0.3-p1-r1d-reference-provider-scope.md`
+Base branch: `feature/0.3-p1-r1c-canonical-directory`
+Base commit: `20cdb463e9c84f35b6d70997916305a1443cfd1d`
+Implementation branch: `feature/0.3-p1-r1d-reference-provider-scope`
+Implementation checkpoint: `WORKTREE`
+OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
-Rust change class: `AMBER_ARCHITECTURE_CORRECTION`
-
-## Relevant background and existing behaviour
-
-R1C was architecturally accepted at `bb4ba22` and closeout-pushed at `942282e`. Two proof gaps remained: a dead_code warning introduced by R1C when `validate_operational_scope` became test-only, and missing explicit test coverage for schema-valued `additionalProperties` canonicalisation.
+Rust change class: `AMBER_PROVIDER_CONFIGURATION_REPAIR`
 
 ## Objective
 
-Close two small proof gaps in the accepted R1C implementation:
-
-1. Eliminate the dead_code warning by making `validate_operational_scope` `#[cfg(test)]`.
-2. Add explicit test proof for `additionalProperties` canonicalisation.
+Make the File Tools and PDF reference providers consume their existing generic Operational Scope exactly. In normal installed operation, absent, malformed, incomplete, wrong-typed, or out-of-bounds scope configuration must refuse rather than select a fallback. Host conformance is the sole exception and activates only when `TETHERS_CONFORMANCE == "1"`.
 
 ## Required behaviour
 
-1. Mark `validate_operational_scope` with `#[cfg(test)]` — not `#[allow(dead_code)]`.
-2. Add `r1c_additional_properties_schema_canonicalised` test.
-3. Update the worker note with corrected truth (warning not pre-existing, remote equality confirmed).
+1. File Tools requires `query_root`, `move_source_root`, `move_destination_root`, and `max_content_bytes`, and applies its exact validated limit.
+2. PDF requires `query_root` and `max_bytes` in normal installed mode, and applies the exact validated limit.
+3. Unset `TETHERS_CONFORMANCE`, `"0"`, and every value other than exact `"1"` are normal installed mode.
+4. Exact `"1"` alone preserves the existing TEMP-based bounded conformance fallback.
+5. Configuration parsing is locally testable; startup remains the only process-exit boundary.
 
 ## Frozen decisions and invariants
 
-1. No `#[allow(dead_code)]` suppression.
-2. No production validation semantics changed.
-3. No new schema features.
-4. Overall P1 remains `completion repair in progress`.
+1. The providers may understand only their own declared scope; no File/PDF knowledge moves into generic host scope, enablement, candidate/install records, schema validation, or launch machinery.
+2. No new dependency, OS sandbox, migration tool, conformance redesign, P2 work, or concurrency change.
+3. Overall P1 remains `completion repair in progress`.
 
 ## Acceptance criteria
 
-1. `cargo check` returns 0 warnings. — DONE
-2. additionalProperties canonicalisation test passes. — DONE
-3. All 15 R1C tests pass. — DONE
-4. All 14 R1B regression tests pass. — DONE
-5. `cargo fmt --all -- --check` clean. — DONE
-6. `git diff --check` clean. — DONE
-7. Branch pushed, remote == local, clean worktree. — DONE
+1. File Tools has no normal-mode current-directory or default-limit fallback.
+2. PDF has no normal-mode `MAX_PDF_BYTES` fallback.
+3. All requested success and fail-closed configuration branches have focused tests.
+4. Existing relevant File Tools and PDF provider tests pass.
+5. `cargo check --all-targets --all-features --locked`, `cargo fmt --all -- --check`, and `git diff --check` pass.
+6. Finished branch is pushed; remote equals local; worktree is clean.
 
-## Relevant components
+## Authorised paths
 
-### AUTHORISED PATHS
-- `tethers-0.1/host-rust/src/validation.rs`
-
-### CLOSEOUT
+- `tethers-0.1/host-rust/src/bin/file_tools_provider.rs`
+- `tethers-0.1/host-rust/src/bin/pdf_tools_provider.rs`
+- `tethers-0.1/host-rust/tests/m4_file_tools.rs`
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-08-09-0.3-p1-r1c-canonical-directory.md`
+- `docs/worker-notes/2026-08-10-0.3-p1-r1d-reference-provider-scope.md`
 
 ## Required verification
 
-1. `cargo check --all-targets --all-features --locked` — 0 warnings
-2. `cargo test r1c` — 15/15 passed
-3. `cargo test r1b` — 14/14 passed
-4. `cargo fmt --all -- --check` — clean
-5. `git diff --check` — clean
+1. Focused File Tools provider configuration tests.
+2. Focused PDF provider configuration tests.
+3. Relevant existing File Tools and PDF provider tests.
+4. `cargo check --all-targets --all-features --locked`
+5. `cargo fmt --all -- --check`
+6. `git diff --check`
+7. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
 
 ## Forbidden changes
 
-- No Tethers language change
-- No concurrency
-- No plug pack/inspect/conform implementation
-- No registry, marketplace, HTTP/WebSocket/gRPC, SDK, secret store, OAuth, OS sandbox
-- No dependency update
-- No physical extraction into `reference-plugs/`
-- No synthetic Plug
-- No provider changes
-- No conformance repair, P2, migration tool
-- No `just verify-agent`, engine fixtures, MCP transcripts, fixture validator
+- No synthetic Plug.
+- No `j23c2` conformance repair.
+- No old placeholder repair.
+- No plug pack/inspect/conform public surface.
+- No generic Operational Scope architecture change.
+- No P2, migration tooling, concurrency, or unrelated cleanup.
+- No `just verify-agent`, engine fixture suite, MCP transcript suite, or full final P1 gate.
 
 ## Stop conditions
 
-None. All acceptance criteria verified.
+- Any need to redesign generic host scope, host conformance, provider architecture, or a concurrent execution boundary.
+- A required test or check has two materially similar failed attempts.
+- An edit causes unrelated formatting or line-ending churn.
 
 ## Expected pre-existing changes
 
