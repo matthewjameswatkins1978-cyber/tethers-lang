@@ -4,13 +4,14 @@ Control contract: `1`
 Task: `TETHERS-0.3-P2C — End-to-End Public Author Proof + Final P2 Gate`
 Owner: `OpenCode`
 Status: `COMPLETE`
-Task colour: `Amber`
-Route: `OpenCode implements proof + final gate`
+Task colour: `Green`
+Route: `COMPLETE / FINAL ACCEPTED — P3 packet not yet issued`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p2c-public-author-proof.md`
 Base branch: `feature/0.3-p2b-fix2-wire-cleanup-proof`
 Base commit: `061a57d4bd48e59cae2d496b889834df7fe54418`
 Implementation branch: `feature/0.3-p2c-public-author-proof`
-Implementation checkpoint: `9d1f43d26f7c0e9eabdb71f53366cb17da9f666f`
+Implementation checkpoint: `4c32b96446e7ae3e20d2994056d0fd435dcc32f3`
+Final independently reviewed P2 evidence head: `84f1002904dd54929fa8002d1634c42c85112f54`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `TEST_AND_DOCS_ONLY`
@@ -128,16 +129,6 @@ to record P2B accepted, P2C proof complete, P3 next.
 8. Task packet checker `control-v1/COMPLETE`
 9. Branch pushed, remote == local, genuinely clean worktree
 
-## Required verification
-
-1. Focused P2C test
-2. Cargo fmt check
-3. Git diff check
-4. Clippy
-5. `just verify-agent` (once, after all code changes)
-6. Task packet checker
-7. Git publish + remote/local equality
-
 ## Forbidden changes
 
 - No src/ production files
@@ -160,7 +151,28 @@ to record P2B accepted, P2C proof complete, P3 next.
 - `just verify-agent` fails
 - Two materially similar attempts fail
 
-## Expected pre-existing changes
+## Final acceptance
 
-None. HEAD equals `061a57d4bd48e59cae2d496b889834df7fe54418` (P2B FINAL ACCEPTED).
-Branch `feature/0.3-p2c-public-author-proof` created from P2B HEAD. Working tree clean.
+P2C is COMPLETE and independently reviewed by Lucy. P2 is FINAL ACCEPTED.
+
+Canonical P2C implementation checkpoint:
+`4c32b96446e7ae3e20d2994056d0fd435dcc32f3`.
+
+Final independently reviewed P2 evidence head:
+`84f1002904dd54929fa8002d1634c42c85112f54`.
+
+Final evidence includes:
+
+- public `plug pack → plug inspect → plug conform` journey PASS
+- explicit conform execution approval tripwire PASS
+- digest continuity PASS
+- source/package immutability PASS
+- workspace cleanup PASS
+- full Cargo test: 1714 passed, 0 failed, 2 ignored
+- Nextest: 1714 passed, 2 skipped
+- `just verify-agent`: PASS
+- production changes in P2C: 0
+- dependency changes in P2C: 0
+
+P3 has not yet been issued. This completed packet remains the current task record
+until Lucy freezes the P3 implementation packet.
