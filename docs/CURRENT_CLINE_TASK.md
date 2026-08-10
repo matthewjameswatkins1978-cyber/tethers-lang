@@ -10,7 +10,7 @@ Worker note: `docs/worker-notes/2026-08-10-0.3-p3-pdf-reference-plug.md`
 Base branch: `main`
 Base commit: `06bcb29d36522f0b75bd24eac7c4b66e49f8ea33`
 Implementation branch: `feature/0.3-p3-pdf-reference-plug`
-Implementation checkpoint: `907eaa75b17a4441806df342af30fd5ffd9c8ea7`
+Implementation checkpoint: `fcf22bff911393869d8dd560efeee1442a50b119`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1` from root pin; plain Cargo; `--locked` mandatory
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
