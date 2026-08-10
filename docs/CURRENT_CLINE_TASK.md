@@ -3,14 +3,14 @@
 Control contract: `1`
 Task: `TETHERS-0.3-P5 — Fresh-Agent Plug Authoring Proof`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `fresh-agent execution → OpenCode evidence capture → Lucy independent review`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p5-fresh-agent-authoring-proof.md`
 Base branch: `main`
 Base commit: `1e1f9b8738a48f727187316dd0078b7f9435f1c6`
 Implementation branch: `feature/0.3-p5-fresh-agent-authoring-proof`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `8e76e1eada4bd071065e5ee2c86fdc2f1cc560cb`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1` from root pin; provider built under `reference-plugs/`
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
