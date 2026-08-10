@@ -223,7 +223,7 @@ fn installed_pdf_plug_lifecycle() {
 
     // -- Mismatched operational scope refused --
     let mismatched_scope = make_pdf_scope(&installed.installed_id, &query_dir, operational_max + 1);
-    assert_eq!(mismatched_scope.integrity_digest, scope.integrity_digest);
+    assert_ne!(mismatched_scope.integrity_digest, scope.integrity_digest);
     let mismatched_launch = InstalledPdfToolsExecutor::launch_from_installed(
         &installed,
         &installation_dir,
@@ -239,7 +239,7 @@ fn installed_pdf_plug_lifecycle() {
         Ok(_) => panic!("mismatched operational scope was accepted"),
         Err(error) => error.to_string(),
     };
-    assert!(mismatched_error.contains("enablement scope does not match supplied scope"));
+    assert!(mismatched_error.contains("enablement pins are stale"));
 
     // -- Successful installed launch --
     let mut executor = InstalledPdfToolsExecutor::launch_from_installed(
