@@ -6,7 +6,7 @@ Task: `TETHERS-0.4-C1 — Together: Deterministic Fan-Out / Join Foundation`
 
 Owner: `OpenCode`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
@@ -17,6 +17,8 @@ Worker note: `docs/worker-notes/2026-08-11-0.4-c1-together-fan-out-join.md`
 Base branch: `feature/0.3-p6-evil-bunny-adversarial-provider-proof`
 
 Base commit: `5ed7634d8abc4056e0faa1ff09924377dec6e645`
+
+Implementation checkpoint: `bb860e690e7469dd75d2c02f018ef57a1f8a78ef`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
