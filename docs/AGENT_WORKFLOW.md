@@ -217,6 +217,35 @@ in the packet, worker note, code, tests, dashboard, and Git.
   authorise a force-push, direct `main` update, or merge.
 - Never claim an unrun check passed.
 
+### Delegation and BLOCKED
+
+The packet sets the **destination** and the **protected guardrails**, not every
+implementation footstep. Once implementation is delegated, the implementation
+owner owns ordinary implementation problems and solves them locally rather than
+returning `BLOCKED`. Problems that should normally be solved locally include:
+
+- compile/test failures;
+- stale assertions or fixtures;
+- mechanical migration fallout;
+- minor supporting refactors/helpers;
+- formatter/lint fallout;
+- locally awkward implementation details where the frozen architecture remains
+  clear.
+
+`BLOCKED` is reserved for a substantially higher threshold:
+
+- the frozen architecture is contradictory;
+- repository evidence disproves a required architectural assumption;
+- completing the task requires a consequential protected
+  architecture/product/security/trust decision;
+- genuinely unavailable required tooling/data/credentials;
+- materially different product/architecture choices remain unresolved.
+
+The repeated-failure rule means: repeated failures trigger escalation only when
+they are **repeated unsuccessful approaches to the same unresolved underlying
+problem**. Multiple tests or files exposing the same understood migration issue
+are not separate failed approaches.
+
 ## Cost Posture
 
 - Use ordinary chat Lucy for all repository-visible architecture, planning,

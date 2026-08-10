@@ -222,8 +222,17 @@ During work:
 - Do not add dependencies or alter safety boundaries merely to make tests pass.
 - Prefer focused tests that prove one required behaviour or failure branch.
 - Stop when requirements conflict or a missing design decision blocks safe work.
+- Solve ordinary implementation problems (compile/test failures, stale fixtures,
+  mechanical migration fallout, minor helpers, formatter/lint fallout) locally
+  once delegated; reserve `BLOCKED` for a contradictory frozen architecture,
+  disproven architectural assumptions, a consequential protected
+  architecture/product/security/trust decision, or genuinely unavailable
+  tooling/data/credentials.
 - After two materially similar failed attempts, stop and return exact evidence
-  plus one smallest unresolved question.
+  plus one smallest unresolved question. Repeated failures escalate only when
+  they are repeated unsuccessful approaches to the same underlying problem;
+  several tests/files exposing one understood migration issue are not separate
+  failed attempts.
 
 After work:
 

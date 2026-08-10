@@ -5,24 +5,26 @@ Updated: 2026-08-10
 ## Current Milestone
 
 Tethers 0.3 public Plug authoring. P1 and P2 are FINAL ACCEPTED. P3 — PDF Tools
-Reference Plug Crucible — implementation is COMPLETE and awaits Lucy's
-independent review/acceptance.
+Reference Plug Crucible — is FINAL ACCEPTED at
+`e23030ad5e9820373133b25222680194af967c39`. P4 — Plug Author Manual — is the
+active/current increment.
 
 ## Verified Checkpoint
 
-P3 implementation checkpoint:
+P3 final implementation correction checkpoint:
 `fcf22bff911393869d8dd560efeee1442a50b119`.
 
 ## Active Task
 
-- Task: P3 — PDF Tools Reference Plug Crucible
-- State: implementation COMPLETE; independent review pending
-- Owner: Lucy for independent GitHub review and acceptance
-- Risk: no implementation blocker; P4 remains out of scope
+- Task: P4 — Plug Author Manual
+- State: implementation in progress
+- Owner: OpenCode (implementation); Lucy (independent GitHub review and acceptance)
+- Risk: Green; documentation-only, no production code changes
 
 ## Last Accepted Result
 
-P3 — PDF Tools Reference Plug Crucible — implementation COMPLETE.
+P3 — PDF Tools Reference Plug Crucible — FINAL ACCEPTED at
+`e23030ad5e9820373133b25222680194af967c39`.
 
 The real reference Plug journey is proven end to end:
 
@@ -45,7 +47,8 @@ None.
 
 ## Next Route
 
-Lucy independent review/acceptance of the P3 implementation. P4 has not
+P4 — Plug Author Manual implementation by OpenCode, then Lucy GitHub review and
+acceptance. P5 (fresh-agent authoring proof) remains next after P4 and has NOT
 started.
 
 ## Operating Mode
@@ -63,7 +66,7 @@ started.
 - One implementation owner per bounded task.
 - Broad discovery before packet compilation.
 - Cheap checks early. Expensive proof once.
-- No P4 implementation before a separately authorised packet is frozen.
+- P5 implementation awaits a separately authorised packet.
 
 ## Where Details Live
 

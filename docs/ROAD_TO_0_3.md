@@ -6,7 +6,8 @@
 
 ## Status
 
-P1 COMPLETE / ACCEPTED. P2 FINAL / ACCEPTED. P3 — PDF Tools Reference Plug Crucible — is next.
+P1 COMPLETE / ACCEPTED. P2 FINAL / ACCEPTED. P3 FINAL / ACCEPTED. P4 — Plug Author
+Manual — is active/current. P5 is next after P4 and has NOT started.
 
 ## Sequence
 
@@ -51,15 +52,20 @@ Expose the generic author workflow: `plug pack`, `plug inspect`, `plug conform`.
   - full Cargo gate: 1714 passed, 0 failed, 2 ignored
   - Nextest: 1714 passed, 2 skipped
 
-### P3 — PDF Tools Reference Plug Crucible
+### P3 — PDF Tools Reference Plug Crucible ✓
 
 Move PDF Tools across the public boundary into `reference-plugs/pdf-tools/`.
 
-P3 must prove that a real existing capability can live outside the generic host and use only the public Plug boundary established by P1–P2.
+P3 proved that a real existing capability can live outside the generic host and
+use only the public Plug boundary established by P1–P2.
 
-### P4 — Plug author manual
+FINAL ACCEPTED at `e23030ad5e9820373133b25222680194af967c39`; final P3
+implementation correction checkpoint `fcf22bff911393869d8dd560efeee1442a50b119`.
+
+### P4 — Plug author manual ✓ (active)
 
 Write the complete Plug-authoring manual using only interfaces proven by P1–P3.
+Canonical public manual: `docs/PLUG_AUTHORING.md`.
 
 ### P5 — Fresh-agent authoring proof
 

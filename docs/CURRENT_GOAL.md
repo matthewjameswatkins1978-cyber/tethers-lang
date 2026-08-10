@@ -6,39 +6,39 @@ Updated: 2026-08-10
 
 Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
 ACCEPTED. P2 (public pack / inspect / conform authoring surface) is FINAL
-ACCEPTED. P3 (PDF Tools Reference Plug Crucible) is next.
+ACCEPTED. P3 (PDF Tools Reference Plug Crucible) is FINAL ACCEPTED. P4 (Plug
+Author Manual) is the active/current increment. P5 is next after P4 and has NOT
+started.
 
-P2 acceptance is anchored to final independently reviewed evidence head
-`84f1002904dd54929fa8002d1634c42c85112f54`, with canonical P2C implementation
-checkpoint `4c32b96446e7ae3e20d2994056d0fd435dcc32f3`.
+P3 acceptance is anchored to accepted head
+`e23030ad5e9820373133b25222680194af967c39`, with final P3 implementation
+correction checkpoint `fcf22bff911393869d8dd560efeee1442a50b119`.
 
 ## Last accepted increment
 
-P2 — Public pack / inspect / conform authoring surface.
+P3 — PDF Tools Reference Plug Crucible — FINAL ACCEPTED.
 
-Proven public workflow:
+The real reference Plug journey is proven end to end:
 
 ```text
-plug pack
-→ plug inspect
-→ plug conform
+standalone provider
+→ public pack / inspect / conform
+→ real installed generic execution
 ```
 
-P2 final gate evidence:
+P3 final gate evidence:
 
-- full Cargo test: 1714 passed, 0 failed, 2 ignored
-- Nextest: 1714 passed, 2 skipped
 - `just verify-agent`: PASS
-- no production or dependency drift in P2C
+- Nextest: 1670 passed, 4 skipped
+- standalone provider checks and both ignored P3 crucible tests: PASS
 
 ## Active increment
 
-No P3 implementation packet has been issued yet.
+P4 — Plug Author Manual. Write the complete public author manual using only
+interfaces and behaviour proven by P1–P3. The canonical manual is
+`docs/PLUG_AUTHORING.md`.
 
-Next: P3 — PDF Tools Reference Plug Crucible. The goal is to move PDF Tools
-across the public Plug boundary into `reference-plugs/pdf-tools/` and prove that
-a real existing capability can operate without PDF-specific knowledge in the
-generic host.
+P5 (fresh-agent authoring proof) remains next after P4 and has NOT started.
 
 ## Foundation Pass boundaries
 
@@ -49,7 +49,7 @@ generic host.
 - Every packet reports each required command as PASS, FAIL, or NOT RUN; a
   mandatory NOT RUN blocks COMPLETE.
 - Final packet verification is serial after the last permitted code/test edit.
-- P3 must not smuggle PDF-specific semantics back into generic Plug machinery.
+- P5 must not smuggle PDF-specific semantics back into generic Plug machinery.
 
 ## Authoritative references
 
