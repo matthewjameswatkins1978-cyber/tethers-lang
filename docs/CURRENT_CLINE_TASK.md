@@ -19,7 +19,7 @@ Rust change class: `VERIFICATION_AND_CLOSEOUT_ONLY`
 
 Rerun the final P1 acceptance gate after the bounded J23C3 stale-test correction (R1G-FIX). Verification + closeout only. No implementation changes.
 
-## Relevant background
+## Relevant background and existing behaviour
 
 - First R1G run was BLOCKED on stale J23C3 assertion (`assert_eq!` at line 226 expected equal digests for different scope content)
 - R1G-FIX corrected two stale expectations: `assert_eq!` → `assert_ne!` and "enablement scope does not match supplied scope" → "enablement pins are stale"
