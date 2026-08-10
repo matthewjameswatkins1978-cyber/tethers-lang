@@ -1,96 +1,103 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P1-R1G-RERUN — Final P1 Acceptance Gate (Rerun)`
+Task: `TETHERS-0.3-P2B-FIX — Cleanup Authority + Task Closeout`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `OpenCode runs final P1 verification and closeout`
-Worker note: `docs/worker-notes/2026-08-10-0.3-p1-r1g-final-gate.md`
-Base branch: `feature/0.3-p1-r1g-fix-j23c3-scope-digest`
-Base commit: `a0bdead29b89f76b41f3350d014e02f5f060e9a9`
-Implementation branch: `feature/0.3-p1-r1g-final-gate-rerun`
-Implementation checkpoint: `169056bb6b53c0e51cdc15a517e4d55534df258a`
+Route: `OpenCode implements bounded cleanup correction`
+Worker note: `docs/worker-notes/2026-08-10-0.3-p2b-fix-cleanup-authority.md`
+Base branch: `feature/0.3-p2b-public-plug-conform`
+Base commit: `532550c296efb6384c67023efeca63bac26a7bdd`
+Implementation branch: `feature/0.3-p2b-fix-cleanup-authority`
+Implementation checkpoint: `WORKTREE`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
-Rust change class: `VERIFICATION_AND_CLOSEOUT_ONLY`
+Rust change class: `PRODUCTION_AND_TEST`
 
 ## Objective
 
-Rerun the final P1 acceptance gate after the bounded J23C3 stale-test correction (R1G-FIX). Verification + closeout only. No implementation changes.
-
-## Relevant background and existing behaviour
-
-- First R1G run was BLOCKED on stale J23C3 assertion (`assert_eq!` at line 226 expected equal digests for different scope content)
-- R1G-FIX corrected two stale expectations: `assert_eq!` → `assert_ne!` and "enablement scope does not match supplied scope" → "enablement pins are stale"
-- R1G-FIX accepted at `a0bdead29b89f76b41f3350d014e02f5f060e9a9`
-- This rerun gates the same acceptance criteria from the corrected base
+Close the final P2B acceptance gaps found during Lucy's independent review.
+Do NOT redesign public conform. Do NOT begin P2C.
 
 ## Required behaviour
 
-1. Verify clean starting state (no untracked file from previous BLOCKED run)
-2. No-knowledge gate: zero generic-provider references in production `src/`
-3. Retired-delivery gate: zero retired subject-specific paths in generic production
-4. Dependency gate: no dependency change vs `c0fd57780156bee023d8dcff884737ea470d096c`
-5. `cargo clippy --all-targets --all-features --locked` — PASS
-6. `just verify-agent` — PASS (full suite)
-7. `git diff --check` — PASS
-8. Reconcile 14 P1 acceptance criteria
-9. Closeout: worker note, task packet COMPLETE, push, remote == local, genuinely clean worktree
+### FIX 1 — Cleanup failure must block clean success
 
-## Reused valid evidence
+1. Always attempt supervised scratch cleanup after conformance execution.
+2. Always attempt final whole-workspace cleanup regardless of conform pass/fail/interruption/scratch-cleanup failure.
+3. Capture cleanup failures.
+4. If either scratch or workspace cleanup fails, return `conformance_cleanup_failed` / `failed` / exit 6.
+5. Safe message: "ephemeral conform state could not be completely removed"
+6. No path, temp dir, or raw filesystem error exposure in public output.
+7. Cleanup failure takes precedence over an otherwise successful conform result.
 
-- Engine fixtures: 29 PASS (no OCaml files changed during P1)
-- MCP transcripts: 15 PASS (R1G-FIX changed only assertions/messages in J23C3 + docs)
-- Fixture validator: 46 JSON + 30 JSONL PASS (no fixture data or production behaviour changed)
+### FIX 2 — Current task packet
+
+Replace stale P1-R1G-RERUN task packet with actual bounded P2B-FIX task.
+
+### FIX 3 — Run three required commands
+
+- `cargo test --locked --lib conformance::tests`
+- `cargo test --locked --lib launch_profile::tests`
+- `cargo test --locked --lib installation_trust::tests`
+
+Report PASS — 0 matched if applicable. Do NOT report NOT RUN.
 
 ## Frozen decisions and invariants
 
-1. No production code changes
-2. No test changes
-3. No implementation
-4. P1 only — no P2
+1. No conformance case changes
+2. No supervised launch semantics changes
+3. No exact-candidate trust changes
+4. No public approval semantics changes
+5. No dependencies added
+6. No P2C work
 
-## Relevant components
+## Authorised paths
 
-### Authorised paths
-
+- `src/plug_conform.rs` (production change)
+- `tests/p2b_plug_conform_cli.rs` (existing, no changes expected)
 - `docs/CURRENT_CLINE_TASK.md` (update)
-- `docs/worker-notes/2026-08-10-0.3-p1-r1g-final-gate.md` (new, replaces removed BLOCKED version)
-- P1/goal/dashboard documentation
+- `docs/worker-notes/2026-08-10-0.3-p2b-fix-cleanup-authority.md` (new)
+- `docs/worker-notes/2026-08-10-0.3-p2b-public-plug-conform.md` (optional addendum)
 
 ## Acceptance criteria
 
-1. Clean starting state: HEAD == `a0bdead29b89f76b41f3350d014e02f5f060e9a9`, no modified/staged/untracked files
-2. No-knowledge gate: zero generic-provider references in production `src/`
-3. Retired-delivery gate: zero retired subject-specific paths in generic production
-4. Dependency gate: no dependency change vs `c0fd57780156bee023d8dcff884737ea470d096c`
-5. `cargo clippy --all-targets --all-features --locked` PASS
-6. `just verify-agent` PASS (full suite)
-7. `git diff --check` PASS
-8. 14/14 P1 criteria reconciled YES
-9. Task packet checker `control-v1/COMPLETE`
-10. Branch pushed, local == remote, genuinely clean worktree (no modified, staged, or untracked files)
+1. Cleanup failure overrides conformance success: `conformance_cleanup_failed` / `failed` / exit 6
+2. Cleanup failure message is safe: no path, no temp dir, no raw error
+3. Both scratch and workspace cleanup attempted regardless of failures
+4. Focused unit tests prove all three outcome classes
+5. `cargo test --locked --test p2b_plug_conform_cli` — 13/13 PASS
+6. `cargo test --locked --test p2a_plug_pack_cli` — 7/7 PASS
+7. `cargo test --locked --test j24a_plug_inspect_cli` — 3/3 PASS
+8. `cargo clippy --all-targets --all-features --locked` — 0 new warnings
+9. `cargo fmt --all -- --check` — PASS
+10. `git diff --check` — PASS
+11. Task packet checker `control-v1/COMPLETE`
+12. Branch pushed, remote == local, genuinely clean worktree
 
 ## Required verification
 
-1. `git diff --check` — PASS
+1. Full focused test suite as listed above
 2. Task packet checker — `control-v1/COMPLETE`
 3. `git push` + remote SHA + local == remote + clean status
 
 ## Forbidden changes
 
-- No production code changes
-- No test changes
-- No implementation of any kind
-- No P2 work
+- No conformance case changes
+- No supervised launch semantics changes
+- No exact-candidate trust changes
+- No public approval semantics changes
+- No dependencies
+- No P2C work
+- No `just verify-agent`
 
 ## Stop conditions
 
 - Any mandatory gate fails
-- Production or test changes needed
+- Production or test changes needed beyond `src/plug_conform.rs`
 - After two materially similar failed attempts
 
 ## Expected pre-existing changes
 
-None. HEAD must equal `a0bdead29b89f76b41f3350d014e02f5f060e9a9`. Working tree must be genuinely clean.
+None. HEAD equals `532550c296efb6384c67023efeca63bac26a7bdd`. Working tree currently has uncommitted P2B-FIX changes.

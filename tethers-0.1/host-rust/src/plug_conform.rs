@@ -74,9 +74,23 @@ pub fn run_conform(package: &Path, allow_execution: bool) -> PlugCommandResult {
         }
     };
 
-    let result = run_conform_in_workspace(&workspace, package);
+    let (result, scratch_cleanup_failed) = run_conform_in_workspace(&workspace, package);
 
-    cleanup_workspace(&workspace);
+    let workspace_cleanup_failed = cleanup_workspace(&workspace).is_err();
+
+    if scratch_cleanup_failed || workspace_cleanup_failed {
+        let envelope = CliEnvelope::error(
+            "plug conform",
+            OutcomeStatus::Failed,
+            "conformance_cleanup_failed",
+            "ephemeral conform state could not be completely removed",
+            None,
+        );
+        return PlugCommandResult {
+            exit_code: envelope.exit_code,
+            envelope,
+        };
+    }
 
     result
 }
@@ -105,23 +119,29 @@ fn create_ephemeral_workspace() -> Result<EphemeralWorkspace, String> {
     Ok(EphemeralWorkspace { root })
 }
 
-fn cleanup_workspace(workspace: &EphemeralWorkspace) {
+fn cleanup_workspace(workspace: &EphemeralWorkspace) -> Result<(), String> {
     if workspace.root.exists() {
-        let _ = fs::remove_dir_all(&workspace.root);
+        fs::remove_dir_all(&workspace.root)
+            .map_err(|e| format!("ephemeral conform state could not be completely removed: {e}"))
+    } else {
+        Ok(())
     }
 }
 
-fn run_conform_in_workspace(workspace: &EphemeralWorkspace, package: &Path) -> PlugCommandResult {
+fn run_conform_in_workspace(
+    workspace: &EphemeralWorkspace,
+    package: &Path,
+) -> (PlugCommandResult, bool) {
     let prepared = match prepare_installation_candidate(&workspace.root, package) {
         Ok(p) => p,
         Err(error) => {
             let status = candidate_error_status(&error);
             let envelope =
                 CliEnvelope::error("plug conform", status, error.code, error.message, None);
-            return PlugCommandResult {
+            return (PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
-            };
+            }, false);
         }
     };
 
@@ -151,10 +171,10 @@ fn run_conform_in_workspace(workspace: &EphemeralWorkspace, package: &Path) -> P
                 format!("{}: {}", error.code, error.message),
                 None,
             );
-            return PlugCommandResult {
+            return (PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
-            };
+            }, false);
         }
     };
 
@@ -168,10 +188,10 @@ fn run_conform_in_workspace(workspace: &EphemeralWorkspace, package: &Path) -> P
                 format!("{}: {}", error.code, error.message),
                 None,
             );
-            return PlugCommandResult {
+            return (PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
-            };
+            }, false);
         }
     };
 
@@ -185,10 +205,10 @@ fn run_conform_in_workspace(workspace: &EphemeralWorkspace, package: &Path) -> P
                 format!("{}: {}", error.code, error.message),
                 None,
             );
-            return PlugCommandResult {
+            return (PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
-            };
+            }, false);
         }
     };
 
@@ -207,10 +227,10 @@ fn run_conform_in_workspace(workspace: &EphemeralWorkspace, package: &Path) -> P
                 format!("{}: {}", error.code, error.message),
                 None,
             );
-            return PlugCommandResult {
+            return (PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
-            };
+            }, false);
         }
     };
 
@@ -225,12 +245,12 @@ fn run_conform_in_workspace(workspace: &EphemeralWorkspace, package: &Path) -> P
         &host_build_identity(),
     );
 
-    prepared_launch.cleanup_scratch().ok();
+    let scratch_cleanup_failed = prepared_launch.cleanup_scratch().is_err();
 
     match evidence {
         Ok(evidence) => {
             let disposition = evidence.disposition;
-            map_conformance_result(evidence, disposition)
+            (map_conformance_result(evidence, disposition), scratch_cleanup_failed)
         }
         Err(error) => {
             let status = if error.code == "conformance_launch" {
@@ -244,10 +264,10 @@ fn run_conform_in_workspace(workspace: &EphemeralWorkspace, package: &Path) -> P
             };
             let envelope =
                 CliEnvelope::error("plug conform", status, error.code, error.message, None);
-            PlugCommandResult {
+            (PlugCommandResult {
                 exit_code: envelope.exit_code,
                 envelope,
-            }
+            }, scratch_cleanup_failed)
         }
     }
 }
@@ -367,5 +387,118 @@ fn map_conformance_result(
                 envelope,
             }
         }
+    }
+}
+
+#[cfg(test)]
+fn finalise_conform_result(
+    conform_result: PlugCommandResult,
+    scratch_cleanup_failed: bool,
+    workspace_cleanup_failed: bool,
+) -> PlugCommandResult {
+    if scratch_cleanup_failed || workspace_cleanup_failed {
+        let envelope = CliEnvelope::error(
+            "plug conform",
+            OutcomeStatus::Failed,
+            "conformance_cleanup_failed",
+            "ephemeral conform state could not be completely removed",
+            None,
+        );
+        PlugCommandResult {
+            exit_code: envelope.exit_code,
+            envelope,
+        }
+    } else {
+        conform_result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn make_ok_result() -> PlugCommandResult {
+        let envelope = CliEnvelope::ok("plug conform", json!({"ok": true}));
+        PlugCommandResult {
+            exit_code: envelope.exit_code,
+            envelope,
+        }
+    }
+
+    fn make_failed_result() -> PlugCommandResult {
+        let envelope = CliEnvelope::error(
+            "plug conform",
+            OutcomeStatus::Failed,
+            "plug_conformance_failed",
+            "conformance suite failed",
+            None,
+        );
+        PlugCommandResult {
+            exit_code: envelope.exit_code,
+            envelope,
+        }
+    }
+
+    #[test]
+    fn p2b_cleanup_success_preserves_ok_result() {
+        let original = make_ok_result();
+        let result = finalise_conform_result(original, false, false);
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.envelope.status, OutcomeStatus::Ok);
+    }
+
+    #[test]
+    fn p2b_cleanup_success_preserves_failed_result() {
+        let original = make_failed_result();
+        let result = finalise_conform_result(original, false, false);
+        assert_eq!(result.exit_code, 6);
+        assert_eq!(result.envelope.status, OutcomeStatus::Failed);
+        assert_eq!(
+            result.envelope.error.as_ref().unwrap().code,
+            "plug_conformance_failed"
+        );
+    }
+
+    #[test]
+    fn p2b_scratch_cleanup_failure_overrides_ok() {
+        let original = make_ok_result();
+        let result = finalise_conform_result(original, true, false);
+        assert_eq!(result.exit_code, 6);
+        assert_eq!(result.envelope.status, OutcomeStatus::Failed);
+        let err = result.envelope.error.as_ref().unwrap();
+        assert_eq!(err.code, "conformance_cleanup_failed");
+        assert!(err.message.contains("could not be completely removed"));
+    }
+
+    #[test]
+    fn p2b_workspace_cleanup_failure_overrides_ok() {
+        let original = make_ok_result();
+        let result = finalise_conform_result(original, false, true);
+        assert_eq!(result.exit_code, 6);
+        assert_eq!(result.envelope.status, OutcomeStatus::Failed);
+        let err = result.envelope.error.as_ref().unwrap();
+        assert_eq!(err.code, "conformance_cleanup_failed");
+    }
+
+    #[test]
+    fn p2b_cleanup_failure_overrides_failed_conform() {
+        let original = make_failed_result();
+        let result = finalise_conform_result(original, true, true);
+        assert_eq!(result.exit_code, 6);
+        assert_eq!(result.envelope.status, OutcomeStatus::Failed);
+        let err = result.envelope.error.as_ref().unwrap();
+        assert_eq!(err.code, "conformance_cleanup_failed");
+    }
+
+    #[test]
+    fn p2b_cleanup_failure_safe_message_has_no_path() {
+        let original = make_ok_result();
+        let result = finalise_conform_result(original, false, true);
+        let msg = &result.envelope.error.as_ref().unwrap().message;
+        assert!(!msg.contains('\\'));
+        assert!(!msg.contains('/'));
+        assert!(!msg.contains("temp"));
+        assert!(!msg.contains("tethers-p2b"));
     }
 }
