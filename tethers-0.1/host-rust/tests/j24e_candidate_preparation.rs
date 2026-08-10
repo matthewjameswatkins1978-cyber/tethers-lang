@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tethers_reference_host::candidate_preparation::{
     prepare_installation_candidate, CandidatePreparationDisposition,
 };
-use tethers_reference_host::pdf_tools;
+use tethers_reference_host::test_fixture_package;
 use uuid::Uuid;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -64,14 +64,14 @@ fn assert_no_lifecycle_paths(root: &Path) {
 }
 
 fn write_package(root: &Path, name: &str, provider_bytes: &[u8]) -> PathBuf {
-    let archive = pdf_tools::build_reference_package(provider_bytes).unwrap();
+    let archive = test_fixture_package::build_fixture_package(provider_bytes).unwrap();
     let package_path = root.join(name);
     fs::write(&package_path, archive).unwrap();
     package_path
 }
 
 fn write_package_default(root: &Path, provider_bytes: &[u8]) -> PathBuf {
-    write_package(root, "pdf-tools.tetherplug", provider_bytes)
+    write_package(root, "fixture.tetherplug", provider_bytes)
 }
 
 #[test]
@@ -85,12 +85,12 @@ fn valid_package_creates_candidate_with_disposition_created() {
 
     let candidate = &result.candidate;
     assert_eq!(candidate.state, "quarantined_installation_candidate");
-    assert_eq!(candidate.package_id, "tethers.pdf-tools");
+    assert_eq!(candidate.package_id, "tethers.fixture");
     assert_eq!(candidate.package_version, "1.0.0");
-    assert_eq!(candidate.provider_id, "tethers-pdf-provider");
-    assert_eq!(candidate.provider_version, "1.0.0");
+    assert_eq!(candidate.provider_id, "tethers-stdio-fixture");
+    assert_eq!(candidate.provider_version, "0.1.0");
     assert_eq!(candidate.capabilities.len(), 1);
-    assert_eq!(candidate.capabilities[0].name, "pdf.inspect");
+    assert_eq!(candidate.capabilities[0].name, "fixture.ping");
     assert_eq!(candidate.capabilities[0].version, 1);
     assert_eq!(candidate.selected_platform.os, "windows");
     assert_eq!(candidate.selected_platform.architecture, "x86_64");
@@ -243,7 +243,7 @@ fn relative_package_path_fails() {
     fs::create_dir_all(&root).unwrap();
     let _package = write_package_default(&root, b"test-bytes");
 
-    let relative = Path::new("pdf-tools.tetherplug");
+    let relative = Path::new("fixture.tetherplug");
     let err = prepare_installation_candidate(&root, relative).unwrap_err();
     assert_eq!(err.code, "invalid_archive");
 
@@ -283,7 +283,7 @@ fn missing_package_path_fails_before_creating_child_dirs() {
 }
 
 #[test]
-fn candidate_output_pins_pdf_evidence() {
+fn candidate_output_pins_neutral_fixture_evidence() {
     let root = temp_dir("evidence-pin");
     fs::create_dir_all(&root).unwrap();
     let package = write_package_default(&root, b"provider-payload-evidence-pin");
@@ -292,15 +292,15 @@ fn candidate_output_pins_pdf_evidence() {
     let candidate = &result.candidate;
 
     assert_eq!(
-        candidate.capabilities[0].name, "pdf.inspect",
-        "must pin pdf.inspect capability"
+        candidate.capabilities[0].name, "fixture.ping",
+        "must pin fixture capability"
     );
     assert_eq!(candidate.capabilities[0].version, 1);
-    assert_eq!(candidate.capabilities[0].operation, "pdf_inspect");
-    assert_eq!(candidate.launch_path, "provider/pdf_tools_provider.exe");
+    assert_eq!(candidate.capabilities[0].operation, "fixture_ping");
+    assert_eq!(candidate.launch_path, "provider/tethers-stdio-fixture.exe");
     assert_eq!(candidate.launch_arguments, Vec::<String>::new());
     assert_eq!(candidate.provider_working_directory, "provider");
-    assert_eq!(candidate.capability_operation_namespace, "pdf");
+    assert_eq!(candidate.capability_operation_namespace, "fixture");
     assert_eq!(
         candidate.source_size_bytes,
         fs::read(&package).unwrap().len() as u64
@@ -326,8 +326,8 @@ fn quarantine_files_are_immutable_read_only() {
 
     for relative in &[
         "plug.json",
-        "manifests/pdf-inspect-v1.json",
-        "provider/pdf_tools_provider.exe",
+        "manifests/fixture-ping.json",
+        "provider/tethers-stdio-fixture.exe",
     ] {
         let file = quarantine_dir.join(relative);
         assert!(
@@ -451,8 +451,9 @@ fn junction_backed_package_path_fails_unsafe_destination() {
     fs::create_dir_all(&root).unwrap();
     fs::create_dir_all(&target).unwrap();
 
-    let package_bytes = pdf_tools::build_reference_package(b"junction-provider-bytes").unwrap();
-    fs::write(target.join("pdf-tools.tetherplug"), &package_bytes).unwrap();
+    let package_bytes =
+        test_fixture_package::build_fixture_package(b"junction-provider-bytes").unwrap();
+    fs::write(target.join("fixture.tetherplug"), &package_bytes).unwrap();
 
     let status = Command::new("cmd")
         .args([
@@ -469,7 +470,7 @@ fn junction_backed_package_path_fails_unsafe_destination() {
         "could not create Windows junction fixture"
     );
 
-    let package = junction.join("pdf-tools.tetherplug");
+    let package = junction.join("fixture.tetherplug");
     assert!(
         package.is_file(),
         "package should be accessible via junction"
@@ -521,12 +522,10 @@ fn junction_host_root_fails_unsafe_destination() {
         "could not create Windows junction fixture"
     );
 
-    let package_bytes = pdf_tools::build_reference_package(b"junction-root-bytes").unwrap();
-    fs::write(junction.join("pdf-tools.tetherplug"), &package_bytes).unwrap();
-    let package = junction
-        .join("pdf-tools.tetherplug")
-        .canonicalize()
-        .unwrap();
+    let package_bytes =
+        test_fixture_package::build_fixture_package(b"junction-root-bytes").unwrap();
+    fs::write(junction.join("fixture.tetherplug"), &package_bytes).unwrap();
+    let package = junction.join("fixture.tetherplug").canonicalize().unwrap();
 
     let err = prepare_installation_candidate(&junction, &package).unwrap_err();
     assert_eq!(

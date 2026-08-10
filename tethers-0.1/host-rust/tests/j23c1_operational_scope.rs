@@ -27,7 +27,7 @@ fn scope_digest() -> String {
 fn pdf_scope_evidence(installed_id: &str, provider_id: &str) -> OperationalScopeEvidence {
     OperationalScopeEvidence::create(
         installed_id,
-        "tethers.pdf-tools",
+        "tethers.fixture",
         provider_id,
         &scope_digest(),
         &serde_json::json!({"query_root": "/tmp/pdf-query", "max_bytes": 65536}),
@@ -56,11 +56,11 @@ fn ft_scope_evidence(installed_id: &str, provider_id: &str) -> OperationalScopeE
 // 1. OperationalScopeEvidence::create produces correct values.
 #[test]
 fn evidence_create_produces_correct_identity() {
-    let evidence = pdf_scope_evidence("inst-1", "tethers-pdf-provider");
+    let evidence = pdf_scope_evidence("inst-1", "tethers-stdio-fixture");
     assert_eq!(evidence.schema_version, 1);
     assert_eq!(evidence.installed_id(), "inst-1");
-    assert_eq!(evidence.package_identity, "tethers.pdf-tools");
-    assert_eq!(evidence.provider_identity, "tethers-pdf-provider");
+    assert_eq!(evidence.package_identity, "tethers.fixture");
+    assert_eq!(evidence.provider_identity, "tethers-stdio-fixture");
     assert!(evidence.integrity_digest.starts_with("sha256:"));
     assert_eq!(evidence.integrity_digest().len(), 71);
     assert_eq!(evidence.authority, "Matthew");
@@ -70,8 +70,8 @@ fn evidence_create_produces_correct_identity() {
 // 2. Digest is deterministic.
 #[test]
 fn evidence_digest_deterministic() {
-    let a = pdf_scope_evidence("inst-2", "tethers-pdf-provider");
-    let b = pdf_scope_evidence("inst-2", "tethers-pdf-provider");
+    let a = pdf_scope_evidence("inst-2", "tethers-stdio-fixture");
+    let b = pdf_scope_evidence("inst-2", "tethers-stdio-fixture");
     assert_eq!(a.integrity_digest, b.integrity_digest);
     assert_eq!(a.canonical_scope_json, b.canonical_scope_json);
 }
@@ -79,8 +79,8 @@ fn evidence_digest_deterministic() {
 // 3. Different installed_id yields different digest.
 #[test]
 fn different_installed_id_yields_different_digest() {
-    let a = pdf_scope_evidence("inst-a", "tethers-pdf-provider");
-    let b = pdf_scope_evidence("inst-b", "tethers-pdf-provider");
+    let a = pdf_scope_evidence("inst-a", "tethers-stdio-fixture");
+    let b = pdf_scope_evidence("inst-b", "tethers-stdio-fixture");
     assert_ne!(a.integrity_digest, b.integrity_digest);
 }
 
@@ -127,14 +127,14 @@ fn short_scope_schema_digest_rejected() {
 // 5. Tamper detection.
 #[test]
 fn tampered_integrity_digest_fails_validation() {
-    let mut evidence = pdf_scope_evidence("tamper-1", "tethers-pdf-provider");
+    let mut evidence = pdf_scope_evidence("tamper-1", "tethers-stdio-fixture");
     evidence.integrity_digest = format!("sha256:{}", "b".repeat(64));
     assert!(evidence.validate().is_err());
 }
 
 #[test]
 fn tampered_canonical_json_fails_validation() {
-    let mut evidence = pdf_scope_evidence("tamper-2", "tethers-pdf-provider");
+    let mut evidence = pdf_scope_evidence("tamper-2", "tethers-stdio-fixture");
     evidence.canonical_scope_json.push('x');
     assert!(evidence.validate().is_err());
 }
@@ -142,7 +142,7 @@ fn tampered_canonical_json_fails_validation() {
 // 6. Serialize-deserialize round-trip.
 #[test]
 fn round_trip_preserves_equality() {
-    let evidence = pdf_scope_evidence("rt-1", "tethers-pdf-provider");
+    let evidence = pdf_scope_evidence("rt-1", "tethers-stdio-fixture");
     let json = serde_json::to_string(&evidence).unwrap();
     let parsed: OperationalScopeEvidence = serde_json::from_str(&json).unwrap();
     assert_eq!(evidence, parsed);
@@ -151,7 +151,7 @@ fn round_trip_preserves_equality() {
 // 7. No variant tag in serialized JSON.
 #[test]
 fn serialized_evidence_has_no_variant_tag() {
-    let evidence = pdf_scope_evidence("ser-1", "tethers-pdf-provider");
+    let evidence = pdf_scope_evidence("ser-1", "tethers-stdio-fixture");
     let json_str = serde_json::to_string(&evidence).unwrap();
     let obj: serde_json::Value = serde_json::from_str(&json_str).unwrap();
     let map = obj.as_object().unwrap();
@@ -176,7 +176,7 @@ fn file_tools_scope_evidence_created() {
 // 9. canonical_scope method round-trips.
 #[test]
 fn canonical_scope_round_trips() {
-    let evidence = pdf_scope_evidence("cs-1", "tethers-pdf-provider");
+    let evidence = pdf_scope_evidence("cs-1", "tethers-stdio-fixture");
     let scope = evidence.canonical_scope().unwrap();
     let obj = scope.as_object().unwrap();
     assert_eq!(obj["query_root"], "/tmp/pdf-query");
@@ -189,7 +189,7 @@ fn installed_plug_for_pdf() -> InstalledPlugRecord {
         schema_version: 1,
         installed_id: Uuid::new_v4().to_string(),
         state: "present_disabled".into(),
-        package_id: "tethers.pdf-tools".into(),
+        package_id: "tethers.fixture".into(),
         package_version: "1.0.0".into(),
         semantic_package_digest: d.clone(),
         source_candidate_id: "candidate".into(),
@@ -224,9 +224,9 @@ fn installed_plug_for_pdf() -> InstalledPlugRecord {
         installation_approval_digest: d.clone(),
         conformance_evidence_id: "conformance".into(),
         conformance_evidence_digest: d.clone(),
-        provider_id: "tethers-pdf-provider".into(),
-        provider_version: "1.0.0".into(),
-        launch_path: "provider/pdf_tools_provider.exe".into(),
+        provider_id: "tethers-stdio-fixture".into(),
+        provider_version: "0.1.0".into(),
+        launch_path: "provider/tethers-stdio-fixture.exe".into(),
         launch_arguments: Vec::new(),
         provider_working_directory: "provider".into(),
         launch_profile_label: "supervised".into(),
@@ -236,10 +236,10 @@ fn installed_plug_for_pdf() -> InstalledPlugRecord {
         architecture: "x86_64".into(),
         disabled_bindings: vec![DisabledBindingRecord {
             state: "disabled".into(),
-            capability_name: "pdf.inspect".into(),
+            capability_name: "fixture.ping".into(),
             capability_version: 1,
             manifest_digest: d.clone(),
-            provider_operation_name: "pdf_inspect".into(),
+            provider_operation_name: "fixture_ping".into(),
         }],
         operational_scope_schema: None,
         operational_scope_schema_digest: None,
@@ -328,11 +328,11 @@ fn enable_accepts_generic_pdf_evidence() {
     let iid = installed.installed_id.clone();
     let temp = std::env::temp_dir().join(format!("tethers-j23c1-pdf-enable-{}", Uuid::new_v4()));
     let enablement_root = temp.join("enablement");
-    let scope = pdf_scope_evidence(&iid, "tethers-pdf-provider");
+    let scope = pdf_scope_evidence(&iid, "tethers-stdio-fixture");
     let store = EnablementStore::open(&enablement_root).unwrap();
     let record = store.enable(&installed, scope, "Matthew").unwrap();
     assert_eq!(record.state, EnablementState::Enabled);
-    assert_eq!(record.package_id, "tethers.pdf-tools");
+    assert_eq!(record.package_id, "tethers.fixture");
     fs::remove_dir_all(temp).unwrap();
 }
 
@@ -342,11 +342,11 @@ fn enablement_record_has_correct_fields() {
     let iid = installed.installed_id.clone();
     let temp = std::env::temp_dir().join(format!("tethers-j23c1-pdf-record-{}", Uuid::new_v4()));
     let enablement_root = temp.join("enablement");
-    let scope = pdf_scope_evidence(&iid, "tethers-pdf-provider");
+    let scope = pdf_scope_evidence(&iid, "tethers-stdio-fixture");
     let store = EnablementStore::open(&enablement_root).unwrap();
     let record = store.enable(&installed, scope, "Matthew").unwrap();
-    assert_eq!(record.package_id, "tethers.pdf-tools");
-    assert_eq!(record.provider_id, "tethers-pdf-provider");
+    assert_eq!(record.package_id, "tethers.fixture");
+    assert_eq!(record.provider_id, "tethers-stdio-fixture");
     assert_eq!(record.operational_scope.schema_version, 1);
     assert!(record.operational_scope_digest.starts_with("sha256:"));
     assert_eq!(
@@ -356,7 +356,7 @@ fn enablement_record_has_correct_fields() {
     let has_capability = record
         .capabilities
         .iter()
-        .any(|c| c.name == "pdf.inspect" && c.version == 1);
+        .any(|c| c.name == "fixture.ping" && c.version == 1);
     assert!(has_capability);
     assert_eq!(record.state, EnablementState::Enabled);
     fs::remove_dir_all(temp).unwrap();
@@ -383,7 +383,7 @@ fn wrong_installed_id_is_refused_by_enablement() {
     let installed = installed_plug_for_pdf();
     let temp = std::env::temp_dir().join(format!("tethers-j23c1-wrong-id-{}", Uuid::new_v4()));
     let enablement_root = temp.join("enablement");
-    let scope = pdf_scope_evidence("wrong-id", "tethers-pdf-provider");
+    let scope = pdf_scope_evidence("wrong-id", "tethers-stdio-fixture");
     let store = EnablementStore::open(&enablement_root).unwrap();
     let result = store.enable(&installed, scope, "Matthew");
     assert!(result.is_err());
@@ -396,7 +396,7 @@ fn disablement_works_for_pdf() {
     let iid = installed.installed_id.clone();
     let temp = std::env::temp_dir().join(format!("tethers-j23c1-disable-pdf-{}", Uuid::new_v4()));
     let enablement_root = temp.join("enablement");
-    let scope = pdf_scope_evidence(&iid, "tethers-pdf-provider");
+    let scope = pdf_scope_evidence(&iid, "tethers-stdio-fixture");
     let store = EnablementStore::open(&enablement_root).unwrap();
     store.enable(&installed, scope, "Matthew").unwrap();
     assert!(store.is_available(&iid).unwrap());

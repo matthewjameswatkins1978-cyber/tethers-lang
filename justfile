@@ -52,4 +52,10 @@ deps-advisories:
 deps-unused:
     scripts/invoke-timed.ps1 -Label "deps-unused" -Executable "cargo" -- machete --with-metadata tethers-0.1/host-rust
 
-verify-agent: verify agent-tools deps-policy deps-advisories test-agent
+test-pdf-reference:
+    cargo fmt --manifest-path reference-plugs/pdf-tools/provider-rust/Cargo.toml -- --check
+    cargo test --manifest-path reference-plugs/pdf-tools/provider-rust/Cargo.toml --locked
+    cargo build --manifest-path reference-plugs/pdf-tools/provider-rust/Cargo.toml --locked
+    $env:TETHERS_PDF_REFERENCE_PROVIDER_EXE=(Resolve-Path reference-plugs/pdf-tools/provider-rust/target/debug/pdf_tools_provider.exe); cargo test --manifest-path {{_manifest}} --locked --test p3_pdf_reference_plug -- --ignored
+
+verify-agent: verify agent-tools deps-policy deps-advisories test-agent test-pdf-reference

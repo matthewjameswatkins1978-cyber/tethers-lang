@@ -1,0 +1,15 @@
+[package]
+name = "tethers-pdf-provider"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.97"
+publish = false
+
+[[bin]]
+name = "pdf_tools_provider"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"

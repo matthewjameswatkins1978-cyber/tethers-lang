@@ -10,7 +10,7 @@ use tethers_reference_host::enablement::{EnablementRecord, EnablementState, Enab
 use tethers_reference_host::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
 use tethers_reference_host::operational_scope::OperationalScopeEvidence;
-use tethers_reference_host::pdf_tools::{self};
+use tethers_reference_host::test_fixture_package;
 
 fn make_scope(installed_id: &str, root: &Path, max_bytes: u64) -> OperationalScopeEvidence {
     let schema = serde_json::json!({
@@ -27,8 +27,8 @@ fn make_scope(installed_id: &str, root: &Path, max_bytes: u64) -> OperationalSco
     let schema_digest = format!("sha256:{:x}", Sha256::digest(schema_bytes));
     OperationalScopeEvidence::create(
         installed_id,
-        "tethers.pdf-tools",
-        "tethers-pdf-provider",
+        "tethers.fixture",
+        "tethers-stdio-fixture",
         &schema_digest,
         &serde_json::json!({"query_root": root.to_string_lossy(), "max_bytes": max_bytes}),
         "Matthew",
@@ -162,11 +162,11 @@ fn install_pdf(
     tethers_reference_host::installed::InstalledPlugRecord,
     PathBuf,
 ) {
-    let archive = root.join("pdf-tools.tetherplug");
-    let provider = fs::read(env!("CARGO_BIN_EXE_pdf_tools_provider")).unwrap();
+    let archive = root.join("fixture.tetherplug");
+    let provider = fs::read(env!("CARGO_BIN_EXE_m3_fixture_provider")).unwrap();
     fs::write(
         &archive,
-        pdf_tools::build_reference_package(&provider).unwrap(),
+        test_fixture_package::build_fixture_package(&provider).unwrap(),
     )
     .unwrap();
     let report = tethers_reference_host::package::inspect(&archive).unwrap();
