@@ -1,15 +1,19 @@
-//! J23C2: generated PDF package passes host conformance.
+//! J23C2: PDF provider conformance through the current generic scope
+//! architecture.
 //!
-//! Part A proves the `pdf_tools_provider` binary resolves the reviewed
-//! `--query-root` placeholder only under host conformance, while every normal
-//! and refused path behaves exactly as before. Part B builds the real provider
-//! package and runs it through the existing generic M3 host conformance flow.
+//! Part A proves the `pdf_tools_provider` binary starts under normal
+//! Operational Scope delivery (TETHERS_OPERATIONAL_SCOPE_JSON), refuses when
+//! scope is absent in normal mode, activates conformance fallback only on exact
+//! TETHERS_CONFORMANCE=1, and correctly refuses invalid conformance TEMP.
+//! Part B builds the real provider package and runs it through the existing
+//! generic M3 host conformance flow, then proves the conformance environment
+//! contains only the expected conformance machinery.
 
 #![cfg(windows)]
 
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -26,8 +30,9 @@ use tethers_reference_host::trust::{
 };
 use uuid::Uuid;
 
-const PDF_QUERY_ROOT_PLACEHOLDER: &str = "__TETHERS_PDF_QUERY_ROOT__";
 const TETHERS_CONFORMANCE: &str = "TETHERS_CONFORMANCE";
+const TETHERS_OPERATIONAL_SCOPE_JSON: &str = "TETHERS_OPERATIONAL_SCOPE_JSON";
+const TETHERS_OPERATIONAL_SCOPE_DIGEST: &str = "TETHERS_OPERATIONAL_SCOPE_DIGEST";
 const TEMP: &str = "TEMP";
 
 fn provider_bin() -> Command {
@@ -40,24 +45,37 @@ fn temp_root(label: &str) -> PathBuf {
     root
 }
 
-/// Spawn the provider with stdin/stdout piped and the given extra environment.
-fn spawn_session(
-    query_root: &str,
-    env: &[(&str, &str)],
+fn normal_session(
+    query_root: &Path,
+    max_bytes: u64,
 ) -> (std::process::Child, BufReader<std::process::ChildStdout>) {
     let mut command = provider_bin();
-    let scope = serde_json::json!({"query_root": query_root, "max_bytes": 67108864});
+    let scope =
+        serde_json::json!({"query_root": query_root.to_string_lossy(), "max_bytes": max_bytes});
     command.env(
-        "TETHERS_OPERATIONAL_SCOPE_JSON",
+        TETHERS_OPERATIONAL_SCOPE_JSON,
         serde_json::to_string(&scope).unwrap(),
     );
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());
-    for (key, value) in env {
-        command.env(key, value);
-    }
+    // No CLI arguments; scope is delivered entirely through environment.
     let mut child = command.spawn().expect("pdf provider starts");
+    let reader = BufReader::new(child.stdout.take().expect("stdout piped"));
+    (child, reader)
+}
+
+fn conformance_session(
+    temp_dir: &Path,
+) -> (std::process::Child, BufReader<std::process::ChildStdout>) {
+    let mut command = provider_bin();
+    command.env(TETHERS_CONFORMANCE, "1");
+    command.env(TEMP, temp_dir.to_string_lossy().as_ref());
+    // No TETHERS_OPERATIONAL_SCOPE_JSON; conformance fallback uses TEMP.
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+    let mut child = command.spawn().expect("pdf provider starts in conformance");
     let reader = BufReader::new(child.stdout.take().expect("stdout piped"));
     (child, reader)
 }
@@ -81,9 +99,9 @@ fn request(
 // -- Part A: provider startup proofs --
 
 #[test]
-fn normal_explicit_absolute_query_root_starts() {
+fn normal_scope_with_valid_json_starts() {
     let root = temp_root("normal");
-    let mut session = spawn_session(root.to_str().unwrap(), &[]);
+    let mut session = normal_session(&root, 1048576);
     let initialize = request(
         &mut session,
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}),
@@ -109,28 +127,32 @@ fn normal_explicit_absolute_query_root_starts() {
 }
 
 #[test]
-fn placeholder_without_conformance_is_refused() {
+fn normal_mode_without_operational_scope_refuses() {
     let refused = provider_bin()
-        .args(["--query-root", PDF_QUERY_ROOT_PLACEHOLDER])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env_remove(TETHERS_CONFORMANCE)
+        .env_remove(TETHERS_OPERATIONAL_SCOPE_JSON)
         .output()
         .unwrap();
     assert!(!refused.status.success());
     assert!(refused.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("configuration refused"));
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("configuration refused"),
+        "expected 'configuration refused' on stderr, got: {}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
 }
 
 #[test]
-fn placeholder_with_conformance_zero_is_refused() {
+fn conformance_zero_without_scope_refuses() {
     let refused = provider_bin()
-        .args(["--query-root", PDF_QUERY_ROOT_PLACEHOLDER])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env(TETHERS_CONFORMANCE, "0")
+        .env_remove(TETHERS_OPERATIONAL_SCOPE_JSON)
         .output()
         .unwrap();
     assert!(!refused.status.success());
@@ -139,29 +161,9 @@ fn placeholder_with_conformance_zero_is_refused() {
 }
 
 #[test]
-fn unknown_pdf_placeholder_is_refused() {
-    let refused = provider_bin()
-        .args(["--query-root", "__TETHERS_PDF_OTHER__"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .unwrap();
-    assert!(!refused.status.success());
-    assert!(refused.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("configuration refused"));
-}
-
-#[test]
-fn placeholder_with_conformance_and_valid_temp_starts_and_passes_protocol() {
+fn conformance_with_valid_temp_starts() {
     let scratch = temp_root("conf-scratch");
-    let mut session = spawn_session(
-        PDF_QUERY_ROOT_PLACEHOLDER,
-        &[
-            ("TETHERS_CONFORMANCE", "1"),
-            (TEMP, scratch.to_str().unwrap()),
-        ],
-    );
+    let mut session = conformance_session(&scratch);
     let initialize = request(
         &mut session,
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}),
@@ -188,9 +190,8 @@ fn placeholder_with_conformance_and_valid_temp_starts_and_passes_protocol() {
 }
 
 #[test]
-fn conformance_mode_with_missing_temp_is_refused() {
+fn conformance_with_missing_temp_refuses() {
     let refused = provider_bin()
-        .args(["--query-root", PDF_QUERY_ROOT_PLACEHOLDER])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -204,16 +205,15 @@ fn conformance_mode_with_missing_temp_is_refused() {
 }
 
 #[test]
-fn conformance_mode_with_invalid_or_relative_temp_is_refused() {
+fn conformance_with_invalid_temp_refuses() {
     let relative = temp_root("conf-relative");
     let relative_temp = relative.file_name().unwrap().to_string_lossy().into_owned();
     let refused_relative = provider_bin()
-        .args(["--query-root", PDF_QUERY_ROOT_PLACEHOLDER])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env(TETHERS_CONFORMANCE, "1")
-        .env(TEMP, &relative_temp)
+        .env(TEMP, relative_temp)
         .output()
         .unwrap();
     assert!(!refused_relative.status.success());
@@ -222,7 +222,6 @@ fn conformance_mode_with_invalid_or_relative_temp_is_refused() {
 
     let absent = std::env::temp_dir().join(format!("tethers-j23c2-absent-{}", Uuid::new_v4()));
     let refused_absent = provider_bin()
-        .args(["--query-root", PDF_QUERY_ROOT_PLACEHOLDER])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -245,6 +244,20 @@ fn assert_case_passed(evidence: &ConformanceEvidence, case_id: &str) {
         .find(|case| case.case_id == case_id)
         .unwrap_or_else(|| panic!("conformance case {case_id} is missing"));
     assert_eq!(case.disposition, CaseDisposition::Passed, "case {case_id}");
+}
+
+fn assert_env_contains(env_names: &[String], name: &str) {
+    assert!(
+        env_names.iter().any(|value| value == name),
+        "expected {name} in conformance environment names, got: {env_names:?}",
+    );
+}
+
+fn assert_env_excludes(env_names: &[String], name: &str) {
+    assert!(
+        !env_names.iter().any(|value| value == name),
+        "did not expect {name} in conformance environment names, got: {env_names:?}",
+    );
 }
 
 #[test]
@@ -293,18 +306,22 @@ fn generated_pdf_package_passes_host_conformance() {
     assert_eq!(conformance.package_version, "1.0.0");
     assert_eq!(conformance.provider_id, "tethers-pdf-provider");
 
-    // Declared launch arguments keep the exact placeholder untouched.
-    let expected_arguments = vec![
-        "--query-root".to_string(),
-        PDF_QUERY_ROOT_PLACEHOLDER.to_string(),
-    ];
-    assert_eq!(candidate.launch_arguments, expected_arguments);
-    assert_eq!(prepared.evidence.arguments, expected_arguments);
+    // Declared launch arguments are empty (no retired placeholder).
+    assert_eq!(candidate.launch_arguments, Vec::<String>::new());
+    assert_eq!(prepared.evidence.arguments, Vec::<String>::new());
 
     // Conformance disposition and bounded retry/stderr behaviour.
     assert_eq!(conformance.disposition, ConformanceDisposition::Passed);
     assert_eq!(conformance.retry_count, 0);
     assert!(!conformance.raw_stderr_persisted);
+
+    // Conformance environment names contain conformance machinery, not
+    // installed operational scope delivery.
+    let env_names = &prepared.evidence.environment_names;
+    assert_env_contains(env_names, TETHERS_CONFORMANCE);
+    assert_env_contains(env_names, TEMP);
+    assert_env_excludes(env_names, TETHERS_OPERATIONAL_SCOPE_JSON);
+    assert_env_excludes(env_names, TETHERS_OPERATIONAL_SCOPE_DIGEST);
 
     // Required individual cases passed.
     assert_case_passed(&conformance, "provider_identity");
