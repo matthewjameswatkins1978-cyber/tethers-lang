@@ -28,7 +28,7 @@ Prove that Tethers can carry a completely unrelated Plug and Operational Scope s
 
 ## Required behaviour
 
-Prove that a synthetic Plug (`example.text-inspector`) with capability `text.inspect@1`, operation `text_inspect`, and operational scope `{workspace (canonical-directory), limit (1-1000)}` passes through the entire generic pipeline without any production code changes.
+1. Prove that a synthetic Plug (`example.text-inspector`) with capability `text.inspect@1`, operation `text_inspect`, and operational scope `{workspace (canonical-directory), limit (1-1000)}` passes through the entire generic pipeline without any production code changes.
 
 ## Frozen decisions and invariants
 
