@@ -183,7 +183,7 @@ fn is_reserved(segment: &str) -> bool {
             .strip_prefix("LPT")
             .is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
 }
-fn validate_path(raw: &[u8]) -> Result<String> {
+pub(crate) fn validate_path(raw: &[u8]) -> Result<String> {
     if raw.len() > 240 || !raw.is_ascii() {
         return Err(refusal(
             "invalid_path",
@@ -223,7 +223,7 @@ fn validate_path(raw: &[u8]) -> Result<String> {
     }
     Ok(path.to_owned())
 }
-fn validate_dotted(value: &str, field: &'static str) -> Result<()> {
+pub(crate) fn validate_dotted(value: &str, field: &'static str) -> Result<()> {
     if value.is_empty()
         || value.split('.').any(|s| {
             s.is_empty()
@@ -297,7 +297,7 @@ fn validate_eocd_profile(bytes: &[u8]) -> Result<()> {
     }
     Ok(())
 }
-fn payload_role_ok(path: &str, role: &str) -> bool {
+pub(crate) fn payload_role_ok(path: &str, role: &str) -> bool {
     match role {
         "provider_executable" | "provider_script" => path.starts_with("provider/"),
         "capability_manifest" => path.starts_with("manifests/"),
@@ -702,7 +702,7 @@ pub fn inspect(path: &Path) -> Result<InspectionReport> {
     report.inspection_evidence_digest = digest(&evidence_bytes);
     Ok(report)
 }
-fn is_version(value: &str) -> bool {
+pub(crate) fn is_version(value: &str) -> bool {
     let mut n = 0;
     for part in value.split('.') {
         n += 1;

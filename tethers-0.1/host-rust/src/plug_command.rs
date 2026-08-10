@@ -7,6 +7,7 @@ use crate::installed::InstalledPlugRegistry;
 use crate::m3_store::M3Error;
 use crate::operational_scope::OperationalScopeEvidence;
 use crate::package::{self, CapabilityEvidence, PackageError};
+use crate::plug_pack::PackError;
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::json;
@@ -64,6 +65,47 @@ pub fn run_inspect(package_path: &Path) -> PlugCommandResult {
                 envelope,
             }
         }
+    }
+}
+
+pub fn run_pack(source: &Path, output: &Path) -> PlugCommandResult {
+    match crate::plug_pack::pack(source, output) {
+        Ok(report) => {
+            let envelope = CliEnvelope::ok(
+                "plug pack",
+                json!({
+                    "output_path": report.output_path,
+                    "package_id": report.package_id,
+                    "package_version": report.package_version,
+                    "semantic_package_digest": report.semantic_package_digest,
+                    "raw_archive_digest": report.raw_archive_digest,
+                    "raw_archive_size": report.raw_archive_size,
+                    "provider_id": report.provider_id,
+                    "capability_count": report.capability_count,
+                }),
+            );
+            PlugCommandResult {
+                exit_code: envelope.exit_code,
+                envelope,
+            }
+        }
+        Err(error) => {
+            let status = pack_error_status(&error);
+            let envelope = CliEnvelope::error("plug pack", status, error.code, error.message, None);
+            PlugCommandResult {
+                exit_code: envelope.exit_code,
+                envelope,
+            }
+        }
+    }
+}
+
+fn pack_error_status(error: &PackError) -> OutcomeStatus {
+    match error.code {
+        "invalid_cli_usage" => OutcomeStatus::InvalidCliUsage,
+        "source_unavailable" | "output_unavailable" | "source_read" | "payload_read"
+        | "archive_write" | "archive_read" => OutcomeStatus::Unavailable,
+        _ => OutcomeStatus::InvalidData,
     }
 }
 

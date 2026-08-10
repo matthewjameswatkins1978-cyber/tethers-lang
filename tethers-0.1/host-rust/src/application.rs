@@ -579,6 +579,15 @@ pub fn run() {
         }
         Ok(Cli {
             command:
+                Some(CliCommand::Plug {
+                    command: crate::cli::PlugCommand::Pack { source, output },
+                }),
+        }) => {
+            let result = plug_command::run_pack(&source, &output);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
                 Some(CliCommand::Run {
                     config,
                     engine,

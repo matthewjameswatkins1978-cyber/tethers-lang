@@ -131,6 +131,13 @@ pub enum PlugCommand {
         #[arg(long = "request", value_name = "ABSOLUTE_JSON_PATH")]
         request: PathBuf,
     },
+    /// Pack an author source directory into a deterministic .tetherplug.
+    Pack {
+        #[arg(long = "source", value_name = "ABSOLUTE_DIRECTORY")]
+        source: PathBuf,
+        #[arg(long = "output", value_name = "ABSOLUTE_FILE")]
+        output: PathBuf,
+    },
 }
 
 /// Outcome status vocabulary with exit codes.
@@ -894,6 +901,78 @@ mod tests {
             "C:\\host",
             "--package",
             "C:\\package.tetherplug",
+            "--unknown"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn p2a_plug_pack_syntax_is_strict() {
+        assert!(matches!(
+            parse_cli(&[
+                "plug",
+                "pack",
+                "--source",
+                "C:\\my-plug",
+                "--output",
+                "C:\\my-plug.tetherplug"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Plug {
+                command: PlugCommand::Pack { source, output }
+            }) if source == PathBuf::from("C:\\my-plug")
+                && output == PathBuf::from("C:\\my-plug.tetherplug")
+        ));
+        assert!(parse_cli(&[
+            "plug",
+            "pack",
+            "--source=C:\\my-plug",
+            "--output=C:\\my-plug.tetherplug"
+        ])
+        .is_ok());
+        assert!(parse_cli(&["plug", "pack"]).is_err());
+        assert!(parse_cli(&["plug", "pack", "--source", "C:\\my-plug"]).is_err());
+        assert!(parse_cli(&["plug", "pack", "--output", "C:\\my-plug.tetherplug"]).is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "pack",
+            "--source",
+            "a",
+            "--source",
+            "b",
+            "--output",
+            "C:\\my-plug.tetherplug"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "pack",
+            "--source",
+            "C:\\my-plug",
+            "--output",
+            "a",
+            "--output",
+            "b"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "pack",
+            "--source",
+            "C:\\my-plug",
+            "--output",
+            "C:\\my-plug.tetherplug",
+            "extra"
+        ])
+        .is_err());
+        assert!(parse_cli(&[
+            "plug",
+            "pack",
+            "--source",
+            "C:\\my-plug",
+            "--output",
+            "C:\\my-plug.tetherplug",
             "--unknown"
         ])
         .is_err());
