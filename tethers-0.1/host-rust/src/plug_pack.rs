@@ -917,16 +917,7 @@ pub fn pack(source: &Path, output: &Path) -> Result<PackReport> {
 
     let semantic_digest = inspection.package.semantic_digest.clone();
 
-    // ---- Publish with CREATE_NEW (no-replace) ----
-    let archive_bytes = fs::read(&temp_path).map_err(|e| {
-        let _ = fs::remove_file(&temp_path);
-        PackError::new(
-            "archive_write",
-            format!("cannot read temp archive for publication: {e}"),
-        )
-    })?;
-    let _ = fs::remove_file(&temp_path);
-
+    // ---- Publish with atomic hard-link (no-replace, no partial write) ----
     #[cfg(test)]
     {
         if let Some(ref hook) = *publication_hook::BEFORE_PUBLICATION.lock().unwrap() {
@@ -934,26 +925,24 @@ pub fn pack(source: &Path, output: &Path) -> Result<PackReport> {
         }
     }
 
-    let mut output_file = fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(output)
-        .map_err(|e| {
-            PackError::new(
-                "output_collision",
-                format!("output appeared after initial check; refusing to replace: {e}"),
-            )
-        })?;
-
-    output_file.write_all(&archive_bytes).map_err(|e| {
-        let _ = fs::remove_file(output);
-        PackError::new("archive_write", format!("cannot write final package: {e}"))
-    })?;
-
-    output_file.flush().map_err(|e| {
-        let _ = fs::remove_file(output);
-        PackError::new("archive_write", format!("cannot flush final package: {e}"))
-    })?;
+    match fs::hard_link(&temp_path, output) {
+        Ok(()) => {
+            let _ = fs::remove_file(&temp_path);
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&temp_path);
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                return Err(PackError::new(
+                    "output_collision",
+                    format!("output appeared after initial check; refusing to replace: {e}"),
+                ));
+            }
+            return Err(PackError::new(
+                "archive_write",
+                format!("cannot publish final package: {e}"),
+            ));
+        }
+    }
 
     Ok(PackReport {
         output_path: output.to_string_lossy().to_string(),
