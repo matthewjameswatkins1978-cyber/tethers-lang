@@ -11,13 +11,17 @@ use std::time::Duration;
 use tethers_reference_host::candidate::{extract_to_quarantine, CandidateRegistry};
 use tethers_reference_host::conformance::{run_host_conformance, ConformanceEvidenceStore};
 use tethers_reference_host::enablement::EnablementStore;
+use tethers_reference_host::host_execution::execute_enabled_installed_action;
 use tethers_reference_host::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use tethers_reference_host::installed_provider_executor::InstalledProviderExecutor;
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
 use tethers_reference_host::operational_scope::OperationalScopeEvidence;
+use tethers_reference_host::policy::CapabilityRequirement;
+use tethers_reference_host::resolver;
 use tethers_reference_host::trust::{
     DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore,
 };
+use tethers_reference_host::trusted_store::TrustedManifestStore;
 
 fn host_binary() -> PathBuf {
     std::env::var_os("CARGO_BIN_EXE_tethers-reference-host")
@@ -282,22 +286,72 @@ fn p3_real_installed_pdf_execution_uses_generic_executor() {
         &approval,
         &enabled,
         &scope,
-        manifest,
+        manifest.clone(),
     )
     .unwrap();
-    let result = executor
-        .call(
-            "pdf_inspect",
-            &json!({"path":"doc.pdf"}),
-            Duration::from_secs(5),
-        )
+    let mut manifests = TrustedManifestStore::new();
+    manifests.insert(manifest).unwrap();
+    let snapshot = enablements
+        .snapshot(&installed.installed_id)
+        .unwrap()
         .unwrap();
+    let resolved = resolver::resolve_capability(
+        &manifests,
+        &snapshot.provider_availability(),
+        "pdf.inspect",
+        1,
+        Some("tethers-pdf-provider"),
+    )
+    .unwrap();
+    let mut response = json!({"status":"matched","protocol_version":"0.1","evaluation_id":"eval-p3-pdf-inspect","event_id":"evt-p3-pdf-inspect","tether_id":"p3-pdf-reference","tether_version":"1","trail":[],"plan":{"id":"plan-p3-pdf-inspect","actions":[{"action_id":"action-p3-pdf-inspect","capability":"pdf.inspect","capability_version":"1.0.0","bridge_capability_version":1,"bridge_provider_identity":"tethers-pdf-provider","manifest_digest":resolved.manifest_digest(),"arguments":{"path":"doc.pdf"}}]}});
+    let replay_root = root.join("replay");
+    fs::create_dir_all(&replay_root).unwrap();
+    let acl_script = format!(
+        "$p='{}'; $identity=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name; $acl=[System.Security.AccessControl.DirectorySecurity]::new(); $acl.SetAccessRuleProtection($true,$false); $inherit=[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit; foreach($t in @($identity,'NT AUTHORITY\\SYSTEM','BUILTIN\\Administrators')) {{ $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($t,'FullControl',$inherit,'None','Allow')) }}; Set-Acl -LiteralPath $p -AclObject $acl",
+        replay_root.to_string_lossy()
+    );
+    assert!(Command::new("pwsh")
+        .args(["-NoProfile", "-Command", &acl_script])
+        .status()
+        .unwrap()
+        .success());
+    let provision = Command::new(host_binary())
+        .args(["provision-replay", replay_root.to_str().unwrap()])
+        .status()
+        .unwrap();
+    assert!(provision.success());
+    let trail_path = root.join("trail.jsonl");
+    let shared = execute_enabled_installed_action(
+        &mut response,
+        &[CapabilityRequirement::new("pdf.inspect", 1)],
+        &resolved,
+        &snapshot,
+        &mut executor,
+        &trail_path,
+        &replay_root,
+        "evt-p3-pdf-inspect",
+    )
+    .unwrap();
+    assert_eq!(
+        shared.outcome,
+        tethers_reference_host::SharedExecutionOutcome::Completed
+    );
+    assert!(shared.execution_id.is_some());
+    assert_eq!(response["execution_status"], "completed");
+    assert_eq!(
+        response["result_anchor"]["event_name"],
+        "capability.succeeded"
+    );
+    let result = &response["result_anchor"]["facts"]["result"];
     assert_eq!(result["is_pdf"], true);
     assert_eq!(result["pdf_version"], "1.4");
     assert_eq!(result["page_count"], 1);
     assert_eq!(result["size_bytes"], pdf.len() as u64);
     assert_eq!(result["path"], "doc.pdf");
     assert!(result["sha256"].as_str().unwrap().starts_with("sha256:"));
+    assert!(fs::read_to_string(&trail_path)
+        .unwrap()
+        .contains("pdf.inspect"));
     prepared.cleanup_scratch().unwrap();
     let _ = fs::remove_dir_all(root);
 }
