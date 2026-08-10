@@ -1,113 +1,151 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P2B-FIX2 — Wire Cleanup Proof Into Production`
+Task: `TETHERS-0.3-P2C — End-to-End Public Author Proof + Final P2 Gate`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Amber`
-Route: `OpenCode implements bounded structural repair`
-Worker note: `docs/worker-notes/2026-08-10-0.3-p2b-fix2-wire-cleanup-proof.md`
-Base branch: `feature/0.3-p2b-fix-cleanup-authority`
-Base commit: `26269f1edc16bc49a4ed7261263185802e3e6fdf`
-Implementation branch: `feature/0.3-p2b-fix2-wire-cleanup-proof`
-Implementation checkpoint: `e21ceefd27f1a7bee0bedbbe2f9b59845300c046`
+Route: `OpenCode implements proof + final gate`
+Worker note: `docs/worker-notes/2026-08-10-0.3-p2c-public-author-proof.md`
+Base branch: `feature/0.3-p2b-fix2-wire-cleanup-proof`
+Base commit: `061a57d4bd48e59cae2d496b889834df7fe54418`
+Implementation branch: `feature/0.3-p2c-public-author-proof`
+Implementation checkpoint: `<populated at checkpoint>`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
-Rust change class: `PRODUCTION_AND_TEST`
+Rust change class: `TEST_AND_DOCS_ONLY`
 
 ## Objective
 
-Close the final P2B acceptance gaps found during Lucy's independent review.
-Do NOT redesign public conform. Do NOT begin P2C.
+Prove the complete public Plug-author journey using only the public CLI. Run the
+expensive final P2 verification gate. No production code changes are expected.
 
 ## Relevant background and existing behaviour
 
-- Original P2B (`feature/0.3-p2b-public-plug-conform`) passed 13/13 CLI tests and all static checks.
-- Lucy rejected acceptance for two reasons:
-  1. Cleanup failures were silently discarded: `prepared_launch.cleanup_scratch().ok()` and `let _ = fs::remove_dir_all(...)`.
-  2. The task packet (`docs/CURRENT_CLINE_TASK.md`) was stale, still describing P1-R1G-RERUN.
-- This fix addresses both gaps without redesigning public conform, supervised launch, exact-candidate trust, or public approval semantics.
+- P2A (public deterministic plug pack) is ACCEPTED.
+- P2B (public supervised plug conform) is ACCEPTED at `061a57d4bd48e59cae2d496b889834df7fe54418`.
+- The public CLI: `plug pack`, `plug inspect`, `plug conform` all exist and pass their suites.
+- P2C is primarily PROOF, not new production behaviour.
 
 ## Required behaviour
 
-### FIX 1 — Cleanup failure must block clean success
+### FIX 1 — End-to-end public author journey test
 
-1. Always attempt supervised scratch cleanup after conformance execution.
-2. Always attempt final whole-workspace cleanup regardless of conform pass/fail/interruption/scratch-cleanup failure.
-3. Capture cleanup failures.
-4. If either scratch or workspace cleanup fails, return `conformance_cleanup_failed` / `failed` / exit 6.
-5. Safe message: "ephemeral conform state could not be completely removed"
-6. No path, temp dir, or raw filesystem error exposure in public output.
-7. Cleanup failure takes precedence over an otherwise successful conform result.
+Create `tests/p2c_public_author_journey.rs` with ONE coherent test proving:
 
-### FIX 2 — Current task packet
+1. **Author source tree** — construct from scratch with synthetic identity
+   (`example.public-author-proof`, `tethers-stdio-fixture`, `fixture.ping@1`).
+   Uses `payloads` not `payload_index`. Omits `manifest_digest` and manifest `digest`.
 
-Replace stale P1-R1G-RERUN task packet with actual bounded P2B-FIX task.
+2. **STEP 1 — Real public pack** — launch `tethers-reference-host plug pack`.
+   Prove: exit 0, schema, command, status ok, expected identities,
+   digest fields, exact one JSON envelope line.
 
-### FIX 3 — Run three required commands
+3. **STEP 2 — Real public inspect** — launch `plug inspect` on the packed package.
+   Prove: exit 0, identity unchanged, manifest digest now exists,
+   digest continuity (`pack.semantic_package_digest == inspect.package.semantic_digest`),
+   package bytes unchanged by inspect.
 
-- `cargo test --locked --lib conformance::tests`
-- `cargo test --locked --lib launch_profile::tests`
-- `cargo test --locked --lib installation_trust::tests`
+4. **STEP 3 — Execution safety gate** — launch `plug conform` WITHOUT
+   `--allow-non-isolated-supervised-execution`. Prove: exit 5,
+   `approval_required`, `conformance_execution_approval_required`,
+   provider marker file does NOT exist.
 
-Report PASS — 0 matched if applicable. Do NOT report NOT RUN.
+5. **STEP 4 — Real approved public conform** — launch `plug conform` WITH
+   `--allow-non-isolated-supervised-execution` using a dedicated TEMP/TMP parent.
+   Prove: exit 0, disposition passed, isolated=false, limitation present,
+   retry_count=0, raw_stderr_persisted=false, evidence fields present.
+
+6. **Provider execution proof** — after approved conform, provider marker MUST exist.
+
+7. **Cleanup proof** — no `tethers-p2b-conform-*` directories remain in the
+   dedicated TEMP/TMP parent.
+
+8. **Digest continuity** — `pack semantic_package_digest == inspect semantic_package_digest == conform semantic_package_digest`.
+
+9. **Immutability proof** — source plug.json, manifest, and provider bytes
+   unchanged; package bytes unchanged since pack.
+
+10. **Public output hygiene** — no quarantine path, trust-store path, temp
+    workspace path, raw provider stderr, or M3_SECRET_CANARY in public output.
+
+The test must use only the public CLI (launching `tethers-reference-host` binary).
+It must NOT call internal Tethers functions.
+
+### FIX 2 — Final P2 verification gate
+
+Run `just verify-agent` from repository root once. Record all component results.
+
+### FIX 3 — Documentation closeout
+
+Update `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, `docs/PROJECT_DASHBOARD.md`
+to record P2B accepted, P2C proof complete, P3 next.
 
 ## Frozen decisions and invariants
 
-1. No conformance case changes
-2. No supervised launch semantics changes
-3. No exact-candidate trust changes
-4. No public approval semantics changes
-5. No dependencies added
-6. No P2C work
+1. No src/ production code changes
+2. No Cargo.toml or Cargo.lock changes
+3. No conformance case changes
+4. No supervised launch semantics changes
+5. No P3 work
+6. No `plug stage`, `plug install`, `plug enable` in the journey
 
 ## Relevant components
 
 ### Authorised paths
 
-- `src/plug_conform.rs` (production change)
-- `tests/p2b_plug_conform_cli.rs` (existing, no changes expected)
+- `tests/p2c_public_author_journey.rs` (new)
 - `docs/CURRENT_CLINE_TASK.md` (update)
-- `docs/worker-notes/2026-08-10-0.3-p2b-fix-cleanup-authority.md` (new)
-- `docs/worker-notes/2026-08-10-0.3-p2b-public-plug-conform.md` (optional addendum)
+- `docs/ROAD_TO_0_3.md` (update)
+- `docs/CURRENT_GOAL.md` (update)
+- `docs/PROJECT_DASHBOARD.md` (update)
+- `docs/worker-notes/2026-08-10-0.3-p2c-public-author-proof.md` (new)
 
 ## Acceptance criteria
 
-1. Cleanup failure overrides conformance success: `conformance_cleanup_failed` / `failed` / exit 6
-2. Cleanup failure message is safe: no path, no temp dir, no raw error
-3. Both scratch and workspace cleanup attempted regardless of failures
-4. Focused unit tests prove all three outcome classes
-5. `cargo test --locked --test p2b_plug_conform_cli` — 13/13 PASS
-6. `cargo test --locked --test p2a_plug_pack_cli` — 7/7 PASS
-7. `cargo test --locked --test j24a_plug_inspect_cli` — 3/3 PASS
-8. `cargo clippy --all-targets --all-features --locked` — 0 new warnings
-9. `cargo fmt --all -- --check` — PASS
-10. `git diff --check` — PASS
-11. Task packet checker `control-v1/COMPLETE`
-12. Branch pushed, remote == local, genuinely clean worktree
+1. P2C focused test passes: `cargo test --locked --test p2c_public_author_journey`
+2. `cargo fmt --all -- --check` — PASS
+3. `git diff --check` — PASS
+4. `cargo clippy --all-targets --all-features --locked` — PASS (no new P2/P2C warnings)
+5. `just verify-agent` — PASS from repository root
+6. Complete diff contains no src/ production changes
+7. No dependency changes from P2B base
+8. Task packet checker `control-v1/COMPLETE`
+9. Branch pushed, remote == local, genuinely clean worktree
 
 ## Required verification
 
-1. Full focused test suite as listed above
-2. Task packet checker — `control-v1/COMPLETE`
-3. `git push` + remote SHA + local == remote + clean status
+1. Focused P2C test
+2. Cargo fmt check
+3. Git diff check
+4. Clippy
+5. `just verify-agent` (once, after all code changes)
+6. Task packet checker
+7. Git publish + remote/local equality
 
 ## Forbidden changes
 
+- No src/ production files
+- No Cargo.toml
+- No Cargo.lock
 - No conformance case changes
-- No supervised launch semantics changes
-- No exact-candidate trust changes
-- No public approval semantics changes
-- No dependencies
-- No P2C work
-- No `just verify-agent`
+- No P3 work
+- No `plug stage`, `plug install`, `plug enable` in the journey
 
 ## Stop conditions
 
-- Any mandatory gate fails
-- Production or test changes needed beyond `src/plug_conform.rs`
-- After two materially similar failed attempts
+- Any production src/ change appears necessary
+- Pack/inspect/conform digest continuity breaks
+- Provider executes without explicit conform approval
+- Conform leaves ephemeral state behind
+- Source files are mutated
+- Inspect mutates package
+- Conform mutates package
+- Dependency changes appear
+- `just verify-agent` fails
+- Two materially similar attempts fail
 
 ## Expected pre-existing changes
 
-None. HEAD equals `26269f1edc16bc49a4ed7261263185802e3e6fdf`. Working tree currently has uncommitted P2B-FIX2 changes.
+None. HEAD equals `061a57d4bd48e59cae2d496b889834df7fe54418` (P2B FINAL ACCEPTED).
+Branch `feature/0.3-p2c-public-author-proof` created from P2B HEAD. Working tree clean.
