@@ -4,32 +4,32 @@ Updated: 2026-08-10
 
 ## Current Milestone
 
-Tethers 0.3 public Plug authoring. P1, P2, and P3 are FINAL ACCEPTED. P4 — Plug
-Author Manual — is FINAL ACCEPTED at
-`1e1f9b8738a48f727187316dd0078b7f9435f1c6`. P5 — Fresh-Agent Plug Authoring
-Proof — is complete, awaiting Lucy review.
+Tethers 0.3 public Plug authoring. P1, P2, P3, and P4 are FINAL ACCEPTED. P5 —
+Fresh-Agent Plug Authoring Proof — is FINAL ACCEPTED at
+`ffbe25e1c36123301182383c97265a6174b5dd98`. P6 — The Evil Bunny Test — is
+complete, awaiting Lucy review.
 
 ## Verified Checkpoint
 
-P4 final implementation checkpoint:
-`1e1f9b8738a48f727187316dd0078b7f9435f1c6`.
+P5 final implementation checkpoint:
+`ffbe25e1c36123301182383c97265a6174b5dd98`.
 
 ## Active Task
 
-- Task: P5 — Fresh-Agent Plug Authoring Proof
+- Task: P6 — The Evil Bunny Test (adversarial provider proof)
 - State: complete, awaiting Lucy independent review
 - Owner: OpenCode (implementation); Lucy (independent GitHub review and acceptance)
-- Risk: Green; evidence-heavy, reference-provider and documentation changes only
+- Risk: Amber; bounded generic conformance corrections plus fixture/evidence
 
 ## Last Accepted Result
 
-P4 — Plug Author Manual — FINAL ACCEPTED at
-`1e1f9b8738a48f727187316dd0078b7f9435f1c6`.
+P5 — Fresh-Agent Plug Authoring Proof — FINAL ACCEPTED at
+`ffbe25e1c36123301182383c97265a6174b5dd98`.
 
-The canonical public author manual is `docs/PLUG_AUTHORING.md` and documents the
-interfaces and behaviour proven by P1–P3: author source tree, `plug.json`,
-capability manifests, the provider contract, Operational Scope Evidence, and
-the `plug pack` → `plug inspect` → `plug conform` journey.
+A fresh author using `docs/PLUG_AUTHORING.md` as its only guide built the
+`tethers.text-stats` Plug and completed the full public journey, surfacing one
+narrow manual gap (advertise both `inputSchema` and `outputSchema` in
+`tools/list`), fixed in the manual during P5.
 
 ## Matthew Decision Required
 
@@ -37,10 +37,12 @@ None.
 
 ## Next Route
 
-P5 evidence review by Lucy: fresh-author experiment log
-(`docs/p5-fresh-agent-proof.md`), the new `reference-plugs/text-stats-proof/`
-Plug, and the narrow `docs/PLUG_AUTHORING.md` correction. P6 (adversarial-provider
-proof) remains next after P5 and has NOT started.
+Lucy review of P6: the Evil Bunny Chronicles (`docs/p6-evil-bunny-proof.md`),
+the committed fixture and per-case evidence
+(`reference-plugs/evil-bunny-proof/`), the three generic conformance
+corrections in `tethers-0.1/host-rust/src/conformance.rs`, and the p6
+regression tests (`tests/p6_evil_bunny.rs`). P7 / 0.4 remains next and has NOT
+started.
 
 ## Operating Mode
 
@@ -59,6 +61,10 @@ proof) remains next after P5 and has NOT started.
 - Cheap checks early. Expensive proof once.
 - P5 surfaced one narrow manual gap (advertise both `inputSchema` and
   `outputSchema` in `tools/list`), fixed in the manual during P5.
+- P6 proved the conformance suite itself still accepted an advertised-only
+  `inputSchema` / mismatched `outputSchema`, an uncorrelated JSON-RPC response
+  id, and a shutdown-refusing provider; those three generic gaps were corrected
+  in `conformance.rs` with before/after evidence and regression tests.
 
 ## Where Details Live
 

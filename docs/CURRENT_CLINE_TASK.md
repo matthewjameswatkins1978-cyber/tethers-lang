@@ -3,13 +3,14 @@
 Control contract: `1`
 Task: `TETHERS-0.3-P6 — The Evil Bunny Test`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p6-evil-bunny-adversarial-provider-proof.md`
 Base branch: `feature/0.3-p5-fresh-agent-authoring-proof`
 Base commit: `ffbe25e1c36123301182383c97265a6174b5dd98`
 Implementation branch: `feature/0.3-p6-evil-bunny-adversarial-provider-proof`
+Implementation checkpoint: `d4ca3b59073051fb46df29d7c50fe9424a752030`
 
 P5 is FINAL ACCEPTED. Do **not** start 0.4 concurrency or any later milestone.
 
