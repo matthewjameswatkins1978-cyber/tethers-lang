@@ -1,0 +1,22 @@
+{
+  "package_format_version": "1",
+  "package_id": "tethers.text-stats",
+  "package_version": "1.0.0",
+  "display_name": "Tethers Text Stats",
+  "description": "Credential-free bounded local UTF-8 text statistics Plug",
+  "publisher": "Tethers reference material",
+  "licence": "MIT",
+  "socket_major": 1,
+  "protocol_bindings": [{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],
+  "platforms": [{"os":"windows","architecture":"x86_64"}],
+  "provider": {
+    "provider_id": "tethers-text-stats-provider",
+    "provider_version": "1.0.0",
+    "launch": {"path": "provider/tethers_text_stats_provider.exe", "arguments": []},
+    "working_directory": "provider",
+    "capability_operation_namespace": "text",
+    "operational_scope_schema": {"type":"object","properties":{"query_root":{"type":"string","x-tethers-path":"canonical-directory"},"max_bytes":{"type":"integer","minimum":1,"maximum":8388608}},"required":["query_root","max_bytes"],"additionalProperties":false}
+  },
+  "capabilities": [{"capability_name":"text.stats","capability_version":1,"manifest_path":"manifests/text-stats-v1.json","provider_operation_name":"text_stats"}],
+  "payloads": [{"path":"manifests/text-stats-v1.json","role":"capability_manifest"},{"path":"provider/tethers_text_stats_provider.exe","role":"provider_executable"}]
+}

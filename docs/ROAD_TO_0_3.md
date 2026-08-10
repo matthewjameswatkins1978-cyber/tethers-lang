@@ -7,7 +7,9 @@
 ## Status
 
 P1 COMPLETE / ACCEPTED. P2 FINAL / ACCEPTED. P3 FINAL / ACCEPTED. P4 — Plug Author
-Manual — is active/current. P5 is next after P4 and has NOT started.
+Manual — FINAL ACCEPTED at `1e1f9b8738a48f727187316dd0078b7f9435f1c6`. P5 —
+Fresh-Agent Authoring Proof — complete, awaiting Lucy review. P6 remains next
+and has NOT started.
 
 ## Sequence
 
@@ -62,14 +64,25 @@ use only the public Plug boundary established by P1–P2.
 FINAL ACCEPTED at `e23030ad5e9820373133b25222680194af967c39`; final P3
 implementation correction checkpoint `fcf22bff911393869d8dd560efeee1442a50b119`.
 
-### P4 — Plug author manual ✓ (active)
+### P4 — Plug author manual ✓
 
 Write the complete Plug-authoring manual using only interfaces proven by P1–P3.
 Canonical public manual: `docs/PLUG_AUTHORING.md`.
 
-### P5 — Fresh-agent authoring proof
+FINAL ACCEPTED at `1e1f9b8738a48f727187316dd0078b7f9435f1c6`.
+
+### P5 — Fresh-agent authoring proof ✓ (awaiting Lucy review)
 
 A clean agent with only released Tethers and the manual builds a new Plug.
+
+A fresh DeepSeek V4 Flash / High-thinking author, guided only by
+`docs/PLUG_AUTHORING.md`, built a new non-PDF Plug (`tethers.text-stats`) under
+`reference-plugs/text-stats-proof/` and completed the full public journey:
+build → pack → inspect → conform-refusal → approved conform. Provider semantic
+tests pass; digest continuity and source immutability proven; one genuine narrow
+manual gap surfaced (advertise both `inputSchema` and `outputSchema` in
+`tools/list`) and was fixed in the manual. Experiment log:
+`docs/p5-fresh-agent-proof.md`.
 
 ### P6 — Adversarial-provider proof
 

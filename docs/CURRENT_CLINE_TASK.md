@@ -1,143 +1,197 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P4 — Plug Author Manual`
+Task: `TETHERS-0.3-P5 — Fresh-Agent Plug Authoring Proof`
 Owner: `OpenCode`
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 Task colour: `Green`
-Route: `OpenCode implementation → Lucy GitHub review`
-Worker note: `docs/worker-notes/2026-08-10-0.3-p4-plug-author-manual.md`
+Route: `fresh-agent execution → OpenCode evidence capture → Lucy independent review`
+Worker note: `docs/worker-notes/2026-08-10-0.3-p5-fresh-agent-authoring-proof.md`
 Base branch: `main`
-Base commit: `e23030ad5e9820373133b25222680194af967c39`
-Implementation branch: `feature/0.3-p4-plug-author-manual`
-Implementation checkpoint: `8b90ce76b70b33276f6b633828cfc782064bb792`
+Base commit: `1e1f9b8738a48f727187316dd0078b7f9435f1c6`
+Implementation branch: `feature/0.3-p5-fresh-agent-authoring-proof`
+Implementation checkpoint: `WORKTREE`
 OCaml switch path: `N/A`
-Rust toolchain: `1.97.1` from root pin; no Rust source changes expected
+Rust toolchain: `1.97.1` from root pin; provider built under `reference-plugs/`
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
-Rust change class: `DOCUMENTATION_ONLY` (no production Rust source changes)
+Rust change class: `REFERENCE_PROVIDER_RUST` (new provider crate under
+`reference-plugs/`; no production host source changes)
 
 ## Objective
 
-Write the first complete public Plug-authoring manual using only interfaces and
-behaviour actually proven by P1–P3, then record small project-state cleanup and
-the agreed delegation/blocking-rule workflow correction.
+Prove that a fresh agent, using `docs/PLUG_AUTHORING.md` as its only authoring
+guide, can build a new non-PDF Plug (Text Stats) from scratch and complete the
+public pack → inspect → conform author journey without relying on hidden Tethers
+knowledge. Capture honest evidence, record any manual gaps, and fix only narrow
+manual deficiencies the proof reveals.
 
 ## Relevant background and existing behaviour
 
-- P3 FINAL ACCEPTED at `e23030ad5e9820373133b25222680194af967c39`; final P3
-  implementation correction checkpoint `fcf22bff911393869d8dd560efeee1442a50b119`.
+- P4 FINAL ACCEPTED at `1e1f9b8738a48f727187316dd0078b7f9435f1c6`; canonical
+  public author manual is `docs/PLUG_AUTHORING.md`.
 - `reference-plugs/pdf-tools/` is the accepted reference Plug owning the
   provider, author material, and manifests.
 - Public `plug pack`, `plug inspect`, and `plug conform` are accepted P2/P3
-  surfaces and must be documented as-is.
+  surfaces and must be used exactly as documented.
+- The host conformance suite (`tethers-0.1/host-rust/src/conformance.rs`) drives
+  an MCP stdio provider through `initialize`, `notifications/initialized`,
+  `tools/list`, and (for `fixture*` operations only) `tools/call`; non-fixture
+  operations are discovered and schema-checked without fixture calls.
+- During approved conformance the host launches the provider with
+  `TETHERS_CONFORMANCE=1`, a scratch `TEMP`/`TMP`, `SystemRoot`, and `WINDIR`.
+  `TETHERS_OPERATIONAL_SCOPE_JSON` is present in installed execution only; the
+  PDF provider falls back to `TEMP` as a safe root when it is absent during
+  conformance.
 - Generic Tethers owns trust, packaging, scope evidence, supervision, dispatch,
   and receipts; the Plug/provider owns application-specific meaning.
 
 ## Required behaviour
 
-1. Create `docs/PLUG_AUTHORING.md` as the canonical public author manual,
-   readable top to bottom, covering: what a Plug is; minimal authoring mental
-   model; author source tree; `plug.json`; capability manifest; provider
-   contract; Operational Scope Evidence; building the provider; assembling the
-   temporary pack source; `plug pack`; `plug inspect`; `plug conform` (both
-   paths); a complete PDF Tools walkthrough; common mistakes; and an author
-   checklist.
-2. Every command and field name must match the current CLI and accepted author
-   format. Use the real PDF reference Plug as the concrete example.
-3. Clearly separate author declarations from Tethers-generated evidence
-   (author `payloads` vs generated `payload_index`; no manual hashes, sizes,
-   manifest digest, or semantic package digest).
-4. Describe conformance as supervised, non-isolated, non-installing and
-   non-trust-creating. State the `--allow-non-isolated-supervised-execution`
-   approval flag and the default approval-required refusal.
-5. Explain Operational Scope Evidence ownership: generic host carries and
-   validates scope evidence; the Plug/provider interprets its own scope meaning.
-6. Update `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, and
-   `docs/PROJECT_DASHBOARD.md` to record P3 FINAL ACCEPTED, P4 active, P5 next
-   and not started.
-7. Update `docs/AGENT_WORKFLOW.md` and `AGENTS.md` with the delegation/blocking
-   rule principle.
+1. Create `feature/0.3-p5-fresh-agent-authoring-proof` based on the exact P4
+   accepted HEAD `1e1f9b8738a48f727187316dd0078b7f9435f1c6`.
+2. Update `docs/CURRENT_CLINE_TASK.md` to the P5 packet with Status
+   `IN_PROGRESS` and run the packet checker.
+3. Run a fresh-author experiment: a fresh agent/session whose only authoring
+   guide is `docs/PLUG_AUTHORING.md` plus the short challenge prompt, builds a
+   new Plug called Text Stats under `reference-plugs/text-stats-proof/`
+   (provider-rust + author source + README), using only the manual, the public
+   CLI, and files the manual explicitly references.
+4. The fresh author must not be directed to P1/P2/P3 worker notes, P2/P3 test
+   implementations, `docs/CURRENT_CLINE_TASK.md`, internal host Rust source,
+   old PDF implementation code, or fixture builders. Any voluntary reach into
+   undocumented internal material is recorded as a manual-quality finding.
+5. The Text Stats provider must implement the required semantics: relative
+   `path`; exact `size_bytes`; `sha256:<64 hex>`; logical `line_count`;
+   whitespace-separated `word_count`; `character_count` after valid UTF-8
+   decoding; scope keys `query_root` and `max_bytes`; path must stay inside
+   `query_root`; regular file required; malformed UTF-8 fails cleanly;
+   `max_bytes` honoured with an 8 MiB hard maximum; read-only; no network;
+   no writes beyond ordinary diagnostics; no hidden/test-only behaviour.
+6. The fresh author must successfully run the public journey in order: build
+   provider → assemble pack source → `plug pack` → `plug inspect` → `plug
+   conform` without approval (observe approval-required refusal) → `plug conform
+   --allow-non-isolated-supervised-execution` (passed, non-isolated).
+7. The provider's own semantics must be tested (valid UTF-8 stats; traversal /
+   outside-root refusal; oversized refusal; malformed UTF-8 refusal; scope above
+   the 8 MiB maximum refusal; unknown/missing arguments refusal; stdout stays
+   MCP-protocol-only), without a test-only copy of production decision logic.
+8. If the proof reveals a narrow manual deficiency, fix
+   `docs/PLUG_AUTHORING.md` in this branch, record exactly what the fresh agent
+   could not infer and the wording that fixed it, and rerun only the affected
+   step. Do not hide the deficiency.
+9. Create `docs/p5-fresh-agent-proof.md` recording the model
+   (`DeepSeek V4 Flash`, Thinking ON, Effort High), the fresh prompt, author
+   sources made available, prohibited sources, clarifications, manual gaps and
+   corrections, pack/inspect/conform results, provider semantic-test results,
+   and the final conclusion — without pasting the whole conversation.
+10. Update `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, and
+    `docs/PROJECT_DASHBOARD.md` to show P4 FINAL ACCEPTED at
+    `1e1f9b8738a48f727187316dd0078b7f9435f1c6`, P5 complete awaiting Lucy
+    review, P6 next and NOT started.
+11. Close out per project control: implementation checkpoint commit, worker
+    note, packet COMPLETE, checker `control-v1/COMPLETE`, docs closeout commit,
+    normal push, remote == local HEAD proof, clean worktree.
 
 ## Relevant components
 
-- `reference-plugs/pdf-tools/author/plug.json`
-- `reference-plugs/pdf-tools/author/manifests/pdf-inspect-v1.json`
-- `reference-plugs/pdf-tools/provider-rust/`
-- `reference-plugs/pdf-tools/README.md`
+- `docs/PLUG_AUTHORING.md`
+- `reference-plugs/pdf-tools/` (reference Plug; NOT an authoring guide for the
+  fresh author)
 - `tethers-0.1/host-rust/src/cli.rs` (public pack/inspect/conform arguments)
-- `tethers-0.1/host-rust/tests/p3_pdf_reference_plug.rs`
-- `tethers-0.1/host-rust/tests/p2a_plug_pack_cli.rs`
-- `tethers-0.1/host-rust/tests/p2b_plug_conform_cli.rs`
-- `justfile` (`test-pdf-reference` recipe)
-- `docs/ROAD_TO_0_3.md`
-- `docs/CURRENT_GOAL.md`
-- `docs/PROJECT_DASHBOARD.md`
-- `docs/AGENT_WORKFLOW.md`
-- `AGENTS.md`
+- `tethers-0.1/host-rust/src/conformance.rs` (host conformance suite contract)
+- `tethers-0.1/host-rust/src/launch_profile.rs` (approved conformance env)
+- `tethers-0.1/host-rust/target/debug/tethers-reference-host.exe` (public CLI)
+- `justfile` (`test-pdf-reference` recipe as reference-only)
+- `docs/p5-fresh-agent-proof.md` (new experiment log)
+- `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, `docs/PROJECT_DASHBOARD.md`
+- `docs/worker-notes/2026-08-10-0.3-p5-fresh-agent-authoring-proof.md` (new)
 
 ## Frozen decisions and invariants
 
-- Manual documents only interfaces proven by P1–P3. No future APIs.
-- Author declarations are separate from generated package evidence.
-- Conformance is supervised but non-isolated, does not install, and does not
-  create durable trust or enablement.
-- No production Rust/OCaml, CLI, semantics, dependencies, or Cargo changes.
+- The manual is the sole authoring guide for the fresh author.
+- Text Stats package `tethers.text-stats` / provider `tethers-text-stats-provider`
+  / capability `text.stats@1` / operation `text_stats`; versions `1.0.0`.
+- `max_bytes` hard maximum is 8 MiB.
+- Conformance is supervised, non-isolated, non-installing, non-trust-creating.
+- Author declarations (`payloads`) remain separate from generated evidence
+  (`payload_index`, digests, sizes).
+- No production host Rust/OCaml, CLI, semantics, dependencies, or Cargo changes.
+- No P6 work and no redesign of Plug/manifest/MCP/scope/trust semantics.
 
 ## Acceptance criteria
 
-1. `docs/PLUG_AUTHORING.md` exists and covers the full current public author
-   journey.
-2. All documented commands and field names checked against current repository
-   evidence.
-3. The PDF reference Plug is the real example.
-4. The manual clearly separates author declarations from Tethers-generated
-   evidence.
-5. Conformance correctly described as supervised, non-isolated, non-installing
-   and non-trust-creating.
-6. Operational Scope Evidence ownership explained correctly.
-7. Author checklist and common-error section present.
-8. Project-state docs and workflow docs updated truthfully.
-9. Diff shows no production Rust/OCaml source changes.
+1. A fresh DeepSeek V4 Flash / High-thinking author was used with
+   `docs/PLUG_AUTHORING.md` as its primary authoring guide.
+2. It created a new non-PDF Plug `tethers.text-stats` under
+   `reference-plugs/text-stats-proof/`.
+3. The provider implements the required Text Stats semantics and its semantic
+   tests pass.
+4. Public `plug pack` and `plug inspect` pass with correct identities,
+   capability, and generated evidence.
+5. Default `plug conform` correctly refuses execution
+   (`approval_required` / `conformance_execution_approval_required`).
+6. Approved non-isolated `plug conform` passes (`passed`, `isolated: false`,
+   non-isolation limitation present).
+7. Digest continuity and source/package immutability are proven.
+8. Any required manual clarification is documented honestly in
+   `docs/p5-fresh-agent-proof.md`; genuine gaps were fixed in
+   `docs/PLUG_AUTHORING.md` with narrow wording.
+9. No hidden reliance on P2/P3 tests, worker notes, internal host source, or PDF
+   implementation was used as the authoring guide.
+10. `docs/p5-fresh-agent-proof.md` records the experiment.
+11. Project docs show P5 complete awaiting Lucy review and P6 next/not started.
+12. Packet checker reports `control-v1/COMPLETE` on closeout.
+13. Branch pushed normally; remote HEAD == local HEAD; worktree clean.
 
 ## Required verification
 
-1. Documented commands cross-checked against `cli.rs` and P2/P3 CLI tests.
-2. Documented field names cross-checked against `plug.json`,
-   `pdf-inspect-v1.json`, and pack/inspect output structures in tests.
-3. `git diff --check` and full diff/status inspection.
-4. Packet checker reports `control-v1/COMPLETE` on closeout.
+1. Packet checker at start (`IN_PROGRESS`) and on closeout
+   (`control-v1/COMPLETE`).
+2. Fresh-author provider formatter/check/build and semantic tests.
+3. Real `plug pack` proof with captured envelope.
+4. Real `plug inspect` proof with captured envelope and digest match.
+5. Real `plug conform` (no approval) refusal proof (exit 5, exact codes).
+6. Real approved `plug conform` proof (exit 0, disposition `passed`,
+   `isolated: false`, limitation present, digest continuity).
+7. Source/package immutability byte checks around pack and inspect.
+8. `git diff --check` and complete diff/status inspection.
+9. Host warnings-denied check ONLY if host production Rust changes unexpectedly
+   (none are expected).
 
 ## Formatting and checkpoint sequence
 
-No Rust source changes are expected. If any formatting tool touches Rust source
-it is out of scope and must be stopped. Documentation-only closeout.
+The only Rust source introduced lives under
+`reference-plugs/text-stats-proof/provider-rust/`. Format that crate with
+`cargo fmt --manifest-path <provider Cargo.toml> -- --check` (and, if the fresh
+author chooses, `cargo fmt` on that crate only). No formatting tool may touch
+production host Rust source. The implementation checkpoint precedes all worker
+note, packet, and dashboard closeout edits.
 
 ## Completion and publication
 
-Commit the implementation checkpoint, write the worker note at the named path,
-set this packet to `COMPLETE`, require checker `control-v1/COMPLETE`, commit
-docs-only closeout, then push the named branch normally and prove
-`origin/feature/0.3-p4-plug-author-manual == HEAD` and a clean worktree.
+Commit the implementation/proof checkpoint, write the worker note at the named
+path, set this packet to `COMPLETE`, require checker `control-v1/COMPLETE`,
+commit docs-only closeout, then push the named branch normally and prove
+`origin/feature/0.3-p5-fresh-agent-authoring-proof == HEAD` and a clean
+worktree. Do not start P6.
 
 ## Forbidden changes
 
-- No P5, no fresh-agent authoring proof, no Plug/package semantic changes.
-- No CLI, Rust/OCaml production, Cargo dependency, or concurrency/Event
-  Ingress/HQ work.
+- No P6, no HQ, no concurrency, no Event Ingress, no adversarial-provider work.
+- No redesign of Plug format, manifests, MCP, Operational Scope Evidence, or
+  trust/install/enable semantics.
+- No CLI, host Rust/OCaml production, Cargo dependency, or conformance semantic
+  changes.
 - No merge, amend, tag, force-push, PR, or direct `main` update.
 
 ## Stop conditions
 
-- A real contradiction in the public Plug interface that cannot be resolved from
-  repository evidence.
+- A real contradiction between the P4 manual and the public Plug interface that
+  cannot be resolved from repository evidence.
 - A consequential architecture/product decision requiring external authority.
 - Two materially similar implementation attempts fail on the same unresolved
   problem.
 
-## Continuation authority
-
-None required. This is documentation and project-control work.
-
 ## Expected pre-existing changes
 
-None.
+None. Base commit is the accepted P4 HEAD; the P5 branch starts clean at it.

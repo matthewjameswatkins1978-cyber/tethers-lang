@@ -251,8 +251,11 @@ Identity and schema discipline:
 
 - the provider identity must match the trusted binding declared in `plug.json`
   and the manifest;
-- the schemas the provider advertises in `tools/list` must match the reviewed
-  manifest.
+- the `tools/list` entry for each operation must advertise the operation name
+  and both the `inputSchema` and `outputSchema` exactly as declared in the
+  reviewed manifest. The host compares the advertised schemas against the
+  manifest during discovery and dispatch, so advertising only `inputSchema` is
+  incomplete.
 
 Providers must **not rely on host-family knowledge** — that is, a provider must
 not assume it is running inside a particular host family. It should behave

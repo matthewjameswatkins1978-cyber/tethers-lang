@@ -7,38 +7,31 @@ Updated: 2026-08-10
 Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
 ACCEPTED. P2 (public pack / inspect / conform authoring surface) is FINAL
 ACCEPTED. P3 (PDF Tools Reference Plug Crucible) is FINAL ACCEPTED. P4 (Plug
-Author Manual) is the active/current increment. P5 is next after P4 and has NOT
-started.
+Author Manual) is FINAL ACCEPTED. P5 (fresh-agent authoring proof) is complete,
+awaiting Lucy review. P6 is next after P5 and has NOT started.
 
-P3 acceptance is anchored to accepted head
-`e23030ad5e9820373133b25222680194af967c39`, with final P3 implementation
-correction checkpoint `fcf22bff911393869d8dd560efeee1442a50b119`.
+P4 acceptance is anchored to accepted head
+`1e1f9b8738a48f727187316dd0078b7f9435f1c6`.
 
 ## Last accepted increment
 
-P3 — PDF Tools Reference Plug Crucible — FINAL ACCEPTED.
+P4 — Plug Author Manual — FINAL ACCEPTED at
+`1e1f9b8738a48f727187316dd0078b7f9435f1c6`.
 
-The real reference Plug journey is proven end to end:
-
-```text
-standalone provider
-→ public pack / inspect / conform
-→ real installed generic execution
-```
-
-P3 final gate evidence:
-
-- `just verify-agent`: PASS
-- Nextest: 1670 passed, 4 skipped
-- standalone provider checks and both ignored P3 crucible tests: PASS
+The canonical public author manual is `docs/PLUG_AUTHORING.md` and documents the
+interfaces and behaviour proven by P1–P3: author source tree, `plug.json`,
+capability manifests, the provider contract, Operational Scope Evidence, and
+the `plug pack` → `plug inspect` → `plug conform` journey.
 
 ## Active increment
 
-P4 — Plug Author Manual. Write the complete public author manual using only
-interfaces and behaviour proven by P1–P3. The canonical manual is
-`docs/PLUG_AUTHORING.md`.
+P5 — Fresh-Agent Plug Authoring Proof — is complete, awaiting Lucy review. A
+fresh DeepSeek V4 Flash / High-thinking author, guided only by
+`docs/PLUG_AUTHORING.md`, built the new `tethers.text-stats` Plug under
+`reference-plugs/text-stats-proof/` and completed the full public journey.
+Experiment log: `docs/p5-fresh-agent-proof.md`.
 
-P5 (fresh-agent authoring proof) remains next after P4 and has NOT started.
+P6 (adversarial-provider proof) is next after P5 and has NOT started.
 
 ## Foundation Pass boundaries
 
