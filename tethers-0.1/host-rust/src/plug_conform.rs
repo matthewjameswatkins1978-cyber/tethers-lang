@@ -59,7 +59,19 @@ pub fn run_conform(package: &Path, allow_execution: bool) -> PlugCommandResult {
 
     let workspace = match create_ephemeral_workspace() {
         Ok(ws) => ws,
-        Err(error) => return error,
+        Err(msg) => {
+            let envelope = CliEnvelope::error(
+                "plug conform",
+                OutcomeStatus::Unavailable,
+                "conformance_workspace_unavailable",
+                msg,
+                None,
+            );
+            return PlugCommandResult {
+                exit_code: envelope.exit_code,
+                envelope,
+            };
+        }
     };
 
     let result = run_conform_in_workspace(&workspace, package);
@@ -87,21 +99,9 @@ impl EphemeralWorkspace {
     }
 }
 
-fn create_ephemeral_workspace() -> Result<EphemeralWorkspace, PlugCommandResult> {
+fn create_ephemeral_workspace() -> Result<EphemeralWorkspace, String> {
     let root = std::env::temp_dir().join(format!("tethers-p2b-conform-{}", Uuid::new_v4()));
-    fs::create_dir_all(&root).map_err(|e| {
-        let envelope = CliEnvelope::error(
-            "plug conform",
-            OutcomeStatus::Unavailable,
-            "conformance_workspace_unavailable",
-            format!("cannot create ephemeral workspace: {e}"),
-            None,
-        );
-        PlugCommandResult {
-            exit_code: envelope.exit_code,
-            envelope,
-        }
-    })?;
+    fs::create_dir_all(&root).map_err(|e| format!("cannot create ephemeral workspace: {e}"))?;
     Ok(EphemeralWorkspace { root })
 }
 
@@ -267,7 +267,7 @@ fn conformance_cases_json(evidence: &crate::conformance::ConformanceEvidence) ->
             .map(|case| {
                 json!({
                     "case_id": case.case_id,
-                    "disposition": serde_json::to_value(&case.disposition).unwrap_or(serde_json::Value::Null),
+                    "disposition": serde_json::to_value(case.disposition).unwrap_or(serde_json::Value::Null),
                     "safe_diagnostic_code": case.safe_diagnostic_code,
                 })
             })
