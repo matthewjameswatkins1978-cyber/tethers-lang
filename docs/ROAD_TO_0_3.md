@@ -6,7 +6,7 @@
 
 ## Status
 
-P1 COMPLETE / ACCEPTED. P2 FINAL (P2A accepted, P2B accepted, P2C proof + final gate complete, awaiting Lucy final independent P2 acceptance).
+P1 COMPLETE / ACCEPTED. P2 FINAL / ACCEPTED. P3 — PDF Tools Reference Plug Crucible — is next.
 
 ## Sequence
 
@@ -38,17 +38,24 @@ Tethers Core
 
 Core must not contain knowledge such as FileTools, Pdf, Image, Audio, Git, Email.
 
-### P2 — Public pack / inspect / conform authoring surface
+### P2 — Public pack / inspect / conform authoring surface ✓
 
 Expose the generic author workflow: `plug pack`, `plug inspect`, `plug conform`.
 
-- **P2A — Public deterministic plug pack** ✓ (accepted at `3d7fd7e580d274de0a422fb78c5741a6bd1405f1`)
-- **P2B — Public conform** ✓ (accepted at `061a57d4bd48e59cae2d496b889834df7fe54418`)
-- **P2C — End-to-end author proof + final P2 verification** — proof complete, awaiting Lucy final P2 acceptance
+- **P2A — Public deterministic plug pack** ✓ accepted at `3d7fd7e580d274de0a422fb78c5741a6bd1405f1`
+- **P2B — Public supervised conform** ✓ accepted at `061a57d4bd48e59cae2d496b889834df7fe54418`
+- **P2C — End-to-end author proof + final P2 verification** ✓ FINAL ACCEPTED
+  - canonical P2C implementation checkpoint: `4c32b96446e7ae3e20d2994056d0fd435dcc32f3`
+  - final independently reviewed P2 evidence head: `84f1002904dd54929fa8002d1634c42c85112f54`
+  - public author journey proven: `plug pack → plug inspect → plug conform`
+  - full Cargo gate: 1714 passed, 0 failed, 2 ignored
+  - Nextest: 1714 passed, 2 skipped
 
 ### P3 — PDF Tools Reference Plug Crucible
 
 Move PDF Tools across the public boundary into `reference-plugs/pdf-tools/`.
+
+P3 must prove that a real existing capability can live outside the generic host and use only the public Plug boundary established by P1–P2.
 
 ### P4 — Plug author manual
 
