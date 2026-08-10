@@ -61,10 +61,16 @@ Rerun the final P1 acceptance gate after the bounded J23C3 stale-test correction
 
 ## Acceptance criteria
 
-1. All 8 mandatory gates PASS
-2. 14/14 P1 criteria reconciled YES
-3. Task packet checker `control-v1/COMPLETE`
-4. Branch pushed, local == remote, genuinely clean worktree (no modified, staged, or untracked files)
+1. Clean starting state: HEAD == `a0bdead29b89f76b41f3350d014e02f5f060e9a9`, no modified/staged/untracked files
+2. No-knowledge gate: zero generic-provider references in production `src/`
+3. Retired-delivery gate: zero retired subject-specific paths in generic production
+4. Dependency gate: no dependency change vs `c0fd57780156bee023d8dcff884737ea470d096c`
+5. `cargo clippy --all-targets --all-features --locked` PASS
+6. `just verify-agent` PASS (full suite)
+7. `git diff --check` PASS
+8. 14/14 P1 criteria reconciled YES
+9. Task packet checker `control-v1/COMPLETE`
+10. Branch pushed, local == remote, genuinely clean worktree (no modified, staged, or untracked files)
 
 ## Required verification
 
