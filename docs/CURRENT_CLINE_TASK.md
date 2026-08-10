@@ -3,14 +3,14 @@
 Control contract: `1`
 Task: `TETHERS-0.3-P2B-FIX — Cleanup Authority + Task Closeout`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode implements bounded cleanup correction`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p2b-fix-cleanup-authority.md`
 Base branch: `feature/0.3-p2b-public-plug-conform`
 Base commit: `532550c296efb6384c67023efeca63bac26a7bdd`
 Implementation branch: `feature/0.3-p2b-fix-cleanup-authority`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `921af5eb95fbb77578af7ed516d8918c26a2c53c`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `PRODUCTION_AND_TEST`
@@ -19,6 +19,14 @@ Rust change class: `PRODUCTION_AND_TEST`
 
 Close the final P2B acceptance gaps found during Lucy's independent review.
 Do NOT redesign public conform. Do NOT begin P2C.
+
+## Relevant background and existing behaviour
+
+- Original P2B (`feature/0.3-p2b-public-plug-conform`) passed 13/13 CLI tests and all static checks.
+- Lucy rejected acceptance for two reasons:
+  1. Cleanup failures were silently discarded: `prepared_launch.cleanup_scratch().ok()` and `let _ = fs::remove_dir_all(...)`.
+  2. The task packet (`docs/CURRENT_CLINE_TASK.md`) was stale, still describing P1-R1G-RERUN.
+- This fix addresses both gaps without redesigning public conform, supervised launch, exact-candidate trust, or public approval semantics.
 
 ## Required behaviour
 
@@ -53,7 +61,9 @@ Report PASS — 0 matched if applicable. Do NOT report NOT RUN.
 5. No dependencies added
 6. No P2C work
 
-## Authorised paths
+## Relevant components
+
+### Authorised paths
 
 - `src/plug_conform.rs` (production change)
 - `tests/p2b_plug_conform_cli.rs` (existing, no changes expected)
