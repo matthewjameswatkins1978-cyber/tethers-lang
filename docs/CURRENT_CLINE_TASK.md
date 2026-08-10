@@ -3,14 +3,14 @@
 Control contract: `1`
 Task: `TETHERS-0.3-P1-R1G-RERUN — Final P1 Acceptance Gate (Rerun)`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `OpenCode runs final P1 verification and closeout`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p1-r1g-final-gate.md`
 Base branch: `feature/0.3-p1-r1g-fix-j23c3-scope-digest`
 Base commit: `a0bdead29b89f76b41f3350d014e02f5f060e9a9`
 Implementation branch: `feature/0.3-p1-r1g-final-gate-rerun`
-Implementation checkpoint: `unset — gate in progress`
+Implementation checkpoint: `169056bb6b53c0e51cdc15a517e4d55534df258a`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `VERIFICATION_AND_CLOSEOUT_ONLY`
