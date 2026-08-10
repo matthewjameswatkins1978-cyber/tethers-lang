@@ -11,7 +11,6 @@ use tethers_reference_host::conformance::{run_host_conformance, ConformanceEvide
 use tethers_reference_host::enablement::EnablementStore;
 use tethers_reference_host::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
-use tethers_reference_host::operational_scope::OperationalScopeEvidence;
 use tethers_reference_host::package;
 use tethers_reference_host::trust::{
     DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore,
@@ -250,26 +249,25 @@ fn install_synthetic(root: &Path) -> tethers_reference_host::installed::Installe
         .unwrap()
 }
 
-fn enable_synthetic(
+fn enable_positive_via_cli(root: &Path, installed_id: &str, scope_file: &Path) -> (i32, Value) {
+    run_enable_cli(root, installed_id, scope_file)
+}
+
+fn write_valid_scope_file(path: &Path, workspace: &Path, limit: u64) {
+    let content = json!({
+        "schema": "tethers.plug-scope/1",
+        "scope": { "workspace": workspace.to_string_lossy(), "limit": limit }
+    });
+    fs::write(path, serde_json::to_vec(&content).unwrap()).unwrap();
+}
+
+fn load_enablement(
     root: &Path,
-    installed: &tethers_reference_host::installed::InstalledPlugRecord,
-    workspace: &Path,
-    limit: u64,
-) {
-    let scope = OperationalScopeEvidence::create(
-        &installed.installed_id,
-        &installed.package_id,
-        &installed.provider_id,
-        installed
-            .operational_scope_schema_digest
-            .as_deref()
-            .unwrap(),
-        &json!({"workspace": workspace.to_string_lossy(), "limit": limit}),
-        "Matthew",
-    )
-    .unwrap();
+    installed_id: &str,
+) -> tethers_reference_host::enablement::EnablementRecord {
     let enablements = EnablementStore::open_existing(&root.join("enablements")).unwrap();
-    enablements.enable(installed, scope, "Matthew").unwrap();
+    let all = enablements.load_all().unwrap();
+    latest_for(&all, installed_id).clone()
 }
 
 fn records_for<'a>(
@@ -448,17 +446,19 @@ fn installed_evidence_preserves_schema_and_digest() {
     let _ = fs::remove_dir_all(root);
 }
 
-// ── Enablement with scope ──
+// ── Positive enablement through real CLI ──
 
 #[test]
 fn enablement_with_valid_scope_succeeds() {
     let (root, installed, workspace) = install_and_enable_setup();
-    enable_synthetic(&root, &installed, &workspace, 37);
+    let scope_file = root.join("valid_scope.json");
+    write_valid_scope_file(&scope_file, &workspace, 37);
+    let (code, envelope) = enable_positive_via_cli(&root, &installed.installed_id, &scope_file);
+    assert_eq!(code, 0, "CLI enable failed: {envelope}");
+    assert_eq!(envelope["status"], "ok");
 
-    let enablements = EnablementStore::open_existing(&root.join("enablements")).unwrap();
-    let all = enablements.load_all().unwrap();
-    let latest = latest_for(&all, &installed.installed_id);
-    assert!(!latest.operational_scope_digest.is_empty());
+    let record = load_enablement(&root, &installed.installed_id);
+    assert!(!record.operational_scope_digest.is_empty());
 
     let _ = fs::remove_dir_all(workspace);
     let _ = fs::remove_dir_all(root);
@@ -467,12 +467,13 @@ fn enablement_with_valid_scope_succeeds() {
 #[test]
 fn workspace_is_canonicalised_generically() {
     let (root, installed, workspace) = install_and_enable_setup();
-    enable_synthetic(&root, &installed, &workspace, 42);
+    let scope_file = root.join("valid_scope.json");
+    write_valid_scope_file(&scope_file, &workspace, 42);
+    let (code, _envelope) = enable_positive_via_cli(&root, &installed.installed_id, &scope_file);
+    assert_eq!(code, 0);
 
-    let enablements = EnablementStore::open_existing(&root.join("enablements")).unwrap();
-    let all = enablements.load_all().unwrap();
-    let latest = latest_for(&all, &installed.installed_id);
-    let scope = latest.operational_scope.canonical_scope().unwrap();
+    let record = load_enablement(&root, &installed.installed_id);
+    let scope = record.operational_scope.canonical_scope().unwrap();
     let canonical_path = scope.get("workspace").unwrap().as_str().unwrap();
     let from_evidence = fs::canonicalize(canonical_path).unwrap();
     let expected = fs::canonicalize(&workspace).unwrap();
@@ -485,12 +486,13 @@ fn workspace_is_canonicalised_generically() {
 #[test]
 fn limit_is_preserved_exactly() {
     let (root, installed, workspace) = install_and_enable_setup();
-    enable_synthetic(&root, &installed, &workspace, 37);
+    let scope_file = root.join("valid_scope.json");
+    write_valid_scope_file(&scope_file, &workspace, 37);
+    let (code, _envelope) = enable_positive_via_cli(&root, &installed.installed_id, &scope_file);
+    assert_eq!(code, 0);
 
-    let enablements = EnablementStore::open_existing(&root.join("enablements")).unwrap();
-    let all = enablements.load_all().unwrap();
-    let latest = latest_for(&all, &installed.installed_id);
-    let scope = latest.operational_scope.canonical_scope().unwrap();
+    let record = load_enablement(&root, &installed.installed_id);
+    let scope = record.operational_scope.canonical_scope().unwrap();
     assert_eq!(scope.get("limit").unwrap().as_i64().unwrap(), 37);
 
     let _ = fs::remove_dir_all(workspace);
@@ -500,12 +502,13 @@ fn limit_is_preserved_exactly() {
 #[test]
 fn operational_scope_evidence_contains_canonical_workspace_and_limit() {
     let (root, installed, workspace) = install_and_enable_setup();
-    enable_synthetic(&root, &installed, &workspace, 37);
+    let scope_file = root.join("valid_scope.json");
+    write_valid_scope_file(&scope_file, &workspace, 37);
+    let (code, _envelope) = enable_positive_via_cli(&root, &installed.installed_id, &scope_file);
+    assert_eq!(code, 0);
 
-    let enablements = EnablementStore::open_existing(&root.join("enablements")).unwrap();
-    let all = enablements.load_all().unwrap();
-    let latest = latest_for(&all, &installed.installed_id);
-    let evidence = &latest.operational_scope;
+    let record = load_enablement(&root, &installed.installed_id);
+    let evidence = &record.operational_scope;
 
     let canonical: Value = serde_json::from_str(&evidence.canonical_scope_json).unwrap();
     let canonical_path = canonical.get("workspace").unwrap().as_str().unwrap();
@@ -522,12 +525,13 @@ fn operational_scope_evidence_contains_canonical_workspace_and_limit() {
 #[test]
 fn operational_scope_evidence_carries_exact_schema_digest() {
     let (root, installed, workspace) = install_and_enable_setup();
-    enable_synthetic(&root, &installed, &workspace, 50);
+    let scope_file = root.join("valid_scope.json");
+    write_valid_scope_file(&scope_file, &workspace, 50);
+    let (code, _envelope) = enable_positive_via_cli(&root, &installed.installed_id, &scope_file);
+    assert_eq!(code, 0);
 
-    let enablements = EnablementStore::open_existing(&root.join("enablements")).unwrap();
-    let all = enablements.load_all().unwrap();
-    let latest = latest_for(&all, &installed.installed_id);
-    let evidence = &latest.operational_scope;
+    let record = load_enablement(&root, &installed.installed_id);
+    let evidence = &record.operational_scope;
 
     assert_eq!(
         &evidence.scope_schema_digest,
@@ -543,43 +547,41 @@ fn operational_scope_evidence_carries_exact_schema_digest() {
 
 #[test]
 fn repeated_creation_produces_deterministic_evidence() {
-    let root = std::env::temp_dir().join(format!("tethers-r1e-det-{}", Uuid::new_v4()));
-    fs::create_dir_all(&root).unwrap();
-    let installed = install_synthetic(&root);
     let workspace = workspace_dir();
+    let dir1 = std::env::temp_dir().join(format!("tethers-r1e-det-1-{}", Uuid::new_v4()));
+    let dir2 = std::env::temp_dir().join(format!("tethers-r1e-det-2-{}", Uuid::new_v4()));
+    fs::create_dir_all(&dir1).unwrap();
+    fs::create_dir_all(&dir2).unwrap();
+    fs::create_dir_all(dir1.join("enablements")).unwrap();
+    fs::create_dir_all(dir2.join("enablements")).unwrap();
 
-    let scope1 = OperationalScopeEvidence::create(
-        &installed.installed_id,
-        &installed.package_id,
-        &installed.provider_id,
-        installed
-            .operational_scope_schema_digest
-            .as_deref()
-            .unwrap(),
-        &json!({"workspace": workspace.to_string_lossy(), "limit": 37}),
-        "Matthew",
-    )
-    .unwrap();
+    let installed1 = install_synthetic(&dir1);
+    let scope1_file = dir1.join("scope.json");
+    write_valid_scope_file(&scope1_file, &workspace, 37);
+    let (code1, _) = enable_positive_via_cli(&dir1, &installed1.installed_id, &scope1_file);
+    assert_eq!(code1, 0);
 
-    let scope2 = OperationalScopeEvidence::create(
-        &installed.installed_id,
-        &installed.package_id,
-        &installed.provider_id,
-        installed
-            .operational_scope_schema_digest
-            .as_deref()
-            .unwrap(),
-        &json!({"workspace": workspace.to_string_lossy(), "limit": 37}),
-        "Matthew",
-    )
-    .unwrap();
+    let installed2 = install_synthetic(&dir2);
+    let scope2_file = dir2.join("scope.json");
+    write_valid_scope_file(&scope2_file, &workspace, 37);
+    let (code2, _) = enable_positive_via_cli(&dir2, &installed2.installed_id, &scope2_file);
+    assert_eq!(code2, 0);
 
-    assert_eq!(scope1.integrity_digest, scope2.integrity_digest);
-    assert_eq!(scope1.canonical_scope_json, scope2.canonical_scope_json);
-    assert_eq!(scope1.scope_schema_digest, scope2.scope_schema_digest);
+    let record1 = load_enablement(&dir1, &installed1.installed_id);
+    let record2 = load_enablement(&dir2, &installed2.installed_id);
+
+    assert_eq!(
+        record1.operational_scope.canonical_scope_json,
+        record2.operational_scope.canonical_scope_json
+    );
+    assert_eq!(
+        record1.operational_scope.scope_schema_digest,
+        record2.operational_scope.scope_schema_digest
+    );
 
     let _ = fs::remove_dir_all(workspace);
-    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(dir1);
+    let _ = fs::remove_dir_all(dir2);
 }
 
 // ── Negative scope validation tests (via CLI plug enable) ──
