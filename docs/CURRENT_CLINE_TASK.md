@@ -3,14 +3,14 @@
 Control contract: `1`
 Task: `TETHERS-0.3-P1-R1D — Reference Providers Obey Generic Scope`
 Owner: `Codex`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Amber`
 Route: `Codex implements bounded repair`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p1-r1d-reference-provider-scope.md`
 Base branch: `feature/0.3-p1-r1c-canonical-directory`
 Base commit: `20cdb463e9c84f35b6d70997916305a1443cfd1d`
 Implementation branch: `feature/0.3-p1-r1d-reference-provider-scope`
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `86ab5f7a785b63feb2ddba6d80746776fc5a10e8`
 OCaml switch path: `not applicable`
 Rust toolchain: `1.97.1`
 Rust change class: `AMBER_PROVIDER_CONFIGURATION_REPAIR`
@@ -18,6 +18,12 @@ Rust change class: `AMBER_PROVIDER_CONFIGURATION_REPAIR`
 ## Objective
 
 Make the File Tools and PDF reference providers consume their existing generic Operational Scope exactly. In normal installed operation, absent, malformed, incomplete, wrong-typed, or out-of-bounds scope configuration must refuse rather than select a fallback. Host conformance is the sole exception and activates only when `TETHERS_CONFORMANCE == "1"`.
+
+## Relevant background and existing behaviour
+
+- Generic installed launch already supplies `TETHERS_OPERATIONAL_SCOPE_JSON` and sets `TETHERS_CONFORMANCE=0`.
+- Generic host conformance already supplies `TETHERS_CONFORMANCE=1` and a bounded TEMP scratch directory.
+- File Tools currently falls back to the process current directory for absent or invalid per-field scope values; PDF currently treats an unset conformance value as its maximum-byte fallback.
 
 ## Required behaviour
 
@@ -35,14 +41,16 @@ Make the File Tools and PDF reference providers consume their existing generic O
 
 ## Acceptance criteria
 
-1. File Tools has no normal-mode current-directory or default-limit fallback.
-2. PDF has no normal-mode `MAX_PDF_BYTES` fallback.
-3. All requested success and fail-closed configuration branches have focused tests.
-4. Existing relevant File Tools and PDF provider tests pass.
-5. `cargo check --all-targets --all-features --locked`, `cargo fmt --all -- --check`, and `git diff --check` pass.
-6. Finished branch is pushed; remote equals local; worktree is clean.
+1. File Tools has no normal-mode current-directory or default-limit fallback. — DONE
+2. PDF has no normal-mode `MAX_PDF_BYTES` fallback. — DONE
+3. All requested success and fail-closed configuration branches have focused tests. — DONE
+4. Existing relevant File Tools and PDF provider tests pass. — DONE
+5. `cargo check --all-targets --all-features --locked`, `cargo fmt --all -- --check`, and `git diff --check` pass. — DONE
+6. Finished branch is pushed; remote equals local; worktree is clean. — PENDING PUBLICATION
 
-## Authorised paths
+## Relevant components
+
+### Authorised paths
 
 - `tethers-0.1/host-rust/src/bin/file_tools_provider.rs`
 - `tethers-0.1/host-rust/src/bin/pdf_tools_provider.rs`
