@@ -71,13 +71,141 @@ type condition_result =
   | Condition_error of string * string * Yojson.Safe.t list
 
 type action_planning_result =
-  | Actions_planned of Yojson.Safe.t list * string list * Yojson.Safe.t list
+  | Actions_planned of
+      Yojson.Safe.t list
+      * string list
+      * Yojson.Safe.t list
+      * group_plan list
   | Action_planning_error of string * string * Yojson.Safe.t list
 
 let unique values =
   List.fold_left
     (fun acc value -> if List.mem value acc then acc else acc @ [ value ])
     [] values
+
+let plan_one_action capabilities event_data evaluation_id index sequence trail
+    planned all_effects action =
+  let schema =
+    match
+      List.find_opt
+        (fun item -> item.name = action.capability)
+        capabilities
+    with
+    | Some value -> value
+    | None ->
+        fail "unknown_capability"
+          ("Unknown Capability: " ^ action.capability)
+  in
+  List.iter
+    (fun (input_name, input_type) ->
+      match List.assoc_opt input_name action.arguments with
+      | None ->
+          fail "missing_argument"
+            ("Missing argument " ^ input_name ^ " for " ^ action.capability)
+      | Some raw ->
+          let resolved = resolve_value event_data raw in
+          if not (matches_type input_type resolved) then
+            fail "type_error"
+              ("Argument " ^ input_name ^ " for " ^ action.capability
+             ^ " must be " ^ input_type))
+    schema.inputs;
+  List.iter
+    (fun (argument_name, _) ->
+      if not (List.mem_assoc argument_name schema.inputs) then
+        fail "unknown_argument"
+          ("Unknown argument " ^ argument_name ^ " for "
+         ^ action.capability))
+    action.arguments;
+  let arguments =
+    action.arguments
+    |> List.map (fun (name, raw) ->
+           (name, resolve_value event_data raw |> json_of_value))
+  in
+  let action_id = "action_" ^ string_of_int index in
+  let base_fields =
+    [
+      ("action_id", `String action_id);
+      ("idempotency_key", `String (evaluation_id ^ "/" ^ action_id));
+      ("capability", `String schema.name);
+      ("capability_version", `String schema.version);
+      ("arguments", `Assoc arguments);
+      ( "effects",
+        `List (List.map (fun item -> `String item) schema.effects) );
+    ]
+  in
+  let bridge_fields =
+    (match schema.manifest_digest with
+    | Some digest -> [ ("manifest_digest", `String digest) ]
+    | None -> [])
+    @ (match schema.bridge_capability_version with
+      | Some version -> [ ("bridge_capability_version", `Int version) ]
+      | None -> [])
+    @ (match schema.bridge_provider_identity with
+      | Some provider ->
+          [ ("bridge_provider_identity", `String provider) ]
+      | None -> [])
+  in
+  let planned_action = `Assoc (base_fields @ bridge_fields) in
+  let entry =
+    trail_entry sequence "evaluation" "action_planned" "accepted"
+      ("Planned " ^ schema.name)
+  in
+  ( action_id,
+    index + 1,
+    sequence + 1,
+    trail @ [ entry ],
+    planned_action :: planned,
+    all_effects @ schema.effects )
+
+let plan_items capabilities event_data evaluation_id next_sequence
+    condition_trail items =
+  let rec plan_group group_index index sequence trail planned all_effects
+      member_ids = function
+    | [] ->
+        let member_ids = List.rev member_ids in
+        let group_id = "group_" ^ string_of_int group_index in
+        let entry =
+          trail_entry sequence "evaluation" "group_planned" "accepted"
+            ("Planned group " ^ group_id ^ " ("
+           ^ string_of_int (List.length member_ids) ^ " members)")
+        in
+        ( group_id,
+          member_ids,
+          index,
+          sequence + 1,
+          trail @ [ entry ],
+          planned,
+          all_effects )
+    | member :: rest ->
+        let member_id, index, sequence, trail, planned, all_effects =
+          plan_one_action capabilities event_data evaluation_id index sequence
+            trail planned all_effects member
+        in
+        plan_group group_index index sequence trail planned all_effects
+          (member_id :: member_ids) rest
+  in
+  let rec loop group_index index sequence trail planned groups all_effects =
+    function
+    | [] -> (List.rev planned, unique all_effects, trail, List.rev groups)
+    | Action action :: rest ->
+        let _, index, sequence, trail, planned, all_effects =
+          plan_one_action capabilities event_data evaluation_id index sequence
+            trail planned all_effects action
+        in
+        loop group_index index sequence trail planned groups all_effects rest
+    | Together members :: rest ->
+        let group_id, member_ids, index, sequence, trail, planned, all_effects
+            =
+          plan_group group_index index sequence trail planned all_effects []
+            members
+        in
+        let groups =
+          { group_id; member_action_ids = member_ids } :: groups
+        in
+        loop (group_index + 1) index sequence trail planned groups
+          all_effects rest
+  in
+  loop 1 1 next_sequence condition_trail [] [] [] items
 
 let evaluate_request request =
   let protocol_version = json_string "protocol_version" request in
@@ -145,89 +273,11 @@ let evaluate_request request =
     | Conditions_matched (next_sequence, condition_trail) -> (
         let plan_result =
           try
-            let rec plan_actions index sequence trail planned all_effects =
-              function
-              | [] -> (List.rev planned, unique all_effects, trail)
-              | action :: rest ->
-                  let schema =
-                    match
-                      List.find_opt
-                        (fun item -> item.name = action.capability)
-                        capabilities
-                    with
-                    | Some value -> value
-                    | None ->
-                        fail "unknown_capability"
-                          ("Unknown Capability: " ^ action.capability)
-                  in
-                  List.iter
-                    (fun (input_name, input_type) ->
-                      match List.assoc_opt input_name action.arguments with
-                      | None ->
-                          fail "missing_argument"
-                            ("Missing argument " ^ input_name ^ " for "
-                           ^ action.capability)
-                      | Some raw ->
-                          let resolved = resolve_value event_data raw in
-                          if not (matches_type input_type resolved) then
-                            fail "type_error"
-                              ("Argument " ^ input_name ^ " for "
-                             ^ action.capability ^ " must be " ^ input_type))
-                    schema.inputs;
-                  List.iter
-                    (fun (argument_name, _) ->
-                      if not (List.mem_assoc argument_name schema.inputs) then
-                        fail "unknown_argument"
-                          ("Unknown argument " ^ argument_name ^ " for "
-                         ^ action.capability))
-                    action.arguments;
-                  let arguments =
-                    action.arguments
-                    |> List.map (fun (name, raw) ->
-                           (name, resolve_value event_data raw |> json_of_value))
-                  in
-                  let action_id = "action_" ^ string_of_int index in
-                  let base_fields =
-                    [
-                      ("action_id", `String action_id);
-                      ( "idempotency_key",
-                        `String (evaluation_id ^ "/" ^ action_id) );
-                      ("capability", `String schema.name);
-                      ("capability_version", `String schema.version);
-                      ("arguments", `Assoc arguments);
-                      ( "effects",
-                        `List
-                          (List.map (fun item -> `String item) schema.effects)
-                      );
-                    ]
-                  in
-                  let bridge_fields =
-                    (match schema.manifest_digest with
-                    | Some digest -> [ ("manifest_digest", `String digest) ]
-                    | None -> [])
-                    @ (match schema.bridge_capability_version with
-                      | Some version ->
-                          [ ("bridge_capability_version", `Int version) ]
-                      | None -> [])
-                    @ (match schema.bridge_provider_identity with
-                      | Some provider ->
-                          [ ("bridge_provider_identity", `String provider) ]
-                      | None -> [])
-                  in
-                  let planned_action = `Assoc (base_fields @ bridge_fields)
-                  in
-                  let entry =
-                    trail_entry sequence "evaluation" "action_planned" "accepted"
-                      ("Planned " ^ schema.name)
-                  in
-                  plan_actions (index + 1) (sequence + 1) (trail @ [ entry ])
-                    (planned_action :: planned) (all_effects @ schema.effects)
-                    rest
+            let actions, required_effects, trail, groups =
+              plan_items capabilities event_data evaluation_id next_sequence
+                condition_trail parsed.actions
             in
-            let actions, required_effects, trail =
-              plan_actions 1 next_sequence condition_trail [] [] parsed.actions
-            in
-            Actions_planned (actions, required_effects, trail)
+            Actions_planned (actions, required_effects, trail, groups)
           with
           | Tethers_error
               ( ( "unknown_capability" | "missing_argument"
@@ -244,6 +294,13 @@ let evaluate_request request =
         | Action_planning_error (code, message, trail) ->
             Contextual
               { context; payload = Evaluation_error { code; message }; trail }
-        | Actions_planned (actions, required_effects, trail) ->
-            let plan = { id = evaluation_id ^ "/plan"; required_effects; actions } in
+        | Actions_planned (actions, required_effects, trail, groups) ->
+            let plan =
+              {
+                id = evaluation_id ^ "/plan";
+                required_effects;
+                actions;
+                groups;
+              }
+            in
             Contextual { context; payload = Matched plan; trail })

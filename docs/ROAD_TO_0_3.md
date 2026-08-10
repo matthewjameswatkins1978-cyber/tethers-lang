@@ -9,8 +9,10 @@
 P1 COMPLETE / ACCEPTED. P2 FINAL / ACCEPTED. P3 FINAL / ACCEPTED. P4 — Plug Author
 Manual — FINAL ACCEPTED at `1e1f9b8738a48f727187316dd0078b7f9435f1c6`. P5 —
 Fresh-Agent Authoring Proof — FINAL ACCEPTED at
-`ffbe25e1c36123301182383c97265a6174b5dd98`. P6 — The Evil Bunny Test — complete,
-awaiting Lucy review. P7 / 0.4 remains next and has NOT started.
+`ffbe25e1c36123301182383c97265a6174b5dd98`. P6 — The Evil Bunny Test — FINAL
+ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`. The active increment is
+0.4 C1 (Together: Deterministic Fan-Out / Join Foundation); P7 / physical-parallel
+0.4 work has NOT started.
 
 ## Sequence
 
@@ -87,7 +89,7 @@ manual gap surfaced (advertise both `inputSchema` and `outputSchema` in
 
 FINAL ACCEPTED at `ffbe25e1c36123301182383c97265a6174b5dd98`.
 
-### P6 — Adversarial-provider proof (awaiting Lucy review)
+### P6 — Adversarial-provider proof ✓
 
 Hostile providers must not compromise host protocol correctness.
 
@@ -103,7 +105,9 @@ in `tethers-0.1/host-rust/src/conformance.rs`, each backed by regression
 evidence at the real discovery/conformance seam. Experiment log:
 `docs/p6-evil-bunny-proof.md`.
 
-Complete, awaiting Lucy review. P7 / 0.4 is next and has NOT started.
+FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`. The active
+increment is 0.4 C1 (Together: Deterministic Fan-Out / Join Foundation);
+P7 / physical-parallel 0.4 work has NOT started.
 
 ## Future
 

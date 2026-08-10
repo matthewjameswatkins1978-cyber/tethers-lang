@@ -1,0 +1,43 @@
+{
+  "protocol_version": "0.1",
+  "evaluation_id": "eval_together_missing_001",
+  "event_id": "evt_together_missing_001",
+  "tether_id": "missing-member-argument",
+  "tether_version": "c1-v1",
+  "status": "error",
+  "plan": null,
+  "error": {
+    "code": "missing_argument",
+    "message": "Missing argument path for files.inspect"
+  },
+  "trail": [
+    {
+      "sequence": 1,
+      "phase": "reception",
+      "kind": "event_received",
+      "outcome": "accepted",
+      "message": "Received morning.started"
+    },
+    {
+      "sequence": 2,
+      "phase": "evaluation",
+      "kind": "anchor_checked",
+      "outcome": "matched",
+      "message": "Anchor morning.started matched"
+    },
+    {
+      "sequence": 3,
+      "phase": "evaluation",
+      "kind": "condition_checked",
+      "outcome": "matched",
+      "message": "ready is true"
+    },
+    {
+      "sequence": 4,
+      "phase": "evaluation",
+      "kind": "action_planning_failed",
+      "outcome": "error",
+      "message": "Missing argument path for files.inspect"
+    }
+  ]
+}

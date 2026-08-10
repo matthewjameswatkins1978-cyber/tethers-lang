@@ -1,256 +1,136 @@
 # Current Implementation Task
 
 Control contract: `1`
-Task: `TETHERS-0.3-P6 — The Evil Bunny Test`
-Owner: `OpenCode`
-Status: `COMPLETE`
-Task colour: `Amber`
-Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
-Worker note: `docs/worker-notes/2026-08-10-0.3-p6-evil-bunny-adversarial-provider-proof.md`
-Base branch: `feature/0.3-p5-fresh-agent-authoring-proof`
-Base commit: `ffbe25e1c36123301182383c97265a6174b5dd98`
-Implementation branch: `feature/0.3-p6-evil-bunny-adversarial-provider-proof`
-Implementation checkpoint: `d4ca3b59073051fb46df29d7c50fe9424a752030`
 
-P5 is FINAL ACCEPTED. Do **not** start 0.4 concurrency or any later milestone.
+Task: `TETHERS-0.4-C1 — Together: Deterministic Fan-Out / Join Foundation`
+
+Owner: `OpenCode`
+
+Status: `IN_PROGRESS`
+
+Task colour: `Amber`
+
+Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
+
+Worker note: `docs/worker-notes/2026-08-11-0.4-c1-together-fan-out-join.md`
+
+Base branch: `feature/0.3-p6-evil-bunny-adversarial-provider-proof`
+
+Base commit: `5ed7634d8abc4056e0faa1ff09924377dec6e645`
+
+OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
+
+Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (resolved by root pin); `--locked` mandatory
+
+Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1` (run; all tools present)
+
+Rust change class: `NON_RUST`
+
+P6 is FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`. Do not alter P6 implementation or evidence except for necessary status references.
 
 ## Objective
 
-Prove that hostile providers cannot compromise host protocol correctness. Build a
-deliberately badly behaved provider test fixture (human nickname: **The Evil
-Bunny Test** — an adversarial *protocol* test, not a malware test, and never a
-claim of OS isolation) and prove that Tethers detects and safely refuses
-protocol violations rather than accepting false conformance. Evidence-first:
-observe each adversarial case against the current host, preserve every correct
-refusal, and make the smallest generic correction only where the host is
-demonstrably fooled.
+Introduce the first real Tethers concurrency primitive — the `together` fan-out / join block — as deterministic language semantics in the OCaml engine, without turning the language into a scheduler and without requiring physical parallel execution. A Tether may declare that several independent Actions are members of one concurrency group; later Actions become executable only after every member has reached a terminal outcome and the group has joined. The C1 reference runtime may execute group members serially in deterministic source order as one valid schedule.
 
 ## Relevant background and existing behaviour
 
-- P5 FINAL ACCEPTED at `ffbe25e1c36123301182383c97265a6174b5dd98`; the public
-  author manual is `docs/PLUG_AUTHORING.md`, and the P5 experiment log is
-  `docs/p5-fresh-agent-proof.md`.
-- `plug conform` deliberately executes provider code under process supervision
-  and reports `isolated: false`; it is **not** a security sandbox.
-- Public `plug pack`, `plug inspect`, and `plug conform` are accepted P2/P3
-  surfaces and must be used exactly as documented, including the mandatory
-  approval gate: default conform refuses execution with status
-  `approval_required`, exit code `5`, and error code
-  `conformance_execution_approval_required`.
-- The host conformance suite (`tethers-0.1/host-rust/src/conformance.rs`) drives
-  an MCP stdio provider through `initialize`, `notifications/initialized`,
-  `tools/list`, and (for `fixture*` operations only) `tools/call`. During
-  approved conformance the host launches the provider with `TETHERS_CONFORMANCE=1`,
-  a scratch `TEMP`/`TMP`, `SystemRoot`, and `WINDIR`.
-- Discovery currently compares only `inputSchema` against the reviewed manifest;
-  the retained-session dispatch path (`stdio_provider.rs`) additionally verifies
-  `outputSchema` and JSON-RPC response id correlation. P5 discovered the manual
-  gap (advertise both schemas) and fixed the manual; conformance itself still
-  accepts an advertised-only-`inputSchema` or mismatched `outputSchema`.
-- The conformance `request()` helper reads a line and parses it but does not
-  validate the JSON-RPC response envelope or correlate the response `id` with
-  the request.
-- The `bounded_shutdown_process_cleanup` case is currently recorded as passed
-  unconditionally; the provider-cleanup accounting from `SupervisedChild::shutdown`
-  is discarded.
-- The M3 fixture provider (`tethers-0.1/host-rust/src/bin/m3_fixture_provider.rs`)
-  is a host-crate test-only binary used by the M3/P2 conformance tests; it
-  advertises `tools/list` entries with only `inputSchema`.
+- P6 FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`; the 0.1 language and protocol semantics are defined by `tethers-0.1/SPEC.md`.
+- The engine (`tethers-0.1/engine-ocaml/bin/`) parses a frozen 0.1 grammar: `do` body contains Actions at 4-space indentation with arguments at 8-space; Actions are planned in source order with position-derived `action_id` (`action_1`, `action_2`, …), `idempotency_key = evaluation_id/action_id`, resolved arguments, and declared Effects; the deterministic planner Trail records `event_received`, `anchor_checked`, `condition_checked`, and `action_planned` entries in causal sequence.
+- The plan response (`plan.actions`) is a flat, ordered array of Action objects; the Rust host consumes only `plan.actions` (and ignores unknown additive plan fields), and the demo boundary currently enforces exactly one Action per plan.
+- `tethers.validate` (MCP adapter) reports `action_count` as the number of Actions in the parsed source.
+- The parser rejects malformed structures with `parse_error` and exact, fixture-protected messages; protocol fixtures live under `tethers-0.1/protocol/cases/<case>/` (`request.json` + `expected-response.json`), MCP transcripts under `tethers-0.1/protocol/mcp-transcripts/<case>/`, and `test-engine.ps1` / `test-mcp-transcripts.ps1` auto-discover them.
+- Determinism: identical input must produce byte-equivalent semantic output; array ordering and Trail sequence are semantic.
+- `tethers-0.1/SPEC.md` currently defines no `together` construct; this packet is the explicit design gate that adds it.
 
 ## Required behaviour
 
-1. Create `feature/0.3-p6-evil-bunny-adversarial-provider-proof` based on the
-   exact P5 accepted HEAD `ffbe25e1c36123301182383c97265a6174b5dd98`.
-2. Update `docs/CURRENT_CLINE_TASK.md` to the P6 packet with Status
-   `IN_PROGRESS` and run the packet checker (`control-v1/IN_PROGRESS`).
-3. Build a bounded adversarial provider fixture (`tethers.evil-bunny-proof` /
-   `tethers-evil-bunny-provider`) under an appropriate test/reference location,
-   with deterministic modes that can only lie, hang, crash, emit malformed
-   protocol, or advertise false contracts at the Tethers/MCP boundary. It must
-   not damage files, escape the filesystem, access credentials, attack the
-   network, spawn uncontrolled processes, persist itself, act destructively, or
-   claim process supervision is a sandbox.
-4. EB-00 Good Bunny control: prove the harness can produce one fully conforming
-   provider (approved conform → passed) so a broken harness cannot make every
-   hostile case look correctly rejected.
-5. Prove the required adversarial cases are each deterministically refused, with
-   observable evidence identifying the violated contract: EB-01 identity liar,
-   EB-02 protocol-version liar, EB-03 missing operation, EB-04 surprise
-   operation, EB-05 wrong operation name, EB-06 input-schema liar, EB-07
-   output-schema liar (mismatched and omitted), EB-08 malformed stdout, EB-09
-   wrong response identity/envelope, EB-10 early death/crash, EB-11 silent
-   Bunny/hang (bounded timeout and cleanup), EB-12 shutdown refusal (bounded
-   cleanup, no orphan process, no clean success).
-6. Preserve the mandatory approval gate for every packable Evil Bunny package:
-   `plug conform` without approval must refuse with status `approval_required`,
-   exit code `5`, error code `conformance_execution_approval_required`, and the
-   provider must not execute. Only then run approved non-isolated conform.
-7. Keep static package correctness separate from runtime hostility: where useful,
-   `plug pack` and `plug inspect` succeed so the evidence proves the package is
-   well formed while the provider lies or misbehaves when executed. Each case
-   should violate one primary contract wherever practical.
-8. If repository evidence confirms approved `plug conform` accepts a missing or
-   mismatched `outputSchema`, or otherwise fails to refuse a hostile case, treat
-   it as a real generic conformance gap and make the smallest generic production
-   correction necessary, with regression evidence. Record the before/after
-   honestly; do not hide an original false acceptance.
-9. Generic host code must gain no Evil Bunny/provider-family knowledge.
-10. Create `docs/p6-evil-bunny-proof.md` (The Evil Bunny Chronicles) recording
-    every case compactly: evil behaviour, contract attacked, expected result,
-    actual result, exit/status/error evidence, process cleanup result, whether a
-    production correction was required, and final disposition, plus an overall
-    matrix. Do not paste enormous raw transcripts.
-11. Add targeted automated regressions for generic host behaviour where
-    appropriate; production conformance and test conformance must use the same
-    helpers/behaviour, and any `outputSchema` regression must prove the real
-    generic discovery/conformance seam rejects the mismatch.
-12. Update `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, and
-    `docs/PROJECT_DASHBOARD.md` to show P5 FINAL ACCEPTED at
-    `ffbe25e1c36123301182383c97265a6174b5dd98`, P6 complete awaiting Lucy
-    review, P7 / 0.4 next and NOT started.
-13. Close out per project control: implementation checkpoint commit, worker
-    note, packet COMPLETE, checker `control-v1/COMPLETE`, docs closeout commit,
-    normal push, remote == local HEAD proof, clean worktree.
+1. Create branch `feature/0.4-c1-together-fan-out-join` from the exact P6 accepted HEAD `5ed7634d8abc4056e0faa1ff09924377dec6e645`, update `docs/CURRENT_CLINE_TASK.md` to this packet with Status `IN_PROGRESS`, and pass the packet checker (`control-v1/IN_PROGRESS`) before production edits.
+2. P6 closeout bookkeeping: update `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, and `docs/PROJECT_DASHBOARD.md` wording so P6 is shown FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`, C1 is the active increment, and nothing beyond C1 (P7 / physical-parallel 0.4 work) has started. Do not alter P6 implementation or evidence except for these status references.
+3. Extend the parser so a `do` body contains Action items: an ordinary Action or a `together` block. A `together` block contains ordinary Actions one indentation level beneath it (members at 8 spaces, member arguments at 12 spaces) and closes when the next item appears at the `do` level or the source ends. Reject, using the existing `parse_error` convention: an empty `together` block, a block with fewer than two members, a nested `together` (a member line exactly `together`), wrong indentation for members or member arguments, and any other C1-restriction violation. `together` alone at the `do` level is the keyword and may not be used as an Action name.
+4. Extend the evaluator so group members are planned as Actions in deterministic source order with contiguous position-derived `action_id`s, declared as one concurrency group with a join point: any Action whose source position follows the group is planned only after the whole group, and the deterministic planner Trail records one group-planning entry after the group's last member. No implicit concurrency: two adjacent ordinary Actions remain sequential, and a Tether without `together` must produce exactly the same semantic plan, Trail, and behaviour it produced before C1.
+5. Represent the concurrency group in the matched plan additively: keep `plan.actions` as the flat, ordered list of every planned Action in source order (this list is the deterministic serial schedule, a valid C1 schedule), and add a `plan.groups` array (present only when at least one `together` block exists) whose entries declare `group_id` (position-derived, `group_1`, `group_2`, …) and the `member_action_ids` of the group in source order.
+6. Keep the MCP `tethers.validate` surface coherent: `action_count` counts every planned Action, including `together` members.
+7. Add targeted automated regressions: new engine fixture cases under `protocol/cases/` covering a valid fan-out/join, ordering across a group, a pure fan-out Tether, two sibling groups, and every rejected malformed shape (empty, single member, nested, wrong member indentation, member planning failure); a `tethers.validate` MCP transcript for a `together` source; and a deterministic repeat check for a `together` case in `test-engine.ps1`. Preserve all existing fixtures unchanged.
+8. Do not change Rust host production code. Prove host compatibility: the additive plan field is ignored by the existing consumers, the engine binary still satisfies the host suite, and `cargo fmt --all -- --check` plus the full locked host test suite pass against the new engine output.
+9. Update `tethers-0.1/SPEC.md` so the precise language and protocol semantics document the `together` grammar, the C1 restrictions, the join semantics, and the additive `groups` plan field, without disturbing any other 0.1 contract.
+10. Close out per project control: commit the implementation checkpoint, write the worker note at the named path, set the packet to `COMPLETE`, require checker `control-v1/COMPLETE`, commit the docs-only closeout, push the branch normally to `origin`, resolve the full remote HEAD SHA, confirm local `HEAD == remote HEAD`, and confirm a clean worktree.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/conformance.rs` (host conformance suite contract)
-- `tethers-0.1/host-rust/src/plug_conform.rs` (public conform CLI)
-- `tethers-0.1/host-rust/src/launch_profile.rs` (approved conformance env and launch)
-- `tethers-0.1/host-rust/src/child_process.rs` (`SupervisedChild` bounded cleanup)
-- `tethers-0.1/host-rust/src/stdio_provider.rs` (retained-session discovery/dispatch
-  contract: `outputSchema` + response-id correlation reference)
-- `tethers-0.1/host-rust/src/bin/m3_fixture_provider.rs` (existing test-only fixture)
-- `tethers-0.1/host-rust/tests/` (p2b, p2c, p3, m3_lifecycle patterns)
-- `reference-plugs/evil-bunny-proof/` (new fixture: provider-rust, author cases, scripts)
-- `justfile` (`test-pdf-reference` recipe as reference-only pattern)
-- `docs/PLUG_AUTHORING.md`, `docs/p5-fresh-agent-proof.md`,
-  `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, `docs/PROJECT_DASHBOARD.md`
-- `docs/worker-notes/2026-08-10-0.3-p6-evil-bunny-adversarial-provider-proof.md` (new)
+- `tethers-0.1/engine-ocaml/bin/tether_parser.ml` and `tether_parser.mli` (Action-item grammar)
+- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml` (group planning, deterministic Trail)
+- `tethers-0.1/engine-ocaml/bin/tethers_outcome.ml` and `tethers_outcome.mli` (plan type, `groups` encoding)
+- `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` (`tethers.validate` `action_count`)
+- `tethers-0.1/SPEC.md` (grammar and semantics update)
+- `tethers-0.1/protocol/cases/` and `tethers-0.1/protocol/mcp-transcripts/` (new fixtures)
+- `tethers-0.1/scripts/test-engine.ps1` (case discovery + deterministic repeat)
+- `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, `docs/PROJECT_DASHBOARD.md` (P6 closeout wording)
+- `docs/worker-notes/2026-08-11-0.4-c1-together-fan-out-join.md` (new worker note)
+- Read-only compatibility reference: `tethers-0.1/host-rust/` (consumes `plan.actions`; unchanged)
 
 ## Frozen decisions and invariants
 
-- The Evil Bunny fixture is a safe, deterministic protocol test fixture; it is
-  never a malware test and never claims operating-system isolation.
-- `isolated: false` and the non-isolation limitation remain honest throughout.
-- Default `plug conform` still requires explicit supervised-execution approval
-  before any provider execution; do not bypass it.
-- Generic host code contains no Evil Bunny/provider-family knowledge; every
-  production correction is generic and backed by regression evidence.
-- Bad provider output must never become trusted evidence; false provider
-  identity must never override reviewed identity; undeclared operations must
-  never be admitted; malformed protocol fails closed; unexpected exit is
-  failure/uncertainty, never success; cleanup failure must never become clean
-  conformance success; no Evil Bunny process may remain running after
-  verification.
-- Do not change 0.1 syntax, Plug format, manifests, MCP, Operational Scope
-  Evidence, or trust/install/enable semantics.
-- No P6 production correction may be added merely because a stronger check is
-  imaginable; each must be driven by observed false acceptance or host-correctness
-  breakage.
+- `together` is the C1 keyword; it is reserved as an Action name. Only an explicit `together` block creates concurrent semantics; adjacent ordinary Actions stay sequential.
+- A `together` block: must contain at least two Actions; cannot be empty; cannot contain another `together` block; cannot contain Conditions, branching, loops, Action-result references, retries, compensation, or dynamic membership.
+- C1 establishes concurrency semantics, not physical parallelism: the flat ordered `plan.actions` list is the deterministic serial schedule and is a valid C1 execution schedule.
+- Actions remain ordered; Action IDs stay position-derived across the whole plan; `idempotency_key` remains `evaluation_id/action_id`.
+- The `groups` plan field is additive and omitted entirely when no `together` block exists, so a Tether without `together` produces byte-identical output to pre-C1.
+- New rejection messages use the existing `parse_error` convention with stable, fixture-protected wording.
+- Determinism, array ordering, and Trail sequence remain exact; Core stays timestamp-free and effect-free; the Core/host boundary is unchanged.
+- No Rust host production change; no dependency, toolchain, Dune, or OCaml-version change; no change to sequential Tether semantics, identities, or existing fixtures.
+- P6 implementation and evidence are not altered except for necessary status references.
 
 ## Acceptance criteria
 
-1. A bounded, safe, deterministic Evil Bunny fixture exists under
-   `reference-plugs/evil-bunny-proof/` with identity `tethers.evil-bunny-proof` /
-   `tethers-evil-bunny-provider`, mode-selected adversarial behaviours, and no
-   destructive, persistent, credential, network, or uncontrolled-process behaviour.
-2. EB-00 Good Bunny control passes approved non-isolated conform
-   (`passed`, `isolated: false`, non-isolation limitation present).
-3. Every required Evil Bunny execution case (EB-01 through EB-12) has observable
-   public-journey evidence: pack/inspect where applicable, default conform
-   refusal (exit 5, `approval_required`,
-   `conformance_execution_approval_required`), approved conform, and the expected
-   safe non-success disposition.
-4. No required hostile case produces false conformance success; identity
-   mismatch, protocol-version mismatch, missing expected operation, undeclared
-   extra operation, wrong operation name, `inputSchema` mismatch, missing or
-   mismatched `outputSchema`, malformed stdout, wrong response
-   identity/envelope, early provider death, silent/hanging provider, and
-   shutdown/cleanup failure are all refused or bounded non-success.
-5. The response-envelope/correlation gap (EB-09) is either already refused with
-   evidence or corrected generically with regression proof.
-6. The `outputSchema` conformance gap (EB-07) is corrected generically so
-   approved conform verifies both reviewed schemas consistently, with regression
-   evidence proving the real discovery/conformance seam rejects the mismatch;
-   any original false acceptance is recorded honestly as before/after evidence.
-7. The shutdown-refusal gap (EB-12) is corrected generically so cleanup failure
-   cannot produce clean conformance success, cleanup stays bounded, and no
-   orphan Evil Bunny process remains.
-8. Approval is still required before provider execution; `isolated:false` and
-   the non-isolation limitation remain honest.
-9. Generic host code contains no Evil Bunny/provider-family knowledge; all
-   production corrections are generic and backed by regression evidence.
-10. `docs/p6-evil-bunny-proof.md` records the experiment with per-case evidence
-    and an overall matrix, and preserves any before/after false acceptance
-    honestly.
-11. Project docs show P5 FINAL ACCEPTED at
-    `ffbe25e1c36123301182383c97265a6174b5dd98`, P6 complete awaiting Lucy
-    review, and P7 / 0.4 next and NOT started.
-12. Packet checker reports `control-v1/IN_PROGRESS` at start and
-    `control-v1/COMPLETE` on closeout.
-13. Branch pushed normally; remote HEAD == local HEAD; worktree clean; 0.4 has
-    not started.
+1. Branch `feature/0.4-c1-together-fan-out-join` is based on `5ed7634d8abc4056e0faa1ff09924377dec6e645`, the packet is `IN_PROGRESS`, and the packet checker reports `control-v1/IN_PROGRESS` before production edits.
+2. `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, and `docs/PROJECT_DASHBOARD.md` show P6 FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`, C1 active, and P7 / physical-parallel 0.4 NOT started.
+3. Engine fixture evidence proves every rejected shape (empty block, single member, nested `together`, wrong member indentation) is refused with `parse_error`, and a valid `together` block parses and plans.
+4. Engine fixture evidence proves fan-out/join planning: members appear in the flat `actions` list in source order with contiguous `action_id`s, a `group_planned` Trail entry follows the group's last member, and later Actions are planned after the group.
+5. Engine fixture evidence proves the additive protocol contract: `plan.groups` exists with the correct `group_id`/`member_action_ids` only when `together` is used; every pre-existing fixture (no `together`) passes unchanged; adjacent ordinary Actions remain sequential.
+6. MCP transcript evidence proves `tethers.validate` reports `action_count` covering all planned Actions for a `together` source, with no change to existing validate transcripts.
+7. All new fixture cases, the transcript, and the `test-engine.ps1` deterministic repeat for the `together` case are committed and pass; each negative branch has its own direct evidence.
+8. `cargo fmt --all -- --check` passes and the full locked host test suite passes with zero failures against the new engine, with no host source change.
+9. `tethers-0.1/SPEC.md` documents the `together` grammar, C1 restrictions, join semantics, and the additive `groups` plan field; the worker note records the exact section changes.
+10. Closeout evidence: worker note exists at the named path with the implementation checkpoint SHA, checker reports `control-v1/COMPLETE`, branch pushed normally to `origin`, full remote HEAD SHA resolved, local `HEAD == remote HEAD`, and `git status --short --branch` clean.
 
 ## Required verification
 
-1. Packet checker at start (`control-v1/IN_PROGRESS`) and on closeout
-   (`control-v1/COMPLETE`).
-2. Evil Bunny fixture provider formatter/check/build and any provider tests.
-3. Real `plug pack` proof for every packable Evil Bunny package.
-4. Real `plug inspect` proof for every packable Evil Bunny package.
-5. Real default `plug conform` refusal proof (exit 5,
-   `approval_required`, `conformance_execution_approval_required`; provider not
-   executed).
-6. Real approved `plug conform` proof for every case with the expected safe
-   non-success disposition and bounded cleanup; no provider process remains.
-7. For the fixed generic gaps, targeted host tests/regressions that prove the
-   real generic conformance seam (same production helpers) rejects the violation.
-8. If production host Rust changes, the repository's full warnings-denied /
-   agent verification gate for production Rust changes (e.g. `just verify` plus
-   the normal host test suite), with any unrelated environmental failure
-   preserved honestly.
-9. `git diff --check` and complete diff/status inspection.
+1. Packet checker at start (`control-v1/IN_PROGRESS`) and on closeout (`control-v1/COMPLETE`):
+   `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
+2. OCaml build through the explicit switch from the engine source directory:
+   `opam exec --switch=<OcamlSwitchPath> -- dune build`
+3. Engine fixture and transcript suites:
+   `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\check-fixtures.ps1`
+   `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-engine.ps1`
+   `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1`
+4. Host compatibility (no host source change; NON_RUST):
+   `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`
+   `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked`
+5. `git diff --check`, complete diff inspection, and final `git status --short --branch` inspection.
 
 ## Formatting and checkpoint sequence
 
-Rust source introduced under `reference-plugs/evil-bunny-proof/provider-rust/`
-is formatted with `cargo fmt --manifest-path <provider Cargo.toml> -- --check`
-(and, if chosen, `cargo fmt` on that crate only). Production host Rust changes
-must satisfy the normal host gate (`cargo fmt --all -- --check` first). The
-implementation checkpoint precedes all worker note, packet, and dashboard
-closeout edits.
+NON_RUST task: run `cargo fmt --all -- --check` only; never run a mutating formatter and never modify Rust source. The engine has no project formatter; preserve local OCaml style. The implementation checkpoint commit precedes all worker-note, packet, and dashboard closeout edits. `docs/ROAD_TO_0_3.md` and `docs/CURRENT_GOAL.md` wording updates are implementation scope and precede the checkpoint commit; the packet, worker note, and `docs/PROJECT_DASHBOARD.md` are closeout scope.
 
 ## Completion and publication
 
-Commit the implementation/proof checkpoint, write the worker note at the named
-path, set this packet to `COMPLETE`, require checker `control-v1/COMPLETE`,
-commit docs-only closeout, then push the named branch normally and prove
-`origin/feature/0.3-p6-evil-bunny-adversarial-provider-proof == HEAD` and a
-clean worktree. Do not start P7 or 0.4.
+Commit the implementation/proof checkpoint, write the worker note at the named path, set this packet to `COMPLETE`, require checker `control-v1/COMPLETE`, commit the docs-only closeout, then push the named branch normally and prove `origin/feature/0.4-c1-together-fan-out-join == HEAD` with a clean worktree. Do not start P7 or any physical-parallel 0.4 increment.
 
 ## Forbidden changes
 
-- No P7, no 0.4 concurrency, no HQ, no Event Ingress.
-- No redesign of Plug format, manifests, MCP, Operational Scope Evidence, or
-  trust/install/enable semantics.
-- No CLI, host OCaml production, dependency, or conformance-semantic changes
-  beyond the smallest generic corrections required by observed false acceptance.
-- No Evil Bunny/provider-family knowledge in generic host code.
-- No claims that process supervision is a security sandbox.
+- No P7, no physical-parallel execution increment, no nested concurrency, no scheduler, no worker/thread/async runtime in Core or host.
+- No Rust host production code, dependency, toolchain, Dune, or OCaml-version changes.
+- No change to 0.1 sequential Tether semantics, Action identities, idempotency material, existing error contracts, or existing fixtures/transcripts.
+- No change to the Core/host boundary, permission, trust, replay, or Trail-ownership semantics.
 - No merge, amend, tag, force-push, PR, or direct `main` update.
 
 ## Stop conditions
 
-- A real contradiction between the frozen architecture and repository evidence
-  that cannot be resolved from the packet.
-- A consequential architecture/product/security/trust decision requiring
-  external authority.
-- Required completion would weaken the explicit approval boundary or claim
-  isolation that does not exist.
-- Two materially similar implementation attempts fail on the same unresolved
-  underlying problem.
+- A real contradiction between the frozen C1 semantics and repository evidence that cannot be resolved from this packet.
+- A consequential architecture/product/security/trust decision beyond the frozen decisions requiring external authority.
+- Two materially similar implementation attempts fail on the same unresolved underlying problem.
+- An unrelated environmental failure prevents trustworthy verification of a required check.
 
 ## Expected pre-existing changes
 
-None. Base commit is the accepted P5 HEAD; the P6 branch starts clean at it.
+None. Base commit is the accepted P6 HEAD; the C1 branch starts clean at it.

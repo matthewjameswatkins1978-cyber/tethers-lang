@@ -6,10 +6,16 @@ type error_details = {
 type planned_action = Yojson.Safe.t
 type trail_entry = Yojson.Safe.t
 
+type group_plan = {
+  group_id : string;
+  member_action_ids : string list;
+}
+
 type plan = {
   id : string;
   required_effects : string list;
   actions : planned_action list;
+  groups : group_plan list;
 }
 
 type evaluation_context = {

@@ -253,15 +253,23 @@ if (Test-Path -LiteralPath $casesRoot -PathType Container) {
 }
 
 $happyResult = $null
+$togetherResult = $null
 foreach ($case in $cases) {
     $result = Invoke-EngineCase -CaseName $case.Name -RequestPath $case.RequestPath -ExpectedPath $case.ExpectedPath
     if ($case.Name -eq "happy-path") {
         $happyResult = $result
     }
+    if ($case.Name -eq "together-happy-path") {
+        $togetherResult = $result
+    }
 }
 
 if ($null -eq $happyResult) {
     throw "Missing fixture case: happy-path"
+}
+
+if ($null -eq $togetherResult) {
+    throw "Missing fixture case: together-happy-path"
 }
 
 $repeatOutput = $happyResult.RequestLine | & $EnginePath
@@ -275,6 +283,18 @@ if ($repeatText -ne $happyResult.ActualText) {
 }
 
 Write-Output "PASS happy-path deterministic repeat"
+
+$togetherRepeatOutput = $togetherResult.RequestLine | & $EnginePath
+if ($LASTEXITCODE -ne 0) {
+    throw "Engine exited with code $LASTEXITCODE during together determinism check."
+}
+
+$togetherRepeatText = ($togetherRepeatOutput -join "`n").Trim()
+if ($togetherRepeatText -ne $togetherResult.ActualText) {
+    throw "Together fan-out/join output was not deterministic across two evaluations."
+}
+
+Write-Output "PASS together-happy-path deterministic repeat"
 
 $tetherLines = @(
     'tether "CRLF parser regression"',

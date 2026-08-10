@@ -1,0 +1,8 @@
+{
+  "protocol_version": "0.1",
+  "status": "error",
+  "error": {
+    "code": "parse_error",
+    "message": "Expected 8-space together member indentation: files.inspect"
+  }
+}

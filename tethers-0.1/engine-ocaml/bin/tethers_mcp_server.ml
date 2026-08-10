@@ -8,6 +8,12 @@ type server_state =
 
 let server_state = ref Uninitialized
 
+let rec count_planned_actions = function
+  | [] -> 0
+  | Action _ :: rest -> 1 + count_planned_actions rest
+  | Together members :: rest ->
+      List.length members + count_planned_actions rest
+
 let supported_protocol_versions = ["2025-06-18"; "2025-11-25"]
 
 let json_member_opt name fields = List.assoc_opt name fields
@@ -221,7 +227,7 @@ let handle_tools_call id fields =
                       ("anchor", `String parsed.anchor);
                       ( "condition_count",
                         `Int (List.length parsed.conditions) );
-                      ("action_count", `Int (List.length parsed.actions));
+                      ("action_count", `Int (count_planned_actions parsed.actions));
                     ]
                 with
                 | Tethers_error (code, message) ->

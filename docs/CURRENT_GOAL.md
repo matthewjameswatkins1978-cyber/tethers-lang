@@ -1,6 +1,6 @@
 # Current Goal
 
-Updated: 2026-08-10
+Updated: 2026-08-11
 
 ## Goal
 
@@ -8,33 +8,35 @@ Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
 ACCEPTED. P2 (public pack / inspect / conform authoring surface) is FINAL
 ACCEPTED. P3 (PDF Tools Reference Plug Crucible) is FINAL ACCEPTED. P4 (Plug
 Author Manual) is FINAL ACCEPTED. P5 (fresh-agent authoring proof) is FINAL
-ACCEPTED. P6 (The Evil Bunny Test) is complete, awaiting Lucy review. P7 / 0.4
-is next and has NOT started.
+ACCEPTED. P6 (The Evil Bunny Test) is FINAL ACCEPTED at
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`. The active increment is 0.4 C1
+(Together: Deterministic Fan-Out / Join Foundation); P7 / physical-parallel 0.4
+work has NOT started.
 
-P5 acceptance is anchored to accepted head
-`ffbe25e1c36123301182383c97265a6174b5dd98`.
+P6 acceptance is anchored to accepted head
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`.
 
 ## Last accepted increment
 
-P5 — Fresh-Agent Plug Authoring Proof — FINAL ACCEPTED at
-`ffbe25e1c36123301182383c97265a6174b5dd98`.
+P6 — The Evil Bunny Test — FINAL ACCEPTED at
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`.
 
-A fresh DeepSeek V4 Flash / High-thinking author, guided only by
-`docs/PLUG_AUTHORING.md`, built the new `tethers.text-stats` Plug under
-`reference-plugs/text-stats-proof/` and completed the full public journey.
-Experiment log: `docs/p5-fresh-agent-proof.md`.
+A safe, deterministic adversarial protocol fixture under
+`reference-plugs/evil-bunny-proof/` proved that hostile providers cannot turn
+bad evidence into conformance success; three genuine generic conformance gaps
+were corrected in `tethers-0.1/host-rust/src/conformance.rs`.
+Experiment log: `docs/p6-evil-bunny-proof.md`.
 
 ## Active increment
 
-P6 — The Evil Bunny Test — is complete, awaiting Lucy review. The adversarial
-protocol fixture under `reference-plugs/evil-bunny-proof/` proved that hostile
-providers cannot turn bad evidence into conformance success; three genuine
-generic conformance gaps (discovery `outputSchema`, JSON-RPC response
-correlation, shutdown-refusal cleanup accounting) were corrected in
-`tethers-0.1/host-rust/src/conformance.rs` with regression evidence at the real
-discovery/conformance seam. Experiment log: `docs/p6-evil-bunny-proof.md`.
+0.4 C1 — Together: Deterministic Fan-Out / Join Foundation — is in progress.
+The OCaml engine introduces the `together` fan-out / join block as deterministic
+language semantics: independent Actions in one concurrency group, a join before
+later Actions, an additive `groups` plan field, and a deterministic
+`group_planned` Trail entry, without any scheduler or physical-parallel
+requirement.
 
-P7 / 0.4 is next after P6 and has NOT started.
+P7 / physical-parallel 0.4 work comes after C1 and has NOT started.
 
 ## Foundation Pass boundaries
 
@@ -47,6 +49,9 @@ P7 / 0.4 is next after P6 and has NOT started.
 - Final packet verification is serial after the last permitted code/test edit.
 - P6 must not smuggle adversarial-provider-specific knowledge into generic host
   code; every production correction is generic and regression-backed.
+- 0.4 C1 establishes concurrency semantics only; it must not introduce a
+  scheduler, threads, or physical-parallel execution, and a Tether without
+  `together` must keep producing the pre-C1 semantic output.
 
 ## Authoritative references
 

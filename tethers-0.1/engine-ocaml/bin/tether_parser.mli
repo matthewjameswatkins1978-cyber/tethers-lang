@@ -22,11 +22,15 @@ type action = {
   arguments : (string * value) list;
 }
 
+type action_item =
+  | Action of action
+  | Together of action list
+
 type tether = {
   title : string;
   anchor : string;
   conditions : condition list;
-  actions : action list;
+  actions : action_item list;
 }
 
 val drop_prefix : string -> string -> string
