@@ -834,10 +834,18 @@ pub fn pack(source: &Path, output: &Path) -> Result<PackReport> {
         ));
     }
 
-    if let Err(e) = fs::metadata(source) {
+    let source_meta = fs::symlink_metadata(source)
+        .map_err(|e| PackError::new("source_unavailable", format!("cannot access source: {e}")))?;
+    if is_reparse_or_symlink(&source_meta) {
+        return Err(PackError::new(
+            "unsafe_source",
+            "source root must be an ordinary directory; symlinks/junctions/reparse points are refused",
+        ));
+    }
+    if !source_meta.is_dir() {
         return Err(PackError::new(
             "source_unavailable",
-            format!("cannot access source: {e}"),
+            "source is not a directory",
         ));
     }
 
@@ -909,13 +917,42 @@ pub fn pack(source: &Path, output: &Path) -> Result<PackReport> {
 
     let semantic_digest = inspection.package.semantic_digest.clone();
 
-    // ---- Rename temp -> final output ----
-    fs::rename(&temp_path, output).map_err(|e| {
+    // ---- Publish with CREATE_NEW (no-replace) ----
+    let archive_bytes = fs::read(&temp_path).map_err(|e| {
         let _ = fs::remove_file(&temp_path);
         PackError::new(
             "archive_write",
-            format!("cannot publish final package: {e}"),
+            format!("cannot read temp archive for publication: {e}"),
         )
+    })?;
+    let _ = fs::remove_file(&temp_path);
+
+    #[cfg(test)]
+    {
+        if let Some(ref hook) = *publication_hook::BEFORE_PUBLICATION.lock().unwrap() {
+            hook(output);
+        }
+    }
+
+    let mut output_file = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(output)
+        .map_err(|e| {
+            PackError::new(
+                "output_collision",
+                format!("output appeared after initial check; refusing to replace: {e}"),
+            )
+        })?;
+
+    output_file.write_all(&archive_bytes).map_err(|e| {
+        let _ = fs::remove_file(output);
+        PackError::new("archive_write", format!("cannot write final package: {e}"))
+    })?;
+
+    output_file.flush().map_err(|e| {
+        let _ = fs::remove_file(output);
+        PackError::new("archive_write", format!("cannot flush final package: {e}"))
     })?;
 
     Ok(PackReport {
@@ -936,6 +973,14 @@ fn temp_sibling_path(output: &Path) -> Result<PathBuf> {
         .ok_or_else(|| PackError::new("output_unavailable", "output has no parent directory"))?;
     let uuid = uuid::Uuid::new_v4();
     Ok(parent.join(format!(".tmp-pack-{uuid}.tetherplug")))
+}
+
+#[cfg(test)]
+mod publication_hook {
+    use std::path::Path;
+    use std::sync::Mutex;
+    pub(crate) static BEFORE_PUBLICATION: Mutex<Option<Box<dyn Fn(&Path) + Send + Sync>>> =
+        Mutex::new(None);
 }
 
 // ---------------------------------------------------------------------------
@@ -1337,6 +1382,101 @@ mod tests {
 
         let _ = pack(&source, &output);
         assert!(!output.exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn p2a_refuses_source_root_junction() {
+        let dir = std::env::temp_dir().join(format!("tethers-p2a-junc-{}", uuid::Uuid::new_v4()));
+        let real_source = dir.join("real-plug");
+        let junction_source = dir.join("junction-plug");
+        let output = dir.join("out.tetherplug");
+        fs::create_dir_all(&real_source).unwrap();
+        example_source_tree(&real_source, false);
+
+        let junction_created = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&junction_source)
+            .arg(&real_source)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if !junction_created {
+            let _ = fs::remove_dir_all(&dir);
+            return;
+        }
+
+        let err = pack(&junction_source, &output).unwrap_err();
+        assert_eq!(err.code, "unsafe_source");
+        assert!(err.message.contains("source root"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn p2a_refuses_source_root_symlink() {
+        use std::os::unix::fs as unix_fs;
+        let dir = std::env::temp_dir().join(format!("tethers-p2a-sym-{}", uuid::Uuid::new_v4()));
+        let real_source = dir.join("real-plug");
+        let symlink_source = dir.join("symlink-plug");
+        let output = dir.join("out.tetherplug");
+        fs::create_dir_all(&real_source).unwrap();
+        example_source_tree(&real_source, false);
+
+        unix_fs::symlink(&real_source, &symlink_source).unwrap();
+        let err = pack(&symlink_source, &output).unwrap_err();
+        assert_eq!(err.code, "unsafe_source");
+        assert!(err.message.contains("source root"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn p2a_refuses_publication_collision() {
+        let dir = std::env::temp_dir().join(format!("tethers-p2a-col-{}", uuid::Uuid::new_v4()));
+        let source = dir.join("my-plug");
+        let output = dir.join("my-plug.tetherplug");
+        fs::create_dir_all(&source).unwrap();
+        example_source_tree(&source, false);
+
+        let output_clone = output.clone();
+        *super::publication_hook::BEFORE_PUBLICATION.lock().unwrap() = Some(Box::new(move |p| {
+            if p == output_clone {
+                fs::write(p, b"collision-bytes").unwrap();
+            }
+        }));
+
+        let err = pack(&source, &output).unwrap_err();
+        assert_eq!(err.code, "output_collision");
+        assert_eq!(
+            fs::read(&output).unwrap(),
+            b"collision-bytes",
+            "pre-existing collision bytes must remain untouched"
+        );
+
+        let temp_pattern = ".tmp-pack-";
+        let parent_dir = output.parent().unwrap();
+        let temps: Vec<_> = fs::read_dir(parent_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .map(|n| n.starts_with(temp_pattern) && n.ends_with(".tetherplug"))
+                    .unwrap_or(false)
+            })
+            .map(|e| e.path())
+            .collect();
+        assert!(
+            temps.is_empty(),
+            "no temporary .tetherplug must remain after collision"
+        );
+
+        *super::publication_hook::BEFORE_PUBLICATION.lock().unwrap() = None;
 
         let _ = fs::remove_dir_all(&dir);
     }
