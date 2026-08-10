@@ -3,14 +3,14 @@
 Control contract: `1`
 Task: `TETHERS-0.3-P4 — Plug Author Manual`
 Owner: `OpenCode`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Task colour: `Green`
 Route: `OpenCode implementation → Lucy GitHub review`
 Worker note: `docs/worker-notes/2026-08-10-0.3-p4-plug-author-manual.md`
 Base branch: `main`
 Base commit: `e23030ad5e9820373133b25222680194af967c39`
 Implementation branch: `feature/0.3-p4-plug-author-manual`
-Implementation checkpoint: pending
+Implementation checkpoint: `8b90ce76b70b33276f6b633828cfc782064bb792`
 OCaml switch path: `N/A`
 Rust toolchain: `1.97.1` from root pin; no Rust source changes expected
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
