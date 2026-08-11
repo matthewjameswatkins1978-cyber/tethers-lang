@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Task: `TETHERS-0.4-C1 — Together: Deterministic Fan-Out / Join Foundation`
+Task: `TETHERS-0.4-C1C — Together Execution / Join Correction`
 
 Owner: `OpenCode`
 
@@ -14,11 +14,11 @@ Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
 
 Worker note: `docs/worker-notes/2026-08-11-0.4-c1-together-fan-out-join.md`
 
-Base branch: `feature/0.3-p6-evil-bunny-adversarial-provider-proof`
+Base branch: `feature/0.4-c1-together-fan-out-join`
 
-Base commit: `5ed7634d8abc4056e0faa1ff09924377dec6e645`
+Base commit: `f688954e243f4b61b4e717d367e72772735c3418`
 
-Implementation checkpoint: `bb860e690e7469dd75d2c02f018ef57a1f8a78ef`
+Implementation checkpoint: `6519d92a06b54c64a38f931c65da446dcebd323a`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -26,113 +26,303 @@ Rust toolchain: read exact channel from `rust-toolchain.toml`; use plain Cargo (
 
 Toolchain preflight: `pwsh -NoProfile -File scripts/check-dev-tools.ps1` (run; all tools present)
 
-Rust change class: `NON_RUST`
+Rust change class: `RUST_CHANGING`
 
-P6 is FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`. Do not alter P6 implementation or evidence except for necessary status references.
+## Packet correction bookkeeping
+
+C1 (the previously accepted planner foundation, checkpoint
+`bb860e690e7469dd75d2c02f018ef57a1f8a78ef`) implemented `together` as
+deterministic planner semantics and explicitly excluded host scheduling
+changes. That narrowing was not authorised by Lucy's original packet: the C1
+mission required the reference runtime to respect the semantic group boundary
+(attempt every group member, join after all members reach terminal outcomes,
+block later Actions on a non-success join). The planner implementation is
+retained and remains valid. This correction restores and completes the
+originally required host execution / join semantics. This is a scope
+correction, not a re-implementation.
 
 ## Objective
 
-Introduce the first real Tethers concurrency primitive — the `together` fan-out / join block — as deterministic language semantics in the OCaml engine, without turning the language into a scheduler and without requiring physical parallel execution. A Tether may declare that several independent Actions are members of one concurrency group; later Actions become executable only after every member has reached a terminal outcome and the group has joined. The C1 reference runtime may execute group members serially in deterministic source order as one valid schedule.
+Make the reference host respect the C1 semantic group boundary: once execution
+of an authorised `together` group begins, every member is attempted once
+regardless of whether an earlier sibling fails; only after every member reaches
+a terminal outcome does the group join; a successful join permits later
+Actions, any other outcome blocks them. Serial execution remains the valid C1
+reference schedule — no physical parallelism is introduced — but serial
+behaviour must match what a future genuinely concurrent runtime would observe:
+failure stops at the join, not inside the fan-out.
 
 ## Relevant background and existing behaviour
 
-- P6 FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`; the 0.1 language and protocol semantics are defined by `tethers-0.1/SPEC.md`.
-- The engine (`tethers-0.1/engine-ocaml/bin/`) parses a frozen 0.1 grammar: `do` body contains Actions at 4-space indentation with arguments at 8-space; Actions are planned in source order with position-derived `action_id` (`action_1`, `action_2`, …), `idempotency_key = evaluation_id/action_id`, resolved arguments, and declared Effects; the deterministic planner Trail records `event_received`, `anchor_checked`, `condition_checked`, and `action_planned` entries in causal sequence.
-- The plan response (`plan.actions`) is a flat, ordered array of Action objects; the Rust host consumes only `plan.actions` (and ignores unknown additive plan fields), and the demo boundary currently enforces exactly one Action per plan.
-- `tethers.validate` (MCP adapter) reports `action_count` as the number of Actions in the parsed source.
-- The parser rejects malformed structures with `parse_error` and exact, fixture-protected messages; protocol fixtures live under `tethers-0.1/protocol/cases/<case>/` (`request.json` + `expected-response.json`), MCP transcripts under `tethers-0.1/protocol/mcp-transcripts/<case>/`, and `test-engine.ps1` / `test-mcp-transcripts.ps1` auto-discover them.
-- Determinism: identical input must produce byte-equivalent semantic output; array ordering and Trail sequence are semantic.
-- `tethers-0.1/SPEC.md` currently defines no `together` construct; this packet is the explicit design gate that adds it.
+- C1 accepted at `bb860e690e7469dd75d2c02f018ef57a1f8a78ef` (branch
+  `feature/0.4-c1-together-fan-out-join`, final pushed HEAD
+  `f688954e243f4b61b4e717d367e72772735c3418`). The OCaml engine emits flat
+  source-order `plan.actions` plus the additive `plan.groups` array
+  (`group_id` + `member_action_ids`); a Tether without `together` produces
+  byte-identical output to pre-C1; the planner Trail records one
+  `group_planned` entry per group.
+- The Rust host has no multi-Action execution path today: every production
+  dispatch converges on `execute_shared_boundary` / `execute_boundary_impl`
+  (`tethers-0.1/host-rust/src/application.rs:1969-2509`), which requires
+  exactly one Action in the plan (`application.rs:2055-2058`), and
+  `extract_proposed_action` (`application.rs:1150-1194`) reads only
+  `plan.actions[0]` for policy. A 2+ Action plan hard-errors.
+- The J13B service route (`host_execution.rs::dispatch_matched_response`,
+  lines 809-1034) performs per-Action: scope assessment, effective policy
+  (Deny / Ask / Unavailable / Allow), exact capability resolution, retained
+  MCP session + catalogue refresh, then `execute_shared_boundary` and
+  `map_shared_result`. The run CLI requires exactly one service result per
+  evaluation (`run_command.rs:175-185`).
+- Each Action already has its own replay claim (`LogicalExecutionKey` embeds
+  `action_id`), its own `execution_id`, durable `IntentEntry` / `OutcomeEntry`,
+  and presentation Trail entries with sequence continuing from the response
+  Trail (`application.rs:2190`). `SharedExecutionOutcome` distinguishes
+  Completed / Failed / Uncertain / Unattempted / Denied / AuditFailed /
+  Replay(...); `ExecutionServiceResult` mirrors those distinctions.
+- `dispatch::Trail` (`dispatch.rs:265-288`) is a sealed trait with four
+  durable methods (intent, authorisation, outcome, event admission),
+  implemented by `FileTrail` and the test-only `RecordingTrail`. The trail
+  command parses trail JSONL generically, so a new entry kind is safe.
+- The legacy `__legacy` coordinator route and the
+  `execute_enabled_installed_action` adapter seams (used by m4/p3 tests) are
+  single-Action paths.
+- No Rust production code change happened during C1; this correction is the
+  first host change for `together`.
 
 ## Required behaviour
 
-1. Create branch `feature/0.4-c1-together-fan-out-join` from the exact P6 accepted HEAD `5ed7634d8abc4056e0faa1ff09924377dec6e645`, update `docs/CURRENT_CLINE_TASK.md` to this packet with Status `IN_PROGRESS`, and pass the packet checker (`control-v1/IN_PROGRESS`) before production edits.
-2. P6 closeout bookkeeping: update `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, and `docs/PROJECT_DASHBOARD.md` wording so P6 is shown FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`, C1 is the active increment, and nothing beyond C1 (P7 / physical-parallel 0.4 work) has started. Do not alter P6 implementation or evidence except for these status references.
-3. Extend the parser so a `do` body contains Action items: an ordinary Action or a `together` block. A `together` block contains ordinary Actions one indentation level beneath it (members at 8 spaces, member arguments at 12 spaces) and closes when the next item appears at the `do` level or the source ends. Reject, using the existing `parse_error` convention: an empty `together` block, a block with fewer than two members, a nested `together` (a member line exactly `together`), wrong indentation for members or member arguments, and any other C1-restriction violation. `together` alone at the `do` level is the keyword and may not be used as an Action name.
-4. Extend the evaluator so group members are planned as Actions in deterministic source order with contiguous position-derived `action_id`s, declared as one concurrency group with a join point: any Action whose source position follows the group is planned only after the whole group, and the deterministic planner Trail records one group-planning entry after the group's last member. No implicit concurrency: two adjacent ordinary Actions remain sequential, and a Tether without `together` must produce exactly the same semantic plan, Trail, and behaviour it produced before C1.
-5. Represent the concurrency group in the matched plan additively: keep `plan.actions` as the flat, ordered list of every planned Action in source order (this list is the deterministic serial schedule, a valid C1 schedule), and add a `plan.groups` array (present only when at least one `together` block exists) whose entries declare `group_id` (position-derived, `group_1`, `group_2`, …) and the `member_action_ids` of the group in source order.
-6. Keep the MCP `tethers.validate` surface coherent: `action_count` counts every planned Action, including `together` members.
-7. Add targeted automated regressions: new engine fixture cases under `protocol/cases/` covering a valid fan-out/join, ordering across a group, a pure fan-out Tether, two sibling groups, and every rejected malformed shape (empty, single member, nested, wrong member indentation, member planning failure); a `tethers.validate` MCP transcript for a `together` source; and a deterministic repeat check for a `together` case in `test-engine.ps1`. Preserve all existing fixtures unchanged.
-8. Do not change Rust host production code. Prove host compatibility: the additive plan field is ignored by the existing consumers, the engine binary still satisfies the host suite, and `cargo fmt --all -- --check` plus the full locked host test suite pass against the new engine output.
-9. Update `tethers-0.1/SPEC.md` so the precise language and protocol semantics document the `together` grammar, the C1 restrictions, the join semantics, and the additive `groups` plan field, without disturbing any other 0.1 contract.
-10. Close out per project control: commit the implementation checkpoint, write the worker note at the named path, set the packet to `COMPLETE`, require checker `control-v1/COMPLETE`, commit the docs-only closeout, push the branch normally to `origin`, resolve the full remote HEAD SHA, confirm local `HEAD == remote HEAD`, and confirm a clean worktree.
+1. Update `docs/CURRENT_CLINE_TASK.md` to this C1C packet with Status
+   `IN_PROGRESS`, including the honest correction bookkeeping above, and pass
+   the packet checker (`control-v1/IN_PROGRESS`) before production edits.
+2. Extend the host's Plan decoding to consume the optional additive
+   `plan.groups` field, keeping flat `plan.actions`, group membership by
+   Action ID, source order, and per-Action idempotency keys unchanged. Plans
+   with `groups` absent must continue working exactly as ordinary sequential
+   plans; `"groups": []` must never be required in old output.
+3. Validate group metadata before any execution and fail closed using the
+   existing host error pattern (`InvalidData`): unknown member Action ID,
+   duplicate Action ID within one group, an Action belonging to more than one
+   group, duplicate group IDs, empty or one-member groups, and group members
+   whose ordering/structure contradicts the C1 plan contract (members must be
+   contiguous in source order). Never silently reinterpret invalid group
+   metadata as sequential execution.
+4. Build and execute a deterministic schedule from `plan.actions` + optional
+   `plan.groups` without a DAG framework: sequential items keep the existing
+   stop-on-first-non-success behaviour; a `together` group attempts every
+   member once in source order even when an earlier sibling fails; the group
+   joins successfully only when every member succeeded; a non-success join
+   blocks all later items. No group-wide idempotency keys; no retries,
+   rollback, compensation, cancellation, or nested groups.
+5. Reuse the current production Action execution function: refactor
+   `execute_boundary_impl` / `execute_shared_boundary` / `authorise_and_execute_inner`
+   to receive the exact Action to dispatch (removing the
+   exactly-one-Action-in-plan gate) and drive every sequential item and every
+   group member through that same production boundary. Do not create a
+   test-only execution path. Keep the legacy route and the
+   `execute_enabled_installed_action` adapter seams fail-closed for
+   non-single-Action plans (explicit error, no silent reinterpretation).
+6. Record group execution evidence: one durable `GroupJoinEntry` on the host
+   Trail (evaluation_id, group_id, member_action_ids, joined, timestamp) via a
+   small generic `dispatch::Trail` extension, plus one presentation
+   `group_joined` Trail entry in the response (outcome `success` /
+   `non_success`). Preserve every per-member outcome distinction (including
+   `uncertain`), the planner `group_planned` evidence, and the "all members
+   attempted" legibility. The aggregate result for a non-success group must
+   preserve the first non-succeeded member's outcome (in source order) rather
+   than flattening it.
+7. Add the Three Bunny Breakfast production-path crucible driving the real
+   execution seam: TB-00 (sequential A B C, B fails: A attempted, B
+   attempted→failed, C NOT attempted), TB-01 (together carrot/toast/coffee all
+   succeed, join success, report attempted), TB-02 (toast fails: carrot
+   attempted, toast failed, coffee attempted, join non-success, report NOT
+   attempted), TB-03 (carrot fails: same shape), TB-04 (one member uncertain:
+   all siblings attempted, join non-success, later Action blocked, uncertain
+   preserved) — TB-04 only if the existing outcome machinery can produce it
+   cleanly through the production seam.
+8. Add focused host tests proving malformed group metadata fails closed, at
+   minimum unknown member Action ID and duplicate membership, plus the other
+   validated malformed shapes.
+9. Create `docs/ROAD_TO_0_4.md` with the provisional 0.4 roadmap
+   (C1 Together semantic foundation; C2 Physical parallel execution;
+   C3 Concurrency limits / resource bounds; C4 Adversarial concurrency
+   crucible; C5 Fresh-agent concurrency proof), the design principle
+   "Concurrency belongs in Tethers semantics. Parallelism mostly belongs in
+   the runtime.", and an explicit note that C2–C5 are provisional and not
+   started.
+10. Run the full Rust completion authority required by the repository guide
+    against the committed checkpoint: focused Together/Three Bunny tests,
+    `cargo test --all-targets --all-features --locked`, `cargo check` with the
+    repository warning policy, `cargo clippy` with the repository warning
+    policy, `cargo fmt --check`, `git diff --check`, packet checker
+    `control-v1/COMPLETE`. Also rerun the relevant OCaml/engine compatibility
+    suites to prove the accepted `together` plan still round-trips into the
+    host. Do not modify OCaml code unless a genuine integration defect is
+    revealed; if OCaml remains untouched, say so explicitly. No new
+    dependency is expected; if none are added, record "No dependency changes."
+11. Close out per project control: commit the implementation checkpoint, write
+    the worker note at the named path (continuing/updating the C1 worker note
+    with the correction record), set the packet to `COMPLETE`, require checker
+    `control-v1/COMPLETE`, commit the docs-only closeout, push the branch
+    normally to `origin`, resolve the full remote HEAD SHA, confirm local
+    `HEAD == remote HEAD`, and confirm a clean worktree.
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tether_parser.ml` and `tether_parser.mli` (Action-item grammar)
-- `tethers-0.1/engine-ocaml/bin/tethers_evaluator.ml` (group planning, deterministic Trail)
-- `tethers-0.1/engine-ocaml/bin/tethers_outcome.ml` and `tethers_outcome.mli` (plan type, `groups` encoding)
-- `tethers-0.1/engine-ocaml/bin/tethers_mcp_server.ml` (`tethers.validate` `action_count`)
-- `tethers-0.1/SPEC.md` (grammar and semantics update)
-- `tethers-0.1/protocol/cases/` and `tethers-0.1/protocol/mcp-transcripts/` (new fixtures)
-- `tethers-0.1/scripts/test-engine.ps1` (case discovery + deterministic repeat)
-- `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, `docs/PROJECT_DASHBOARD.md` (P6 closeout wording)
-- `docs/worker-notes/2026-08-11-0.4-c1-together-fan-out-join.md` (new worker note)
-- Read-only compatibility reference: `tethers-0.1/host-rust/` (consumes `plan.actions`; unchanged)
+- `tethers-0.1/host-rust/src/plan_execution.rs` (new: schedule build/validate, serial group execution loop, join aggregation)
+- `tethers-0.1/host-rust/src/dispatch.rs` (Plan `groups` decode types, `GroupJoinEntry`, `Trail::append_group_join`)
+- `tethers-0.1/host-rust/src/application.rs` (`execute_boundary_impl` / `execute_shared_boundary` / `authorise_and_execute_inner` Action parameter, `extract_proposed_action_at`, legacy-route and test callers)
+- `tethers-0.1/host-rust/src/host_execution.rs` (`execute_one_action` extraction, plan-level dispatch route)
+- `tethers-0.1/host-rust/tests/` or module tests (Three Bunny Breakfast crucible, malformed-metadata regressions)
+- `docs/ROAD_TO_0_4.md` (new roadmap)
+- `docs/CURRENT_CLINE_TASK.md` (packet), `docs/worker-notes/2026-08-11-0.4-c1-together-fan-out-join.md` (continued worker note), `docs/PROJECT_DASHBOARD.md` (closeout)
+- Read-only references: `tethers-0.1/engine-ocaml/` (accepted C1 planner; do not modify), `tethers-0.1/protocol/` fixtures
 
 ## Frozen decisions and invariants
 
-- `together` is the C1 keyword; it is reserved as an Action name. Only an explicit `together` block creates concurrent semantics; adjacent ordinary Actions stay sequential.
-- A `together` block: must contain at least two Actions; cannot be empty; cannot contain another `together` block; cannot contain Conditions, branching, loops, Action-result references, retries, compensation, or dynamic membership.
-- C1 establishes concurrency semantics, not physical parallelism: the flat ordered `plan.actions` list is the deterministic serial schedule and is a valid C1 execution schedule.
-- Actions remain ordered; Action IDs stay position-derived across the whole plan; `idempotency_key` remains `evaluation_id/action_id`.
-- The `groups` plan field is additive and omitted entirely when no `together` block exists, so a Tether without `together` produces byte-identical output to pre-C1.
-- New rejection messages use the existing `parse_error` convention with stable, fixture-protected wording.
-- Determinism, array ordering, and Trail sequence remain exact; Core stays timestamp-free and effect-free; the Core/host boundary is unchanged.
-- No Rust host production change; no dependency, toolchain, Dune, or OCaml-version change; no change to sequential Tether semantics, identities, or existing fixtures.
-- P6 implementation and evidence are not altered except for necessary status references.
+- Keep the accepted C1 planner foundation: flat `plan.actions`, `plan.groups`
+  membership by Action ID, source-order canonicality, stable Action IDs,
+  deterministic group IDs, planner `group_planned` Trail evidence, malformed
+  group refusal, byte-compatible output for Tethers without `together`.
+- C1C establishes execution semantics only: the serial reference schedule is a
+  valid C1 schedule; no physical parallel execution, threads, worker pools,
+  provider multiplexing, or async-runtime migration.
+- Failure stops at the join, not inside the fan-out. Every group member is
+  attempted at most once through the group execution path; existing
+  idempotency rules remain in force; no group-wide idempotency keys.
+- A group succeeds only when every member has a success outcome. A member
+  outcome of Completed or replay-blocked completed-success counts as success;
+  Failed / Uncertain / Denied / Unattempted / AuditFailed / other replay /
+  approval-required are non-success. Non-success distinctions are preserved in
+  the aggregate (first non-success in source order), never flattened.
+- Existing Action/Effect authorisation remains authoritative per Action; no
+  group-level permissions; a Plan remains a request, not permission.
+- The Core/host boundary, replay identity material, one-shot approval rules,
+  and Trail-ownership semantics are unchanged. The legacy route and adapter
+  seams stay single-Action and fail closed explicitly for larger plans.
+- No OCaml, dependency, toolchain, Dune, or lockfile changes; no change to
+  sequential Tether semantics or existing fixtures; P6 implementation and
+  evidence remain untouched.
+- New Trail/JSONL entry kinds are additive and legible; planner `group_planned`
+  evidence is retained.
 
 ## Acceptance criteria
 
-1. Branch `feature/0.4-c1-together-fan-out-join` is based on `5ed7634d8abc4056e0faa1ff09924377dec6e645`, the packet is `IN_PROGRESS`, and the packet checker reports `control-v1/IN_PROGRESS` before production edits.
-2. `docs/ROAD_TO_0_3.md`, `docs/CURRENT_GOAL.md`, and `docs/PROJECT_DASHBOARD.md` show P6 FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`, C1 active, and P7 / physical-parallel 0.4 NOT started.
-3. Engine fixture evidence proves every rejected shape (empty block, single member, nested `together`, wrong member indentation) is refused with `parse_error`, and a valid `together` block parses and plans.
-4. Engine fixture evidence proves fan-out/join planning: members appear in the flat `actions` list in source order with contiguous `action_id`s, a `group_planned` Trail entry follows the group's last member, and later Actions are planned after the group.
-5. Engine fixture evidence proves the additive protocol contract: `plan.groups` exists with the correct `group_id`/`member_action_ids` only when `together` is used; every pre-existing fixture (no `together`) passes unchanged; adjacent ordinary Actions remain sequential.
-6. MCP transcript evidence proves `tethers.validate` reports `action_count` covering all planned Actions for a `together` source, with no change to existing validate transcripts.
-7. All new fixture cases, the transcript, and the `test-engine.ps1` deterministic repeat for the `together` case are committed and pass; each negative branch has its own direct evidence.
-8. `cargo fmt --all -- --check` passes and the full locked host test suite passes with zero failures against the new engine, with no host source change.
-9. `tethers-0.1/SPEC.md` documents the `together` grammar, C1 restrictions, join semantics, and the additive `groups` plan field; the worker note records the exact section changes.
-10. Closeout evidence: worker note exists at the named path with the implementation checkpoint SHA, checker reports `control-v1/COMPLETE`, branch pushed normally to `origin`, full remote HEAD SHA resolved, local `HEAD == remote HEAD`, and `git status --short --branch` clean.
+1. Packet is the C1C correction packet, Status `IN_PROGRESS`, checker reports
+   `control-v1/IN_PROGRESS` before production edits; the correction
+   bookkeeping is present in the packet and final worker note.
+2. Host consumes `plan.groups` additively; a plan without `groups` executes as
+   an ordinary sequential plan with identical behaviour; no test requires
+   `"groups": []`.
+3. Host tests prove every listed malformed group shape (unknown member Action
+   ID, duplicate membership, duplicate group IDs, empty/one-member group,
+   non-contiguous members) is rejected with `InvalidData` (or the equivalent
+   existing host error pattern) before any dispatch.
+4. Crucible evidence proves: sequential stop-on-first-failure unchanged;
+   group members all attempted once in source order regardless of sibling
+   failure; join success only when all members succeeded; later Actions
+   blocked on non-success join; no retries or cancellation; no group-wide
+   idempotency key in any produced record.
+5. `execute_shared_boundary` is driven per Action through one refactored
+   production path used by both sequential items and group members; legacy and
+   adapter seams fail closed explicitly for non-single-Action plans.
+6. Durable Trail contains one `GroupJoinEntry` per group with evaluation_id,
+   group_id, member_action_ids, joined flag, and timestamp; the response Trail
+   contains a `group_joined` presentation entry; per-member outcomes and the
+   planner `group_planned` entry remain present; `uncertain` is not flattened.
+7. TB-00, TB-01, TB-02, TB-03 pass through the real execution seam; TB-04 is
+   implemented if a clean uncertain path exists, otherwise its omission is
+   recorded with the reason.
+8. Malformed-metadata regression tests exist and pass, covering at minimum
+   unknown member Action ID and duplicate membership.
+9. `docs/ROAD_TO_0_4.md` exists with the C1–C5 provisional roadmap, the
+   concurrency/parallelism design principle, and an explicit not-started note
+   for C2–C5.
+10. Full Rust gate passes against the committed checkpoint (focused tests,
+    full `cargo test --locked`, `cargo check` and `cargo clippy` with the
+    repository warning policy, `cargo fmt --check`); OCaml engine suites
+    (fixtures, engine cases, MCP transcripts) pass unchanged; OCaml untouched
+    (stated explicitly) or a genuine integration defect fixed; "No dependency
+    changes." recorded.
+11. Closeout evidence: worker note at the named path with the implementation
+    checkpoint SHA, checker `control-v1/COMPLETE`, branch pushed normally to
+    `origin`, full remote HEAD SHA resolved, local `HEAD == remote HEAD`, and
+    `git status --short --branch` clean.
 
 ## Required verification
 
-1. Packet checker at start (`control-v1/IN_PROGRESS`) and on closeout (`control-v1/COMPLETE`):
+1. Packet checker at start (`control-v1/IN_PROGRESS`) and on closeout
+   (`control-v1/COMPLETE`):
    `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
-2. OCaml build through the explicit switch from the engine source directory:
+2. Rust formatter (RUST_CHANGING; run before the implementation checkpoint and
+   inspect the immediate diff; STOP if rustfmt touches any file outside the
+   authorised Rust paths — `tethers-0.1/host-rust/src/plan_execution.rs`,
+   `dispatch.rs`, `application.rs`, `host_execution.rs`, and the test files
+   this packet adds):
+   `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all`
+   then `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`
+3. Focused Together/Three Bunny and malformed-metadata tests:
+   `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --locked plan_execution`
+   (and the full suite below for final authority)
+4. Full Rust completion authority:
+   `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked`
+   `$env:RUSTFLAGS="-D warnings"; cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked`
+   `cargo clippy --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked`
+5. OCaml/engine compatibility rerun (unchanged source; prove round-trip):
    `opam exec --switch=<OcamlSwitchPath> -- dune build`
-3. Engine fixture and transcript suites:
    `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\check-fixtures.ps1`
    `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-engine.ps1`
    `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1`
-4. Host compatibility (no host source change; NON_RUST):
-   `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`
-   `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked`
-5. `git diff --check`, complete diff inspection, and final `git status --short --branch` inspection.
+6. `git diff --check`, complete diff inspection, and final
+   `git status --short --branch` inspection.
 
 ## Formatting and checkpoint sequence
 
-NON_RUST task: run `cargo fmt --all -- --check` only; never run a mutating formatter and never modify Rust source. The engine has no project formatter; preserve local OCaml style. The implementation checkpoint commit precedes all worker-note, packet, and dashboard closeout edits. `docs/ROAD_TO_0_3.md` and `docs/CURRENT_GOAL.md` wording updates are implementation scope and precede the checkpoint commit; the packet, worker note, and `docs/PROJECT_DASHBOARD.md` are closeout scope.
+RUST_CHANGING task: run the packet's Cargo formatter command
+(`cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all`) before the
+implementation checkpoint and inspect its immediate diff. Stop if rustfmt
+changes any file outside the authorised Rust paths. The engine has no project
+formatter; preserve local OCaml style. The implementation checkpoint commit
+precedes all worker-note, packet, and dashboard closeout edits. `docs/ROAD_TO_0_4.md`
+is implementation scope and precedes the checkpoint commit; the packet, worker
+note, and `docs/PROJECT_DASHBOARD.md` are closeout scope.
 
 ## Completion and publication
 
-Commit the implementation/proof checkpoint, write the worker note at the named path, set this packet to `COMPLETE`, require checker `control-v1/COMPLETE`, commit the docs-only closeout, then push the named branch normally and prove `origin/feature/0.4-c1-together-fan-out-join == HEAD` with a clean worktree. Do not start P7 or any physical-parallel 0.4 increment.
+Commit the implementation/proof checkpoint, continue/update the worker note at
+the named path, set this packet to `COMPLETE`, require checker
+`control-v1/COMPLETE`, commit the docs-only closeout, then push the named
+branch normally and prove `origin/feature/0.4-c1-together-fan-out-join == HEAD`
+with a clean worktree. Do not start C2 or any physical-parallel increment.
 
 ## Forbidden changes
 
-- No P7, no physical-parallel execution increment, no nested concurrency, no scheduler, no worker/thread/async runtime in Core or host.
-- No Rust host production code, dependency, toolchain, Dune, or OCaml-version changes.
-- No change to 0.1 sequential Tether semantics, Action identities, idempotency material, existing error contracts, or existing fixtures/transcripts.
-- No change to the Core/host boundary, permission, trust, replay, or Trail-ownership semantics.
+- No physical parallel execution, Tokio, async-runtime migration, threads for
+  group execution, worker pools, provider multiplexing, or simultaneous MCP
+  requests.
+- No nested `together`, DAG engine, dynamic fan-out, cancellation, retries,
+  rollback, compensation, priority scheduling, or resource quotas.
+- No C2 work, HQ work, or unrelated cleanup.
+- No change to the accepted C1 planner semantics, Action identities,
+  idempotency material, existing error contracts, or existing
+  fixtures/transcripts; no OCaml change unless a genuine integration defect is
+  revealed.
+- No dependency, toolchain, Cargo.lock, Dune, or OCaml-version changes.
 - No merge, amend, tag, force-push, PR, or direct `main` update.
 
 ## Stop conditions
 
-- A real contradiction between the frozen C1 semantics and repository evidence that cannot be resolved from this packet.
-- A consequential architecture/product/security/trust decision beyond the frozen decisions requiring external authority.
-- Two materially similar implementation attempts fail on the same unresolved underlying problem.
-- An unrelated environmental failure prevents trustworthy verification of a required check.
+- A real contradiction between the frozen C1 execution semantics and repository
+  evidence that cannot be resolved from this packet.
+- Evidence that the current host cannot represent a required terminal outcome
+  without a consequential redesign (in that case return the architecture
+  evidence rather than inventing a new outcome type).
+- A protocol/version decision beyond this packet.
+- Two materially similar implementation attempts fail on the same unresolved
+  underlying problem.
+- An unrelated environmental failure prevents trustworthy verification of a
+  required check.
 
 ## Expected pre-existing changes
 
-None. Base commit is the accepted P6 HEAD; the C1 branch starts clean at it.
+None. Base commit is the accepted C1 final pushed HEAD; the C1C branch
+continues clean at it.

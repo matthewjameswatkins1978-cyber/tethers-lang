@@ -16,11 +16,12 @@ P6 final implementation checkpoint:
 
 ## Active Task
 
-- Task: TETHERS-0.4-C1 — Together: Deterministic Fan-Out / Join Foundation
+- Task: TETHERS-0.4-C1C — Together Execution / Join Correction
 - State: implementation complete; awaiting Lucy independent GitHub review
 - Owner: OpenCode (implementation); Lucy (independent GitHub review and acceptance)
-- Risk: Amber; OCaml engine language semantics with additive plan protocol,
-  fixture-protected regressions, and no host change
+- Risk: Amber; first host execution change for `together` — plan-level
+  fan-out/join execution through the shared boundary, with the Three Bunny
+  Breakfast production-path crucible
 
 ## Last Accepted Result
 
@@ -38,13 +39,12 @@ None.
 
 ## Next Route
 
-Lucy review of C1: the pushed branch `feature/0.4-c1-together-fan-out-join`
-(implementation checkpoint `bb860e690e7469dd75d2c02f018ef57a1f8a78ef`), the
-engine diff (`tether_parser.ml`, `tethers_evaluator.ml`,
-`tethers_outcome.ml`), the nine `protocol/cases/together-*` fixtures, the
-`validate-together` MCP transcript, the `group_planned` Trail entry and
-additive `plan.groups` field, and the SPEC.md section 5 / 6.1 update. P7 /
-physical-parallel 0.4 work has NOT started.
+Lucy review of C1C: the pushed branch `feature/0.4-c1-together-fan-out-join`
+(implementation checkpoint `6519d92a06b54c64a38f931c65da446dcebd323a`), the
+plan-level executor and schedule validation in `plan_execution.rs`, the
+shared-boundary Action parameter refactor, the `GroupJoinEntry` Trail
+extension, the Three Bunny Breakfast crucible and malformed-metadata tests,
+and `docs/ROAD_TO_0_4.md`. C2–C5 are provisional and have NOT started.
 
 ## Operating Mode
 
@@ -65,10 +65,14 @@ physical-parallel 0.4 work has NOT started.
   `inputSchema` / mismatched `outputSchema`, an uncorrelated JSON-RPC response
   id, and a shutdown-refusing provider; those three generic gaps were corrected
   in `conformance.rs` with before/after evidence and regression tests.
-- C1 introduces the first real concurrency primitive (`together`) as
+- C1 introduced the first real concurrency primitive (`together`) as
   deterministic language semantics only: no scheduler, no threads, no
   physical-parallel execution; the flat `plan.actions` list remains a valid
   serial schedule and `plan.groups` is additive.
+- C1C completed the execution half: the reference host now attempts every
+  group member before the join, a non-success join blocks later Actions, and
+  the serial schedule matches what a future genuinely concurrent runtime
+  would observe (failure stops at the join, not inside the fan-out).
 
 ## Where Details Live
 
