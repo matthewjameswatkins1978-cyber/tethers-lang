@@ -2,23 +2,23 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-2 — Human AST → Core Lowering`
+Task: `TETHERS CORE-2A — Ambiguous Environment Fail-Closed Correction`
 
 Owner: `OpenCode`
 
 Status: `COMPLETE`
 
-Task colour: `Amber`
+Task colour: `Green`
 
 Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
 
-Worker note: `docs/worker-notes/2026-08-11-core-2-human-to-core-lowering.md`
+Worker note: `docs/worker-notes/2026-08-11-core-2a-ambiguous-environment-fail-closed.md`
 
 Base branch: `feature/core-2-human-to-core-lowering`
 
-Base commit: `b5daea00accff8e7617727a02ee524bfb80cd823`
+Base commit: `ca7d013effef4bf1e697141651301561f573435c`
 
-Implementation checkpoint: `52032e42f8c1d44a801e79735272327c12ee004c`
+Implementation checkpoint: `47cb5469d758cd0d2c4239a95f3c7ebe02de26bb`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -30,103 +30,80 @@ Rust change class: `RUST_UNCHANGED`
 
 ## Objective
 
-Implement the first real Tethers Core lowering pass:
+Correct two ambiguity cases in CORE-2 lowering:
 
-```text
-Human Tether AST
-        +
-explicit lowering environment
-        ↓
-Tethers Core program
-```
+1. duplicate Human Fact bindings must be reported as ambiguity, not
+   `Unknown_fact`;
+2. conflicting Capability contracts sharing one `CapabilityId` must never be
+   silently deduplicated.
 
-CORE-2 translates the existing sequential Tethers 0.1 subset into the dormant
-Core representation introduced by CORE-1 / 1A / 1B. It does NOT replace the
-existing evaluator path yet.
-
-The lowerer translates meaning. It MUST NOT invent semantic information
-unavailable from its inputs. Capability contract identities, host-input Fact
-declarations, Program identity, and Core version are supplied explicitly
-through a lowering environment. No fake hashes, no guessed contracts, no
-hidden defaults.
+No architecture changes. No runtime wiring.
 
 ## Relevant background and existing behaviour
 
-CORE-1 established dormant nominal Core types. CORE-1A added typed literal
-values, input Facts, and Fact Guards. CORE-1B added named capability inputs
-and explicit success continuation flow. The existing parser (`Tether_parser`)
-produces typed AST values for the supported sequential Tether 0.1 subset
-including `Together`. The existing evaluator (`Tethers_evaluator`) evaluates
-directly from parsed AST to protocol responses; it does not consume Core
-types. The Core types exist as a dormant vocabulary with no consumer.
+CORE-2 established the `Tethers_core_lowerer` module translating the
+sequential Tethers 0.1 subset into dormant Core programs. Two fail-closed gaps
+remain in the lowering environment handling: `resolve_fact` mapped 2+ matches
+to `Unknown_fact` (absence and ambiguity were conflated), and the
+`capability_contracts` dedup silently retained the first digest seen for a
+given `capability_id`, allowing a Program whose Action Origins and pinned
+contract table disagree about semantic identity.
 
 ## Required behaviour
 
-1. Lower a single-action Tether into a Core program with Anchor Origin,
-   Action Origin, entry origin, and Program_complete continuation.
-2. Lower multiple sequential Actions into an explicit A1→A2→...→complete
-   success-continuation chain.
-3. Preserve typed literals (string, int, bool) in Core as exact typed values
-   without stringification.
-4. Lower `anchor.*` references into structural `Anchor_value(origin_id, path
-   parts)` bindings.
-5. Lower all four Condition operators (Is, Contains, Greater_than,
-   Greater_than_or_equal) to Core comparison operators with order preserved.
-6. Resolve known input Facts through the lowering environment; reject unknown
-   Facts with a bounded error.
-7. Resolve known Capabilities to exact CapabilityId and ContractDigest from
-   the environment; reject unknown and duplicate capabilities.
-8. Reject any Tether containing `Together` with an explicit
-   `Unsupported_construct` error.
-9. Produce structurally equal Core programs for the same inputs (determinism).
+1. Add an explicit `Duplicate_fact` lowering error distinguishing duplicate
+   source-name Fact bindings from an unknown Fact.
+2. Change Fact resolution so 2+ matching input Fact bindings produce
+   `Duplicate_fact` instead of `Unknown_fact`.
+3. Detect when two used capability bindings share one `CapabilityId` but have
+   different contract digests and produce an explicit conflict error.
+4. Permit two source names resolving to the same `CapabilityId` with the same
+   digest to collapse into one `capability_contract` entry.
+5. Validate only the used semantic subset so unused conflicting environment
+   entries do not poison lowering.
+6. Leave Action Origin contract references unchanged.
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core.ml` / `.mli` — dormant Core types
-  (CORE-1/1A/1B vocabulary).
-- `tethers-0.1/engine-ocaml/bin/tether_parser.ml` / `.mli` — parsed Human AST
-  types (`tether`, `condition`, `action`, `action_item`, `value`, `operator`).
-- `tethers-0.1/engine-ocaml/bin/dune` — module graph for both executables.
-- `tethers-0.1/engine-ocaml/bin/tethers_core_lowerer.ml` / `.mli` — new
-  lowerer module.
+- `tethers-0.1/engine-ocaml/bin/tethers_core_lowerer.ml` / `.mli` — lowerer
+  module; `resolve_fact` and `capability_contracts` construction.
+- `tethers-0.1/engine-ocaml/bin/tethers_core_lowerer_test.ml` — focused tests.
+- `tethers-0.1/engine-ocaml/bin/dune` — module graph (unchanged).
 
 ## Frozen decisions and invariants
 
-- ID assignment: deterministic pre-canonical static IDs (`O_anchor`,
-  `O_action_1`, ...). CORE-4 will canonicalise later.
-- Anchor name preserved directly as `event_name`.
-- Typed literals: lossless, no stringification.
-- Anchor references: `"anchor.x.y"` → `Anchor_value(O_anchor, ["x"; "y"])`.
-  Non-anchor refs → `Missing_anchor_reference`.
-- Named action inputs: argument names become `capability_input_name`.
-- Capability resolution: exact match from environment; duplicates rejected.
-- Input Fact resolution: exact match; only referenced facts in `input_facts`.
-- Guard operators: `Is→Equals`, `Contains→Contains`, `Greater_than→
-  Greater_than`, `Greater_than_or_equal→Greater_than_or_equal`.
-- Sequential flow: `entry_origin` + `success_continuations` chain; storage
-  order carries no execution meaning.
-- Together: explicit `Unsupported_construct`.
-- No Core type changes needed.
-- No evaluator/protocol/outcome/Rust changes.
-- Determinism: structural equality for same inputs.
+- Absence and ambiguity are distinct errors: `Unknown_fact` vs `Duplicate_fact`.
+- A used `CapabilityId` must have exactly one pinned digest across all used
+  source names.
+- Equivalent repeated `(CapabilityId, CapabilityContractDigest)` pairs may
+  collapse into one Program contract entry.
+- Conflicting digests for one used `CapabilityId` fail before `Ok program`.
+- Only capabilities actually referenced by the Tether are validated; unused
+  environment entries do not poison lowering (documented and deterministic).
+- Deterministic Origin IDs, literal lowering, Anchor path lowering, named
+  inputs, entry guards, success continuations, and Together refusal are
+  unchanged.
+- No Core type changes. No Rust changes. No runtime wiring.
 
 ## Acceptance criteria
 
-1. Single action produces correct Anchor + Action + entry + continuations
-2. Three sequential actions: A1→A2→A3→complete chain explicit
-3. Typed literals remain typed (string, int, bool)
-4. Anchor binding: structural path parts
-5. All four operators lower correctly, order preserved
-6. Known fact resolves; unknown fact fails closed
-7. Known capability resolves to exact ID/digest; unknown fails; duplicate fails
-8. Together returns explicit unsupported-construct error
-9. Determinism: repeat lowering produces structural equality
+1. Two environment Fact bindings with `source_name = "file_type"` and a Human
+   Condition `file_type is "pdf"` produce `Duplicate_fact "file_type"`.
+2. Two source names (`saveA`, `saveB`) mapping to `C_save`/`D1`, both used,
+   lower successfully with exactly one `C_save`/`D1` Program contract entry.
+3. Two source names mapping to `C_save`/`D1` and `C_save`/`D2`, both used,
+   produce an explicit conflicting-contract error.
+4. Unused conflicting environment bindings do not poison lowering when only
+   one source name is referenced.
+5. All existing CORE-2 tests and legacy suites continue to pass.
+6. Existing tests confirm each Action Origin retains the contract reference
+   resolved from its own source-name binding after CORE-2A changes.
 
 ## Required verification
 
 1. Packet checker at closeout: `control-v1/COMPLETE`
 2. OCaml build: `dune build`
-3. Lowerer tests: `dune runtest` — 44/44 assertions
+3. Lowerer tests: `dune runtest` — 49/49 assertions
 4. Fixture suite: `check-fixtures.ps1` — 64 JSON + 32 JSONL
 5. Engine suite: `test-engine.ps1` — 32 cases
 6. MCP transcript suite: `test-mcp-transcripts.ps1` — 16 cases
@@ -139,14 +116,14 @@ types. The Core types exist as a dormant vocabulary with no consumer.
 
 Do NOT modify: `tethers_evaluator.ml/.mli`, `tethers_protocol.ml/.mli`,
 `tethers_outcome.ml/.mli`. Do not modify Rust. Do not change existing
-runtime output. Do not route production evaluation through Core yet.
-Do not modify `tethers_core.ml/.mli` unless a genuinely unavoidable
-representation defect blocks correct lowering.
+runtime output. Do not modify `tethers_core.ml/.mli`. Do not change
+deterministic Origin IDs, literal lowering, Anchor path lowering, named
+inputs, entry guards, success continuations, or Together refusal.
 
 ## Stop conditions
 
-Committed CORE-2. STOP. Do NOT wire into evaluator, begin Core validation,
-serialize Core, or begin CORE-3.
+Committed CORE-2A. STOP. Do NOT begin CORE-3, wire into the evaluator, or
+serialize Core.
 
 ## Expected pre-existing changes
 
