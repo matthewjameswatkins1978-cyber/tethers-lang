@@ -6,7 +6,7 @@ Task: `TETHERS-0.4-C1C — Together Execution / Join Correction`
 
 Owner: `OpenCode`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
@@ -56,9 +56,11 @@ any-other value (null / object / string / number / bool) returns
 `ExecutionServiceResult::InvalidData` before any Action dispatch. A focused
 production-route regression proves the rejection and that no executor/provider
 was invoked. No change to `build_plan_schedule`, group execution semantics,
-OCaml, dependencies, or any other C1C behaviour. Status is `IN_PROGRESS`
-while the committed correction awaits final verification (full completion
-suite deferred by Lucy's instruction).
+OCaml, dependencies, or any other C1C behaviour. Status is `COMPLETE`: Lucy
+accepted the C1C-1 correction for final verification, and the full Rust
+completion suite and the unchanged OCaml compatibility suites were rerun
+against the committed checkpoint `92d2a27a1c2f77c0db97cbcbe955a7d99634f83a`
+and passed (full-suite authority re-established after the C1C-1 code change).
 
 ## Objective
 
