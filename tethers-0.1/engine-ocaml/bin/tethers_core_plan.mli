@@ -83,6 +83,10 @@ type planning_error =
   | Capability_projection_incomplete of Tethers_core.capability_id
   (** The approved projection lacks required runtime metadata (empty
       capability name or version, or partially present bridge fields). *)
+  | Ambiguous_capability_projection of Tethers_core.capability_id
+  (** More than one approved projection matches the exact Core capability
+      identity and contract digest pair.  Planning must not silently select
+      one; the host must deduplicate projections before supply. *)
   | Flow_cycle of Tethers_core.origin_id list
   (** Defensive: unreachable for validated Core, which rejects success
       cycles.  Guards the walk against a hang. *)

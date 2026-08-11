@@ -19,6 +19,7 @@ type planning_error =
   | Capability_projection_identity_mismatch of capability_id
   | Capability_projection_digest_mismatch of capability_id
   | Capability_projection_incomplete of capability_id
+  | Ambiguous_capability_projection of capability_id
   | Flow_cycle of origin_id list
   | Unresolved_origin of origin_id
 
@@ -164,16 +165,18 @@ let projection_of context capability_id contract_digest =
       if by_digest = [] then Error (Missing_capability_projection capability_id)
       else Error (Capability_projection_identity_mismatch capability_id)
   | _ -> (
-      match
-        List.find_opt
+      let exact =
+        List.filter
           (fun (p : runtime_capability_projection) ->
             p.contract_digest = contract_digest)
           by_id
-      with
-      | None -> Error (Capability_projection_digest_mismatch capability_id)
-      | Some projection ->
+      in
+      match exact with
+      | [] -> Error (Capability_projection_digest_mismatch capability_id)
+      | [ projection ] ->
           if projection_metadata_complete projection then Ok projection
-          else Error (Capability_projection_incomplete capability_id))
+          else Error (Capability_projection_incomplete capability_id)
+      | _ -> Error (Ambiguous_capability_projection capability_id))
 
 (* ------------------------------------------------------------------ *)
 (*  Action planning                                                    *)

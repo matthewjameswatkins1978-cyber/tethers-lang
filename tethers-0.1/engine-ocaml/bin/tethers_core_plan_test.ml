@@ -35,6 +35,7 @@ let string_of_planning_error = function
   | Capability_projection_digest_mismatch _ ->
       "Capability_projection_digest_mismatch"
   | Capability_projection_incomplete _ -> "Capability_projection_incomplete"
+  | Ambiguous_capability_projection _ -> "Ambiguous_capability_projection"
   | Flow_cycle _ -> "Flow_cycle"
   | Unresolved_origin _ -> "Unresolved_origin"
 
@@ -831,6 +832,119 @@ let test_capability_projection_incomplete () =
     "T13 incomplete projection fails closed" (plan program ctx)
 
 (* ================================================================== *)
+(*  B1-T1 — Duplicate exact projection fails                           *)
+(* ================================================================== *)
+
+let test_duplicate_projection_fails () =
+  let program = mk_program
+    ~id:"P_bt1"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "ev" [];
+      mk_action_origin "O_action" "cap.a" "sha256:a"
+        [ mk_lit_input "x" (String_value "1") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.a" "sha256:a" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_bt1"
+      ~capabilities:[
+        mk_projection "cap.a" "sha256:a" ~name:"cap.a" ~version:"1.0.0"
+          ~effects:["e1"] ();
+        mk_projection "cap.a" "sha256:a" ~name:"cap.a" ~version:"2.0.0"
+          ~effects:["e2"] ();
+      ]
+      ()
+  in
+  assert_plan_error (Ambiguous_capability_projection (cid "cap.a"))
+    "B1-T1 duplicate exact projection fails" (plan program ctx)
+
+(* ================================================================== *)
+(*  B1-T2 — Reversed duplicates fail identically                       *)
+(* ================================================================== *)
+
+let test_reversed_duplicates_fail () =
+  let program = mk_program
+    ~id:"P_bt2"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "ev" [];
+      mk_action_origin "O_action" "cap.a" "sha256:a"
+        [ mk_lit_input "x" (String_value "1") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.a" "sha256:a" ]
+    ()
+  in
+  let ctx_fwd =
+    mk_context
+      ~evaluation_id:"eval_bt2"
+      ~capabilities:[
+        mk_projection "cap.a" "sha256:a" ~name:"cap.a" ~version:"1.0.0" ();
+        mk_projection "cap.a" "sha256:a" ~name:"cap.a" ~version:"2.0.0" ();
+      ]
+      ()
+  in
+  let ctx_rev =
+    mk_context
+      ~evaluation_id:"eval_bt2"
+      ~capabilities:[
+        mk_projection "cap.a" "sha256:a" ~name:"cap.a" ~version:"2.0.0" ();
+        mk_projection "cap.a" "sha256:a" ~name:"cap.a" ~version:"1.0.0" ();
+      ]
+      ()
+  in
+  assert_plan_error (Ambiguous_capability_projection (cid "cap.a"))
+    "B1-T2 reversed duplicates fail (forward)" (plan program ctx_fwd);
+  assert_plan_error (Ambiguous_capability_projection (cid "cap.a"))
+    "B1-T2 reversed duplicates fail (reversed)" (plan program ctx_rev)
+
+(* ================================================================== *)
+(*  B1-T3 — Multiple contracts for one CapabilityId remain selectable   *)
+(* ================================================================== *)
+
+let test_distinct_contracts_coexist () =
+  let program = mk_program
+    ~id:"P_bt3"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "ev" [];
+      mk_action_origin "O_action" "cap.a" "sha256:d1"
+        [ mk_lit_input "x" (String_value "1") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.a" "sha256:d1" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_bt3"
+      ~capabilities:[
+        mk_projection "cap.a" "sha256:d1" ~name:"cap.a" ~version:"1.0.0" ();
+        mk_projection "cap.a" "sha256:d2" ~name:"cap.a" ~version:"2.0.0" ();
+      ]
+      ()
+  in
+  let p = assert_ok_plan "B1-T3 distinct contracts coexist" (plan program ctx) in
+  assert_true "B1-T3 resolved correct version"
+    (match p.actions with
+     | [ action ] ->
+         action_field "capability_version" action = `String "1.0.0"
+     | _ -> false)
+
+(* ================================================================== *)
 (*  RUN ALL TESTS                                                       *)
 (* ================================================================== *)
 
@@ -856,4 +970,7 @@ let () =
   test_invalid_core ();
   test_capability_identity_mismatch ();
   test_capability_projection_incomplete ();
+  test_duplicate_projection_fails ();
+  test_reversed_duplicates_fail ();
+  test_distinct_contracts_coexist ();
   Printf.printf "PASS all plan bridge tests (%d/%d)\n" !tests_passed !tests_run
