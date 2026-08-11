@@ -458,6 +458,135 @@ do
   | _ -> ()
 
 (* ------------------------------------------------------------------ *)
+(*  CORE-2A. Ambiguous Environment Fail-Closed                        *)
+(* ------------------------------------------------------------------ *)
+
+let test_duplicate_fact_fails () =
+  let dup_env = make_env
+    [ cap_binding "notify" "C_notify" "D_notify_v1" ]
+    [ fact_binding "file_type";
+      fact_binding "file_type";
+    ]
+  in
+  let source = {|
+tether "test"
+anchor
+    file.received
+when
+    file_type is "pdf"
+do
+    notify
+        message: "ok"
+|} in
+  match parse source with
+  | Ok tether ->
+      assert_error_eq "duplicate fact fails"
+        (Duplicate_fact "file_type") (lower dup_env tether)
+  | _ -> ()
+
+let test_same_contract_two_source_names () =
+  let env = make_env
+    [ cap_binding "saveA" "C_save" "D_save_v1";
+      cap_binding "saveB" "C_save" "D_save_v1";
+    ]
+    [ fact_binding "file_type" ]
+  in
+  let source = {|
+tether "test"
+anchor
+    file.received
+when
+    file_type is "pdf"
+do
+    saveA
+        file: anchor.document
+    saveB
+        file: anchor.document
+|} in
+  match parse source with
+  | Ok tether ->
+      (match lower env tether with
+       | Ok program ->
+           let save_contracts =
+             List.filter
+               (fun (c : capability_contract) ->
+                 c.capability_id = capability_id_of_string "C_save")
+               program.capability_contracts
+           in
+           assert_equal "one C_save contract entry" 1 (List.length save_contracts);
+           (match save_contracts with
+            | [ c ] ->
+                assert_equal "digest D_save_v1"
+                  "D_save_v1"
+                  (string_of_capability_contract_digest c.contract_digest)
+            | _ ->
+                Printf.eprintf "FAIL: unexpected C_save contracts\n"; exit 1)
+       | Error _ ->
+           Printf.eprintf "FAIL: same contract two names returned error\n"; exit 1)
+  | _ -> ()
+
+let test_conflicting_contract_fails () =
+  let env = make_env
+    [ cap_binding "saveA" "C_save" "D_save_v1";
+      cap_binding "saveB" "C_save" "D_save_v2";
+    ]
+    [ fact_binding "file_type" ]
+  in
+  let source = {|
+tether "test"
+anchor
+    file.received
+when
+    file_type is "pdf"
+do
+    saveA
+        file: anchor.document
+    saveB
+        file: anchor.document
+|} in
+  match parse source with
+  | Ok tether ->
+      assert_error_eq "conflicting contract fails"
+        (Conflicting_capability_contract (capability_id_of_string "C_save"))
+        (lower env tether)
+  | _ -> ()
+
+let test_unused_conflict_ignored () =
+  (* Conflicting environment bindings exist, but only saveA is referenced by
+     the Tether.  CORE-2A validates only the used semantic subset, so this
+     lowers successfully. *)
+  let env = make_env
+    [ cap_binding "saveA" "C_save" "D_save_v1";
+      cap_binding "saveB" "C_save" "D_save_v2";
+    ]
+    [ fact_binding "file_type" ]
+  in
+  let source = {|
+tether "test"
+anchor
+    file.received
+when
+    file_type is "pdf"
+do
+    saveA
+        file: anchor.document
+|} in
+  match parse source with
+  | Ok tether ->
+      (match lower env tether with
+       | Ok program ->
+           let save_contracts =
+             List.filter
+               (fun (c : capability_contract) ->
+                 c.capability_id = capability_id_of_string "C_save")
+               program.capability_contracts
+           in
+           assert_equal "one C_save contract entry" 1 (List.length save_contracts)
+       | Error _ ->
+           Printf.eprintf "FAIL: unused conflict should not poison lowering\n"; exit 1)
+  | _ -> ()
+
+(* ------------------------------------------------------------------ *)
 (*  H. Together Refusal                                                *)
 (* ------------------------------------------------------------------ *)
 
@@ -567,6 +696,10 @@ let () =
   test_known_capability_resolves ();
   test_unknown_capability_fails ();
   test_duplicate_capability_fails ();
+  test_duplicate_fact_fails ();
+  test_same_contract_two_source_names ();
+  test_conflicting_contract_fails ();
+  test_unused_conflict_ignored ();
   test_together_refused ();
   test_determinism ();
   test_non_anchor_reference_rejected ();

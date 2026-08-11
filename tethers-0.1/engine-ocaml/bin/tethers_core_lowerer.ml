@@ -23,6 +23,8 @@ type lowering_error =
   | Unknown_capability of string
   | Duplicate_capability of string
   | Unknown_fact of string
+  | Duplicate_fact of string
+  | Conflicting_capability_contract of capability_id
   | Missing_anchor_reference of string
 
 (* ------------------------------------------------------------------ *)
@@ -96,7 +98,7 @@ let resolve_fact all_facts name =
   match matches with
   | [] -> Error (Unknown_fact name)
   | [ b ] -> Ok b.fact
-  | _ :: _ :: _ -> Error (Unknown_fact name)
+  | _ :: _ :: _ -> Error (Duplicate_fact name)
 
 (* ------------------------------------------------------------------ *)
 (*  Operator lowering                                                  *)
@@ -210,15 +212,20 @@ let lower env (tether : Tether_parser.tether) =
     ) env.input_facts
     |> List.map (fun b -> b.fact)
   in
-  let capability_contracts =
+  let* capability_contracts =
     let rec dedup (acc : capability_contract list) (input : capability_contract list) =
       match input with
-      | [] -> List.rev acc
+      | [] -> Ok (List.rev acc)
       | (c : capability_contract) :: rest ->
-          if List.exists (fun (existing : capability_contract) -> existing.capability_id = c.capability_id) acc then
-            dedup acc rest
-          else
-            dedup (c :: acc) rest
+          (match
+             List.find_opt
+               (fun (existing : capability_contract) -> existing.capability_id = c.capability_id)
+               acc
+           with
+           | None -> dedup (c :: acc) rest
+           | Some existing ->
+               if existing.contract_digest = c.contract_digest then dedup acc rest
+               else Error (Conflicting_capability_contract c.capability_id))
     in
     dedup [] used_cap_contracts_rev
   in

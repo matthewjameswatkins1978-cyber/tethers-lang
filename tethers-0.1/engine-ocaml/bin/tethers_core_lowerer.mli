@@ -31,6 +31,8 @@ type lowering_error =
   | Unknown_capability of string
   | Duplicate_capability of string
   | Unknown_fact of string
+  | Duplicate_fact of string
+  | Conflicting_capability_contract of Tethers_core.capability_id
   | Missing_anchor_reference of string
 
 val lower :
