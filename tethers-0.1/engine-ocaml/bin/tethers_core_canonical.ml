@@ -314,13 +314,6 @@ let build_static_refs p =
     ) StringMap.empty p.entry_guards
   in
 
-  (* Origin scope map: origin_id string -> [`Program | `Template tid] *)
-  let origin_scope_map =
-    List.fold_left (fun m (oid, _, scope, _) ->
-      StringMap.add (string_of_origin_id oid) scope m
-    ) StringMap.empty (all_origins p)
-  in
-
   (* Scoped consumers: track the scope of the consuming Action origin *)
   let consumers_for_fact_scoped =
     List.fold_left (fun m (_oid, site, scope, _) ->
@@ -359,15 +352,32 @@ let build_static_refs p =
     !m
   in
 
+  (* Direct derivation of Fact scope from containing site/template, including Batch *)
   let fact_scope_map =
-    StringMap.mapi (fun _fid opt_oid ->
-      match opt_oid with
-      | Some oid ->
-        (match StringMap.find_opt (string_of_origin_id oid) origin_scope_map with
-         | Some sc -> sc
-         | None -> `Program)
-      | None -> `Program
-    ) origin_for_fact
+    let m = ref StringMap.empty in
+    List.iter (fun (_oid, site, scope, _) ->
+      let facts = match site with
+        | Anchor_origin a -> a.declared_facts
+        | Action_origin a -> a.declared_facts
+        | _ -> []
+      in
+      List.iter (fun (f : fact) ->
+        m := StringMap.add (string_of_fact_id f.fact_id) scope !m
+      ) facts
+    ) (all_origins p);
+    List.iter (fun (_bid, site, scope, _) ->
+      match site with
+      | Batch_site b ->
+        List.iter (fun (f : fact) ->
+          m := StringMap.add (string_of_fact_id f.fact_id) scope !m
+        ) b.aggregate_facts
+      | _ -> ()
+    ) (all_batches p);
+    List.iter (fun (f : fact) ->
+      if not (StringMap.mem (string_of_fact_id f.fact_id) !m) then
+        m := StringMap.add (string_of_fact_id f.fact_id) `Program !m
+    ) (all_facts p);
+    !m
   in
 
   { entry_origin_id_str; success_out_map; success_in_map;
@@ -782,41 +792,37 @@ let assign_canonical_ids colours p =
        role_id_of_string ("R" ^ string_of_int (i + 1)))) sorted_roles
   in
 
-  (* Maps for scoped rewriting: origin -> scope, fact -> scope *)
+  (* Maps for scoped rewriting: origin -> scope, fact -> scope (direct) *)
   let origin_scope_map =
     List.fold_left (fun m (oid, _, scope, _) ->
       StringMap.add (string_of_origin_id oid) scope m
     ) StringMap.empty all_orig
   in
-  let origin_for_fact_map =
+  let fact_scope_map =
     let m = ref StringMap.empty in
-    let add_origin oid (declared : fact list) =
+    List.iter (fun (_oid, site, scope, _) ->
+      let facts = match site with
+        | Anchor_origin a -> a.declared_facts
+        | Action_origin a -> a.declared_facts
+        | _ -> []
+      in
       List.iter (fun (f : fact) ->
-        m := StringMap.add (string_of_fact_id f.fact_id) (Some oid) !m
-      ) declared
-    in
-    let all_sites = all_origin_sites_flat p in
-    List.iter (fun site ->
+        m := StringMap.add (string_of_fact_id f.fact_id) scope !m
+      ) facts
+    ) all_orig;
+    List.iter (fun (_bid, site, scope, _) ->
       match site with
-      | Anchor_origin a -> add_origin a.anchor_origin_id a.declared_facts
-      | Action_origin a -> add_origin a.action_origin_id a.declared_facts
+      | Batch_site b ->
+        List.iter (fun (f : fact) ->
+          m := StringMap.add (string_of_fact_id f.fact_id) scope !m
+        ) b.aggregate_facts
       | _ -> ()
-    ) all_sites;
+    ) all_bat;
     List.iter (fun (f : fact) ->
       if not (StringMap.mem (string_of_fact_id f.fact_id) !m) then
-        m := StringMap.add (string_of_fact_id f.fact_id) None !m
+        m := StringMap.add (string_of_fact_id f.fact_id) `Program !m
     ) all_fact;
     !m
-  in
-  let fact_scope_map =
-    StringMap.mapi (fun _fid opt_oid ->
-      match opt_oid with
-      | Some oid ->
-        (match StringMap.find_opt (string_of_origin_id oid) origin_scope_map with
-         | Some sc -> sc
-         | None -> `Program)
-      | None -> `Program
-    ) origin_for_fact_map
   in
 
   let sorted_branches =

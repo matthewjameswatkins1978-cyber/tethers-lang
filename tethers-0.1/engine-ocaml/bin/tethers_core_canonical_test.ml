@@ -1685,6 +1685,87 @@ let test_multi_branch_rename_invariance () =
   assert (digest_of p1 = digest_of p2);
   assert (bytes_of p1 = bytes_of p2)
 
+(* T6 — Batch aggregate Fact Role_proxy scoped rename adversarial *)
+let test_batch_aggregate_role_proxy_rename () =
+  let mk_batch tid role_id fact_id batch_id =
+    let fact_rp = {
+      fact_id = fact_id_of_string fact_id;
+      schema_description = "desc";
+      provenance = Role_proxy (role_id_of_string role_id);
+    } in
+    Batch_site {
+      batch_id = batch_id_of_string batch_id;
+      collection_provenance = batch_collection_provenance_of_string "prov1";
+      item_template_id = item_template_id_of_string tid;
+      traversal_policy = batch_traversal_policy_of_string "pol1";
+      composite_objective = batch_objective_of_string "obj1";
+      aggregate_facts = [fact_rp];
+    }
+  in
+  let mk_template tid role_id fact_id batch_id fulfill =
+    {
+      item_template_id = item_template_id_of_string tid;
+      origin_sites = [mk_batch tid role_id fact_id batch_id];
+      branches = [];
+      roles = [{
+        role_id = role_id_of_string role_id;
+        scope = Item_template_scope (item_template_id_of_string tid);
+        fact_contract = Role_fact_contract [];
+        eligible_fulfillment = role_fulfillment_of_string fulfill;
+      }];
+      objective = Required_role (role_id_of_string role_id);
+    }
+  in
+  let mk_program_with_templates templates =
+    mk_program
+      ~input_facts:[ mk_eval_fact "F0" "hk0" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[ mk_anchor_origin "ent" "ev" [] ]
+      ~item_templates:templates
+      ~capability_contracts:[]
+      ()
+  in
+  (* P1: tplA/R1/F_A/BA_A + tplB/R1/F_B/BA_B, storage A,B *)
+  let tA1 = mk_template "tplA" "R1" "F_A" "BA_A" "fa" in
+  let tB1 = mk_template "tplB" "R1" "F_B" "BA_B" "fb" in
+  let p1 = mk_program_with_templates [tA1; tB1] in
+  (* P2: renamed template IDs + Role IDs, reversed storage *)
+  let tA2 = mk_template "ZETA_TPL" "R9" "F_A" "BA_A" "fa" in
+  let tB2 = mk_template "ALPHA_TPL" "R9" "F_B" "BA_B" "fb" in
+  let p2 = mk_program_with_templates [tB2; tA2] in
+  assert (bytes_of p1 = bytes_of p2);
+  assert (digest_of p1 = digest_of p2);
+  (* Verify rewritten Batch aggregate Fact provenance resolves to correct local canonical Role *)
+  let cp = canon_prog_of p1 in
+  assert (List.length cp.item_templates = 2);
+  List.iter (fun (t : item_template) ->
+    match t.origin_sites with
+    | [Batch_site b] -> (
+      match b.aggregate_facts with
+      | [{ provenance = Role_proxy rid; _ }] ->
+        let expected_scope = Item_template_scope t.item_template_id in
+        let matching = List.find_opt (fun (r : role) -> r.role_id = rid && r.scope = expected_scope) t.roles in
+        assert (matching <> None)
+      | _ -> failwith "expected one Role_proxy fact in Batch"
+    )
+    | _ -> failwith "expected one Batch per template"
+  ) cp.item_templates;
+  (* Also verify renamed program rewrites identically *)
+  let cp2 = canon_prog_of p2 in
+  assert (List.length cp2.item_templates = 2);
+  List.iter (fun (t : item_template) ->
+    match t.origin_sites with
+    | [Batch_site b] -> (
+      match b.aggregate_facts with
+      | [{ provenance = Role_proxy rid; _ }] ->
+        let expected_scope = Item_template_scope t.item_template_id in
+        let matching = List.find_opt (fun (r : role) -> r.role_id = rid && r.scope = expected_scope) t.roles in
+        assert (matching <> None)
+      | _ -> failwith "expected one Role_proxy fact in Batch (cp2)"
+    )
+    | _ -> failwith "expected one Batch per template (cp2)"
+  ) cp2.item_templates
+
 (* ================================================================== *)
 (*  RUN ALL TESTS                                                       *)
 (* ================================================================== *)
@@ -1749,4 +1830,5 @@ let () =
   test "4C-T2-ft-role" test_fact_through_role_rename_invariance;
   test "4C-T3-same-local-role" test_same_local_role_in_two_templates;
   test "4C-T4-join-predecessors" test_join_predecessor_rename_invariance;
-  test "4C-T5-multi-branch" test_multi_branch_rename_invariance
+  test "4C-T5-multi-branch" test_multi_branch_rename_invariance;
+  test "4C-T6-batch-aggregate-role-proxy" test_batch_aggregate_role_proxy_rename
