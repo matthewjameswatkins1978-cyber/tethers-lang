@@ -64,6 +64,21 @@ let assert_plan_error expected msg = function
         (string_of_planning_error expected);
       exit 1
 
+let assert_ok_canonical = function
+  | Ok c -> c
+  | Error (Tethers_core_canonical.Invalid_core _) ->
+      failwith "canonicalize: expected Ok, got Invalid_core"
+  | Error Tethers_core_canonical.Refinement_exceeded ->
+      failwith "canonicalize: expected Ok, got Refinement_exceeded"
+
+let assert_ok_canonical_plan msg = function
+  | Ok cp -> incr tests_run; incr tests_passed; cp
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: %s (expected Ok, got Error %s)\n" msg
+        (string_of_planning_error err);
+      exit 1
+
 (* ================================================================== *)
 (*  Core program construction helpers                                  *)
 (* ================================================================== *)
@@ -1499,6 +1514,421 @@ do
    | _ -> assert_true "E2E single-action shape" false)
 
 (* ================================================================== *)
+(*  CORE-6B T1 — Canonicalized entry point produces Runtime Plan       *)
+(* ================================================================== *)
+
+let test_canonical_plan_basic () =
+  let program = mk_program
+    ~id:"P_cb1"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "hello") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_cb1"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ()
+  in
+  let cp = assert_ok_canonical_plan "CB-T1 plan" (plan_canonicalized c ctx) in
+  assert_true "CB-T1 runtime plan has actions"
+    (List.length cp.runtime_plan.actions = 1);
+  assert_true "CB-T1 plan id derives from evaluation_id"
+    (cp.runtime_plan.id = "eval_cb1/plan")
+
+(* ================================================================== *)
+(*  CORE-6B T2 — Returned ProgramDigest equals canonicalized digest     *)
+(* ================================================================== *)
+
+let test_canonical_plan_digest_matches () =
+  let program = mk_program
+    ~id:"P_cb2"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "hello") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_cb2"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ()
+  in
+  let cp = assert_ok_canonical_plan "CB-T2 plan" (plan_canonicalized c ctx) in
+  assert_true "CB-T2 digest matches"
+    (Tethers_core_canonical.program_digest c = cp.program_digest)
+
+(* ================================================================== *)
+(*  CORE-6B T3 — Human → Canonical Core → Plan Anchor_value proof      *)
+(* ================================================================== *)
+
+let test_e2e_human_to_canonical_plan () =
+  let source = {|tether "anchor canonical"
+anchor
+    doc.arrived
+when
+do
+    notify
+        title: anchor.document.title
+|} in
+  let parsed = Tether_parser.parse_tether source in
+  let env : Tethers_core_lowerer.lowering_environment = {
+    program_id = program_id_of_string "P_cb3";
+    core_version = core_version_of_string "0.1.0";
+    capabilities = [
+      { source_name = "notify";
+        capability_id = cid "cap.notify";
+        contract_digest = capability_contract_digest_of_string "sha256:abc" };
+    ];
+    input_facts = [];
+  } in
+  let lowered = match Tethers_core_lowerer.lower env parsed with
+    | Ok p -> p
+    | Error _ -> assert_true "CB-T3 lower ok" false; assert false
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  (* Locate the canonical Anchor_origin and extract its canonical OriginId *)
+  let canonical_anchor_oid =
+    let rec find = function
+      | [] -> assert_true "CB-T3 has canonical anchor" false; oid "O_missing"
+      | Anchor_origin a :: _ -> a.anchor_origin_id
+      | _ :: rest -> find rest
+    in
+    find c_program.origin_sites
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_cb3"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot
+                   (Tethers_core.string_of_origin_id canonical_anchor_oid)
+                   snapshot ]
+      ()
+  in
+  let cp = assert_ok_canonical_plan "CB-T3 plan" (plan_canonicalized c ctx) in
+  (match cp.runtime_plan.actions with
+   | [ action ] ->
+       assert_true "CB-T3 resolved string"
+         (action_field "arguments" action =
+            `Assoc [ ("title", `String "Tethers") ])
+   | _ -> assert_true "CB-T3 single-action shape" false)
+
+(* ================================================================== *)
+(*  CORE-6B T4 — ProgramId variation leaves digest and occurrence      *)
+(*                   plan unchanged                                     *)
+(* ================================================================== *)
+
+let test_program_id_varies_digest_unchanged () =
+  let build pid =
+    mk_program
+      ~id:pid
+      ~entry_origin:(Some (oid "O_anchor"))
+      ~origin_sites:[
+        mk_anchor_origin "O_anchor" "doc.arrived" [];
+        mk_action_origin "O_action" "cap.notify" "sha256:abc"
+          [ mk_lit_input "message" (String_value "hello") ] [];
+      ]
+      ~success_continuations:[
+        mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+        mk_success_cont "O_action" Program_complete;
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+      ()
+  in
+  let c1 = assert_ok_canonical (Tethers_core_canonical.canonicalize (build "P_alpha")) in
+  let c2 = assert_ok_canonical (Tethers_core_canonical.canonicalize (build "P_beta")) in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_cb4"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ()
+  in
+  let cp1 = assert_ok_canonical_plan "CB-T4 plan alpha" (plan_canonicalized c1 ctx) in
+  let cp2 = assert_ok_canonical_plan "CB-T4 plan beta" (plan_canonicalized c2 ctx) in
+  assert_true "CB-T4 digests equal"
+    (Tethers_core_canonical.program_digest c1 = Tethers_core_canonical.program_digest c2);
+  assert_true "CB-T4 plan ids equal"
+    (cp1.runtime_plan.id = cp2.runtime_plan.id);
+  assert_true "CB-T4 plan ids derive from evaluation_id"
+    (cp1.runtime_plan.id = "eval_cb4/plan");
+  assert_true "CB-T4 actions equal"
+    (cp1.runtime_plan.actions = cp2.runtime_plan.actions)
+
+(* ================================================================== *)
+(*  CORE-6B T5 — Pre-canonical temporary ID/storage variation           *)
+(*                   canonicalises to equal plans                       *)
+(* ================================================================== *)
+
+let test_temp_id_storage_order_canonical_plan () =
+  let mk_prog anchor_oid action_oid =
+    mk_program
+      ~id:"P_cb5"
+      ~entry_origin:(Some (oid anchor_oid))
+      ~origin_sites:[
+        mk_anchor_origin anchor_oid "doc.arrived" [];
+        mk_action_origin action_oid "cap.notify" "sha256:abc"
+          [ mk_lit_input "message" (String_value "hello") ] [];
+      ]
+      ~success_continuations:[
+        mk_success_cont anchor_oid (Origin_target (oid action_oid));
+        mk_success_cont action_oid Program_complete;
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+      ()
+  in
+  let c1 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "O_x" "O_y")) in
+  let c2 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "O_a" "O_b")) in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_cb5"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ()
+  in
+  let cp1 = assert_ok_canonical_plan "CB-T5 plan 1" (plan_canonicalized c1 ctx) in
+  let cp2 = assert_ok_canonical_plan "CB-T5 plan 2" (plan_canonicalized c2 ctx) in
+  assert_true "CB-T5 digests equal"
+    (Tethers_core_canonical.program_digest c1 = Tethers_core_canonical.program_digest c2);
+  assert_true "CB-T5 canonical programs structurally equal"
+    (Tethers_core_canonical.canonical_program c1 = Tethers_core_canonical.canonical_program c2);
+  assert_true "CB-T5 runtime plans equal"
+    (cp1.runtime_plan = cp2.runtime_plan)
+
+(* ================================================================== *)
+(*  CORE-6B T6 — Anchor snapshot keyed by canonical OriginId resolves   *)
+(* ================================================================== *)
+
+let test_canonical_anchor_snapshot_resolves () =
+  let source = {|tether "snap"
+anchor
+    doc.arrived
+when
+do
+    notify
+        title: anchor.document.title
+|} in
+  let parsed = Tether_parser.parse_tether source in
+  let env : Tethers_core_lowerer.lowering_environment = {
+    program_id = program_id_of_string "P_cb6";
+    core_version = core_version_of_string "0.1.0";
+    capabilities = [
+      { source_name = "notify";
+        capability_id = cid "cap.notify";
+        contract_digest = capability_contract_digest_of_string "sha256:abc" };
+    ];
+    input_facts = [];
+  } in
+  let lowered = match Tethers_core_lowerer.lower env parsed with
+    | Ok p -> p
+    | Error _ -> assert_true "CB-T6 lower ok" false; assert false
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  let canonical_anchor_oid =
+    let rec find = function
+      | [] -> assert_true "CB-T6 has canonical anchor" false; oid "O_missing"
+      | Anchor_origin a :: _ -> a.anchor_origin_id
+      | _ :: rest -> find rest
+    in
+    find c_program.origin_sites
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_cb6"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot
+                   (Tethers_core.string_of_origin_id canonical_anchor_oid)
+                   snapshot ]
+      ()
+  in
+  let cp = assert_ok_canonical_plan "CB-T6 plan" (plan_canonicalized c ctx) in
+  (match cp.runtime_plan.actions with
+   | [ action ] ->
+       assert_true "CB-T6 resolved string"
+         (action_field "arguments" action =
+            `Assoc [ ("title", `String "Tethers") ])
+   | _ -> assert_true "CB-T6 single-action shape" false)
+
+(* ================================================================== *)
+(*  CORE-6B T7 — Stale pre-canonical Anchor OriginId does not work      *)
+(* ================================================================== *)
+
+let test_stale_pre_canonical_snapshot_fails () =
+  let source = {|tether "stale"
+anchor
+    doc.arrived
+when
+do
+    notify
+        title: anchor.document.title
+|} in
+  let parsed = Tether_parser.parse_tether source in
+  let env : Tethers_core_lowerer.lowering_environment = {
+    program_id = program_id_of_string "P_cb7";
+    core_version = core_version_of_string "0.1.0";
+    capabilities = [
+      { source_name = "notify";
+        capability_id = cid "cap.notify";
+        contract_digest = capability_contract_digest_of_string "sha256:abc" };
+    ];
+    input_facts = [];
+  } in
+  let lowered = match Tethers_core_lowerer.lower env parsed with
+    | Ok p -> p
+    | Error _ -> assert_true "CB-T7 lower ok" false; assert false
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  let canonical_anchor_oid =
+    let rec find = function
+      | [] -> assert_true "CB-T7 has canonical anchor" false; oid "O_missing"
+      | Anchor_origin a :: _ -> a.anchor_origin_id
+      | _ :: rest -> find rest
+    in
+    find c_program.origin_sites
+  in
+  (* Use a deliberately wrong pre-canonical OriginId as snapshot key *)
+  let stale_oid = oid "O_anchor" in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_cb7"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  (* The canonical program uses canonical OriginIds (e.g. O1), so a snapshot
+     keyed by the pre-canonical O_anchor won't match.  The error will name the
+     canonical OriginId that was actually looked up. *)
+  (match plan_canonicalized c ctx with
+   | Error (Missing_anchor_snapshot looked_up_oid) ->
+       assert_true "CB-T7 error names canonical anchor"
+         (looked_up_oid = canonical_anchor_oid);
+       assert_true "CB-T7 canonical differs from pre-canonical"
+         (canonical_anchor_oid <> stale_oid);
+       incr tests_run; incr tests_passed
+   | Error err ->
+       incr tests_run;
+       Printf.eprintf "FAIL: CB-T7 expected Missing_anchor_snapshot, got %s\n"
+         (string_of_planning_error err);
+       exit 1
+   | Ok _ ->
+       incr tests_run;
+       Printf.eprintf "FAIL: CB-T7 expected Error, got Ok\n";
+       exit 1)
+
+(* ================================================================== *)
+(*  CORE-6B T8 — Existing CORE-6A planner tests remain green            *)
+(* ================================================================== *)
+
+let test_existing_core6a_tests_green () =
+  (* Re-run the existing anchor resolution through the low-level plan *)
+  let program = mk_program
+    ~id:"P_cb8"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_cb8"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  (* Low-level plan still works *)
+  let p = assert_ok_plan "CB-T8 low-level plan" (plan program ctx) in
+  (match p.actions with
+   | [ action ] ->
+       assert_true "CB-T8 resolved string"
+         (action_field "arguments" action =
+            `Assoc [ ("ref", `String "Tethers") ])
+   | _ -> assert_true "CB-T8 single-action shape" false);
+  (* Canonical path: use the canonical OriginId for the snapshot *)
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  let canonical_anchor_oid =
+    let rec find = function
+      | [] -> assert_true "CB-T8 has canonical anchor" false; oid "O_missing"
+      | Anchor_origin a :: _ -> a.anchor_origin_id
+      | _ :: rest -> find rest
+    in
+    find c_program.origin_sites
+  in
+  let ctx_canonical =
+    mk_context
+      ~evaluation_id:"eval_cb8"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot
+                   (Tethers_core.string_of_origin_id canonical_anchor_oid)
+                   snapshot ]
+      ()
+  in
+  let cp = assert_ok_canonical_plan "CB-T8 canonical plan" (plan_canonicalized c ctx_canonical) in
+  (match cp.runtime_plan.actions with
+   | [ action ] ->
+       assert_true "CB-T8 canonical resolved string"
+         (action_field "arguments" action =
+            `Assoc [ ("ref", `String "Tethers") ])
+   | _ -> assert_true "CB-T8 canonical single-action shape" false)
+
+(* ================================================================== *)
 (*  RUN ALL TESTS                                                       *)
 (* ================================================================== *)
 
@@ -1539,4 +1969,13 @@ let () =
   test_unsupported_terminal_json ();
   test_existing_fail_closed_fact_from_origin ();
   test_e2e_human_to_plan ();
+  (* CORE-6B tests *)
+  test_canonical_plan_basic ();
+  test_canonical_plan_digest_matches ();
+  test_e2e_human_to_canonical_plan ();
+  test_program_id_varies_digest_unchanged ();
+  test_temp_id_storage_order_canonical_plan ();
+  test_canonical_anchor_snapshot_resolves ();
+  test_stale_pre_canonical_snapshot_fails ();
+  test_existing_core6a_tests_green ();
   Printf.printf "PASS all plan bridge tests (%d/%d)\n" !tests_passed !tests_run

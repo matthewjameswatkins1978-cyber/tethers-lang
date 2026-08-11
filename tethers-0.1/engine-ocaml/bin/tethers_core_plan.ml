@@ -44,6 +44,11 @@ type planning_context = {
   anchors : anchor_snapshot list;
 }
 
+type canonical_plan = {
+  program_digest : Tethers_core_canonical.program_digest;
+  runtime_plan : Tethers_outcome.plan;
+}
+
 (* ------------------------------------------------------------------ *)
 (*  Core value encoding                                                *)
 (* ------------------------------------------------------------------ *)
@@ -382,3 +387,10 @@ let plan program context =
                       actions;
                       groups = [];
                     }))
+
+let plan_canonicalized canonicalized context =
+  let c_program = Tethers_core_canonical.canonical_program canonicalized in
+  let c_digest = Tethers_core_canonical.program_digest canonicalized in
+  match plan c_program context with
+  | Error err -> Error err
+  | Ok runtime_plan -> Ok { program_digest = c_digest; runtime_plan }

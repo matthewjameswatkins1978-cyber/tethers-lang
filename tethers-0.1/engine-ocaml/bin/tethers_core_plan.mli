@@ -118,6 +118,15 @@ type planning_error =
       boolean and cannot be represented by the Runtime Plan argument
       vocabulary. *)
 
+type canonical_plan = {
+  program_digest : Tethers_core_canonical.program_digest;
+  runtime_plan : Tethers_outcome.plan;
+}
+(** A Runtime Plan together with the semantic Core identity (ProgramDigest)
+    that produced it.  This is not a second Runtime Plan model; [runtime_plan]
+    remains the existing [Tethers_outcome.plan].  The wrapper carries the
+    semantic Core identity alongside the runtime occurrence plan. *)
+
 val plan :
   Tethers_core.program ->
   planning_context ->
@@ -142,3 +151,16 @@ val plan :
     remains Core logical identity and is never used as an occurrence identity.
     [required_effects] aggregates the planned capabilities' effects with
     deterministic first-occurrence uniqueness. *)
+
+val plan_canonicalized :
+  Tethers_core_canonical.canonicalized ->
+  planning_context ->
+  (canonical_plan, planning_error) result
+(** Plan from an already-canonicalised Core value.  The caller cannot
+    accidentally pass non-canonical Core to this entry point: it requires a
+    [canonicalized] value produced by [Tethers_core_canonical.canonicalize].
+
+    Internally obtains the Core program through
+    [Tethers_core_canonical.canonical_program] and delegates to [plan].
+    Returns the existing Runtime Plan together with the canonical
+    [ProgramDigest] so that semantic program identity is preserved. *)
