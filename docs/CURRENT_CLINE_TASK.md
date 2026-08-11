@@ -84,6 +84,7 @@ preserving the existing Runtime Plan model.
 6. CB-T6 — Anchor snapshot keyed by canonical OriginId resolves
 7. CB-T7 — Stale pre-canonical Anchor OriginId does not silently substitute
 8. CB-T8 — Existing CORE-6A planner tests remain green (low-level + canonical)
+9. No unsafe canonical_plan constructor exists; canonicalized values are only obtainable from Tethers_core_canonical.canonicalize
 
 ## Required verification
 
