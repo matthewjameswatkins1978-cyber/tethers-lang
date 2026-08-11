@@ -136,10 +136,9 @@ let validate program =
   (*  1. Identity uniqueness                                             *)
   (* ------------------------------------------------------------------ *)
 
-  (* Program-level origin IDs *)
-  let program_origin_ids = origin_ids_of_sites program_sites in
-  let dup_origins = find_duplicates_unique program_origin_ids in
-  List.iter (fun oid -> add (Duplicate_origin_id oid)) dup_origins;
+  (* Global origin ID uniqueness across program and all item templates *)
+  let dup_all_origins = find_duplicates_unique all_origin_ids in
+  List.iter (fun oid -> add (Duplicate_origin_id oid)) dup_all_origins;
 
   (* input_fact IDs *)
   let dup_input_facts = find_duplicates_unique all_input_fact_ids in
@@ -284,19 +283,64 @@ let validate program =
   ) program.item_templates;
 
   (* Role references in Fact_through_role input bindings *)
+  (* Scope-aware: program origins resolve program roles only;
+     item-template origins resolve roles from their own template only. *)
+  let program_role_ids =
+    List.map (fun (r : role) -> r.role_id) program.roles
+  in
+  let item_template_role_map =
+    List.map (fun (t : item_template) ->
+      (t.item_template_id, List.map (fun (r : role) -> r.role_id) t.roles))
+      program.item_templates
+  in
+  let item_origin_to_template =
+    List.concat_map (fun (t : item_template) ->
+      List.filter_map (fun site ->
+        match origin_id_of_site site with
+        | Some oid -> Some (oid, t.item_template_id)
+        | None -> None
+      ) t.origin_sites
+    ) program.item_templates
+  in
+  let program_origin_ids_set = origin_ids_of_sites program_sites in
+
+  let role_visible_from_origin origin_id =
+    if List.mem origin_id program_origin_ids_set then
+      program_role_ids
+    else
+      match List.assoc_opt origin_id item_origin_to_template with
+      | Some tid ->
+          (match List.assoc_opt tid item_template_role_map with
+           | Some rids -> rids
+           | None -> [])
+      | None -> []
+  in
+
+  let find_role_in_scope origin_id role_id =
+    let visible = role_visible_from_origin origin_id in
+    if List.mem role_id visible then Some role_id else None
+  in
+
   List.iter (fun site ->
     let inputs =
       match site with
-      | Action_origin a -> a.inputs
-      | _ -> []
+      | Action_origin a -> (origin_id_of_site site, a.inputs)
+      | _ -> (None, [])
     in
-    List.iter (fun (ai : action_input) ->
-      match ai.binding with
-      | Fact_through_role (_, role_id) ->
-          if not (is_known_role role_id) then
-            add (Missing_role role_id)
-      | _ -> ()
-    ) inputs
+    match inputs with
+    | (Some action_origin_id, bindings) ->
+        List.iter (fun (ai : action_input) ->
+          match ai.binding with
+          | Fact_through_role (_, role_id) ->
+              if not (is_known_role role_id) then
+                add (Missing_role role_id)
+              else
+                (match find_role_in_scope action_origin_id role_id with
+                 | None -> add (Missing_role role_id)
+                 | Some _ -> ())
+          | _ -> ()
+        ) bindings
+    | _ -> ()
   ) all_sites;
 
   (* Item Template references from Batch sites *)
@@ -313,7 +357,7 @@ let validate program =
   (* ------------------------------------------------------------------ *)
 
   let has_actions =
-    List.exists (fun s -> match s with Action_origin _ -> true | _ -> false) all_sites
+    List.exists (fun s -> match s with Action_origin _ -> true | _ -> false) program_sites
   in
   (match program.entry_origin with
    | None when has_actions -> add Missing_entry_origin_for_actions
@@ -406,27 +450,53 @@ let validate program =
   (* ------------------------------------------------------------------ *)
   (*  8. Fact dependency DAG                                             *)
   (* ------------------------------------------------------------------ *)
+  (*
+     Correct v0 dependency rule:
+     Dependencies are derived from Action_origin input/output relationships.
+     If an Action_origin OA declares output Facts {F_out} and consumes
+     input Facts {F_in} (via Fact_from_origin or Fact_through_role
+     bindings), then each output Fact depends on each input Fact:
+         F_out -> F_in
+     Literal_value and Anchor_value introduce no Fact dependency edge.
+     Origin_provenance alone does not create a dependency.
+     Batch aggregate placeholders are not interpreted.
+  *)
 
-  let compute_fact_deps (f : fact) =
-    match f.provenance with
-    | Origin_provenance oid ->
-        let site_facts =
-          match origin_by_id all_sites oid with
-          | Some s -> List.map (fun (f' : fact) -> f'.fact_id) (declared_facts_of s)
-          | None -> []
-        in
-        site_facts
-    | Role_proxy rid ->
-        (match List.find_opt (fun (r : role) -> r.role_id = rid) all_roles_list with
-         | Some r ->
-             let (Role_fact_contract fact_ids) = r.fact_contract in
-             fact_ids
-         | None -> [])
-    | Evaluation_input _ -> []
+  let fact_input_of_binding (ai : action_input) =
+    match ai.binding with
+    | Fact_from_origin (fid, _) -> Some fid
+    | Fact_through_role (fid, _) -> Some fid
+    | _ -> None
+  in
+
+  let action_declared_fact_ids a =
+    List.map (fun (f : fact) -> f.fact_id) a.declared_facts
+  in
+
+  let action_input_fact_ids a =
+    List.filter_map fact_input_of_binding a.inputs
+  in
+
+  let fact_dep_pairs =
+    List.concat_map (fun site ->
+      match site with
+      | Action_origin a ->
+          let outputs = action_declared_fact_ids a in
+          let inputs = action_input_fact_ids a in
+          List.concat_map (fun out ->
+            List.map (fun inp -> (out, inp)) inputs
+          ) outputs
+      | _ -> []
+    ) all_sites
   in
 
   let fact_dep_map =
-    List.map (fun (f : fact) -> (f.fact_id, compute_fact_deps f)) all_facts
+    let rec insert key new_dep = function
+      | [] -> [(key, [new_dep])]
+      | (k, deps) :: rest when k = key -> (k, new_dep :: deps) :: rest
+      | pair :: rest -> pair :: insert key new_dep rest
+    in
+    List.fold_left (fun acc (out, inp) -> insert out inp acc) [] fact_dep_pairs
   in
 
   let fact_visited = ref [] in
@@ -488,11 +558,14 @@ let validate program =
         List.iter (fun (ai : action_input) ->
           match ai.binding with
           | Fact_from_origin (fid, oid) ->
-              (match find_fact_provenance fid with
-               | Some (Origin_provenance oid') when oid = oid' -> ()
-               | Some (Origin_provenance _) ->
-                   add (Fact_from_origin_provenance_mismatch (fid, oid))
-               | _ -> ())
+              if not (is_known_fact fid) then
+                add (Missing_fact fid)
+              else
+                (match find_fact_provenance fid with
+                 | Some (Origin_provenance oid') when oid = oid' -> ()
+                 | Some (Origin_provenance _) ->
+                     add (Fact_from_origin_provenance_mismatch (fid, oid))
+                 | _ -> ())
           | _ -> ()
         ) a.inputs
     | _ -> ()
@@ -502,20 +575,40 @@ let validate program =
   (*  11. Fact_through_role integrity                                    *)
   (* ------------------------------------------------------------------ *)
 
+  (* Scope-aware helper: find a role record visible from the given origin *)
+  let find_role_record_in_scope origin_id role_id =
+    if List.mem origin_id program_origin_ids_set then
+      List.find_opt (fun (r : role) -> r.role_id = role_id) program.roles
+    else
+      match List.assoc_opt origin_id item_origin_to_template with
+      | Some tid ->
+          (match List.find_opt (fun (t : item_template) -> t.item_template_id = tid) program.item_templates with
+           | Some tmpl ->
+               List.find_opt (fun (r : role) -> r.role_id = role_id) tmpl.roles
+           | None -> None)
+      | None -> None
+  in
+
   List.iter (fun site ->
     match site with
     | Action_origin a ->
-        List.iter (fun (ai : action_input) ->
-          match ai.binding with
-          | Fact_through_role (fid, rid) ->
-              (match List.find_opt (fun (r : role) -> r.role_id = rid) all_roles_list with
-               | Some r ->
-                   let (Role_fact_contract fact_ids) = r.fact_contract in
-                   if not (List.mem fid fact_ids) then
-                     add (Fact_role_contract_not_exposed (fid, rid))
-               | None -> ())
-          | _ -> ()
-        ) a.inputs
+        (match origin_id_of_site site with
+         | Some origin_id ->
+             List.iter (fun (ai : action_input) ->
+               match ai.binding with
+               | Fact_through_role (fid, rid) ->
+                   if not (is_known_fact fid) then
+                     add (Missing_fact fid)
+                   else
+                     (match find_role_record_in_scope origin_id rid with
+                      | Some r ->
+                          let (Role_fact_contract fact_ids) = r.fact_contract in
+                          if not (List.mem fid fact_ids) then
+                            add (Fact_role_contract_not_exposed (fid, rid))
+                      | None -> ())
+               | _ -> ()
+             ) a.inputs
+         | None -> ())
     | _ -> ()
   ) all_sites;
 

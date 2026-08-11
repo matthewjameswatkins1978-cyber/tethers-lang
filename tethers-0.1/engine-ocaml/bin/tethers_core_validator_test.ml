@@ -369,8 +369,24 @@ let test_role_fact_contract_mismatch () =
     [ { input_name = cin "v";
         binding = Fact_through_role (fid "F_y", rid "R1") } ]
   in
+  (* F_y must exist so the contract mismatch, not Missing_fact, fires *)
+  let declared_f =
+    { fact_id = fid "F_y";
+      schema_description = "";
+      provenance = Origin_provenance (oid "O_notify");
+    }
+  in
+  let notify_action = { (action_origin_record "O_notify" "C_notify" "D_notify_v1") with
+    declared_facts = [ declared_f ];
+  } in
   let program = { (basic_program ()) with
-    origin_sites = [ Anchor_origin anchor_origin_record; Action_origin action ];
+    origin_sites = [ Anchor_origin anchor_origin_record;
+                     Action_origin notify_action; Action_origin action ];
+    entry_origin = Some (oid "O_notify");
+    success_continuations = [
+      { from_origin = oid "O_notify"; target = Origin_target (oid "O1") };
+      { from_origin = oid "O1"; target = Program_complete };
+    ];
     roles = [ role ];
   } in
   assert_has_error (Fact_role_contract_not_exposed (fid "F_y", rid "R1"))
@@ -886,6 +902,268 @@ let test_duplicate_branch_id () =
     "duplicate branch id rejected" (validate program)
 
 (* ------------------------------------------------------------------ *)
+(*  CORE-3A tests                                                       *)
+(* ------------------------------------------------------------------ *)
+
+(* 3A-1: Ordinary Origin Fact does not self-cycle *)
+let test_fact_origin_no_self_cycle () =
+  let declared_fact =
+    { fact_id = fid "F_result";
+      schema_description = "";
+      provenance = Origin_provenance (oid "O1");
+    }
+  in
+  let action = { (action_origin_record "O1" "C_notify" "D_notify_v1") with
+    declared_facts = [ declared_fact ];
+    inputs = [];
+  } in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record; Action_origin action ];
+  } in
+  assert_ok "ordinary origin fact no self-cycle" (validate program)
+
+(* 3A-2: Real Fact dependency *)
+let test_real_fact_dependency () =
+  let declared_f1 =
+    { fact_id = fid "F_a";
+      schema_description = "";
+      provenance = Origin_provenance (oid "O1");
+    }
+  in
+  let declared_f2 =
+    { fact_id = fid "F_b";
+      schema_description = "";
+      provenance = Origin_provenance (oid "O2");
+    }
+  in
+  let action1 = { (action_origin_record "O1" "C_notify" "D_notify_v1") with
+    declared_facts = [ declared_f1 ];
+    inputs = [];
+  } in
+  let action2 = { (action_origin_record "O2" "C_save" "D_save_v1") with
+    declared_facts = [ declared_f2 ];
+    inputs = [ { input_name = cin "v";
+                 binding = Fact_from_origin (fid "F_a", oid "O1") } ];
+  } in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record;
+                     Action_origin action1; Action_origin action2 ];
+    entry_origin = Some (oid "O1");
+    success_continuations = [
+      { from_origin = oid "O1"; target = Origin_target (oid "O2") };
+      { from_origin = oid "O2"; target = Program_complete };
+    ];
+    capability_contracts = [ cap_contract "C_notify" "D_notify_v1";
+                             cap_contract "C_save" "D_save_v1" ];
+  } in
+  assert_ok "real fact dependency validates" (validate program)
+
+(* 3A-3: Real Fact dependency cycle *)
+let test_fact_dependency_cycle () =
+  let declared_f1 =
+    { fact_id = fid "F_cycle_a";
+      schema_description = "";
+      provenance = Origin_provenance (oid "O1");
+    }
+  in
+  let declared_f2 =
+    { fact_id = fid "F_cycle_b";
+      schema_description = "";
+      provenance = Origin_provenance (oid "O2");
+    }
+  in
+  let action1 = { (action_origin_record "O1" "C_notify" "D_notify_v1") with
+    declared_facts = [ declared_f1 ];
+    inputs = [ { input_name = cin "v";
+                 binding = Fact_from_origin (fid "F_cycle_b", oid "O2") } ];
+  } in
+  let action2 = { (action_origin_record "O2" "C_save" "D_save_v1") with
+    declared_facts = [ declared_f2 ];
+    inputs = [ { input_name = cin "v";
+                 binding = Fact_from_origin (fid "F_cycle_a", oid "O1") } ];
+  } in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record;
+                     Action_origin action1; Action_origin action2 ];
+    entry_origin = Some (oid "O1");
+    success_continuations = [
+      { from_origin = oid "O1"; target = Origin_target (oid "O2") };
+      { from_origin = oid "O2"; target = Program_complete };
+    ];
+    capability_contracts = [ cap_contract "C_notify" "D_notify_v1";
+                             cap_contract "C_save" "D_save_v1" ];
+  } in
+  assert_error "fact dependency cycle rejected" (validate program)
+
+(* 3A-4: Global program/template Origin collision *)
+let test_global_origin_collision () =
+  let action_prog = action_origin_record "O_collide" "C_notify" "D_notify_v1" in
+  let action_item = action_origin_record "O_collide" "C_save" "D_save_v1" in
+  let item =
+    { item_template_id = tid "IT_collide";
+      origin_sites = [ Action_origin action_item ];
+      branches = [];
+      roles = [];
+      objective = Required_role (rid "R_nonexistent");
+    }
+  in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record; Action_origin action_prog ];
+    item_templates = [ item ];
+    capability_contracts = [ cap_contract "C_notify" "D_notify_v1" ];
+  } in
+  assert_has_error (Duplicate_origin_id (oid "O_collide"))
+    "global origin collision rejected" (validate program)
+
+(* 3A-5: Missing Fact_from_origin Fact *)
+let test_missing_fact_from_origin () =
+  let declared_f =
+    { fact_id = fid "F_exists";
+      schema_description = "";
+      provenance = Origin_provenance (oid "O2");
+    }
+  in
+  let action1 = { (action_origin_record "O1" "C_notify" "D_notify_v1") with
+    inputs = [ { input_name = cin "v";
+                 binding = Fact_from_origin (fid "F_missing", oid "O1") } ];
+  } in
+  let action2 = { (action_origin_record "O2" "C_save" "D_save_v1") with
+    declared_facts = [ declared_f ];
+  } in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record;
+                     Action_origin action1; Action_origin action2 ];
+    entry_origin = Some (oid "O1");
+    success_continuations = [
+      { from_origin = oid "O1"; target = Origin_target (oid "O2") };
+      { from_origin = oid "O2"; target = Program_complete };
+    ];
+    capability_contracts = [ cap_contract "C_notify" "D_notify_v1";
+                             cap_contract "C_save" "D_save_v1" ];
+  } in
+  assert_has_error (Missing_fact (fid "F_missing"))
+    "missing fact from origin rejected" (validate program)
+
+(* 3A-6: Missing Fact_through_role Fact *)
+let test_missing_fact_through_role () =
+  let role =
+    { role_id = rid "R_ex";
+      scope = Program_scope;
+      fact_contract = Role_fact_contract [ fid "F_exists" ];
+      eligible_fulfillment = role_fulfillment_of_string "opaque";
+    }
+  in
+  let action = action_with_inputs "O1" "C_notify" "D_notify_v1"
+    [ { input_name = cin "v";
+        binding = Fact_through_role (fid "F_missing_st", rid "R_ex") } ]
+  in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record; Action_origin action ];
+    roles = [ role ];
+  } in
+  assert_has_error (Missing_fact (fid "F_missing_st"))
+    "missing fact through role rejected" (validate program)
+
+(* 3A-7: Program cannot steal Item Role *)
+let test_program_cannot_use_item_role () =
+  let item_role =
+    { role_id = rid "R_item";
+      scope = Item_template_scope (tid "IT_scope");
+      fact_contract = Role_fact_contract [ fid "F_file_type" ];
+      eligible_fulfillment = role_fulfillment_of_string "opaque";
+    }
+  in
+  let item =
+    { item_template_id = tid "IT_scope";
+      origin_sites = [];
+      branches = [];
+      roles = [ item_role ];
+      objective = Required_role (rid "R_item");
+    }
+  in
+  let action = action_with_inputs "O1" "C_notify" "D_notify_v1"
+    [ { input_name = cin "v";
+        binding = Fact_through_role (fid "F_file_type", rid "R_item") } ]
+  in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record; Action_origin action ];
+    item_templates = [ item ];
+  } in
+  assert_has_error (Missing_role (rid "R_item"))
+    "program cannot use item role rejected" (validate program)
+
+(* 3A-8: Template isolation - cross-template Role reference *)
+let test_cross_template_role_isolation () =
+  let role_t2 =
+    { role_id = rid "R_t2";
+      scope = Item_template_scope (tid "IT_B");
+      fact_contract = Role_fact_contract [ fid "F_file_type" ];
+      eligible_fulfillment = role_fulfillment_of_string "opaque";
+    }
+  in
+  let item2 =
+    { item_template_id = tid "IT_B";
+      origin_sites = [];
+      branches = [];
+      roles = [ role_t2 ];
+      objective = Required_role (rid "R_t2");
+    }
+  in
+  let action = action_with_inputs "O_item_a" "C_notify" "D_notify_v1"
+    [ { input_name = cin "v";
+        binding = Fact_through_role (fid "F_file_type", rid "R_t2") } ]
+  in
+  let dummy_role =
+    { role_id = rid "R_dummy_a";
+      scope = Item_template_scope (tid "IT_A");
+      fact_contract = Role_fact_contract [];
+      eligible_fulfillment = role_fulfillment_of_string "opaque";
+    }
+  in
+  let item1 =
+    { item_template_id = tid "IT_A";
+      origin_sites = [ Action_origin action ];
+      branches = [];
+      roles = [ dummy_role ];
+      objective = Required_role (rid "R_dummy_a");
+    }
+  in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record ];
+    item_templates = [ item1; item2 ];
+    entry_origin = None;
+    success_continuations = [];
+  } in
+  assert_has_error (Missing_role (rid "R_t2"))
+    "cross-template role isolation rejected" (validate program)
+
+(* 3A-9: Correct same-template Role *)
+let test_same_template_role_valid () =
+  let role_t =
+    { role_id = rid "R_own";
+      scope = Item_template_scope (tid "IT_own");
+      fact_contract = Role_fact_contract [];
+      eligible_fulfillment = role_fulfillment_of_string "opaque";
+    }
+  in
+  let action = action_origin_record "O_item" "C_notify" "D_notify_v1" in
+  let item =
+    { item_template_id = tid "IT_own";
+      origin_sites = [ Action_origin action ];
+      branches = [];
+      roles = [ role_t ];
+      objective = Required_role (rid "R_own");
+    }
+  in
+  let program = { (basic_program ()) with
+    origin_sites = [ Anchor_origin anchor_origin_record ];
+    item_templates = [ item ];
+    entry_origin = None;
+    success_continuations = [];
+  } in
+  assert_ok "same template role valid" (validate program)
+
+(* ------------------------------------------------------------------ *)
 (*  Run all tests                                                      *)
 (* ------------------------------------------------------------------ *)
 
@@ -930,4 +1208,13 @@ let () =
   test_duplicate_item_template_id ();
   test_duplicate_role_id ();
   test_duplicate_branch_id ();
+  test_fact_origin_no_self_cycle ();
+  test_real_fact_dependency ();
+  test_fact_dependency_cycle ();
+  test_global_origin_collision ();
+  test_missing_fact_from_origin ();
+  test_missing_fact_through_role ();
+  test_program_cannot_use_item_role ();
+  test_cross_template_role_isolation ();
+  test_same_template_role_valid ();
   Printf.printf "PASS all validator tests (%d/%d)\n" !tests_passed !tests_run
