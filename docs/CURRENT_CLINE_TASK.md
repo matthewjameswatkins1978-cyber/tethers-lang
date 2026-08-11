@@ -6,9 +6,9 @@ Task: `TETHERS CORE-6A — Anchor Snapshot Binding`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `NOT YET COMMITTED`
+Implementation checkpoint: `9333cd71ed080792a348ff2bef0d677540133943`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
