@@ -6,9 +6,9 @@ Task: `TETHERS CORE-5A — Minimal Core → Runtime Plan Bridge`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `10596e0a2a7222c211d6d1b048ae923dba60c2ec`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
