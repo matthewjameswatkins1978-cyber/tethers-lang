@@ -76,9 +76,10 @@ changes. No Rust changes. No evaluator/protocol/outcome changes.
 ## Publication evidence
 
 Branch pushed: `origin/feature/core-2-human-to-core-lowering` (continued from
-CORE-2). Full remote HEAD SHA resolved after the final push:
-`7b46ef601ee1c778bcbd028849855385db5cfec0`. Local `HEAD == remote HEAD`:
-confirmed. Final `git status --short --branch`: clean.
+CORE-2). The branch was pushed normally to `origin`; local `HEAD` was confirmed
+equal to the resolved remote `HEAD` after the push, and final
+`git status --short --branch` was clean. The exact full remote `HEAD` SHA is
+recorded in the completion report.
 
 ## Discoveries
 
