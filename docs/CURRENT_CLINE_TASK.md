@@ -2,11 +2,11 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-4 — Canonicalisation + ProgramDigest`
+Task: `TETHERS CORE-4A — Canonical Identity Correction`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `f535713a83c3449f81dfd8c4cb624b4ba90f9dc2`
+Implementation checkpoint: `fb8ee33de05eadba028e35f343411a76802acc92`
 
 Status: `COMPLETE`
 

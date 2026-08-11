@@ -1,6 +1,6 @@
 # Worker Note
 
-Task: `TETHERS CORE-4 — Canonicalisation + ProgramDigest`
+Task: `TETHERS CORE-4A — Canonical Identity Correction`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
@@ -8,15 +8,21 @@ Owner: `OpenCode`
 
 Status: `COMPLETE`
 
-Base commit: `7e94924d813bb7bd29ff234559cdb590bdddd016`
+Base commit: `7efec4b1eb69c37c98b3e6b71a7b2e1d8a9260f5`
 
-Implementation checkpoint: `f535713a83c3449f81dfd8c4cb624b4ba90f9dc2`
+Implementation checkpoint: `fb8ee33de05eadba028e35f343411a76802acc92`
 
 ## Requested outcome
 
-Implement the first authoritative canonical semantic identity layer for Tethers Core: semantic projection, structural fingerprinting, canonical ordering, internal ID assignment, reference rewriting, canonical byte encoding, SHA-256, and ProgramDigest. Same semantic meaning must produce same canonical bytes and ProgramDigest regardless of temporary IDs or storage order.
+CORE-4: Implement the first authoritative canonical semantic identity layer for Tethers Core. CORE-4A: Correct defects found by Lucy's independent review — remove raw-ID leaks from structural keys, complete batch canonicalisation, scope-qualify role identity, add guard-based refinement, replace expanding-string keys with color-compressed partition refinement, and add regression tests for each corrected leak.
 
-## Changes made
+## Changes made (CORE-4A)
+
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical.ml` — rewritten core fingerprinting and refinement (440 lines changed)
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_test.ml` — 14 new regression tests + real byte fixture (397 lines added)
+- Total canonicaliser tests: 42 (28 original + 14 new)
+
+### CORE-4 original changes
 
 - `tethers-0.1/engine-ocaml/bin/tethers_core_canonical.ml` — new (implementation, ~960 lines)
 - `tethers-0.1/engine-ocaml/bin/tethers_core_canonical.mli` — new (interface)
@@ -28,9 +34,23 @@ Implement the first authoritative canonical semantic identity layer for Tethers 
 
 ## Decisions and assumptions
 
-1. **Structural fingerprinting via iterative refinement**: Each entity gets a structural key computed by iterative Weisfeiler-Lehman-style refinement over the typed Core graph. Round 0 keys include only scalar semantic fields. Each subsequent round incorporates neighbor keys from the previous round. Refinement runs until fixpoint (converges in 2-3 iterations for the current Core structure, capped at 20).
+### CORE-4A corrections
 
-2. **Canonical ID assignment**: Entities are sorted by their final structural key (string comparison) and assigned sequential canonical IDs: O1, O2... (Origins), F1, F2... (Facts), R1, R2... (Roles), B1, B2... (Branches), G1, G2... (Groups), BA1, BA2... (Batches), IT1, IT2... (ItemTemplates). External semantic IDs (CapabilityId, CapabilityContractDigest, HostSnapshotKey, CoreVersion, CapabilityInputName) are NOT renumbered.
+1. **Color-compressed partition refinement**: Replaced expanding-string key scheme with deterministic polynomial-hash color compression (`color_of_string = djb2 variant`). Prevents unbounded key growth while preserving deterministic comparison. Stable refinement terminates when all entity key maps are unchanged between rounds (capped at 200 for safety).
+
+2. **Scoped role identity**: Role keys now qualified by containing scope (`"P:" ^ rid_s` for Program_scope, `"T:" ^ tid_s ^ ":" ^ rid_s` for Template_scope). Two templates each using local "R1" receive distinct keys.
+
+3. **Raw-ID removal**: Together_origin no longer hashes raw GroupId strings. Anchor_value/Fact_from_origin bindings use `lookup_origin keys` / `lookup_fact keys` for referenced entities. Branch subject uses `lookup_origin keys`. All raw incoming internal ID strings are lookup handles only.
+
+4. **Guard-based fact refinement**: `build_guard_refs p` collects entry_guards grouped by fact_id, contributing `:g=<sorted_val_keys>` to fact structural keys. Distinguishes structurally identical facts referenced by different guard operators/values.
+
+5. **Graph-position refinement**: `build_origin_refs p` tags origins as "entry", "sc_from", or "sc_to" based on their role in the control flow graph. These tags contribute to origin structural keys, distinguishing otherwise identical origins by their graph position.
+
+6. **Group identity**: Groups derive canonical ordering from their Together origin's position in the sorted origin list, never from raw GroupId spelling.
+
+7. **Complete batch collection**: Batches have their own `all_batches` collection and key map. `all_facts` includes facts from origins AND batches. BatchIds receive canonical BA1.. IDs from batch structural keys.
+
+### CORE-4 original decisions
 
 3. **Canonical byte encoding**: Uses a tagged, self-delimiting format with version prefix `TETHERS_CORE_CANON_V1\x00`. Strings are length-prefixed (`<len>:<bytes>`), integers are decimal-terminated (`<digits>;`), lists are count-prefixed (`<count>:<items>`), variants and options use explicit tags. No whitespace, no platform-dependent newlines. Fields excluded: `program_id`, `schema_description` (on fact and capability_contract).
 
@@ -42,18 +62,17 @@ Implement the first authoritative canonical semantic identity layer for Tethers 
 
 ## Evidence
 
-All commands run against implementation checkpoint `f535713a83c3449f81dfd8c4cb624b4ba90f9dc2`.
+All commands run against implementation checkpoint `fb8ee33de05eadba028e35f343411a76802acc92`.
 
 | Command | Result |
 | --- | --- |
-| `dune build @all` | PASS (no output, exit 0) |
-| `dune runtest` | PASS (all tests, including CORE-3 validator and CORE-2 lowerer) |
-| `git diff --check` | PASS (no trailing whitespace) |
-| `cargo fmt --check` | PASS (exit 0, RUST_UNCHANGED) |
+| `dune build @all` | PASS (exit 0) |
+| `dune runtest` | PASS (42 new + all existing validator/lowerer) |
+| `git diff --check` | PASS |
+| `cargo fmt --check` | PASS (RUST_UNCHANGED) |
 | `git status --short` | PASS (clean) |
-| `git diff --stat` | 7 files changed, 1875 insertions, 61 deletions |
 
-**New tests:** 28 focused tests covering:
+**New tests:** 42 focused tests covering:
 - A: Baseline valid canonicalisation
 - B: Determinism (identical inputs → identical outputs)
 - C: Temporary Origin ID independence
