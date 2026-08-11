@@ -846,10 +846,18 @@ impl<'a> HostExecutionService<'a> {
                 };
             }
         };
-        let groups = plan
-            .get("groups")
-            .and_then(Value::as_array)
-            .map(Vec::as_slice);
+        let groups = match plan.get("groups") {
+            // Absent optional field: an ordinary sequential plan, exactly as
+            // pre-C1.  A present non-array value is malformed metadata and must
+            // never be silently reinterpreted as sequential execution.
+            None => None,
+            Some(Value::Array(groups)) => Some(groups.as_slice()),
+            Some(_) => {
+                return ExecutionServiceResult::InvalidData {
+                    message: "plan.groups was not an array".to_owned(),
+                };
+            }
+        };
         let items = match crate::plan_execution::build_plan_schedule(&actions, groups) {
             Ok(items) => items,
             Err(message) => {
@@ -2417,5 +2425,274 @@ mod tests {
             crate::replay::ExecutionId::parse("exec_00000000-0000-4000-8000-000000000001".into())
                 .unwrap();
         assert_eq!(id.as_str(), "exec_00000000-0000-4000-8000-000000000001");
+    }
+
+    // -----------------------------------------------------------------------
+    // C1C-1 — present non-array top-level plan.groups fails closed
+    // -----------------------------------------------------------------------
+
+    /// Build a minimal verified manifest for the runtime fixture.
+    fn c1c1_test_manifest() -> (String, String) {
+        let mut m = json!({
+            "manifest_format_version": "1.0",
+            "capability_name": "lantern.task.record",
+            "capability_version": 1,
+            "title": "Test Capability",
+            "description": "A test capability.",
+            "input_schema": {
+                "type": "object",
+                "properties": { "path": { "type": "string" } },
+                "required": ["path"]
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": { "result": { "type": "string" } }
+            },
+            "effects": ["test.effect"],
+            "permission_scope": null,
+            "reversibility": "reversible",
+            "determinism": "deterministic",
+            "idempotency": { "mechanism": "none" },
+            "confirmation_policy": {
+                "standing_permitted": false,
+                "per_call_required": true
+            },
+            "timeout_ms": 5000,
+            "retry_policy": {
+                "max_retries": 0,
+                "backoff_ms": 500,
+                "allowed_on": [],
+                "requires_idempotency_proof": false
+            },
+            "provider": {
+                "identity": "lantern-local",
+                "display_name": "Test Provider",
+                "identity_source": "host_configuration",
+                "description": "Host-assigned."
+            },
+            "binding": {
+                "kind": "mcp",
+                "server_name": "test-server",
+                "tool_name": "test_tool",
+                "adapter": null
+            }
+        });
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&m.to_string()).unwrap();
+        m["digest"] = json!(digest);
+        (m.to_string(), digest)
+    }
+
+    /// Build a real `PreparedRuntime` (config + tether + manifest on disk),
+    /// the established repository pattern for production-route host tests.
+    fn prepared_runtime_for_c1c1() -> (PreparedRuntime, PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("tethers-c1c1-runtime-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("tethers")).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        std::fs::write(
+            dir.join("tethers/record-completed-task.tether"),
+            "when event.task.completed if task.status == \"done\" do lantern.task.record",
+        )
+        .unwrap();
+
+        let (manifest_json, digest) = c1c1_test_manifest();
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "example.local",
+                "version": "1",
+                "tethers": [
+                    {
+                        "id": "record-completed-task",
+                        "version": "demo-v1",
+                        "source_path": "tethers/record-completed-task.tether"
+                    }
+                ],
+                "capability_requirements": [
+                    {
+                        "name": "lantern.task.record",
+                        "version": 1,
+                        "reason": "Record a completed task"
+                    }
+                ]
+            },
+            "providers": [
+                {
+                    "id": "lantern-local",
+                    "display_name": "Lantern Local",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": ["-NoProfile", "-File", "providers/lantern.ps1"],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "lantern.task.record",
+                            "version": 1,
+                            "manifest_path": "manifests/lantern-task-record.json",
+                            "pinned_digest": ""
+                        }
+                    ]
+                }
+            ],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    { "name": "lantern.task.record", "version": 1, "decision": "allow" }
+                ]
+            }
+        });
+        config["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+        let config_path = dir.join("tethers-config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = crate::configured_runtime::prepare_runtime(&loaded).unwrap();
+        (prepared, dir)
+    }
+
+    /// A matched planner response with the given `plan.actions` and optional
+    /// `plan.groups` value, exactly as `dispatch_matched_plan` consumes it.
+    fn c1c1_matched_response(actions: Vec<Value>, groups: Option<Value>) -> Value {
+        let mut plan = json!({
+            "id": "plan-c1c1",
+            "actions": actions,
+        });
+        if let Some(groups) = groups {
+            plan["groups"] = groups;
+        }
+        json!({
+            "status": "matched",
+            "evaluation_id": "eval-correlation-1",
+            "plan": plan,
+            "trail": [],
+        })
+    }
+
+    fn c1c1_actions() -> Vec<Value> {
+        vec![
+            json!({
+                "action_id": "a1",
+                "idempotency_key": "eval-correlation-1/a1",
+                "capability": "lantern.task.record",
+                "capability_version": "1.0.0",
+                "bridge_capability_version": 1,
+                "bridge_provider_identity": "lantern-local",
+                "arguments": {},
+            }),
+            json!({
+                "action_id": "a2",
+                "idempotency_key": "eval-correlation-1/a2",
+                "capability": "lantern.task.record",
+                "capability_version": "1.0.0",
+                "bridge_capability_version": 1,
+                "bridge_provider_identity": "lantern-local",
+                "arguments": {},
+            }),
+        ]
+    }
+
+    /// A present non-array top-level `plan.groups` value is malformed metadata
+    /// and must be rejected as `InvalidData` before any Action dispatch — it
+    /// must never be silently reinterpreted as sequential execution.  Absent
+    /// groups and a present JSON array must both proceed as valid plans.
+    ///
+    /// Dispatch is observed through the real production route
+    /// (`dispatch_matched_plan` on a real `HostExecutionService` backed by a
+    /// real `PreparedRuntime`).  `FileTrail::open` is the last gate before
+    /// `execute_plan` / `execute_one_action`, so a trail file that was never
+    /// created proves zero executor or provider activity.
+    #[test]
+    fn c1c1_present_non_array_plan_groups_fails_closed_before_dispatch() {
+        let (runtime, runtime_dir) = prepared_runtime_for_c1c1();
+        let engine_path = PathBuf::from("unused-engine");
+        let input = planner_input();
+        let availability = ProviderAvailability::from_identities(["lantern-local"]);
+        let mut trail_paths = Vec::new();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let malformed_values = [
+                json!(null),
+                json!({ "group_id": "g1" }),
+                json!("carrot"),
+                json!(1),
+                json!(true),
+            ];
+            for (index, malformed) in malformed_values.iter().enumerate() {
+                let trail_path = std::env::temp_dir().join(format!(
+                    "tethers-c1c1-malformed-{}-{}.jsonl",
+                    index,
+                    uuid::Uuid::new_v4().simple()
+                ));
+                trail_paths.push(trail_path.clone());
+                let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
+                let mut sessions: HashMap<String, RetainedProviderSession> = HashMap::new();
+                let mut approvals = crate::approval::ApprovalStore::default();
+                let result = service.dispatch_matched_plan(
+                    &input,
+                    c1c1_matched_response(c1c1_actions(), Some(malformed.clone())),
+                    &mut sessions,
+                    &availability,
+                    &mut approvals,
+                );
+                assert!(
+                    matches!(&result, ExecutionServiceResult::InvalidData { message } if message.contains("plan.groups")),
+                    "present non-array plan.groups ({malformed:?}) must fail closed, got: {result:?}"
+                );
+                assert!(
+                    !trail_path.exists(),
+                    "malformed plan.groups must stop before Trail open / any executor or provider activity"
+                );
+            }
+
+            for (label, groups) in [
+                ("absent", None::<Value>),
+                (
+                    "valid_array",
+                    Some(json!([
+                        { "group_id": "g1", "member_action_ids": ["a1", "a2"] }
+                    ])),
+                ),
+            ] {
+                let trail_path = std::env::temp_dir().join(format!(
+                    "tethers-c1c1-{label}-{}.jsonl",
+                    uuid::Uuid::new_v4().simple()
+                ));
+                trail_paths.push(trail_path.clone());
+                let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
+                let mut sessions: HashMap<String, RetainedProviderSession> = HashMap::new();
+                let mut approvals = crate::approval::ApprovalStore::default();
+                let result = service.dispatch_matched_plan(
+                    &input,
+                    c1c1_matched_response(c1c1_actions(), groups),
+                    &mut sessions,
+                    &availability,
+                    &mut approvals,
+                );
+                assert!(
+                    !matches!(&result, ExecutionServiceResult::InvalidData { message } if message.contains("plan.groups")),
+                    "{label} plan.groups must not be rejected as malformed, got: {result:?}"
+                );
+                assert!(
+                    trail_path.exists(),
+                    "{label} plan.groups must proceed to Trail open (dispatch begins), got: {result:?}"
+                );
+            }
+        }));
+
+        let _ = std::fs::remove_dir_all(&runtime_dir);
+        for path in &trail_paths {
+            let _ = std::fs::remove_file(path);
+        }
+        if let Err(e) = result {
+            std::panic::resume_unwind(e);
+        }
     }
 }
