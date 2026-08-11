@@ -9,6 +9,10 @@
     host-supplied evaluation-input Facts and the Conditions over them, and
     structured Anchor event-data bindings used by Action arguments.
 
+    CORE-1B adds named capability inputs and explicit success-continuation
+    flow so Action meaning and sequential execution are representational,
+    not derived from hidden list ordering.
+
     The critical invariant is that each identity-bearing type is a distinct
     OCaml type.  [OriginId] and [RoleId] are not interchangeable string
     aliases. *)
@@ -61,6 +65,7 @@ val string_of_item_template_id : item_template_id -> string
 type capability_contract_digest = private Capability_contract_digest of string
 type core_version = private Core_version of string
 type host_snapshot_key = private Host_snapshot_key of string
+type capability_input_name = private Capability_input_name of string
 
 val capability_contract_digest_of_string :
   string -> capability_contract_digest
@@ -72,6 +77,9 @@ val string_of_core_version : core_version -> string
 
 val host_snapshot_key_of_string : string -> host_snapshot_key
 val string_of_host_snapshot_key : host_snapshot_key -> string
+
+val capability_input_name_of_string : string -> capability_input_name
+val string_of_capability_input_name : capability_input_name -> string
 
 (* ------------------------------------------------------------------ *)
 (*  Core primitive types                                               *)
@@ -151,8 +159,22 @@ type input_binding =
   | Batch_item_context of item_template_id
 
 (* ------------------------------------------------------------------ *)
+(*  Action Input                                                       *)
+(* ------------------------------------------------------------------ *)
+
+type action_input = {
+  input_name : capability_input_name;
+  binding : input_binding;
+}
+
+(* ------------------------------------------------------------------ *)
 (*  Origin Sites                                                       *)
 (* ------------------------------------------------------------------ *)
+
+(** Ordering of [origin_sites] within a [program] is representational
+    storage order only and MUST NOT determine runtime execution order.
+    Execution meaning comes from [entry_origin], explicit normal success
+    continuations, Branch semantics, and composite scheduling. *)
 
 type anchor_origin = {
   anchor_origin_id : origin_id;
@@ -164,7 +186,7 @@ type action_origin = {
   action_origin_id : origin_id;
   capability_id : capability_id;
   contract_digest : capability_contract_digest;
-  input_bindings : input_binding list;
+  inputs : action_input list;
   declared_facts : fact list;
   execution_constraints : execution_constraint list;
 }
@@ -208,6 +230,22 @@ type origin_site =
   | Action_origin of action_origin
   | Together_origin of together_origin
   | Batch_site of batch_site
+
+(* ------------------------------------------------------------------ *)
+(*  Control Flow                                                       *)
+(* ------------------------------------------------------------------ *)
+
+type control_target =
+  | Origin_target of origin_id
+  | Program_complete
+
+type success_continuation = {
+  from_origin : origin_id;
+  target : control_target;
+}
+(** The ordinary successful path from one Origin to its successor.
+    FAILURE, UNCERTAIN, and CANCELLED continuations are part of the
+    separate Branch routing construct, not this type. *)
 
 (* ------------------------------------------------------------------ *)
 (*  Branch                                                             *)
@@ -279,6 +317,8 @@ type program = {
   core_version : core_version;
   input_facts : fact list;
   entry_guards : fact_guard list;
+  entry_origin : origin_id option;
+  success_continuations : success_continuation list;
   origin_sites : origin_site list;
   branches : branch list;
   roles : role list;

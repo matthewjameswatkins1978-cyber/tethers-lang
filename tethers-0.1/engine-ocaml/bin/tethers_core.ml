@@ -38,6 +38,7 @@ let string_of_item_template_id (Item_template_id s) = s
 type capability_contract_digest = Capability_contract_digest of string
 type core_version = Core_version of string
 type host_snapshot_key = Host_snapshot_key of string
+type capability_input_name = Capability_input_name of string
 
 let capability_contract_digest_of_string s = Capability_contract_digest s
 let string_of_capability_contract_digest (Capability_contract_digest s) = s
@@ -47,6 +48,9 @@ let string_of_core_version (Core_version s) = s
 
 let host_snapshot_key_of_string s = Host_snapshot_key s
 let string_of_host_snapshot_key (Host_snapshot_key s) = s
+
+let capability_input_name_of_string s = Capability_input_name s
+let string_of_capability_input_name (Capability_input_name s) = s
 
 type terminal_outcome =
   | Success
@@ -105,6 +109,11 @@ type input_binding =
   | Anchor_value of origin_id * string list
   | Batch_item_context of item_template_id
 
+type action_input = {
+  input_name : capability_input_name;
+  binding : input_binding;
+}
+
 type anchor_origin = {
   anchor_origin_id : origin_id;
   event_name : string;
@@ -115,7 +124,7 @@ type action_origin = {
   action_origin_id : origin_id;
   capability_id : capability_id;
   contract_digest : capability_contract_digest;
-  input_bindings : input_binding list;
+  inputs : action_input list;
   declared_facts : fact list;
   execution_constraints : execution_constraint list;
 }
@@ -157,6 +166,15 @@ type origin_site =
   | Action_origin of action_origin
   | Together_origin of together_origin
   | Batch_site of batch_site
+
+type control_target =
+  | Origin_target of origin_id
+  | Program_complete
+
+type success_continuation = {
+  from_origin : origin_id;
+  target : control_target;
+}
 
 type branch_target =
   | Continue_to of origin_id
@@ -208,6 +226,8 @@ type program = {
   core_version : core_version;
   input_facts : fact list;
   entry_guards : fact_guard list;
+  entry_origin : origin_id option;
+  success_continuations : success_continuation list;
   origin_sites : origin_site list;
   branches : branch list;
   roles : role list;
