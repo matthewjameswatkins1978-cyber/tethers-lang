@@ -1,20 +1,37 @@
 (** Core → Runtime Plan bridge.
 
-    CORE-5A is the first executable vertical slice from validated Tethers
-    Core meaning toward the existing Runtime Plan representation
-    ([Tethers_outcome.plan]).  It consumes Core meaning: it never executes
-    Actions, never authorises, never repairs invalid Core, never infers
-    missing semantics, and never reinterprets the program.
+    CORE-5B is the runtime-plan boundary slice from validated Tethers Core to
+    the existing Runtime Plan representation ([Tethers_outcome.plan]).  It
+    combines what Core means, this runtime occurrence, and approved host
+    Capability projections into a concrete Runtime Plan request.
 
-    Sequential execution order is derived from the semantic control-flow
-    graph ([entry_origin] then [success_continuation] edges, stopping at
-    [Program_complete]), never from [origin_sites] storage order.
+    Core defines the program.  Runtime instantiates an occurrence.  The bridge
+    never executes Actions, never authorises, never repairs invalid Core, never
+    infers missing semantics, and never reinterprets the program.  The Plan
+    remains a request, not permission. *)
 
-    The bridge reuses [Tethers_outcome.plan] as its Runtime Plan model.  It
-    does not create a second competing model.  A valid plan contains only
-    real Core content: every field is either genuine Core meaning or absent.
-    No placeholder strings, no "TODO" values, and no fabricated evaluation
-    IDs may enter a valid plan. *)
+type runtime_capability_projection = {
+  capability_id : Tethers_core.capability_id;
+  (** Core capability identity this projection is approved for. *)
+  contract_digest : Tethers_core.capability_contract_digest;
+  (** Core-pinned contract digest the projection must match exactly. *)
+  runtime : Tethers_protocol.capability;
+  (** Existing runtime capability schema carrying the plan-relevant fields:
+      name, version, effects, and optional bridge metadata (manifest digest,
+      bridge capability version, bridge provider identity). *)
+}
+(** Approved runtime Capability projection keyed and pinned by the Core
+    capability identity and contract digest.  The bridge never trusts the full
+    manifest; it copies planning-relevant fields from this projection. *)
+
+type planning_context = {
+  evaluation_id : string;
+  (** Runtime execution occurrence identity.  Occurrence-derived Plan and
+      idempotency identities must derive from this value, never from
+      [program_id]. *)
+  capabilities : runtime_capability_projection list;
+  (** Approved runtime Capability projections supplied by the host. *)
+}
 
 type planning_error =
   | Invalid_core of Tethers_core_validator.validation_error list
@@ -22,6 +39,10 @@ type planning_error =
   | Missing_entry_origin
   (** Valid Core declares no [entry_origin]; there is no control path to
       start the sequential plan. *)
+  | Incomplete_success_path of Tethers_core.origin_id
+  (** A reachable sequential path ran out of continuation at this origin:
+      runtime execution order must reach [Program_complete] explicitly.
+      Running out of continuation is incomplete meaning, not completion. *)
   | Unsupported_together
   (** [Together_origin] present: physical concurrency is outside the
       sequential runtime-plan vocabulary. *)
@@ -51,6 +72,17 @@ type planning_error =
   | Unsupported_item_template
   (** [item_template] present: item/batch execution is outside the
       sequential runtime-plan vocabulary. *)
+  | Missing_capability_projection of Tethers_core.capability_id
+  (** No approved projection exists for this Core capability identity. *)
+  | Capability_projection_identity_mismatch of Tethers_core.capability_id
+  (** The contract digest is approved but only under a different Core
+      capability identity; the bridge must not silently substitute it. *)
+  | Capability_projection_digest_mismatch of Tethers_core.capability_id
+  (** A projection exists for the capability identity but its pinned
+      contract digest differs from the Core-pinned digest. *)
+  | Capability_projection_incomplete of Tethers_core.capability_id
+  (** The approved projection lacks required runtime metadata (empty
+      capability name or version, or partially present bridge fields). *)
   | Flow_cycle of Tethers_core.origin_id list
   (** Defensive: unreachable for validated Core, which rejects success
       cycles.  Guards the walk against a hang. *)
@@ -60,14 +92,24 @@ type planning_error =
 
 val plan :
   Tethers_core.program ->
+  planning_context ->
   (Tethers_outcome.plan, planning_error) result
-(** Validate the Core program, reject unsupported constructs with the
-    precise errors above, then derive the sequential Runtime Plan by
-    walking [entry_origin] → [success_continuation] → … → [Program_complete].
+(** Validate the Core program, reject unsupported constructs with the precise
+    errors above, verify every planned capability against an approved pinned
+    projection, then derive the sequential Runtime Plan by walking
+    [entry_origin] → [success_continuation] → … → [Program_complete].
 
-    Every planned Action carries its [CapabilityId] and
-    [CapabilityContractDigest] exactly as semantic atoms.  Literal Action
-    inputs become concrete argument values.  [plan.id] is the program's
-    logical identity ([program_id]); no evaluation ID is fabricated.
-    [required_effects] and [groups] are empty because Core declares no
-    effects in this bridge and Together execution is unsupported. *)
+    Every reachable sequential path must terminate explicitly at
+    [Program_complete]; a path that runs out of continuation fails with
+    [Incomplete_success_path].  Execution order derives only from semantic
+    control flow, never from [origin_sites] storage order.
+
+    Each planned Action carries the existing Runtime Plan contract fields:
+    [action_id], [idempotency_key] (derived from
+    [context.evaluation_id]), [capability] and [capability_version] (from the
+    approved projection), [arguments] (literal Core inputs as concrete
+    values), [effects], and the projection's bridge metadata fields when
+    present.  [plan.id] is [context.evaluation_id ^ "/plan"]; [program_id]
+    remains Core logical identity and is never used as an occurrence identity.
+    [required_effects] aggregates the planned capabilities' effects with
+    deterministic first-occurrence uniqueness. *)

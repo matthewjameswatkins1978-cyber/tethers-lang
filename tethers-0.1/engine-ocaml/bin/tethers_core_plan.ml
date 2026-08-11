@@ -5,6 +5,7 @@ open Tethers_outcome
 type planning_error =
   | Invalid_core of validation_error list
   | Missing_entry_origin
+  | Incomplete_success_path of origin_id
   | Unsupported_together
   | Unsupported_batch
   | Unsupported_branch
@@ -14,8 +15,23 @@ type planning_error =
   | Unsupported_anchor_value
   | Unsupported_execution_constraint
   | Unsupported_item_template
+  | Missing_capability_projection of capability_id
+  | Capability_projection_identity_mismatch of capability_id
+  | Capability_projection_digest_mismatch of capability_id
+  | Capability_projection_incomplete of capability_id
   | Flow_cycle of origin_id list
   | Unresolved_origin of origin_id
+
+type runtime_capability_projection = {
+  capability_id : capability_id;
+  contract_digest : capability_contract_digest;
+  runtime : Tethers_protocol.capability;
+}
+
+type planning_context = {
+  evaluation_id : string;
+  capabilities : runtime_capability_projection list;
+}
 
 (* ------------------------------------------------------------------ *)
 (*  Core value encoding                                                *)
@@ -112,15 +128,68 @@ let unsupported program =
             else None
 
 (* ------------------------------------------------------------------ *)
+(*  Runtime capability projection resolution                           *)
+(*                                                                     *)
+(*  The bridge never trusts the full manifest.  It resolves the         *)
+(*  approved projection keyed by the Core capability identity and       *)
+(*  contract digest, and fails closed on every mismatch.  It never      *)
+(*  substitutes another capability version or contract.                 *)
+(* ------------------------------------------------------------------ *)
+
+let projection_metadata_complete (p : runtime_capability_projection) =
+  p.runtime.name <> "" && p.runtime.version <> ""
+  &&
+  match
+    ( p.runtime.manifest_digest,
+      p.runtime.bridge_capability_version,
+      p.runtime.bridge_provider_identity )
+  with
+  | None, None, None | Some _, Some _, Some _ -> true
+  | _ -> false
+
+let projection_of context capability_id contract_digest =
+  let by_id =
+    List.filter
+      (fun (p : runtime_capability_projection) -> p.capability_id = capability_id)
+      context.capabilities
+  in
+  match by_id with
+  | [] ->
+      let by_digest =
+        List.filter
+          (fun (p : runtime_capability_projection) ->
+            p.contract_digest = contract_digest)
+          context.capabilities
+      in
+      if by_digest = [] then Error (Missing_capability_projection capability_id)
+      else Error (Capability_projection_identity_mismatch capability_id)
+  | _ -> (
+      match
+        List.find_opt
+          (fun (p : runtime_capability_projection) ->
+            p.contract_digest = contract_digest)
+          by_id
+      with
+      | None -> Error (Capability_projection_digest_mismatch capability_id)
+      | Some projection ->
+          if projection_metadata_complete projection then Ok projection
+          else Error (Capability_projection_incomplete capability_id))
+
+(* ------------------------------------------------------------------ *)
 (*  Action planning                                                    *)
 (*                                                                     *)
 (*  Only literal inputs reach this point: the pre-scan rejects every    *)
-(*  binding the sequential plan cannot carry.  The result keeps the     *)
+(*  binding the sequential plan cannot carry.  Each planned Action      *)
+(*  carries the existing Runtime Plan Action contract: [action_id],     *)
+(*  [idempotency_key] derived from the occurrence context,              *)
+(*  [capability] and [capability_version] from the approved projection, *)
+(*  [arguments] as concrete values, [effects], and the projection's     *)
+(*  bridge metadata fields when present.  The result keeps the          *)
 (*  function total and honest even though the non-literal branches are  *)
 (*  unreachable for a program that passed the pre-scan.                 *)
 (* ------------------------------------------------------------------ *)
 
-let plan_action index (a : action_origin) =
+let plan_action context index (a : action_origin) =
   let rec build_arguments acc = function
     | [] -> Ok (List.rev acc)
     | (ai : action_input) :: rest -> (
@@ -135,27 +204,59 @@ let plan_action index (a : action_origin) =
   in
   match build_arguments [] a.inputs with
   | Error _ as err -> err
-  | Ok arguments ->
-      Ok
-        (`Assoc
-          [
-            ("action_id", `String ("action_" ^ string_of_int index));
-            ("capability", `String (string_of_capability_id a.capability_id));
-            ( "capability_contract_digest",
-              `String
-                (string_of_capability_contract_digest a.contract_digest) );
-            ("arguments", `Assoc arguments);
-          ])
+  | Ok arguments -> (
+      match projection_of context a.capability_id a.contract_digest with
+      | Error _ as err -> err
+      | Ok projection ->
+          let action_id = "action_" ^ string_of_int index in
+          let idempotency_key = context.evaluation_id ^ "/" ^ action_id in
+          let base_fields =
+            [
+              ("action_id", `String action_id);
+              ("idempotency_key", `String idempotency_key);
+              ("capability", `String projection.runtime.name);
+              ("capability_version", `String projection.runtime.version);
+              ("arguments", `Assoc arguments);
+              ( "effects",
+                `List
+                  (List.map (fun item -> `String item) projection.runtime.effects) );
+            ]
+          in
+          let bridge_fields =
+            (match projection.runtime.manifest_digest with
+            | Some digest -> [ ("manifest_digest", `String digest) ]
+            | None -> [])
+            @ (match projection.runtime.bridge_capability_version with
+              | Some version -> [ ("bridge_capability_version", `Int version) ]
+              | None -> [])
+            @ (match projection.runtime.bridge_provider_identity with
+              | Some provider -> [ ("bridge_provider_identity", `String provider) ]
+              | None -> [])
+          in
+          Ok (`Assoc (base_fields @ bridge_fields), projection.runtime.effects))
+
+(* ------------------------------------------------------------------ *)
+(*  Deterministic required-effects uniqueness                          *)
+(*                                                                     *)
+(*  Matches the existing evaluator contract: unique values preserving  *)
+(*  first-occurrence order across the planned Actions.                 *)
+(* ------------------------------------------------------------------ *)
+
+let unique_effects values =
+  List.fold_left
+    (fun acc value -> if List.mem value acc then acc else acc @ [ value ])
+    [] values
 
 (* ------------------------------------------------------------------ *)
 (*  Control-flow walk                                                  *)
 (*                                                                     *)
 (*  Sequential execution follows [entry_origin] then success            *)
-(*  continuations until [Program_complete].  An origin with no          *)
-(*  continuation ends the plan.  Anchor origins contribute no action.   *)
+(*  continuations.  Every reachable path must reach [Program_complete]  *)
+(*  explicitly; an origin with no continuation fails with               *)
+(*  [Incomplete_success_path].  Anchor origins contribute no action.    *)
 (* ------------------------------------------------------------------ *)
 
-let plan program =
+let plan program context =
   match validate program with
   | Error errors -> Error (Invalid_core errors)
   | Ok () -> (
@@ -176,7 +277,7 @@ let plan program =
               let site_of oid =
                 List.find_opt (fun s -> origin_id_of_site s = Some oid) sites
               in
-              let rec walk visited index acc oid =
+              let rec walk visited index planned effects oid =
                 if List.mem oid visited then
                   Error (Flow_cycle (List.rev (oid :: visited)))
                 else
@@ -185,29 +286,31 @@ let plan program =
                   | Some site -> (
                       match site with
                       | Anchor_origin _ ->
-                          advance (oid :: visited) index acc oid
+                          advance (oid :: visited) index planned effects oid
                       | Action_origin action -> (
-                          match plan_action index action with
+                          match plan_action context index action with
                           | Error _ as err -> err
-                          | Ok planned ->
+                          | Ok (planned_action, action_effects) ->
                               advance (oid :: visited) (index + 1)
-                                (planned :: acc) oid)
+                                (planned_action :: planned)
+                                (List.rev_append action_effects effects) oid)
                       | Together_origin _ -> Error Unsupported_together
                       | Batch_site _ -> Error Unsupported_batch)
-              and advance visited index acc oid =
+              and advance visited index planned effects oid =
                 match continuation_of oid with
-                | None -> Ok (List.rev acc)
-                | Some Program_complete -> Ok (List.rev acc)
+                | None -> Error (Incomplete_success_path oid)
+                | Some Program_complete ->
+                    Ok (List.rev planned, unique_effects (List.rev effects))
                 | Some (Origin_target next_oid) ->
-                    walk visited index acc next_oid
+                    walk visited index planned effects next_oid
               in
-              match walk [] 1 [] entry_oid with
+              match walk [] 1 [] [] entry_oid with
               | Error _ as err -> err
-              | Ok actions ->
+              | Ok (actions, required_effects) ->
                   Ok
                     {
-                      id = string_of_program_id program.program_id;
-                      required_effects = [];
+                      id = context.evaluation_id ^ "/plan";
+                      required_effects;
                       actions;
                       groups = [];
                     }))

@@ -27,5 +27,5 @@
 
 (test
   (name tethers_core_plan_test)
-  (modules tethers_core_plan_test tethers_core_plan tethers_core_validator tethers_core tethers_outcome)
+  (modules tethers_core_plan_test tethers_core_plan tethers_core_validator tethers_core tethers_outcome tethers_protocol tether_parser tethers_error)
   (libraries yojson))
