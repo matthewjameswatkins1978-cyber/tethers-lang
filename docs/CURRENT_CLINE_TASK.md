@@ -18,7 +18,7 @@ Worker note: `docs/worker-notes/2026-08-11-core-4-canonicalisation.md`
 
 Base branch: `feature/core-3-static-validator`
 
-Base commit: `7e94924d813bb7bd29ff234559cdb590bdddd016`
+Base commit: `7efec4b1eb69c37c98b3e6b71a7b2e1d8a9260f5`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
