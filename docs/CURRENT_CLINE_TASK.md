@@ -6,7 +6,7 @@ Task: `TETHERS-0.4-C1C — Together Execution / Join Correction`
 
 Owner: `OpenCode`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Task colour: `Amber`
 
@@ -18,7 +18,7 @@ Base branch: `feature/0.4-c1-together-fan-out-join`
 
 Base commit: `f688954e243f4b61b4e717d367e72772735c3418`
 
-Implementation checkpoint: `6519d92a06b54c64a38f931c65da446dcebd323a`
+Implementation checkpoint: `92d2a27a1c2f77c0db97cbcbe955a7d99634f83a` (C1C-1 correction; prior C1C checkpoint `6519d92a06b54c64a38f931c65da446dcebd323a`)
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -40,6 +40,25 @@ block later Actions on a non-success join). The planner implementation is
 retained and remains valid. This correction restores and completes the
 originally required host execution / join semantics. This is a scope
 correction, not a re-implementation.
+
+### C1C-1 correction bookkeeping
+
+Lucy's review of the pushed C1C result found one bounded acceptance defect in
+the plan-level dispatch route (`host_execution.rs::dispatch_matched_plan`):
+`plan.get("groups").and_then(Value::as_array)` silently mapped a PRESENT but
+non-array `plan.groups` value to `None`, making malformed top-level group
+metadata indistinguishable from an absent optional field and allowing
+sequential execution. The frozen rule being repaired is: never silently
+reinterpret invalid group metadata as sequential execution. C1C-1 corrects
+only that decode: absent `plan.groups` remains an ordinary sequential plan, a
+present JSON array is passed to `build_plan_schedule` unchanged, and a present
+any-other value (null / object / string / number / bool) returns
+`ExecutionServiceResult::InvalidData` before any Action dispatch. A focused
+production-route regression proves the rejection and that no executor/provider
+was invoked. No change to `build_plan_schedule`, group execution semantics,
+OCaml, dependencies, or any other C1C behaviour. Status is `IN_PROGRESS`
+while the committed correction awaits final verification (full completion
+suite deferred by Lucy's instruction).
 
 ## Objective
 
