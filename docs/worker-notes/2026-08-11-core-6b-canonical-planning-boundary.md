@@ -1,30 +1,35 @@
 # Worker Note
 
-- **Task:** `CORE-6B`
-- **Task packet:** `docs/CURRENT_CLINE_TASK.md`
-- **Owner:** OpenCode (MiMo-V2.5)
-- **Status:** `COMPLETE`
-- **Base Commit:** `534abc763938f573fa799619ffa22193206e3b15`
-- **Implementation Commit:** `dac6cce92287b2ad853b3f435063c96359c8d1e5`
+Task: `CORE-6B`
+
+Task packet: `docs/CURRENT_CLINE_TASK.md`
+
+Owner: `OpenCode`
+
+Status: `COMPLETE`
+
+Base commit: `534abc763938f573fa799619ffa22193206e3b15`
+
+Implementation checkpoint: `dac6cce92287b2ad853b3f435063c96359c8d1e5`
 
 ## Requested outcome
 
-Make the canonical Core → Runtime Plan boundary explicit and tested: add a
+Make the canonical Core to Runtime Plan boundary explicit and tested: add a
 `plan_canonicalized` entry point requiring already-canonicalised Core, prove
 identity invariance across ProgramId, temporary OriginId, and storage order
-variations, and prove the Human → parser → lowerer → canonicaliser → planner
+variations, and prove the Human to parser to lowerer to canonicaliser to planner
 chain works end-to-end with canonical Anchor snapshots.
 
 ## Changes made
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml` — added `canonical_plan`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml` -- added `canonical_plan`
   record type and `plan_canonicalized` function (12 lines)
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.mli` — exposed
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.mli` -- exposed
   `canonical_plan` type and `plan_canonicalized` signature with documentation
   (24 lines)
-- `tethers-0.1/engine-ocaml/bin/dune` — added `tethers_core_canonical` module
+- `tethers-0.1/engine-ocaml/bin/dune` -- added `tethers_core_canonical` module
   and `digestif` library to the plan-test stanza
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` — added 8 CORE-6B
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` -- added 8 CORE-6B
   test functions (439 lines), new test helpers `assert_ok_canonical` and
   `assert_ok_canonical_plan`
 
@@ -51,14 +56,14 @@ chain works end-to-end with canonical Anchor snapshots.
 
 ## Evidence
 
-- `dune build @all` — PASS (exit 0)
-- `dune runtest --force` — PASS
+- `dune build @all` -- PASS (exit 0)
+- `dune runtest --force` -- PASS
   - `PASS all lowerer tests (49/49)`
   - `PASS all validator tests (51/51)`
   - `PASS all plan bridge tests (101/101)` (was 93 before CORE-6B)
-- `git diff --check` — PASS (CRLF checkout warnings only)
-- `cargo fmt --all -- --check` — PASS (RUST_UNCHANGED)
-- `git status --short` — clean
+- `git diff --check` -- PASS (CRLF checkout warnings only)
+- `cargo fmt --all -- --check` -- PASS (RUST_UNCHANGED)
+- `git status --short` -- clean
 
 ### Test coverage
 
@@ -66,7 +71,7 @@ chain works end-to-end with canonical Anchor snapshots.
 |------|-------------|--------|
 | CB-T1 | Canonicalized entry point produces Runtime Plan | PASS |
 | CB-T2 | Returned ProgramDigest matches canonicalized digest | PASS |
-| CB-T3 | Human → parser → lowerer → canonicalize → planner E2E proof | PASS |
+| CB-T3 | Human to parser to lowerer to canonicalize to planner E2E proof | PASS |
 | CB-T4 | ProgramId variation leaves digest and occurrence unchanged | PASS |
 | CB-T5 | Pre-canonical ID variation canonicalises to equal plans | PASS |
 | CB-T6 | Anchor snapshot keyed by canonical OriginId resolves | PASS |
@@ -76,21 +81,24 @@ chain works end-to-end with canonical Anchor snapshots.
 ## Publication evidence
 
 - Branch pushed: `feature/core-6b-canonical-planning`
-- Remote HEAD SHA: `dac6cce92287b2ad853b3f435063c96359c8d1e5`
-- Local HEAD: `dac6cce92287b2ad853b3f435063c96359c8d1e5`
+- Remote HEAD SHA: `dac6cce92287b2ad853b3f435063c96359c8d1e5` (implementation commit)
+- Final remote HEAD SHA after closeout: `1fb791b` (closeout commits)
+- Local HEAD: `1fb791b`
 - Local HEAD == remote HEAD: confirmed
 - `git status --short`: clean
 
 ## Discoveries
 
-- `origin_id = private Origin_id of string` — the `private` keyword restricts
+- `origin_id = private Origin_id of string` -- the `private` keyword restricts
   construction but structural equality works correctly via `origin_id_of_string`.
 - Canonical Anchor OriginIds are assigned based on colour-sorted position (e.g.
   `O1`, `O2`), not by the pre-canonical name. Tests must locate the canonical
   OriginId dynamically from the canonical program's `origin_sites`.
 - The `assert_plan_error` helper uses structural equality on `planning_error`,
-  which means the full error payload (including OriginId) must match — string
-  representations are insufficient for comparison.
+  which means the full error payload (including OriginId) must match.
+- PowerShell `Get-Content -Raw` may mangle UTF-8 multi-byte characters like
+  em-dash and right-arrow. Field values in task packets and worker notes should
+  use ASCII equivalents.
 
 ## Remaining risks
 
