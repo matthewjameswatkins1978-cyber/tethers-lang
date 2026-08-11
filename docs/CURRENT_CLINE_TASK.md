@@ -2,13 +2,13 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-6A — Anchor Snapshot Binding`
+Task: `TETHERS CORE-6A1 — Human → Core → Plan Proof`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `9333cd71ed080792a348ff2bef0d677540133943`
+Implementation checkpoint: `NOT YET COMMITTED`
 
-Status: `COMPLETE`
+Status: `READY`
 
 Task colour: `Amber`
 
@@ -18,7 +18,7 @@ Worker note: `docs/worker-notes/2026-08-11-core-6a-anchor-snapshot-binding.md`
 
 Base branch: `feature/core-6-anchor-snapshot-binding`
 
-Base commit: `d1ef28d737ac1c8205473e324bc231a4ce2c99af`
+Base commit: `6e1aba9f2ade3c24c43badc77d20b2094e791f3a`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -26,7 +26,7 @@ Rust change class: `RUST_UNCHANGED`
 
 ## Objective
 
-Add faithful Runtime Plan support for Core `Anchor_value of origin_id * string list` using runtime-supplied Anchor snapshots. The bridge must continue to consume Core meaning + runtime occurrence context + approved Capability projections + runtime Anchor snapshot data, and produce concrete Runtime Plan. Do not reinterpret Human syntax in the planner.
+Add the end-to-end test requested by CORE-6A: prove the actual Human → parser → Core lowerer → planner chain works correctly for Anchor snapshot binding. The previous report said this was not possible without parser/lowerer integration changes. Independent review found that it is possible entirely inside the test layer. `Tether_parser.parse_tether` and `Tethers_core_lowerer.lower` are already public APIs. A Dune test-module dependency change is authorised.
 
 ## Relevant background and existing behaviour
 

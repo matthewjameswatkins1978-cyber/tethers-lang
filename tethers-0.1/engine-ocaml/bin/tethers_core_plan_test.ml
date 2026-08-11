@@ -1431,6 +1431,74 @@ let test_existing_fail_closed_fact_from_origin () =
     "T12 Fact_from_origin still fails closed" (plan program ctx)
 
 (* ================================================================== *)
+(*  E2E — Human → Parser → Lowerer → Planner proof                     *)
+(* ================================================================== *)
+
+let test_e2e_human_to_plan () =
+  (* Step 1: Human Tether source *)
+  let source = {|tether "anchor e2e"
+anchor
+    document.received
+when
+do
+    notify
+        title: anchor.document.title
+|} in
+  (* Step 2: Parse *)
+  let parsed = Tether_parser.parse_tether source in
+  assert_true "E2E parsed title" (parsed.title = "anchor e2e");
+  assert_true "E2E parsed anchor" (parsed.anchor = "document.received");
+  assert_true "E2E parsed no conditions" (parsed.conditions = []);
+  (* Step 3: Lower with explicit capability mapping *)
+  let env : Tethers_core_lowerer.lowering_environment = {
+    program_id = program_id_of_string "P_e2e";
+    core_version = core_version_of_string "0.1.0";
+    capabilities = [
+      { source_name = "notify";
+        capability_id = cid "cap.notify";
+        contract_digest = capability_contract_digest_of_string "sha256:e2e" };
+    ];
+    input_facts = [];
+  } in
+  let lowered = match Tethers_core_lowerer.lower env parsed with
+    | Ok p -> p
+    | Error _ -> assert_true "E2E lower ok" false; assert false
+  in
+  (* Step 4: Verify the lowered Core contains Anchor_value *)
+  let expected_origin = oid "O_anchor" in
+  (match lowered.origin_sites with
+   | [ Anchor_origin _; Action_origin ao ] ->
+       (match ao.inputs with
+        | [ { binding = Anchor_value (resolved_oid, path); _ } ] ->
+            assert_true "E2E anchor origin id" (resolved_oid = expected_origin);
+            assert_true "E2E anchor path" (path = [ "document"; "title" ])
+        | _ -> assert_true "E2E anchor binding shape" false)
+   | _ -> assert_true "E2E origin_sites shape" false);
+  (* Step 5: Plan with runtime snapshot *)
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_e2e"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:e2e" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  let p = assert_ok_plan "E2E plan" (plan lowered ctx) in
+  (* Step 6: Prove the planned argument is the resolved string *)
+  (match p.actions with
+   | [ action ] ->
+       assert_true "E2E planned argument"
+         (action_field "arguments" action =
+            `Assoc [ ("title", `String "Tethers") ])
+   | _ -> assert_true "E2E single-action shape" false)
+
+(* ================================================================== *)
 (*  RUN ALL TESTS                                                       *)
 (* ================================================================== *)
 
@@ -1470,4 +1538,5 @@ let () =
   test_non_object_traversal ();
   test_unsupported_terminal_json ();
   test_existing_fail_closed_fact_from_origin ();
+  test_e2e_human_to_plan ();
   Printf.printf "PASS all plan bridge tests (%d/%d)\n" !tests_passed !tests_run
