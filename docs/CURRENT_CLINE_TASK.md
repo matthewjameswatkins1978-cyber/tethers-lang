@@ -2,23 +2,23 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-2A — Ambiguous Environment Fail-Closed Correction`
+Task: `TETHERS CORE-3 — Static Core Validator`
 
 Owner: `OpenCode`
 
 Status: `COMPLETE`
 
-Task colour: `Green`
+Task colour: `Amber`
 
 Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
 
-Worker note: `docs/worker-notes/2026-08-11-core-2a-ambiguous-environment-fail-closed.md`
+Worker note: `docs/worker-notes/2026-08-11-core-3-static-validator.md`
 
 Base branch: `feature/core-2-human-to-core-lowering`
 
-Base commit: `ca7d013effef4bf1e697141651301561f573435c`
+Base commit: `68c3510188d0a6db464fbb2e1814f0ce87b4bc3b`
 
-Implementation checkpoint: `47cb5469d758cd0d2c4239a95f3c7ebe02de26bb`
+Implementation checkpoint: `b9763ad440d4500577535430a0e7f6b3b3d00910`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -30,100 +30,102 @@ Rust change class: `RUST_UNCHANGED`
 
 ## Objective
 
-Correct two ambiguity cases in CORE-2 lowering:
-
-1. duplicate Human Fact bindings must be reported as ambiguity, not
-   `Unknown_fact`;
-2. conflicting Capability contracts sharing one `CapabilityId` must never be
-   silently deduplicated.
-
-No architecture changes. No runtime wiring.
+Implement a standalone static validator for `Tethers_core.program`. The validator validates that a Core Program is internally well-formed according to current Core semantics. It MUST NOT repair, infer, reorder, canonicalise, or execute.
 
 ## Relevant background and existing behaviour
 
-CORE-2 established the `Tethers_core_lowerer` module translating the
-sequential Tethers 0.1 subset into dormant Core programs. Two fail-closed gaps
-remain in the lowering environment handling: `resolve_fact` mapped 2+ matches
-to `Unknown_fact` (absence and ambiguity were conflated), and the
-`capability_contracts` dedup silently retained the first digest seen for a
-given `capability_id`, allowing a Program whose Action Origins and pinned
-contract table disagree about semantic identity.
+CORE-2 lowered Human Tether AST to `Tethers_core.program` values. The lowerer enforces its own rules during translation but produces a Core Program whose internal consistency across the full Core vocabulary (identities, references, control flow, capability contracts, fact provenance, branches, roles, together, item templates, batch, deadlines) is not yet validated. CORE-3 adds that static validation as a separate pass.
+
+The existing evaluator path remains unchanged. Production still evaluates Human Tether source through the parser and evaluator directly, without Core. CORE-3 is a new side path: parse → lower → validate → stop.
 
 ## Required behaviour
 
-1. Add an explicit `Duplicate_fact` lowering error distinguishing duplicate
-   source-name Fact bindings from an unknown Fact.
-2. Change Fact resolution so 2+ matching input Fact bindings produce
-   `Duplicate_fact` instead of `Unknown_fact`.
-3. Detect when two used capability bindings share one `CapabilityId` but have
-   different contract digests and produce an explicit conflict error.
-4. Permit two source names resolving to the same `CapabilityId` with the same
-   digest to collapse into one `capability_contract` entry.
-5. Validate only the used semantic subset so unused conflicting environment
-   entries do not poison lowering.
-6. Leave Action Origin contract references unchanged.
+1. Validate identity uniqueness of all static semantic identities (OriginId, FactId, RoleId, CapabilityId, BranchId, GroupId, BatchId, ItemTemplateId) at Program scope including nested Item Template identities
+2. Validate origin reference integrity: every referenced OriginId resolves to an existing Origin Site (entry_origin, success_continuations, Branch subjects and targets, Together members, Anchor_value origins, Fact_from_origin origins)
+3. Validate entry integrity: actionable programs require a valid entry_origin; zero-Action programs may have None
+4. Validate success continuation integrity: no duplicate from_origin, cycle-free success-flow graph
+5. Reject success-flow cycles (self-cycle and multi-node)
+6. Validate capability contract integrity: every Action_origin matches a pinned program contract with same CapabilityId and contract digest
+7. Validate input fact integrity: unique FactIds, Evaluation_input provenance, guard facts declared
+8. Validate fact provenance integrity: Origin_provenance references existing Origin; Role_proxy references existing Role
+9. Validate fact dependency DAG: static provenance/dependency relationships must be acyclic
+10. Validate anchor binding integrity: referenced Origin exists and is an Anchor_origin, path non-empty with no empty components
+11. Validate fact-from-origin integrity: Fact provenance compatible with Origin
+12. Validate fact-through-role integrity: Role exists and Fact Contract exposes the Fact
+13. Validate branch integrity: unique BranchId, outcomes not duplicated per branch, continue targets exist, subject exists
+14. Validate role integrity: unique RoleId, scope item template exists, Fact Contract references valid Facts
+15. Validate item template integrity: unique ItemTemplateId, nested identity uniqueness, objective Required_role references in-template Role
+16. Validate together integrity: at least 2 members, no duplicate members, no self-membership, all members exist
+17. Validate batch structural integrity: unique BatchId, referenced ItemTemplateId exists
+18. Reject empty Deadline strings
+19. Produce deterministic error ordering across repeated identical input
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_lowerer.ml` / `.mli` — lowerer
-  module; `resolve_fact` and `capability_contracts` construction.
-- `tethers-0.1/engine-ocaml/bin/tethers_core_lowerer_test.ml` — focused tests.
-- `tethers-0.1/engine-ocaml/bin/dune` — module graph (unchanged).
+- `tethers-0.1/engine-ocaml/bin/tethers_core.ml` / `.mli` — Core semantic type vocabulary
+- `tethers-0.1/engine-ocaml/bin/tethers_core_validator.ml` / `.mli` — new validator module
+- `tethers-0.1/engine-ocaml/bin/tethers_core_validator_test.ml` — focused tests
+- `tethers-0.1/engine-ocaml/bin/dune` — module graph (add validator test)
 
 ## Frozen decisions and invariants
 
-- Absence and ambiguity are distinct errors: `Unknown_fact` vs `Duplicate_fact`.
-- A used `CapabilityId` must have exactly one pinned digest across all used
-  source names.
-- Equivalent repeated `(CapabilityId, CapabilityContractDigest)` pairs may
-  collapse into one Program contract entry.
-- Conflicting digests for one used `CapabilityId` fail before `Ok program`.
-- Only capabilities actually referenced by the Tether are validated; unused
-  environment entries do not poison lowering (documented and deterministic).
-- Deterministic Origin IDs, literal lowering, Anchor path lowering, named
-  inputs, entry guards, success continuations, and Together refusal are
-  unchanged.
-- No Core type changes. No Rust changes. No runtime wiring.
+- CORE-3 validates Core. It never repairs Core. No guessing, no deduplication, no reordering.
+- Validation errors are collected across categories where practical.
+- Error ordering is deterministic using fixed traversal order.
+- Multi-error API preferred: `(unit, validation_error list) result`.
+- No Core type changes.
+- No Rust changes. No runtime wiring. No evaluator/protocol/outcome changes.
+- Batch semantics opaque placeholders are validated only structurally, not interpretatively.
 
 ## Acceptance criteria
 
-1. Two environment Fact bindings with `source_name = "file_type"` and a Human
-   Condition `file_type is "pdf"` produce `Duplicate_fact "file_type"`.
-2. Two source names (`saveA`, `saveB`) mapping to `C_save`/`D1`, both used,
-   lower successfully with exactly one `C_save`/`D1` Program contract entry.
-3. Two source names mapping to `C_save`/`D1` and `C_save`/`D2`, both used,
-   produce an explicit conflicting-contract error.
-4. Unused conflicting environment bindings do not poison lowering when only
-   one source name is referenced.
-5. All existing CORE-2 tests and legacy suites continue to pass.
-6. Existing tests confirm each Action Origin retains the contract reference
-   resolved from its own source-name binding after CORE-2A changes.
+1. Valid lowered CORE-2 Program validates OK
+2. Duplicate Origin rejected
+3. Missing entry target rejected
+4. Duplicate success continuation rejected
+5. Success-flow self-cycle rejected
+6. Multi-node success cycle rejected
+7. Missing Capability contract rejected
+8. Contract digest mismatch rejected
+9. Duplicate input Fact ID rejected
+10. Guard unknown Fact rejected
+11. Bad Anchor Origin reference rejected
+12. Anchor path empty rejected
+13. Fact provenance missing Origin rejected
+14. Fact_from_origin provenance mismatch rejected
+15. Role missing rejected
+16. Role Fact Contract mismatch rejected
+17. Branch duplicate Outcome rejected
+18. Branch missing target rejected
+19. Together one member rejected
+20. Together duplicate member rejected
+21. Together unknown member rejected
+22. Item objective missing Role rejected
+23. Batch missing Item Template rejected
+24. Determinism: repeated validation returns identical errors in identical order
+25. Integration test: parse → lower → validate → OK
 
 ## Required verification
 
 1. Packet checker at closeout: `control-v1/COMPLETE`
 2. OCaml build: `dune build`
-3. Lowerer tests: `dune runtest` — 49/49 assertions
-4. Fixture suite: `check-fixtures.ps1` — 64 JSON + 32 JSONL
-5. Engine suite: `test-engine.ps1` — 32 cases
-6. MCP transcript suite: `test-mcp-transcripts.ps1` — 16 cases
-7. Whitespace check: `git diff --check`
-8. Rust formatter: `cargo fmt --check` (exit 0)
-9. Complete diff inspection: only authorised files
-10. Git status: clean worktree
+3. Validator tests: `dune runtest` — 42/42 assertions
+4. Existing lowerer tests: passing (same `dune runtest`)
+5. Fixture suite: `check-fixtures.ps1` — 64 JSON + 32 JSONL
+6. Engine suite: `test-engine.ps1` — NOT RUN (pre-existing environment: worktree lacks local `_opam`; script does not accept `--switch` parameter)
+7. MCP transcript suite: `test-mcp-transcripts.ps1` — 16 cases
+8. Whitespace check: `git diff --check`
+9. Rust formatter: `cargo fmt --check` (exit 0)
+10. Complete diff inspection: only authorised files
+11. Git status: clean worktree
 
 ## Forbidden changes
 
-Do NOT modify: `tethers_evaluator.ml/.mli`, `tethers_protocol.ml/.mli`,
-`tethers_outcome.ml/.mli`. Do not modify Rust. Do not change existing
-runtime output. Do not modify `tethers_core.ml/.mli`. Do not change
-deterministic Origin IDs, literal lowering, Anchor path lowering, named
-inputs, entry guards, success continuations, or Together refusal.
+No evaluator/protocol/outcome changes. No Rust changes. No runtime wiring. No Core type changes.
 
 ## Stop conditions
 
-Committed CORE-2A. STOP. Do NOT begin CORE-3, wire into the evaluator, or
-serialize Core.
+Commit CORE-3. STOP. Do NOT begin CORE-4 canonicalisation, ProgramDigest, JSON wire protocol, or Rust ingestion.
 
 ## Expected pre-existing changes
 
