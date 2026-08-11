@@ -4,6 +4,11 @@
     consumes [Tethers_core] values. Later packets will lower Human Tether AST
     into these types, validate Core graphs, and drive planning.
 
+    CORE-1A extends the vocabulary so every current sequential Tether
+    construct has a lossless static home: typed literal values, immutable
+    host-supplied evaluation-input Facts and the Conditions over them, and
+    structured Anchor event-data bindings used by Action arguments.
+
     The critical invariant is that each identity-bearing type is a distinct
     OCaml type.  [OriginId] and [RoleId] are not interchangeable string
     aliases. *)
@@ -55,6 +60,7 @@ val string_of_item_template_id : item_template_id -> string
 
 type capability_contract_digest = private Capability_contract_digest of string
 type core_version = private Core_version of string
+type host_snapshot_key = private Host_snapshot_key of string
 
 val capability_contract_digest_of_string :
   string -> capability_contract_digest
@@ -63,6 +69,9 @@ val string_of_capability_contract_digest :
 
 val core_version_of_string : string -> core_version
 val string_of_core_version : core_version -> string
+
+val host_snapshot_key_of_string : string -> host_snapshot_key
+val string_of_host_snapshot_key : host_snapshot_key -> string
 
 (* ------------------------------------------------------------------ *)
 (*  Core primitive types                                               *)
@@ -82,11 +91,22 @@ type fact_availability =
   | Optional
   | Guaranteed
 
+type core_scalar_type =
+  | String_type
+  | Integer_type
+  | Boolean_type
+
+type core_value =
+  | String_value of string
+  | Integer_value of int
+  | Boolean_value of bool
+
 (* ------------------------------------------------------------------ *)
 (*  Fact                                                               *)
 (* ------------------------------------------------------------------ *)
 
 type fact_provenance =
+  | Evaluation_input of host_snapshot_key * core_scalar_type
   | Origin_provenance of origin_id
   | Role_proxy of role_id
 
@@ -94,6 +114,22 @@ type fact = {
   fact_id : fact_id;
   schema_description : string;
   provenance : fact_provenance;
+}
+
+(* ------------------------------------------------------------------ *)
+(*  Fact Guard                                                         *)
+(* ------------------------------------------------------------------ *)
+
+type comparison_operator =
+  | Equals
+  | Contains
+  | Greater_than
+  | Greater_than_or_equal
+
+type fact_guard = {
+  fact_id : fact_id;
+  operator : comparison_operator;
+  expected : core_value;
 }
 
 (* ------------------------------------------------------------------ *)
@@ -108,9 +144,10 @@ type execution_constraint =
 (* ------------------------------------------------------------------ *)
 
 type input_binding =
-  | Literal_value of string
+  | Literal_value of core_value
   | Fact_from_origin of fact_id * origin_id
   | Fact_through_role of fact_id * role_id
+  | Anchor_value of origin_id * string list
   | Batch_item_context of item_template_id
 
 (* ------------------------------------------------------------------ *)
@@ -240,6 +277,8 @@ type capability_contract = {
 type program = {
   program_id : program_id;
   core_version : core_version;
+  input_facts : fact list;
+  entry_guards : fact_guard list;
   origin_sites : origin_site list;
   branches : branch list;
   roles : role list;

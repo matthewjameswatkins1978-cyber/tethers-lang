@@ -37,12 +37,16 @@ let string_of_item_template_id (Item_template_id s) = s
 
 type capability_contract_digest = Capability_contract_digest of string
 type core_version = Core_version of string
+type host_snapshot_key = Host_snapshot_key of string
 
 let capability_contract_digest_of_string s = Capability_contract_digest s
 let string_of_capability_contract_digest (Capability_contract_digest s) = s
 
 let core_version_of_string s = Core_version s
 let string_of_core_version (Core_version s) = s
+
+let host_snapshot_key_of_string s = Host_snapshot_key s
+let string_of_host_snapshot_key (Host_snapshot_key s) = s
 
 type terminal_outcome =
   | Success
@@ -58,7 +62,18 @@ type fact_availability =
   | Optional
   | Guaranteed
 
+type core_scalar_type =
+  | String_type
+  | Integer_type
+  | Boolean_type
+
+type core_value =
+  | String_value of string
+  | Integer_value of int
+  | Boolean_value of bool
+
 type fact_provenance =
+  | Evaluation_input of host_snapshot_key * core_scalar_type
   | Origin_provenance of origin_id
   | Role_proxy of role_id
 
@@ -68,13 +83,26 @@ type fact = {
   provenance : fact_provenance;
 }
 
+type comparison_operator =
+  | Equals
+  | Contains
+  | Greater_than
+  | Greater_than_or_equal
+
+type fact_guard = {
+  fact_id : fact_id;
+  operator : comparison_operator;
+  expected : core_value;
+}
+
 type execution_constraint =
   | Deadline of string
 
 type input_binding =
-  | Literal_value of string
+  | Literal_value of core_value
   | Fact_from_origin of fact_id * origin_id
   | Fact_through_role of fact_id * role_id
+  | Anchor_value of origin_id * string list
   | Batch_item_context of item_template_id
 
 type anchor_origin = {
@@ -178,6 +206,8 @@ type capability_contract = {
 type program = {
   program_id : program_id;
   core_version : core_version;
+  input_facts : fact list;
+  entry_guards : fact_guard list;
   origin_sites : origin_site list;
   branches : branch list;
   roles : role list;
