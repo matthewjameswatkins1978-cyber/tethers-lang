@@ -12,6 +12,7 @@ type canonicalized
 
 type canonicalization_error =
   | Invalid_core of Tethers_core_validator.validation_error list
+  | Refinement_exceeded
 
 val canonicalize :
   Tethers_core.program ->

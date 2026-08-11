@@ -2,6 +2,7 @@ open Tethers_core
 
 type canonicalization_error =
   | Invalid_core of Tethers_core_validator.validation_error list
+  | Refinement_exceeded
 
 type program_digest = Program_digest of string
 
@@ -13,9 +14,10 @@ type canonicalized = {
 
 let canonical_prefix = "TETHERS_CORE_CANON_V1"
 let canonical_prefix_byte = '\x00'
+let safety_cap = 1000
 
 (* ------------------------------------------------------------------ *)
-(*  Entity collection - scoped, complete                                *)
+(*  Entity collection                                                   *)
 (* ------------------------------------------------------------------ *)
 
 let origin_id_of_site = function
@@ -89,22 +91,18 @@ let all_facts p =
   in
   p.input_facts @ from_origins @ from_batches
 
+let all_origin_sites_flat p =
+  p.origin_sites @ List.flatten (List.map (fun (t : item_template) -> t.origin_sites) p.item_templates)
+
+let all_branches_flat p =
+  p.branches @ List.flatten (List.map (fun (t : item_template) -> t.branches) p.item_templates)
+
 (* ------------------------------------------------------------------ *)
 (*  Scoped identity maps                                                *)
 (* ------------------------------------------------------------------ *)
 
 module StringMap = Map.Make(String)
 
-type entity_keys = {
-  fact_keys : string StringMap.t;
-  origin_keys : string StringMap.t;
-  batch_keys : string StringMap.t;
-  role_keys : string StringMap.t;
-  branch_keys : string StringMap.t;
-  item_template_keys : string StringMap.t;
-}
-
-(* Scope-qualified role identity *)
 let scoped_role_id r scope =
   match scope with
   | `Program -> "P:" ^ string_of_role_id r.role_id
@@ -120,10 +118,10 @@ let key_of_value = function
   | Boolean_value b -> "bv:" ^ (if b then "1" else "0")
 
 let key_of_outcome = function
-  | Success -> "out_success"
-  | Failure -> "out_failure"
-  | Uncertain -> "out_uncertain"
-  | Cancelled -> "out_cancelled"
+  | Success -> "out_s"
+  | Failure -> "out_f"
+  | Uncertain -> "out_u"
+  | Cancelled -> "out_c"
 
 let key_of_provenance = function
   | Evaluation_input (Host_snapshot_key k, t) ->
@@ -150,57 +148,219 @@ let key_of_batch_traversal_policy (Batch_traversal_policy s) =
 let key_of_batch_objective (Batch_objective s) =
   "bo:" ^ string_of_int (String.length s) ^ ":" ^ s
 
-(* ------------------------------------------------------------------ *)
-(*  Color compression: prevent unbounded key expansion                   *)
-(* ------------------------------------------------------------------ *)
-
-let color_of_string s =
-  let h = ref 0 in
-  for i = 0 to String.length s - 1 do
-    h := ((!h * 31) + Char.code (String.get s i)) land 0x7FFFFFFF
-  done;
-  string_of_int !h
+let operator_rank = function
+  | Equals -> 0
+  | Contains -> 1
+  | Greater_than -> 2
+  | Greater_than_or_equal -> 3
 
 (* ------------------------------------------------------------------ *)
-(*  Scoped key lookups                                                  *)
+(*  Colour map: collision-free partition refinement                     *)
 (* ------------------------------------------------------------------ *)
 
-let lookup_fact keys fid =
-  match StringMap.find_opt (string_of_fact_id fid) keys.fact_keys with
-  | Some k -> k | None -> "fact_unknown"
+type colour_map = {
+  fact_colours : int StringMap.t;
+  origin_colours : int StringMap.t;
+  batch_colours : int StringMap.t;
+  role_colours : int StringMap.t;
+  branch_colours : int StringMap.t;
+  item_template_colours : int StringMap.t;
+}
 
-let lookup_origin keys oid =
-  match StringMap.find_opt (string_of_origin_id oid) keys.origin_keys with
-  | Some k -> k | None -> "origin_unknown"
-
-let lookup_batch keys bid =
-  match StringMap.find_opt (string_of_batch_id bid) keys.batch_keys with
-  | Some k -> k | None -> "batch_unknown"
-
-let lookup_role keys rid scope =
-  let sid = match scope with
-    | `Program -> "P:" ^ string_of_role_id rid
-    | `Template tid -> "T:" ^ string_of_item_template_id tid ^ ":" ^ string_of_role_id rid
+(* Compress: given (entity_id_string, full_signature) pairs,
+   assign consecutive colours 1..N by sorted unique signatures *)
+let compress_colours pairs =
+  let uniques =
+    pairs |> List.map snd |> List.sort_uniq String.compare
   in
-  match StringMap.find_opt sid keys.role_keys with
-  | Some k -> k | None -> "role_unknown"
+  let sig_to_colour =
+    List.mapi (fun i sig_str -> (sig_str, i + 1)) uniques
+  in
+  List.fold_left (fun m (id, sig_str) ->
+    StringMap.add id (List.assoc sig_str sig_to_colour) m
+  ) StringMap.empty pairs
 
-let lookup_branch keys bid =
-  match StringMap.find_opt (string_of_branch_id bid) keys.branch_keys with
-  | Some k -> k | None -> "branch_unknown"
+let int_map_partition_stable prev next =
+  let count_unique m =
+    StringMap.fold (fun _ v acc -> if List.mem v acc then acc else v :: acc) m [] |> List.length
+  in
+  let n_prev = count_unique prev in
+  let n_next = count_unique next in
+  if n_prev <> n_next then false
+  else
+    let prev_classes =
+      StringMap.fold (fun id c acc ->
+        let key = string_of_int c in
+        StringMap.update key (function None -> Some [id] | Some ids -> Some (id :: ids)) acc
+      ) prev StringMap.empty
+    in
+    StringMap.for_all (fun _ members ->
+      match members with
+      | [] | [_] -> true
+      | first :: rest ->
+          let first_next = StringMap.find first next in
+          List.for_all (fun id -> StringMap.find id next = first_next) rest
+    ) prev_classes
 
-let lookup_item_template keys tid =
-  match StringMap.find_opt (string_of_item_template_id tid) keys.item_template_keys with
-  | Some k -> k | None -> "it_unknown"
+let partitions_equal a b =
+  int_map_partition_stable a.fact_colours b.fact_colours
+  && int_map_partition_stable a.origin_colours b.origin_colours
+  && int_map_partition_stable a.batch_colours b.batch_colours
+  && int_map_partition_stable a.role_colours b.role_colours
+  && int_map_partition_stable a.branch_colours b.branch_colours
+  && int_map_partition_stable a.item_template_colours b.item_template_colours
 
 (* ------------------------------------------------------------------ *)
-(*  Round-0 keys: species + scalar fields ONLY, no references           *)
+(*  Colour lookups                                                      *)
 (* ------------------------------------------------------------------ *)
 
-let fact_key_r0 (f : fact) =
+let lookup_fact_c colours fid =
+  match StringMap.find_opt (string_of_fact_id fid) colours.fact_colours with
+  | Some c -> string_of_int c | None -> "0"
+
+let lookup_origin_c colours oid =
+  match StringMap.find_opt (string_of_origin_id oid) colours.origin_colours with
+  | Some c -> string_of_int c | None -> "0"
+
+let lookup_batch_c colours bid =
+  match StringMap.find_opt (string_of_batch_id bid) colours.batch_colours with
+  | Some c -> string_of_int c | None -> "0"
+
+let lookup_role_c colours scoped_key =
+  match StringMap.find_opt scoped_key colours.role_colours with
+  | Some c -> string_of_int c | None -> "0"
+
+let lookup_branch_c colours bid =
+  match StringMap.find_opt (string_of_branch_id bid) colours.branch_colours with
+  | Some c -> string_of_int c | None -> "0"
+
+let lookup_item_template_c colours tid =
+  match StringMap.find_opt (string_of_item_template_id tid) colours.item_template_colours with
+  | Some c -> string_of_int c | None -> "0"
+
+(* Scope-aware role colour lookup *)
+let lookup_role_colour_in_scope colours rid = function
+  | `Program -> lookup_role_c colours ("P:" ^ string_of_role_id rid)
+  | `Template tid -> lookup_role_c colours ("T:" ^ string_of_item_template_id tid ^ ":" ^ string_of_role_id rid)
+
+(* ------------------------------------------------------------------ *)
+(*  Static reference maps (built once, used every refinement round)     *)
+(* ------------------------------------------------------------------ *)
+
+type static_refs = {
+  entry_origin_id_str : string option;
+  success_out_map : control_target list StringMap.t;
+  success_in_map : origin_id list StringMap.t;
+  origin_branches : branch_id list StringMap.t;
+  together_for_member : origin_id StringMap.t;
+  guards_for_fact : (comparison_operator * core_value) list StringMap.t;
+  consumers_for_fact : (capability_input_name * input_binding) list StringMap.t;
+  origin_for_fact : origin_id option StringMap.t;
+}
+
+let build_static_refs p =
+  let entry_origin_id_str = Option.map string_of_origin_id p.entry_origin in
+
+  let success_out_map =
+    List.fold_left (fun m sc ->
+      let from_s = string_of_origin_id sc.from_origin in
+      StringMap.update from_s (function
+        | None -> Some [sc.target]
+        | Some lst -> Some (sc.target :: lst)) m
+    ) StringMap.empty p.success_continuations
+  in
+
+  let success_in_map =
+    List.fold_left (fun m sc ->
+      match sc.target with
+      | Origin_target tgt ->
+        let tgt_s = string_of_origin_id tgt in
+        StringMap.update tgt_s (function
+          | None -> Some [sc.from_origin]
+          | Some lst -> Some (sc.from_origin :: lst)) m
+      | Program_complete -> m
+    ) StringMap.empty p.success_continuations
+  in
+
+  let origin_branches =
+    List.fold_left (fun m (b : branch) ->
+      let oid_s = string_of_origin_id b.branch_subject in
+      StringMap.update oid_s (function
+        | None -> Some [b.branch_id]
+        | Some lst -> Some (b.branch_id :: lst)) m
+    ) StringMap.empty (all_branches_flat p)
+  in
+
+  let all_sites = all_origin_sites_flat p in
+  let together_for_member =
+    List.fold_left (fun m site ->
+      match site with
+      | Together_origin t ->
+        List.fold_left (fun m' member ->
+          StringMap.add (string_of_origin_id member) t.together_origin_id m'
+        ) m t.member_origin_ids
+      | _ -> m
+    ) StringMap.empty all_sites
+  in
+
+  let guards_for_fact =
+    List.fold_left (fun m g ->
+      let fid_s = string_of_fact_id g.fact_id in
+      StringMap.update fid_s (function
+        | None -> Some [(g.operator, g.expected)]
+        | Some lst -> Some ((g.operator, g.expected) :: lst)) m
+    ) StringMap.empty p.entry_guards
+  in
+
+  let consumers_for_fact =
+    List.fold_left (fun m site ->
+      match site with
+      | Action_origin a ->
+        List.fold_left (fun m' ai ->
+          match ai.binding with
+          | Fact_from_origin (fid, _) | Fact_through_role (fid, _) ->
+            let fid_s = string_of_fact_id fid in
+            StringMap.update fid_s (function
+              | None -> Some [(ai.input_name, ai.binding)]
+              | Some lst -> Some ((ai.input_name, ai.binding) :: lst)) m'
+          | _ -> m'
+        ) m a.inputs
+      | _ -> m
+    ) StringMap.empty all_sites
+  in
+
+  let origin_for_fact =
+    let m = ref StringMap.empty in
+    let add_origin oid (declared : fact list) =
+      List.iter (fun (f : fact) ->
+        m := StringMap.add (string_of_fact_id f.fact_id) (Some oid) !m
+      ) declared
+    in
+    List.iter (fun site ->
+      match site with
+      | Anchor_origin a -> add_origin a.anchor_origin_id a.declared_facts
+      | Action_origin a -> add_origin a.action_origin_id a.declared_facts
+      | _ -> ()
+    ) all_sites;
+    List.iter (fun (f : fact) ->
+      if not (StringMap.mem (string_of_fact_id f.fact_id) !m) then
+        m := StringMap.add (string_of_fact_id f.fact_id) None !m
+    ) (all_facts p);
+    !m
+  in
+
+  { entry_origin_id_str; success_out_map; success_in_map;
+    origin_branches; together_for_member; guards_for_fact;
+    consumers_for_fact; origin_for_fact }
+
+(* ------------------------------------------------------------------ *)
+(*  Round 0: scalar-only signatures                                     *)
+(* ------------------------------------------------------------------ *)
+
+let fact_sig_r0 (f : fact) =
   "F:" ^ key_of_provenance f.provenance
 
-let origin_key_r0 (_oid, site, _scope, _tmpl) =
+let origin_sig_r0 (_oid, site, _scope, _tmpl) =
   match site with
   | Anchor_origin a -> "A:" ^ a.event_name
   | Action_origin a ->
@@ -212,130 +372,160 @@ let origin_key_r0 (_oid, site, _scope, _tmpl) =
       ^ key_of_batch_traversal_policy b.traversal_policy ^ ":"
       ^ key_of_batch_objective b.composite_objective
 
-let role_key_r0 (r, _scope) =
+let role_sig_r0 (r, _scope) =
   let (Role_fact_contract fids) = r.fact_contract in
   "Ro:" ^ key_of_role_fulfillment r.eligible_fulfillment ^ ":"
   ^ string_of_int (List.length fids)
 
-let branch_key_r0 (b, _scope) =
+let branch_sig_r0 (b, _scope) =
   "Br:" ^ string_of_int (List.length b.outcome_branches)
 
-let item_template_key_r0 (t : item_template) =
+let item_template_sig_r0 (t : item_template) =
   let obj = match t.objective with Required_role _ -> "RR" in
   "IT:" ^ obj ^ ":" ^ string_of_int (List.length t.origin_sites) ^ ":"
   ^ string_of_int (List.length t.branches) ^ ":"
   ^ string_of_int (List.length t.roles)
 
-(* ------------------------------------------------------------------ *)
-(*  Round-0 construction                                                *)
-(* ------------------------------------------------------------------ *)
-
 let round_0 p =
-  let fact_keys =
-    List.fold_left (fun m (f : fact) ->
-      StringMap.add (string_of_fact_id f.fact_id) (color_of_string (fact_key_r0 f)) m
-    ) StringMap.empty (all_facts p)
+  let fact_colours =
+    List.map (fun (f : fact) -> (string_of_fact_id f.fact_id, fact_sig_r0 f)) (all_facts p)
+    |> compress_colours
   in
-  let origin_keys =
-    List.fold_left (fun m (oid, site, scope, tmpl) ->
-      StringMap.add (string_of_origin_id oid) (color_of_string (origin_key_r0 (oid, site, scope, tmpl))) m
-    ) StringMap.empty (all_origins p)
+  let origin_colours =
+    List.map (fun (oid, site, scope, tmpl) ->
+      (string_of_origin_id oid, origin_sig_r0 (oid, site, scope, tmpl))) (all_origins p)
+    |> compress_colours
   in
-  let batch_keys =
-    List.fold_left (fun m (bid, site, scope, tmpl) ->
-      StringMap.add (string_of_batch_id bid) (color_of_string (origin_key_r0 (origin_id_of_string "", site, scope, tmpl))) m
-    ) StringMap.empty (all_batches p)
+  let batch_colours =
+    List.map (fun (bid, site, scope, tmpl) ->
+      (string_of_batch_id bid, origin_sig_r0 (origin_id_of_string "", site, scope, tmpl))) (all_batches p)
+    |> compress_colours
   in
-  let role_keys =
-    List.fold_left (fun m (r, scope) ->
-      StringMap.add (scoped_role_id r scope) (color_of_string (role_key_r0 (r, scope))) m
-    ) StringMap.empty (all_roles p)
+  let role_colours =
+    List.map (fun (r, scope) ->
+      (scoped_role_id r scope, role_sig_r0 (r, scope))) (all_roles p)
+    |> compress_colours
   in
-  let branch_keys =
-    List.fold_left (fun m (b, scope) ->
-      StringMap.add (string_of_branch_id b.branch_id) (color_of_string (branch_key_r0 (b, scope))) m
-    ) StringMap.empty (all_branches p)
+  let branch_colours =
+    List.map (fun (b, scope) ->
+      (string_of_branch_id b.branch_id, branch_sig_r0 (b, scope))) (all_branches p)
+    |> compress_colours
   in
-  let item_template_keys =
-    List.fold_left (fun m t ->
-      StringMap.add (string_of_item_template_id t.item_template_id) (color_of_string (item_template_key_r0 t)) m
-    ) StringMap.empty p.item_templates
+  let item_template_colours =
+    List.map (fun (t : item_template) ->
+      (string_of_item_template_id t.item_template_id, item_template_sig_r0 t)) p.item_templates
+    |> compress_colours
   in
-  { fact_keys; origin_keys; batch_keys; role_keys; branch_keys; item_template_keys }
+  { fact_colours; origin_colours; batch_colours; role_colours;
+    branch_colours; item_template_colours }
 
 (* ------------------------------------------------------------------ *)
-(*  Round-N keys: species + scalar + sorted neighbor keys               *)
+(*  Round N: signatures using previous-round colours                     *)
 (* ------------------------------------------------------------------ *)
 
-(* Determine the scope of an origin, for resolving scoped role lookups *)
-let lookup_role_in_scope keys rid =
-  function
-  | `Program -> lookup_role keys rid `Program
-  | `Template tid -> lookup_role keys rid (`Template tid)
+(* Control-target colour string for origin signatures *)
+let control_target_cstr colours = function
+  | Origin_target oid -> "C:" ^ lookup_origin_c colours oid
+  | Program_complete -> "PC"
 
-(* Lookup guard reference tags for a fact *)
-let guard_ref_tag grefs fid =
-  match StringMap.find_opt (string_of_fact_id fid) grefs with
-  | Some tag -> ":g=" ^ tag
-  | None -> ""
-
-let fact_key_rn keys grefs (f : fact) =
-  let prov_key = match f.provenance with
+(* Fact signature round N *)
+let fact_sig_rn colours refs (f : fact) =
+  let prov_str = match f.provenance with
     | Evaluation_input (Host_snapshot_key k, t) ->
         "E:" ^ k ^ ":" ^ (
           match t with String_type -> "S" | Integer_type -> "I" | Boolean_type -> "B")
-    | Origin_provenance oid -> "O:" ^ lookup_origin keys oid
-    | Role_proxy rid -> "R:prog=" ^ lookup_role keys rid `Program
+    | Origin_provenance oid -> "O:" ^ lookup_origin_c colours oid
+    | Role_proxy rid ->
+        let sc = match StringMap.find_opt (string_of_fact_id f.fact_id) refs.origin_for_fact with
+          | None -> "RP:" ^ string_of_role_id rid
+          | Some _ -> "RP:" ^ string_of_role_id rid
+        in sc
   in
-  let guard_tag = guard_ref_tag grefs f.fact_id in
-  "F:" ^ prov_key ^ guard_tag
+  let guards_str =
+    match StringMap.find_opt (string_of_fact_id f.fact_id) refs.guards_for_fact with
+    | None -> ""
+    | Some [] -> ""
+    | Some guards ->
+        let sorted = List.sort (fun (a_op, a_v) (b_op, b_v) ->
+          let c = Int.compare (operator_rank a_op) (operator_rank b_op) in
+          if c <> 0 then c else String.compare (key_of_value a_v) (key_of_value b_v)
+        ) guards in
+        ":G=" ^ String.concat "," (List.map (fun (op, v) ->
+          string_of_int (operator_rank op) ^ ":" ^ key_of_value v) sorted)
+  in
+  let consumers_str =
+    match StringMap.find_opt (string_of_fact_id f.fact_id) refs.consumers_for_fact with
+    | None -> ""
+    | Some [] -> ""
+    | Some consumers ->
+        let sorted = List.sort (fun (an_a, _) (an_b, _) ->
+          String.compare (string_of_capability_input_name an_a) (string_of_capability_input_name an_b)
+        ) consumers in
+        ":U=" ^ String.concat "," (List.map (fun (iname, binding) ->
+          string_of_capability_input_name iname ^ ":" ^ (
+            match binding with
+            | Fact_from_origin (_, oid) -> "FO:" ^ lookup_origin_c colours oid
+            | Fact_through_role (_, rid) -> "FR:" ^ string_of_role_id rid
+            | _ -> "??"
+          )) sorted)
+  in
+  let establisher_str =
+    match StringMap.find_opt (string_of_fact_id f.fact_id) refs.origin_for_fact with
+    | Some (Some oid) -> ":E=" ^ lookup_origin_c colours oid
+    | _ -> ""
+  in
+  "F:" ^ prov_str ^ guards_str ^ consumers_str ^ establisher_str
 
-(* Build origin lookup map for success continuation and entry origin refs *)
-let build_origin_refs p =
-  let refs = ref StringMap.empty in
-  (match p.entry_origin with
-   | Some oid -> refs := StringMap.add (string_of_origin_id oid) "entry" !refs
-   | None -> ());
-  List.iter (fun sc ->
-    refs := StringMap.add (string_of_origin_id sc.from_origin) "sc_from" !refs;
-    match sc.target with Origin_target oid -> refs := StringMap.add (string_of_origin_id oid) "sc_to" !refs | _ -> ()
-  ) p.success_continuations;
-  !refs
+(* Origin signature round N *)
+let origin_sig_rn colours refs (oid, site, scope, _tmpl) =
+  let oid_s = string_of_origin_id oid in
 
-let origin_ref_tag refs oid =
-  match StringMap.find_opt (string_of_origin_id oid) refs with
-  | Some tag -> ":" ^ tag
-  | None -> ""
+  let entry_tag =
+    match refs.entry_origin_id_str with
+    | Some s when s = oid_s -> ":entry"
+    | _ -> "" in
 
-(* Build guard reference info for fact key refinement *)
-let build_guard_refs p =
-  let refs = ref [] in
-  List.iter (fun g ->
-    refs := (string_of_fact_id g.fact_id, key_of_value g.expected) :: !refs
-  ) p.entry_guards;
-  let grouped = List.sort (fun (af,av) (bf,bv) ->
-    match String.compare af bf with 0 -> String.compare av bv | c -> c) !refs in
-  let groups = ref StringMap.empty in
-  List.iter (fun (fid_s, val_key) ->
-    match StringMap.find_opt fid_s !groups with
-    | Some existing -> groups := StringMap.add fid_s (existing ^ "," ^ val_key) !groups
-    | None -> groups := StringMap.add fid_s val_key !groups
-  ) grouped;
-  !groups
+  let success_out_str =
+    match StringMap.find_opt oid_s refs.success_out_map with
+    | None -> ""
+    | Some targets ->
+        ":out=" ^ String.concat "," (List.map (control_target_cstr colours) targets) in
 
-let origin_key_rn keys refs (oid, site, scope, _tmpl) =
-  let ref_tag = origin_ref_tag refs oid in
+  let success_in_str =
+    match StringMap.find_opt oid_s refs.success_in_map with
+    | None -> ""
+    | Some predecessors ->
+        ":in=" ^ String.concat "," (List.map (fun p ->
+          lookup_origin_c colours p) (List.sort (fun a b ->
+            String.compare (string_of_origin_id a) (string_of_origin_id b)) predecessors)) in
+
+  let branch_tag =
+    match StringMap.find_opt oid_s refs.origin_branches with
+    | None -> ""
+    | Some bids ->
+        ":br=" ^ String.concat "," (List.map (fun bid ->
+          lookup_branch_c colours bid) (List.sort (fun a b ->
+            String.compare (string_of_branch_id a) (string_of_branch_id b)) bids)) in
+
+  let together_tag =
+    match StringMap.find_opt oid_s refs.together_for_member with
+    | None -> ""
+    | Some tog_oid -> ":tg=" ^ lookup_origin_c colours tog_oid in
+
   let origin_scope = scope in
+
   match site with
   | Anchor_origin a ->
-      let fact_keys_sorted =
-        List.map (fun (f : fact) -> lookup_fact keys f.fact_id) a.declared_facts
+      let fact_cs =
+        List.map (fun (f : fact) -> lookup_fact_c colours f.fact_id) a.declared_facts
         |> List.sort String.compare
       in
-      "A:" ^ a.event_name ^ ref_tag ^ ":facts:" ^ String.concat "," fact_keys_sorted
+      "A:" ^ a.event_name ^ entry_tag ^ success_out_str ^ success_in_str
+      ^ branch_tag ^ together_tag
+      ^ ":facts=" ^ String.concat "," fact_cs
   | Action_origin a ->
-      let fact_keys_sorted =
-        List.map (fun (f : fact) -> lookup_fact keys f.fact_id) a.declared_facts
+      let fact_cs =
+        List.map (fun (f : fact) -> lookup_fact_c colours f.fact_id) a.declared_facts
         |> List.sort String.compare
       in
       let input_keys =
@@ -344,13 +534,13 @@ let origin_key_rn keys refs (oid, site, scope, _tmpl) =
           let binding_key = match ai.binding with
             | Literal_value v -> "L:" ^ key_of_value v
             | Anchor_value (oid', path) ->
-                "AV:" ^ lookup_origin keys oid' ^ ":" ^ String.concat "/" path
+                "AV:" ^ lookup_origin_c colours oid' ^ ":" ^ String.concat "/" path
             | Fact_from_origin (fid, oid') ->
-                "FO:" ^ lookup_fact keys fid ^ ":" ^ lookup_origin keys oid'
+                "FO:" ^ lookup_fact_c colours fid ^ ":" ^ lookup_origin_c colours oid'
             | Fact_through_role (fid, rid) ->
-                "FT:" ^ lookup_fact keys fid ^ ":" ^ lookup_role_in_scope keys rid origin_scope
+                "FT:" ^ lookup_fact_c colours fid ^ ":" ^ lookup_role_colour_in_scope colours rid origin_scope
             | Batch_item_context (Item_template_id tid) ->
-                "BIC:" ^ lookup_item_template keys (item_template_id_of_string tid)
+                "BIC:" ^ lookup_item_template_c colours (item_template_id_of_string tid)
           in
           name_part ^ "=" ^ binding_key
         ) a.inputs
@@ -361,140 +551,146 @@ let origin_key_rn keys refs (oid, site, scope, _tmpl) =
         |> List.sort String.compare
       in
       "Ac:" ^ string_of_capability_id a.capability_id ^ ":"
-      ^ string_of_capability_contract_digest a.contract_digest ^ ref_tag
-      ^ ":facts:" ^ String.concat "," fact_keys_sorted
-      ^ ":inputs:" ^ String.concat "," input_keys
-      ^ ":constraints:" ^ String.concat "," constraint_keys
+      ^ string_of_capability_contract_digest a.contract_digest
+      ^ entry_tag ^ success_out_str ^ success_in_str
+      ^ branch_tag ^ together_tag
+      ^ ":facts=" ^ String.concat "," fact_cs
+      ^ ":inputs=" ^ String.concat "," input_keys
+      ^ ":constraints=" ^ String.concat "," constraint_keys
   | Together_origin t ->
       let member_keys =
-        List.map (fun oid' -> lookup_origin keys oid') t.member_origin_ids
+        List.map (fun oid' -> lookup_origin_c colours oid') t.member_origin_ids
         |> List.sort String.compare
       in
-      "T:" ^ key_of_together_objective t.objective ^ ref_tag
-      ^ ":members:" ^ String.concat "," member_keys
+      "T:" ^ key_of_together_objective t.objective
+      ^ entry_tag ^ success_out_str ^ success_in_str
+      ^ branch_tag ^ together_tag
+      ^ ":members=" ^ String.concat "," member_keys
   | Batch_site b ->
       "Ba:" ^ key_of_batch_collection_provenance b.collection_provenance ^ ":"
-      ^ lookup_item_template keys b.item_template_id ^ ":"
+      ^ lookup_item_template_c colours b.item_template_id ^ ":"
       ^ key_of_batch_traversal_policy b.traversal_policy ^ ":"
       ^ key_of_batch_objective b.composite_objective
-      ^ ":facts:" ^ String.concat ","
-          (List.map (fun (f : fact) -> lookup_fact keys f.fact_id) b.aggregate_facts
+      ^ ":facts=" ^ String.concat ","
+          (List.map (fun (f : fact) -> lookup_fact_c colours f.fact_id) b.aggregate_facts
            |> List.sort String.compare)
 
-let role_key_rn keys (r, scope) =
+(* Role signature round N *)
+let role_sig_rn colours _refs (r, scope) =
   let (Role_fact_contract fids) = r.fact_contract in
   let fact_keys_sorted =
-    List.map (fun fid -> lookup_fact keys fid) fids
+    List.map (fun fid -> lookup_fact_c colours fid) fids
     |> List.sort String.compare
   in
-  let scope_key = match scope with
+  let scope_str = match scope with
     | `Program -> "P"
-    | `Template tid -> "T:" ^ lookup_item_template keys tid
+    | `Template tid -> "T:" ^ lookup_item_template_c colours tid
   in
-  "Ro:" ^ scope_key ^ ":"
+  "Ro:" ^ scope_str ^ ":"
   ^ key_of_role_fulfillment r.eligible_fulfillment
-  ^ ":facts:" ^ String.concat "," fact_keys_sorted
+  ^ ":facts=" ^ String.concat "," fact_keys_sorted
 
-let branch_key_rn keys (b, _scope) =
+(* Branch signature round N *)
+let branch_sig_rn colours _refs (b, _scope) =
   let outcome_keys =
     List.map (fun (outcome, target) ->
       key_of_outcome outcome ^ ":"
       ^ (match target with
-         | Continue_to oid -> "C:" ^ lookup_origin keys oid
+         | Continue_to oid -> "C:" ^ lookup_origin_c colours oid
          | Stop -> "S"))
       b.outcome_branches
     |> List.sort String.compare
   in
-  "Br:" ^ lookup_origin keys b.branch_subject
-  ^ ":outcomes:" ^ String.concat "," outcome_keys
+  "Br:" ^ lookup_origin_c colours b.branch_subject
+  ^ ":outcomes=" ^ String.concat "," outcome_keys
 
-let item_template_key_rn keys (t : item_template) =
+(* Item Template signature round N *)
+let item_template_sig_rn colours _refs (t : item_template) =
   let origin_keys_list =
     List.map (fun site ->
       match origin_id_of_site site with
-      | Some oid -> lookup_origin keys oid
+      | Some oid -> lookup_origin_c colours oid
       | None ->
           (match site with
-           | Batch_site b -> lookup_batch keys b.batch_id
-           | _ -> "none"))
+           | Batch_site b -> lookup_batch_c colours b.batch_id
+           | _ -> "0"))
       t.origin_sites
     |> List.sort String.compare
   in
   let branch_keys_list =
-    List.map (fun b -> lookup_branch keys b.branch_id) t.branches
+    List.map (fun b -> lookup_branch_c colours b.branch_id) t.branches
     |> List.sort String.compare
   in
   let role_keys_list =
-    List.map (fun r ->
-      lookup_role keys r.role_id (`Template t.item_template_id)
+    List.map (fun (r : role) ->
+      lookup_role_c colours (scoped_role_id r (`Template t.item_template_id))
     ) t.roles
     |> List.sort String.compare
   in
   let obj_key = match t.objective with
-    | Required_role rid -> "RR:" ^ lookup_role keys rid (`Template t.item_template_id)
+    | Required_role rid ->
+        "RR:" ^ lookup_role_c colours (scoped_role_id { role_id = rid; scope = Program_scope;
+          fact_contract = Role_fact_contract []; eligible_fulfillment = role_fulfillment_of_string "" } (`Template t.item_template_id))
   in
   "IT:" ^ obj_key
-  ^ ":origins:" ^ String.concat "," origin_keys_list
-  ^ ":branches:" ^ String.concat "," branch_keys_list
-  ^ ":roles:" ^ String.concat "," role_keys_list
+  ^ ":origins=" ^ String.concat "," origin_keys_list
+  ^ ":branches=" ^ String.concat "," branch_keys_list
+  ^ ":roles=" ^ String.concat "," role_keys_list
 
 (* ------------------------------------------------------------------ *)
-(*  Refinement round                                                    *)
+(*  Single refinement round                                             *)
 (* ------------------------------------------------------------------ *)
 
-let refine_keys prev p =
-  let refs = build_origin_refs p in
-  let grefs = build_guard_refs p in
-  let fact_keys =
-    List.fold_left (fun m (f : fact) ->
-      StringMap.add (string_of_fact_id f.fact_id) (color_of_string (fact_key_rn prev grefs f)) m
-    ) StringMap.empty (all_facts p)
+let refine_round prev refs p =
+  let fact_colours =
+    List.map (fun (f : fact) ->
+      (string_of_fact_id f.fact_id, fact_sig_rn prev refs f)) (all_facts p)
+    |> compress_colours
   in
-  let origin_keys =
-    List.fold_left (fun m (oid, site, scope, tmpl) ->
-      StringMap.add (string_of_origin_id oid) (color_of_string (origin_key_rn prev refs (oid, site, scope, tmpl))) m
-    ) StringMap.empty (all_origins p)
+  let origin_colours =
+    List.map (fun (oid, site, scope, tmpl) ->
+      (string_of_origin_id oid, origin_sig_rn prev refs (oid, site, scope, tmpl))) (all_origins p)
+    |> compress_colours
   in
-  let batch_keys =
-    List.fold_left (fun m (bid, site, scope, tmpl) ->
-      StringMap.add (string_of_batch_id bid) (color_of_string (origin_key_rn prev refs (origin_id_of_string "", site, scope, tmpl))) m
-    ) StringMap.empty (all_batches p)
+  let batch_colours =
+    List.map (fun (bid, site, scope, tmpl) ->
+      (string_of_batch_id bid, origin_sig_rn prev refs (origin_id_of_string "", site, scope, tmpl))) (all_batches p)
+    |> compress_colours
   in
-  let role_keys =
-    List.fold_left (fun m (r, scope) ->
-      StringMap.add (scoped_role_id r scope) (color_of_string (role_key_rn prev (r, scope))) m
-    ) StringMap.empty (all_roles p)
+  let role_colours =
+    List.map (fun (r, scope) ->
+      (scoped_role_id r scope, role_sig_rn prev refs (r, scope))) (all_roles p)
+    |> compress_colours
   in
-  let branch_keys =
-    List.fold_left (fun m (b, scope) ->
-      StringMap.add (string_of_branch_id b.branch_id) (color_of_string (branch_key_rn prev (b, scope))) m
-    ) StringMap.empty (all_branches p)
+  let branch_colours =
+    List.map (fun (b, scope) ->
+      (string_of_branch_id b.branch_id, branch_sig_rn prev refs (b, scope))) (all_branches p)
+    |> compress_colours
   in
-  let item_template_keys =
-    List.fold_left (fun m (t : item_template) ->
-      StringMap.add (string_of_item_template_id t.item_template_id) (color_of_string (item_template_key_rn prev t)) m
-    ) StringMap.empty p.item_templates
+  let item_template_colours =
+    List.map (fun (t : item_template) ->
+      (string_of_item_template_id t.item_template_id, item_template_sig_rn prev refs t)) p.item_templates
+    |> compress_colours
   in
-  { fact_keys; origin_keys; batch_keys; role_keys; branch_keys; item_template_keys }
+  { fact_colours; origin_colours; batch_colours; role_colours;
+    branch_colours; item_template_colours }
 
-let keys_equal a b =
-  StringMap.equal (=) a.fact_keys b.fact_keys
-  && StringMap.equal (=) a.origin_keys b.origin_keys
-  && StringMap.equal (=) a.batch_keys b.batch_keys
-  && StringMap.equal (=) a.role_keys b.role_keys
-  && StringMap.equal (=) a.branch_keys b.branch_keys
-  && StringMap.equal (=) a.item_template_keys b.item_template_keys
+(* ------------------------------------------------------------------ *)
+(*  Refinement to stability                                             *)
+(* ------------------------------------------------------------------ *)
 
-let rec refine_until_stable n max_n prev p =
-  if n >= max_n then prev
+let rec refine_until_stable n prev refs p =
+  if n >= safety_cap then raise Exit
   else
-    let next = refine_keys prev p in
-    if keys_equal prev next then next
-    else refine_until_stable (n + 1) max_n next p
+    let next = refine_round prev refs p in
+    if partitions_equal prev next then next
+    else refine_until_stable (n + 1) next refs p
 
-let final_keys p =
+let final_colours p =
+  let refs = build_static_refs p in
   let r0 = round_0 p in
-  refine_until_stable 1 200 r0 p
+  try refine_until_stable 1 r0 refs p
+  with Exit -> failwith "refinement exceeded safety cap"
 
 (* ------------------------------------------------------------------ *)
 (*  Canonical ID assignment                                             *)
@@ -503,14 +699,15 @@ let final_keys p =
 type canonical_ids = {
   origin_order : (origin_id * origin_id) list;
   fact_order : (fact_id * fact_id) list;
-  role_order : (role_id * role_id) list;
+  role_order : (string * role_id) list;
+  role_scope_of : role_scope StringMap.t;
   branch_order : (branch_id * branch_id) list;
   group_order : (group_id * group_id) list;
   batch_order : (batch_id * batch_id) list;
   item_template_order : (item_template_id * item_template_id) list;
 }
 
-let assign_canonical_ids keys p =
+let assign_canonical_ids colours p =
   let all_orig = all_origins p in
   let all_fact = all_facts p in
   let all_rl = all_roles p in
@@ -518,12 +715,11 @@ let assign_canonical_ids keys p =
   let all_it = p.item_templates in
   let all_bat = all_batches p in
 
-  (* Origins: sort by structural key *)
   let sorted_origins =
     List.map (fun (oid, _, _, _) ->
-      let k = StringMap.find (string_of_origin_id oid) keys.origin_keys in
-      (string_of_origin_id oid, k)) all_orig
-    |> List.sort (fun (_, a) (_, b) -> String.compare a b)
+      let c = StringMap.find (string_of_origin_id oid) colours.origin_colours in
+      (string_of_origin_id oid, c)) all_orig
+    |> List.sort (fun (_, a) (_, b) -> Int.compare a b)
   in
   let origin_order =
     List.mapi (fun i (oid_s, _) ->
@@ -531,12 +727,11 @@ let assign_canonical_ids keys p =
        origin_id_of_string ("O" ^ string_of_int (i + 1)))) sorted_origins
   in
 
-  (* Facts: sort by structural key *)
   let sorted_facts =
     List.map (fun (f : fact) ->
-      let k = StringMap.find (string_of_fact_id f.fact_id) keys.fact_keys in
-      (string_of_fact_id f.fact_id, k)) all_fact
-    |> List.sort (fun (_, a) (_, b) -> String.compare a b)
+      let c = StringMap.find (string_of_fact_id f.fact_id) colours.fact_colours in
+      (string_of_fact_id f.fact_id, c)) all_fact
+    |> List.sort (fun (_, a) (_, b) -> Int.compare a b)
   in
   let fact_order =
     List.mapi (fun i (fid_s, _) ->
@@ -544,33 +739,33 @@ let assign_canonical_ids keys p =
        fact_id_of_string ("F" ^ string_of_int (i + 1)))) sorted_facts
   in
 
-  (* Roles: sort by scoped key *)
+  (* Roles: sort by colour; do NOT sort_uniq — different scopes with same colour are distinct *)
   let sorted_roles =
     List.map (fun (r, scope) ->
-      let k = StringMap.find (scoped_role_id r scope) keys.role_keys in
-      (scoped_role_id r scope, k)) all_rl
-    |> List.sort_uniq (fun (_, a) (_, b) -> String.compare a b)
+      let c = StringMap.find (scoped_role_id r scope) colours.role_colours in
+      (scoped_role_id r scope, c)) all_rl
+    |> List.sort (fun (_, a) (_, b) -> Int.compare a b)
   in
   let role_order =
-    List.mapi (fun i ((scoped_key, _)) ->
-      let rid_s =
-        if String.length scoped_key > 2 && scoped_key.[0] = 'P' && scoped_key.[1] = ':' then
-          String.sub scoped_key 2 (String.length scoped_key - 2)
-        else
-          match String.split_on_char ':' scoped_key with
-          | _ :: _ :: rest -> String.concat ":" rest
-          | _ -> scoped_key
-      in
-      (role_id_of_string rid_s,
+    List.mapi (fun i (scoped_key, _) ->
+      (scoped_key,
        role_id_of_string ("R" ^ string_of_int (i + 1)))) sorted_roles
   in
+  let role_scope_of =
+    List.fold_left (fun m (r, scope) ->
+      let concrete_scope = match scope with
+        | `Program -> Program_scope
+        | `Template tid -> Item_template_scope tid
+      in
+      StringMap.add (string_of_role_id r.role_id) concrete_scope m
+    ) StringMap.empty all_rl
+  in
 
-  (* Branches: sort by structural key *)
   let sorted_branches =
     List.map (fun (b, _) ->
-      let k = StringMap.find (string_of_branch_id b.branch_id) keys.branch_keys in
-      (string_of_branch_id b.branch_id, k)) all_br
-    |> List.sort (fun (_, a) (_, b) -> String.compare a b)
+      let c = StringMap.find (string_of_branch_id b.branch_id) colours.branch_colours in
+      (string_of_branch_id b.branch_id, c)) all_br
+    |> List.sort (fun (_, a) (_, b) -> Int.compare a b)
   in
   let branch_order =
     List.mapi (fun i (bid_s, _) ->
@@ -578,12 +773,11 @@ let assign_canonical_ids keys p =
        branch_id_of_string ("B" ^ string_of_int (i + 1)))) sorted_branches
   in
 
-  (* Item Templates: sort by structural key *)
   let sorted_item_templates =
-    List.map (fun t ->
-      let k = StringMap.find (string_of_item_template_id t.item_template_id) keys.item_template_keys in
-      (string_of_item_template_id t.item_template_id, k)) all_it
-    |> List.sort (fun (_, a) (_, b) -> String.compare a b)
+    List.map (fun (t : item_template) ->
+      let c = StringMap.find (string_of_item_template_id t.item_template_id) colours.item_template_colours in
+      (string_of_item_template_id t.item_template_id, c)) all_it
+    |> List.sort (fun (_, a) (_, b) -> Int.compare a b)
   in
   let item_template_order =
     List.mapi (fun i (tid_s, _) ->
@@ -591,12 +785,12 @@ let assign_canonical_ids keys p =
        item_template_id_of_string ("IT" ^ string_of_int (i + 1)))) sorted_item_templates
   in
 
-  (* Batches: sort by structural key *)
+  (* Batches *)
   let sorted_batches =
     List.map (fun (bid, _, _, _) ->
-      let k = StringMap.find (string_of_batch_id bid) keys.batch_keys in
-      (string_of_batch_id bid, k)) all_bat
-    |> List.sort (fun (_, a) (_, b) -> String.compare a b)
+      let c = StringMap.find (string_of_batch_id bid) colours.batch_colours in
+      (string_of_batch_id bid, c)) all_bat
+    |> List.sort (fun (_, a) (_, b) -> Int.compare a b)
   in
   let batch_order =
     List.mapi (fun i (bid_s, _) ->
@@ -604,8 +798,7 @@ let assign_canonical_ids keys p =
        batch_id_of_string ("BA" ^ string_of_int (i + 1)))) sorted_batches
   in
 
-  (* Groups: derive from Together origin canonical positions *)
-  (* Build a map from raw origin_id string to its canonical position (order index) *)
+  (* Groups *)
   let origin_pos =
     List.mapi (fun i (oid_s, _) -> (oid_s, i)) sorted_origins
   in
@@ -628,11 +821,11 @@ let assign_canonical_ids keys p =
       (gid, group_id_of_string ("G" ^ string_of_int (i + 1)))) sorted_tog
   in
 
-  { origin_order; fact_order; role_order; branch_order;
+  { origin_order; fact_order; role_order; role_scope_of; branch_order;
     group_order; batch_order; item_template_order }
 
 (* ------------------------------------------------------------------ *)
-(*  Reference rewriting (unchanged)                                      *)
+(*  Reference rewriting                                                  *)
 (* ------------------------------------------------------------------ *)
 
 let canonical_origin ids oid =
@@ -641,8 +834,18 @@ let canonical_origin ids oid =
 let canonical_fact ids fid =
   match List.assoc_opt fid ids.fact_order with Some c -> c | None -> fid
 
+let canonical_role_in_scope ids rid scope =
+  let scoped_key = match scope with
+    | Program_scope -> "P:" ^ string_of_role_id rid
+    | Item_template_scope tid -> "T:" ^ string_of_item_template_id tid ^ ":" ^ string_of_role_id rid
+  in
+  match List.assoc_opt scoped_key ids.role_order with Some c -> c | None -> rid
+
 let canonical_role ids rid =
-  match List.assoc_opt rid ids.role_order with Some c -> c | None -> rid
+  let rid_s = string_of_role_id rid in
+  match StringMap.find_opt rid_s ids.role_scope_of with
+  | Some scope -> canonical_role_in_scope ids rid scope
+  | None -> rid
 
 let canonical_branch ids bid =
   match List.assoc_opt bid ids.branch_order with Some c -> c | None -> bid
@@ -734,23 +937,22 @@ let rewrite_role ids r =
     | Program_scope -> Program_scope
     | Item_template_scope tid -> Item_template_scope (canonical_item_template ids tid)
   in
-  { role_id = canonical_role ids r.role_id;
+  { role_id = canonical_role_in_scope ids r.role_id r.scope;
     scope;
     fact_contract = Role_fact_contract (List.map (canonical_fact ids) fids);
     eligible_fulfillment = r.eligible_fulfillment }
 
-let rewrite_item_objective ids = function
-  | Required_role rid -> Required_role (canonical_role ids rid)
-
 let rewrite_item_template ids t =
+  let scope = Item_template_scope t.item_template_id in
   { item_template_id = canonical_item_template ids t.item_template_id;
     origin_sites = List.map (rewrite_origin_site ids) t.origin_sites;
     branches = List.map (rewrite_branch ids) t.branches;
     roles = List.map (rewrite_role ids) t.roles;
-    objective = rewrite_item_objective ids t.objective }
+    objective = (match t.objective with
+      | Required_role rid -> Required_role (canonical_role_in_scope ids rid scope)) }
 
 (* ------------------------------------------------------------------ *)
-(*  Collection sorting (unchanged)                                       *)
+(*  Collection sorting                                                   *)
 (* ------------------------------------------------------------------ *)
 
 let compare_origin_id a b =
@@ -779,27 +981,54 @@ let sort_facts (facts : fact list) =
   List.sort (fun (a : fact) (b : fact) -> compare_fact_id a.fact_id b.fact_id) facts
 
 let sort_action_inputs inputs =
-  List.sort (fun a b -> compare_input_name a.input_name b.input_name) inputs
+  List.sort (fun a b ->
+    let c = compare_input_name a.input_name b.input_name in
+    if c <> 0 then c
+    else
+      let encode_binding ai =
+        match ai.binding with
+        | Literal_value v -> "0:" ^ key_of_value v
+        | Fact_from_origin (fid, oid) ->
+            "1:" ^ string_of_fact_id fid ^ ":" ^ string_of_origin_id oid
+        | Fact_through_role (fid, rid) ->
+            "2:" ^ string_of_fact_id fid ^ ":" ^ string_of_role_id rid
+        | Anchor_value (oid, path) ->
+            "3:" ^ string_of_origin_id oid ^ ":" ^ String.concat "/" path
+        | Batch_item_context tid ->
+            "4:" ^ string_of_item_template_id tid
+      in
+      String.compare (encode_binding a) (encode_binding b)
+    ) inputs
 
 let sort_member_origin_ids ids =
   List.sort compare_origin_id ids
 
 let sort_origin_sites sites =
-  let origin_of = function
-    | Anchor_origin a -> a.anchor_origin_id
-    | Action_origin a -> a.action_origin_id
-    | Together_origin t -> t.together_origin_id
-    | Batch_site _ -> origin_id_of_string ""
+  let rank_of = function
+    | Anchor_origin a -> (0, string_of_origin_id a.anchor_origin_id)
+    | Action_origin a -> (1, string_of_origin_id a.action_origin_id)
+    | Together_origin t -> (2, string_of_origin_id t.together_origin_id)
+    | Batch_site b -> (3, string_of_batch_id b.batch_id)
   in
-  List.sort (fun a b -> compare_origin_id (origin_of a) (origin_of b)) sites
+  List.sort (fun a b ->
+    let (ra, sa) = rank_of a in
+    let (rb, sb) = rank_of b in
+    let c = Int.compare ra rb in
+    if c <> 0 then c else String.compare sa sb
+  ) sites
 
-let sort_success_continuations (scs : success_continuation list) =
-  List.sort (fun (a : success_continuation) (b : success_continuation) ->
-    compare_origin_id a.from_origin b.from_origin) scs
+let sort_success_continuations scs =
+  List.sort (fun a b -> compare_origin_id a.from_origin b.from_origin) scs
 
-let sort_entry_guards (guards : fact_guard list) =
-  List.sort (fun (a : fact_guard) (b : fact_guard) ->
-    compare_fact_id a.fact_id b.fact_id) guards
+let sort_entry_guards guards =
+  List.sort (fun a b ->
+    let c = compare_fact_id a.fact_id b.fact_id in
+    if c <> 0 then c
+    else
+      let d = Int.compare (operator_rank a.operator) (operator_rank b.operator) in
+      if d <> 0 then d
+      else String.compare (key_of_value a.expected) (key_of_value b.expected)
+  ) guards
 
 let sort_roles (roles : role list) =
   List.sort (fun (a : role) (b : role) -> compare_role_id a.role_id b.role_id) roles
@@ -850,7 +1079,7 @@ let normalize_item_template (t : item_template) =
     roles = (List.map normalize_role t.roles |> sort_roles) }
 
 (* ------------------------------------------------------------------ *)
-(*  Build the canonical program (unchanged)                              *)
+(*  Build the canonical program                                         *)
 (* ------------------------------------------------------------------ *)
 
 let build_canonical_program p ids =
@@ -879,7 +1108,7 @@ let build_canonical_program p ids =
     capability_contracts = sort_capability_contracts rewritten_capability_contracts }
 
 (* ------------------------------------------------------------------ *)
-(*  Canonical byte encoding (unchanged)                                  *)
+(*  Canonical byte encoding                                              *)
 (* ------------------------------------------------------------------ *)
 
 let encode_string buf s =
@@ -1062,7 +1291,7 @@ let make_canonical_bytes p =
   Buffer.contents buf
 
 (* ------------------------------------------------------------------ *)
-(*  SHA-256 and ProgramDigest (unchanged)                                *)
+(*  SHA-256 and ProgramDigest                                           *)
 (* ------------------------------------------------------------------ *)
 
 let compute_sha256 bytes =
@@ -1073,20 +1302,23 @@ let make_program_digest hex =
   Program_digest ("sha256:" ^ hex)
 
 (* ------------------------------------------------------------------ *)
-(*  Public API (unchanged)                                               *)
+(*  Public API                                                          *)
 (* ------------------------------------------------------------------ *)
 
 let canonicalize p =
   match Tethers_core_validator.validate p with
   | Error errors -> Error (Invalid_core errors)
   | Ok () ->
-      let keys = final_keys p in
-      let ids = assign_canonical_ids keys p in
-      let canon = build_canonical_program p ids in
-      let bytes = make_canonical_bytes canon in
-      let hex = compute_sha256 bytes in
-      let digest = make_program_digest hex in
-      Ok { c_program = canon; c_bytes = bytes; c_digest = digest }
+      (try
+         let colours = final_colours p in
+         let ids = assign_canonical_ids colours p in
+         let canon = build_canonical_program p ids in
+         let bytes = make_canonical_bytes canon in
+         let hex = compute_sha256 bytes in
+         let digest = make_program_digest hex in
+         Ok { c_program = canon; c_bytes = bytes; c_digest = digest }
+       with Failure msg when msg = "refinement exceeded safety cap" ->
+         Error Refinement_exceeded)
 
 let canonical_program c = c.c_program
 
