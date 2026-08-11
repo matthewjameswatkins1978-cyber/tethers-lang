@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-6B — Canonical Core → Runtime Plan Boundary`
+Task: `TETHERS CORE-6B - Canonical Core to Runtime Plan Boundary`
 
 Owner: `OpenCode`
 
@@ -12,7 +12,7 @@ Status: `COMPLETE`
 
 Task colour: `Amber`
 
-Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
+Route: `OpenCode implementation + evidence, Lucy independent GitHub review`
 
 Worker note: `docs/worker-notes/2026-08-11-core-6b-canonical-planning-boundary.md`
 
