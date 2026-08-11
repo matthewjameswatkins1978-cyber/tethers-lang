@@ -1,6 +1,6 @@
 # Worker Note
 
-Task: `TETHERS CORE-4A — Canonical Identity Correction`
+Task: `TETHERS CORE-4B — Collision-Free Canonical Refinement`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
@@ -10,13 +10,59 @@ Status: `COMPLETE`
 
 Base commit: `7efec4b1eb69c37c98b3e6b71a7b2e1d8a9260f5`
 
-Implementation checkpoint: `fb8ee33de05eadba028e35f343411a76802acc92`
+Implementation checkpoint: `31b614727c1f42e2fcab975341c09be35508eefb`
 
 ## Requested outcome
 
-CORE-4: Implement the first authoritative canonical semantic identity layer for Tethers Core. CORE-4A: Correct defects found by Lucy's independent review — remove raw-ID leaks from structural keys, complete batch canonicalisation, scope-qualify role identity, add guard-based refinement, replace expanding-string keys with color-compressed partition refinement, and add regression tests for each corrected leak.
+CORE-4B: Replace lossy hash-based colouring with exact-signature partition refinement. Add complete graph relationship modelling. Preserve role scope through canonical assignment. Give every unordered collection a total semantic order.
 
-## Changes made (CORE-4A)
+## Changes made (CORE-4B)
+
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical.ml` — rewritten refinement core (810 lines changed)
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical.mli` — added Refinement_exceeded variant
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_test.ml` — 8 new tests (238 lines added)
+- Total canonicaliser tests: 50 (42 prior + 8 new)
+
+### Collision-free colour compression
+
+- Delete 31-bit `color_of_string` (djb2 variant hash)
+- Implement `compress_colours`: collect unique full-signature strings per entity type, sort deterministically, assign consecutive colour numbers (1..N) by exact-signature equality
+- Replace `partitions_equal` with `int_map_partition_stable`: checks partition identity by verifying entities sharing a colour in round N also share a colour in round N+1, and the number of unique colours is unchanged
+- This prevents false convergence (colour values shifting while partition is stable) while detecting true non-stabilisation
+
+### Graph relationship modelling
+
+- Add `static_refs` with complete structural relationships:
+  - `success_out_map`: origin → list of control_targets
+  - `success_in_map`: target origin → list of predecessor origin_ids
+  - `origin_branches`: origin → list of branch_ids
+  - `together_for_member`: member origin → containing Together origin
+  - `guards_for_fact`: fact → list of (operator, expected_value) with operator rank
+  - `consumers_for_fact`: fact → list of (input_name, binding) from consuming actions
+  - `origin_for_fact`: fact → declaring origin
+- Origin signatures include: entry marker, success outgoing target colour, success incoming predecessor colours, attached branch colours, Together container colour
+- Fact signatures include: provenance colour, guard operators (ranked), consuming action input colours, establishing origin colour
+
+### Role scope through canonical assignment
+
+- `role_order` now uses scoped keys (e.g. "P:rolename", "T:tid:rolename") instead of raw role_ids
+- `role_scope_of` map added to `canonical_ids` for disambiguating Role_proxy references
+- `canonical_role_in_scope` for scope-explicit lookup; `canonical_role` fallback uses scope map
+- `rewrite_role` and `rewrite_item_template` objective use scope-explicit lookup
+
+### Total ordering for unordered collections
+
+- Guard sorting: canonical FactId → operator rank → typed expected value
+- Action input sorting: input name → binding encoding (not just name)
+- Origin site sorting: species-aware (Anchor/Action/Together→OriginId, Batch→BatchId)
+- Duplicate input names with distinct bindings sorted consistently via binding encoding break
+
+### Safety cap
+
+- 1000-round safety cap, returns `Refinement_exceeded` error (never partial state)
+- Refinement converges in O(log N) rounds for chains via colour-based neighbour propagation
+
+### CORE-4A changes (preserved)
 
 - `tethers-0.1/engine-ocaml/bin/tethers_core_canonical.ml` — rewritten core fingerprinting and refinement (440 lines changed)
 - `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_test.ml` — 14 new regression tests + real byte fixture (397 lines added)
@@ -62,15 +108,16 @@ CORE-4: Implement the first authoritative canonical semantic identity layer for 
 
 ## Evidence
 
-All commands run against implementation checkpoint `fb8ee33de05eadba028e35f343411a76802acc92`.
+All commands run against implementation checkpoint `31b614727c1f42e2fcab975341c09be35508eefb`.
 
 | Command | Result |
 | --- | --- |
 | `dune build @all` | PASS (exit 0) |
-| `dune runtest` | PASS (42 new + all existing validator/lowerer) |
+| `dune runtest` | PASS (50 new + all existing validator/lowerer) |
 | `git diff --check` | PASS |
 | `cargo fmt --check` | PASS (RUST_UNCHANGED) |
 | `git status --short` | PASS (clean) |
+| `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` | `control-v1/COMPLETE` |
 
 **New tests:** 42 focused tests covering:
 - A: Baseline valid canonicalisation
