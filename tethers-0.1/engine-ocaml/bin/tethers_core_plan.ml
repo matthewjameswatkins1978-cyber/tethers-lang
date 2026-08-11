@@ -2,6 +2,11 @@ open Tethers_core
 open Tethers_core_validator
 open Tethers_outcome
 
+type anchor_snapshot = {
+  origin_id : Tethers_core.origin_id;
+  data : Yojson.Safe.t;
+}
+
 type planning_error =
   | Invalid_core of validation_error list
   | Missing_entry_origin
@@ -12,7 +17,6 @@ type planning_error =
   | Unsupported_role_binding
   | Unsupported_role_proxy
   | Unsupported_fact_binding
-  | Unsupported_anchor_value
   | Unsupported_execution_constraint
   | Unsupported_item_template
   | Missing_capability_projection of capability_id
@@ -22,6 +26,11 @@ type planning_error =
   | Ambiguous_capability_projection of capability_id
   | Flow_cycle of origin_id list
   | Unresolved_origin of origin_id
+  | Missing_anchor_snapshot of origin_id
+  | Ambiguous_anchor_snapshot of origin_id
+  | Anchor_path_missing of origin_id * string list
+  | Anchor_path_not_object of origin_id * string list
+  | Unsupported_anchor_value_type of origin_id * string list
 
 type runtime_capability_projection = {
   capability_id : capability_id;
@@ -32,6 +41,7 @@ type runtime_capability_projection = {
 type planning_context = {
   evaluation_id : string;
   capabilities : runtime_capability_projection list;
+  anchors : anchor_snapshot list;
 }
 
 (* ------------------------------------------------------------------ *)
@@ -73,7 +83,7 @@ let binding_error = function
   | Literal_value _ -> None
   | Fact_through_role _ -> Some Unsupported_role_binding
   | Fact_from_origin _ -> Some Unsupported_fact_binding
-  | Anchor_value _ -> Some Unsupported_anchor_value
+  | Anchor_value _ -> None
   | Batch_item_context _ -> Some Unsupported_batch
 
 let action_inputs_of_site = function
@@ -179,6 +189,57 @@ let projection_of context capability_id contract_digest =
       | _ -> Error (Ambiguous_capability_projection capability_id))
 
 (* ------------------------------------------------------------------ *)
+(*  Anchor snapshot resolution                                         *)
+(*                                                                     *)
+(*  For an [Anchor_value (origin_id, path)] binding, the bridge finds   *)
+(*  the snapshot for exactly the requested [origin_id], traverses the   *)
+(*  ordered path through the JSON tree, and produces a concrete value    *)
+(*  suitable for the Runtime Plan argument vocabulary.  Lookup is        *)
+(*  identity-based, not first-match, not order-dependent.               *)
+(* ------------------------------------------------------------------ *)
+
+let find_snapshot context origin_id =
+  let matching =
+    List.filter
+      (fun (s : anchor_snapshot) -> s.origin_id = origin_id)
+      context.anchors
+  in
+  match matching with
+  | [] -> Error (Missing_anchor_snapshot origin_id)
+  | [ snapshot ] -> Ok snapshot
+  | _ -> Error (Ambiguous_anchor_snapshot origin_id)
+
+let traverse_path origin_id path json =
+  let rec go remaining current =
+    match remaining with
+    | [] -> Ok current
+    | component :: rest -> (
+        match current with
+        | `Assoc members -> (
+            match List.assoc_opt component members with
+            | None ->
+                Error
+                  (Anchor_path_missing (origin_id, path))
+            | Some value -> go rest value)
+        | _ ->
+            Error
+              (Anchor_path_not_object (origin_id, path)))
+  in
+  go path json
+
+let json_value_of_terminal origin_id path = function
+  | `String s -> Ok (`String s)
+  | `Int i -> Ok (`Int i)
+  | `Bool b -> Ok (`Bool b)
+  | _ -> Error (Unsupported_anchor_value_type (origin_id, path))
+
+let resolve_anchor_value context origin_id path =
+  let open Result.Syntax in
+  let* snapshot = find_snapshot context origin_id in
+  let* terminal = traverse_path origin_id path snapshot.data in
+  json_value_of_terminal origin_id path terminal
+
+(* ------------------------------------------------------------------ *)
 (*  Action planning                                                    *)
 (*                                                                     *)
 (*  Only literal inputs reach this point: the pre-scan rejects every    *)
@@ -202,7 +263,11 @@ let plan_action context index (a : action_origin) =
             build_arguments ((name, json_of_core_value value) :: acc) rest
         | Fact_through_role _ -> Error Unsupported_role_binding
         | Fact_from_origin _ -> Error Unsupported_fact_binding
-        | Anchor_value _ -> Error Unsupported_anchor_value
+        | Anchor_value (origin_id, path) ->
+            let name = string_of_capability_input_name ai.input_name in
+            let open Result.Syntax in
+            let* value = resolve_anchor_value context origin_id path in
+            build_arguments ((name, value) :: acc) rest
         | Batch_item_context _ -> Error Unsupported_batch)
   in
   match build_arguments [] a.inputs with

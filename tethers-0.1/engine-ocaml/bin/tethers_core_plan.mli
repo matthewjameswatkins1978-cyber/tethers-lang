@@ -1,14 +1,25 @@
 (** Core → Runtime Plan bridge.
 
-    CORE-5B is the runtime-plan boundary slice from validated Tethers Core to
+    CORE-6A is the runtime-plan boundary slice from validated Tethers Core to
     the existing Runtime Plan representation ([Tethers_outcome.plan]).  It
-    combines what Core means, this runtime occurrence, and approved host
-    Capability projections into a concrete Runtime Plan request.
+    combines what Core means, this runtime occurrence, approved host Capability
+    projections, and runtime Anchor snapshot data into a concrete Runtime Plan
+    request.
 
     Core defines the program.  Runtime instantiates an occurrence.  The bridge
     never executes Actions, never authorises, never repairs invalid Core, never
     infers missing semantics, and never reinterprets the program.  The Plan
     remains a request, not permission. *)
+
+type anchor_snapshot = {
+  origin_id : Tethers_core.origin_id;
+  (** Core Anchor identity this snapshot is for. *)
+  data : Yojson.Safe.t;
+  (** Runtime-supplied JSON snapshot for this Anchor. *)
+}
+(** A runtime-supplied Anchor snapshot.  The bridge resolves [Anchor_value]
+    bindings by finding the snapshot for the exact [origin_id] and traversing
+    the requested path. *)
 
 type runtime_capability_projection = {
   capability_id : Tethers_core.capability_id;
@@ -31,6 +42,9 @@ type planning_context = {
       [program_id]. *)
   capabilities : runtime_capability_projection list;
   (** Approved runtime Capability projections supplied by the host. *)
+  anchors : anchor_snapshot list;
+  (** Runtime-supplied Anchor snapshot data for resolving [Anchor_value]
+      bindings.  Each snapshot is keyed by its Core [origin_id]. *)
 }
 
 type planning_error =
@@ -62,10 +76,6 @@ type planning_error =
   (** [Fact_from_origin] input binding present: the existing runtime plan
       carries concrete resolved argument values and has no event-data or
       fact-carrying vocabulary. *)
-  | Unsupported_anchor_value
-  (** [Anchor_value] input binding present: the existing runtime plan
-      carries concrete resolved argument values and has no event-data
-      vocabulary for anchor paths. *)
   | Unsupported_execution_constraint
   (** An execution constraint (e.g. [Deadline]) is present: the existing
       runtime-plan vocabulary has no field for it. *)
@@ -93,6 +103,20 @@ type planning_error =
   | Unresolved_origin of Tethers_core.origin_id
   (** Defensive: unreachable for validated Core, which rejects unknown
       entry origins and missing continuation targets. *)
+  | Missing_anchor_snapshot of Tethers_core.origin_id
+  (** No snapshot exists for the Core Anchor [origin_id] referenced by an
+      [Anchor_value] binding. *)
+  | Ambiguous_anchor_snapshot of Tethers_core.origin_id
+  (** More than one snapshot exists for the same Core Anchor [origin_id].
+      The host must deduplicate snapshots before supply. *)
+  | Anchor_path_missing of Tethers_core.origin_id * string list
+  (** The requested path component does not exist in the Anchor snapshot. *)
+  | Anchor_path_not_object of Tethers_core.origin_id * string list
+  (** Traversal attempted to continue through a non-object value. *)
+  | Unsupported_anchor_value_type of Tethers_core.origin_id * string list
+  (** The terminal value at the resolved path is not a string, integer, or
+      boolean and cannot be represented by the Runtime Plan argument
+      vocabulary. *)
 
 val plan :
   Tethers_core.program ->
@@ -112,7 +136,8 @@ val plan :
     [action_id], [idempotency_key] (derived from
     [context.evaluation_id]), [capability] and [capability_version] (from the
     approved projection), [arguments] (literal Core inputs as concrete
-    values), [effects], and the projection's bridge metadata fields when
+    values, plus [Anchor_value] inputs resolved through runtime Anchor
+    snapshots), [effects], and the projection's bridge metadata fields when
     present.  [plan.id] is [context.evaluation_id ^ "/plan"]; [program_id]
     remains Core logical identity and is never used as an occurrence identity.
     [required_effects] aggregates the planned capabilities' effects with

@@ -26,7 +26,6 @@ let string_of_planning_error = function
   | Unsupported_role_binding -> "Unsupported_role_binding"
   | Unsupported_role_proxy -> "Unsupported_role_proxy"
   | Unsupported_fact_binding -> "Unsupported_fact_binding"
-  | Unsupported_anchor_value -> "Unsupported_anchor_value"
   | Unsupported_execution_constraint -> "Unsupported_execution_constraint"
   | Unsupported_item_template -> "Unsupported_item_template"
   | Missing_capability_projection _ -> "Missing_capability_projection"
@@ -38,6 +37,11 @@ let string_of_planning_error = function
   | Ambiguous_capability_projection _ -> "Ambiguous_capability_projection"
   | Flow_cycle _ -> "Flow_cycle"
   | Unresolved_origin _ -> "Unresolved_origin"
+  | Missing_anchor_snapshot _ -> "Missing_anchor_snapshot"
+  | Ambiguous_anchor_snapshot _ -> "Ambiguous_anchor_snapshot"
+  | Anchor_path_missing _ -> "Anchor_path_missing"
+  | Anchor_path_not_object _ -> "Anchor_path_not_object"
+  | Unsupported_anchor_value_type _ -> "Unsupported_anchor_value_type"
 
 let assert_ok_plan msg = function
   | Ok plan -> incr tests_run; incr tests_passed; plan
@@ -142,10 +146,17 @@ let mk_projection cap_id_str digest ?(name="") ?(version="1.0.0")
         bridge_capability_version;
         bridge_provider_identity } }
 
-let mk_context ?(evaluation_id="eval_1") ?(capabilities=[]) () =
-  { evaluation_id; capabilities }
+let mk_context ?(evaluation_id="eval_1") ?(capabilities=[]) ?(anchors=[]) () =
+  { evaluation_id; capabilities; anchors }
 
 let action_field name action = Yojson.Safe.Util.member name action
+
+(* ================================================================== *)
+(*  Anchor snapshot helpers                                             *)
+(* ================================================================== *)
+
+let mk_anchor_snapshot oid_str json =
+  { origin_id = oid oid_str; data = json }
 
 (* ================================================================== *)
 (*  T1 — Explicit completion: A → Program_complete                     *)
@@ -636,27 +647,6 @@ let test_unsupported_role_binding () =
   assert_plan_error Unsupported_role_binding "T11 role binding fails closed"
     (plan program ctx)
 
-let test_unsupported_anchor_value () =
-  let program = mk_program
-    ~id:"P_anchor_value"
-    ~entry_origin:(Some (oid "O_anchor"))
-    ~origin_sites:[
-      mk_anchor_origin "O_anchor" "file.received" [];
-      mk_action_origin "O_action" "cap.notify" "sha256:abc"
-        [ { input_name = capability_input_name_of_string "ref";
-            binding = Anchor_value (oid "O_anchor", [ "document"; "name" ]) } ] []
-    ]
-    ~success_continuations:[
-      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
-      mk_success_cont "O_action" Program_complete;
-    ]
-    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
-    ()
-  in
-  let ctx = mk_context ~evaluation_id:"eval_t11" () in
-  assert_plan_error Unsupported_anchor_value
-    "T11 Anchor_value fails closed" (plan program ctx)
-
 let test_unsupported_fact_from_origin () =
   let action1 =
     Action_origin
@@ -945,6 +935,502 @@ let test_distinct_contracts_coexist () =
      | _ -> false)
 
 (* ================================================================== *)
+(*  T1 — Nested string resolution                                      *)
+(* ================================================================== *)
+
+let test_anchor_nested_string () =
+  let program = mk_program
+    ~id:"P_t1"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t1"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  let p = assert_ok_plan "T1 plan" (plan program ctx) in
+  (match p.actions with
+   | [ action ] ->
+       assert_true "T1 resolved string"
+         (action_field "arguments" action =
+            `Assoc [ ("ref", `String "Tethers") ])
+   | _ -> assert_true "T1 single-action shape" false)
+
+(* ================================================================== *)
+(*  T2 — Integer resolution                                             *)
+(* ================================================================== *)
+
+let test_anchor_integer () =
+  let program = mk_program
+    ~id:"P_t2"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "count";
+            binding = Anchor_value (oid "O_anchor", [ "meta"; "count" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("meta", `Assoc [
+        ("count", `Int 42)
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t2"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  let p = assert_ok_plan "T2 plan" (plan program ctx) in
+  (match p.actions with
+   | [ action ] ->
+       assert_true "T2 resolved integer"
+         (action_field "arguments" action =
+            `Assoc [ ("count", `Int 42) ])
+   | _ -> assert_true "T2 single-action shape" false)
+
+(* ================================================================== *)
+(*  T3 — Boolean resolution                                             *)
+(* ================================================================== *)
+
+let test_anchor_boolean () =
+  let program = mk_program
+    ~id:"P_t3"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "flag";
+            binding = Anchor_value (oid "O_anchor", [ "status"; "active" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("status", `Assoc [
+        ("active", `Bool true)
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t3"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  let p = assert_ok_plan "T3 plan" (plan program ctx) in
+  (match p.actions with
+   | [ action ] ->
+       assert_true "T3 resolved boolean"
+         (action_field "arguments" action =
+            `Assoc [ ("flag", `Bool true) ])
+   | _ -> assert_true "T3 single-action shape" false)
+
+(* ================================================================== *)
+(*  T4 — Mixed literal + anchor inputs                                  *)
+(* ================================================================== *)
+
+let test_mixed_literal_and_anchor () =
+  let program = mk_program
+    ~id:"P_t4"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "Hello");
+          { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t4"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  let p = assert_ok_plan "T4 plan" (plan program ctx) in
+  (match p.actions with
+   | [ action ] ->
+       let args = action_field "arguments" action in
+       assert_true "T4 literal argument"
+         (Yojson.Safe.Util.member "message" args = `String "Hello");
+       assert_true "T4 anchor argument"
+         (Yojson.Safe.Util.member "ref" args = `String "Tethers")
+   | _ -> assert_true "T4 single-action shape" false)
+
+(* ================================================================== *)
+(*  T5 — Missing snapshot                                                *)
+(* ================================================================== *)
+
+let test_missing_snapshot () =
+  let program = mk_program
+    ~id:"P_t5"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t5"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[]
+      ()
+  in
+  assert_plan_error (Missing_anchor_snapshot (oid "O_anchor"))
+    "T5 missing snapshot fails" (plan program ctx)
+
+(* ================================================================== *)
+(*  T6 — Wrong anchor does not substitute                               *)
+(* ================================================================== *)
+
+let test_wrong_anchor_no_substitute () =
+  let program = mk_program
+    ~id:"P_t6"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t6"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_other_anchor" snapshot ]
+      ()
+  in
+  assert_plan_error (Missing_anchor_snapshot (oid "O_anchor"))
+    "T6 wrong anchor does not substitute" (plan program ctx)
+
+(* ================================================================== *)
+(*  T7 — Duplicate snapshot ambiguity                                   *)
+(* ================================================================== *)
+
+let test_duplicate_snapshot_ambiguity () =
+  let program = mk_program
+    ~id:"P_t7"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t7"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[
+        mk_anchor_snapshot "O_anchor" snapshot;
+        mk_anchor_snapshot "O_anchor" snapshot;
+      ]
+      ()
+  in
+  assert_plan_error (Ambiguous_anchor_snapshot (oid "O_anchor"))
+    "T7 duplicate snapshot ambiguity" (plan program ctx)
+
+(* ================================================================== *)
+(*  T8 — Reversed duplicate snapshot order                              *)
+(* ================================================================== *)
+
+let test_reversed_duplicate_snapshot_order () =
+  let program = mk_program
+    ~id:"P_t8"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers")
+      ])
+    ]
+  in
+  let ctx_fwd =
+    mk_context
+      ~evaluation_id:"eval_t8"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[
+        mk_anchor_snapshot "O_anchor" snapshot;
+        mk_anchor_snapshot "O_anchor" snapshot;
+      ]
+      ()
+  in
+  let ctx_rev =
+    mk_context
+      ~evaluation_id:"eval_t8"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[
+        mk_anchor_snapshot "O_anchor" snapshot;
+        mk_anchor_snapshot "O_anchor" snapshot;
+      ]
+      ()
+  in
+  assert_plan_error (Ambiguous_anchor_snapshot (oid "O_anchor"))
+    "T8 reversed duplicates fail (forward)" (plan program ctx_fwd);
+  assert_plan_error (Ambiguous_anchor_snapshot (oid "O_anchor"))
+    "T8 reversed duplicates fail (reversed)" (plan program ctx_rev)
+
+(* ================================================================== *)
+(*  T9 — Missing path component                                         *)
+(* ================================================================== *)
+
+let test_missing_path_component () =
+  let program = mk_program
+    ~id:"P_t9"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("other", `String "value")
+      ])
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t9"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  assert_plan_error (Anchor_path_missing (oid "O_anchor", [ "document"; "title" ]))
+    "T9 missing path component" (plan program ctx)
+
+(* ================================================================== *)
+(*  T10 — Non-object traversal                                          *)
+(* ================================================================== *)
+
+let test_non_object_traversal () =
+  let program = mk_program
+    ~id:"P_t10"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `String "hello")
+    ]
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_t10"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ()
+  in
+  assert_plan_error (Anchor_path_not_object (oid "O_anchor", [ "document"; "title" ]))
+    "T10 non-object traversal" (plan program ctx)
+
+(* ================================================================== *)
+(*  T11 — Unsupported terminal JSON                                     *)
+(* ================================================================== *)
+
+let test_unsupported_terminal_json () =
+  let program = mk_program
+    ~id:"P_t11"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ { input_name = capability_input_name_of_string "ref";
+            binding = Anchor_value (oid "O_anchor", [ "document"; "title" ]) } ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let test_unsupported name terminal =
+    let snapshot =
+      `Assoc [
+        ("document", `Assoc [
+          ("title", terminal)
+        ])
+      ]
+    in
+    let ctx =
+      mk_context
+        ~evaluation_id:"eval_t11"
+        ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+        ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+        ()
+    in
+    assert_plan_error (Unsupported_anchor_value_type (oid "O_anchor", [ "document"; "title" ]))
+      ("T11 " ^ name) (plan program ctx)
+  in
+  test_unsupported "object" (`Assoc [("key", `String "value")]);
+  test_unsupported "array" (`List [ `String "a" ]);
+  test_unsupported "null" `Null
+
+(* ================================================================== *)
+(*  T12 — Existing fail-closed behaviour (Fact_from_origin)             *)
+(* ================================================================== *)
+
+let test_existing_fail_closed_fact_from_origin () =
+  let action1 =
+    Action_origin
+      { action_origin_id = oid "O1";
+        capability_id = cid "cap.notify";
+        contract_digest = capability_contract_digest_of_string "sha256:abc";
+        inputs = [];
+        declared_facts = [ mk_origin_fact "F_a" "O1" ];
+        execution_constraints = [] }
+  in
+  let action2 =
+    mk_action_origin "O2" "cap.save" "sha256:def"
+      [ { input_name = capability_input_name_of_string "v";
+          binding = Fact_from_origin (fid "F_a", oid "O1") } ] []
+  in
+  let program = mk_program
+    ~id:"P_t12"
+    ~entry_origin:(Some (oid "O1"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "ev" [];
+      action1;
+      action2;
+    ]
+    ~success_continuations:[
+      mk_success_cont "O1" (Origin_target (oid "O2"));
+      mk_success_cont "O2" Program_complete;
+    ]
+    ~capability_contracts:[
+      mk_cap_contract "cap.notify" "sha256:abc";
+      mk_cap_contract "cap.save" "sha256:def";
+    ]
+    ()
+  in
+  let ctx = mk_context ~evaluation_id:"eval_t12" () in
+  assert_plan_error Unsupported_fact_binding
+    "T12 Fact_from_origin still fails closed" (plan program ctx)
+
+(* ================================================================== *)
 (*  RUN ALL TESTS                                                       *)
 (* ================================================================== *)
 
@@ -963,7 +1449,6 @@ let () =
   test_unsupported_batch ();
   test_unsupported_branch ();
   test_unsupported_role_binding ();
-  test_unsupported_anchor_value ();
   test_unsupported_fact_from_origin ();
   test_unsupported_execution_constraint ();
   test_unsupported_item_template ();
@@ -973,4 +1458,16 @@ let () =
   test_duplicate_projection_fails ();
   test_reversed_duplicates_fail ();
   test_distinct_contracts_coexist ();
+  test_anchor_nested_string ();
+  test_anchor_integer ();
+  test_anchor_boolean ();
+  test_mixed_literal_and_anchor ();
+  test_missing_snapshot ();
+  test_wrong_anchor_no_substitute ();
+  test_duplicate_snapshot_ambiguity ();
+  test_reversed_duplicate_snapshot_order ();
+  test_missing_path_component ();
+  test_non_object_traversal ();
+  test_unsupported_terminal_json ();
+  test_existing_fail_closed_fact_from_origin ();
   Printf.printf "PASS all plan bridge tests (%d/%d)\n" !tests_passed !tests_run
