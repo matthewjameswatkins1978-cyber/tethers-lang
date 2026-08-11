@@ -1402,6 +1402,290 @@ let test_fact_usage_position () =
   assert (digest_of p1 = digest_of p2)
 
 (* ================================================================== *)
+(*  CORE-4C REGRESSION TESTS                                            *)
+(* ================================================================== *)
+
+(* T1 — Role_proxy rename invariance *)
+let test_role_proxy_rename_invariance () =
+  let mk prog_role_id fact_id =
+    let role = {
+      role_id = role_id_of_string prog_role_id;
+      scope = Program_scope;
+      fact_contract = Role_fact_contract [];
+      eligible_fulfillment = role_fulfillment_of_string "fulfill_alpha";
+    } in
+    let fact_rp = {
+      fact_id = fact_id_of_string fact_id;
+      schema_description = "desc";
+      provenance = Role_proxy (role_id_of_string prog_role_id);
+    } in
+    mk_program
+      ~input_facts:[ mk_eval_fact "F0" "hk0" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "O_anchor"))
+      ~origin_sites:[
+        mk_anchor_origin "O_anchor" "event.proxy" [];
+        mk_action_origin "O_action" "cap.x" "sha256:d1"
+          [ mk_lit_input "x" (String_value "v") ]
+          [ fact_rp ]
+      ]
+      ~roles:[ role ]
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  let p1 = mk "ROLE_ALPHA" "F_proxy" in
+  let p2 = mk "ROLE_ZETA" "F_proxy2" in
+  (* also rename fact id consistently: Fact id rename should not affect digest separately,
+     but role rename is the core invariant. We rename fact id to ensure fact identity
+     colour-compression covers the proxy fact itself. *)
+  assert (bytes_of p1 = bytes_of p2);
+  assert (digest_of p1 = digest_of p2)
+
+(* T2 — Fact_through_role rename invariance *)
+let test_fact_through_role_rename_invariance () =
+  let mk role_id_str =
+    let fid = "F_target" in
+    let fact_eval = mk_eval_fact fid "hk1" String_type in
+    let role = {
+      role_id = role_id_of_string role_id_str;
+      scope = Program_scope;
+      fact_contract = Role_fact_contract [ fact_id_of_string fid ];
+      eligible_fulfillment = role_fulfillment_of_string "fulfill_beta";
+    } in
+    mk_program
+      ~input_facts:[ fact_eval ]
+      ~entry_origin:(Some (origin_id_of_string "O_anchor"))
+      ~origin_sites:[
+        mk_anchor_origin "O_anchor" "event.ft" [];
+        mk_action_origin "O_consumer" "cap.x" "sha256:d1"
+          [ { input_name = capability_input_name_of_string "y";
+              binding = Fact_through_role (fact_id_of_string fid, role_id_of_string role_id_str) } ]
+          []
+      ]
+      ~roles:[ role ]
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  let p_a = mk "ROLE_ALPHA" in
+  let p_b = mk "ROLE_ZETA" in
+  assert (bytes_of p_a = bytes_of p_b);
+  assert (digest_of p_a = digest_of p_b)
+
+(* T3 — Same local RoleId in two ItemTemplates, distinct semantics, no collapse *)
+let test_same_local_role_in_two_templates () =
+  let mk mk_templates =
+    let input_facts = [
+      mk_eval_fact "F_tplA" "hkA" String_type;
+      mk_eval_fact "F_tplB" "hkB" String_type
+    ] in
+    let t1_fixed = {
+      item_template_id = item_template_id_of_string "tplA";
+      origin_sites = [
+        mk_action_origin "O_tplA" "cap.t" "sha256:t"
+          [ { input_name = capability_input_name_of_string "inp";
+              binding = Fact_through_role (fact_id_of_string "F_tplA", role_id_of_string "R1") } ]
+          []
+      ];
+      branches = [];
+      roles = [{
+        role_id = role_id_of_string "R1";
+        scope = Item_template_scope (item_template_id_of_string "tplA");
+        fact_contract = Role_fact_contract [ fact_id_of_string "F_tplA" ];
+        eligible_fulfillment = role_fulfillment_of_string "fa" }];
+      objective = Required_role (role_id_of_string "R1")
+    } in
+    let t2_fixed = {
+      item_template_id = item_template_id_of_string "tplB";
+      origin_sites = [
+        mk_action_origin "O_tplB" "cap.t" "sha256:t"
+          [ { input_name = capability_input_name_of_string "inp";
+              binding = Fact_through_role (fact_id_of_string "F_tplB", role_id_of_string "R1") } ]
+          []
+      ];
+      branches = [];
+      roles = [{
+        role_id = role_id_of_string "R1";
+        scope = Item_template_scope (item_template_id_of_string "tplB");
+        fact_contract = Role_fact_contract [ fact_id_of_string "F_tplB" ];
+        eligible_fulfillment = role_fulfillment_of_string "fb" }];
+      objective = Required_role (role_id_of_string "R1")
+    } in
+    let t1 = t1_fixed in
+    let t2 = t2_fixed in
+    let t1_fixed = { t1 with
+      origin_sites = [
+        mk_action_origin "O_tplA" "cap.t" "sha256:t"
+          [ { input_name = capability_input_name_of_string "inp";
+              binding = Fact_through_role (fact_id_of_string "F_tplA", role_id_of_string "R1") } ]
+          []
+      ];
+      roles = [{ role_id = role_id_of_string "R1";
+                 scope = Item_template_scope (item_template_id_of_string "tplA");
+                 fact_contract = Role_fact_contract [ fact_id_of_string "F_tplA" ];
+                 eligible_fulfillment = role_fulfillment_of_string "fa" }]
+    } in
+    let t2_fixed = { t2 with
+      origin_sites = [
+        mk_action_origin "O_tplB" "cap.t" "sha256:t"
+          [ { input_name = capability_input_name_of_string "inp";
+              binding = Fact_through_role (fact_id_of_string "F_tplB", role_id_of_string "R1") } ]
+          []
+      ];
+      roles = [{ role_id = role_id_of_string "R1";
+                 scope = Item_template_scope (item_template_id_of_string "tplB");
+                 fact_contract = Role_fact_contract [ fact_id_of_string "F_tplB" ];
+                 eligible_fulfillment = role_fulfillment_of_string "fb" }]
+    } in
+    mk_program
+      ~input_facts
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[ mk_anchor_origin "ent" "ev" [] ]
+      ~item_templates:(mk_templates t1_fixed t2_fixed)
+      ~capability_contracts:[ mk_cap_contract "cap.t" "sha256:t" ]
+      ()
+  in
+  let p1 = mk (fun a b -> [a; b]) in
+  let p2 = mk (fun a b -> [b; a]) in
+  assert (digest_of p1 = digest_of p2);
+  assert (bytes_of p1 = bytes_of p2);
+  (* Inspect rewritten canonical Core: roles should be distinct canonical IDs *)
+  let cp = canon_prog_of p1 in
+  assert (List.length cp.item_templates = 2);
+  let all_roles = List.concat_map (fun (t : item_template) -> t.roles) cp.item_templates in
+  assert (List.length all_roles = 2);
+  let rids = List.map (fun (r : role) -> string_of_role_id r.role_id) all_roles in
+  assert (List.length (List.sort_uniq String.compare rids) = 2);
+  (* No collapse: each template's action should reference its own canonical role *)
+  let check_references (prog : program) =
+    List.iter (fun (t : item_template) ->
+      match t.origin_sites with
+      | [Action_origin a] -> (
+        match a.inputs with
+        | [{ input_name = _; binding = Fact_through_role (_, rid) }] ->
+            let expected_scope = Item_template_scope t.item_template_id in
+            let matching_role = List.find_opt (fun (r : role) -> r.role_id = rid && r.scope = expected_scope) t.roles in
+            assert (matching_role <> None)
+        | _ -> failwith "expected one FT input"
+      )
+      | _ -> failwith "expected one action per template"
+    ) prog.item_templates
+  in
+  check_references cp;
+  (* Second program with renamed template IDs and local RoleIds, reversed storage *)
+  let mk_renamed () =
+    let input_facts = [
+      mk_eval_fact "F_tplA" "hkA" String_type;
+      mk_eval_fact "F_tplB" "hkB" String_type
+    ] in
+    let tA = {
+      item_template_id = item_template_id_of_string "ZETA_TPL";
+      origin_sites = [
+        mk_action_origin "O_ZETA_A" "cap.t" "sha256:t"
+          [ { input_name = capability_input_name_of_string "inp";
+              binding = Fact_through_role (fact_id_of_string "F_tplA", role_id_of_string "R9") } ]
+          []
+      ];
+      branches = [];
+      roles = [{
+        role_id = role_id_of_string "R9";
+        scope = Item_template_scope (item_template_id_of_string "ZETA_TPL");
+        fact_contract = Role_fact_contract [ fact_id_of_string "F_tplA" ];
+        eligible_fulfillment = role_fulfillment_of_string "fa" }];
+      objective = Required_role (role_id_of_string "R9")
+    } in
+    let tB = {
+      item_template_id = item_template_id_of_string "ALPHA_TPL";
+      origin_sites = [
+        mk_action_origin "O_ALPHA_B" "cap.t" "sha256:t"
+          [ { input_name = capability_input_name_of_string "inp";
+              binding = Fact_through_role (fact_id_of_string "F_tplB", role_id_of_string "R9") } ]
+          []
+      ];
+      branches = [];
+      roles = [{
+        role_id = role_id_of_string "R9";
+        scope = Item_template_scope (item_template_id_of_string "ALPHA_TPL");
+        fact_contract = Role_fact_contract [ fact_id_of_string "F_tplB" ];
+        eligible_fulfillment = role_fulfillment_of_string "fb" }];
+      objective = Required_role (role_id_of_string "R9")
+    } in
+    mk_program
+      ~input_facts
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[ mk_anchor_origin "ent" "ev" [] ]
+      ~item_templates:[ tB; tA ]
+      ~capability_contracts:[ mk_cap_contract "cap.t" "sha256:t" ]
+      ()
+  in
+  let p_renamed = mk_renamed () in
+  assert (digest_of p1 = digest_of p_renamed);
+  assert (bytes_of p1 = bytes_of p_renamed)
+
+(* T4 — Join predecessor rename invariance *)
+let test_join_predecessor_rename_invariance () =
+  let mk a_id b_id =
+    let c_id = "O_C" in
+    mk_program
+      ~input_facts:[ mk_eval_fact "F0" "hk0" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~success_continuations:[
+        mk_success_cont a_id (Origin_target (origin_id_of_string c_id));
+        mk_success_cont b_id (Origin_target (origin_id_of_string c_id));
+      ]
+      ~origin_sites:[
+        mk_anchor_origin "ent" "event.join" [];
+        mk_action_origin a_id "cap.alpha" "sha256:alpha"
+          [ mk_lit_input "x" (String_value "alpha_val") ] [];
+        mk_action_origin b_id "cap.beta" "sha256:beta"
+          [ mk_lit_input "x" (String_value "beta_val") ] [];
+        mk_action_origin c_id "cap.gamma" "sha256:gamma"
+          [ mk_lit_input "x" (String_value "gamma_val") ] [];
+      ]
+      ~capability_contracts:[
+        mk_cap_contract "cap.alpha" "sha256:alpha";
+        mk_cap_contract "cap.beta" "sha256:beta";
+        mk_cap_contract "cap.gamma" "sha256:gamma";
+      ]
+      ()
+  in
+  (* Program1: A=O_A, B=O_Z ; Program2: swap lexical ids while preserving A/B semantics *)
+  let p1 = mk "O_A" "O_Z" in
+  let p2 = mk "O_Z" "O_A" in
+  assert (digest_of p1 = digest_of p2);
+  assert (bytes_of p1 = bytes_of p2)
+
+(* T5 — Multi-branch rename invariance *)
+let test_multi_branch_rename_invariance () =
+  let mk b1_id b2_id =
+    mk_program
+      ~input_facts:[ mk_eval_fact "F0" "hk0" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "O_anchor"))
+      ~origin_sites:[
+        mk_anchor_origin "O_anchor" "event.branch" [];
+        mk_action_origin "O_X" "cap.x" "sha256:x"
+          [ mk_lit_input "v" (String_value "x") ] [];
+        mk_action_origin "O_Y" "cap.y" "sha256:y"
+          [ mk_lit_input "v" (String_value "y") ] [];
+      ]
+      ~branches:[
+        { branch_id = branch_id_of_string b1_id;
+          branch_subject = origin_id_of_string "O_anchor";
+          outcome_branches = [ (Failure, Continue_to (origin_id_of_string "O_X")) ] };
+        { branch_id = branch_id_of_string b2_id;
+          branch_subject = origin_id_of_string "O_anchor";
+          outcome_branches = [ (Uncertain, Continue_to (origin_id_of_string "O_Y")) ] };
+      ]
+      ~capability_contracts:[
+        mk_cap_contract "cap.x" "sha256:x";
+        mk_cap_contract "cap.y" "sha256:y";
+      ]
+      ()
+  in
+  let p1 = mk "B_zzz" "B_aaa" in
+  let p2 = mk "B_aaa" "B_zzz" in
+  assert (digest_of p1 = digest_of p2);
+  assert (bytes_of p1 = bytes_of p2)
+
+(* ================================================================== *)
 (*  RUN ALL TESTS                                                       *)
 (* ================================================================== *)
 
@@ -1460,4 +1744,9 @@ let () =
   test "4B-8-fact-usage" test_fact_usage_position;
   test "byte_fixture" test_canonical_byte_fixture;
   test "prefix" test_canonical_prefix_in_bytes;
-  test "digest_fixture" test_program_digest_fixture
+  test "digest_fixture" test_program_digest_fixture;
+  test "4C-T1-role-proxy" test_role_proxy_rename_invariance;
+  test "4C-T2-ft-role" test_fact_through_role_rename_invariance;
+  test "4C-T3-same-local-role" test_same_local_role_in_two_templates;
+  test "4C-T4-join-predecessors" test_join_predecessor_rename_invariance;
+  test "4C-T5-multi-branch" test_multi_branch_rename_invariance

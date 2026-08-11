@@ -254,8 +254,10 @@ type static_refs = {
   origin_branches : branch_id list StringMap.t;
   together_for_member : origin_id StringMap.t;
   guards_for_fact : (comparison_operator * core_value) list StringMap.t;
-  consumers_for_fact : (capability_input_name * input_binding) list StringMap.t;
+  consumers_for_fact_scoped :
+    (capability_input_name * input_binding * [`Program | `Template of item_template_id]) list StringMap.t;
   origin_for_fact : origin_id option StringMap.t;
+  fact_scope_map : [`Program | `Template of item_template_id] StringMap.t;
 }
 
 let build_static_refs p =
@@ -312,8 +314,16 @@ let build_static_refs p =
     ) StringMap.empty p.entry_guards
   in
 
-  let consumers_for_fact =
-    List.fold_left (fun m site ->
+  (* Origin scope map: origin_id string -> [`Program | `Template tid] *)
+  let origin_scope_map =
+    List.fold_left (fun m (oid, _, scope, _) ->
+      StringMap.add (string_of_origin_id oid) scope m
+    ) StringMap.empty (all_origins p)
+  in
+
+  (* Scoped consumers: track the scope of the consuming Action origin *)
+  let consumers_for_fact_scoped =
+    List.fold_left (fun m (_oid, site, scope, _) ->
       match site with
       | Action_origin a ->
         List.fold_left (fun m' ai ->
@@ -321,12 +331,12 @@ let build_static_refs p =
           | Fact_from_origin (fid, _) | Fact_through_role (fid, _) ->
             let fid_s = string_of_fact_id fid in
             StringMap.update fid_s (function
-              | None -> Some [(ai.input_name, ai.binding)]
-              | Some lst -> Some ((ai.input_name, ai.binding) :: lst)) m'
+              | None -> Some [(ai.input_name, ai.binding, scope)]
+              | Some lst -> Some ((ai.input_name, ai.binding, scope) :: lst)) m'
           | _ -> m'
         ) m a.inputs
       | _ -> m
-    ) StringMap.empty all_sites
+    ) StringMap.empty (all_origins p)
   in
 
   let origin_for_fact =
@@ -349,9 +359,20 @@ let build_static_refs p =
     !m
   in
 
+  let fact_scope_map =
+    StringMap.mapi (fun _fid opt_oid ->
+      match opt_oid with
+      | Some oid ->
+        (match StringMap.find_opt (string_of_origin_id oid) origin_scope_map with
+         | Some sc -> sc
+         | None -> `Program)
+      | None -> `Program
+    ) origin_for_fact
+  in
+
   { entry_origin_id_str; success_out_map; success_in_map;
     origin_branches; together_for_member; guards_for_fact;
-    consumers_for_fact; origin_for_fact }
+    consumers_for_fact_scoped; origin_for_fact; fact_scope_map }
 
 (* ------------------------------------------------------------------ *)
 (*  Round 0: scalar-only signatures                                     *)
@@ -436,10 +457,12 @@ let fact_sig_rn colours refs (f : fact) =
           match t with String_type -> "S" | Integer_type -> "I" | Boolean_type -> "B")
     | Origin_provenance oid -> "O:" ^ lookup_origin_c colours oid
     | Role_proxy rid ->
-        let sc = match StringMap.find_opt (string_of_fact_id f.fact_id) refs.origin_for_fact with
-          | None -> "RP:" ^ string_of_role_id rid
-          | Some _ -> "RP:" ^ string_of_role_id rid
-        in sc
+        let scope =
+          match StringMap.find_opt (string_of_fact_id f.fact_id) refs.fact_scope_map with
+          | Some sc -> sc
+          | None -> `Program
+        in
+        "RP:" ^ lookup_role_colour_in_scope colours rid scope
   in
   let guards_str =
     match StringMap.find_opt (string_of_fact_id f.fact_id) refs.guards_for_fact with
@@ -454,20 +477,22 @@ let fact_sig_rn colours refs (f : fact) =
           string_of_int (operator_rank op) ^ ":" ^ key_of_value v) sorted)
   in
   let consumers_str =
-    match StringMap.find_opt (string_of_fact_id f.fact_id) refs.consumers_for_fact with
+    match StringMap.find_opt (string_of_fact_id f.fact_id) refs.consumers_for_fact_scoped with
     | None -> ""
     | Some [] -> ""
     | Some consumers ->
-        let sorted = List.sort (fun (an_a, _) (an_b, _) ->
-          String.compare (string_of_capability_input_name an_a) (string_of_capability_input_name an_b)
+        let encode_scoped binding scope =
+          match binding with
+          | Fact_from_origin (_, oid) -> "FO:" ^ lookup_origin_c colours oid
+          | Fact_through_role (_, rid) -> "FR:" ^ lookup_role_colour_in_scope colours rid scope
+          | _ -> "??"
+        in
+        let sorted = List.sort (fun (an_a, b_a, sc_a) (an_b, b_b, sc_b) ->
+          let c = String.compare (string_of_capability_input_name an_a) (string_of_capability_input_name an_b) in
+          if c <> 0 then c else String.compare (encode_scoped b_a sc_a) (encode_scoped b_b sc_b)
         ) consumers in
-        ":U=" ^ String.concat "," (List.map (fun (iname, binding) ->
-          string_of_capability_input_name iname ^ ":" ^ (
-            match binding with
-            | Fact_from_origin (_, oid) -> "FO:" ^ lookup_origin_c colours oid
-            | Fact_through_role (_, rid) -> "FR:" ^ string_of_role_id rid
-            | _ -> "??"
-          )) sorted)
+        ":U=" ^ String.concat "," (List.map (fun (iname, binding, scope) ->
+          string_of_capability_input_name iname ^ ":" ^ encode_scoped binding scope) sorted)
   in
   let establisher_str =
     match StringMap.find_opt (string_of_fact_id f.fact_id) refs.origin_for_fact with
@@ -495,17 +520,21 @@ let origin_sig_rn colours refs (oid, site, scope, _tmpl) =
     match StringMap.find_opt oid_s refs.success_in_map with
     | None -> ""
     | Some predecessors ->
-        ":in=" ^ String.concat "," (List.map (fun p ->
-          lookup_origin_c colours p) (List.sort (fun a b ->
-            String.compare (string_of_origin_id a) (string_of_origin_id b)) predecessors)) in
+        let colour_strs =
+          List.map (fun p -> lookup_origin_c colours p) predecessors
+          |> List.sort String.compare
+        in
+        ":in=" ^ String.concat "," colour_strs in
 
   let branch_tag =
     match StringMap.find_opt oid_s refs.origin_branches with
     | None -> ""
     | Some bids ->
-        ":br=" ^ String.concat "," (List.map (fun bid ->
-          lookup_branch_c colours bid) (List.sort (fun a b ->
-            String.compare (string_of_branch_id a) (string_of_branch_id b)) bids)) in
+        let colour_strs =
+          List.map (fun bid -> lookup_branch_c colours bid) bids
+          |> List.sort String.compare
+        in
+        ":br=" ^ String.concat "," colour_strs in
 
   let together_tag =
     match StringMap.find_opt oid_s refs.together_for_member with
@@ -700,7 +729,8 @@ type canonical_ids = {
   origin_order : (origin_id * origin_id) list;
   fact_order : (fact_id * fact_id) list;
   role_order : (string * role_id) list;
-  role_scope_of : role_scope StringMap.t;
+  origin_scope_map : [`Program | `Template of item_template_id] StringMap.t;
+  fact_scope_map : [`Program | `Template of item_template_id] StringMap.t;
   branch_order : (branch_id * branch_id) list;
   group_order : (group_id * group_id) list;
   batch_order : (batch_id * batch_id) list;
@@ -751,14 +781,42 @@ let assign_canonical_ids colours p =
       (scoped_key,
        role_id_of_string ("R" ^ string_of_int (i + 1)))) sorted_roles
   in
-  let role_scope_of =
-    List.fold_left (fun m (r, scope) ->
-      let concrete_scope = match scope with
-        | `Program -> Program_scope
-        | `Template tid -> Item_template_scope tid
-      in
-      StringMap.add (string_of_role_id r.role_id) concrete_scope m
-    ) StringMap.empty all_rl
+
+  (* Maps for scoped rewriting: origin -> scope, fact -> scope *)
+  let origin_scope_map =
+    List.fold_left (fun m (oid, _, scope, _) ->
+      StringMap.add (string_of_origin_id oid) scope m
+    ) StringMap.empty all_orig
+  in
+  let origin_for_fact_map =
+    let m = ref StringMap.empty in
+    let add_origin oid (declared : fact list) =
+      List.iter (fun (f : fact) ->
+        m := StringMap.add (string_of_fact_id f.fact_id) (Some oid) !m
+      ) declared
+    in
+    let all_sites = all_origin_sites_flat p in
+    List.iter (fun site ->
+      match site with
+      | Anchor_origin a -> add_origin a.anchor_origin_id a.declared_facts
+      | Action_origin a -> add_origin a.action_origin_id a.declared_facts
+      | _ -> ()
+    ) all_sites;
+    List.iter (fun (f : fact) ->
+      if not (StringMap.mem (string_of_fact_id f.fact_id) !m) then
+        m := StringMap.add (string_of_fact_id f.fact_id) None !m
+    ) all_fact;
+    !m
+  in
+  let fact_scope_map =
+    StringMap.mapi (fun _fid opt_oid ->
+      match opt_oid with
+      | Some oid ->
+        (match StringMap.find_opt (string_of_origin_id oid) origin_scope_map with
+         | Some sc -> sc
+         | None -> `Program)
+      | None -> `Program
+    ) origin_for_fact_map
   in
 
   let sorted_branches =
@@ -821,7 +879,8 @@ let assign_canonical_ids colours p =
       (gid, group_id_of_string ("G" ^ string_of_int (i + 1)))) sorted_tog
   in
 
-  { origin_order; fact_order; role_order; role_scope_of; branch_order;
+  { origin_order; fact_order; role_order;
+    origin_scope_map; fact_scope_map; branch_order;
     group_order; batch_order; item_template_order }
 
 (* ------------------------------------------------------------------ *)
@@ -841,11 +900,21 @@ let canonical_role_in_scope ids rid scope =
   in
   match List.assoc_opt scoped_key ids.role_order with Some c -> c | None -> rid
 
-let canonical_role ids rid =
-  let rid_s = string_of_role_id rid in
-  match StringMap.find_opt rid_s ids.role_scope_of with
-  | Some scope -> canonical_role_in_scope ids rid scope
-  | None -> rid
+let canonical_role_for_fact ids fid rid =
+  let scope =
+    match StringMap.find_opt (string_of_fact_id fid) ids.fact_scope_map with
+    | Some (`Program) -> Program_scope
+    | Some (`Template tid) -> Item_template_scope tid
+    | None -> Program_scope
+  in
+  canonical_role_in_scope ids rid scope
+
+let canonical_role_for_origin ids rid origin_scope =
+  let scope = match origin_scope with
+    | `Program -> Program_scope
+    | `Template tid -> Item_template_scope tid
+  in
+  canonical_role_in_scope ids rid scope
 
 let canonical_branch ids bid =
   match List.assoc_opt bid ids.branch_order with Some c -> c | None -> bid
@@ -864,7 +933,7 @@ let rewrite_fact ids f =
     match f.provenance with
     | Evaluation_input _ -> f.provenance
     | Origin_provenance oid -> Origin_provenance (canonical_origin ids oid)
-    | Role_proxy rid -> Role_proxy (canonical_role ids rid)
+    | Role_proxy rid -> Role_proxy (canonical_role_for_fact ids f.fact_id rid)
   in
   { fact_id = canonical_fact ids f.fact_id;
     schema_description = f.schema_description;
@@ -875,18 +944,23 @@ let rewrite_fact_guard ids g =
     operator = g.operator;
     expected = g.expected }
 
-let rewrite_input_binding ids = function
+let rewrite_input_binding ids origin_scope = function
   | Literal_value v -> Literal_value v
   | Fact_from_origin (fid, oid) ->
       Fact_from_origin (canonical_fact ids fid, canonical_origin ids oid)
   | Fact_through_role (fid, rid) ->
-      Fact_through_role (canonical_fact ids fid, canonical_role ids rid)
+      let canon_rid =
+        match origin_scope with
+        | None -> canonical_role_for_fact ids fid rid
+        | Some sc -> canonical_role_for_origin ids rid sc
+      in
+      Fact_through_role (canonical_fact ids fid, canon_rid)
   | Anchor_value (oid, path) -> Anchor_value (canonical_origin ids oid, path)
   | Batch_item_context tid -> Batch_item_context (canonical_item_template ids tid)
 
-let rewrite_action_input ids ai =
+let rewrite_action_input ids origin_scope ai =
   { input_name = ai.input_name;
-    binding = rewrite_input_binding ids ai.binding }
+    binding = rewrite_input_binding ids origin_scope ai.binding }
 
 let rewrite_origin_site ids = function
   | Anchor_origin a ->
@@ -894,10 +968,13 @@ let rewrite_origin_site ids = function
                        event_name = a.event_name;
                        declared_facts = List.map (rewrite_fact ids) a.declared_facts }
   | Action_origin a ->
+      let origin_scope =
+        StringMap.find_opt (string_of_origin_id a.action_origin_id) ids.origin_scope_map
+      in
       Action_origin { action_origin_id = canonical_origin ids a.action_origin_id;
                        capability_id = a.capability_id;
                        contract_digest = a.contract_digest;
-                       inputs = List.map (rewrite_action_input ids) a.inputs;
+                       inputs = List.map (rewrite_action_input ids origin_scope) a.inputs;
                        declared_facts = List.map (rewrite_fact ids) a.declared_facts;
                        execution_constraints = a.execution_constraints }
   | Together_origin t ->
