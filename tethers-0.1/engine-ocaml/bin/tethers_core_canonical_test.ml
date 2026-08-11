@@ -742,7 +742,380 @@ let test_raw_id_inversion_trap () =
   assert (d_asc = d_desc)
 
 (* ================================================================== *)
-(*  Frozen canonical-byte fixture                                       *)
+(*  CORE-4A REGRESSION TESTS                                            *)
+(* ================================================================== *)
+
+(* 1. Rename GroupIds across two Together groups with reversed lexical order *)
+let test_group_id_independence () =
+  let mk g1 g2 =
+    mk_program
+      ~input_facts:[ mk_eval_fact "fx" "hk" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[
+        mk_anchor_origin "ent" "ev" [];
+        mk_action_origin "A1" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "a1") ] [];
+        mk_action_origin "A2" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "a2") ] [];
+        mk_action_origin "B1" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "b1") ] [];
+        mk_action_origin "B2" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "b2") ] [];
+        Together_origin { together_origin_id = origin_id_of_string "TG1";
+          group_id = group_id_of_string g1;
+          member_origin_ids = [origin_id_of_string "A1"; origin_id_of_string "A2"];
+          objective = All_members_succeed };
+        Together_origin { together_origin_id = origin_id_of_string "TG2";
+          group_id = group_id_of_string g2;
+          member_origin_ids = [origin_id_of_string "B1"; origin_id_of_string "B2"];
+          objective = All_members_succeed }
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  assert (digest_of (mk "zzzz" "aaaa") = digest_of (mk "aaaa" "zzzz"))
+
+(* 2. Rename BatchId *)
+let test_batch_id_independence () =
+  let mk bid_str =
+    mk_program
+      ~input_facts:[ mk_eval_fact "fx" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[
+        mk_anchor_origin "ent" "ev" [];
+        Batch_site { batch_id = batch_id_of_string bid_str;
+          collection_provenance = batch_collection_provenance_of_string "prov1";
+          item_template_id = item_template_id_of_string "IT1";
+          traversal_policy = batch_traversal_policy_of_string "pol1";
+          composite_objective = batch_objective_of_string "obj1";
+          aggregate_facts = [] }
+      ]
+      ~item_templates:[{
+        item_template_id = item_template_id_of_string "IT1";
+        origin_sites = []; branches = [];
+        roles = [{ role_id = role_id_of_string "R1";
+                   scope = Item_template_scope (item_template_id_of_string "IT1");
+                   fact_contract = Role_fact_contract [];
+                   eligible_fulfillment = role_fulfillment_of_string "f" }];
+        objective = Required_role (role_id_of_string "R1") }]
+      ~capability_contracts:[]
+      ()
+  in
+  assert (digest_of (mk "zzz_batch_99") = digest_of (mk "aaa_batch_01"))
+
+(* 3. Rename Batch aggregate FactId consistently *)
+let test_batch_fact_id_independence () =
+  let mk fid_str =
+    mk_program
+      ~input_facts:[ mk_eval_fact "fx" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[
+        mk_anchor_origin "ent" "ev" [];
+        Batch_site { batch_id = batch_id_of_string "B1";
+          collection_provenance = batch_collection_provenance_of_string "prov1";
+          item_template_id = item_template_id_of_string "IT1";
+          traversal_policy = batch_traversal_policy_of_string "pol1";
+          composite_objective = batch_objective_of_string "obj1";
+          aggregate_facts = [{ fact_id = fact_id_of_string fid_str;
+            schema_description = "x";
+            provenance = Evaluation_input (host_snapshot_key_of_string "k", String_type) }] }
+      ]
+      ~item_templates:[{
+        item_template_id = item_template_id_of_string "IT1";
+        origin_sites = []; branches = [];
+        roles = [{ role_id = role_id_of_string "R1";
+                   scope = Item_template_scope (item_template_id_of_string "IT1");
+                   fact_contract = Role_fact_contract [];
+                   eligible_fulfillment = role_fulfillment_of_string "f" }];
+        objective = Required_role (role_id_of_string "R1") }]
+      ~capability_contracts:[]
+      ()
+  in
+  assert (digest_of (mk "zzzzz") = digest_of (mk "aaaaa"))
+
+(* 4. Reverse two Batch sites *)
+let test_batch_order_independence () =
+  let mk (bids : string list) =
+    let make_bat bid =
+      Batch_site { batch_id = batch_id_of_string bid;
+        collection_provenance = batch_collection_provenance_of_string "p1";
+        item_template_id = item_template_id_of_string "IT1";
+        traversal_policy = batch_traversal_policy_of_string "tp1";
+        composite_objective = batch_objective_of_string "o1";
+        aggregate_facts = [] }
+    in
+    mk_program
+      ~input_facts:[ mk_eval_fact "fx" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:(
+        mk_anchor_origin "ent" "ev" [] ::
+        List.map make_bat bids
+      )
+      ~item_templates:[{
+        item_template_id = item_template_id_of_string "IT1";
+        origin_sites = []; branches = [];
+        roles = [{ role_id = role_id_of_string "R1";
+                   scope = Item_template_scope (item_template_id_of_string "IT1");
+                   fact_contract = Role_fact_contract [];
+                   eligible_fulfillment = role_fulfillment_of_string "f" }];
+        objective = Required_role (role_id_of_string "R1") }]
+      ~capability_contracts:[]
+      ()
+  in
+  assert (digest_of (mk ["B_zzz"; "B_xxx"]) = digest_of (mk ["B_xxx"; "B_zzz"]))
+
+(* 5. Rename Anchor_value referenced OriginId *)
+let test_anchor_value_origin_independence () =
+  let mk anchor_oid_str =
+    mk_program
+      ~input_facts:[ mk_eval_fact "fx" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[
+        mk_anchor_origin "ent" "ev" [];
+        mk_anchor_origin anchor_oid_str "ev2" [];
+        mk_action_origin "act" "cap.x" "sha256:d1"
+          [ { input_name = capability_input_name_of_string "x";
+              binding = Anchor_value (origin_id_of_string anchor_oid_str, ["a"; "b"]) } ] []
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  assert (digest_of (mk "ref_777") = digest_of (mk "ref_111"))
+
+(* 6. Rename Fact_from_origin referenced FactId *)
+let test_fo_fact_id_independence () =
+  let mk fid_str =
+    mk_program
+      ~input_facts:[ mk_eval_fact "fx" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[
+        mk_anchor_origin "ent" "ev" [];
+        mk_action_origin "src" "cap.x" "sha256:d1"
+          [ mk_lit_input "x" (String_value "v") ]
+          [ { fact_id = fact_id_of_string fid_str;
+              schema_description = "d";
+              provenance = Origin_provenance (origin_id_of_string "src") } ];
+        mk_action_origin "cons" "cap.x" "sha256:d1"
+          [ { input_name = capability_input_name_of_string "y";
+              binding = Fact_from_origin (fact_id_of_string fid_str,
+                                          origin_id_of_string "src") } ] []
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  assert (digest_of (mk "zz_fid") = digest_of (mk "aa_fid"))
+
+(* 7. Rename Fact_through_role referenced FactId *)
+let test_ft_fact_id_independence () =
+  let mk fid_str =
+    mk_program
+      ~input_facts:[ mk_eval_fact fid_str "h" String_type; mk_eval_fact "fx" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[
+        mk_anchor_origin "ent" "ev" [];
+        mk_action_origin "act" "cap.x" "sha256:d1"
+          [ { input_name = capability_input_name_of_string "y";
+              binding = Fact_through_role (fact_id_of_string fid_str,
+                                           role_id_of_string "rl") } ] []
+      ]
+      ~roles:[{ role_id = role_id_of_string "rl";
+                scope = Program_scope;
+                fact_contract = Role_fact_contract [ fact_id_of_string fid_str ];
+                eligible_fulfillment = role_fulfillment_of_string "f" }]
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  assert (digest_of (mk "fid_z") = digest_of (mk "fid_a"))
+
+(* 8. Rename Branch subject OriginId *)
+let test_branch_subject_independence () =
+  let mk subj_id_str =
+    mk_program
+      ~input_facts:[ mk_eval_fact "fx" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string subj_id_str))
+      ~origin_sites:[
+        mk_anchor_origin subj_id_str "ev" [];
+        mk_action_origin "nx" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "v") ] []
+      ]
+      ~branches:[{
+        branch_id = branch_id_of_string "B1";
+        branch_subject = origin_id_of_string subj_id_str;
+        outcome_branches = [(Success, Continue_to (origin_id_of_string "nx"))] }]
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  assert (digest_of (mk "subj_z") = digest_of (mk "subj_a"))
+
+(* 9. Two Actions with swapped inputs, storage reversal *)
+let test_input_storage_reversal () =
+  let mk ordered =
+    mk_program
+      ~input_facts:[ mk_eval_fact "f" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:(
+        mk_anchor_origin "ent" "ev" [] :: ordered
+      )
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  let p1 = mk [
+    mk_action_origin "A" "cap.x" "sha256:d1"
+      [ mk_lit_input "x" (Integer_value 1); mk_lit_input "y" (Integer_value 2) ] [];
+    mk_action_origin "B" "cap.x" "sha256:d1"
+      [ mk_lit_input "x" (Integer_value 2); mk_lit_input "y" (Integer_value 1) ] []
+  ] in
+  let p2 = mk [
+    mk_action_origin "B" "cap.x" "sha256:d1"
+      [ mk_lit_input "x" (Integer_value 2); mk_lit_input "y" (Integer_value 1) ] [];
+    mk_action_origin "A" "cap.x" "sha256:d1"
+      [ mk_lit_input "x" (Integer_value 1); mk_lit_input "y" (Integer_value 2) ] []
+  ] in
+  assert (digest_of p1 = digest_of p2)
+
+(* 10. Two identical Actions in success chain, reversed storage *)
+let test_chain_storage_reversal () =
+  let mk ordered =
+    mk_program
+      ~input_facts:[ mk_eval_fact "f" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~success_continuations:[
+        mk_success_cont "A" (Origin_target (origin_id_of_string "B"))
+      ]
+      ~origin_sites:(
+        mk_anchor_origin "ent" "ev" [] :: ordered
+      )
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  let p1 = mk [
+    mk_action_origin "A" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "v") ] [];
+    mk_action_origin "B" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "w") ] []
+  ] in
+  let p2 = mk [
+    mk_action_origin "B" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "w") ] [];
+    mk_action_origin "A" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "v") ] []
+  ] in
+  assert (digest_of p1 = digest_of p2)
+
+(* 11. Entry Origin distinguishes, storage reversal *)
+let test_entry_origin_distinguishes () =
+  let mk ordered =
+    mk_program
+      ~input_facts:[ mk_eval_fact "f" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites: ordered
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  let p1 = mk [
+    mk_anchor_origin "ent" "ev" [];
+    mk_action_origin "A" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "a") ] [];
+    mk_action_origin "B" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "b") ] []
+  ] in
+  let p2 = mk [
+    mk_anchor_origin "ent" "ev" [];
+    mk_action_origin "B" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "b") ] [];
+    mk_action_origin "A" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "a") ] []
+  ] in
+  assert (digest_of p1 = digest_of p2)
+
+(* 12. Two Guards reversed storage *)
+let test_guard_storage_reversal () =
+  let p1 = mk_program
+    ~input_facts:[ mk_eval_fact "f1" "h" String_type; mk_eval_fact "f2" "h" String_type ]
+    ~entry_guards:[{ fact_id = fact_id_of_string "f1"; operator = Equals; expected = String_value "a" };
+                   { fact_id = fact_id_of_string "f2"; operator = Contains; expected = String_value "b" }]
+    ~entry_origin:(Some (origin_id_of_string "ent"))
+    ~origin_sites:[
+      mk_anchor_origin "ent" "ev" [];
+      mk_action_origin "A" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "v") ] []
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+    ()
+  in
+  let p2 = mk_program
+    ~input_facts:[ mk_eval_fact "f2" "h" String_type; mk_eval_fact "f1" "h" String_type ]
+    ~entry_guards:[{ fact_id = fact_id_of_string "f2"; operator = Contains; expected = String_value "b" };
+                   { fact_id = fact_id_of_string "f1"; operator = Equals; expected = String_value "a" }]
+    ~entry_origin:(Some (origin_id_of_string "ent"))
+    ~origin_sites:[
+      mk_anchor_origin "ent" "ev" [];
+      mk_action_origin "A" "cap.x" "sha256:d1" [ mk_lit_input "x" (String_value "v") ] []
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+    ()
+  in
+  assert (digest_of p1 = digest_of p2)
+
+(* 14. Two Item Templates each using local RoleId "R1" - template reordering preserves digest *)
+let test_template_role_isolation () =
+  let mk ordered_templates =
+    mk_program
+      ~input_facts:[ mk_eval_fact "fx" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:[ mk_anchor_origin "ent" "ev" [] ]
+      ~item_templates: ordered_templates
+      ~capability_contracts:[]
+      ()
+  in
+  let p1 = mk [
+    { item_template_id = item_template_id_of_string "ita";
+      origin_sites = []; branches = [];
+      roles = [{ role_id = role_id_of_string "R1";
+                 scope = Item_template_scope (item_template_id_of_string "ita");
+                 fact_contract = Role_fact_contract [];
+                 eligible_fulfillment = role_fulfillment_of_string "fa" }];
+      objective = Required_role (role_id_of_string "R1") };
+    { item_template_id = item_template_id_of_string "itb";
+      origin_sites = []; branches = [];
+      roles = [{ role_id = role_id_of_string "R1";
+                 scope = Item_template_scope (item_template_id_of_string "itb");
+                 fact_contract = Role_fact_contract [];
+                 eligible_fulfillment = role_fulfillment_of_string "fb" }];
+      objective = Required_role (role_id_of_string "R1") }
+  ] in
+  let p2 = mk [
+    { item_template_id = item_template_id_of_string "itb";
+      origin_sites = []; branches = [];
+      roles = [{ role_id = role_id_of_string "R1";
+                 scope = Item_template_scope (item_template_id_of_string "itb");
+                 fact_contract = Role_fact_contract [];
+                 eligible_fulfillment = role_fulfillment_of_string "fb" }];
+      objective = Required_role (role_id_of_string "R1") };
+    { item_template_id = item_template_id_of_string "ita";
+      origin_sites = []; branches = [];
+      roles = [{ role_id = role_id_of_string "R1";
+                 scope = Item_template_scope (item_template_id_of_string "ita");
+                 fact_contract = Role_fact_contract [];
+                 eligible_fulfillment = role_fulfillment_of_string "fa" }];
+      objective = Required_role (role_id_of_string "R1") }
+  ] in
+  assert (digest_of p1 = digest_of p2)
+
+(* 15. Deep sequential structure >20 similar Origins *)
+let test_deep_structure () =
+  let mk ordered =
+    mk_program
+      ~input_facts:[ mk_eval_fact "f" "h" String_type ]
+      ~entry_origin:(Some (origin_id_of_string "ent"))
+      ~origin_sites:(
+        mk_anchor_origin "ent" "ev" [] :: ordered
+      )
+      ~success_continuations:(
+        List.init 29 (fun i ->
+          mk_success_cont ("A" ^ string_of_int i)
+            (Origin_target (origin_id_of_string ("A" ^ string_of_int (i + 1)))))
+      )
+      ~capability_contracts:[ mk_cap_contract "cap.x" "sha256:d1" ]
+      ()
+  in
+  let actions ordered =
+    List.map (fun oid ->
+      mk_action_origin oid "cap.x" "sha256:d1"
+        [ mk_lit_input "x" (String_value oid) ] []) ordered
+  in
+  let p1 = mk (actions (List.init 30 (fun i -> "A" ^ string_of_int i))) in
+  let p2 = mk (actions (List.init 30 (fun i -> "A" ^ string_of_int (29 - i)))) in
+  assert (digest_of p1 = digest_of p2)
+
+(* ================================================================== *)
+(*  REAL FROZEN BYTE FIXTURE                                            *)
 (* ================================================================== *)
 
 let test_canonical_byte_fixture () =
@@ -758,10 +1131,8 @@ let test_canonical_byte_fixture () =
     ()
   in
   let bytes = bytes_of prog in
-  let prefix_len = String.length "TETHERS_CORE_CANON_V1" in
-  assert (String.sub bytes 0 prefix_len = "TETHERS_CORE_CANON_V1");
-  assert (bytes.[prefix_len] = '\x00');
-  assert (String.length bytes > prefix_len + 1)
+  let expected = "TETHERS_CORE_CANON_V1\x005:0.1.01:2:F10:14:host.key.alpha0:0:1:2:O10:2:0:2:O110:event.ping0:1:2:O28:cap.ping9:sha256:p11:7:payload0:0:5:hello0:0:0:0:0:1:8:cap.ping9:sha256:p1" in
+  assert (bytes = expected)
 
 (* ================================================================== *)
 (*  Frozen SHA-256 ProgramDigest fixture                                *)
@@ -839,6 +1210,20 @@ let () =
   test "W" test_multiplicity;
   test "X" test_invalid_core;
   test "Y" test_raw_id_inversion_trap;
-  test "canonical_byte_fixture" test_canonical_byte_fixture;
+  test "4A-1-group-id" test_group_id_independence;
+  test "4A-2-batch-id" test_batch_id_independence;
+  test "4A-3-batch-fact-id" test_batch_fact_id_independence;
+  test "4A-4-batch-order" test_batch_order_independence;
+  test "4A-5-av-origin" test_anchor_value_origin_independence;
+  test "4A-6-fo-fact" test_fo_fact_id_independence;
+  test "4A-7-ft-fact" test_ft_fact_id_independence;
+  test "4A-8-branch-subj" test_branch_subject_independence;
+  test "4A-9-input-rev" test_input_storage_reversal;
+  test "4A-10-chain-rev" test_chain_storage_reversal;
+  test "4A-11-entry-dist" test_entry_origin_distinguishes;
+  test "4A-12-guard-rev" test_guard_storage_reversal;
+  test "4A-14-template-iso" test_template_role_isolation;
+  test "4A-15-deep" test_deep_structure;
+  test "byte_fixture" test_canonical_byte_fixture;
   test "prefix" test_canonical_prefix_in_bytes;
   test "digest_fixture" test_program_digest_fixture
