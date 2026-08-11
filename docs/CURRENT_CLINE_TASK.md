@@ -2,23 +2,23 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-4B — Collision-Free Canonical Refinement`
+Task: `TETHERS CORE-5A — Minimal Core → Runtime Plan Bridge`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `31b614727c1f42e2fcab975341c09be35508eefb`
+Implementation checkpoint: `WORKTREE`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Task colour: `Amber`
 
 Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
 
-Worker note: `docs/worker-notes/2026-08-11-core-4-canonicalisation.md`
+Worker note: `docs/worker-notes/2026-08-11-core-5a-runtime-plan-bridge.md`
 
-Base branch: `feature/core-3-static-validator`
+Base branch: `feature/core-4-canonicalisation-program-digest`
 
-Base commit: `7efec4b1eb69c37c98b3e6b71a7b2e1d8a9260f5`
+Base commit: `b29b0d348d057cec19faf544f64b64989111fa09`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -26,79 +26,62 @@ Rust change class: `RUST_UNCHANGED`
 
 ## Objective
 
-Implement the first authoritative canonical semantic identity layer for Tethers Core: semantic projection, structural fingerprinting, canonical ordering, internal ID assignment, reference rewriting, canonical byte encoding, SHA-256, and ProgramDigest. Same semantic meaning must produce same canonical bytes and ProgramDigest regardless of temporary IDs or storage order.
+Create the first executable sidecar bridge from validated Tethers Core to the existing Runtime Plan representation (`Tethers_outcome.plan`). Prove the architecture with the smallest useful vertical slice: `Core Program → validate → Core → Runtime Plan bridge → sequential executable plan`. Do not replace the legacy evaluator and do not wire production dispatch.
 
 ## Relevant background and existing behaviour
 
-CORE-3 provides a static Core validator. CORE-2 provides the lowering pipeline. Neither provides canonical semantic identity. The Core types (`program`, `origin_site`, `fact`, `role`, etc.) represent semantic meaning but carry temporary internal IDs that are not canonical. No canonical byte representation exists.
+CORE-1..CORE-4 provide Core types, lowering, validation, and canonicalisation. The legacy evaluator (`tethers_evaluator.ml`) plans directly from the parser AST into `Tethers_outcome.plan` (`plan`, `group_plan`, `planned_action` as Yojson, plus `Matched`/`Not_matched`/`Evaluation_error` payloads). No bridge exists from Core meaning to that plan vocabulary. `Tethers_outcome.plan` is the existing Runtime Plan model; it must be reused, not duplicated.
 
 ## Required behaviour
 
-1. Validate with `Tethers_core_validator.validate` before canonicalising; fail closed on invalid Core
-2. Compute structural fingerprints for every semantic entity using iterative refinement over the typed Core graph, excluding raw temporary IDs, behaviour-neutral metadata, and storage position
-3. Determine canonical semantic ordering from structural fingerprints; never from raw IDs or list position
-4. Assign fresh canonical IDs (O1.., F1.., R1.., B1.., G1.., BA1.., IT1..) in structural order
-5. Rewrite every internal reference to use canonical IDs
-6. Sort every semantically unordered collection by canonical ID (or fixed semantic order for outcomes)
-7. Encode the canonical program as deterministic bytes with version prefix `TETHERS_CORE_CANON_V1\0`
-8. Compute SHA-256 over the canonical bytes; produce `sha256:<hex>` ProgramDigest
-9. Handle genuinely symmetric structures (identical Together siblings) without falling back to raw IDs
-10. Exclude `program_id`, `fact.schema_description`, and `capability_contract.schema_description` from canonical bytes
-11. Include `core_version`, all external identities, opaque strings, and all semantic scalar fields in canonical bytes
-12. Never reconstruct or manufacture a ProgramDigest outside canonicalisation
+1. `plan : Tethers_core.program -> (Tethers_outcome.plan, planning_error) result` validates Core with `Tethers_core_validator.validate` first; invalid Core returns an explicit error and never produces a plan
+2. Sequential execution order derives from semantic control flow (`entry_origin` then `success_continuation` edges, stopping at `Program_complete`), never from `origin_sites` storage order
+3. Every planned Action preserves `CapabilityId` and `CapabilityContractDigest` exactly, without resolving capability meaning from human syntax or inventing host authorisation
+4. Literal Action inputs translate to concrete plan argument values; any binding that cannot be represented faithfully by the existing plan layer returns an explicit typed error
+5. `Together_origin`, `Batch_site`, branch-driven control flow, `Fact_through_role`, `Role_proxy` facts, item templates, and execution constraints fail closed with precise typed errors and never partially plan
+6. Reuse `Tethers_outcome.plan` as the Runtime Plan representation; do not create a second competing Runtime Plan model
+7. No placeholder strings, `"TODO"` values, fabricated evaluation IDs, or invented runtime semantics may enter a valid plan
+8. Remain a dormant sidecar: no evaluator, protocol, runtime, canonicalisation, parser, lowerer, Rust, or dispatch wiring changes
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical.ml` — new (implementation)
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical.mli` — new (interface)
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_test.ml` — new (28 tests)
-- `tethers-0.1/engine-ocaml/bin/dune` — modified (test executable)
-- `tethers-0.1/engine-ocaml/tethers_engine.opam` — modified (digestif dep)
-- `tethers-0.1/engine-ocaml/tethers_engine.opam.locked` — modified (digestif 1.3.1 + eqaf 0.10)
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml` — new (bridge implementation)
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.mli` — new (bridge interface)
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` — new (T1..T8 plus fail-closed branch tests)
+- `tethers-0.1/engine-ocaml/bin/dune` — modified (new test executable stanza)
 
 ## Frozen decisions and invariants
 
-- Canonicalisation receives Core meaning; it does not reinterpret Human Tethers, execute, repair invalid Core, infer missing semantics, or use AI
-- Incoming/pre-canonical IDs must not influence canonical order
-- ProgramDigest = exact semantic-content identity; ProgramId = logical/source identity
-- External semantic identities (CapabilityId, CapabilityContractDigest, HostSnapshotKey, CoreVersion, CapabilityInputName) are semantic atoms — never renumbered
-- Opaque string-backed placeholders (Deadline, role_fulfillment, batch fields) are exact atoms — not reinterpreted
-- Canonicalisation normalises representation; it does not invent semantic equivalences
-- No graph-isomorphism theatre: use typed semantic structure, not general isomorphism engines
-- CORE-4 remains semantically dormant apart from its tests — not wired into evaluator/runtime
+- The bridge consumes Core meaning; it does not reinterpret Human Tethers, execute Actions, authorise, repair invalid Core, infer missing semantics, or use AI
+- Execution order is semantic control flow only; `origin_sites` order is representational storage and must not affect the plan
+- `CapabilityId` and `CapabilityContractDigest` are semantic atoms preserved exactly on every planned Action
+- The existing Runtime Plan carries concrete resolved argument values and has no event-data vocabulary; therefore `Anchor_value` and `Fact_from_origin` bindings cannot be faithfully represented by this bridge and must return explicit typed errors (representation incompatibility, not silent skip)
+- Execution constraints (e.g. `Deadline`) have no existing runtime-plan vocabulary; their presence returns an explicit typed error
+- `plan.id` uses the program's logical identity (`program_id`); no evaluation ID is fabricated
+- The bridge must never construct a valid plan containing a placeholder; every field is either real Core content or absent
+- CORE-5A remains a sidecar; it is not wired into the evaluator, MCP, or runtime
 
 ## Acceptance criteria
 
-1. Valid CORE-2 sequential program canonicalises successfully
-2. Repeated canonicalisation of identical input produces identical canonical bytes and ProgramDigest
-3. Renaming every OriginId consistently produces the same ProgramDigest
-4. Renaming all internal IDs (Origin, Fact, Role, Branch, Group, Batch, ItemTemplate) consistently produces the same ProgramDigest
-5. Shuffling unordered collections produces the same ProgramDigest
-6. Reordering named Action inputs produces the same ProgramDigest
-7. Reordering Together members produces the same ProgramDigest
-8. Two structurally identical Together siblings survive temporary-ID renaming and storage reversal with identical canonical bytes; multiplicity preserved
-9. Reordering outcome branches produces the same ProgramDigest
-10. Changing `fact.schema_description` or `capability_contract.schema_description` leaves ProgramDigest unchanged
-11. Changing only `program_id` leaves ProgramDigest unchanged
-12. Changing an Action literal value produces a different ProgramDigest
-13. Changing CapabilityId produces a different ProgramDigest
-14. Changing CapabilityContractDigest produces a different ProgramDigest
-15. Changing Anchor event_name or path content/order produces a different ProgramDigest
-16. Changing comparison operator or expected value produces a different ProgramDigest
-17. Changing a success continuation target produces a different ProgramDigest
-18. Changing Branch Outcome routing produces a different ProgramDigest
-19. Consistent RoleId renaming preserves digest; changing fulfillment semantics changes digest
-20. Consistent ItemTemplateId renaming preserves digest; changing objective/template semantics changes digest
-21. Changing one opaque Batch semantic field produces a different ProgramDigest
-22. Changing CoreVersion produces a different ProgramDigest
-23. One semantic member canonicalises differently from two semantic members
-24. Invalid Core returns `Invalid_core` and produces no bytes or digest
-25. Programs with lexically reversed temporary IDs produce identical canonical bytes
+1. T1 — Minimal Action: `Anchor → Action A → Program_complete` plans exactly one executable Action with correct capability identity and inputs
+2. T2 — Sequential Two Actions: `Anchor → A → B → Program_complete` plans A then B in control-flow order
+3. T3 — Storage Order Independence: identical control-flow graphs with reversed `origin_sites` storage produce identical Runtime Plans
+4. T4 — Capability Digest Preservation: the planned Action carries `CapabilityId` and `CapabilityContractDigest` exactly
+5. T5 — Unsupported Together: a valid Core program containing `Together_origin` returns an explicit unsupported error and plans no partial siblings
+6. T6 — Unsupported Batch: a valid Core program containing `Batch_site` returns an explicit unsupported error
+7. T7 — Unsupported Role binding: a valid Core Action using `Fact_through_role` returns an explicit unsupported error
+8. T8 — Invalid Core: an invalid Core program returns `Error` and never a plan
+9. T9 — An `Anchor_value` binding returns an explicit representation-incompatibility error
+10. T10 — A `Fact_from_origin` binding returns an explicit representation-incompatibility error
+11. T11 — Branch semantics returns an explicit unsupported error
+12. T12 — An execution constraint (Deadline) returns an explicit unsupported error
+13. T13 — Item templates return an explicit unsupported error
+14. T14 — A program with no `entry_origin` returns an explicit missing-entry error
 
 ## Required verification
 
 1. OCaml build: `dune build @all` — PASS (exit 0)
-2. All tests: `dune runtest` — PASS (28 new + existing validator/lowerer)
+2. All tests: `dune runtest` — PASS (T1..T14 plus existing validator/lowerer/canonical)
 3. Whitespace: `git diff --check` — PASS
 4. Cargo fmt: `cargo fmt --check` — PASS (RUST_UNCHANGED)
 5. Diff inspection: only authorised files changed
@@ -108,11 +91,11 @@ CORE-3 provides a static Core validator. CORE-2 provides the lowering pipeline. 
 
 ## Forbidden changes
 
-No evaluator/protocol/outcome/CORE-2/CORE-3 changes. No Rust changes. No runtime wiring. No Core type changes. No Human Tethers changes.
+No evaluator/protocol/outcome/CORE-1..CORE-4 changes. No Rust changes. No runtime wiring or production dispatch. No Core type changes. No Human Tether, parser, lowerer, or canonicalisation changes. No new dependencies. No engine entry-point changes.
 
 ## Stop conditions
 
-Commit CORE-4 implementation checkpoint. STOP. Do NOT begin CORE-5.
+Commit CORE-5A implementation checkpoint. STOP. Do NOT begin CORE-5B or any runtime wiring.
 
 ## Expected pre-existing changes
 
