@@ -70,6 +70,7 @@ pub mod manifest;
 pub mod operational_scope;
 mod outcome;
 pub mod package;
+pub mod plan_execution;
 pub mod plug_command;
 pub mod plug_conform;
 mod plug_install_command;
@@ -94,7 +95,7 @@ pub mod trusted_store;
 mod validation;
 pub(crate) use application::{
     build_event_admission_entry, execute_shared_boundary, extract_proposed_action,
-    inject_bridge_projection_into_request, now_unix_ms, request_exact_approval, InputEventContext,
-    ResponseResultAnchorWriter,
+    extract_proposed_action_at, extract_single_action, inject_bridge_projection_into_request,
+    now_unix_ms, request_exact_approval, InputEventContext, ResponseResultAnchorWriter,
 };
 pub use application::{SharedExecutionOutcome, SharedExecutionResult};

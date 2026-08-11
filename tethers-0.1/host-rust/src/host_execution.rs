@@ -348,13 +348,14 @@ pub fn execute_enabled_installed_action(
     replay_root: &Path,
     event_id: &str,
 ) -> Result<crate::SharedExecutionResult, Box<dyn std::error::Error>> {
-    let action = crate::extract_proposed_action(response)?;
+    let proposed = crate::extract_proposed_action(response)?;
+    let action = crate::extract_single_action(response)?.clone();
     if !enabled.contains(
         resolved.capability_name(),
         resolved.capability_version(),
         &resolved.manifest().manifest().binding.tool_name,
         resolved.manifest_digest(),
-    ) || action.capability_name != resolved.capability_name()
+    ) || proposed.capability_name != resolved.capability_name()
     {
         return Err("enabled installed binding does not match planned capability".into());
     }
@@ -365,8 +366,9 @@ pub fn execute_enabled_installed_action(
     let mut replay_authority = FileReplayAuthority::new(Some(replay_root));
     let mut anchor_writer = crate::ResponseResultAnchorWriter;
     let context = crate::InputEventContext::for_initial(event_id);
-    Ok(crate::execute_shared_boundary(
+    crate::execute_shared_boundary(
         response,
+        &action,
         decision,
         resolved,
         &mut trail,
@@ -377,7 +379,7 @@ pub fn execute_enabled_installed_action(
         &mut replay_authority,
         None,
         &mut anchor_writer,
-    )?)
+    )
 }
 
 impl<'a> HostExecutionService<'a> {
@@ -581,7 +583,7 @@ impl<'a> HostExecutionService<'a> {
 
         let outcome = Self::classify_planner_response(input, wire_response);
         Self::route_planner_outcome(outcome, |matched| {
-            self.dispatch_matched_response(
+            self.dispatch_matched_plan(
                 input,
                 matched,
                 provider_sessions,
@@ -806,7 +808,15 @@ impl<'a> HostExecutionService<'a> {
     }
 
     /// Dispatch a matched response through the one accepted J05-J11 boundary.
-    fn dispatch_matched_response(
+    ///
+    /// The whole plan executes through one deterministic schedule: ordinary
+    /// sequential Actions keep the existing stop-on-first-non-success
+    /// behaviour, and every `together` group attempts all of its members once
+    /// in source order before the join is decided; a non-success join blocks
+    /// every later item.  This is the C1 reference schedule — group members
+    /// run serially, which is one valid schedule for a future genuinely
+    /// concurrent runtime.
+    fn dispatch_matched_plan(
         &self,
         input: &PreparedEvaluationInput,
         mut response: Value,
@@ -820,14 +830,110 @@ impl<'a> HostExecutionService<'a> {
             obj.remove("execution_id");
             obj.remove("_host_execution_id");
         }
-        let proposed = match crate::extract_proposed_action(&response) {
-            Ok(action) => action,
-            Err(error) => {
+        let plan = match response.get("plan") {
+            Some(plan) => plan,
+            None => {
                 return ExecutionServiceResult::InvalidData {
-                    message: format!("invalid planned Action: {error}"),
+                    message: "matched response had no plan".to_owned(),
                 };
             }
         };
+        let actions: Vec<Value> = match plan.get("actions").and_then(Value::as_array) {
+            Some(actions) => actions.clone(),
+            None => {
+                return ExecutionServiceResult::InvalidData {
+                    message: "plan had no actions".to_owned(),
+                };
+            }
+        };
+        let groups = plan
+            .get("groups")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice);
+        let items = match crate::plan_execution::build_plan_schedule(&actions, groups) {
+            Ok(items) => items,
+            Err(message) => {
+                return ExecutionServiceResult::InvalidData { message };
+            }
+        };
+        let evaluation_id = match response.get("evaluation_id").and_then(Value::as_str) {
+            Some(evaluation_id) => evaluation_id.to_owned(),
+            None => {
+                return ExecutionServiceResult::InvalidData {
+                    message: "response had no evaluation_id".to_owned(),
+                };
+            }
+        };
+        if let Some(parent) = self.trail_path.parent() {
+            if let Err(error) = fs::create_dir_all(parent) {
+                return ExecutionServiceResult::AuditFailed {
+                    evaluation_id,
+                    action_id: String::new(),
+                    reason: format!("trail directory create failed: {error}"),
+                    execution_id: None,
+                };
+            }
+        }
+        let mut trail = match dispatch::FileTrail::open(self.trail_path) {
+            Ok(trail) => trail,
+            Err(error) => {
+                return ExecutionServiceResult::AuditFailed {
+                    evaluation_id,
+                    action_id: String::new(),
+                    reason: format!("trail open failed: {error}"),
+                    execution_id: None,
+                };
+            }
+        };
+        crate::plan_execution::execute_plan(
+            response,
+            &items,
+            &actions,
+            &evaluation_id,
+            &mut trail,
+            |response: &mut Value, action_index: usize, trail: &mut dyn dispatch::Trail| {
+                let proposed = match crate::extract_proposed_action_at(response, action_index) {
+                    Ok(proposed) => proposed,
+                    Err(error) => {
+                        return Err(ExecutionServiceResult::InvalidData {
+                            message: format!("invalid planned Action: {error}"),
+                        });
+                    }
+                };
+                self.execute_one_action(
+                    response,
+                    &actions[action_index],
+                    proposed,
+                    input,
+                    provider_sessions,
+                    provider_availability,
+                    approvals,
+                    trail,
+                )
+            },
+        )
+    }
+
+    /// Run one planned Action through the full production boundary: scope
+    /// assessment, effective policy (Deny / Ask / Unavailable / Allow),
+    /// exact capability resolution, retained MCP session and catalogue
+    /// refresh, then the shared execution boundary.
+    ///
+    /// Returns the boundary result as `Ok`; any stop before the boundary
+    /// (policy, availability, approval, malformed data) is `Err` with the
+    /// exact service result.
+    #[allow(clippy::too_many_arguments)]
+    fn execute_one_action(
+        &self,
+        response: &mut Value,
+        action: &Value,
+        proposed: policy::ProposedAction,
+        input: &PreparedEvaluationInput,
+        provider_sessions: &mut HashMap<String, RetainedProviderSession>,
+        provider_availability: &ProviderAvailability,
+        approvals: &mut crate::approval::ApprovalStore,
+        trail: &mut dyn dispatch::Trail,
+    ) -> Result<crate::SharedExecutionResult, ExecutionServiceResult> {
         let evaluation_id = proposed.evaluation_id.clone();
         let action_id = proposed.action_id.clone();
         let scope_assessment = self.runtime.assess_action_scope(&proposed);
@@ -842,25 +948,14 @@ impl<'a> HostExecutionService<'a> {
 
         match &policy_evaluation.decision {
             PermissionDecision::Deny => {
-                return ExecutionServiceResult::Denied {
+                return Err(ExecutionServiceResult::Denied {
                     evaluation_id,
                     action_id,
                     reason: format!("{:?}", policy_evaluation.reason),
                     execution_id: None,
-                };
+                });
             }
             PermissionDecision::Ask => {
-                let mut trail = match dispatch::FileTrail::open(self.trail_path) {
-                    Ok(trail) => trail,
-                    Err(_) => {
-                        return ExecutionServiceResult::AuditFailed {
-                            evaluation_id,
-                            action_id,
-                            reason: "approval request Trail is unavailable".to_owned(),
-                            execution_id: None,
-                        };
-                    }
-                };
                 match crate::request_exact_approval(
                     &proposed,
                     self.runtime.requirements(),
@@ -869,65 +964,62 @@ impl<'a> HostExecutionService<'a> {
                     self.runtime.policy(),
                     scope_assessment,
                     approvals,
-                    &mut trail,
+                    trail,
                 ) {
                     Ok(Some(_)) => {
-                        return approval_required_result(
+                        return Err(approval_required_result(
                             evaluation_id,
                             action_id,
                             &policy_evaluation.reason,
-                        );
+                        ));
                     }
                     Ok(None) => {
-                        return ExecutionServiceResult::AuditFailed {
+                        return Err(ExecutionServiceResult::AuditFailed {
                             evaluation_id,
                             action_id,
                             reason: "approval request could not be established".to_owned(),
                             execution_id: None,
-                        };
+                        });
                     }
                     Err(_) => {
-                        return ExecutionServiceResult::AuditFailed {
+                        return Err(ExecutionServiceResult::AuditFailed {
                             evaluation_id,
                             action_id,
                             reason: "approval request Trail recording failed".to_owned(),
                             execution_id: None,
-                        };
+                        });
                     }
                 }
             }
             PermissionDecision::Unavailable => {
-                return ExecutionServiceResult::Unavailable {
+                return Err(ExecutionServiceResult::Unavailable {
                     evaluation_id,
                     reason: format!("{:?}", policy_evaluation.reason),
-                };
+                });
             }
             PermissionDecision::Allow(_) => {}
         }
 
-        let resolved = match self.resolve_exact_capability(&proposed, provider_availability) {
-            Ok(resolved) => resolved,
-            Err(result) => return result,
-        };
+        let resolved = self.resolve_exact_capability(&proposed, provider_availability)?;
         let binding = &resolved.manifest().manifest().binding;
         if binding.kind != BindingKind::Mcp {
-            return ExecutionServiceResult::Denied {
+            return Err(ExecutionServiceResult::Denied {
                 evaluation_id,
                 action_id,
                 reason: "capability binding is not MCP".to_owned(),
                 execution_id: None,
-            };
+            });
         }
         let session = match provider_sessions.get_mut(resolved.provider_identity()) {
             Some(session) => session,
             None => {
-                return ExecutionServiceResult::Unavailable {
+                return Err(ExecutionServiceResult::Unavailable {
                     evaluation_id,
                     reason: format!(
                         "provider '{}' has no retained session",
                         resolved.provider_identity()
                     ),
-                };
+                });
             }
         };
         let Some(prepared_provider) = self
@@ -936,33 +1028,33 @@ impl<'a> HostExecutionService<'a> {
             .iter()
             .find(|provider| provider.identity == resolved.provider_identity())
         else {
-            return ExecutionServiceResult::Unavailable {
+            return Err(ExecutionServiceResult::Unavailable {
                 evaluation_id,
                 reason: format!(
                     "provider '{}' has no prepared catalogue authority",
                     resolved.provider_identity()
                 ),
-            };
+            });
         };
         match refresh_prepared_catalogue(prepared_provider, session) {
             Ok(true) => {}
             Ok(false) => {
-                return ExecutionServiceResult::Unavailable {
+                return Err(ExecutionServiceResult::Unavailable {
                     evaluation_id,
                     reason: format!(
                         "provider '{}' catalogue no longer matches trusted bindings",
                         resolved.provider_identity()
                     ),
-                };
+                });
             }
             Err(error) => {
-                return ExecutionServiceResult::Unavailable {
+                return Err(ExecutionServiceResult::Unavailable {
                     evaluation_id,
                     reason: format!(
                         "provider '{}' catalogue refresh unavailable: {error}",
                         resolved.provider_identity()
                     ),
-                };
+                });
             }
         }
         let mut executor = ProviderSessionExecutor {
@@ -977,42 +1069,21 @@ impl<'a> HostExecutionService<'a> {
         {
             Some(event_id) => event_id,
             None => {
-                return ExecutionServiceResult::InvalidData {
+                return Err(ExecutionServiceResult::InvalidData {
                     message: "Anchor event requires a non-empty string id".to_owned(),
-                };
+                });
             }
         };
         let input_context = crate::InputEventContext::for_initial(event_id);
-
-        if let Some(parent) = self.trail_path.parent() {
-            if let Err(error) = fs::create_dir_all(parent) {
-                return ExecutionServiceResult::AuditFailed {
-                    evaluation_id,
-                    action_id,
-                    reason: format!("trail directory create failed: {error}"),
-                    execution_id: None,
-                };
-            }
-        }
-        let mut trail = match dispatch::FileTrail::open(self.trail_path) {
-            Ok(trail) => trail,
-            Err(error) => {
-                return ExecutionServiceResult::AuditFailed {
-                    evaluation_id,
-                    action_id,
-                    reason: format!("trail open failed: {error}"),
-                    execution_id: None,
-                };
-            }
-        };
         let clock = ProductionMonotonicClock::new();
         let mut replay_authority = FileReplayAuthority::new(self.host_data_root);
         let mut anchor_writer = crate::ResponseResultAnchorWriter;
-        let shared = match crate::execute_shared_boundary(
-            &mut response,
+        match crate::execute_shared_boundary(
+            response,
+            action,
             policy_evaluation.decision,
             &resolved,
-            &mut trail,
+            trail,
             &mut executor,
             &input_context,
             true,
@@ -1021,20 +1092,21 @@ impl<'a> HostExecutionService<'a> {
             None,
             &mut anchor_writer,
         ) {
-            Ok(result) => result,
-            Err(error) => {
-                return ExecutionServiceResult::AuditFailed {
-                    evaluation_id,
-                    action_id,
-                    reason: format!("shared execution boundary failed: {error}"),
-                    execution_id: None,
-                };
-            }
-        };
-        Self::map_shared_result(shared, evaluation_id, action_id, response)
+            Ok(result) => Ok(result),
+            Err(error) => Err(ExecutionServiceResult::AuditFailed {
+                evaluation_id,
+                action_id,
+                reason: format!("shared execution boundary failed: {error}"),
+                execution_id: None,
+            }),
+        }
     }
 
-    fn map_shared_result(
+    /// Map one shared-boundary result to a service result, consuming the
+    /// response only for the Completed arm (the plan executor preserves the
+    /// accumulated response itself and passes a placeholder for aggregates,
+    /// where Completed is unreachable by construction).
+    pub(crate) fn map_shared_result(
         result: crate::SharedExecutionResult,
         evaluation_id: String,
         action_id: String,
