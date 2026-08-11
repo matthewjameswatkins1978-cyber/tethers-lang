@@ -2,23 +2,23 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-1B — Named Inputs & Explicit Success Flow`
+Task: `TETHERS CORE-2 — Human AST → Core Lowering`
 
 Owner: `OpenCode`
 
 Status: `COMPLETE`
 
-Task colour: `Green`
+Task colour: `Amber`
 
 Route: `OpenCode implementation + evidence → Lucy independent GitHub review`
 
-Worker note: `docs/worker-notes/2026-08-11-core-1b-named-inputs-success-flow.md`
+Worker note: `docs/worker-notes/2026-08-11-core-2-human-to-core-lowering.md`
 
-Base branch: `feature/core-1-ocaml-core-types`
+Base branch: `feature/core-2-human-to-core-lowering`
 
-Base commit: `6295842688c7637172723ba46e43f128c3e86bc5`
+Base commit: `b5daea00accff8e7617727a02ee524bfb80cd823`
 
-Implementation checkpoint: `1011a644b3aa550c70643aaea33b7c2f301539b4`
+Implementation checkpoint: `52032e42f8c1d44a801e79735272327c12ee004c`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -30,108 +30,123 @@ Rust change class: `RUST_UNCHANGED`
 
 ## Objective
 
-Extend dormant `Tethers_core` so Action arguments are associated with their capability input names structurally and sequential Origin execution flow is explicitly stated, rather than derived from hidden list ordering.
+Implement the first real Tethers Core lowering pass:
 
-CORE-1B fixes two type-level omissions discovered during CORE-2 preparation: `action_origin` stores bindings without retaining the capability input name, and Core has no explicit successful-continuation representation.
+```text
+Human Tether AST
+        +
+explicit lowering environment
+        ↓
+Tethers Core program
+```
 
-No lowering or runtime wiring occurs in this packet.
+CORE-2 translates the existing sequential Tethers 0.1 subset into the dormant
+Core representation introduced by CORE-1 / 1A / 1B. It does NOT replace the
+existing evaluator path yet.
+
+The lowerer translates meaning. It MUST NOT invent semantic information
+unavailable from its inputs. Capability contract identities, host-input Fact
+declarations, Program identity, and Core version are supplied explicitly
+through a lowering environment. No fake hashes, no guessed contracts, no
+hidden defaults.
 
 ## Relevant background and existing behaviour
 
-Tethers 0.1 names every Action argument: `file: anchor.document`, `copies: 2`. The parser emits these as a `(name * value) list` inside each `action`. The current CORE-1 `action_origin` collapses this to a bare `input_binding list`, discarding the argument name. CORE-2 cannot reconstruct the semantic association from position.
-
-Tethers 0.1 evaluates Action Origins sequentially after the Anchor matches and all entry guards pass. Action evaluation order is source order. The current CORE-1 `program.origin_sites` is a list; without an explicit entry point and continuation structure, execution semantics are latent in list position.
-
-The branch tip `6295842688c7637172723ba46e43f128c3e86bc5` contains the accepted CORE-1A implementation. CORE-1B continues on the same branch from that tip.
+CORE-1 established dormant nominal Core types. CORE-1A added typed literal
+values, input Facts, and Fact Guards. CORE-1B added named capability inputs
+and explicit success continuation flow. The existing parser (`Tether_parser`)
+produces typed AST values for the supported sequential Tether 0.1 subset
+including `Together`. The existing evaluator (`Tethers_evaluator`) evaluates
+directly from parsed AST to protocol responses; it does not consume Core
+types. The Core types exist as a dormant vocabulary with no consumer.
 
 ## Required behaviour
 
-1. Introduce `capability_input_name` as a nominal type with a private constructor and `of_string`/`to_string` functions, matching the Core ID discipline.
-2. Introduce `action_input = { input_name : capability_input_name; binding : input_binding }` associating each binding with its capability argument name.
-3. Replace `action_origin.input_bindings : input_binding list` with `inputs : action_input list`.
-4. Introduce `control_target = Origin_target of origin_id | Program_complete` as an explicit semantic continuation destination.
-5. Introduce `success_continuation = { from_origin : origin_id; target : control_target }`, representing the ordinary successful path from one Origin to its successor.
-6. Add `entry_origin : origin_id option` to `program`, naming the first executable semantic Origin.
-7. Add `success_continuations : success_continuation list` to `program`.
-8. Document in the interface that `origin_sites` ordering is representational storage only and MUST NOT determine runtime execution order.
-9. Preserve byte-for-byte unchanged behaviour: no existing code consumes `Tethers_core` values, no existing OCaml module or Dune file is modified, and the full fixture/engine/MCP suite continues to pass.
+1. Lower a single-action Tether into a Core program with Anchor Origin,
+   Action Origin, entry origin, and Program_complete continuation.
+2. Lower multiple sequential Actions into an explicit A1→A2→...→complete
+   success-continuation chain.
+3. Preserve typed literals (string, int, bool) in Core as exact typed values
+   without stringification.
+4. Lower `anchor.*` references into structural `Anchor_value(origin_id, path
+   parts)` bindings.
+5. Lower all four Condition operators (Is, Contains, Greater_than,
+   Greater_than_or_equal) to Core comparison operators with order preserved.
+6. Resolve known input Facts through the lowering environment; reject unknown
+   Facts with a bounded error.
+7. Resolve known Capabilities to exact CapabilityId and ContractDigest from
+   the environment; reject unknown and duplicate capabilities.
+8. Reject any Tether containing `Together` with an explicit
+   `Unsupported_construct` error.
+9. Produce structurally equal Core programs for the same inputs (determinism).
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core.ml` (modify: type definitions and implementations)
-- `tethers-0.1/engine-ocaml/bin/tethers_core.mli` (modify: type interface with private constructors)
-- `docs/CURRENT_CLINE_TASK.md` (packet, closeout scope)
-- `docs/worker-notes/2026-08-11-core-1b-named-inputs-success-flow.md` (worker note, closeout scope)
-- Read-only references: `tether_parser.ml` (action type shape), SPEC.md, OCaml guide
+- `tethers-0.1/engine-ocaml/bin/tethers_core.ml` / `.mli` — dormant Core types
+  (CORE-1/1A/1B vocabulary).
+- `tethers-0.1/engine-ocaml/bin/tether_parser.ml` / `.mli` — parsed Human AST
+  types (`tether`, `condition`, `action`, `action_item`, `value`, `operator`).
+- `tethers-0.1/engine-ocaml/bin/dune` — module graph for both executables.
+- `tethers-0.1/engine-ocaml/bin/tethers_core_lowerer.ml` / `.mli` — new
+  lowerer module.
 
 ## Frozen decisions and invariants
 
-- CORE-1B defines types and documentation only. No lowering, ID generation, success-edge validation, Branch validation, canonicalisation, ProgramDigest, JSON encoding, evaluator integration, Runtime Plan generation, Rust changes, Trail changes, Together execution, Roles, Batch behaviour, or Deadline behaviour.
-- The module remains dormant: no existing code consumes `Tethers_core` values.
-- Action meaning = Capability identity + named input bindings + contract digest + facts + constraints. Never "first item at position N probably means field N."
-- Sequential meaning = explicit entry origin + explicit success continuation graph. Never "things in a list probably run in order."
-- `success_continuation` defines only the ordinary successful path (SUCCESS). FAILURE, UNCERTAIN, CANCELLED are not represented here; their handling belongs to Branches or later semantics.
-- Branch remains the explicit alternative-routing construct; CORE-1B does not replace Branch with generic outcome edges.
-- Together semantics and internal member scheduling are not modified.
-- Only `tethers_core.ml`, `tethers_core.mli`, packet, and worker note may change.
-- `bin/dune` must not be modified unless an unforeseen compile issue genuinely requires it.
+- ID assignment: deterministic pre-canonical static IDs (`O_anchor`,
+  `O_action_1`, ...). CORE-4 will canonicalise later.
+- Anchor name preserved directly as `event_name`.
+- Typed literals: lossless, no stringification.
+- Anchor references: `"anchor.x.y"` → `Anchor_value(O_anchor, ["x"; "y"])`.
+  Non-anchor refs → `Missing_anchor_reference`.
+- Named action inputs: argument names become `capability_input_name`.
+- Capability resolution: exact match from environment; duplicates rejected.
+- Input Fact resolution: exact match; only referenced facts in `input_facts`.
+- Guard operators: `Is→Equals`, `Contains→Contains`, `Greater_than→
+  Greater_than`, `Greater_than_or_equal→Greater_than_or_equal`.
+- Sequential flow: `entry_origin` + `success_continuations` chain; storage
+  order carries no execution meaning.
+- Together: explicit `Unsupported_construct`.
+- No Core type changes needed.
+- No evaluator/protocol/outcome/Rust changes.
+- Determinism: structural equality for same inputs.
 
 ## Acceptance criteria
 
-1. `capability_input_name` exists as a private nominal type with `of_string`/`to_string`.
-2. `action_input` exists with `input_name : capability_input_name` and `binding : input_binding`.
-3. `action_origin` has `inputs : action_input list` (no longer `input_bindings : input_binding list`).
-4. `control_target` exists with `Origin_target` and `Program_complete` constructors.
-5. `success_continuation` exists with `from_origin : origin_id` and `target : control_target`.
-6. `program` has `entry_origin : origin_id option`.
-7. `program` has `success_continuations : success_continuation list`.
-8. Interface comments explicitly state that `origin_sites` list order carries no execution semantics.
-9. `dune build` succeeds with the modified module.
-10. Fixture suite passes: 64 JSON + 32 JSONL.
-11. Engine suite passes: 32 cases.
-12. MCP transcript suite passes: 16 cases.
-13. `git diff --check` reports no whitespace issues.
-14. Zero Rust or dependency changes confirmed by `git diff --stat`.
-15. `git status --short` shows only authorised files changed.
-16. No existing OCaml module other than `tethers_core.ml` and `tethers_core.mli` is modified.
+1. Single action produces correct Anchor + Action + entry + continuations
+2. Three sequential actions: A1→A2→A3→complete chain explicit
+3. Typed literals remain typed (string, int, bool)
+4. Anchor binding: structural path parts
+5. All four operators lower correctly, order preserved
+6. Known fact resolves; unknown fact fails closed
+7. Known capability resolves to exact ID/digest; unknown fails; duplicate fails
+8. Together returns explicit unsupported-construct error
+9. Determinism: repeat lowering produces structural equality
 
 ## Required verification
 
-1. Packet checker at start (`control-v1/IN_PROGRESS`):
-   `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
-2. OCaml build:
-   `opam exec --switch="D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml" -- dune build`
-3. Fixture suite:
-   `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\check-fixtures.ps1`
-4. Engine suite:
-   `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-engine.ps1`
-5. MCP transcript suite:
-   `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tethers-0.1\scripts\test-mcp-transcripts.ps1`
-6. Whitespace check:
-   `git diff --check`
-7. Complete diff inspection and `git status --short`.
-8. On closeout: packet checker `control-v1/COMPLETE`.
-
-Rust suite is not required: Rust source and dependencies remain untouched.
-
-Expected baselines: fixtures 64 JSON + 32 JSONL, engine 32 cases, MCP 16 cases.
+1. Packet checker at closeout: `control-v1/COMPLETE`
+2. OCaml build: `dune build`
+3. Lowerer tests: `dune runtest` — 44/44 assertions
+4. Fixture suite: `check-fixtures.ps1` — 64 JSON + 32 JSONL
+5. Engine suite: `test-engine.ps1` — 32 cases
+6. MCP transcript suite: `test-mcp-transcripts.ps1` — 16 cases
+7. Whitespace check: `git diff --check`
+8. Rust formatter: `cargo fmt --check` (exit 0)
+9. Complete diff inspection: only authorised files
+10. Git status: clean worktree
 
 ## Forbidden changes
 
-DO NOT modify any existing OCaml module other than `tethers_core.ml` and `tethers_core.mli` (`tether_parser.ml`, `tether_parser.mli`, `tethers_evaluator.ml`, `tethers_evaluator.mli`, `tethers_protocol.ml`, `tethers_protocol.mli`, `tethers_outcome.ml`, `tethers_outcome.mli`, `tethers_error.ml`, `main.ml`, `tethers_mcp_main.ml`, `tethers_mcp_server.ml`).
-
-DO NOT modify `bin/dune` unless an unforeseen compile issue genuinely requires it.
-
-DO NOT modify any Rust source, Cargo files, dependencies, opam files, toolchain configuration, fixtures, grammar, or protocol specifications.
-
-DO NOT implement Human AST → Core lowering, automatic ID generation, success-edge validation, Branch validation, canonicalisation, ProgramDigest, JSON encoding, evaluator integration, Runtime Plan generation, Rust changes, Trail changes, Together execution, Roles, Batch behaviour, or Deadline behaviour.
+Do NOT modify: `tethers_evaluator.ml/.mli`, `tethers_protocol.ml/.mli`,
+`tethers_outcome.ml/.mli`. Do not modify Rust. Do not change existing
+runtime output. Do not route production evaluation through Core yet.
+Do not modify `tethers_core.ml/.mli` unless a genuinely unavoidable
+representation defect blocks correct lowering.
 
 ## Stop conditions
 
-- After committing CORE-1B, stop. Do not begin CORE-2.
-- If the base commit does not match the current branch's ancestor relationship, stop.
-- If two materially similar implementation attempts fail on the same underlying problem, stop.
-- If a required verification command produces unexpected output that cannot be resolved locally, stop.
+Committed CORE-2. STOP. Do NOT wire into evaluator, begin Core validation,
+serialize Core, or begin CORE-3.
 
 ## Expected pre-existing changes
 
