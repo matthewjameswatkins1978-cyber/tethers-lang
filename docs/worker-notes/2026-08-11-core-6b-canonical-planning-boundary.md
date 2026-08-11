@@ -1,6 +1,7 @@
 # Worker Note
 
-- **Task Packet:** `docs/CURRENT_CLINE_TASK.md` (CORE-6B)
+- **Task:** `CORE-6B`
+- **Task packet:** `docs/CURRENT_CLINE_TASK.md`
 - **Owner:** OpenCode (MiMo-V2.5)
 - **Status:** `COMPLETE`
 - **Base Commit:** `534abc763938f573fa799619ffa22193206e3b15`
