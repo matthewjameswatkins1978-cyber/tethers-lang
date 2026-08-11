@@ -6,9 +6,9 @@ Task: `TETHERS CORE-6A1 — Human → Core → Plan Proof`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `NOT YET COMMITTED`
+Implementation checkpoint: `7586b29d20133879af47ca8fd0d22878c85710de`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 

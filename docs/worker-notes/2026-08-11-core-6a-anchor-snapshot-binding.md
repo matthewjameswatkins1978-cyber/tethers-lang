@@ -1,6 +1,6 @@
 # Worker Note
 
-Task: `CORE-6A — Anchor Snapshot Binding`
+Task: `CORE-6A1 — Human → Core → Plan Proof`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
@@ -8,37 +8,34 @@ Owner: `OpenCode`
 
 Status: `COMPLETE`
 
-Base commit: `d1ef28d737ac1c8205473e324bc231a4ce2c99af`
+Base commit: `6e1aba9f2ade3c24c43badc77d20b2094e791f3a`
 
-Implementation checkpoint: `9333cd71ed080792a348ff2bef0d677540133943`
+Implementation checkpoint: `7586b29d20133879af47ca8fd0d22878c85710de`
 
 ## Requested outcome
 
-Add faithful Runtime Plan support for Core `Anchor_value of origin_id * string list` using runtime-supplied Anchor snapshots. The bridge must continue to consume Core meaning + runtime occurrence context + approved Capability projections + runtime Anchor snapshot data, and produce concrete Runtime Plan. Do not reinterpret Human syntax in the planner.
+Add the end-to-end test requested by CORE-6A: prove the actual Human → parser → Core lowerer → planner chain works correctly for Anchor snapshot binding. The previous report said this was not possible without parser/lowerer integration changes. Independent review found that it is possible entirely inside the test layer. `Tether_parser.parse_tether` and `Tethers_core_lowerer.lower` are already public APIs. A Dune test-module dependency change is authorised.
 
 ## Changes made
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.mli` — added `anchor_snapshot` type, extended `planning_context` with `anchors` field, added five new error variants for anchor snapshot resolution
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml` — implemented anchor snapshot resolution logic: `find_snapshot`, `traverse_path`, `json_value_of_terminal`, `resolve_anchor_value`; modified `binding_error` to accept `Anchor_value`; modified `plan_action` to resolve `Anchor_value` bindings
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` — added tests T1..T12 for anchor snapshot binding; removed old `test_unsupported_anchor_value` test; updated error string function
-- `docs/CURRENT_CLINE_TASK.md` — updated to CORE-6A with implementation checkpoint
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` — added `test_e2e_human_to_plan` that parses a Human Tether with `anchor.document.title`, lowers it with explicit capability mapping, verifies the lowered Core contains `Anchor_value (O_anchor, ["document"; "title"])`, then plans with a runtime snapshot and asserts the resolved argument is `"title": "Tethers"`
+- `tethers-0.1/engine-ocaml/bin/dune` — added `tethers_core_lowerer` to the plan-test module list to enable direct lowerer calls in the test
+- `docs/CURRENT_CLINE_TASK.md` — updated to CORE-6A1 with implementation checkpoint
 
 ## Decisions and assumptions
 
-- Anchor snapshot lookup is identity-based, not first-match, not order-dependent (deterministic)
-- Path traversal follows ordered semantic data; fails explicitly on missing components, non-object traversal, or unsupported terminal values
-- CORE-6A supports string, integer, boolean terminal values; anything else fails closed with explicit typed error
-- Existing `Literal_value` planning behaviour remains unchanged; Actions may contain a mixture of `Literal_value` and `Anchor_value`
-- `Fact_from_origin`, `Fact_through_role`, `Batch_item_context` retain existing fail-closed errors
-- If planning context contains data for `O_other_anchor` but Core requests `O_anchor`, planning fails; no fallback to "the only available anchor"
+- The test uses `Tether_parser.parse_tether` and `Tethers_core_lowerer.lower` directly, proving the existing public APIs work end-to-end without any production code changes
+- A Dune test-module dependency change is authorised per the task packet
+- No parser, lowerer, or planner semantics were modified; the test only exercises existing code paths
+- The test constructs a `lowering_environment` with a single capability binding mapping `notify` to `cap.notify` with a known contract digest
 
 ## Evidence
 
-- OCaml build: `dune build @all` — PASS (exit 0)
-- All tests: `dune runtest --force` — PASS (lowerer 49/49, validator 51/51, plan bridge 67/67)
-- Whitespace: `git diff --check` — PASS (no errors)
+- OCaml build: `dune build` — PASS (exit 0)
+- All tests: `dune runtest` — PASS (74/74 plan bridge tests)
+- Whitespace: `git diff --check` — PASS (no errors, only line-ending conversion warnings)
 - Cargo fmt: `cargo fmt --check` — PASS (RUST_UNCHANGED)
-- Diff inspection: only authorised files changed (docs/CURRENT_CLINE_TASK.md, tethers_core_plan.ml, tethers_core_plan.mli, tethers_core_plan_test.ml)
+- Diff inspection: only authorised files changed (tethers_core_plan_test.ml, dune, CURRENT_CLINE_TASK.md)
 - Git status: clean worktree
 - Task-packet checker: `control-v1/COMPLETE` (after worker note creation)
 
@@ -48,9 +45,10 @@ Branch: `feature/core-6-anchor-snapshot-binding`. Push to origin pending (awaiti
 
 ## Discoveries
 
-- The existing `Unsupported_anchor_value` error was removed from `planning_error` type since we now support `Anchor_value` bindings
-- The test `test_unsupported_anchor_value` was removed and replaced with new tests T1..T12 that verify anchor snapshot resolution
-- The `mk_context` helper function was updated to include the `anchors` field
+- `Tether_parser.parse_tether` and `Tethers_core_lowerer.lower` are already public APIs that can be called directly from tests
+- The lowerer produces `Anchor_value (O_anchor, ["document"; "title"])` from `anchor.document.title` syntax, confirming the Human → Core lowering path
+- The planner correctly resolves the anchor value through the full pipeline, producing `"title": "Tethers"` as the concrete Runtime Plan argument
+- Adding `tethers_core_lowerer` to the plan-test module list was the only build configuration change needed
 
 ## Remaining risks
 
@@ -63,6 +61,6 @@ Push the finished branch to origin and confirm local HEAD == remote HEAD.
 ## References
 
 - Task packet: `docs/CURRENT_CLINE_TASK.md`
-- Implementation: `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml`, `tethers_core_plan.mli`, `tethers_core_plan_test.ml`
-- Base commit: `d1ef28d737ac1c8205473e324bc231a4ce2c99af`
-- Implementation commit: `9333cd71ed080792a348ff2bef0d677540133943`
+- Implementation: `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml`, `tethers-0.1/engine-ocaml/bin/dune`
+- Base commit: `6e1aba9f2ade3c24c43badc77d20b2094e791f3a`
+- Implementation commit: `7586b29d20133879af47ca8fd0d22878c85710de`
