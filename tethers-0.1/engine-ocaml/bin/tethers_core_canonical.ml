@@ -102,6 +102,7 @@ let all_branches_flat p =
 (* ------------------------------------------------------------------ *)
 
 module StringMap = Map.Make(String)
+module IntSet = Set.Make(Int)
 
 let scoped_role_id r scope =
   match scope with
@@ -174,15 +175,19 @@ let compress_colours pairs =
     pairs |> List.map snd |> List.sort_uniq String.compare
   in
   let sig_to_colour =
-    List.mapi (fun i sig_str -> (sig_str, i + 1)) uniques
+    List.fold_left (fun m sig_str ->
+      let colour = StringMap.cardinal m + 1 in
+      StringMap.add sig_str colour m
+    ) StringMap.empty uniques
   in
   List.fold_left (fun m (id, sig_str) ->
-    StringMap.add id (List.assoc sig_str sig_to_colour) m
+    StringMap.add id (StringMap.find sig_str sig_to_colour) m
   ) StringMap.empty pairs
 
 let int_map_partition_stable prev next =
   let count_unique m =
-    StringMap.fold (fun _ v acc -> if List.mem v acc then acc else v :: acc) m [] |> List.length
+    StringMap.fold (fun _k v acc -> IntSet.add v acc) m IntSet.empty
+    |> IntSet.cardinal
   in
   let n_prev = count_unique prev in
   let n_next = count_unique next in
@@ -736,15 +741,15 @@ let final_colours p =
 (* ------------------------------------------------------------------ *)
 
 type canonical_ids = {
-  origin_order : (origin_id * origin_id) list;
-  fact_order : (fact_id * fact_id) list;
-  role_order : (string * role_id) list;
+  origin_lookup : origin_id StringMap.t;
+  fact_lookup : fact_id StringMap.t;
+  role_lookup : role_id StringMap.t;
   origin_scope_map : [`Program | `Template of item_template_id] StringMap.t;
   fact_scope_map : [`Program | `Template of item_template_id] StringMap.t;
-  branch_order : (branch_id * branch_id) list;
-  group_order : (group_id * group_id) list;
-  batch_order : (batch_id * batch_id) list;
-  item_template_order : (item_template_id * item_template_id) list;
+  branch_lookup : branch_id StringMap.t;
+  group_lookup : group_id StringMap.t;
+  batch_lookup : batch_id StringMap.t;
+  item_template_lookup : item_template_id StringMap.t;
 }
 
 let assign_canonical_ids colours p =
@@ -866,6 +871,9 @@ let assign_canonical_ids colours p =
   let origin_pos =
     List.mapi (fun i (oid_s, _) -> (oid_s, i)) sorted_origins
   in
+  let origin_pos_map =
+    List.fold_left (fun m (oid_s, i) -> StringMap.add oid_s i m) StringMap.empty origin_pos
+  in
   let together_origins =
     List.filter_map (fun (_, site, _, _) ->
       match site with
@@ -874,7 +882,7 @@ let assign_canonical_ids colours p =
     ) all_orig
   in
   let get_pos oid_s =
-    match List.assoc_opt oid_s origin_pos with Some p -> p | None -> (-1)
+    match StringMap.find_opt oid_s origin_pos_map with Some p -> p | None -> (-1)
   in
   let sorted_tog =
     List.sort (fun (_, a) (_, b) ->
@@ -885,26 +893,59 @@ let assign_canonical_ids colours p =
       (gid, group_id_of_string ("G" ^ string_of_int (i + 1)))) sorted_tog
   in
 
-  { origin_order; fact_order; role_order;
-    origin_scope_map; fact_scope_map; branch_order;
-    group_order; batch_order; item_template_order }
+  let origin_lookup =
+    List.fold_left (fun m (k, v) -> StringMap.add (string_of_origin_id k) v m)
+      StringMap.empty origin_order
+  in
+  let fact_lookup =
+    List.fold_left (fun m (k, v) -> StringMap.add (string_of_fact_id k) v m)
+      StringMap.empty fact_order
+  in
+  let role_lookup =
+    List.fold_left (fun m (k, v) -> StringMap.add k v m)
+      StringMap.empty role_order
+  in
+  let branch_lookup =
+    List.fold_left (fun m (k, v) -> StringMap.add (string_of_branch_id k) v m)
+      StringMap.empty branch_order
+  in
+  let group_lookup =
+    List.fold_left (fun m (k, v) -> StringMap.add (string_of_group_id k) v m)
+      StringMap.empty group_order
+  in
+  let batch_lookup =
+    List.fold_left (fun m (k, v) -> StringMap.add (string_of_batch_id k) v m)
+      StringMap.empty batch_order
+  in
+  let item_template_lookup =
+    List.fold_left (fun m (k, v) -> StringMap.add (string_of_item_template_id k) v m)
+      StringMap.empty item_template_order
+  in
+
+  { origin_lookup; fact_lookup;
+    role_lookup;
+    origin_scope_map; fact_scope_map;
+    branch_lookup;
+    group_lookup;
+    batch_lookup;
+    item_template_lookup }
 
 (* ------------------------------------------------------------------ *)
 (*  Reference rewriting                                                  *)
 (* ------------------------------------------------------------------ *)
 
 let canonical_origin ids oid =
-  match List.assoc_opt oid ids.origin_order with Some c -> c | None -> oid
+  match StringMap.find_opt (string_of_origin_id oid) ids.origin_lookup with Some c -> c | None -> oid
 
 let canonical_fact ids fid =
-  match List.assoc_opt fid ids.fact_order with Some c -> c | None -> fid
+  match StringMap.find_opt (string_of_fact_id fid) ids.fact_lookup with Some c -> c | None -> fid
 
 let canonical_role_in_scope ids rid scope =
   let scoped_key = match scope with
     | Program_scope -> "P:" ^ string_of_role_id rid
     | Item_template_scope tid -> "T:" ^ string_of_item_template_id tid ^ ":" ^ string_of_role_id rid
   in
-  match List.assoc_opt scoped_key ids.role_order with Some c -> c | None -> rid
+  match StringMap.find_opt scoped_key ids.role_lookup with Some c -> c | None -> rid
 
 let canonical_role_for_fact ids fid rid =
   let scope =
@@ -923,16 +964,16 @@ let canonical_role_for_origin ids rid origin_scope =
   canonical_role_in_scope ids rid scope
 
 let canonical_branch ids bid =
-  match List.assoc_opt bid ids.branch_order with Some c -> c | None -> bid
+  match StringMap.find_opt (string_of_branch_id bid) ids.branch_lookup with Some c -> c | None -> bid
 
 let canonical_group ids gid =
-  match List.assoc_opt gid ids.group_order with Some c -> c | None -> gid
+  match StringMap.find_opt (string_of_group_id gid) ids.group_lookup with Some c -> c | None -> gid
 
 let canonical_batch ids bid =
-  match List.assoc_opt bid ids.batch_order with Some c -> c | None -> bid
+  match StringMap.find_opt (string_of_batch_id bid) ids.batch_lookup with Some c -> c | None -> bid
 
 let canonical_item_template ids tid =
-  match List.assoc_opt tid ids.item_template_order with Some c -> c | None -> tid
+  match StringMap.find_opt (string_of_item_template_id tid) ids.item_template_lookup with Some c -> c | None -> tid
 
 let rewrite_fact ids f =
   let provenance =
