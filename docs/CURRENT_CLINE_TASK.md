@@ -6,15 +6,15 @@ Task: `TETHERS CORE-8B — Explicit Core Evaluation Request Boundary`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: pending
+Implementation checkpoint: `829f8f1846cc376e92c7d3750ec2d3870faf4a71`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
 Route: `OpenCode implementation + evidence, Lucy independent GitHub review`
 
-Worker note: pending
+Worker note: `docs/worker-notes/2026-08-12-core-8b-request-boundary.md`
 
 Base branch: `feature/core-8a-evaluation-adapter`
 
