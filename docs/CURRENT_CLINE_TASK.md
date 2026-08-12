@@ -2,11 +2,11 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-8B1 — Total Request Parsing + Fact Fidelity Proof`
+Task: `TETHERS CORE-8B2 — Truly Total JSON Shape Validation`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `c333812c1092f196654cf6c0556e156ae2adb3cc`
+Implementation checkpoint: `203393ae0715d53122ce98da47e3d4d31079919f`
 
 Status: `COMPLETE`
 
@@ -14,11 +14,11 @@ Task colour: `Amber`
 
 Route: `OpenCode implementation + evidence, Lucy independent GitHub review`
 
-Worker note: `docs/worker-notes/2026-08-12-core-8b1-total-parsing-fact-fidelity.md`
+Worker note: `docs/worker-notes/2026-08-12-core-8b2-truly-total-json-validation.md`
 
 Base branch: `feature/core-8b-request-boundary`
 
-Base commit: `dcdc6dbe5e568b863f86dde29d05b6bf80a9b3a5`
+Base commit: `10605078138ab7eab3e3cda8a5d4d14eec53d243`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -26,35 +26,28 @@ Rust change class: `RUST_UNCHANGED`
 
 ## Objective
 
-Close four narrow review findings in CORE-8B:
-
-1. Make evaluate_request total over request JSON (no escape through
-   Exit, Type_error, Failure, Match_failure)
-2. Preserve top-level fact occurrence data exactly (no filter_map)
-3. Fix T3 reception-before-guard proof
-4. Strengthen T7 and T13 with exact key/idempotency assertions
-
-Plus 8 new regression tests (R1-R8).
+Finish the total-request invariant from CORE-8B1. evaluate_request must
+return request_error for malformed structural JSON. No Yojson.Safe.Util.Type_error
+or other structural exception may escape.
 
 ## Relevant background and existing behaviour
 
-CORE-8B created the request boundary module. Review found four gaps:
-- `raise Exit` paths in `resolve_one_capability` and `parse_one_fact`
-- `filter_map` dropping non-scalar fact values before CORE-8A
-- T3 not proving reception-before-guard semantics
-- T7 and T13 assertions too shallow
+CORE-8B1 removed `raise Exit` paths and added `core_env_string` helper.
+But `json_string`, `json_list`, `json_member`, and `core_env_string` still
+call `Yojson.Safe.Util.member` on potentially non-object values. The root
+request, tether, event, and capability-list items were not validated as
+objects before field extraction.
 
 ## Required behaviour
 
-1. Remove all `raise Exit` paths from `resolve_one_capability` and `parse_one_fact`
-2. Use Result-returning `core_env_string` helper for core_environment field extraction
-3. Validate `core_environment` is an object before parsing
-4. Require `facts` field to be an object (missing/null = Invalid_request)
-5. Pass occurrence facts pairs through unchanged (no filter_map)
-6. Strengthen T3 with guarded tether, wrong event, no facts
-7. Strengthen T7 with exact HOST_KEY_771 key assertion
-8. Strengthen T13 with exact idempotency key assertions
-9. Add R1-R8 regression tests
+1. Replace Yojson.Util.member-based helpers with object-safe extraction
+   that proves `Assoc` before accessing fields
+2. Validate root request is object; tether is object; event is object
+3. Validate each capability list item is object before parse_capability
+4. Validate each core_environment capability binding is object
+5. Validate each input_facts declaration is object
+6. Require schema_description as mandatory string field (not optional "")
+7. Add Q1-Q12 regression tests
 
 ## Relevant components
 
@@ -69,23 +62,26 @@ CORE-8B created the request boundary module. Review found four gaps:
 - core_environment must be an object (not Null, not string, etc.)
 - facts must be an object (missing/null = Invalid_request)
 - Malformed core_environment fields return Invalid_core_environment
-- Malformed core_environment fields return Invalid_core_environment
+- schema_description is required (not optional)
 
 ## Acceptance criteria
 
-1. All T1-T16 tests pass (strengthened T3, T7, T13)
-2. R1: malformed core capability field → typed error
-3. R2: malformed Fact declaration → typed error
-4. R3: malformed core_environment structural type → typed error
-5. R4: facts missing/non-object → Invalid_request
-6. R5: non-scalar occurrence Fact preserved → type mismatch (not missing)
-7. R6: guarded wrong-event → Not_matched
-8. R7: exact HOST_KEY_771 assertion
-9. R8: exact idempotency key assertions
-10. dune build @all PASS
-11. dune runtest --force PASS
-12. git diff --check PASS
-13. task-packet checker PASS
+1. Q1: `evaluate_request `Null` → Invalid_request, no exception
+2. Q2: `evaluate_request (`String "oops")` → Invalid_request, no exception
+3. Q3: tether = `String "oops"` → Invalid_request
+4. Q4: event = `List []` → Invalid_request
+5. Q5: capabilities = [`Int 42] → Invalid_request
+6. Q6: core_environment.capabilities = [`Int 42] → Invalid_core_environment
+7. Q7: core_environment.input_facts = [`String "oops"] → Invalid_core_environment
+8. Q8: Fact declaration missing schema_description → Invalid_core_environment
+9. Q9: Fact declaration schema_description = `Int 7 → Invalid_core_environment
+10. Q10: program_id wrong type → Invalid_core_environment
+11. Q11: core_version wrong type → Invalid_core_environment
+12. Q12: all previous tests remain green
+13. dune build @all PASS
+14. dune runtest --force PASS
+15. git diff --check PASS
+16. task-packet checker PASS
 
 ## Required verification
 
@@ -105,8 +101,8 @@ semantics.
 
 ## Stop conditions
 
-Commit CORE-8B1 implementation checkpoint. STOP.
+Commit CORE-8B2 implementation checkpoint. STOP.
 
 ## Expected pre-existing changes
 
-CORE-8B request boundary (accepted).
+CORE-8B request boundary and CORE-8B1 total-parsing fixes (accepted).
