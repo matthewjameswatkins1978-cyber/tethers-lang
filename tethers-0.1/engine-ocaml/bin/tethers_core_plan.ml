@@ -36,6 +36,8 @@ type planning_error =
   | Ambiguous_fact_snapshot of host_snapshot_key
   | Fact_snapshot_type_mismatch of host_snapshot_key
   | Invalid_guard_comparison of fact_id
+  | Missing_reception_anchor
+  | Ambiguous_reception_anchor
 
 type runtime_capability_projection = {
   capability_id : capability_id;
@@ -58,6 +60,18 @@ type planning_context = {
 type canonical_plan = {
   program_digest : Tethers_core_canonical.program_digest;
   runtime_plan : Tethers_outcome.plan;
+}
+
+type runtime_event = {
+  name : string;
+  data : Yojson.Safe.t;
+}
+
+type evaluation_context = {
+  evaluation_id : string;
+  event : runtime_event;
+  capabilities : runtime_capability_projection list;
+  facts : fact_snapshot list;
 }
 
 type canonical_evaluation =
@@ -178,7 +192,7 @@ let projection_metadata_complete (p : runtime_capability_projection) =
   | None, None, None | Some _, Some _, Some _ -> true
   | _ -> false
 
-let projection_of context capability_id contract_digest =
+let projection_of (context : planning_context) capability_id contract_digest =
   let by_id =
     List.filter
       (fun (p : runtime_capability_projection) -> p.capability_id = capability_id)
@@ -218,7 +232,7 @@ let projection_of context capability_id contract_digest =
 (*  identity-based, not first-match, not order-dependent.               *)
 (* ------------------------------------------------------------------ *)
 
-let find_snapshot context origin_id =
+let find_snapshot (context : planning_context) origin_id =
   let matching =
     List.filter
       (fun (s : anchor_snapshot) -> s.origin_id = origin_id)
@@ -277,7 +291,7 @@ let find_fact_by_id program fact_id =
   List.find_opt (fun (f : Tethers_core.fact) -> f.fact_id = fact_id)
     program.input_facts
 
-let find_fact_snapshot context host_key =
+let find_fact_snapshot (context : planning_context) host_key =
   let matching =
     List.filter
       (fun (s : fact_snapshot) -> s.key = host_key)
@@ -327,7 +341,7 @@ let validate_guard_expected operator (expected : Tethers_core.core_value) (scala
 
 type guard_single_result = Guard_ok | Guard_false
 
-let evaluate_single_guard context program (guard : Tethers_core.fact_guard) =
+let evaluate_single_guard (context : planning_context) program (guard : Tethers_core.fact_guard) =
   let open Result.Syntax in
   let* fact =
     match find_fact_by_id program guard.fact_id with
@@ -351,7 +365,7 @@ type guard_result =
   | All_guards_passed
   | Guard_not_matched
 
-let evaluate_entry_guards context program =
+let evaluate_entry_guards (context : planning_context) program =
   let guards = program.entry_guards in
   let rec loop = function
     | [] -> Ok All_guards_passed
@@ -379,7 +393,7 @@ let evaluate_entry_guards context program =
 (*  unreachable for a program that passed the pre-scan.                 *)
 (* ------------------------------------------------------------------ *)
 
-let plan_action context index (a : action_origin) =
+let plan_action (context : planning_context) index (a : action_origin) =
   let rec build_arguments acc = function
     | [] -> Ok (List.rev acc)
     | (ai : action_input) :: rest -> (
@@ -450,7 +464,7 @@ let unique_effects values =
 (*  [Incomplete_success_path].  Anchor origins contribute no action.    *)
 (* ------------------------------------------------------------------ *)
 
-let plan_core program context =
+let plan_core program (context : planning_context) =
   match unsupported program with
   | Some error -> Error error
   | None -> (
@@ -506,14 +520,14 @@ let plan_core program context =
                   groups = [];
                 })
 
-let plan program context =
+let plan program (context : planning_context) =
   match validate program with
   | Error errors -> Error (Invalid_core errors)
   | Ok () -> (
       if program.entry_guards <> [] then Error Unresolved_entry_guards
       else plan_core program context)
 
-let plan_canonicalized canonicalized context =
+let plan_canonicalized canonicalized (context : planning_context) =
   let c_program = Tethers_core_canonical.canonical_program canonicalized in
   let c_digest = Tethers_core_canonical.program_digest canonicalized in
   if c_program.entry_guards <> [] then Error Unresolved_entry_guards
@@ -521,7 +535,7 @@ let plan_canonicalized canonicalized context =
     | Error err -> Error err
     | Ok runtime_plan -> Ok { program_digest = c_digest; runtime_plan }
 
-let plan_internal program context =
+let plan_internal program (context : planning_context) =
   match validate program with
   | Error errors -> Error (Invalid_core errors)
   | Ok () -> plan_core program context
@@ -530,10 +544,36 @@ let evaluate_canonicalized canonicalized context =
   let c_program = Tethers_core_canonical.canonical_program canonicalized in
   let c_digest = Tethers_core_canonical.program_digest canonicalized in
   let open Result.Syntax in
-  let* guard_result = evaluate_entry_guards context c_program in
-  match guard_result with
-  | Guard_not_matched -> Ok Not_matched
-  | All_guards_passed ->
-      match plan_internal c_program context with
-      | Error err -> Error err
-      | Ok runtime_plan -> Ok (Matched { program_digest = c_digest; runtime_plan })
+  (* Anchor reception: exactly one top-level Anchor_origin required *)
+  let anchor_origins =
+    List.filter_map
+      (function Anchor_origin a -> Some a | _ -> None)
+      c_program.origin_sites
+  in
+  let* anchor =
+    match anchor_origins with
+    | [] -> Error Missing_reception_anchor
+    | [ a ] -> Ok a
+    | _ :: _ -> Error Ambiguous_reception_anchor
+  in
+  (* Exact event name match *)
+  if anchor.event_name <> context.event.name then
+    Ok Not_matched
+  else
+    (* Event matched: bind event data to canonical Anchor OriginId *)
+    let derived_anchor =
+      { origin_id = anchor.anchor_origin_id; data = context.event.data }
+    in
+    let planning_ctx =
+      { evaluation_id = context.evaluation_id;
+        capabilities = context.capabilities;
+        anchors = [ derived_anchor ];
+        facts = context.facts }
+    in
+    let* guard_result = evaluate_entry_guards planning_ctx c_program in
+    match guard_result with
+    | Guard_not_matched -> Ok Not_matched
+    | All_guards_passed ->
+        match plan_internal c_program planning_ctx with
+        | Error err -> Error err
+        | Ok runtime_plan -> Ok (Matched { program_digest = c_digest; runtime_plan })

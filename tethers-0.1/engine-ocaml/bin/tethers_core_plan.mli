@@ -152,6 +152,13 @@ type planning_error =
       valid comparison with the given operator (e.g. [Contains] with a
       non-string expected value, or [Greater_than] with a non-integer
       expected value). *)
+  | Missing_reception_anchor
+  (** The canonical program has zero top-level [Anchor_origin] sites.
+      Reception requires exactly one. *)
+  | Ambiguous_reception_anchor
+  (** The canonical program has two or more top-level [Anchor_origin] sites.
+      Reception requires exactly one; the evaluator does not silently pick
+      one by storage order. *)
 
 type canonical_plan = {
   program_digest : Tethers_core_canonical.program_digest;
@@ -209,28 +216,66 @@ type canonical_evaluation =
 (** The outcome of evaluating a canonical Core program with entry guards
     against runtime Fact snapshots.
 
-    - [Matched plan]: all entry guards evaluated to true; the plan is
-      produced with the preserved [ProgramDigest].
-    - [Not_matched]: at least one valid guard evaluated to false; no
-      Runtime Plan is produced.
+    - [Matched plan]: the event matched the canonical Anchor, all entry
+      guards evaluated to true; the plan is produced with the preserved
+      [ProgramDigest].
+    - [Not_matched]: the event name did not match the canonical Anchor, or
+      at least one valid guard evaluated to false; no Runtime Plan is
+      produced.
 
     Missing, ambiguous, wrongly typed, or malformed runtime Facts produce
-    an [Error] through the [planning_error] result, NOT [Not_matched]. *)
+    an [Error] through the [planning_error] result, NOT [Not_matched].
+    Event mismatch is a normal [Not_matched], not an error. *)
+
+type runtime_event = {
+  name : string;
+  (** Exact event name to match against the canonical Anchor_origin. *)
+  data : Yojson.Safe.t;
+  (** Immutable event-data JSON snapshot. *)
+}
+(** A typed runtime event value for canonical evaluation. *)
+
+type evaluation_context = {
+  evaluation_id : string;
+  (** Runtime execution occurrence identity. *)
+  event : runtime_event;
+  (** The triggering runtime event. *)
+  capabilities : runtime_capability_projection list;
+  (** Approved runtime Capability projections supplied by the host. *)
+  facts : fact_snapshot list;
+  (** Runtime-supplied evaluation Fact snapshots for entry guard evaluation.
+      Each snapshot is keyed by the [HostSnapshotKey] declared in the
+      corresponding [Evaluation_input] provenance. *)
+}
+(** High-level canonical evaluation context.  The caller supplies
+    Human-world occurrence data (event name + event data) without knowing
+    the canonical Anchor OriginId.  The evaluator maps it to Core
+    identities internally. *)
 
 val evaluate_canonicalized :
   Tethers_core_canonical.canonicalized ->
-  planning_context ->
+  evaluation_context ->
   (canonical_evaluation, planning_error) result
-(** Evaluate a canonical Core program's entry guards against runtime Fact
-    snapshots, then produce a Runtime Plan if all guards match.
+(** High-level canonical evaluation: reception → guards → plan.
 
-    Resolution steps for each guard:
-    1. Resolve the guard's canonical FactId to its declaration in
-       [canonical_program.input_facts].
-    2. Require provenance [Evaluation_input(host_key, scalar_type)].
-    3. Resolve the runtime snapshot by exactly [host_key].
-    4. Decode the runtime JSON value according to [scalar_type].
-    5. Compare against the guard's expected Core value.
+    Evaluation order (semantic and REQUIRED):
+    1. Anchor reception: locate the single top-level [Anchor_origin] in the
+       canonical program.  0 → [Missing_reception_anchor]; 2+ →
+       [Ambiguous_reception_anchor].
+    2. Exact event name match: compare [context.event.name] with the
+       canonical [Anchor_origin.event_name] using exact string equality.
+       Mismatch → [Ok Not_matched].
+    3. Entry guard evaluation: bind [context.event.data] to the canonical
+       Anchor OriginId internally, then evaluate guards against
+       [context.facts].
+    4. Planning: produce the Runtime Plan if all guards pass.
 
-    For programs with zero entry guards, equivalent to [plan_canonicalized]
+    Wrong event + missing or malformed Fact snapshots → [Ok Not_matched]
+    (the Tether was never awakened, so its Conditions are not evaluated).
+
+    The caller must NOT supply the canonical Anchor OriginId; the evaluator
+    derives it internally from the canonical program.  Event name and data
+    are occurrence inputs and MUST NOT alter [ProgramDigest].
+
+    For programs with zero entry guards, equivalent to reception + plan
     wrapped in [Matched]. *)
