@@ -120,6 +120,36 @@ let handle_tools_list id =
             ];
           `Assoc
             [
+              ("name", `String "tethers.evaluate_core");
+              ( "description",
+                `String
+                  "Canonical Core evaluation boundary.  Evaluates a complete \
+                   extended Tethers 0.1 request through the Core pipeline \
+                   (parse, lower, canonicalize, plan) and returns the \
+                   canonical response envelope.  Does not execute Actions." );
+              ( "inputSchema",
+                `Assoc
+                  [
+                    ("type", `String "object");
+                    ( "properties",
+                      `Assoc
+                        [
+                          ( "request",
+                            `Assoc
+                              [
+                                ("type", `String "object");
+                                ( "description",
+                                  `String
+                                    "Complete extended Tethers 0.1 request \
+                                     envelope with core_environment" );
+                              ] );
+                        ] );
+                    ("required", `List [ `String "request" ]);
+                    ("additionalProperties", `Bool false);
+                  ] );
+            ];
+          `Assoc
+            [
               ("name", `String "tethers.validate");
               ( "description",
                 `String
@@ -211,6 +241,44 @@ let handle_tools_call id fields =
             (make_error id (-32602)
                "Invalid arguments for tethers.evaluate: expected object field \
                 request"
+               None)
+    else if tool_name = "tethers.evaluate_core" then
+      match json_member_opt "arguments" params with
+      | Some (`Assoc args) -> (
+          match json_member_opt "request" args with
+          | Some request ->
+              let tethers_response =
+                Tethers_core_wire.evaluate_request_json request
+              in
+              let compact_json = Yojson.Safe.to_string tethers_response in
+              let result =
+                `Assoc
+                  [
+                    ("structuredContent", tethers_response);
+                    ( "content",
+                      `List
+                        [
+                          `Assoc
+                            [
+                              ("type", `String "text");
+                              ("text", `String compact_json);
+                            ];
+                        ] );
+                    ("isError", `Bool false);
+                  ]
+              in
+              Some (make_response id result)
+          | None ->
+              Some
+                (make_error id (-32602)
+                   "Invalid arguments for tethers.evaluate_core: expected \
+                    object field request"
+                   None))
+      | _ ->
+          Some
+            (make_error id (-32602)
+               "Invalid arguments for tethers.evaluate_core: expected object \
+                field request"
                None)
     else if tool_name = "tethers.validate" then
       match json_member_opt "arguments" params with

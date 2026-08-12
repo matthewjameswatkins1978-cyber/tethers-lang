@@ -632,6 +632,40 @@ impl<'a> HostExecutionService<'a> {
         Ok(request)
     }
 
+    /// Build the extended Core request envelope for one evaluation.
+    ///
+    /// Reuses the existing request assembly pipeline, then inserts the
+    /// `core_environment` JSON from the configured PreparedTether.
+    /// Fails explicitly when no core_environment is present.
+    ///
+    /// The proof matters because the Core request must contain the SAME
+    /// runtime capability projection that real production request
+    /// construction would use.
+    pub(crate) fn build_core_request_envelope(
+        &self,
+        input: &PreparedEvaluationInput,
+        tether: &PreparedTether,
+        provider_availability: &ProviderAvailability,
+    ) -> Result<Value, ExecutionServiceResult> {
+        let mut request = self.build_request_envelope(input, tether, provider_availability)?;
+        let core_env =
+            tether
+                .core_environment_json()
+                .ok_or_else(|| ExecutionServiceResult::InvalidData {
+                    message: format!(
+                        "tether {} v{} has no core_environment",
+                        tether.id, tether.version
+                    ),
+                })?;
+        request
+            .as_object_mut()
+            .ok_or_else(|| ExecutionServiceResult::InvalidData {
+                message: "request envelope is not a JSON object".to_owned(),
+            })?
+            .insert("core_environment".to_owned(), core_env);
+        Ok(request)
+    }
+
     fn route_planner_outcome<F>(
         outcome: Result<PlannerOutcome, ExecutionServiceResult>,
         dispatch: F,

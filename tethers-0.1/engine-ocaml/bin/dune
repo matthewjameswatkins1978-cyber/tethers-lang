@@ -7,8 +7,8 @@
 (executable
  (name tethers_mcp_main)
  (public_name tethers_mcp_server)
- (modules tethers_mcp_main tethers_mcp_server tethers_error tethers_outcome tethers_core tethers_core_lowerer tether_parser tethers_protocol tethers_evaluator)
- (libraries yojson))
+ (modules tethers_mcp_main tethers_mcp_server tethers_error tethers_outcome tethers_core tethers_core_lowerer tethers_core_validator tethers_core_canonical tethers_core_plan tethers_core_evaluation_adapter tethers_core_request_adapter tethers_core_wire tether_parser tethers_protocol tethers_evaluator)
+ (libraries yojson digestif))
 
 (test
   (name tethers_core_lowerer_test)
@@ -38,4 +38,9 @@
 (test
   (name tethers_core_request_adapter_test)
   (modules tethers_core_request_adapter_test tethers_core_request_adapter tethers_core_evaluation_adapter tethers_core_plan tethers_core_canonical tethers_core_validator tethers_core tethers_core_lowerer tethers_outcome tethers_protocol tether_parser tethers_error)
+  (libraries yojson digestif))
+
+(test
+  (name tethers_core_wire_test)
+  (modules tethers_core_wire_test tethers_core_wire tethers_core_request_adapter tethers_core_evaluation_adapter tethers_core_plan tethers_core_canonical tethers_core_validator tethers_core tethers_core_lowerer tethers_outcome tethers_protocol tether_parser tethers_error)
   (libraries yojson digestif))
