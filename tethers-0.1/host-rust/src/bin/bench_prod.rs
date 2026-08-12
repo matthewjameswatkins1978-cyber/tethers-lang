@@ -26,6 +26,7 @@ use tethers_reference_host::host_execution::{
     ExecutionServiceResult, HostExecutionService, PreparedEvaluationInput,
 };
 use tethers_reference_host::manifest;
+use tethers_reference_host::replay_runtime::FileReplayAuthority;
 use tethers_reference_host::runtime_config::load_runtime_config;
 
 #[derive(Parser)]
@@ -403,6 +404,7 @@ fn main() {
     // Warm evaluation path
     eprintln!("Warming evaluation path ({})...", args.warmup);
     let mut approvals = ApprovalStore::default();
+    let mut replay_authority = FileReplayAuthority::new(Some(&host_data_root));
     for i in 0..args.warmup {
         let input = make_input(&format!("warmup_{i}"), case);
         let _ = service.bench_evaluate_one(
@@ -411,6 +413,7 @@ fn main() {
             &mut provider_sessions,
             &provider_availability,
             &mut approvals,
+            &mut replay_authority,
         );
     }
     eprintln!("Evaluation warmup complete.");
@@ -437,6 +440,7 @@ fn main() {
                 &mut provider_sessions,
                 &provider_availability,
                 &mut approvals,
+                &mut replay_authority,
             );
             match &result {
                 ExecutionServiceResult::Completed {

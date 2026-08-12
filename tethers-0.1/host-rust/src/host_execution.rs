@@ -434,6 +434,7 @@ impl<'a> HostExecutionService<'a> {
         provider_sessions: &mut HashMap<String, RetainedProviderSession>,
         provider_availability: &ProviderAvailability,
         approvals: &mut crate::approval::ApprovalStore,
+        replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
     ) -> ExecutionServiceResult {
         self.evaluate_one(
             input,
@@ -441,6 +442,7 @@ impl<'a> HostExecutionService<'a> {
             provider_sessions,
             provider_availability,
             approvals,
+            replay_authority,
         )
     }
 
@@ -582,6 +584,7 @@ impl<'a> HostExecutionService<'a> {
         // The store is process-local to this service invocation.  An Ask
         // result deliberately never exposes its internal approval identity.
         let mut approvals = crate::approval::ApprovalStore::default();
+        let mut replay_authority = FileReplayAuthority::new(self.host_data_root);
         let mut results = Vec::with_capacity(inputs.len());
 
         for input in inputs {
@@ -597,6 +600,7 @@ impl<'a> HostExecutionService<'a> {
                 &mut provider_sessions,
                 &provider_availability,
                 &mut approvals,
+                &mut replay_authority,
             );
             results.push(result);
         }
@@ -650,6 +654,7 @@ impl<'a> HostExecutionService<'a> {
         provider_sessions: &mut HashMap<String, RetainedProviderSession>,
         provider_availability: &ProviderAvailability,
         approvals: &mut crate::approval::ApprovalStore,
+        replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
     ) -> ExecutionServiceResult {
         // Find the matching Tether in the runtime.
         let tether = match self.find_tether(&input.tether_id, &input.tether_version) {
@@ -681,6 +686,7 @@ impl<'a> HostExecutionService<'a> {
                 provider_sessions,
                 provider_availability,
                 approvals,
+                replay_authority,
             )
         })
     }
@@ -949,6 +955,7 @@ impl<'a> HostExecutionService<'a> {
         provider_sessions: &mut HashMap<String, RetainedProviderSession>,
         provider_availability: &ProviderAvailability,
         approvals: &mut crate::approval::ApprovalStore,
+        replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
     ) -> ExecutionServiceResult {
         // Strip any planner-supplied execution_id or _host_execution_id before
         // processing. Only the replay-admission identity may populate trusted evidence.
@@ -1043,6 +1050,7 @@ impl<'a> HostExecutionService<'a> {
                     provider_availability,
                     approvals,
                     trail,
+                    replay_authority,
                 )
             },
         )
@@ -1067,6 +1075,7 @@ impl<'a> HostExecutionService<'a> {
         provider_availability: &ProviderAvailability,
         approvals: &mut crate::approval::ApprovalStore,
         trail: &mut dyn dispatch::Trail,
+        replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
     ) -> Result<crate::SharedExecutionResult, ExecutionServiceResult> {
         let evaluation_id = proposed.evaluation_id.clone();
         let action_id = proposed.action_id.clone();
@@ -1218,7 +1227,6 @@ impl<'a> HostExecutionService<'a> {
         };
         let input_context = crate::InputEventContext::for_initial(event_id);
         let clock = ProductionMonotonicClock::new();
-        let mut replay_authority = FileReplayAuthority::new(self.host_data_root);
         let mut anchor_writer = crate::ResponseResultAnchorWriter;
         let shared_result = crate::bench_timing::timed("shared_boundary", || {
             crate::execute_shared_boundary(
@@ -1231,7 +1239,7 @@ impl<'a> HostExecutionService<'a> {
                 &input_context,
                 true,
                 &clock,
-                &mut replay_authority,
+                replay_authority,
                 None,
                 &mut anchor_writer,
             )
@@ -2776,12 +2784,14 @@ mod tests {
                 let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
                 let mut sessions: HashMap<String, RetainedProviderSession> = HashMap::new();
                 let mut approvals = crate::approval::ApprovalStore::default();
+                let mut replay_authority = FileReplayAuthority::new(None);
                 let result = service.dispatch_matched_plan(
                     &input,
                     c1c1_matched_response(c1c1_actions(), Some(malformed.clone())),
                     &mut sessions,
                     &availability,
                     &mut approvals,
+                    &mut replay_authority,
                 );
                 assert!(
                     matches!(&result, ExecutionServiceResult::InvalidData { message } if message.contains("plan.groups")),
@@ -2810,12 +2820,14 @@ mod tests {
                 let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
                 let mut sessions: HashMap<String, RetainedProviderSession> = HashMap::new();
                 let mut approvals = crate::approval::ApprovalStore::default();
+                let mut replay_authority = FileReplayAuthority::new(None);
                 let result = service.dispatch_matched_plan(
                     &input,
                     c1c1_matched_response(c1c1_actions(), groups),
                     &mut sessions,
                     &availability,
                     &mut approvals,
+                    &mut replay_authority,
                 );
                 assert!(
                     !matches!(&result, ExecutionServiceResult::InvalidData { message } if message.contains("plan.groups")),
