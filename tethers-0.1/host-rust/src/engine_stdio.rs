@@ -263,44 +263,6 @@ impl EngineSession {
         classify_wire_response(evaluation_id, structured)
     }
 
-    /// Evaluate a fully-formed extended Tethers 0.1 request through the
-    /// Core pipeline via the retained engine.
-    ///
-    /// Sends `tools/call` with `tethers.evaluate_core` and the complete
-    /// request envelope including `core_environment`.  Returns a typed wire
-    /// classification; a Tethers response with `status: "error"` is valid
-    /// planner data and is classified as `PlannerResponseWire::Error`, not
-    /// an engine transport failure.
-    pub fn evaluate_tether_core(
-        &mut self,
-        evaluation_id: &str,
-        request_envelope: &Value,
-    ) -> Result<PlannerResponseWire, EngineError> {
-        let request_id = self.next_request_id;
-        self.next_request_id += 1;
-
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "tools/call",
-            "params": {
-                "name": "tethers.evaluate_core",
-                "arguments": {
-                    "request": request_envelope
-                }
-            }
-        });
-
-        Self::write_json(&mut self.child, &request)?;
-        let result = Self::read_json(&mut self.child, request_id, "tools/call", self.read_timeout)?;
-
-        let structured = result.get("structuredContent").cloned().ok_or_else(|| {
-            EngineError::ProtocolError("tools/call result missing structuredContent".to_owned())
-        })?;
-
-        classify_wire_response(evaluation_id, structured)
-    }
-
     /// List available tools via tools/list.
     pub fn list_tools(&mut self) -> Result<Vec<Value>, EngineError> {
         let request_id = self.next_request_id;
@@ -502,29 +464,7 @@ mod tests {
     fn j13b_retained_engine_uses_arguments_request_for_multiple_evaluations() {
         let (engine_path, working_dir) = require_engine();
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
-        let request = serde_json::json!({
-            "protocol_version": "0.1",
-            "language_version": "0.1",
-            "evaluation_id": "eval_j13b_real_001",
-            "tether": {
-                "id": "test.tether",
-                "version": "1.0.0",
-                "source": VALID_TETHER
-            },
-            "event": {
-                "id": "evt_j13b_real_001",
-                "name": "coding.task_completed",
-                "data": {"project": "tethers"}
-            },
-            "facts": {"project.type": "software"},
-            "capabilities": [{
-                "name": "lantern.task.record",
-                "version": "1.0.0",
-                "inputs": {"project": "string"},
-                "effects": ["lantern.write"],
-                "reversibility": "compensatable"
-            }]
-        });
+        let request = core9b_valid_request("eval_j13b_real_001", "fixture.start");
         let wire = session
             .evaluate_tether("eval_j13b_real_001", &request)
             .expect("real retained tethers.evaluate call");
@@ -532,20 +472,18 @@ mod tests {
             panic!("expected Matched wire, got {wire:?}");
         };
         assert_eq!(response["evaluation_id"], "eval_j13b_real_001");
-        assert_eq!(response["event_id"], "evt_j13b_real_001");
+        assert_eq!(response["event_id"], "evt_eval_j13b_real_001");
         assert_eq!(response["status"], "matched");
 
-        let mut second_request = request;
-        second_request["evaluation_id"] = Value::String("eval_j13b_real_002".to_owned());
-        second_request["event"]["id"] = Value::String("evt_j13b_real_002".to_owned());
-        let second_wire = session
+        let second_request = core9b_valid_request("eval_j13b_real_002", "fixture.start");
+        let wire = session
             .evaluate_tether("eval_j13b_real_002", &second_request)
             .expect("second real retained tethers.evaluate call");
-        let PlannerResponseWire::Matched(second) = second_wire else {
-            panic!("expected Matched wire, got {second_wire:?}");
+        let PlannerResponseWire::Matched(second) = wire else {
+            panic!("expected Matched wire, got {wire:?}");
         };
         assert_eq!(second["evaluation_id"], "eval_j13b_real_002");
-        assert_eq!(second["event_id"], "evt_j13b_real_002");
+        assert_eq!(second["event_id"], "evt_eval_j13b_real_002");
         assert_eq!(second["status"], "matched");
         session.shutdown();
     }
@@ -641,10 +579,10 @@ mod tests {
         })
     }
 
-    // T4: MCP tools/list contains tethers.validate, tethers.evaluate,
-    //     and tethers.evaluate_core.  No existing tool disappears.
+    // T4: MCP tools/list contains tethers.validate and tethers.evaluate
+    //     only.  No legacy or rehearsal tools remain.
     #[test]
-    fn core9b_t4_mcp_tools_list_contains_all_three() {
+    fn core9b_t4_mcp_tools_list_contains_two() {
         let (engine_path, working_dir) = require_engine();
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let tools = session.list_tools().expect("tools/list");
@@ -660,69 +598,44 @@ mod tests {
             names.contains(&"tethers.evaluate"),
             "tethers.evaluate missing: {names:?}"
         );
-        assert!(
-            names.contains(&"tethers.evaluate_core"),
-            "tethers.evaluate_core missing: {names:?}"
-        );
-        assert_eq!(names.len(), 3, "expected exactly 3 tools, got {names:?}");
+        assert_eq!(names.len(), 2, "expected exactly 2 tools, got {names:?}");
         session.shutdown();
     }
 
-    // T5: Legacy tethers.evaluate still uses the legacy evaluator with a
-    //     request that has NO core_environment.  The tether references the
-    //     runtime capability name directly (not a Core source name).
+    // T5: tethers.evaluate now uses the Core pipeline.  A request with
+    //     core_environment produces Matched with program_digest.
     #[test]
-    fn core9b_t5_legacy_evaluate_still_legacy() {
-        let legacy_tether = "tether \"core rehearsal legacy\"\n\nanchor\n    fixture.start\n\nwhen\n\ndo\n    fixture.ping\n        message: anchor.message\n";
+    fn core9b_t5_evaluate_is_core() {
         let (engine_path, working_dir) = require_engine();
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
-        let request = serde_json::json!({
-            "protocol_version": "0.1",
-            "language_version": "0.1",
-            "evaluation_id": "eval_t5_legacy",
-            "tether": {
-                "id": "core-rehearsal",
-                "version": "1",
-                "source": legacy_tether
-            },
-            "event": {
-                "id": "evt_eval_t5_legacy",
-                "name": "fixture.start",
-                "data": { "message": "Hello Core" }
-            },
-            "facts": {},
-            "capabilities": [{
-                "name": "fixture.ping",
-                "version": "1.0.0",
-                "inputs": {"message": "string"},
-                "effects": ["fixture.test"],
-                "reversibility": "compensatable"
-            }]
-        });
+        let request = core9b_valid_request("eval_t5_core", "fixture.start");
         let wire = session
-            .evaluate_tether("eval_t5_legacy", &request)
+            .evaluate_tether("eval_t5_core", &request)
             .expect("evaluate_tether");
         let PlannerResponseWire::Matched(response) = wire else {
             panic!("T5: expected Matched, got {wire:?}");
         };
         assert_eq!(response["status"], "matched");
-        assert_eq!(response["evaluation_id"], "eval_t5_legacy");
-        assert_eq!(response["event_id"], "evt_eval_t5_legacy");
-        assert_eq!(response["tether_id"], "core-rehearsal");
-        assert_eq!(response["tether_version"], "1");
+        assert_eq!(response["evaluation_id"], "eval_t5_core");
+        // program_digest must be top-level
+        let pd = response
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("program_digest missing");
+        assert!(pd.starts_with("sha256:"));
         session.shutdown();
     }
 
-    // T6: New tethers.evaluate_core reaches the Core pipeline and returns
-    //     Matched with program_digest.
+    // T6: tethers.evaluate with core_environment reaches Core pipeline
+    //     and returns Matched with program_digest.
     #[test]
-    fn core9b_t6_new_evaluate_core_reaches_core() {
+    fn core9b_t6_new_evaluate_reaches_core() {
         let (engine_path, working_dir) = require_engine();
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let request = core9b_valid_request("eval_t6_core", "fixture.start");
         let wire = session
-            .evaluate_tether_core("eval_t6_core", &request)
-            .expect("evaluate_tether_core");
+            .evaluate_tether("eval_t6_core", &request)
+            .expect("evaluate_tether");
         let PlannerResponseWire::Matched(response) = wire else {
             panic!("T6: expected Matched, got {wire:?}");
         };
@@ -748,58 +661,36 @@ mod tests {
         session.shutdown();
     }
 
-    // T7: EngineSession::evaluate_tether still calls tethers.evaluate
-    //     and works with the historical request (source-level proof).
+    // T7: tethers.evaluate with core_environment is the single production
+    //     route.  Verify it works with a valid extended request.
     #[test]
-    fn core9b_t7_legacy_engine_method_works() {
-        let legacy_tether = "tether \"core rehearsal legacy\"\n\nanchor\n    fixture.start\n\nwhen\n\ndo\n    fixture.ping\n        message: anchor.message\n";
+    fn core9b_t7_core_evaluate_works() {
         let (engine_path, working_dir) = require_engine();
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
-        let request = serde_json::json!({
-            "protocol_version": "0.1",
-            "language_version": "0.1",
-            "evaluation_id": "eval_t7_legacy_method",
-            "tether": {
-                "id": "core-rehearsal",
-                "version": "1",
-                "source": legacy_tether
-            },
-            "event": {
-                "id": "evt_eval_t7_legacy_method",
-                "name": "fixture.start",
-                "data": { "message": "Hello Core" }
-            },
-            "facts": {},
-            "capabilities": [{
-                "name": "fixture.ping",
-                "version": "1.0.0",
-                "inputs": {"message": "string"},
-                "effects": ["fixture.test"],
-                "reversibility": "compensatable"
-            }]
-        });
+        let request = core9b_valid_request("eval_t7_core_method", "fixture.start");
         let wire = session
-            .evaluate_tether("eval_t7_legacy_method", &request)
-            .expect("evaluate_tether legacy");
+            .evaluate_tether("eval_t7_core_method", &request)
+            .expect("evaluate_tether");
         match wire {
             PlannerResponseWire::Matched(response) => {
                 assert_eq!(response["status"], "matched");
+                assert_eq!(response["evaluation_id"], "eval_t7_core_method");
             }
-            other => panic!("T7: expected Matched from legacy evaluate, got {other:?}"),
+            other => panic!("T7: expected Matched from core evaluate, got {other:?}"),
         }
         session.shutdown();
     }
 
-    // T8: EngineSession::evaluate_tether_core calls tethers.evaluate_core
-    //     and returns Matched for a valid extended request.
+    // T8: tethers.evaluate with core_environment returns Matched for a
+    //     valid extended request.
     #[test]
-    fn core9b_t8_new_engine_method_returns_matched() {
+    fn core9b_t8_core_evaluate_returns_matched() {
         let (engine_path, working_dir) = require_engine();
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let request = core9b_valid_request("eval_t8_core_method", "fixture.start");
         let wire = session
-            .evaluate_tether_core("eval_t8_core_method", &request)
-            .expect("evaluate_tether_core");
+            .evaluate_tether("eval_t8_core_method", &request)
+            .expect("evaluate_tether");
         match wire {
             PlannerResponseWire::Matched(response) => {
                 assert_eq!(response["status"], "matched");
@@ -810,15 +701,16 @@ mod tests {
         session.shutdown();
     }
 
-    // T9: Core request builder fails when core_environment is absent.
+    // T9: Core request without core_environment fails with
+    //     missing_core_environment through the public tethers.evaluate.
     #[test]
     fn core9b_t9_no_core_environment_fails() {
         let (engine_path, working_dir) = require_engine();
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let request = core9b_legacy_request("eval_t9_no_core", "fixture.start");
         let wire = session
-            .evaluate_tether_core("eval_t9_no_core", &request)
-            .expect("evaluate_tether_core");
+            .evaluate_tether("eval_t9_no_core", &request)
+            .expect("evaluate_tether");
         match wire {
             PlannerResponseWire::Error(response) => {
                 let code = response
@@ -844,8 +736,8 @@ mod tests {
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let request = core9b_valid_request("eval_t10_identity", "fixture.start");
         let wire = session
-            .evaluate_tether_core("eval_t10_identity", &request)
-            .expect("evaluate_tether_core");
+            .evaluate_tether("eval_t10_identity", &request)
+            .expect("evaluate_tether");
         let PlannerResponseWire::Matched(response) = wire else {
             panic!("T10: expected Matched, got {wire:?}");
         };
@@ -951,8 +843,8 @@ mod tests {
         );
         // Send through core and verify it still matches
         let wire = session
-            .evaluate_tether_core("eval_t11_bridge", &request)
-            .expect("evaluate_tether_core");
+            .evaluate_tether("eval_t11_bridge", &request)
+            .expect("evaluate_tether");
         let PlannerResponseWire::Matched(_) = wire else {
             panic!("T11: expected Matched, got {wire:?}");
         };
@@ -960,10 +852,10 @@ mod tests {
     }
 
     // T12: Real cross-language E2E — Rust request → real OCaml MCP binary
-    //      → tethers.evaluate_core → Tethers_core_wire → CORE-8B → canonical
+    //      → tethers.evaluate → Tethers_core_wire → CORE-8B → canonical
     //      Core → Runtime Plan.
     //
-    //      This is the mandatory proof that the retained MCP boundary
+    //      This is the mandatory proof that the public production route
     //      delivers a canonical Core plan.
     #[test]
     fn core9b_t12_real_cross_language_e2e() {
@@ -971,8 +863,8 @@ mod tests {
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let request = core9b_valid_request("eval_core9b_001", "fixture.start");
         let wire = session
-            .evaluate_tether_core("eval_core9b_001", &request)
-            .expect("evaluate_tether_core E2E");
+            .evaluate_tether("eval_core9b_001", &request)
+            .expect("evaluate_tether E2E");
         let PlannerResponseWire::Matched(response) = wire else {
             panic!("T12: expected Matched, got {wire:?}");
         };
@@ -1084,8 +976,8 @@ mod tests {
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let request = core9b_valid_request("eval_t13_wrong", "fixture.other");
         let wire = session
-            .evaluate_tether_core("eval_t13_wrong", &request)
-            .expect("evaluate_tether_core wrong event");
+            .evaluate_tether("eval_t13_wrong", &request)
+            .expect("evaluate_tether wrong event");
         match wire {
             PlannerResponseWire::NotMatched(response) => {
                 assert_eq!(response["status"], "not_matched");
@@ -1107,7 +999,7 @@ mod tests {
 
         let req1 = core9b_valid_request("eval_core9b_001", "fixture.start");
         let wire1 = session
-            .evaluate_tether_core("eval_core9b_001", &req1)
+            .evaluate_tether("eval_core9b_001", &req1)
             .expect("first evaluation");
         let PlannerResponseWire::Matched(resp1) = wire1 else {
             panic!("T14: expected Matched for first eval, got {wire1:?}")
@@ -1115,7 +1007,7 @@ mod tests {
 
         let req2 = core9b_valid_request("eval_core9b_002", "fixture.start");
         let wire2 = session
-            .evaluate_tether_core("eval_core9b_002", &req2)
+            .evaluate_tether("eval_core9b_002", &req2)
             .expect("second evaluation");
         let PlannerResponseWire::Matched(resp2) = wire2 else {
             panic!("T14: expected Matched for second eval, got {wire2:?}")

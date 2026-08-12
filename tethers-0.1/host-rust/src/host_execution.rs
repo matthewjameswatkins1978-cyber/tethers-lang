@@ -569,13 +569,14 @@ impl<'a> HostExecutionService<'a> {
             Err(result) => return result,
         };
 
-        // Build the Tethers 0.1 request envelope.
-        let envelope = match self.build_request_envelope(input, tether, provider_availability) {
+        // Build the extended Core request envelope.
+        let envelope = match self.build_core_request_envelope(input, tether, provider_availability)
+        {
             Ok(envelope) => envelope,
             Err(result) => return result,
         };
 
-        // Call tethers.evaluate.
+        // Call tethers.evaluate (now Core).
         let wire_response = match engine.evaluate_tether(&input.evaluation_id, &envelope) {
             Ok(resp) => resp,
             Err(error) => return Self::classify_engine_evaluation_failure(input, error),
@@ -3136,8 +3137,8 @@ mod tests {
                 .expect("builder should succeed");
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let wire = session
-            .evaluate_tether_core("eval_core9b_001", &request)
-            .expect("evaluate_tether_core E2E");
+            .evaluate_tether("eval_core9b_001", &request)
+            .expect("evaluate_tether E2E");
         let PlannerResponseWire::Matched(response) = wire else {
             panic!("T12: expected Matched, got {wire:?}");
         };
@@ -3251,8 +3252,8 @@ mod tests {
                 .expect("builder should succeed");
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let wire = session
-            .evaluate_tether_core("eval_t13_wrong", &request)
-            .expect("evaluate_tether_core wrong event");
+            .evaluate_tether("eval_t13_wrong", &request)
+            .expect("evaluate_tether wrong event");
         match wire {
             PlannerResponseWire::NotMatched(response) => {
                 assert_eq!(response["status"], "not_matched");
@@ -3276,7 +3277,7 @@ mod tests {
             .expect("first builder");
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
         let wire1 = session
-            .evaluate_tether_core("eval_core9b_001", &req1)
+            .evaluate_tether("eval_core9b_001", &req1)
             .expect("first evaluation");
         let PlannerResponseWire::Matched(resp1) = wire1 else {
             panic!("T14: expected Matched for first eval, got {wire1:?}")
@@ -3285,7 +3286,7 @@ mod tests {
         let req2 = core9b_build_request(&runtime, &engine_path, "eval_core9b_002", "fixture.start")
             .expect("second builder");
         let wire2 = session
-            .evaluate_tether_core("eval_core9b_002", &req2)
+            .evaluate_tether("eval_core9b_002", &req2)
             .expect("second evaluation");
         let PlannerResponseWire::Matched(resp2) = wire2 else {
             panic!("T14: expected Matched for second eval, got {wire2:?}")

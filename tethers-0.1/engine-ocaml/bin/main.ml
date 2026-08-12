@@ -1,14 +1,12 @@
 let process_line line =
   try
-    let response = Yojson.Safe.from_string line |> Tethers_evaluator.evaluate_request in
-    Tethers_outcome.json_of_response response
+    let request = Yojson.Safe.from_string line in
+    Tethers_core_wire.evaluate_request_json request
   with
-  | Tethers_error.Tethers_error (code, message) ->
-      Tethers_outcome.json_of_response (Tethers_outcome.error_response code message)
   | Yojson.Json_error message ->
-      Tethers_outcome.json_of_response (Tethers_outcome.error_response "invalid_json" message)
+      `Assoc [("status", `String "error"); ("error", `Assoc [("code", `String "invalid_json"); ("message", `String message)])]
   | exn ->
-      Tethers_outcome.json_of_response (Tethers_outcome.error_response "internal_error" (Printexc.to_string exn))
+      `Assoc [("status", `String "error"); ("error", `Assoc [("code", `String "internal_error"); ("message", `String (Printexc.to_string exn))])]
 
 let () =
   try
