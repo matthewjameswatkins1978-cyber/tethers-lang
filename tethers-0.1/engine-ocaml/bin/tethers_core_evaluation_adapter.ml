@@ -118,6 +118,28 @@ let plan_projections (env_caps : capability_binding list) : Tethers_core_plan.ru
          runtime = b.runtime })
     env_caps
 
+(* Reject environment-wide capability contract conflicts before lowering.
+   For each CapabilityId, the first digest establishes its contract.
+   A later binding with the same CapabilityId but a different digest
+   is a conflict regardless of whether the Human source uses it. *)
+let check_conflicting_capability_contracts (caps : capability_binding list) =
+  let rec check acc = function
+    | [] -> Ok ()
+    | b :: rest ->
+        let key = Tethers_core.string_of_capability_id b.capability_id in
+        match List.assoc_opt key acc with
+        | None ->
+            check ((key, b.contract_digest) :: acc) rest
+        | Some digest ->
+            if b.contract_digest = digest then
+              check acc rest
+            else
+              Error (Lowering_error
+                       (Tethers_core_lowerer.Conflicting_capability_contract
+                          b.capability_id))
+  in
+  check [] caps
+
 (* ================================================================== *)
 (*  Main evaluate                                                     *)
 (* ================================================================== *)
@@ -130,6 +152,8 @@ let evaluate env input =
     with Tethers_error.Tethers_error (code, msg) -> Error (Parse_error (code, msg))
   in
   parsed >>= fun tether ->
+  (* 1b. Validate environment-wide capability contract consistency. *)
+  check_conflicting_capability_contracts env.capabilities >>= fun () ->
   (* 2. Build lowerer environment and lower. *)
   let lowerer_env =
     { Tethers_core_lowerer.program_id = env.program_id;

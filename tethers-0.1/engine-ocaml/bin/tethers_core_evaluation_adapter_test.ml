@@ -139,19 +139,6 @@ do
   let input = mk_input source
     ~event_name:"document.received" ~event_data:`Null in
   let result = evaluate env input in
-  (match result with
-   | Error e ->
-       let tag = match e with
-         | Parse_error (c, m) -> Printf.sprintf "Parse_error(%s, %s)" c m
-         | Lowering_error _ -> "Lowering_error"
-         | Canonicalization_error _ -> "Canonicalization_error"
-         | Planning_error _ -> "Planning_error"
-         | Unknown_runtime_fact_name n -> "Unknown_runtime_fact_name: " ^ n
-         | Ambiguous_runtime_fact_name n -> "Ambiguous_runtime_fact_name: " ^ n
-         | Duplicate_runtime_fact_name n -> "Duplicate_runtime_fact_name: " ^ n
-       in
-       Printf.eprintf "T1 DEBUG: Error %s\n%!" tag
-   | Ok _ -> ());
   let cp = assert_matched "T1" result in
   assert_true "T1 one action" (List.length cp.runtime_plan.actions = 1);
   assert_true "T1 plan id" (cp.runtime_plan.id = "eval_1/plan")
@@ -628,6 +615,81 @@ let test_existing_tests_placeholder () =
   incr tests_passed
 
 (* ================================================================== *)
+(*  C1 — Unused conflicting binding                                    *)
+(* ================================================================== *)
+
+let test_conflict_unused () =
+  let source =
+    {|tether "minimal"
+anchor
+    document.received
+when
+do
+    notify
+        literal: "value"
+|}
+  in
+  let env = mk_env
+    ~capabilities:[
+      mk_cap_binding "notify" "C_shared" "D1" ~name:"notify" ();
+      mk_cap_binding "archive" "C_shared" "D2" ~name:"archive" ();
+    ] () in
+  let input = mk_input source
+    ~event_name:"document.received" ~event_data:`Null in
+  let result = evaluate env input in
+  assert_adapter_error "Lowering_error" "C1" result
+
+(* ================================================================== *)
+(*  C2 — Reverse environment order                                     *)
+(* ================================================================== *)
+
+let test_conflict_reverse_order () =
+  let source =
+    {|tether "minimal"
+anchor
+    document.received
+when
+do
+    notify
+        literal: "value"
+|}
+  in
+  let env = mk_env
+    ~capabilities:[
+      mk_cap_binding "archive" "C_shared" "D2" ~name:"archive" ();
+      mk_cap_binding "notify" "C_shared" "D1" ~name:"notify" ();
+    ] () in
+  let input = mk_input source
+    ~event_name:"document.received" ~event_data:`Null in
+  let result = evaluate env input in
+  assert_adapter_error "Lowering_error" "C2" result
+
+(* ================================================================== *)
+(*  C3 — Unrelated CapabilityIds                                      *)
+(* ================================================================== *)
+
+let test_conflict_unrelated_ids () =
+  let source =
+    {|tether "minimal"
+anchor
+    document.received
+when
+do
+    notify
+        literal: "value"
+|}
+  in
+  let env = mk_env
+    ~capabilities:[
+      mk_cap_binding "notify" "C_notify" "D1" ~name:"notify" ();
+      mk_cap_binding "archive" "C_archive" "D2" ~name:"archive" ();
+    ] () in
+  let input = mk_input source
+    ~event_name:"document.received" ~event_data:`Null in
+  let result = evaluate env input in
+  ignore (assert_matched "C3" result)
+
+(* ================================================================== *)
 (*  Runner                                                             *)
 (* ================================================================== *)
 
@@ -664,4 +726,10 @@ let () =
   test_existing_tests_placeholder ();
   (* E2E *)
   test_e2e_adapter_proof ();
+  (* C1 *)
+  test_conflict_unused ();
+  (* C2 *)
+  test_conflict_reverse_order ();
+  (* C3 *)
+  test_conflict_unrelated_ids ();
   Printf.printf "PASS all adapter tests (%d/%d)\n" !tests_passed !tests_run
