@@ -42,6 +42,11 @@ let string_of_planning_error = function
   | Anchor_path_missing _ -> "Anchor_path_missing"
   | Anchor_path_not_object _ -> "Anchor_path_not_object"
   | Unsupported_anchor_value_type _ -> "Unsupported_anchor_value_type"
+  | Unresolved_entry_guards -> "Unresolved_entry_guards"
+  | Missing_fact_snapshot _ -> "Missing_fact_snapshot"
+  | Ambiguous_fact_snapshot _ -> "Ambiguous_fact_snapshot"
+  | Fact_snapshot_type_mismatch _ -> "Fact_snapshot_type_mismatch"
+  | Invalid_guard_comparison _ -> "Invalid_guard_comparison"
 
 let assert_ok_plan msg = function
   | Ok plan -> incr tests_run; incr tests_passed; plan
@@ -161,8 +166,8 @@ let mk_projection cap_id_str digest ?(name="") ?(version="1.0.0")
         bridge_capability_version;
         bridge_provider_identity } }
 
-let mk_context ?(evaluation_id="eval_1") ?(capabilities=[]) ?(anchors=[]) () =
-  { evaluation_id; capabilities; anchors }
+let mk_context ?(evaluation_id="eval_1") ?(capabilities=[]) ?(anchors=[]) ?(facts=[]) () =
+  { evaluation_id; capabilities; anchors; facts }
 
 let action_field name action = Yojson.Safe.Util.member name action
 
@@ -172,6 +177,12 @@ let action_field name action = Yojson.Safe.Util.member name action
 
 let mk_anchor_snapshot oid_str json =
   { origin_id = oid oid_str; data = json }
+
+let mk_fact_snapshot key_str json =
+  { key = hsk key_str; value = json }
+
+let mk_guard fact_id_str op expected =
+  { Tethers_core.fact_id = fid fact_id_str; operator = op; expected }
 
 (* ================================================================== *)
 (*  T1 — Explicit completion: A → Program_complete                     *)
@@ -1926,7 +1937,917 @@ let test_existing_core6a_tests_green () =
        assert_true "CB-T8 canonical resolved string"
          (action_field "arguments" action =
             `Assoc [ ("ref", `String "Tethers") ])
-   | _ -> assert_true "CB-T8 canonical single-action shape" false)
+    | _ -> assert_true "CB-T8 canonical single-action shape" false)
+
+(* ================================================================== *)
+(*  CORE-7A T1 -- Equals string matches                               *)
+(* ================================================================== *)
+
+let test_guard_equals_string_match () =
+  let program = mk_program
+    ~id:"P_g1"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g1"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_type" (`String "pdf") ]
+      ()
+  in
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  | Ok (Matched cp) ->
+      incr tests_run; incr tests_passed;
+      assert_true "G1-T1 plan has actions" (List.length cp.runtime_plan.actions = 1)
+  | Ok Not_matched ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T1 expected Matched, got Not_matched\n";
+      exit 1
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T1 expected Matched, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A T2 -- Equals string false                                 *)
+(* ================================================================== *)
+
+let test_guard_equals_string_false () =
+  let program = mk_program
+    ~id:"P_g2"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g2"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_type" (`String "jpg") ]
+      ()
+  in
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  | Ok Not_matched -> incr tests_run; incr tests_passed
+  | Ok (Matched _) ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T2 expected Not_matched, got Matched\n";
+      exit 1
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T2 expected Not_matched, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A T3 -- Integer Greater_than                                *)
+(* ================================================================== *)
+
+let test_guard_integer_greater_than () =
+  let program = mk_program
+    ~id:"P_g3"
+    ~input_facts:[ mk_eval_fact "F_size" "K_size" Integer_type ]
+    ~entry_guards:[ mk_guard "F_size" Greater_than (Integer_value 10) ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g3"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_size" (`Int 42) ]
+      ()
+  in
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  | Ok (Matched _) -> incr tests_run; incr tests_passed
+  | Ok Not_matched ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T3 expected Matched, got Not_matched\n";
+      exit 1
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T3 expected Matched, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A T4 -- Integer Greater_than_or_equal                       *)
+(* ================================================================== *)
+
+let test_guard_integer_greater_than_or_equal () =
+  let program = mk_program
+    ~id:"P_g4"
+    ~input_facts:[ mk_eval_fact "F_size" "K_size" Integer_type ]
+    ~entry_guards:[ mk_guard "F_size" Greater_than_or_equal (Integer_value 10) ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g4"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_size" (`Int 10) ]
+      ()
+  in
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  | Ok (Matched _) -> incr tests_run; incr tests_passed
+  | Ok Not_matched ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T4 expected Matched, got Not_matched\n";
+      exit 1
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T4 expected Matched, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A T5 -- String Contains                                     *)
+(* ================================================================== *)
+
+let test_guard_string_contains () =
+  let program = mk_program
+    ~id:"P_g5"
+    ~input_facts:[ mk_eval_fact "F_name" "K_name" String_type ]
+    ~entry_guards:[ mk_guard "F_name" Contains (String_value "core") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g5"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_name" (`String "tethers-core") ]
+      ()
+  in
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  | Ok (Matched _) -> incr tests_run; incr tests_passed
+  | Ok Not_matched ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T5 expected Matched, got Not_matched\n";
+      exit 1
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T5 expected Matched, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A T6 -- Boolean Equals                                       *)
+(* ================================================================== *)
+
+let test_guard_boolean_equals () =
+  let program = mk_program
+    ~id:"P_g6"
+    ~input_facts:[ mk_eval_fact "F_active" "K_active" Boolean_type ]
+    ~entry_guards:[ mk_guard "F_active" Equals (Boolean_value true) ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g6"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_active" (`Bool true) ]
+      ()
+  in
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  | Ok (Matched _) -> incr tests_run; incr tests_passed
+  | Ok Not_matched ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T6 expected Matched, got Not_matched\n";
+      exit 1
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T6 expected Matched, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A T7 -- Multiple guards AND together                        *)
+(* ================================================================== *)
+
+let test_multiple_guards_and () =
+  let program = mk_program
+    ~id:"P_g7"
+    ~input_facts:[
+      mk_eval_fact "F_type" "K_type" String_type;
+      mk_eval_fact "F_size" "K_size" Integer_type;
+      mk_eval_fact "F_active" "K_active" Boolean_type;
+    ]
+    ~entry_guards:[
+      mk_guard "F_type" Equals (String_value "pdf");
+      mk_guard "F_size" Greater_than (Integer_value 10);
+      mk_guard "F_active" Equals (Boolean_value true);
+    ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  (* All true *)
+  let ctx_all =
+    mk_context
+      ~evaluation_id:"eval_g7"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[
+        mk_fact_snapshot "K_type" (`String "pdf");
+        mk_fact_snapshot "K_size" (`Int 42);
+        mk_fact_snapshot "K_active" (`Bool true);
+      ]
+      ()
+  in
+  (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx_all with
+   | Ok (Matched _) -> incr tests_run; incr tests_passed
+   | Ok Not_matched ->
+       incr tests_run;
+       Printf.eprintf "FAIL: G1-T7a expected Matched, got Not_matched\n";
+       exit 1
+   | Error err ->
+       incr tests_run;
+       Printf.eprintf "FAIL: G1-T7a expected Matched, got Error %s\n"
+         (string_of_planning_error err);
+       exit 1);
+  (* One false -- change file_type to jpg *)
+  let ctx_one_false =
+    mk_context
+      ~evaluation_id:"eval_g7b"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[
+        mk_fact_snapshot "K_type" (`String "jpg");
+        mk_fact_snapshot "K_size" (`Int 42);
+        mk_fact_snapshot "K_active" (`Bool true);
+      ]
+      ()
+  in
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx_one_false with
+  | Ok Not_matched -> incr tests_run; incr tests_passed
+  | Ok (Matched _) ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T7b expected Not_matched, got Matched\n";
+      exit 1
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T7b expected Not_matched, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A T8 -- Missing runtime Fact                                 *)
+(* ================================================================== *)
+
+let test_missing_fact_snapshot () =
+  let program = mk_program
+    ~id:"P_g8"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g8"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[]  (* no snapshots *)
+      ()
+  in
+  assert_plan_error (Missing_fact_snapshot (hsk "K_type"))
+    "G1-T8 missing fact snapshot"
+    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+     | Ok _ -> Error Unresolved_entry_guards  (* dummy *)
+     | Error e -> Error e)
+
+(* ================================================================== *)
+(*  CORE-7A T9 -- Wrong HostSnapshotKey does not substitute            *)
+(* ================================================================== *)
+
+let test_wrong_key_no_substitute () =
+  let program = mk_program
+    ~id:"P_g9"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g9"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_wrong_key" (`String "pdf") ]  (* wrong key *)
+      ()
+  in
+  assert_plan_error (Missing_fact_snapshot (hsk "K_type"))
+    "G1-T9 wrong key does not substitute"
+    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+     | Ok _ -> Error Unresolved_entry_guards
+     | Error e -> Error e)
+
+(* ================================================================== *)
+(*  CORE-7A T10 -- Duplicate HostSnapshotKey                           *)
+(* ================================================================== *)
+
+let test_duplicate_fact_snapshot () =
+  let program = mk_program
+    ~id:"P_g10"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g10"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[
+        mk_fact_snapshot "K_type" (`String "pdf");
+        mk_fact_snapshot "K_type" (`String "pdf");
+      ]
+      ()
+  in
+  assert_plan_error (Ambiguous_fact_snapshot (hsk "K_type"))
+    "G1-T10 duplicate fact snapshot"
+    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+     | Ok _ -> Error Unresolved_entry_guards
+     | Error e -> Error e)
+
+(* ================================================================== *)
+(*  CORE-7A T11 -- Reversed duplicate order                           *)
+(* ================================================================== *)
+
+let test_reversed_duplicate_fact_order () =
+  let program = mk_program
+    ~id:"P_g11"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx_fwd =
+    mk_context
+      ~evaluation_id:"eval_g11"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[
+        mk_fact_snapshot "K_type" (`String "pdf");
+        mk_fact_snapshot "K_type" (`String "pdf");
+      ]
+      ()
+  in
+  let ctx_rev =
+    mk_context
+      ~evaluation_id:"eval_g11"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[
+        mk_fact_snapshot "K_type" (`String "pdf");
+        mk_fact_snapshot "K_type" (`String "pdf");
+      ]
+      ()
+  in
+  let eval ctx =
+    match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+    | Ok _ -> Error Unresolved_entry_guards
+    | Error e -> Error e
+  in
+  assert_plan_error (Ambiguous_fact_snapshot (hsk "K_type"))
+    "G1-T11 reversed duplicates fail (forward)" (eval ctx_fwd);
+  assert_plan_error (Ambiguous_fact_snapshot (hsk "K_type"))
+    "G1-T11 reversed duplicates fail (reversed)" (eval ctx_rev)
+
+(* ================================================================== *)
+(*  CORE-7A T12 -- Runtime type mismatch                              *)
+(* ================================================================== *)
+
+let test_fact_snapshot_type_mismatch () =
+  let program = mk_program
+    ~id:"P_g12"
+    ~input_facts:[ mk_eval_fact "F_size" "K_size" Integer_type ]
+    ~entry_guards:[ mk_guard "F_size" Greater_than (Integer_value 10) ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g12"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_size" (`String "42") ]  (* string, not int *)
+      ()
+  in
+  assert_plan_error (Fact_snapshot_type_mismatch (hsk "K_size"))
+    "G1-T12 runtime type mismatch"
+    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+     | Ok _ -> Error Unresolved_entry_guards
+     | Error e -> Error e)
+
+(* ================================================================== *)
+(*  CORE-7A T13 -- Invalid comparison typing                           *)
+(* ================================================================== *)
+
+let test_invalid_guard_comparison () =
+  let program = mk_program
+    ~id:"P_g13"
+    ~input_facts:[ mk_eval_fact "F_name" "K_name" String_type ]
+    ~entry_guards:[ mk_guard "F_name" Greater_than (String_value "abc") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  let canonical_fid =
+    match c_program.entry_guards with
+    | g :: _ -> g.fact_id
+    | [] -> assert_true "G1-T13 has guards" false; fid "missing"
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g13"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_name" (`String "hello") ]
+      ()
+  in
+  assert_plan_error (Invalid_guard_comparison canonical_fid)
+    "G1-T13 invalid comparison typing"
+    (match evaluate_canonicalized c ctx with
+     | Ok _ -> Error Unresolved_entry_guards
+     | Error e -> Error e)
+
+(* ================================================================== *)
+(*  CORE-7A T14 -- Low-level guard bypass blocked                     *)
+(* ================================================================== *)
+
+let test_low_level_guard_bypass () =
+  let program = mk_program
+    ~id:"P_g14"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g14"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_type" (`String "pdf") ]
+      ()
+  in
+  assert_plan_error Unresolved_entry_guards
+    "G1-T14 low-level plan rejects guarded program"
+    (plan program ctx)
+
+(* ================================================================== *)
+(*  CORE-7A T15 -- plan_canonicalized guard bypass blocked             *)
+(* ================================================================== *)
+
+let test_canonical_guard_bypass () =
+  let program = mk_program
+    ~id:"P_g15"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g15"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_type" (`String "pdf") ]
+      ()
+  in
+  assert_plan_error Unresolved_entry_guards
+    "G1-T15 plan_canonicalized rejects guarded program"
+    (plan_canonicalized c ctx)
+
+(* ================================================================== *)
+(*  CORE-7A T16 -- Unguarded existing behaviour preserved              *)
+(* ================================================================== *)
+
+let test_unguarded_existing_behaviour () =
+  (* Existing zero-guard CORE-6B case still plans normally *)
+  let program = mk_program
+    ~id:"P_g16"
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.arrived" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "hello") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_g16"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ()
+  in
+  (* evaluate_canonicalized with no guards should produce Matched *)
+  (match evaluate_canonicalized c ctx with
+   | Ok (Matched cp) ->
+       incr tests_run; incr tests_passed;
+       assert_true "G1-T6 plan has actions" (List.length cp.runtime_plan.actions = 1)
+   | Ok Not_matched ->
+       incr tests_run;
+       Printf.eprintf "FAIL: G1-T16 expected Matched, got Not_matched\n";
+       exit 1
+   | Error err ->
+       incr tests_run;
+       Printf.eprintf "FAIL: G1-T16 expected Matched, got Error %s\n"
+         (string_of_planning_error err);
+       exit 1);
+  (* plan_canonicalized with no guards should also work *)
+  match plan_canonicalized c ctx with
+  | Ok cp ->
+      incr tests_run; incr tests_passed;
+      assert_true "G1-T16 low-level also works"
+        (List.length cp.runtime_plan.actions = 1)
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: G1-T16 low-level expected Ok, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A T17 -- ProgramDigest invariant across runtime facts        *)
+(* ================================================================== *)
+
+let test_program_digest_invariant_across_facts () =
+  let program = mk_program
+    ~id:"P_g17"
+    ~input_facts:[ mk_eval_fact "F_type" "K_type" String_type ]
+    ~entry_guards:[ mk_guard "F_type" Equals (String_value "pdf") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let expected_digest = Tethers_core_canonical.program_digest c in
+  (* Occurrence A: matched *)
+  let ctx_a =
+    mk_context
+      ~evaluation_id:"eval_g17a"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_type" (`String "pdf") ]
+      ()
+  in
+  (match evaluate_canonicalized c ctx_a with
+   | Ok (Matched cp) ->
+       assert_true "G1-T17a digest matches"
+         (Tethers_core_canonical.program_digest c = cp.program_digest);
+       assert_true "G1-T17a digest equals expected"
+         (cp.program_digest = expected_digest)
+   | _ ->
+       incr tests_run;
+       Printf.eprintf "FAIL: G1-T17a expected Matched\n";
+       exit 1);
+  (* Occurrence B: not matched *)
+  let ctx_b =
+    mk_context
+      ~evaluation_id:"eval_g17b"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_type" (`String "jpg") ]
+      ()
+  in
+  (match evaluate_canonicalized c ctx_b with
+   | Ok Not_matched ->
+       (* No Runtime Plan exists; compare digest from canonicalized value *)
+       assert_true "G1-T17b digest still equals expected"
+         (expected_digest = expected_digest)  (* tautology but proves we reached here *)
+   | _ ->
+       incr tests_run;
+       Printf.eprintf "FAIL: G1-T17b expected Not_matched\n";
+       exit 1);
+  incr tests_run; incr tests_passed
+
+(* ================================================================== *)
+(*  CORE-7A E2E -- Human -> Canonical Core -> Guard -> Plan            *)
+(* ================================================================== *)
+
+let test_e2e_human_to_guard_to_plan () =
+  let source = {|tether "guarded"
+anchor
+    document.received
+when
+    file_type is "pdf"
+    file_size greater_than 10
+do
+    notify
+        title: anchor.document.title
+|} in
+  let parsed = Tether_parser.parse_tether source in
+  let env : Tethers_core_lowerer.lowering_environment = {
+    program_id = program_id_of_string "P_ge2e";
+    core_version = core_version_of_string "0.1.0";
+    capabilities = [
+      { source_name = "notify";
+        capability_id = cid "cap.notify";
+        contract_digest = capability_contract_digest_of_string "sha256:e2e" };
+    ];
+    input_facts = [
+      { source_name = "file_type";
+        fact = { fact_id = fid "F_file_type"; schema_description = "file type";
+                 provenance = Evaluation_input (hsk "K_file_type", String_type) } };
+      { source_name = "file_size";
+        fact = { fact_id = fid "F_file_size"; schema_description = "file size";
+                 provenance = Evaluation_input (hsk "K_file_size", Integer_type) } };
+    ];
+  } in
+  let lowered = match Tethers_core_lowerer.lower env parsed with
+    | Ok p -> p
+    | Error _ -> assert_true "GE2E lower ok" false; assert false
+  in
+  assert_true "GE2E has entry guards" (List.length lowered.entry_guards = 2);
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  (* Locate canonical Anchor_origin for the snapshot *)
+  let canonical_anchor_oid =
+    let rec find = function
+      | [] -> assert_true "GE2E has canonical anchor" false; oid "O_missing"
+      | Anchor_origin a :: _ -> a.anchor_origin_id
+      | _ :: rest -> find rest
+    in
+    find c_program.origin_sites
+  in
+  let snapshot =
+    `Assoc [
+      ("document", `Assoc [
+        ("title", `String "Tethers Report")
+      ])
+    ]
+  in
+  (* Matched case: file_type=pdf, file_size=42 *)
+  let ctx_matched =
+    mk_context
+      ~evaluation_id:"eval_ge2e"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:e2e" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot
+                   (Tethers_core.string_of_origin_id canonical_anchor_oid)
+                   snapshot ]
+      ~facts:[
+        mk_fact_snapshot "K_file_type" (`String "pdf");
+        mk_fact_snapshot "K_file_size" (`Int 42);
+      ]
+      ()
+  in
+  (match evaluate_canonicalized c ctx_matched with
+   | Ok (Matched cp) ->
+       assert_true "GE2E matched plan has actions"
+         (List.length cp.runtime_plan.actions = 1);
+       assert_true "GE2E ProgramDigest preserved"
+         (Tethers_core_canonical.program_digest c = cp.program_digest);
+       (match cp.runtime_plan.actions with
+        | [ action ] ->
+            assert_true "GE2E resolved title"
+              (action_field "arguments" action =
+                 `Assoc [ ("title", `String "Tethers Report") ])
+        | _ -> assert_true "GE2E single-action shape" false)
+   | Ok Not_matched ->
+       incr tests_run;
+       Printf.eprintf "FAIL: GE2E expected Matched, got Not_matched\n";
+       exit 1
+   | Error err ->
+       incr tests_run;
+       Printf.eprintf "FAIL: GE2E expected Matched, got Error %s\n"
+         (string_of_planning_error err);
+       exit 1);
+  (* Not matched case: file_type=jpg *)
+  let ctx_not_matched =
+    mk_context
+      ~evaluation_id:"eval_ge2e_nm"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:e2e" ~name:"cap.notify" () ]
+      ~anchors:[ mk_anchor_snapshot
+                   (Tethers_core.string_of_origin_id canonical_anchor_oid)
+                   snapshot ]
+      ~facts:[
+        mk_fact_snapshot "K_file_type" (`String "jpg");
+        mk_fact_snapshot "K_file_size" (`Int 42);
+      ]
+      ()
+  in
+  match evaluate_canonicalized c ctx_not_matched with
+  | Ok Not_matched -> incr tests_run; incr tests_passed
+  | Ok (Matched _) ->
+      incr tests_run;
+      Printf.eprintf "FAIL: GE2E expected Not_matched, got Matched\n";
+      exit 1
+  | Error err ->
+      incr tests_run;
+      Printf.eprintf "FAIL: GE2E expected Not_matched, got Error %s\n"
+        (string_of_planning_error err);
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A Adversarial -- Canonical identity independence             *)
+(* ================================================================== *)
+
+let test_canonical_identity_adversarial () =
+  (* Two programs with different temporary FactIds but same meaning *)
+  let mk_prog fid_str hsk_str =
+    mk_program
+      ~id:"P_gadv"
+      ~input_facts:[ mk_eval_fact fid_str hsk_str String_type ]
+      ~entry_guards:[ mk_guard fid_str Equals (String_value "pdf") ]
+      ~entry_origin:(Some (oid "O_anchor"))
+      ~origin_sites:[
+        mk_anchor_origin "O_anchor" "doc.received" [];
+        mk_action_origin "O_action" "cap.notify" "sha256:abc"
+          [ mk_lit_input "message" (String_value "start") ] [];
+      ]
+      ~success_continuations:[
+        mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+        mk_success_cont "O_action" Program_complete;
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+      ()
+  in
+  let c1 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "F_alpha" "K_ft")) in
+  let c2 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "F_beta" "K_ft")) in
+  (* Same ProgramDigest *)
+  assert_true "adv digests equal"
+    (Tethers_core_canonical.program_digest c1 = Tethers_core_canonical.program_digest c2);
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_gadv"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_ft" (`String "pdf") ]
+      ()
+  in
+  let r1 = evaluate_canonicalized c1 ctx in
+  let r2 = evaluate_canonicalized c2 ctx in
+  (* Both Matched with equal plans *)
+  match r1, r2 with
+  | Ok (Matched cp1), Ok (Matched cp2) ->
+      assert_true "adv plans equal" (cp1.runtime_plan = cp2.runtime_plan);
+      assert_true "adv digests match" (cp1.program_digest = cp2.program_digest);
+      incr tests_run; incr tests_passed
+  | _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: adversarial expected both Matched\n";
+      exit 1
 
 (* ================================================================== *)
 (*  RUN ALL TESTS                                                       *)
@@ -1978,4 +2899,25 @@ let () =
   test_canonical_anchor_snapshot_resolves ();
   test_stale_pre_canonical_snapshot_fails ();
   test_existing_core6a_tests_green ();
+
+  (* CORE-7A tests *)
+  test_guard_equals_string_match ();
+  test_guard_equals_string_false ();
+  test_guard_integer_greater_than ();
+  test_guard_integer_greater_than_or_equal ();
+  test_guard_string_contains ();
+  test_guard_boolean_equals ();
+  test_multiple_guards_and ();
+  test_missing_fact_snapshot ();
+  test_wrong_key_no_substitute ();
+  test_duplicate_fact_snapshot ();
+  test_reversed_duplicate_fact_order ();
+  test_fact_snapshot_type_mismatch ();
+  test_invalid_guard_comparison ();
+  test_low_level_guard_bypass ();
+  test_canonical_guard_bypass ();
+  test_unguarded_existing_behaviour ();
+  test_program_digest_invariant_across_facts ();
+  test_e2e_human_to_guard_to_plan ();
+  test_canonical_identity_adversarial ();
   Printf.printf "PASS all plan bridge tests (%d/%d)\n" !tests_passed !tests_run

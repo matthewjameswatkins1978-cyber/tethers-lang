@@ -35,6 +35,14 @@ type runtime_capability_projection = {
     capability identity and contract digest.  The bridge never trusts the full
     manifest; it copies planning-relevant fields from this projection. *)
 
+type fact_snapshot = {
+  key : Tethers_core.host_snapshot_key;
+  value : Yojson.Safe.t;
+}
+(** A runtime-supplied evaluation Fact value, keyed by the host snapshot key
+    declared in the Core program's [Evaluation_input] provenance.  Runtime
+    Facts are keyed by [HostSnapshotKey], NOT by canonical FactId. *)
+
 type planning_context = {
   evaluation_id : string;
   (** Runtime execution occurrence identity.  Occurrence-derived Plan and
@@ -45,7 +53,15 @@ type planning_context = {
   anchors : anchor_snapshot list;
   (** Runtime-supplied Anchor snapshot data for resolving [Anchor_value]
       bindings.  Each snapshot is keyed by its Core [origin_id]. *)
+  facts : fact_snapshot list;
+  (** Runtime-supplied evaluation Fact snapshots for entry guard evaluation.
+      Each snapshot is keyed by the [HostSnapshotKey] declared in the
+      corresponding [Evaluation_input] provenance.  Guard lookup is
+      deterministic by [HostSnapshotKey]; 0 matches is an error, 2+ is an
+      error. *)
 }
+(** The full runtime planning and evaluation context.  Bridges Core meaning
+    with this occurrence's runtime data. *)
 
 type planning_error =
   | Invalid_core of Tethers_core_validator.validation_error list
@@ -117,6 +133,25 @@ type planning_error =
   (** The terminal value at the resolved path is not a string, integer, or
       boolean and cannot be represented by the Runtime Plan argument
       vocabulary. *)
+  | Unresolved_entry_guards
+  (** The Core program declares entry guards but the lower-level [plan] or
+      [plan_canonicalized] API was called without evaluating them first.
+      Use [evaluate_canonicalized] for guarded programs. *)
+  | Missing_fact_snapshot of Tethers_core.host_snapshot_key
+  (** No runtime Fact snapshot exists for the [HostSnapshotKey] declared in
+      an [Evaluation_input] provenance referenced by an entry guard. *)
+  | Ambiguous_fact_snapshot of Tethers_core.host_snapshot_key
+  (** More than one runtime Fact snapshot exists for the same
+      [HostSnapshotKey].  The host must deduplicate Fact snapshots before
+      supply. *)
+  | Fact_snapshot_type_mismatch of Tethers_core.host_snapshot_key
+  (** The runtime Fact snapshot JSON type does not match the declared Core
+      scalar type (e.g. JSON string supplied for an [Integer_type] fact). *)
+  | Invalid_guard_comparison of Tethers_core.fact_id
+  (** The guard's declared Fact type and expected Core value cannot form a
+      valid comparison with the given operator (e.g. [Contains] with a
+      non-string expected value, or [Greater_than] with a non-integer
+      expected value). *)
 
 type canonical_plan = {
   program_digest : Tethers_core_canonical.program_digest;
@@ -163,4 +198,39 @@ val plan_canonicalized :
     Internally obtains the Core program through
     [Tethers_core_canonical.canonical_program] and delegates to [plan].
     Returns the existing Runtime Plan together with the canonical
-    [ProgramDigest] so that semantic program identity is preserved. *)
+    [ProgramDigest] so that semantic program identity is preserved.
+
+    FAILS CLOSED with [Unresolved_entry_guards] if the program declares
+    entry guards.  Use [evaluate_canonicalized] for guarded programs. *)
+
+type canonical_evaluation =
+  | Matched of canonical_plan
+  | Not_matched
+(** The outcome of evaluating a canonical Core program with entry guards
+    against runtime Fact snapshots.
+
+    - [Matched plan]: all entry guards evaluated to true; the plan is
+      produced with the preserved [ProgramDigest].
+    - [Not_matched]: at least one valid guard evaluated to false; no
+      Runtime Plan is produced.
+
+    Missing, ambiguous, wrongly typed, or malformed runtime Facts produce
+    an [Error] through the [planning_error] result, NOT [Not_matched]. *)
+
+val evaluate_canonicalized :
+  Tethers_core_canonical.canonicalized ->
+  planning_context ->
+  (canonical_evaluation, planning_error) result
+(** Evaluate a canonical Core program's entry guards against runtime Fact
+    snapshots, then produce a Runtime Plan if all guards match.
+
+    Resolution steps for each guard:
+    1. Resolve the guard's canonical FactId to its declaration in
+       [canonical_program.input_facts].
+    2. Require provenance [Evaluation_input(host_key, scalar_type)].
+    3. Resolve the runtime snapshot by exactly [host_key].
+    4. Decode the runtime JSON value according to [scalar_type].
+    5. Compare against the guard's expected Core value.
+
+    For programs with zero entry guards, equivalent to [plan_canonicalized]
+    wrapped in [Matched]. *)

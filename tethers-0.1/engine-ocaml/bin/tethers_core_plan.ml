@@ -31,6 +31,11 @@ type planning_error =
   | Anchor_path_missing of origin_id * string list
   | Anchor_path_not_object of origin_id * string list
   | Unsupported_anchor_value_type of origin_id * string list
+  | Unresolved_entry_guards
+  | Missing_fact_snapshot of host_snapshot_key
+  | Ambiguous_fact_snapshot of host_snapshot_key
+  | Fact_snapshot_type_mismatch of host_snapshot_key
+  | Invalid_guard_comparison of fact_id
 
 type runtime_capability_projection = {
   capability_id : capability_id;
@@ -38,16 +43,26 @@ type runtime_capability_projection = {
   runtime : Tethers_protocol.capability;
 }
 
+type fact_snapshot = {
+  key : host_snapshot_key;
+  value : Yojson.Safe.t;
+}
+
 type planning_context = {
   evaluation_id : string;
   capabilities : runtime_capability_projection list;
   anchors : anchor_snapshot list;
+  facts : fact_snapshot list;
 }
 
 type canonical_plan = {
   program_digest : Tethers_core_canonical.program_digest;
   runtime_plan : Tethers_outcome.plan;
 }
+
+type canonical_evaluation =
+  | Matched of canonical_plan
+  | Not_matched
 
 (* ------------------------------------------------------------------ *)
 (*  Core value encoding                                                *)
@@ -245,6 +260,110 @@ let resolve_anchor_value context origin_id path =
   json_value_of_terminal origin_id path terminal
 
 (* ------------------------------------------------------------------ *)
+(*  Entry guard evaluation                                             *)
+(*                                                                     *)
+(*  For each entry guard the bridge resolves the canonical FactId to    *)
+(*  its declaration in [input_facts], extracts the [HostSnapshotKey]   *)
+(*  from [Evaluation_input] provenance, looks up the runtime snapshot   *)
+(*  by exactly that key, decodes the JSON value according to the       *)
+(*  declared scalar type, and compares against the expected Core value. *)
+(*                                                                     *)
+(*  Runtime Facts are keyed by [HostSnapshotKey], never by canonical   *)
+(*  FactId, never by source-name text, never by list position, and     *)
+(*  never by "only available fact".                                    *)
+(* ------------------------------------------------------------------ *)
+
+let find_fact_by_id program fact_id =
+  List.find_opt (fun (f : Tethers_core.fact) -> f.fact_id = fact_id)
+    program.input_facts
+
+let find_fact_snapshot context host_key =
+  let matching =
+    List.filter
+      (fun (s : fact_snapshot) -> s.key = host_key)
+      context.facts
+  in
+  match matching with
+  | [] -> Error (Missing_fact_snapshot host_key)
+  | [ snapshot ] -> Ok snapshot
+  | _ -> Error (Ambiguous_fact_snapshot host_key)
+
+let runtime_value_matches_type (json : Yojson.Safe.t) (scalar_type : Tethers_core.core_scalar_type) =
+  match scalar_type, json with
+  | String_type, `String _ -> true
+  | Integer_type, `Int _ -> true
+  | Boolean_type, `Bool _ -> true
+  | _ -> false
+
+let compare_guard operator (runtime_json : Yojson.Safe.t) (expected : Tethers_core.core_value) =
+  match operator, runtime_json, expected with
+  | Equals, `String r, String_value e -> r = e
+  | Equals, `Int r, Integer_value e -> r = e
+  | Equals, `Bool r, Boolean_value e -> r = e
+  | Contains, `String r, String_value e ->
+      let r_len = String.length r in
+      let e_len = String.length e in
+      if e_len = 0 then true
+      else
+        let rec search i =
+          if i + e_len > r_len then false
+          else if String.sub r i e_len = e then true
+          else search (i + 1)
+        in
+        search 0
+  | Greater_than, `Int r, Integer_value e -> r > e
+  | Greater_than_or_equal, `Int r, Integer_value e -> r >= e
+  | _ -> false
+
+let validate_guard_expected operator (expected : Tethers_core.core_value) (scalar_type : Tethers_core.core_scalar_type) =
+  match operator, expected, scalar_type with
+  | Contains, String_value _, String_type -> true
+  | Equals, _, _ -> true
+  | Greater_than, Integer_value _, Integer_type -> true
+  | Greater_than_or_equal, Integer_value _, Integer_type -> true
+  | _ -> false
+
+type guard_single_result = Guard_ok | Guard_false
+
+let evaluate_single_guard context program (guard : Tethers_core.fact_guard) =
+  let open Result.Syntax in
+  let* fact =
+    match find_fact_by_id program guard.fact_id with
+    | Some f -> Ok f
+    | None -> Error (Invalid_guard_comparison guard.fact_id)
+  in
+  let* host_key, scalar_type =
+    match fact.provenance with
+    | Evaluation_input (hk, st) -> Ok (hk, st)
+    | _ -> Error (Invalid_guard_comparison guard.fact_id)
+  in
+  let* snapshot = find_fact_snapshot context host_key in
+  if not (runtime_value_matches_type snapshot.value scalar_type) then
+    Error (Fact_snapshot_type_mismatch host_key)
+  else if not (validate_guard_expected guard.operator guard.expected scalar_type) then
+    Error (Invalid_guard_comparison guard.fact_id)
+  else if compare_guard guard.operator snapshot.value guard.expected then Ok Guard_ok
+  else Ok Guard_false
+
+type guard_result =
+  | All_guards_passed
+  | Guard_not_matched
+
+let evaluate_entry_guards context program =
+  let guards = program.entry_guards in
+  let rec loop = function
+    | [] -> Ok All_guards_passed
+    | guard :: rest ->
+        (match evaluate_single_guard context program guard with
+         | Ok Guard_ok -> loop rest
+         | Ok Guard_false -> Ok Guard_not_matched
+         | Error _ as err -> err)
+  in
+  match guards with
+  | [] -> Ok All_guards_passed
+  | _ -> loop guards
+
+(* ------------------------------------------------------------------ *)
 (*  Action planning                                                    *)
 (*                                                                     *)
 (*  Only literal inputs reach this point: the pre-scan rejects every    *)
@@ -329,68 +448,90 @@ let unique_effects values =
 (*  [Incomplete_success_path].  Anchor origins contribute no action.    *)
 (* ------------------------------------------------------------------ *)
 
+let plan_core program context =
+  match unsupported program with
+  | Some error -> Error error
+  | None -> (
+      match program.entry_origin with
+      | None -> Error Missing_entry_origin
+      | Some entry_oid ->
+          let sites = program.origin_sites in
+          let continuation_of oid =
+            List.assoc_opt oid
+              (List.map
+                 (fun (sc : success_continuation) ->
+                   (sc.from_origin, sc.target))
+                 program.success_continuations)
+          in
+          let site_of oid =
+            List.find_opt (fun s -> origin_id_of_site s = Some oid) sites
+          in
+          let rec walk visited index planned effects oid =
+            if List.mem oid visited then
+              Error (Flow_cycle (List.rev (oid :: visited)))
+            else
+              match site_of oid with
+              | None -> Error (Unresolved_origin oid)
+              | Some site -> (
+                  match site with
+                  | Anchor_origin _ ->
+                      advance (oid :: visited) index planned effects oid
+                  | Action_origin action -> (
+                      match plan_action context index action with
+                      | Error _ as err -> err
+                      | Ok (planned_action, action_effects) ->
+                          advance (oid :: visited) (index + 1)
+                            (planned_action :: planned)
+                            (List.rev_append action_effects effects) oid)
+                  | Together_origin _ -> Error Unsupported_together
+                  | Batch_site _ -> Error Unsupported_batch)
+          and advance visited index planned effects oid =
+            match continuation_of oid with
+            | None -> Error (Incomplete_success_path oid)
+            | Some Program_complete ->
+                Ok (List.rev planned, unique_effects (List.rev effects))
+            | Some (Origin_target next_oid) ->
+                walk visited index planned effects next_oid
+          in
+          match walk [] 1 [] [] entry_oid with
+          | Error _ as err -> err
+          | Ok (actions, required_effects) ->
+              Ok
+                {
+                  id = context.evaluation_id ^ "/plan";
+                  required_effects;
+                  actions;
+                  groups = [];
+                })
+
 let plan program context =
   match validate program with
   | Error errors -> Error (Invalid_core errors)
   | Ok () -> (
-      match unsupported program with
-      | Some error -> Error error
-      | None -> (
-          match program.entry_origin with
-          | None -> Error Missing_entry_origin
-          | Some entry_oid ->
-              let sites = program.origin_sites in
-              let continuation_of oid =
-                List.assoc_opt oid
-                  (List.map
-                     (fun (sc : success_continuation) ->
-                       (sc.from_origin, sc.target))
-                     program.success_continuations)
-              in
-              let site_of oid =
-                List.find_opt (fun s -> origin_id_of_site s = Some oid) sites
-              in
-              let rec walk visited index planned effects oid =
-                if List.mem oid visited then
-                  Error (Flow_cycle (List.rev (oid :: visited)))
-                else
-                  match site_of oid with
-                  | None -> Error (Unresolved_origin oid)
-                  | Some site -> (
-                      match site with
-                      | Anchor_origin _ ->
-                          advance (oid :: visited) index planned effects oid
-                      | Action_origin action -> (
-                          match plan_action context index action with
-                          | Error _ as err -> err
-                          | Ok (planned_action, action_effects) ->
-                              advance (oid :: visited) (index + 1)
-                                (planned_action :: planned)
-                                (List.rev_append action_effects effects) oid)
-                      | Together_origin _ -> Error Unsupported_together
-                      | Batch_site _ -> Error Unsupported_batch)
-              and advance visited index planned effects oid =
-                match continuation_of oid with
-                | None -> Error (Incomplete_success_path oid)
-                | Some Program_complete ->
-                    Ok (List.rev planned, unique_effects (List.rev effects))
-                | Some (Origin_target next_oid) ->
-                    walk visited index planned effects next_oid
-              in
-              match walk [] 1 [] [] entry_oid with
-              | Error _ as err -> err
-              | Ok (actions, required_effects) ->
-                  Ok
-                    {
-                      id = context.evaluation_id ^ "/plan";
-                      required_effects;
-                      actions;
-                      groups = [];
-                    }))
+      if program.entry_guards <> [] then Error Unresolved_entry_guards
+      else plan_core program context)
 
 let plan_canonicalized canonicalized context =
   let c_program = Tethers_core_canonical.canonical_program canonicalized in
   let c_digest = Tethers_core_canonical.program_digest canonicalized in
-  match plan c_program context with
-  | Error err -> Error err
-  | Ok runtime_plan -> Ok { program_digest = c_digest; runtime_plan }
+  if c_program.entry_guards <> [] then Error Unresolved_entry_guards
+  else match plan_core c_program context with
+    | Error err -> Error err
+    | Ok runtime_plan -> Ok { program_digest = c_digest; runtime_plan }
+
+let plan_internal program context =
+  match validate program with
+  | Error errors -> Error (Invalid_core errors)
+  | Ok () -> plan_core program context
+
+let evaluate_canonicalized canonicalized context =
+  let c_program = Tethers_core_canonical.canonical_program canonicalized in
+  let c_digest = Tethers_core_canonical.program_digest canonicalized in
+  let open Result.Syntax in
+  let* guard_result = evaluate_entry_guards context c_program in
+  match guard_result with
+  | Guard_not_matched -> Ok Not_matched
+  | All_guards_passed ->
+      match plan_internal c_program context with
+      | Error err -> Error err
+      | Ok runtime_plan -> Ok (Matched { program_digest = c_digest; runtime_plan })
