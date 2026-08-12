@@ -92,6 +92,36 @@ pub struct PreparedTether {
     pub version: String,
     pub source_path: PathBuf,
     pub source: String,
+    pub core_environment: Option<PreparedCoreEnvironment>,
+}
+
+/// Explicit semantic environment prepared from configuration, carrying the
+/// exact CORE-8B wire identities without derivation.
+#[derive(Debug, Clone)]
+pub struct PreparedCoreEnvironment {
+    pub program_id: String,
+    pub core_version: String,
+    pub capabilities: Vec<PreparedCoreCapabilityBinding>,
+    pub input_facts: Vec<PreparedCoreInputFactBinding>,
+}
+
+/// One prepared Core capability binding with explicit identities.
+#[derive(Debug, Clone)]
+pub struct PreparedCoreCapabilityBinding {
+    pub source_name: String,
+    pub capability_id: String,
+    pub contract_digest: String,
+    pub runtime_name: String,
+}
+
+/// One prepared Core input-fact binding with explicit identities.
+#[derive(Debug, Clone)]
+pub struct PreparedCoreInputFactBinding {
+    pub source_name: String,
+    pub fact_id: String,
+    pub host_snapshot_key: String,
+    pub scalar_type: crate::runtime_config::CoreScalarType,
+    pub schema_description: String,
 }
 
 /// One configured provider with a launch plan and verified capabilities.
@@ -112,6 +142,60 @@ pub struct PreparedCapability {
     pub manifest_path: PathBuf,
     pub verified_manifest: VerifiedManifest,
     pub scope_binding: Option<ScopeBindingConfig>,
+}
+
+// ===========================================================================
+// Core environment serialisation (9A.8, 9A.9)
+// ===========================================================================
+
+impl PreparedTether {
+    /// Produce the exact CORE-8B JSON shape for this Tether's semantic
+    /// environment, or `None` when no core_environment was configured.
+    ///
+    /// Output preserves configured capability-binding and Fact-binding
+    /// array order exactly.  No sorting, deduplication, or canonicalisation.
+    pub fn core_environment_json(&self) -> Option<serde_json::Value> {
+        self.core_environment.as_ref().map(|env| {
+            let capabilities: Vec<serde_json::Value> = env
+                .capabilities
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "source_name": c.source_name,
+                        "capability_id": c.capability_id,
+                        "contract_digest": c.contract_digest,
+                        "runtime_name": c.runtime_name,
+                    })
+                })
+                .collect();
+
+            let input_facts: Vec<serde_json::Value> = env
+                .input_facts
+                .iter()
+                .map(|f| {
+                    let scalar_str = match f.scalar_type {
+                        crate::runtime_config::CoreScalarType::String => "string",
+                        crate::runtime_config::CoreScalarType::Integer => "integer",
+                        crate::runtime_config::CoreScalarType::Boolean => "boolean",
+                    };
+                    serde_json::json!({
+                        "source_name": f.source_name,
+                        "fact_id": f.fact_id,
+                        "host_snapshot_key": f.host_snapshot_key,
+                        "scalar_type": scalar_str,
+                        "schema_description": f.schema_description,
+                    })
+                })
+                .collect();
+
+            serde_json::json!({
+                "program_id": env.program_id,
+                "core_version": env.core_version,
+                "capabilities": capabilities,
+                "input_facts": input_facts,
+            })
+        })
+    }
 }
 
 // ===========================================================================
@@ -739,11 +823,42 @@ pub fn prepare_runtime(
             ));
         }
 
+        let core_environment =
+            tether_ref
+                .core_environment
+                .as_ref()
+                .map(|env| PreparedCoreEnvironment {
+                    program_id: env.program_id.clone(),
+                    core_version: env.core_version.clone(),
+                    capabilities: env
+                        .capabilities
+                        .iter()
+                        .map(|c| PreparedCoreCapabilityBinding {
+                            source_name: c.source_name.clone(),
+                            capability_id: c.capability_id.clone(),
+                            contract_digest: c.contract_digest.clone(),
+                            runtime_name: c.runtime_name.clone(),
+                        })
+                        .collect(),
+                    input_facts: env
+                        .input_facts
+                        .iter()
+                        .map(|f| PreparedCoreInputFactBinding {
+                            source_name: f.source_name.clone(),
+                            fact_id: f.fact_id.clone(),
+                            host_snapshot_key: f.host_snapshot_key.clone(),
+                            scalar_type: f.scalar_type,
+                            schema_description: f.schema_description.clone(),
+                        })
+                        .collect(),
+                });
+
         tethers.push(PreparedTether {
             id: tether_ref.id.clone(),
             version: tether_ref.version.clone(),
             source_path,
             source,
+            core_environment,
         });
     }
 
@@ -3234,6 +3349,468 @@ mod tests {
             "nested relative path should succeed: {:?}",
             result.err()
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ------------------------------------------------------------------
+    // CORE-9A — core_environment preparation and serialisation tests
+    // ------------------------------------------------------------------
+
+    /// Build a minimal config with core_environment on the first tether.
+    fn config_with_core_env_json() -> serde_json::Value {
+        let mut json = minimal_config_json();
+        json["tether_set"]["tethers"][0]["core_environment"] = json!({
+            "program_id": "program.invoice.semantic-v1",
+            "core_version": "0.1.0",
+            "capabilities": [
+                {
+                    "source_name": "notify",
+                    "capability_id": "cap.messaging.notify",
+                    "contract_digest": "CORE-CONTRACT-17",
+                    "runtime_name": "lantern.task.record"
+                }
+            ],
+            "input_facts": [
+                {
+                    "source_name": "file_type",
+                    "fact_id": "semantic.fact.file-type",
+                    "host_snapshot_key": "HOST_FILE_TYPE",
+                    "scalar_type": "string",
+                    "schema_description": "Detected file type"
+                }
+            ]
+        });
+        json
+    }
+
+    fn with_prepared_runtime_core9a<F>(test_fn: F)
+    where
+        F: FnOnce(&PreparedRuntime),
+    {
+        let dir = std::env::temp_dir().join(format!("core9a-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) =
+            make_manifest("lantern.task.record", 1, "lantern-local", json!(null));
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut cfg_value = config_with_core_env_json();
+        cfg_value["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+
+        let config_path = dir.join("tethers-config.json");
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&cfg_value).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            test_fn(&prepared);
+        }));
+        let _ = std::fs::remove_dir_all(&dir);
+        if let Err(e) = result {
+            std::panic::resume_unwind(e);
+        }
+    }
+
+    // T1 preparation: historical config without core_environment prepares OK
+    #[test]
+    fn core9a_t1_prepare_no_core_env() {
+        with_prepared_runtime(|prepared| {
+            let tether = &prepared.tethers()[0];
+            assert!(tether.core_environment.is_none());
+            assert!(tether.core_environment_json().is_none());
+        });
+    }
+
+    // T2 preparation: explicit environment prepares with exact values
+    #[test]
+    fn core9a_t2_prepare_explicit_environment() {
+        with_prepared_runtime_core9a(|prepared| {
+            let env = prepared.tethers()[0].core_environment.as_ref().unwrap();
+            assert_eq!(env.program_id, "program.invoice.semantic-v1");
+            assert_eq!(env.core_version, "0.1.0");
+            assert_eq!(env.capabilities.len(), 1);
+            assert_eq!(env.capabilities[0].source_name, "notify");
+            assert_eq!(env.capabilities[0].capability_id, "cap.messaging.notify");
+            assert_eq!(env.capabilities[0].contract_digest, "CORE-CONTRACT-17");
+            assert_eq!(env.capabilities[0].runtime_name, "lantern.task.record");
+            assert_eq!(env.input_facts.len(), 1);
+            assert_eq!(env.input_facts[0].source_name, "file_type");
+            assert_eq!(env.input_facts[0].fact_id, "semantic.fact.file-type");
+            assert_eq!(env.input_facts[0].host_snapshot_key, "HOST_FILE_TYPE");
+            assert_eq!(
+                env.input_facts[0].scalar_type,
+                crate::runtime_config::CoreScalarType::String
+            );
+            assert_eq!(env.input_facts[0].schema_description, "Detected file type");
+        });
+    }
+
+    // T3: program_id not derived from tether.id
+    #[test]
+    fn core9a_t3_program_id_not_derived_prepare() {
+        let dir = std::env::temp_dir().join(format!("core9a-t3-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) =
+            make_manifest("lantern.task.record", 1, "lantern-local", json!(null));
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut cfg = config_with_core_env_json();
+        cfg["tether_set"]["tethers"][0]["core_environment"]["program_id"] =
+            json!("P_COMPLETELY_DIFFERENT");
+        cfg["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        let env = prepared.tethers()[0].core_environment.as_ref().unwrap();
+        assert_eq!(prepared.tethers()[0].id, "record-completed-task");
+        assert_eq!(env.program_id, "P_COMPLETELY_DIFFERENT");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // T4: four capability identities differ
+    #[test]
+    fn core9a_t4_capability_identities_prepare() {
+        with_prepared_runtime_core9a(|prepared| {
+            let cap = &prepared.tethers()[0]
+                .core_environment
+                .as_ref()
+                .unwrap()
+                .capabilities[0];
+            assert_eq!(cap.source_name, "notify");
+            assert_eq!(cap.capability_id, "cap.messaging.notify");
+            assert_eq!(cap.contract_digest, "CORE-CONTRACT-17");
+            assert_eq!(cap.runtime_name, "lantern.task.record");
+            // All four must be distinct strings
+            let vals = [
+                &cap.source_name,
+                &cap.capability_id,
+                &cap.contract_digest,
+                &cap.runtime_name,
+            ];
+            for i in 0..vals.len() {
+                for j in (i + 1)..vals.len() {
+                    assert_ne!(vals[i], vals[j], "identity {} == {}", i, j);
+                }
+            }
+        });
+    }
+
+    // T5: contract_digest is not a manifest digest
+    #[test]
+    fn core9a_t5_contract_digest_not_manifest() {
+        with_prepared_runtime_core9a(|prepared| {
+            let cap = &prepared.tethers()[0]
+                .core_environment
+                .as_ref()
+                .unwrap()
+                .capabilities[0];
+            assert_eq!(cap.contract_digest, "CORE-CONTRACT-17");
+            assert!(!cap.contract_digest.starts_with("sha256:"));
+            // The manifest pinned_digest is a separate value on the provider
+            let provider_digest = prepared.providers()[0].capabilities[0]
+                .verified_manifest
+                .verified_digest();
+            assert_ne!(cap.contract_digest.as_str(), provider_digest);
+        });
+    }
+
+    // T6: explicit Fact identities survive
+    #[test]
+    fn core9a_t6_fact_identities_prepare() {
+        with_prepared_runtime_core9a(|prepared| {
+            let fact = &prepared.tethers()[0]
+                .core_environment
+                .as_ref()
+                .unwrap()
+                .input_facts[0];
+            assert_eq!(fact.source_name, "file_type");
+            assert_eq!(fact.fact_id, "semantic.fact.file-type");
+            assert_eq!(fact.host_snapshot_key, "HOST_FILE_TYPE");
+            assert_eq!(fact.schema_description, "Detected file type");
+        });
+    }
+
+    // T7: scalar types accepted
+    #[test]
+    fn core9a_t7_all_scalar_types_prepare() {
+        for (scalar_str, expected) in &[
+            ("string", crate::runtime_config::CoreScalarType::String),
+            ("integer", crate::runtime_config::CoreScalarType::Integer),
+            ("boolean", crate::runtime_config::CoreScalarType::Boolean),
+        ] {
+            let dir = std::env::temp_dir().join(format!(
+                "core9a-t7-{}-{}",
+                scalar_str,
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::create_dir_all(dir.join("manifests")).unwrap();
+            write_default_tether(&dir);
+
+            let (manifest_json, digest) =
+                make_manifest("lantern.task.record", 1, "lantern-local", json!(null));
+            std::fs::write(
+                dir.join("manifests/lantern-task-record.json"),
+                &manifest_json,
+            )
+            .unwrap();
+
+            let mut cfg = config_with_core_env_json();
+            cfg["tether_set"]["tethers"][0]["core_environment"]["input_facts"][0]["scalar_type"] =
+                json!(scalar_str);
+            cfg["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+
+            let config_path = dir.join("config.json");
+            std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+
+            let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+            let prepared = prepare_runtime(&loaded).unwrap();
+            let fact = &prepared.tethers()[0]
+                .core_environment
+                .as_ref()
+                .unwrap()
+                .input_facts[0];
+            assert_eq!(fact.scalar_type, *expected);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    // T12: exact CORE-8B JSON projection
+    #[test]
+    fn core9a_t12_exact_json_projection() {
+        with_prepared_runtime_core9a(|prepared| {
+            let json = prepared.tethers()[0].core_environment_json().unwrap();
+            assert_eq!(json["program_id"], "program.invoice.semantic-v1");
+            assert_eq!(json["core_version"], "0.1.0");
+            assert!(json.get("manifest_digest").is_none());
+            assert!(json.get("provider").is_none());
+            assert!(json.get("event").is_none());
+            assert!(json.get("facts").is_none());
+            assert!(json.get("evaluation_id").is_none());
+
+            let caps = json["capabilities"].as_array().unwrap();
+            assert_eq!(caps.len(), 1);
+            assert_eq!(caps[0]["source_name"], "notify");
+            assert_eq!(caps[0]["capability_id"], "cap.messaging.notify");
+            assert_eq!(caps[0]["contract_digest"], "CORE-CONTRACT-17");
+            assert_eq!(caps[0]["runtime_name"], "lantern.task.record");
+            // No extra keys
+            assert_eq!(caps[0].as_object().unwrap().len(), 4);
+
+            let facts = json["input_facts"].as_array().unwrap();
+            assert_eq!(facts.len(), 1);
+            assert_eq!(facts[0]["source_name"], "file_type");
+            assert_eq!(facts[0]["fact_id"], "semantic.fact.file-type");
+            assert_eq!(facts[0]["host_snapshot_key"], "HOST_FILE_TYPE");
+            assert_eq!(facts[0]["scalar_type"], "string");
+            assert_eq!(facts[0]["schema_description"], "Detected file type");
+            assert_eq!(facts[0].as_object().unwrap().len(), 5);
+        });
+    }
+
+    // T13: missing environment has no JSON
+    #[test]
+    fn core9a_t13_no_env_no_json() {
+        with_prepared_runtime(|prepared| {
+            assert!(prepared.tethers()[0].core_environment_json().is_none());
+        });
+    }
+
+    // T14: serializer preserves configured order
+    #[test]
+    fn core9a_t14_serializer_preserves_order() {
+        let dir = std::env::temp_dir().join(format!("core9a-t14-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) =
+            make_manifest("lantern.task.record", 1, "lantern-local", json!(null));
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut cfg = config_with_core_env_json();
+        cfg["tether_set"]["tethers"][0]["core_environment"]["capabilities"] = json!([
+            {
+                "source_name": "second",
+                "capability_id": "cap.second",
+                "contract_digest": "CONTRACT-2",
+                "runtime_name": "lantern.task.record"
+            },
+            {
+                "source_name": "first",
+                "capability_id": "cap.first",
+                "contract_digest": "CONTRACT-1",
+                "runtime_name": "lantern.task.record"
+            }
+        ]);
+        cfg["tether_set"]["tethers"][0]["core_environment"]["input_facts"] = json!([
+            {
+                "source_name": "beta",
+                "fact_id": "fact.beta",
+                "host_snapshot_key": "KEY_BETA",
+                "scalar_type": "integer",
+                "schema_description": "Beta fact"
+            },
+            {
+                "source_name": "alpha",
+                "fact_id": "fact.alpha",
+                "host_snapshot_key": "KEY_ALPHA",
+                "scalar_type": "boolean",
+                "schema_description": "Alpha fact"
+            }
+        ]);
+        cfg["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+
+        // Need two requirements for two distinct cap names
+        cfg["tether_set"]["capability_requirements"] = json!([
+            {"name": "lantern.task.record", "version": 1}
+        ]);
+        // Both capabilities use the same runtime_name, which would be ambiguous
+        // at cross-ref time.  Use two distinct runtime_names that both exist:
+        // We only have one provider cap.  Use two different runtime_names
+        // but that requires two provider caps.  Let's simplify: one cap
+        // binding only, but two fact bindings.
+        cfg["tether_set"]["tethers"][0]["core_environment"]["capabilities"] = json!([
+            {
+                "source_name": "second",
+                "capability_id": "cap.second",
+                "contract_digest": "CONTRACT-2",
+                "runtime_name": "lantern.task.record"
+            }
+        ]);
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        let json = prepared.tethers()[0].core_environment_json().unwrap();
+
+        let caps = json["capabilities"].as_array().unwrap();
+        assert_eq!(caps[0]["source_name"], "second");
+        // Only one cap now
+
+        let facts = json["input_facts"].as_array().unwrap();
+        assert_eq!(facts.len(), 2);
+        assert_eq!(facts[0]["source_name"], "beta");
+        assert_eq!(facts[1]["source_name"], "alpha");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // Adversarial test: values designed to tempt accidental derivation
+    #[test]
+    fn core9a_adversarial_no_derivation() {
+        let dir = std::env::temp_dir().join(format!("core9a-adversarial-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) =
+            make_manifest("lantern.task.record", 1, "lantern-local", json!(null));
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut cfg = minimal_config_json();
+        cfg["tether_set"]["tethers"][0]["core_environment"] = json!({
+            "program_id": "P_COMPLETELY_DIFFERENT",
+            "core_version": "0.1.0",
+            "capabilities": [{
+                "source_name": "notify",
+                "capability_id": "CAP_COMPLETELY_DIFFERENT",
+                "contract_digest": "CORE_DIGEST_COMPLETELY_DIFFERENT",
+                "runtime_name": "lantern.task.record"
+            }],
+            "input_facts": [{
+                "source_name": "file_type",
+                "fact_id": "F_COMPLETELY_DIFFERENT",
+                "host_snapshot_key": "K_COMPLETELY_DIFFERENT",
+                "scalar_type": "string",
+                "schema_description": "A schema description"
+            }]
+        });
+        cfg["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+
+        let env = prepared.tethers()[0].core_environment.as_ref().unwrap();
+
+        // tether.id is "record-completed-task" — must NOT bleed into program_id
+        assert_ne!(env.program_id, prepared.tethers()[0].id);
+        assert_eq!(env.program_id, "P_COMPLETELY_DIFFERENT");
+
+        let cap = &env.capabilities[0];
+        // source_name == "notify" must NOT derive capability_id
+        assert_ne!(cap.capability_id, cap.source_name);
+        assert_eq!(cap.capability_id, "CAP_COMPLETELY_DIFFERENT");
+        // capability_id must NOT derive contract_digest
+        assert_ne!(cap.contract_digest, cap.capability_id);
+        assert_eq!(cap.contract_digest, "CORE_DIGEST_COMPLETELY_DIFFERENT");
+        // runtime_name must NOT derive from anything
+        assert_eq!(cap.runtime_name, "lantern.task.record");
+
+        let fact = &env.input_facts[0];
+        // source_name must NOT derive fact_id
+        assert_ne!(fact.fact_id, fact.source_name);
+        assert_eq!(fact.fact_id, "F_COMPLETELY_DIFFERENT");
+        // source_name must NOT derive host_snapshot_key
+        assert_ne!(fact.host_snapshot_key, fact.source_name);
+        assert_eq!(fact.host_snapshot_key, "K_COMPLETELY_DIFFERENT");
+
+        // Manifest digest must be completely separate
+        let manifest_digest = prepared.providers()[0].capabilities[0]
+            .verified_manifest
+            .verified_digest();
+        assert_ne!(cap.contract_digest.as_str(), manifest_digest);
+
+        // JSON projection must contain only explicit values
+        let json = prepared.tethers()[0].core_environment_json().unwrap();
+        assert_eq!(json["program_id"], "P_COMPLETELY_DIFFERENT");
+        assert_eq!(
+            json["capabilities"][0]["capability_id"],
+            "CAP_COMPLETELY_DIFFERENT"
+        );
+        assert_eq!(
+            json["capabilities"][0]["contract_digest"],
+            "CORE_DIGEST_COMPLETELY_DIFFERENT"
+        );
+        assert_eq!(json["input_facts"][0]["fact_id"], "F_COMPLETELY_DIFFERENT");
+        assert_eq!(
+            json["input_facts"][0]["host_snapshot_key"],
+            "K_COMPLETELY_DIFFERENT"
+        );
+        assert!(json.get("manifest_digest").is_none());
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

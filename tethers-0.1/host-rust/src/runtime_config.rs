@@ -51,6 +51,55 @@ pub struct TetherRef {
     pub id: String,
     pub version: String,
     pub source_path: String,
+    #[serde(default)]
+    pub core_environment: Option<CoreEnvironmentConfig>,
+}
+
+// ===========================================================================
+// CORE-9A — Core semantic environment configuration
+// ===========================================================================
+
+/// Explicit semantic environment for a Tether, carrying the identities that
+/// the CORE-8B request boundary requires.  Absent means no Core semantic
+/// authority is configured for this Tether.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreEnvironmentConfig {
+    pub program_id: String,
+    pub core_version: String,
+    pub capabilities: Vec<CoreCapabilityBindingConfig>,
+    pub input_facts: Vec<CoreInputFactBindingConfig>,
+}
+
+/// One explicit Core capability binding within a Tether's core_environment.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreCapabilityBindingConfig {
+    pub source_name: String,
+    pub capability_id: String,
+    pub contract_digest: String,
+    pub runtime_name: String,
+}
+
+/// One explicit Core input-fact binding within a Tether's core_environment.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreInputFactBindingConfig {
+    pub source_name: String,
+    pub fact_id: String,
+    pub host_snapshot_key: String,
+    pub scalar_type: CoreScalarType,
+    pub schema_description: String,
+}
+
+/// Exact set of scalar types accepted by CORE-8B fact declarations.
+/// No case folding, no aliases, no float, no "number".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoreScalarType {
+    String,
+    Integer,
+    Boolean,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -390,6 +439,14 @@ fn validate_tether_set(set: &TetherSetConfig) -> Result<(), RuntimeConfigError> 
                 ),
                 format!("{}/id", ptr),
             ));
+        }
+    }
+
+    // Validate each Tether's optional core_environment
+    for (i, tether) in set.tethers.iter().enumerate() {
+        if let Some(ref env) = tether.core_environment {
+            let ptr = format!("/tether_set/tethers/{}", i);
+            validate_core_environment(env, &ptr)?;
         }
     }
 
@@ -772,6 +829,96 @@ fn validate_policy(policy: &PolicyConfig) -> Result<(), RuntimeConfigError> {
     Ok(())
 }
 
+/// Validate structural invariants within a core_environment block (9A.5).
+fn validate_core_environment(
+    env: &CoreEnvironmentConfig,
+    parent_ptr: &str,
+) -> Result<(), RuntimeConfigError> {
+    let env_ptr = format!("{}/core_environment", parent_ptr);
+
+    if env.program_id.trim().is_empty() {
+        return Err(RuntimeConfigError::with_field(
+            RuntimeConfigErrorCode::InvalidValue,
+            "core_environment.program_id must not be empty or whitespace-only",
+            format!("{}/program_id", env_ptr),
+        ));
+    }
+    if env.core_version.trim().is_empty() {
+        return Err(RuntimeConfigError::with_field(
+            RuntimeConfigErrorCode::InvalidValue,
+            "core_environment.core_version must not be empty or whitespace-only",
+            format!("{}/core_version", env_ptr),
+        ));
+    }
+
+    for (i, cap) in env.capabilities.iter().enumerate() {
+        let cptr = format!("{}/capabilities/{}", env_ptr, i);
+        if cap.source_name.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "core capability source_name must not be empty or whitespace-only",
+                format!("{}/source_name", cptr),
+            ));
+        }
+        if cap.capability_id.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "core capability capability_id must not be empty or whitespace-only",
+                format!("{}/capability_id", cptr),
+            ));
+        }
+        if cap.contract_digest.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "core capability contract_digest must not be empty or whitespace-only",
+                format!("{}/contract_digest", cptr),
+            ));
+        }
+        if cap.runtime_name.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "core capability runtime_name must not be empty or whitespace-only",
+                format!("{}/runtime_name", cptr),
+            ));
+        }
+    }
+
+    for (i, fact) in env.input_facts.iter().enumerate() {
+        let fptr = format!("{}/input_facts/{}", env_ptr, i);
+        if fact.source_name.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "core input_fact source_name must not be empty or whitespace-only",
+                format!("{}/source_name", fptr),
+            ));
+        }
+        if fact.fact_id.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "core input_fact fact_id must not be empty or whitespace-only",
+                format!("{}/fact_id", fptr),
+            ));
+        }
+        if fact.host_snapshot_key.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "core input_fact host_snapshot_key must not be empty or whitespace-only",
+                format!("{}/host_snapshot_key", fptr),
+            ));
+        }
+        if fact.schema_description.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "core input_fact schema_description must not be empty or whitespace-only",
+                format!("{}/schema_description", fptr),
+            ));
+        }
+        // scalar_type is validated by the enum; no additional check needed.
+    }
+
+    Ok(())
+}
+
 /// Cross-reference validation between sections.
 fn validate_cross_references(config: &RuntimeConfig) -> Result<(), RuntimeConfigError> {
     let requirements = &config.tether_set.capability_requirements;
@@ -838,6 +985,56 @@ fn validate_cross_references(config: &RuntimeConfig) -> Result<(), RuntimeConfig
                 ),
                 format!("/policy/rules/{}/name", i),
             ));
+        }
+    }
+
+    // 4. CORE-9A: runtime_name join validation (9A.6).
+    // For every core_environment capability binding, runtime_name must refer
+    // to exactly ONE configured provider capability by NAME across the
+    // selected runtime.  0 matches = missing; 2+ matches = ambiguous.
+    // Build a count of provider capabilities by name.
+    let mut provider_cap_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for provider in providers {
+        for cap in &provider.capabilities {
+            *provider_cap_counts.entry(cap.name.clone()).or_insert(0) += 1;
+        }
+    }
+
+    for (ti, tether) in config.tether_set.tethers.iter().enumerate() {
+        if let Some(ref env) = tether.core_environment {
+            for (ci, binding) in env.capabilities.iter().enumerate() {
+                let count = provider_cap_counts
+                    .get(&binding.runtime_name)
+                    .copied()
+                    .unwrap_or(0);
+                let bptr = format!(
+                    "/tether_set/tethers/{}/core_environment/capabilities/{}",
+                    ti, ci
+                );
+                if count == 0 {
+                    return Err(RuntimeConfigError::with_field(
+                        RuntimeConfigErrorCode::UnmatchedReference,
+                        format!(
+                            "core capability runtime_name \"{}\" does not match \
+                             any configured provider capability",
+                            binding.runtime_name
+                        ),
+                        format!("{}/runtime_name", bptr),
+                    ));
+                }
+                if count > 1 {
+                    return Err(RuntimeConfigError::with_field(
+                        RuntimeConfigErrorCode::DuplicateEntry,
+                        format!(
+                            "core capability runtime_name \"{}\" matches {} \
+                             provider capabilities; expected exactly one",
+                            binding.runtime_name, count
+                        ),
+                        format!("{}/runtime_name", bptr),
+                    ));
+                }
+            }
         }
     }
 
@@ -1883,5 +2080,332 @@ mod tests {
             "expected global-uniqueness error, got: {}",
             err.message
         );
+    }
+
+    // ------------------------------------------------------------------
+    // CORE-9A — core_environment configuration tests
+    // ------------------------------------------------------------------
+
+    /// Build a minimal config JSON with an optional core_environment on the
+    /// first tether.  Pass `None` to omit core_environment entirely.
+    fn config_with_core_env(core_env: Option<serde_json::Value>) -> serde_json::Value {
+        let mut json = minimal_config_json();
+        if let Some(env) = core_env {
+            json["tether_set"]["tethers"][0]["core_environment"] = env;
+        }
+        json
+    }
+
+    /// A valid core_environment JSON value.
+    fn valid_core_env() -> serde_json::Value {
+        serde_json::json!({
+            "program_id": "program.invoice.semantic-v1",
+            "core_version": "0.1.0",
+            "capabilities": [
+                {
+                    "source_name": "notify",
+                    "capability_id": "cap.messaging.notify",
+                    "contract_digest": "CORE-CONTRACT-17",
+                    "runtime_name": "lantern.task.record"
+                }
+            ],
+            "input_facts": [
+                {
+                    "source_name": "file_type",
+                    "fact_id": "semantic.fact.file-type",
+                    "host_snapshot_key": "HOST_FILE_TYPE",
+                    "scalar_type": "string",
+                    "schema_description": "Detected file type"
+                }
+            ]
+        })
+    }
+
+    // T1: historical config without core_environment remains valid
+    #[test]
+    fn core9a_t1_existing_config_without_core_env_valid() {
+        let json = config_with_core_env(None);
+        let cfg = parse_ok(&json);
+        let tether = &cfg.tether_set.tethers[0];
+        assert!(tether.core_environment.is_none());
+    }
+
+    // T2: explicit environment parses with exact typed values
+    #[test]
+    fn core9a_t2_explicit_environment_parses() {
+        let json = config_with_core_env(Some(valid_core_env()));
+        let cfg = parse_ok(&json);
+        let env = cfg.tether_set.tethers[0].core_environment.as_ref().unwrap();
+        assert_eq!(env.program_id, "program.invoice.semantic-v1");
+        assert_eq!(env.core_version, "0.1.0");
+        assert_eq!(env.capabilities.len(), 1);
+        assert_eq!(env.capabilities[0].source_name, "notify");
+        assert_eq!(env.capabilities[0].capability_id, "cap.messaging.notify");
+        assert_eq!(env.capabilities[0].contract_digest, "CORE-CONTRACT-17");
+        assert_eq!(env.capabilities[0].runtime_name, "lantern.task.record");
+        assert_eq!(env.input_facts.len(), 1);
+        assert_eq!(env.input_facts[0].source_name, "file_type");
+        assert_eq!(env.input_facts[0].fact_id, "semantic.fact.file-type");
+        assert_eq!(env.input_facts[0].host_snapshot_key, "HOST_FILE_TYPE");
+        assert_eq!(env.input_facts[0].scalar_type, CoreScalarType::String);
+        assert_eq!(env.input_facts[0].schema_description, "Detected file type");
+    }
+
+    // T3: program_id is NOT derived from tether.id
+    #[test]
+    fn core9a_t3_program_id_not_derived() {
+        let mut env = valid_core_env();
+        env["program_id"] = serde_json::json!("P_COMPLETELY_DIFFERENT");
+        let json = config_with_core_env(Some(env));
+        let cfg = parse_ok(&json);
+        let env = cfg.tether_set.tethers[0].core_environment.as_ref().unwrap();
+        // tether.id is "record-completed-task", program_id must be the explicit value
+        assert_eq!(cfg.tether_set.tethers[0].id, "record-completed-task");
+        assert_eq!(env.program_id, "P_COMPLETELY_DIFFERENT");
+    }
+
+    // T4: four capability identities differ and survive unchanged
+    #[test]
+    fn core9a_t4_four_capability_identities_differ() {
+        let mut env = valid_core_env();
+        env["capabilities"][0] = serde_json::json!({
+            "source_name": "notify",
+            "capability_id": "CAP_COMPLETELY_DIFFERENT",
+            "contract_digest": "CORE_DIGEST_COMPLETELY_DIFFERENT",
+            "runtime_name": "RUNTIME_COMPLETELY_DIFFERENT"
+        });
+        // runtime_name must match a provider capability — use the existing one
+        env["capabilities"][0]["runtime_name"] = serde_json::json!("lantern.task.record");
+        let json = config_with_core_env(Some(env));
+        let cfg = parse_ok(&json);
+        let cap = &cfg.tether_set.tethers[0]
+            .core_environment
+            .as_ref()
+            .unwrap()
+            .capabilities[0];
+        assert_eq!(cap.source_name, "notify");
+        assert_eq!(cap.capability_id, "CAP_COMPLETELY_DIFFERENT");
+        assert_eq!(cap.contract_digest, "CORE_DIGEST_COMPLETELY_DIFFERENT");
+        assert_eq!(cap.runtime_name, "lantern.task.record");
+    }
+
+    // T5: manifest digest is distinct from contract_digest
+    #[test]
+    fn core9a_t5_manifest_digest_distinct_from_contract() {
+        let json = config_with_core_env(Some(valid_core_env()));
+        let cfg = parse_ok(&json);
+        let cap = &cfg.tether_set.tethers[0]
+            .core_environment
+            .as_ref()
+            .unwrap()
+            .capabilities[0];
+        // contract_digest is an opaque string, not a sha256 manifest digest
+        assert_eq!(cap.contract_digest, "CORE-CONTRACT-17");
+        assert!(!cap.contract_digest.starts_with("sha256:"));
+    }
+
+    // T6: explicit Fact identities survive unchanged
+    #[test]
+    fn core9a_t6_explicit_fact_identities() {
+        let json = config_with_core_env(Some(valid_core_env()));
+        let cfg = parse_ok(&json);
+        let fact = &cfg.tether_set.tethers[0]
+            .core_environment
+            .as_ref()
+            .unwrap()
+            .input_facts[0];
+        assert_eq!(fact.source_name, "file_type");
+        assert_eq!(fact.fact_id, "semantic.fact.file-type");
+        assert_eq!(fact.host_snapshot_key, "HOST_FILE_TYPE");
+        assert_eq!(fact.schema_description, "Detected file type");
+    }
+
+    // T7: all three scalar types accepted
+    #[test]
+    fn core9a_t7_scalar_types_all_accepted() {
+        for scalar in &["string", "integer", "boolean"] {
+            let mut env = valid_core_env();
+            env["input_facts"][0]["scalar_type"] = serde_json::json!(scalar);
+            let json = config_with_core_env(Some(env));
+            let cfg = parse_ok(&json);
+            let fact = &cfg.tether_set.tethers[0]
+                .core_environment
+                .as_ref()
+                .unwrap()
+                .input_facts[0];
+            match *scalar {
+                "string" => assert_eq!(fact.scalar_type, CoreScalarType::String),
+                "integer" => assert_eq!(fact.scalar_type, CoreScalarType::Integer),
+                "boolean" => assert_eq!(fact.scalar_type, CoreScalarType::Boolean),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    // T8: invalid scalar type rejected
+    #[test]
+    fn core9a_t8_invalid_scalar_type_rejected() {
+        let mut env = valid_core_env();
+        env["input_facts"][0]["scalar_type"] = serde_json::json!("float");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidType);
+    }
+
+    // T9: missing runtime_name target
+    #[test]
+    fn core9a_t9_missing_runtime_name_target() {
+        let mut env = valid_core_env();
+        env["capabilities"][0]["runtime_name"] = serde_json::json!("missing.runtime");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::UnmatchedReference);
+        assert!(
+            err.message.contains("missing.runtime"),
+            "error should mention the missing name: {}",
+            err.message
+        );
+    }
+
+    // T10: ambiguous runtime_name (two provider caps with same name)
+    #[test]
+    fn core9a_t10_ambiguous_runtime_name() {
+        let mut json = minimal_config_json();
+        // Add a second provider capability with the same name but different version
+        json["providers"][0]["capabilities"] = serde_json::json!([
+            {
+                "name": "lantern.task.record",
+                "version": 1,
+                "manifest_path": "manifests/v1.json",
+                "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+                "name": "lantern.task.record",
+                "version": 2,
+                "manifest_path": "manifests/v2.json",
+                "pinned_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            }
+        ]);
+        json["tether_set"]["capability_requirements"] = serde_json::json!([
+            {"name": "lantern.task.record", "version": 1},
+            {"name": "lantern.task.record", "version": 2}
+        ]);
+        json["policy"]["rules"] = serde_json::json!([
+            {"name": "lantern.task.record", "version": 1, "decision": "allow"},
+            {"name": "lantern.task.record", "version": 2, "decision": "allow"}
+        ]);
+        // Now add core_environment referencing the shared name
+        let mut env = valid_core_env();
+        env["capabilities"][0]["runtime_name"] = serde_json::json!("lantern.task.record");
+        json["tether_set"]["tethers"][0]["core_environment"] = env;
+
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::DuplicateEntry);
+        assert!(
+            err.message.contains("2 provider capabilities"),
+            "expected ambiguity error: {}",
+            err.message
+        );
+    }
+
+    // T11: empty semantic identities rejected
+    #[test]
+    fn core9a_t11_empty_program_id_rejected() {
+        let mut env = valid_core_env();
+        env["program_id"] = serde_json::json!("   ");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("program_id"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_capability_id_rejected() {
+        let mut env = valid_core_env();
+        env["capabilities"][0]["capability_id"] = serde_json::json!("");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("capability_id"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_contract_digest_rejected() {
+        let mut env = valid_core_env();
+        env["capabilities"][0]["contract_digest"] = serde_json::json!("  ");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("contract_digest"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_fact_id_rejected() {
+        let mut env = valid_core_env();
+        env["input_facts"][0]["fact_id"] = serde_json::json!("");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("fact_id"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_host_snapshot_key_rejected() {
+        let mut env = valid_core_env();
+        env["input_facts"][0]["host_snapshot_key"] = serde_json::json!("  \t  ");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("host_snapshot_key"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_schema_description_rejected() {
+        let mut env = valid_core_env();
+        env["input_facts"][0]["schema_description"] = serde_json::json!("   ");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("schema_description"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_runtime_name_rejected() {
+        let mut env = valid_core_env();
+        env["capabilities"][0]["runtime_name"] = serde_json::json!("");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("runtime_name"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_source_name_cap_rejected() {
+        let mut env = valid_core_env();
+        env["capabilities"][0]["source_name"] = serde_json::json!("  ");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("source_name"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_source_name_fact_rejected() {
+        let mut env = valid_core_env();
+        env["input_facts"][0]["source_name"] = serde_json::json!("");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("source_name"));
+    }
+
+    #[test]
+    fn core9a_t11_empty_core_version_rejected() {
+        let mut env = valid_core_env();
+        env["core_version"] = serde_json::json!("  ");
+        let json = config_with_core_env(Some(env));
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert!(err.message.contains("core_version"));
     }
 }

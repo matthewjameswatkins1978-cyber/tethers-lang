@@ -1844,6 +1844,7 @@ mod tests {
             source_path: PathBuf::from("selected.tether"),
             source: "tether fixture.selected version 1.2.3\non fixture.start\ndo fixture.ping()"
                 .to_owned(),
+            core_environment: None,
         };
         let capabilities = vec![serde_json::json!({
             "name": "fixture.ping",
@@ -2129,12 +2130,14 @@ mod tests {
                 version: "1".to_owned(),
                 source_path: PathBuf::from("selected.tether"),
                 source: "selected".to_owned(),
+                core_environment: None,
             },
             PreparedTether {
                 id: "unselected".to_owned(),
                 version: "1".to_owned(),
                 source_path: PathBuf::from("unselected.tether"),
                 source: "unselected".to_owned(),
+                core_environment: None,
             },
         ];
         let selected = PreparedEvaluationInput {
