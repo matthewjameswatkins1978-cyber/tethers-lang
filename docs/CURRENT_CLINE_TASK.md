@@ -2,11 +2,11 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-6B - Canonical Core to Runtime Plan Boundary`
+Task: `TETHERS CORE-7A - Canonical Entry Guard Evaluation`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `dac6cce92287b2ad853b3f435063c96359c8d1e5`
+Implementation checkpoint: `c9cfc20fefae80a02ee9658317af65aaf699bfe2`
 
 Status: `COMPLETE`
 
@@ -14,11 +14,11 @@ Task colour: `Amber`
 
 Route: `OpenCode implementation + evidence, Lucy independent GitHub review`
 
-Worker note: `docs/worker-notes/2026-08-11-core-6b-canonical-planning-boundary.md`
+Worker note: `docs/worker-notes/2026-08-12-core-7a-entry-guard-evaluation.md`
 
-Base branch: `feature/core-6b-canonical-planning`
+Base branch: `feature/core-7a-entry-guards`
 
-Base commit: `534abc763938f573fa799619ffa22193206e3b15`
+Base commit: `29e5cc72b1e71fdae2cccef4478f075878d0e288`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -26,72 +26,84 @@ Rust change class: `RUST_UNCHANGED`
 
 ## Objective
 
-Make the canonical Core → Runtime Plan boundary explicit and tested: add a
-`plan_canonicalized` entry point requiring already-canonicalised Core, preserve
-the existing `plan` function as the lower-level API, and prove identity
-invariance across ProgramId, temporary OriginId, and storage order variations.
+Add deterministic runtime evaluation of canonical Core entry guards before
+Runtime Plan creation, establishing: canonical Core + runtime Fact snapshots ->
+evaluate entry guards -> MATCHED produces Runtime Plan, NOT MATCHED produces
+no plan, ERROR produces typed failure.
 
 ## Relevant background and existing behaviour
 
-CORE-4 implements deterministic canonicalisation: structural fingerprinting,
-canonical ordering, internal ID assignment, reference rewriting, canonical byte
-encoding, SHA-256, and ProgramDigest. CORE-6A added the Core → Runtime Plan
-bridge with anchor snapshot resolution. CORE-6B proves that Runtime planning
-is performed from canonical Core, with canonical internal identities, while
-preserving the existing Runtime Plan model.
+Core already defines evaluation-input Facts as `Evaluation_input of
+host_snapshot_key * core_scalar_type` and entry guards as `fact_guard` records
+with `fact_id`, `comparison_operator`, and expected `core_value`. Operators
+are Equals, Contains, Greater_than, Greater_than_or_equal. CORE-4 implements
+canonicalisation; CORE-6A implements the Core to Runtime Plan bridge; CORE-6B
+adds the canonical planning entry point. Entry guards are not yet evaluated
+by any planning path.
 
 ## Required behaviour
 
-1. Add `canonical_plan` type wrapping `ProgramDigest` + existing `Tethers_outcome.plan`
-2. Add `plan_canonicalized` entry point requiring `Tethers_core_canonical.canonicalized`
-3. Preserve existing `plan` function as lower-level API
-4. Anchor snapshot lookup must use canonical OriginId, not pre-canonical
-5. Prove Human → parser → lowerer → canonicalise → planner chain works end-to-end
-6. Prove ProgramId variation leaves digest and occurrence plan unchanged
-7. Prove pre-canonical temporary ID/storage variation canonicalises to equal plans
-8. Prove stale pre-canonical Anchor OriginId fails with existing typed error
-9. Prove existing CORE-6A planner tests remain green through both paths
+1. Add `fact_snapshot` type to `tethers_core_plan` (key: `host_snapshot_key`,
+   value: `Yojson.Safe.t`)
+2. Extend `planning_context` with `facts : fact_snapshot list`
+3. Resolve each guard's canonical FactId to its `Evaluation_input` declaration
+   in `canonical_program.input_facts`
+4. Resolve runtime snapshot by exactly `HostSnapshotKey` (0 = error, 1 = continue,
+   2+ = error)
+5. Runtime type checking: String_type -> JSON string only, Integer_type -> JSON
+   integer only, Boolean_type -> JSON boolean only
+6. Guard comparison: Equals, Contains, Greater_than, Greater_than_or_equal
+7. Add `evaluate_canonicalized` returning `Matched of canonical_plan | Not_matched`
+8. `plan()` and `plan_canonicalized()` fail with `Unresolved_entry_guards` when
+   entry_guards is non-empty
+9. ProgramDigest preserved across different runtime Fact values
+10. evaluation_id unaffected by Fact values
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml` — modified (canonical_plan type + plan_canonicalized)
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.mli` — modified (canonical_plan + plan_canonicalized interface)
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` — modified (CB-T1..CB-T8)
-- `tethers-0.1/engine-ocaml/bin/dune` — modified (tethers_core_canonical + digestif added to plan-test stanza)
-- `docs/CURRENT_CLINE_TASK.md` — updated to CORE-6B
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml` -- modified (fact_snapshot, guard evaluation, evaluate_canonicalized, Unresolved_entry_guards, plan_internal)
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.mli` -- modified (fact_snapshot, facts field, canonical_evaluation, evaluate_canonicalized, new error constructors)
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` -- modified (G1-T1 through G1-T17, E2E, adversarial)
 
 ## Frozen decisions and invariants
 
-- The bridge consumes Core meaning plus runtime occurrence context plus approved host Capability projections plus runtime Anchor snapshot data; it never reinterprets Core, executes Actions, authorises, repairs invalid Core, infers missing semantics, or uses AI
-- Core defines the program; Runtime instantiates an occurrence. Occurrence identity (`plan.id`, idempotency keys) derives from `evaluation_id`, never from `program_id`
-- Execution order is semantic control flow only; `origin_sites` order is representational storage and must not affect the plan
-- `CapabilityId` and `CapabilityContractDigest` are semantic atoms used to key and verify approved projections; they are not derived from human syntax
-- Projection verification is fail-closed: missing projection, identity mismatch, digest mismatch, or incomplete runtime metadata all return precise typed errors; no silent substitution of another capability version or contract
-- `required_effects` aggregates planned capability effects with the existing deterministic first-occurrence uniqueness behaviour
-- Anchor snapshot lookup is deterministic: identity-based, not first-match, not order-dependent
-- Anchor path traversal is ordered semantic data; fail explicitly on missing components, non-object traversal, or unsupported terminal values
-- No placeholder strings, `"TODO"` values, fabricated evaluation IDs, or invented runtime semantics may enter a valid plan
-- The bridge remains a dormant sidecar; no evaluator, protocol, runtime, canonicalisation, parser, lowerer, Rust, or dispatch wiring changes
-- `ProgramDigest` = semantic program identity; `evaluation_id` = runtime occurrence identity. Do not conflate them.
+- Runtime Facts are keyed by HostSnapshotKey, NOT canonical FactId
+- FactId is internal Core identity and may be rewritten by canonicalisation
+- HostSnapshotKey is the external semantic key through which runtime data enters
+- Resolution by HostSnapshotKey must be deterministic: never first-match
+- No coercion: "42" -> 42, 1 -> true, null -> missing are all forbidden
+- Same canonical program + different runtime Facts: ProgramDigest stays identical
+- evaluation_id remains the runtime occurrence identity regardless of Fact values
+- plan() and plan_canonicalized() fail closed on guarded programs
 
 ## Acceptance criteria
 
-1. CB-T1 — Canonicalized entry point produces Runtime Plan
-2. CB-T2 — Returned ProgramDigest equals canonicalized ProgramDigest
-3. CB-T3 — Human → parser → lowerer → canonicalize → planner Anchor_value proof
-4. CB-T4 — ProgramId variation leaves digest and occurrence plan unchanged
-5. CB-T5 — Pre-canonical temporary ID/storage variation canonicalises to equal plans
-6. CB-T6 — Anchor snapshot keyed by canonical OriginId resolves
-7. CB-T7 — Stale pre-canonical Anchor OriginId does not silently substitute
-8. CB-T8 — Existing CORE-6A planner tests remain green (low-level + canonical)
-9. No unsafe canonical_plan constructor exists; canonicalized values are only obtainable from Tethers_core_canonical.canonicalize
+1. G1-T1: Equals string matches
+2. G1-T2: Equals string false -> Not_matched
+3. G1-T3: Integer Greater_than
+4. G1-T4: Integer Greater_than_or_equal
+5. G1-T5: String Contains
+6. G1-T6: Boolean Equals
+7. G1-T7: Multiple guards AND together (3+ guards)
+8. G1-T8: Missing runtime Fact -> Missing_fact_snapshot
+9. G1-T9: Wrong HostSnapshotKey -> still Missing_fact_snapshot
+10. G1-T10: Duplicate HostSnapshotKey -> Ambiguous_fact_snapshot
+11. G1-T11: Reversed duplicate order -> same error
+12. G1-T12: Runtime type mismatch -> Fact_snapshot_type_mismatch
+13. G1-T13: Invalid comparison typing -> Invalid_guard_comparison
+14. G1-T14: Low-level guard bypass blocked -> Unresolved_entry_guards
+15. G1-T15: plan_canonicalized guard bypass blocked -> Unresolved_entry_guards
+16. G1-T16: Unguarded existing behaviour preserved
+17. G1-T17: ProgramDigest invariant across runtime facts
+18. E2E: Human -> parser -> lowerer -> canonicalize -> evaluate_canonicalized
+19. Adversarial: Canonical identity independence across different temporary FactIds
 
 ## Required verification
 
-1. OCaml build: `dune build @all` — PASS (exit 0)
-2. All tests: `dune runtest` — PASS (101/101 plan bridge tests)
-3. Whitespace: `git diff --check` — PASS
-4. Cargo fmt: `cargo fmt --check` — PASS (RUST_UNCHANGED)
+1. OCaml build: `dune build @all` -- PASS (exit 0)
+2. All tests: `dune runtest --force` -- PASS (136/136 plan bridge tests)
+3. Whitespace: `git diff --check` -- PASS
+4. Cargo fmt: `cargo fmt --check` -- PASS (RUST_UNCHANGED)
 5. Diff inspection: only authorised files changed
 6. Git status: clean worktree
 7. Task-packet checker at closeout: `control-v1/COMPLETE`
@@ -99,11 +111,15 @@ preserving the existing Runtime Plan model.
 
 ## Forbidden changes
 
-No Core type changes, no validator semantic changes, no evaluator/protocol/outcome changes, no runtime wiring, no production dispatch, no Rust changes, no new dependencies. Do not broaden unsupported-construct support. Do not modify Core Validator semantics in this packet. Do not change Human syntax or lowerer semantics. Do not change canonicalisation semantics.
+No Core type changes, no validator semantic changes, no evaluator/protocol/outcome
+changes, no runtime wiring, no production dispatch, no Rust changes, no new
+dependencies. Do not change Human syntax or lowerer semantics. Do not change
+canonicalisation semantics.
 
 ## Stop conditions
 
-Commit CORE-6B implementation checkpoint. STOP. Do NOT begin CORE-6C or any runtime wiring.
+Commit CORE-7A implementation checkpoint. STOP. Do NOT begin CORE-7B or any
+runtime wiring.
 
 ## Expected pre-existing changes
 
