@@ -36,6 +36,14 @@ Close four narrow review findings in CORE-8B:
 
 Plus 8 new regression tests (R1-R8).
 
+## Relevant background and existing behaviour
+
+CORE-8B created the request boundary module. Review found four gaps:
+- `raise Exit` paths in `resolve_one_capability` and `parse_one_fact`
+- `filter_map` dropping non-scalar fact values before CORE-8A
+- T3 not proving reception-before-guard semantics
+- T7 and T13 assertions too shallow
+
 ## Relevant components
 
 - `tethers-0.1/engine-ocaml/bin/tethers_core_request_adapter.ml` -- modified
