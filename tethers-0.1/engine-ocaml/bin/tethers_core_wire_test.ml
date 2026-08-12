@@ -164,11 +164,15 @@ let test_t1_wire_matched () =
   (* plan.id = evaluation_id/plan *)
   let plan_id = json_string_member "id" plan in
   assert_bool "T1: plan.id correct" (plan_id = "eval_wire_001/plan");
-  (* program_digest present and starts with sha256: *)
-  let pd = json_string_member "program_digest" plan in
+  (* program_digest present at top level (sibling of plan), starts with sha256: *)
+  let pd = json_string_member "program_digest" response in
   assert_bool "T1: program_digest starts with sha256:" (String.length pd > 7 && String.sub pd 0 7 = "sha256:");
   assert_bool "T1: program_digest has 64 hex chars after prefix"
     (String.length pd = 71);
+  (* program_digest must NOT be inside plan *)
+  (match json_member "program_digest" plan with
+   | Some _ -> failwith "T1: program_digest must NOT be inside plan"
+   | None -> ());
   (* actions array has one entry *)
   (match json_member "actions" plan with
    | Some (`List [action]) ->

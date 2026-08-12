@@ -729,17 +729,22 @@ mod tests {
         assert_eq!(response["status"], "matched");
         assert_eq!(response["evaluation_id"], "eval_t6_core");
         assert_eq!(response["event_id"], "evt_eval_t6_core");
-        // plan must be an object with program_digest
-        let plan = response.get("plan").expect("plan missing");
-        let pd = plan
+        // program_digest must be a top-level sibling of plan
+        let pd = response
             .get("program_digest")
             .and_then(Value::as_str)
-            .expect("program_digest missing");
+            .expect("program_digest missing from top level");
         assert!(
             pd.starts_with("sha256:"),
             "program_digest must start with sha256:"
         );
         assert_eq!(pd.len(), 71, "program_digest must be sha256: + 64 hex");
+        // plan must NOT contain program_digest
+        let plan = response.get("plan").expect("plan missing");
+        assert!(
+            plan.get("program_digest").is_none(),
+            "program_digest must NOT be inside plan"
+        );
         session.shutdown();
     }
 
@@ -987,11 +992,11 @@ mod tests {
             "plan.id must be eval_id/plan"
         );
 
-        // program_digest
-        let pd = plan
+        // program_digest at top level (sibling of plan), NOT inside plan
+        let pd = response
             .get("program_digest")
             .and_then(Value::as_str)
-            .expect("program_digest");
+            .expect("program_digest missing from top level");
         assert!(
             pd.starts_with("sha256:"),
             "program_digest must start with sha256:"
@@ -1000,6 +1005,10 @@ mod tests {
             pd.len(),
             71,
             "program_digest must be sha256: + 64 hex chars"
+        );
+        assert!(
+            plan.get("program_digest").is_none(),
+            "program_digest must NOT be inside plan"
         );
 
         // Actions
@@ -1113,11 +1122,11 @@ mod tests {
         };
 
         let pd1 = resp1
-            .pointer("/plan/program_digest")
+            .get("program_digest")
             .and_then(Value::as_str)
             .expect("first program_digest");
         let pd2 = resp2
-            .pointer("/plan/program_digest")
+            .get("program_digest")
             .and_then(Value::as_str)
             .expect("second program_digest");
         assert_eq!(pd1, pd2, "same program must produce same program_digest");

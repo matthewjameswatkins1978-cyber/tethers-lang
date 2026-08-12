@@ -1367,7 +1367,7 @@ fn refresh_prepared_catalogue(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::configured_runtime::{PreparedCapability, PreparedProvider};
+    use crate::configured_runtime::{prepare_runtime, PreparedCapability, PreparedProvider};
     use crate::dispatch::{self, ActionId, ExecutionId, RecordingTrail};
     use crate::policy::{CapabilityRequirement, HostLocalPolicy, ScopeAssessment};
     use crate::replay::LogicalExecutionKey;
@@ -2731,5 +2731,609 @@ mod tests {
         if let Err(e) = result {
             std::panic::resume_unwind(e);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // CORE-9B — real Rust builder E2E tests (T9–T14)
+    //
+    // These tests use build_core_request_envelope to prove the Rust host
+    // request builder produces the correct extended request for the Core
+    // pipeline.  T12-T14 send the builder output through a real MCP binary.
+    // -----------------------------------------------------------------------
+
+    fn core9b_engine_binary_path() -> Option<PathBuf> {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.pop();
+        path.push("engine-ocaml");
+        path.push("_build");
+        path.push("default");
+        path.push("bin");
+        path.push("tethers_mcp_main.exe");
+        if path.exists() {
+            Some(path)
+        } else {
+            None
+        }
+    }
+
+    fn core9b_require_engine() -> (PathBuf, PathBuf) {
+        let ep = core9b_engine_binary_path()
+            .expect("engine binary not found; build with opam exec -- dune build");
+        let wd = ep.parent().unwrap().to_path_buf();
+        (ep, wd)
+    }
+
+    const CORE_REHEARSAL_TETHER: &str =
+        "tether \"core rehearsal\"\n\nanchor\n    fixture.start\n\nwhen\n\ndo\n    notify\n        message: anchor.message\n";
+
+    /// Build the fixture-ping manifest from the repository source.
+    fn core9b_fixture_ping_manifest() -> crate::manifest::VerifiedManifest {
+        crate::manifest::verify_manifest(include_str!(
+            "../../protocol/capability-manifests/fixture-ping.json"
+        ))
+        .unwrap()
+    }
+
+    /// Build a PreparedRuntime with CORE-9A semantic authority on the tether,
+    /// using the real fixture-ping manifest and provider.
+    fn core9b_prepared_runtime_with_core() -> (PreparedRuntime, PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("tethers-core9b-runtime-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("tethers")).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        std::fs::write(
+            dir.join("tethers/core-rehearsal.tether"),
+            CORE_REHEARSAL_TETHER,
+        )
+        .unwrap();
+
+        let _verified_manifest = core9b_fixture_ping_manifest();
+        let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let (_, manifest_digest) = crate::manifest::canonicalize_and_digest(manifest_json).unwrap();
+        std::fs::write(dir.join("manifests/fixture-ping.json"), manifest_json).unwrap();
+
+        let config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "core9b.test",
+                "version": "1",
+                "tethers": [
+                    {
+                        "id": "core-rehearsal",
+                        "version": "1",
+                        "source_path": "tethers/core-rehearsal.tether",
+                        "core_environment": {
+                            "program_id": "program.core9b",
+                            "core_version": "1",
+                            "capabilities": [
+                                {
+                                    "source_name": "notify",
+                                    "capability_id": "cap.semantic.notify",
+                                    "contract_digest": "CORE-CONTRACT-9B",
+                                    "runtime_name": "fixture.ping"
+                                }
+                            ],
+                            "input_facts": []
+                        }
+                    }
+                ],
+                "capability_requirements": [
+                    {
+                        "name": "fixture.ping",
+                        "version": 1,
+                        "reason": "Core rehearsal"
+                    }
+                ]
+            },
+            "providers": [
+                {
+                    "id": "tethers-stdio-fixture",
+                    "display_name": "Tethers Stdio Fixture",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": ["-NoProfile", "-File", "providers/fixture.ps1"],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "fixture.ping",
+                            "version": 1,
+                            "manifest_path": "manifests/fixture-ping.json",
+                            "pinned_digest": manifest_digest
+                        }
+                    ]
+                }
+            ],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    {
+                        "name": "fixture.ping",
+                        "version": 1,
+                        "decision": "allow"
+                    }
+                ]
+            }
+        });
+
+        let config_path = dir.join("tethers-config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        (prepared, dir)
+    }
+
+    /// Build a PreparedRuntime WITHOUT core_environment on the tether.
+    fn core9b_prepared_runtime_no_core() -> (PreparedRuntime, PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("tethers-core9b-no-core-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("tethers")).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        std::fs::write(
+            dir.join("tethers/core-rehearsal.tether"),
+            CORE_REHEARSAL_TETHER,
+        )
+        .unwrap();
+
+        let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let (_, manifest_digest) = crate::manifest::canonicalize_and_digest(manifest_json).unwrap();
+        std::fs::write(dir.join("manifests/fixture-ping.json"), manifest_json).unwrap();
+
+        let config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "core9b.test",
+                "version": "1",
+                "tethers": [
+                    {
+                        "id": "core-rehearsal",
+                        "version": "1",
+                        "source_path": "tethers/core-rehearsal.tether"
+                    }
+                ],
+                "capability_requirements": [
+                    {
+                        "name": "fixture.ping",
+                        "version": 1,
+                        "reason": "Core rehearsal"
+                    }
+                ]
+            },
+            "providers": [
+                {
+                    "id": "tethers-stdio-fixture",
+                    "display_name": "Tethers Stdio Fixture",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": ["-NoProfile", "-File", "providers/fixture.ps1"],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [
+                        {
+                            "name": "fixture.ping",
+                            "version": 1,
+                            "manifest_path": "manifests/fixture-ping.json",
+                            "pinned_digest": manifest_digest
+                        }
+                    ]
+                }
+            ],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    {
+                        "name": "fixture.ping",
+                        "version": 1,
+                        "decision": "allow"
+                    }
+                ]
+            }
+        });
+
+        let config_path = dir.join("tethers-config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        (prepared, dir)
+    }
+
+    /// Build a core request envelope through the real builder and return
+    /// (request_json, service, runtime_dir).  Caller must keep runtime_dir
+    /// alive until after assertions.
+    fn core9b_build_request(
+        runtime: &PreparedRuntime,
+        engine_path: &Path,
+        evaluation_id: &str,
+        event_name: &str,
+    ) -> Result<Value, ExecutionServiceResult> {
+        let tether = &runtime.tethers()[0];
+        let input = PreparedEvaluationInput {
+            tether_id: tether.id.clone(),
+            tether_version: tether.version.clone(),
+            evaluation_id: evaluation_id.to_owned(),
+            anchor_event: json!({
+                "id": format!("evt_{evaluation_id}"),
+                "name": event_name,
+                "data": { "message": "Hello Core" }
+            }),
+            facts: json!({}),
+        };
+        let availability = ProviderAvailability::from_identities(["tethers-stdio-fixture"]);
+        let trail_path = std::env::temp_dir().join(format!(
+            "tethers-core9b-trail-{}.jsonl",
+            uuid::Uuid::new_v4()
+        ));
+        let service = HostExecutionService::new(runtime, engine_path, &trail_path, None);
+        service.build_core_request_envelope(&input, tether, &availability)
+    }
+
+    /// T9: build_core_request_envelope fails when core_environment is absent.
+    #[test]
+    fn core9b_t9_builder_fails_without_core_environment() {
+        let (runtime, _dir) = core9b_prepared_runtime_no_core();
+        let engine_path = PathBuf::from("unused-engine");
+        let tether = &runtime.tethers()[0];
+        let input = PreparedEvaluationInput {
+            tether_id: tether.id.clone(),
+            tether_version: tether.version.clone(),
+            evaluation_id: "eval_t9_no_core".to_owned(),
+            anchor_event: json!({
+                "id": "evt_eval_t9_no_core",
+                "name": "fixture.start",
+                "data": { "message": "Hello Core" }
+            }),
+            facts: json!({}),
+        };
+        let availability = ProviderAvailability::from_identities(["tethers-stdio-fixture"]);
+        let trail_path =
+            std::env::temp_dir().join(format!("tethers-core9b-t9-{}.jsonl", uuid::Uuid::new_v4()));
+        let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
+        let result = service.build_core_request_envelope(&input, tether, &availability);
+        match result {
+            Err(ExecutionServiceResult::InvalidData { message }) => {
+                assert!(
+                    message.contains("no core_environment"),
+                    "expected 'no core_environment' in error, got: {message}"
+                );
+            }
+            other => {
+                panic!("T9: expected InvalidData for missing core_environment, got: {other:?}")
+            }
+        }
+        std::fs::remove_dir_all(&_dir).ok();
+    }
+
+    /// T10: Identity separation — inspect builder output for exact Core
+    ///      identities and runtime identities.  No derivation.
+    #[test]
+    fn core9b_t10_builder_identity_separation() {
+        let (runtime, _dir) = core9b_prepared_runtime_with_core();
+        let engine_path = PathBuf::from("unused-engine");
+        let request =
+            core9b_build_request(&runtime, &engine_path, "eval_t10_identity", "fixture.start")
+                .expect("builder should succeed");
+
+        // Core identity in core_environment
+        let core_caps = request
+            .pointer("/core_environment/capabilities")
+            .and_then(Value::as_array)
+            .expect("core_environment.capabilities");
+        assert_eq!(core_caps.len(), 1);
+        let cc = &core_caps[0];
+        assert_eq!(
+            cc.get("source_name").and_then(Value::as_str),
+            Some("notify"),
+            "Core source_name must be notify"
+        );
+        assert_eq!(
+            cc.get("capability_id").and_then(Value::as_str),
+            Some("cap.semantic.notify"),
+            "Core capability_id must be cap.semantic.notify"
+        );
+        assert_eq!(
+            cc.get("contract_digest").and_then(Value::as_str),
+            Some("CORE-CONTRACT-9B"),
+            "Core contract_digest must be CORE-CONTRACT-9B"
+        );
+        assert_eq!(
+            cc.get("runtime_name").and_then(Value::as_str),
+            Some("fixture.ping"),
+            "runtime_name must be fixture.ping"
+        );
+
+        // Top-level runtime capability name must be fixture.ping
+        let caps = request
+            .get("capabilities")
+            .and_then(Value::as_array)
+            .expect("capabilities");
+        assert_eq!(caps.len(), 1);
+        assert_eq!(
+            caps[0].get("name").and_then(Value::as_str),
+            Some("fixture.ping"),
+            "runtime capability name must be fixture.ping"
+        );
+
+        std::fs::remove_dir_all(&_dir).ok();
+    }
+
+    /// T11: Bridge metadata separation — inspect builder output.
+    ///      core_environment must NOT contain manifest_digest,
+    ///      bridge_capability_version, or bridge_provider_identity.
+    ///      Top-level runtime capability MUST contain them with real values.
+    #[test]
+    fn core9b_t11_builder_bridge_metadata_separation() {
+        let (runtime, _dir) = core9b_prepared_runtime_with_core();
+        let engine_path = PathBuf::from("unused-engine");
+        let request =
+            core9b_build_request(&runtime, &engine_path, "eval_t11_bridge", "fixture.start")
+                .expect("builder should succeed");
+
+        // core_environment must NOT contain bridge metadata
+        let core_env = request.get("core_environment").expect("core_environment");
+        assert!(
+            core_env.get("manifest_digest").is_none(),
+            "core_environment must not contain manifest_digest"
+        );
+        assert!(
+            core_env.get("bridge_capability_version").is_none(),
+            "core_environment must not contain bridge_capability_version"
+        );
+        assert!(
+            core_env.get("bridge_provider_identity").is_none(),
+            "core_environment must not contain bridge_provider_identity"
+        );
+
+        // Top-level runtime capability MUST contain bridge metadata
+        let caps = request
+            .get("capabilities")
+            .and_then(Value::as_array)
+            .expect("capabilities");
+        assert_eq!(caps.len(), 1);
+        let cap = &caps[0];
+        assert_eq!(
+            cap.get("manifest_digest").and_then(Value::as_str),
+            Some("sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b"),
+            "runtime capability must have manifest_digest"
+        );
+        assert_eq!(
+            cap.get("bridge_capability_version").and_then(Value::as_i64),
+            Some(1),
+            "runtime capability must have bridge_capability_version = 1"
+        );
+        assert_eq!(
+            cap.get("bridge_provider_identity").and_then(Value::as_str),
+            Some("tethers-stdio-fixture"),
+            "runtime capability must have bridge_provider_identity"
+        );
+
+        // CORE-CONTRACT-9B must differ from manifest digest
+        let contract_digest = core_env["capabilities"][0]["contract_digest"]
+            .as_str()
+            .unwrap();
+        let manifest_digest = cap.get("manifest_digest").and_then(Value::as_str).unwrap();
+        assert_ne!(
+            contract_digest, manifest_digest,
+            "Core contract_digest must differ from manifest digest"
+        );
+
+        std::fs::remove_dir_all(&_dir).ok();
+    }
+
+    /// T12: The mandatory E2E — runtime config → PreparedRuntime →
+    ///      build_core_request_envelope → real MCP binary →
+    ///      tethers.evaluate_core → Tethers_core_wire → CORE-8B →
+    ///      canonical Core → Runtime Plan.
+    #[test]
+    fn core9b_t12_real_rust_built_cross_language_e2e() {
+        let (runtime, _dir) = core9b_prepared_runtime_with_core();
+        let (engine_path, working_dir) = core9b_require_engine();
+        let request =
+            core9b_build_request(&runtime, &engine_path, "eval_core9b_001", "fixture.start")
+                .expect("builder should succeed");
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let wire = session
+            .evaluate_tether_core("eval_core9b_001", &request)
+            .expect("evaluate_tether_core E2E");
+        let PlannerResponseWire::Matched(response) = wire else {
+            panic!("T12: expected Matched, got {wire:?}");
+        };
+
+        // Correlation fields
+        assert_eq!(response["protocol_version"], "0.1");
+        assert_eq!(response["evaluation_id"], "eval_core9b_001");
+        assert_eq!(response["event_id"], "evt_eval_core9b_001");
+        assert_eq!(response["tether_id"], "core-rehearsal");
+        assert_eq!(response["tether_version"], "1");
+
+        // Plan structure
+        let plan = response.get("plan").expect("plan missing");
+        let plan_id = plan.get("id").and_then(Value::as_str).expect("plan.id");
+        assert_eq!(
+            plan_id, "eval_core9b_001/plan",
+            "plan.id must be eval_id/plan"
+        );
+
+        // program_digest at top level (sibling of plan), NOT inside plan
+        let pd = response
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("program_digest missing from top level");
+        assert!(
+            pd.starts_with("sha256:"),
+            "program_digest must start with sha256:"
+        );
+        assert_eq!(
+            pd.len(),
+            71,
+            "program_digest must be sha256: + 64 hex chars"
+        );
+        assert!(
+            plan.get("program_digest").is_none(),
+            "program_digest must NOT be inside plan"
+        );
+
+        // Actions
+        let actions = plan
+            .get("actions")
+            .and_then(Value::as_array)
+            .expect("actions");
+        assert_eq!(actions.len(), 1, "expected exactly one action");
+        let action = &actions[0];
+        assert_eq!(
+            action.get("capability").and_then(Value::as_str),
+            Some("fixture.ping"),
+            "action capability must be fixture.ping"
+        );
+        let args = action.get("arguments").expect("action arguments");
+        assert_eq!(
+            args.get("message").and_then(Value::as_str),
+            Some("Hello Core"),
+            "action arguments.message must be Hello Core"
+        );
+        assert_eq!(
+            action.get("idempotency_key").and_then(Value::as_str),
+            Some("eval_core9b_001/action_1"),
+            "idempotency_key must be eval_id/action_1"
+        );
+
+        // Effects
+        let effects = action
+            .get("effects")
+            .and_then(Value::as_array)
+            .expect("effects");
+        assert!(
+            effects.iter().any(|e| e.as_str() == Some("fixture.test")),
+            "effects must contain fixture.test"
+        );
+
+        // Bridge metadata in the plan action
+        assert_eq!(
+            action.get("manifest_digest").and_then(Value::as_str),
+            Some("sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b"),
+            "action manifest_digest must match fixture-ping"
+        );
+        assert_eq!(
+            action
+                .get("bridge_capability_version")
+                .and_then(Value::as_i64),
+            Some(1),
+            "action bridge_capability_version must be 1"
+        );
+        assert_eq!(
+            action
+                .get("bridge_provider_identity")
+                .and_then(Value::as_str),
+            Some("tethers-stdio-fixture"),
+            "action bridge_provider_identity must be tethers-stdio-fixture"
+        );
+
+        // Trail is empty (compatibility scaffolding)
+        let trail = response.get("trail").expect("trail");
+        assert!(
+            trail.is_array() && trail.as_array().unwrap().is_empty(),
+            "trail must be empty array"
+        );
+
+        session.shutdown();
+    }
+
+    /// T13: Wrong event via builder — produces NotMatched.
+    #[test]
+    fn core9b_t13_builder_wrong_event_not_matched() {
+        let (runtime, _dir) = core9b_prepared_runtime_with_core();
+        let (engine_path, working_dir) = core9b_require_engine();
+        let request =
+            core9b_build_request(&runtime, &engine_path, "eval_t13_wrong", "fixture.other")
+                .expect("builder should succeed");
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let wire = session
+            .evaluate_tether_core("eval_t13_wrong", &request)
+            .expect("evaluate_tether_core wrong event");
+        match wire {
+            PlannerResponseWire::NotMatched(response) => {
+                assert_eq!(response["status"], "not_matched");
+                assert_eq!(response["evaluation_id"], "eval_t13_wrong");
+                assert_eq!(response["event_id"], "evt_eval_t13_wrong");
+            }
+            other => panic!("T13: expected NotMatched, got {other:?}"),
+        }
+        session.shutdown();
+    }
+
+    /// T14: Occurrence identity via builder — same semantic program,
+    ///      different evaluation_id produces same ProgramDigest but
+    ///      different plan.id and idempotency keys.
+    #[test]
+    fn core9b_t14_builder_occurrence_identity() {
+        let (runtime, _dir) = core9b_prepared_runtime_with_core();
+        let (engine_path, working_dir) = core9b_require_engine();
+
+        let req1 = core9b_build_request(&runtime, &engine_path, "eval_core9b_001", "fixture.start")
+            .expect("first builder");
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let wire1 = session
+            .evaluate_tether_core("eval_core9b_001", &req1)
+            .expect("first evaluation");
+        let PlannerResponseWire::Matched(resp1) = wire1 else {
+            panic!("T14: expected Matched for first eval, got {wire1:?}")
+        };
+
+        let req2 = core9b_build_request(&runtime, &engine_path, "eval_core9b_002", "fixture.start")
+            .expect("second builder");
+        let wire2 = session
+            .evaluate_tether_core("eval_core9b_002", &req2)
+            .expect("second evaluation");
+        let PlannerResponseWire::Matched(resp2) = wire2 else {
+            panic!("T14: expected Matched for second eval, got {wire2:?}")
+        };
+
+        // Same program_digest
+        let pd1 = resp1
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("first program_digest");
+        let pd2 = resp2
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("second program_digest");
+        assert_eq!(pd1, pd2, "same program must produce same program_digest");
+
+        // Different plan.id
+        let pid1 = resp1
+            .pointer("/plan/id")
+            .and_then(Value::as_str)
+            .expect("first plan.id");
+        let pid2 = resp2
+            .pointer("/plan/id")
+            .and_then(Value::as_str)
+            .expect("second plan.id");
+        assert_ne!(
+            pid1, pid2,
+            "different evaluations must produce different plan.id"
+        );
+        assert_eq!(pid1, "eval_core9b_001/plan");
+        assert_eq!(pid2, "eval_core9b_002/plan");
+
+        // Different idempotency keys
+        let ik1 = resp1
+            .pointer("/plan/actions/0/idempotency_key")
+            .and_then(Value::as_str)
+            .expect("first idempotency_key");
+        let ik2 = resp2
+            .pointer("/plan/actions/0/idempotency_key")
+            .and_then(Value::as_str)
+            .expect("second idempotency_key");
+        assert_ne!(
+            ik1, ik2,
+            "different evaluations must produce different idempotency keys"
+        );
+        assert_eq!(ik1, "eval_core9b_001/action_1");
+        assert_eq!(ik2, "eval_core9b_002/action_1");
+
+        session.shutdown();
     }
 }

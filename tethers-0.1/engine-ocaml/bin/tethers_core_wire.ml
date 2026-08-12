@@ -100,31 +100,17 @@ let make_success_envelope (result : evaluated_request) =
                trail = [];
              })
       in
-      (* Add program_digest to the plan object within the envelope. *)
+      (* Add program_digest as a sibling of plan in the envelope. *)
       (match base with
        | `Assoc fields ->
-           let plan_json =
-             List.assoc_opt "plan" fields
-             |> Option.value ~default:`Null
-           in
-           let enriched_plan =
-             match plan_json with
-             | `Assoc plan_fields ->
-                `Assoc
-                  (plan_fields
-                  @ [
-                      ( "program_digest",
-                        `String
-                          (Tethers_core_canonical.string_of_program_digest
-                             canonical_plan.program_digest) );
-                    ])
-             | _ -> plan_json
-           in
            `Assoc
-             (List.map
-                (fun (k, v) ->
-                  if k = "plan" then (k, enriched_plan) else (k, v))
-                fields)
+             (fields
+             @ [
+                 ( "program_digest",
+                   `String
+                     (Tethers_core_canonical.string_of_program_digest
+                        canonical_plan.program_digest) );
+               ])
        | other -> other)
   | Tethers_core_plan.Not_matched ->
       Tethers_outcome.json_of_response
