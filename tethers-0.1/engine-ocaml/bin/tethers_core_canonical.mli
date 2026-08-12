@@ -40,3 +40,24 @@ val string_of_program_digest :
   program_digest ->
   string
 (** ["sha256:<64 lowercase hexadecimal characters>"]. *)
+
+(** {1 Internal pipeline (exposed for C-B1 benchmarking)} *)
+
+module StringMap : Map.S with type key = string
+
+type colour_map = {
+  fact_colours : int StringMap.t;
+  origin_colours : int StringMap.t;
+  batch_colours : int StringMap.t;
+  role_colours : int StringMap.t;
+  branch_colours : int StringMap.t;
+  item_template_colours : int StringMap.t;
+}
+
+type canonical_ids
+
+val assign_canonical_ids : colour_map -> Tethers_core.program -> canonical_ids
+val build_canonical_program : Tethers_core.program -> canonical_ids -> Tethers_core.program
+val make_canonical_bytes : Tethers_core.program -> string
+val compute_sha256 : string -> string
+val make_program_digest : string -> program_digest
