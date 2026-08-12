@@ -6,7 +6,7 @@ Task: `TETHERS CORE-9B - Rust to Canonical Core Cross-Language Rehearsal`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `b6329de0e0faeea0ba526e74b179e91a2cc0a897`
+Implementation checkpoint: `c79db5caf096d8a3037476ee422d4ba25cdeab42`
 
 Status: `COMPLETE`
 
