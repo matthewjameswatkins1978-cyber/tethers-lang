@@ -2,23 +2,23 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-7A - Canonical Entry Guard Evaluation`
+Task: `TETHERS CORE-7B - Canonical Anchor Reception and Runtime Event Binding`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `c9cfc20fefae80a02ee9658317af65aaf699bfe2`
+Implementation checkpoint: `c5e37618d5114af13d153d82c0685756631667f7`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Task colour: `Amber`
 
 Route: `OpenCode implementation + evidence, Lucy independent GitHub review`
 
-Worker note: `docs/worker-notes/2026-08-12-core-7a-entry-guard-evaluation.md`
+Worker note: `docs/worker-notes/2026-08-12-core-7b-anchor-reception.md`
 
-Base branch: `feature/core-7a-entry-guards`
+Base branch: `feature/core-7b-anchor-reception`
 
-Base commit: `29e5cc72b1e71fdae2cccef4478f075878d0e288`
+Base commit: `28426eed6ed145791e51793fc6954e9dc1a5b173`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
@@ -26,82 +26,76 @@ Rust change class: `RUST_UNCHANGED`
 
 ## Objective
 
-Add deterministic runtime evaluation of canonical Core entry guards before
-Runtime Plan creation, establishing: canonical Core + runtime Fact snapshots ->
-evaluate entry guards -> MATCHED produces Runtime Plan, NOT MATCHED produces
-no plan, ERROR produces typed failure.
+Make the high-level canonical evaluation path consume an actual runtime event
+and prove that the event matches the Core Anchor before evaluating guards or
+planning Actions.
 
 ## Relevant background and existing behaviour
 
-Core already defines evaluation-input Facts as `Evaluation_input of
-host_snapshot_key * core_scalar_type` and entry guards as `fact_guard` records
-with `fact_id`, `comparison_operator`, and expected `core_value`. Operators
-are Equals, Contains, Greater_than, Greater_than_or_equal. CORE-4 implements
-canonicalisation; CORE-6A implements the Core to Runtime Plan bridge; CORE-6B
-adds the canonical planning entry point. Entry guards are not yet evaluated
-by any planning path.
+CORE-7A implemented entry guard evaluation. The existing `evaluate_canonicalized`
+takes a `planning_context` with manually-supplied `anchors` and `facts`. The
+caller must know the canonical Anchor OriginId to construct the anchor snapshot.
+CORE-7B adds the reception gate: the caller supplies a runtime event (name +
+data), the evaluator finds the single canonical Anchor_origin, matches the event
+name exactly, and internally derives the anchor snapshot from the event data.
 
 ## Required behaviour
 
-1. Add `fact_snapshot` type to `tethers_core_plan` (key: `host_snapshot_key`,
-   value: `Yojson.Safe.t`)
-2. Extend `planning_context` with `facts : fact_snapshot list`
-3. Resolve each guard's canonical FactId to its `Evaluation_input` declaration
-   in `canonical_program.input_facts`
-4. Resolve runtime snapshot by exactly `HostSnapshotKey` (0 = error, 1 = continue,
-   2+ = error)
-5. Runtime type checking: String_type -> JSON string only, Integer_type -> JSON
-   integer only, Boolean_type -> JSON boolean only
-6. Guard comparison: Equals, Contains, Greater_than, Greater_than_or_equal
-7. Add `evaluate_canonicalized` returning `Matched of canonical_plan | Not_matched`
-8. `plan()` and `plan_canonicalized()` fail with `Unresolved_entry_guards` when
-   entry_guards is non-empty
-9. ProgramDigest preserved across different runtime Fact values
-10. evaluation_id unaffected by Fact values
+1. Add `runtime_event` type: `{ name : string; data : Yojson.Safe.t }`
+2. Add `evaluation_context` type: `{ evaluation_id; event; capabilities; facts }`
+3. Add `Missing_reception_anchor` and `Ambiguous_reception_anchor` errors
+4. Implement anchor reception in `evaluate_canonicalized`:
+   - Find single top-level Anchor_origin (0 = error, 2+ = error)
+   - Exact event name match (no normalisation)
+   - Mismatch = `Ok Not_matched` (not an error)
+   - Match = bind event data to canonical Anchor OriginId internally
+5. Evaluation order: reception → guards → plan
+6. Wrong event + missing/malformed Fact → `Not_matched` (not guard error)
+7. ProgramDigest invariant across different events
+8. evaluation_id preserved (plan.id = evaluation_id + "/plan")
+9. Caller must NOT supply canonical Anchor OriginId
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml` -- modified (fact_snapshot, guard evaluation, evaluate_canonicalized, Unresolved_entry_guards, plan_internal)
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.mli` -- modified (fact_snapshot, facts field, canonical_evaluation, evaluate_canonicalized, new error constructors)
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` -- modified (G1-T1 through G1-T17, E2E, adversarial)
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml` -- modified
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.mli` -- modified
+- `tethers-0.1/engine-ocaml/bin/tethers_core_plan_test.ml` -- modified
 
 ## Frozen decisions and invariants
 
-- Runtime Facts are keyed by HostSnapshotKey, NOT canonical FactId
-- FactId is internal Core identity and may be rewritten by canonicalisation
-- HostSnapshotKey is the external semantic key through which runtime data enters
-- Resolution by HostSnapshotKey must be deterministic: never first-match
-- No coercion: "42" -> 42, 1 -> true, null -> missing are all forbidden
-- Same canonical program + different runtime Facts: ProgramDigest stays identical
-- evaluation_id remains the runtime occurrence identity regardless of Fact values
-- plan() and plan_canonicalized() fail closed on guarded programs
+- Runtime event name/data are occurrence inputs, NOT program identity
+- ProgramDigest stays identical across different events for same canonical program
+- Reception happens before guard evaluation (ordering is semantic)
+- Exact string equality for event name matching
+- Caller must not know canonical Anchor OriginId
+- No coercion, no case folding, no normalisation
 
 ## Acceptance criteria
 
-1. G1-T1: Equals string matches
-2. G1-T2: Equals string false -> Not_matched
-3. G1-T3: Integer Greater_than
-4. G1-T4: Integer Greater_than_or_equal
-5. G1-T5: String Contains
-6. G1-T6: Boolean Equals
-7. G1-T7: Multiple guards AND together (3+ guards)
-8. G1-T8: Missing runtime Fact -> Missing_fact_snapshot
-9. G1-T9: Wrong HostSnapshotKey -> still Missing_fact_snapshot
-10. G1-T10: Duplicate HostSnapshotKey -> Ambiguous_fact_snapshot
-11. G1-T11: Reversed duplicate order -> same error
-12. G1-T12: Runtime type mismatch -> Fact_snapshot_type_mismatch
-13. G1-T13: Invalid comparison typing -> Invalid_guard_comparison
-14. G1-T14: Low-level guard bypass blocked -> Unresolved_entry_guards
-15. G1-T15: plan_canonicalized guard bypass blocked -> Unresolved_entry_guards
-16. G1-T16: Unguarded existing behaviour preserved
-17. G1-T17: ProgramDigest invariant across runtime facts
-18. E2E: Human -> parser -> lowerer -> canonicalize -> evaluate_canonicalized
-19. Adversarial: Canonical identity independence across different temporary FactIds
+1. T1: Exact event match → Matched
+2. T2: Event mismatch → Not_matched
+3. T3: Matching is exact (case, space, prefix)
+4. T4: Reception before missing Fact → Not_matched
+5. T5: Reception before malformed Fact → Not_matched
+6. T6: Matched event then missing Fact → Missing_fact_snapshot
+7. T7: Matched event then guard false → Not_matched
+8. T8: Matched event + guard true → Matched
+9. T9: Event data resolves Anchor_value
+10. T10: Event mismatch prevents Anchor path error
+11. T11: Event match exposes Anchor path error
+12. T12: Missing reception Anchor → Missing_reception_anchor
+13. T13: Multiple reception Anchors → Ambiguous_reception_anchor
+14. T14: ProgramDigest invariant across events
+15. T15: evaluation_id preserved
+16. E2E A: Human → canonical → reception → guards → plan (full match)
+17. E2E B: Wrong event → Not_matched
+18. E2E C: Right event, wrong condition → Not_matched
+19. Adversarial: Canonical identity independence across temporary Anchor OriginIds
 
 ## Required verification
 
 1. OCaml build: `dune build @all` -- PASS (exit 0)
-2. All tests: `dune runtest --force` -- PASS (136/136 plan bridge tests)
+2. All tests: `dune runtest --force` -- PASS (179/179 plan bridge tests)
 3. Whitespace: `git diff --check` -- PASS
 4. Cargo fmt: `cargo fmt --check` -- PASS (RUST_UNCHANGED)
 5. Diff inspection: only authorised files changed
@@ -111,14 +105,15 @@ by any planning path.
 
 ## Forbidden changes
 
-No Core type changes, no validator semantic changes, no evaluator/protocol/outcome
-changes, no runtime wiring, no production dispatch, no Rust changes, no new
-dependencies. Do not change Human syntax or lowerer semantics. Do not change
-canonicalisation semantics.
+No Human syntax changes, no parser semantic changes, no lowerer semantic changes,
+no Core vocabulary changes, no validator semantic changes, no canonicalisation
+semantic changes, no Runtime Plan representation changes, no production evaluator
+changes, no main.ml changes, no MCP protocol changes, no Rust changes, no new
+dependencies.
 
 ## Stop conditions
 
-Commit CORE-7A implementation checkpoint. STOP. Do NOT begin CORE-7B or any
+Commit CORE-7B implementation checkpoint. STOP. Do NOT begin CORE-7C or any
 runtime wiring.
 
 ## Expected pre-existing changes
