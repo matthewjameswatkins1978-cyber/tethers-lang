@@ -1,0 +1,3037 @@
+{
+  "actions_per_eval": 10,
+  "benchmark": "PF1-RETAINED",
+  "case": "P10",
+  "description": "Retained P10 production growth benchmark (single retained session)",
+  "env": {
+    "date": "1786548689.818",
+    "package_version": "0.2.2"
+  },
+  "eval": [
+    {
+      "eval_id": "pf1_retained_01_d7f1fd2bb4e240e89c86493d3eda4c1b",
+      "eval_number": 1,
+      "provider_tools_call_cumulative": 10,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 25088,
+      "replay_chain_files": 31,
+      "replay_claims": 10,
+      "replay_directories": 25,
+      "replay_execution_dirs": 10,
+      "replay_files": 51,
+      "replay_locks": 10,
+      "stage_raw": [
+        {
+          "stage": "envelope_build",
+          "us": 26
+        },
+        {
+          "stage": "core_mcp",
+          "us": 708
+        },
+        {
+          "stage": "scope_policy",
+          "us": 17
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 3
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 17764
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14526
+        },
+        {
+          "stage": "trail_intent",
+          "us": 983
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15501
+        },
+        {
+          "stage": "provider_call",
+          "us": 3159
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 1037
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14202
+        },
+        {
+          "stage": "result_anchor",
+          "us": 4
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 67339
+        },
+        {
+          "stage": "scope_policy",
+          "us": 13
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 19903
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 13379
+        },
+        {
+          "stage": "trail_intent",
+          "us": 637
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15943
+        },
+        {
+          "stage": "provider_call",
+          "us": 1539
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 477
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13751
+        },
+        {
+          "stage": "result_anchor",
+          "us": 6
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 65768
+        },
+        {
+          "stage": "scope_policy",
+          "us": 13
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 1
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 0
+        },
+        {
+          "stage": "replay_admit",
+          "us": 22541
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14700
+        },
+        {
+          "stage": "trail_intent",
+          "us": 551
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 17494
+        },
+        {
+          "stage": "provider_call",
+          "us": 1869
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 612
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14621
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 72527
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 23760
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15994
+        },
+        {
+          "stage": "trail_intent",
+          "us": 580
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16333
+        },
+        {
+          "stage": "provider_call",
+          "us": 1998
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 609
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15596
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 75021
+        },
+        {
+          "stage": "scope_policy",
+          "us": 15
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 23730
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15398
+        },
+        {
+          "stage": "trail_intent",
+          "us": 696
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15709
+        },
+        {
+          "stage": "provider_call",
+          "us": 2008
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 628
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 16484
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 74814
+        },
+        {
+          "stage": "scope_policy",
+          "us": 15
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 25666
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15111
+        },
+        {
+          "stage": "trail_intent",
+          "us": 635
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16131
+        },
+        {
+          "stage": "provider_call",
+          "us": 2794
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 636
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14182
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 75318
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 29144
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14538
+        },
+        {
+          "stage": "trail_intent",
+          "us": 679
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16895
+        },
+        {
+          "stage": "provider_call",
+          "us": 1929
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 726
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14358
+        },
+        {
+          "stage": "result_anchor",
+          "us": 27
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 78444
+        },
+        {
+          "stage": "scope_policy",
+          "us": 15
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 3
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 31408
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14578
+        },
+        {
+          "stage": "trail_intent",
+          "us": 574
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16700
+        },
+        {
+          "stage": "provider_call",
+          "us": 1875
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 706
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15902
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 81881
+        },
+        {
+          "stage": "scope_policy",
+          "us": 13
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 0
+        },
+        {
+          "stage": "replay_admit",
+          "us": 31362
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15592
+        },
+        {
+          "stage": "trail_intent",
+          "us": 576
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 18310
+        },
+        {
+          "stage": "provider_call",
+          "us": 1827
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 662
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14433
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 82912
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 34659
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 16743
+        },
+        {
+          "stage": "trail_intent",
+          "us": 596
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15982
+        },
+        {
+          "stage": "provider_call",
+          "us": 1813
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 645
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15743
+        },
+        {
+          "stage": "result_anchor",
+          "us": 6
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 86322
+        }
+      ],
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.1,
+          "total_us": 21
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.8,
+          "total_us": 8
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 708.0,
+          "total_us": 708
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 26.0,
+          "total_us": 26
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 2081.1,
+          "total_us": 20811
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 25993.7,
+          "total_us": 259937
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 16499.8,
+          "total_us": 164998
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 15055.9,
+          "total_us": 150559
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14927.2,
+          "total_us": 149272
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 8.8,
+          "total_us": 88
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 14.3,
+          "total_us": 143
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 76034.6,
+          "total_us": 760346
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 650.7,
+          "total_us": 6507
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 673.8,
+          "total_us": 6738
+        }
+      },
+      "trail_bytes": 5012,
+      "trail_lines": 20,
+      "wall_us": 765645
+    },
+    {
+      "eval_id": "pf1_retained_02_5bdc5677550e4e16b4318da5561db650",
+      "eval_number": 2,
+      "provider_tools_call_cumulative": 20,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 50149,
+      "replay_chain_files": 61,
+      "replay_claims": 20,
+      "replay_directories": 45,
+      "replay_execution_dirs": 20,
+      "replay_files": 101,
+      "replay_locks": 20,
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.9,
+          "total_us": 9
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 821.0,
+          "total_us": 821
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 36.0,
+          "total_us": 36
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 2572.0,
+          "total_us": 25720
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 43252.3,
+          "total_us": 432523
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 16650.3,
+          "total_us": 166503
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 14962.5,
+          "total_us": 149625
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 15164.8,
+          "total_us": 151648
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 10.3,
+          "total_us": 103
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 15.4,
+          "total_us": 154
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 94337.9,
+          "total_us": 943379
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 924.3,
+          "total_us": 9243
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 652.0,
+          "total_us": 6520
+        }
+      },
+      "trail_bytes": 10024,
+      "trail_lines": 40,
+      "wall_us": 949030
+    },
+    {
+      "eval_id": "pf1_retained_03_e365a3c0f047438e882190c3c2950dd5",
+      "eval_number": 3,
+      "provider_tools_call_cumulative": 30,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 75210,
+      "replay_chain_files": 91,
+      "replay_claims": 30,
+      "replay_directories": 64,
+      "replay_execution_dirs": 30,
+      "replay_files": 151,
+      "replay_locks": 30,
+      "stage_raw": [
+        {
+          "stage": "envelope_build",
+          "us": 29
+        },
+        {
+          "stage": "core_mcp",
+          "us": 823
+        },
+        {
+          "stage": "scope_policy",
+          "us": 13
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 51079
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14692
+        },
+        {
+          "stage": "trail_intent",
+          "us": 644
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16533
+        },
+        {
+          "stage": "provider_call",
+          "us": 1446
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 672
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13971
+        },
+        {
+          "stage": "result_anchor",
+          "us": 5
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 99173
+        },
+        {
+          "stage": "scope_policy",
+          "us": 13
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 52326
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14349
+        },
+        {
+          "stage": "trail_intent",
+          "us": 586
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 17032
+        },
+        {
+          "stage": "provider_call",
+          "us": 1469
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 594
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15711
+        },
+        {
+          "stage": "result_anchor",
+          "us": 11
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 102218
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 52405
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15322
+        },
+        {
+          "stage": "trail_intent",
+          "us": 549
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 14989
+        },
+        {
+          "stage": "provider_call",
+          "us": 1492
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 555
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15180
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 100649
+        },
+        {
+          "stage": "scope_policy",
+          "us": 15
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 55232
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15562
+        },
+        {
+          "stage": "trail_intent",
+          "us": 659
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15548
+        },
+        {
+          "stage": "provider_call",
+          "us": 1747
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 625
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15433
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 104939
+        },
+        {
+          "stage": "scope_policy",
+          "us": 23
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 56919
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 13915
+        },
+        {
+          "stage": "trail_intent",
+          "us": 641
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15267
+        },
+        {
+          "stage": "provider_call",
+          "us": 1426
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 637
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13395
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 102328
+        },
+        {
+          "stage": "scope_policy",
+          "us": 16
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 57408
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14440
+        },
+        {
+          "stage": "trail_intent",
+          "us": 588
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 17062
+        },
+        {
+          "stage": "provider_call",
+          "us": 1466
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 609
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14197
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 105912
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 63182
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14150
+        },
+        {
+          "stage": "trail_intent",
+          "us": 567
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16565
+        },
+        {
+          "stage": "provider_call",
+          "us": 1510
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 654
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15855
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 112631
+        },
+        {
+          "stage": "scope_policy",
+          "us": 16
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 62053
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14087
+        },
+        {
+          "stage": "trail_intent",
+          "us": 616
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16104
+        },
+        {
+          "stage": "provider_call",
+          "us": 1526
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 663
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15505
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 110721
+        },
+        {
+          "stage": "scope_policy",
+          "us": 16
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 63748
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 16645
+        },
+        {
+          "stage": "trail_intent",
+          "us": 665
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16405
+        },
+        {
+          "stage": "provider_call",
+          "us": 1358
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 689
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15633
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 115288
+        },
+        {
+          "stage": "scope_policy",
+          "us": 13
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 64711
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15429
+        },
+        {
+          "stage": "trail_intent",
+          "us": 720
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15980
+        },
+        {
+          "stage": "provider_call",
+          "us": 1623
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 779
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 16674
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 116061
+        }
+      ],
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 1.0,
+          "total_us": 10
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 823.0,
+          "total_us": 823
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 29.0,
+          "total_us": 29
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1506.3,
+          "total_us": 15063
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 57906.3,
+          "total_us": 579063
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 16148.5,
+          "total_us": 161485
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 14859.1,
+          "total_us": 148591
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 15155.4,
+          "total_us": 151554
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 7.7,
+          "total_us": 77
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 15.3,
+          "total_us": 153
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 106992.0,
+          "total_us": 1069920
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 623.5,
+          "total_us": 6235
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 647.7,
+          "total_us": 6477
+        }
+      },
+      "trail_bytes": 15036,
+      "trail_lines": 60,
+      "wall_us": 1075101
+    },
+    {
+      "eval_id": "pf1_retained_04_6ea0ec6b80ad42489cf414c37c3c118f",
+      "eval_number": 4,
+      "provider_tools_call_cumulative": 40,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 100271,
+      "replay_chain_files": 121,
+      "replay_claims": 40,
+      "replay_directories": 83,
+      "replay_execution_dirs": 40,
+      "replay_files": 201,
+      "replay_locks": 40,
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.8,
+          "total_us": 8
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 693.0,
+          "total_us": 693
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 33.0,
+          "total_us": 33
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1386.4,
+          "total_us": 13864
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 74578.1,
+          "total_us": 745781
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 16218.4,
+          "total_us": 162184
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 15469.6,
+          "total_us": 154696
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14578.6,
+          "total_us": 145786
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 10.2,
+          "total_us": 102
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 14.1,
+          "total_us": 141
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 123747.7,
+          "total_us": 1237477
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 693.8,
+          "total_us": 6938
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 677.9,
+          "total_us": 6779
+        }
+      },
+      "trail_bytes": 20048,
+      "trail_lines": 80,
+      "wall_us": 1242403
+    },
+    {
+      "eval_id": "pf1_retained_05_307dd794fda64c84b0e7af2c21400e43",
+      "eval_number": 5,
+      "provider_tools_call_cumulative": 50,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 125332,
+      "replay_chain_files": 151,
+      "replay_claims": 50,
+      "replay_directories": 103,
+      "replay_execution_dirs": 50,
+      "replay_files": 251,
+      "replay_locks": 50,
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.7,
+          "total_us": 7
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 730.0,
+          "total_us": 730
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 29.0,
+          "total_us": 29
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1190.7,
+          "total_us": 11907
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 90195.3,
+          "total_us": 901953
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 16476.1,
+          "total_us": 164761
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 15085.6,
+          "total_us": 150856
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 15083.9,
+          "total_us": 150839
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 7.0,
+          "total_us": 70
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 14.4,
+          "total_us": 144
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 139578.6,
+          "total_us": 1395786
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 713.4,
+          "total_us": 7134
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 692.0,
+          "total_us": 6920
+        }
+      },
+      "trail_bytes": 25060,
+      "trail_lines": 100,
+      "wall_us": 1400777
+    },
+    {
+      "eval_id": "pf1_retained_06_86e3de864ca4420c8f7b6644332d65d3",
+      "eval_number": 6,
+      "provider_tools_call_cumulative": 60,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 150393,
+      "replay_chain_files": 181,
+      "replay_claims": 60,
+      "replay_directories": 122,
+      "replay_execution_dirs": 60,
+      "replay_files": 301,
+      "replay_locks": 60,
+      "stage_raw": [
+        {
+          "stage": "envelope_build",
+          "us": 30
+        },
+        {
+          "stage": "core_mcp",
+          "us": 695
+        },
+        {
+          "stage": "scope_policy",
+          "us": 11
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 0
+        },
+        {
+          "stage": "replay_admit",
+          "us": 100171
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15642
+        },
+        {
+          "stage": "trail_intent",
+          "us": 842
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15294
+        },
+        {
+          "stage": "provider_call",
+          "us": 1155
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 659
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15369
+        },
+        {
+          "stage": "result_anchor",
+          "us": 4
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 149294
+        },
+        {
+          "stage": "scope_policy",
+          "us": 17
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 101083
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15810
+        },
+        {
+          "stage": "trail_intent",
+          "us": 631
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15250
+        },
+        {
+          "stage": "provider_call",
+          "us": 1091
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 659
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15359
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 150020
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 0
+        },
+        {
+          "stage": "replay_admit",
+          "us": 103298
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14705
+        },
+        {
+          "stage": "trail_intent",
+          "us": 661
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16123
+        },
+        {
+          "stage": "provider_call",
+          "us": 1139
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 610
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14104
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 150780
+        },
+        {
+          "stage": "scope_policy",
+          "us": 15
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 105416
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14283
+        },
+        {
+          "stage": "trail_intent",
+          "us": 588
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16798
+        },
+        {
+          "stage": "provider_call",
+          "us": 1112
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 648
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13643
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 152626
+        },
+        {
+          "stage": "scope_policy",
+          "us": 15
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 106860
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14055
+        },
+        {
+          "stage": "trail_intent",
+          "us": 648
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16921
+        },
+        {
+          "stage": "provider_call",
+          "us": 1182
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 608
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15439
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 155861
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 106355
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15821
+        },
+        {
+          "stage": "trail_intent",
+          "us": 680
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15281
+        },
+        {
+          "stage": "provider_call",
+          "us": 1261
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 636
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15456
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 155624
+        },
+        {
+          "stage": "scope_policy",
+          "us": 17
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 109040
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14170
+        },
+        {
+          "stage": "trail_intent",
+          "us": 714
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16711
+        },
+        {
+          "stage": "provider_call",
+          "us": 1208
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 632
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13798
+        },
+        {
+          "stage": "result_anchor",
+          "us": 9
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 156427
+        },
+        {
+          "stage": "scope_policy",
+          "us": 16
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 109847
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 13681
+        },
+        {
+          "stage": "trail_intent",
+          "us": 696
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15995
+        },
+        {
+          "stage": "provider_call",
+          "us": 1239
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 679
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15376
+        },
+        {
+          "stage": "result_anchor",
+          "us": 9
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 157662
+        },
+        {
+          "stage": "scope_policy",
+          "us": 17
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 108965
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14547
+        },
+        {
+          "stage": "trail_intent",
+          "us": 592
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 14944
+        },
+        {
+          "stage": "provider_call",
+          "us": 1200
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 624
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 16121
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 157211
+        },
+        {
+          "stage": "scope_policy",
+          "us": 17
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 114930
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15220
+        },
+        {
+          "stage": "trail_intent",
+          "us": 648
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16424
+        },
+        {
+          "stage": "provider_call",
+          "us": 1119
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 572
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13549
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 162599
+        }
+      ],
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.8,
+          "total_us": 8
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 695.0,
+          "total_us": 695
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 30.0,
+          "total_us": 30
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1170.6,
+          "total_us": 11706
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 106596.5,
+          "total_us": 1065965
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 15974.1,
+          "total_us": 159741
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 14793.4,
+          "total_us": 147934
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14821.4,
+          "total_us": 148214
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 7.5,
+          "total_us": 75
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 15.3,
+          "total_us": 153
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 154810.4,
+          "total_us": 1548104
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 670.0,
+          "total_us": 6700
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 632.7,
+          "total_us": 6327
+        }
+      },
+      "trail_bytes": 30072,
+      "trail_lines": 120,
+      "wall_us": 1553121
+    },
+    {
+      "eval_id": "pf1_retained_07_e03f8dc3fbb947da985af588bd19f8cc",
+      "eval_number": 7,
+      "provider_tools_call_cumulative": 70,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 175454,
+      "replay_chain_files": 211,
+      "replay_claims": 70,
+      "replay_directories": 140,
+      "replay_execution_dirs": 70,
+      "replay_files": 351,
+      "replay_locks": 70,
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.8,
+          "total_us": 8
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 675.0,
+          "total_us": 675
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 31.0,
+          "total_us": 31
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1392.7,
+          "total_us": 13927
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 123322.9,
+          "total_us": 1233229
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 15969.2,
+          "total_us": 159692
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 14676.3,
+          "total_us": 146763
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14576.4,
+          "total_us": 145764
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 7.5,
+          "total_us": 75
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 14.6,
+          "total_us": 146
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 171266.0,
+          "total_us": 1712660
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 588.6,
+          "total_us": 5886
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 596.7,
+          "total_us": 5967
+        }
+      },
+      "trail_bytes": 35084,
+      "trail_lines": 140,
+      "wall_us": 1717622
+    },
+    {
+      "eval_id": "pf1_retained_08_7ed5881fbb06437ea79e200bf2c4f7ab",
+      "eval_number": 8,
+      "provider_tools_call_cumulative": 80,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 200515,
+      "replay_chain_files": 241,
+      "replay_claims": 80,
+      "replay_directories": 157,
+      "replay_execution_dirs": 80,
+      "replay_files": 401,
+      "replay_locks": 80,
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 1.0,
+          "total_us": 10
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 666.0,
+          "total_us": 666
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 28.0,
+          "total_us": 28
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1066.4,
+          "total_us": 10664
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 137629.4,
+          "total_us": 1376294
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 15937.4,
+          "total_us": 159374
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 15032.0,
+          "total_us": 150320
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14542.4,
+          "total_us": 145424
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 7.1,
+          "total_us": 71
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 15.1,
+          "total_us": 151
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 185581.9,
+          "total_us": 1855819
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 627.0,
+          "total_us": 6270
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 607.9,
+          "total_us": 6079
+        }
+      },
+      "trail_bytes": 40096,
+      "trail_lines": 160,
+      "wall_us": 1860744
+    },
+    {
+      "eval_id": "pf1_retained_09_aa9f21ea950f4f18b66c9e3b2d5bb6cb",
+      "eval_number": 9,
+      "provider_tools_call_cumulative": 90,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 225576,
+      "replay_chain_files": 271,
+      "replay_claims": 90,
+      "replay_directories": 172,
+      "replay_execution_dirs": 90,
+      "replay_files": 451,
+      "replay_locks": 90,
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.9,
+          "total_us": 9
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 722.0,
+          "total_us": 722
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 32.0,
+          "total_us": 32
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1069.7,
+          "total_us": 10697
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 150852.5,
+          "total_us": 1508525
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 15612.9,
+          "total_us": 156129
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 15369.4,
+          "total_us": 153694
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14955.2,
+          "total_us": 149552
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 7.4,
+          "total_us": 74
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 14.9,
+          "total_us": 149
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 199172.9,
+          "total_us": 1991729
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 564.3,
+          "total_us": 5643
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 598.7,
+          "total_us": 5987
+        }
+      },
+      "trail_bytes": 45108,
+      "trail_lines": 180,
+      "wall_us": 1996688
+    },
+    {
+      "eval_id": "pf1_retained_10_b1e63b7c9b42462dbd6916b0308341a3",
+      "eval_number": 10,
+      "provider_tools_call_cumulative": 100,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 250637,
+      "replay_chain_files": 301,
+      "replay_claims": 100,
+      "replay_directories": 191,
+      "replay_execution_dirs": 100,
+      "replay_files": 501,
+      "replay_locks": 100,
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.0,
+          "total_us": 20
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.8,
+          "total_us": 8
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 695.0,
+          "total_us": 695
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 29.0,
+          "total_us": 29
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1092.3,
+          "total_us": 10923
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 164606.2,
+          "total_us": 1646062
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 16056.6,
+          "total_us": 160566
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 14628.5,
+          "total_us": 146285
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14359.3,
+          "total_us": 143593
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 8.4,
+          "total_us": 84
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 14.6,
+          "total_us": 146
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 212123.8,
+          "total_us": 2121238
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 614.9,
+          "total_us": 6149
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 624.9,
+          "total_us": 6249
+        }
+      },
+      "trail_bytes": 50120,
+      "trail_lines": 200,
+      "wall_us": 2126207
+    },
+    {
+      "eval_id": "pf1_retained_11_00eb9090d3ee4b0a958bc4f40c7202af",
+      "eval_number": 11,
+      "provider_tools_call_cumulative": 110,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 275698,
+      "replay_chain_files": 331,
+      "replay_claims": 110,
+      "replay_directories": 206,
+      "replay_execution_dirs": 110,
+      "replay_files": 551,
+      "replay_locks": 110,
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.1,
+          "total_us": 21
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 1.0,
+          "total_us": 10
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 686.0,
+          "total_us": 686
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 29.0,
+          "total_us": 29
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1068.6,
+          "total_us": 10686
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 179937.3,
+          "total_us": 1799373
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 15697.5,
+          "total_us": 156975
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 14835.9,
+          "total_us": 148359
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14999.0,
+          "total_us": 149990
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 7.8,
+          "total_us": 78
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 16.5,
+          "total_us": 165
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 227888.4,
+          "total_us": 2278884
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 598.4,
+          "total_us": 5984
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 608.3,
+          "total_us": 6083
+        }
+      },
+      "trail_bytes": 55132,
+      "trail_lines": 220,
+      "wall_us": 2283790
+    },
+    {
+      "eval_id": "pf1_retained_12_62d2506fc0ca4fd7afa33c5a828ad152",
+      "eval_number": 12,
+      "provider_tools_call_cumulative": 120,
+      "provider_tools_call_delta": 10,
+      "replay_bytes": 300759,
+      "replay_chain_files": 361,
+      "replay_claims": 120,
+      "replay_directories": 219,
+      "replay_execution_dirs": 120,
+      "replay_files": 601,
+      "replay_locks": 120,
+      "stage_raw": [
+        {
+          "stage": "envelope_build",
+          "us": 32
+        },
+        {
+          "stage": "core_mcp",
+          "us": 674
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 0
+        },
+        {
+          "stage": "replay_admit",
+          "us": 187909
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14282
+        },
+        {
+          "stage": "trail_intent",
+          "us": 561
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 17328
+        },
+        {
+          "stage": "provider_call",
+          "us": 1166
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 554
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14875
+        },
+        {
+          "stage": "result_anchor",
+          "us": 5
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 236814
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 194849
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15011
+        },
+        {
+          "stage": "trail_intent",
+          "us": 560
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 17041
+        },
+        {
+          "stage": "provider_call",
+          "us": 1263
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 456
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15655
+        },
+        {
+          "stage": "result_anchor",
+          "us": 6
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 244979
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 192748
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15328
+        },
+        {
+          "stage": "trail_intent",
+          "us": 597
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15395
+        },
+        {
+          "stage": "provider_call",
+          "us": 1053
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 560
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 16430
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 242239
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 3
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 190498
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15349
+        },
+        {
+          "stage": "trail_intent",
+          "us": 539
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15097
+        },
+        {
+          "stage": "provider_call",
+          "us": 1034
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 572
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 16356
+        },
+        {
+          "stage": "result_anchor",
+          "us": 9
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 239610
+        },
+        {
+          "stage": "scope_policy",
+          "us": 17
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 3
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 197309
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 16225
+        },
+        {
+          "stage": "trail_intent",
+          "us": 591
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 14647
+        },
+        {
+          "stage": "provider_call",
+          "us": 1032
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 660
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13355
+        },
+        {
+          "stage": "result_anchor",
+          "us": 6
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 243958
+        },
+        {
+          "stage": "scope_policy",
+          "us": 14
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 0
+        },
+        {
+          "stage": "replay_admit",
+          "us": 196924
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 15195
+        },
+        {
+          "stage": "trail_intent",
+          "us": 570
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16783
+        },
+        {
+          "stage": "provider_call",
+          "us": 1005
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 627
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13759
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 245035
+        },
+        {
+          "stage": "scope_policy",
+          "us": 15
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 195038
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14949
+        },
+        {
+          "stage": "trail_intent",
+          "us": 566
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 15049
+        },
+        {
+          "stage": "provider_call",
+          "us": 992
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 538
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14479
+        },
+        {
+          "stage": "result_anchor",
+          "us": 9
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 241756
+        },
+        {
+          "stage": "scope_policy",
+          "us": 15
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 195766
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 13812
+        },
+        {
+          "stage": "trail_intent",
+          "us": 643
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 16861
+        },
+        {
+          "stage": "provider_call",
+          "us": 1138
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 610
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 13651
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 242625
+        },
+        {
+          "stage": "scope_policy",
+          "us": 16
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 204449
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14460
+        },
+        {
+          "stage": "trail_intent",
+          "us": 581
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 17001
+        },
+        {
+          "stage": "provider_call",
+          "us": 1960
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 626
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 14135
+        },
+        {
+          "stage": "result_anchor",
+          "us": 8
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 253354
+        },
+        {
+          "stage": "scope_policy",
+          "us": 16
+        },
+        {
+          "stage": "capability_resolve",
+          "us": 2
+        },
+        {
+          "stage": "catalogue_refresh",
+          "us": 1
+        },
+        {
+          "stage": "replay_admit",
+          "us": 201625
+        },
+        {
+          "stage": "replay_publish_intent",
+          "us": 14378
+        },
+        {
+          "stage": "trail_intent",
+          "us": 651
+        },
+        {
+          "stage": "replay_publish_armed",
+          "us": 17473
+        },
+        {
+          "stage": "provider_call",
+          "us": 1166
+        },
+        {
+          "stage": "trail_outcome",
+          "us": 663
+        },
+        {
+          "stage": "replay_publish_terminal",
+          "us": 15710
+        },
+        {
+          "stage": "result_anchor",
+          "us": 7
+        },
+        {
+          "stage": "shared_boundary",
+          "us": 251810
+        }
+      ],
+      "stages": {
+        "capability_resolve": {
+          "count": 10,
+          "mean_us": 2.2,
+          "total_us": 22
+        },
+        "catalogue_refresh": {
+          "count": 10,
+          "mean_us": 0.8,
+          "total_us": 8
+        },
+        "core_mcp": {
+          "count": 1,
+          "mean_us": 674.0,
+          "total_us": 674
+        },
+        "envelope_build": {
+          "count": 1,
+          "mean_us": 32.0,
+          "total_us": 32
+        },
+        "provider_call": {
+          "count": 10,
+          "mean_us": 1180.9,
+          "total_us": 11809
+        },
+        "replay_admit": {
+          "count": 10,
+          "mean_us": 195711.5,
+          "total_us": 1957115
+        },
+        "replay_publish_armed": {
+          "count": 10,
+          "mean_us": 16267.5,
+          "total_us": 162675
+        },
+        "replay_publish_intent": {
+          "count": 10,
+          "mean_us": 14898.9,
+          "total_us": 148989
+        },
+        "replay_publish_terminal": {
+          "count": 10,
+          "mean_us": 14840.5,
+          "total_us": 148405
+        },
+        "result_anchor": {
+          "count": 10,
+          "mean_us": 7.2,
+          "total_us": 72
+        },
+        "scope_policy": {
+          "count": 10,
+          "mean_us": 14.9,
+          "total_us": 149
+        },
+        "shared_boundary": {
+          "count": 10,
+          "mean_us": 244218.0,
+          "total_us": 2442180
+        },
+        "trail_intent": {
+          "count": 10,
+          "mean_us": 585.9,
+          "total_us": 5859
+        },
+        "trail_outcome": {
+          "count": 10,
+          "mean_us": 586.6,
+          "total_us": 5866
+        }
+      },
+      "trail_bytes": 60144,
+      "trail_lines": 240,
+      "wall_us": 2447149
+    }
+  ],
+  "evaluations": 12,
+  "provider_call_proof": {
+    "all_exact": true,
+    "expected_per_eval": 10,
+    "total": 120
+  },
+  "replay_root": "C:\\Users\\Matmus\\AppData\\Local\\Temp\\tethers-bench-pf1-2d3da775-38ae-4b99-b01e-d85959e19111\\host-data",
+  "trail_path": "C:\\Users\\Matmus\\AppData\\Local\\Temp\\tethers-bench-pf1-2d3da775-38ae-4b99-b01e-d85959e19111\\trail.jsonl",
+  "warmup": 3
+}

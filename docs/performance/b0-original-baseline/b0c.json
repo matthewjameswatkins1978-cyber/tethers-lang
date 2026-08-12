@@ -1,0 +1,138 @@
+{
+  "P0": {
+    "benchmark": "B0-C",
+    "case": "P0",
+    "correctness": true,
+    "description": "Warm Full Production Execution Benchmark",
+    "provider_tools_call_observed": 0,
+    "raw_us": [
+      168.2,
+      163.6,
+      164.4,
+      148.2,
+      141.6,
+      146.2
+    ],
+    "stats": {
+      "max_us": 168.2,
+      "mean_us": 155.36666666666665,
+      "median_us": 155.89999999999998,
+      "min_us": 141.6,
+      "ops_per_sec": 6436.3870414074245,
+      "p95_us": 168.2,
+      "sample_count": 6,
+      "stddev_us": 10.319829886625502
+    }
+  },
+  "P3": {
+    "benchmark": "B0-C",
+    "case": "P3",
+    "correctness": true,
+    "description": "Warm Full Production Execution Benchmark",
+    "provider_tools_call_observed": 90,
+    "raw_us": [
+      361139.6,
+      423280.0,
+      498719.0,
+      558677.8
+    ],
+    "stats": {
+      "max_us": 558677.8,
+      "mean_us": 460454.10000000003,
+      "median_us": 460999.5,
+      "min_us": 361139.6,
+      "ops_per_sec": 2.1717691296483186,
+      "p95_us": 558677.8,
+      "sample_count": 4,
+      "stddev_us": 74761.92452505488
+    }
+  },
+  "P50": {
+    "benchmark": "B0-C",
+    "case": "P50",
+    "correctness": true,
+    "description": "Warm Full Production Execution Benchmark",
+    "provider_tools_call_observed": 750,
+    "raw_us": [
+      47214900.2
+    ],
+    "stats": {
+      "max_us": 47214900.2,
+      "mean_us": 47214900.2,
+      "median_us": 47214900.2,
+      "min_us": 47214900.2,
+      "ops_per_sec": 0.021179754606364707,
+      "p95_us": 47214900.2,
+      "sample_count": 1,
+      "stddev_us": 0.0
+    }
+  },
+  "P25": {
+    "benchmark": "B0-C",
+    "case": "P25",
+    "correctness": true,
+    "description": "Warm Full Production Execution Benchmark",
+    "provider_tools_call_observed": 500,
+    "raw_us": [
+      13238851.4,
+      17224182.2
+    ],
+    "stats": {
+      "max_us": 17224182.2,
+      "mean_us": 15231516.8,
+      "median_us": 15231516.8,
+      "min_us": 13238851.4,
+      "ops_per_sec": 0.06565334320479493,
+      "p95_us": 17224182.2,
+      "sample_count": 2,
+      "stddev_us": 1992665.3999999994
+    }
+  },
+  "P1": {
+    "benchmark": "B0-C",
+    "case": "P1",
+    "correctness": true,
+    "description": "Warm Full Production Execution Benchmark",
+    "provider_tools_call_observed": 40,
+    "raw_us": [
+      84269.8,
+      98888.8,
+      114108.6,
+      106140.4,
+      114153.2,
+      121025.0
+    ],
+    "stats": {
+      "max_us": 121025.0,
+      "mean_us": 106430.96666666667,
+      "median_us": 110124.5,
+      "min_us": 84269.8,
+      "ops_per_sec": 9.395761697175226,
+      "p95_us": 121025.0,
+      "sample_count": 6,
+      "stddev_us": 12108.198085273554
+    }
+  },
+  "P10": {
+    "benchmark": "B0-C",
+    "case": "P10",
+    "correctness": true,
+    "description": "Warm Full Production Execution Benchmark",
+    "provider_tools_call_observed": 250,
+    "raw_us": [
+      2739164.6,
+      3353635.8,
+      4132317.0
+    ],
+    "stats": {
+      "max_us": 4132317.0,
+      "mean_us": 3408372.466666667,
+      "median_us": 3353635.8,
+      "min_us": 2739164.6,
+      "ops_per_sec": 0.2933951643430519,
+      "p95_us": 4132317.0,
+      "sample_count": 3,
+      "stddev_us": 570067.527821499
+    }
+  }
+}

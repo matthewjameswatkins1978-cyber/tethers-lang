@@ -1,0 +1,80 @@
+{
+  "P0": {
+    "benchmark": "B0-D",
+    "case": "P0",
+    "correctness": true,
+    "description": "Cold Full Production Execution Benchmark",
+    "raw_us": [
+      888630.0,
+      527229.0,
+      518773.0,
+      519321.0,
+      513990.0,
+      515417.0,
+      547619.0,
+      531253.0
+    ],
+    "stats": {
+      "max_us": 888630.0,
+      "mean_us": 570279.0,
+      "median_us": 523275.0,
+      "min_us": 513990.0,
+      "ops_per_sec": 1.7535276592685334,
+      "p95_us": 888630.0,
+      "sample_count": 8,
+      "stddev_us": 120760.63221410362
+    }
+  },
+  "P10": {
+    "benchmark": "B0-D",
+    "case": "P10",
+    "correctness": true,
+    "description": "Cold Full Production Execution Benchmark",
+    "raw_us": [
+      1630607.0,
+      1231300.0,
+      1340701.0,
+      1285581.0,
+      1986281.0,
+      1566232.0,
+      1317249.0,
+      1318944.0
+    ],
+    "stats": {
+      "max_us": 1986281.0,
+      "mean_us": 1459611.875,
+      "median_us": 1329822.5,
+      "min_us": 1231300.0,
+      "ops_per_sec": 0.6851136368015641,
+      "p95_us": 1986281.0,
+      "sample_count": 8,
+      "stddev_us": 238378.64947517714
+    }
+  },
+  "P1": {
+    "benchmark": "B0-D",
+    "case": "P1",
+    "correctness": true,
+    "description": "Cold Full Production Execution Benchmark",
+    "raw_us": [
+      970535.0,
+      598405.0,
+      608531.0,
+      620100.0,
+      624986.0,
+      610569.0,
+      600581.0,
+      595358.0
+    ],
+    "stats": {
+      "max_us": 970535.0,
+      "mean_us": 653633.125,
+      "median_us": 609550.0,
+      "min_us": 595358.0,
+      "ops_per_sec": 1.529910222955729,
+      "p95_us": 970535.0,
+      "sample_count": 8,
+      "stddev_us": 120167.2330103318
+    }
+  }
+}

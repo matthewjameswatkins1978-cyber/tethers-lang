@@ -2166,7 +2166,9 @@ fn execute_boundary_impl(
 
     // Replay persistence is opened lazily here, after all ordinary fresh gates
     // above and only for a branch that may dispatch.
-    let mut replay_admission = match replay_authority.admit(&logical_key, &binding) {
+    let mut replay_admission = match crate::bench_timing::timed("replay_admit", || {
+        replay_authority.admit(&logical_key, &binding)
+    }) {
         Ok(admission) => admission,
         Err(_) => {
             set_replay_result(
@@ -2222,7 +2224,11 @@ fn execute_boundary_impl(
     let mut sequence = json_trail.len() as u64 + 1;
 
     // The immutable replay intent boundary precedes the existing Trail intent.
-    if replay_admission.publish_intent().is_err() {
+    if crate::bench_timing::timed("replay_publish_intent", || {
+        replay_admission.publish_intent()
+    })
+    .is_err()
+    {
         set_replay_result(
             response,
             replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
@@ -2236,14 +2242,16 @@ fn execute_boundary_impl(
     }
 
     // Attempt durable Trail intent recording.
-    let ready = match dispatch::prepare_and_record(
-        decision,
-        resolved,
-        execution_id,
-        action_id.clone(),
-        arguments,
-        trail,
-    ) {
+    let ready = match crate::bench_timing::timed("trail_intent", || {
+        dispatch::prepare_and_record(
+            decision,
+            resolved,
+            execution_id,
+            action_id.clone(),
+            arguments,
+            trail,
+        )
+    }) {
         Ok(ready) => ready,
         Err(err) => {
             json_trail.push(trail_entry(
@@ -2291,7 +2299,9 @@ fn execute_boundary_impl(
     // This durable boundary is immediately before provider invocation. The
     // held admission guard retains cross-process exclusion through the call
     // and final publication.
-    if replay_admission.publish_armed().is_err() {
+    if crate::bench_timing::timed("replay_publish_armed", || replay_admission.publish_armed())
+        .is_err()
+    {
         set_replay_result(
             response,
             replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
@@ -2316,7 +2326,9 @@ fn execute_boundary_impl(
         Some(&ready.action_id().0),
     ));
     sequence += 1;
-    let provider_result = executor.execute_classified(&ready, remaining);
+    let provider_result = crate::bench_timing::timed("provider_call", || {
+        executor.execute_classified(&ready, remaining)
+    });
     let observed_after_deadline = outcome::deadline_expired(clock, deadline_start, deadline);
     let timestamp_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2394,7 +2406,8 @@ fn execute_boundary_impl(
         timestamp_unix_ms: timestamp_ms,
     };
 
-    if trail.append_outcome(&outcome_entry).is_err() {
+    if crate::bench_timing::timed("trail_outcome", || trail.append_outcome(&outcome_entry)).is_err()
+    {
         // The in-memory classification above remains truthful, but it is not
         // auditable enough for a Result Anchor or retry authority.
         json_trail.push(trail_entry(
@@ -2451,9 +2464,10 @@ fn execute_boundary_impl(
             });
         }
     };
-    if replay_admission
-        .publish_terminal(terminal_state, outcome_digest)
-        .is_err()
+    if crate::bench_timing::timed("replay_publish_terminal", || {
+        replay_admission.publish_terminal(terminal_state, outcome_digest)
+    })
+    .is_err()
     {
         set_replay_result(
             response,
@@ -2520,7 +2534,9 @@ fn execute_boundary_impl(
             &input_context.event_id,
             next_generation,
         );
-        if anchor_writer.write(response, &anchor).is_err() {
+        if crate::bench_timing::timed("result_anchor", || anchor_writer.write(response, &anchor))
+            .is_err()
+        {
             if let Some(object) = response.as_object_mut() {
                 object.remove("result_anchor");
             }

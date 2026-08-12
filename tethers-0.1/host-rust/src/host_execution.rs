@@ -399,6 +399,94 @@ impl<'a> HostExecutionService<'a> {
         }
     }
 
+    /// Expose the runtime reference for benchmark setup.
+    ///
+    /// This method exists solely for B0-C benchmark construction. It is not
+    /// part of the production API surface.
+    #[doc(hidden)]
+    pub fn runtime(&self) -> &PreparedRuntime {
+        self.runtime
+    }
+
+    /// Expose the engine path for benchmark setup.
+    #[doc(hidden)]
+    pub fn engine_path(&self) -> &Path {
+        self.engine_path
+    }
+
+    /// Expose the trail path for benchmark setup.
+    #[doc(hidden)]
+    pub fn trail_path(&self) -> &Path {
+        self.trail_path
+    }
+
+    /// Run a single evaluation through the warm engine and provider sessions.
+    ///
+    /// This method exists solely for B0-C benchmark measurement. The caller
+    /// must have already launched and warmed the engine and provider sessions
+    /// through the normal production setup path. This method is not part of
+    /// the production API surface.
+    #[doc(hidden)]
+    pub fn bench_evaluate_one(
+        &self,
+        input: &PreparedEvaluationInput,
+        engine: &mut EngineSession,
+        provider_sessions: &mut HashMap<String, RetainedProviderSession>,
+        provider_availability: &ProviderAvailability,
+        approvals: &mut crate::approval::ApprovalStore,
+    ) -> ExecutionServiceResult {
+        self.evaluate_one(
+            input,
+            engine,
+            provider_sessions,
+            provider_availability,
+            approvals,
+        )
+    }
+
+    /// Launch, initialize, and validate the warm state for benchmarking.
+    ///
+    /// Returns the warmed engine, provider sessions, and availability.
+    /// This method exists solely for B0-C benchmark measurement.
+    #[doc(hidden)]
+    pub fn bench_warmup(
+        &self,
+    ) -> Result<
+        (
+            EngineSession,
+            HashMap<String, RetainedProviderSession>,
+            ProviderAvailability,
+        ),
+        ExecutionServiceError,
+    > {
+        let engine_working_dir = self
+            .engine_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let mut engine = EngineSession::launch(self.engine_path, &engine_working_dir)?;
+
+        // Validate all tethers
+        for (i, tether) in self.runtime.tethers().iter().enumerate() {
+            engine.validate_tether(i, &tether.id, &tether.version, &tether.source)?;
+        }
+
+        // Launch providers
+        let mut provider_sessions: HashMap<String, RetainedProviderSession> = HashMap::new();
+        let mut provider_availability = ProviderAvailability::empty();
+
+        for prepared_provider in self.runtime.providers() {
+            if let Some(session) = self.launch_and_initialize_provider(prepared_provider)? {
+                let identity = session.identity().to_owned();
+                provider_sessions.insert(identity.clone(), session);
+                let ids: Vec<String> = provider_sessions.keys().cloned().collect();
+                provider_availability = ProviderAvailability::from_identities(ids);
+            }
+        }
+
+        Ok((engine, provider_sessions, provider_availability))
+    }
+
     /// Run the execution service end-to-end.
     ///
     /// Ordering:
@@ -570,14 +658,17 @@ impl<'a> HostExecutionService<'a> {
         };
 
         // Build the extended Core request envelope.
-        let envelope = match self.build_core_request_envelope(input, tether, provider_availability)
-        {
+        let envelope = match crate::bench_timing::timed("envelope_build", || {
+            self.build_core_request_envelope(input, tether, provider_availability)
+        }) {
             Ok(envelope) => envelope,
             Err(result) => return result,
         };
 
         // Call tethers.evaluate (now Core).
-        let wire_response = match engine.evaluate_tether(&input.evaluation_id, &envelope) {
+        let wire_response = match crate::bench_timing::timed("core_mcp", || {
+            engine.evaluate_tether(&input.evaluation_id, &envelope)
+        }) {
             Ok(resp) => resp,
             Err(error) => return Self::classify_engine_evaluation_failure(input, error),
         };
@@ -979,15 +1070,19 @@ impl<'a> HostExecutionService<'a> {
     ) -> Result<crate::SharedExecutionResult, ExecutionServiceResult> {
         let evaluation_id = proposed.evaluation_id.clone();
         let action_id = proposed.action_id.clone();
-        let scope_assessment = self.runtime.assess_action_scope(&proposed);
-        let policy_evaluation = policy::evaluate_effective_policy(
-            &proposed,
-            self.runtime.requirements(),
-            self.runtime.trusted_store(),
-            provider_availability,
-            self.runtime.policy(),
-            scope_assessment,
-        );
+        let (scope_assessment, policy_evaluation) =
+            crate::bench_timing::timed("scope_policy", || {
+                let scope_assessment = self.runtime.assess_action_scope(&proposed);
+                let policy_evaluation = policy::evaluate_effective_policy(
+                    &proposed,
+                    self.runtime.requirements(),
+                    self.runtime.trusted_store(),
+                    provider_availability,
+                    self.runtime.policy(),
+                    scope_assessment,
+                );
+                (scope_assessment, policy_evaluation)
+            });
 
         match &policy_evaluation.decision {
             PermissionDecision::Deny => {
@@ -1043,7 +1138,9 @@ impl<'a> HostExecutionService<'a> {
             PermissionDecision::Allow(_) => {}
         }
 
-        let resolved = self.resolve_exact_capability(&proposed, provider_availability)?;
+        let resolved = crate::bench_timing::timed("capability_resolve", || {
+            self.resolve_exact_capability(&proposed, provider_availability)
+        })?;
         let binding = &resolved.manifest().manifest().binding;
         if binding.kind != BindingKind::Mcp {
             return Err(ExecutionServiceResult::Denied {
@@ -1079,27 +1176,29 @@ impl<'a> HostExecutionService<'a> {
                 ),
             });
         };
-        match refresh_prepared_catalogue(prepared_provider, session) {
-            Ok(true) => {}
-            Ok(false) => {
-                return Err(ExecutionServiceResult::Unavailable {
-                    evaluation_id,
-                    reason: format!(
-                        "provider '{}' catalogue no longer matches trusted bindings",
-                        resolved.provider_identity()
-                    ),
-                });
+        crate::bench_timing::timed("catalogue_refresh", || {
+            match refresh_prepared_catalogue(prepared_provider, session) {
+                Ok(true) => Ok(()),
+                Ok(false) => {
+                    return Err(ExecutionServiceResult::Unavailable {
+                        evaluation_id: evaluation_id.clone(),
+                        reason: format!(
+                            "provider '{}' catalogue no longer matches trusted bindings",
+                            resolved.provider_identity()
+                        ),
+                    });
+                }
+                Err(error) => {
+                    return Err(ExecutionServiceResult::Unavailable {
+                        evaluation_id: evaluation_id.clone(),
+                        reason: format!(
+                            "provider '{}' catalogue refresh unavailable: {error}",
+                            resolved.provider_identity()
+                        ),
+                    });
+                }
             }
-            Err(error) => {
-                return Err(ExecutionServiceResult::Unavailable {
-                    evaluation_id,
-                    reason: format!(
-                        "provider '{}' catalogue refresh unavailable: {error}",
-                        resolved.provider_identity()
-                    ),
-                });
-            }
-        }
+        })?;
         let mut executor = ProviderSessionExecutor {
             session,
             tool_name: binding.tool_name.clone(),
@@ -1121,20 +1220,23 @@ impl<'a> HostExecutionService<'a> {
         let clock = ProductionMonotonicClock::new();
         let mut replay_authority = FileReplayAuthority::new(self.host_data_root);
         let mut anchor_writer = crate::ResponseResultAnchorWriter;
-        match crate::execute_shared_boundary(
-            response,
-            action,
-            policy_evaluation.decision,
-            &resolved,
-            trail,
-            &mut executor,
-            &input_context,
-            true,
-            &clock,
-            &mut replay_authority,
-            None,
-            &mut anchor_writer,
-        ) {
+        let shared_result = crate::bench_timing::timed("shared_boundary", || {
+            crate::execute_shared_boundary(
+                response,
+                action,
+                policy_evaluation.decision,
+                &resolved,
+                trail,
+                &mut executor,
+                &input_context,
+                true,
+                &clock,
+                &mut replay_authority,
+                None,
+                &mut anchor_writer,
+            )
+        });
+        match shared_result {
             Ok(result) => Ok(result),
             Err(error) => Err(ExecutionServiceResult::AuditFailed {
                 evaluation_id,
