@@ -8,7 +8,7 @@ Owner: `OpenCode`
 
 Implementation checkpoint: `c5e37618d5114af13d153d82c0685756631667f7`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
