@@ -2850,6 +2850,273 @@ let test_canonical_identity_adversarial () =
       exit 1
 
 (* ================================================================== *)
+(*  CORE-7A1 E1 -- String_type + Equals + Integer_value                *)
+(* ================================================================== *)
+
+let test_equals_string_type_integer_value () =
+  let program = mk_program
+    ~id:"P_e1"
+    ~input_facts:[ mk_eval_fact "F_name" "K_name" String_type ]
+    ~entry_guards:[ mk_guard "F_name" Equals (Integer_value 42) ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  let canonical_fid =
+    match c_program.entry_guards with
+    | g :: _ -> g.fact_id
+    | [] -> assert_true "E1 has guards" false; fid "missing"
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_e1"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_name" (`String "hello") ]
+      ()
+  in
+  assert_plan_error (Invalid_guard_comparison canonical_fid)
+    "E1 String_type + Equals + Integer_value"
+    (match evaluate_canonicalized c ctx with
+     | Ok _ -> Error Unresolved_entry_guards
+     | Error e -> Error e)
+
+(* ================================================================== *)
+(*  CORE-7A1 E2 -- Integer_type + Equals + String_value               *)
+(* ================================================================== *)
+
+let test_equals_integer_type_string_value () =
+  let program = mk_program
+    ~id:"P_e2"
+    ~input_facts:[ mk_eval_fact "F_size" "K_size" Integer_type ]
+    ~entry_guards:[ mk_guard "F_size" Equals (String_value "42") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  let canonical_fid =
+    match c_program.entry_guards with
+    | g :: _ -> g.fact_id
+    | [] -> assert_true "E2 has guards" false; fid "missing"
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_e2"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_size" (`Int 42) ]
+      ()
+  in
+  assert_plan_error (Invalid_guard_comparison canonical_fid)
+    "E2 Integer_type + Equals + String_value"
+    (match evaluate_canonicalized c ctx with
+     | Ok _ -> Error Unresolved_entry_guards
+     | Error e -> Error e)
+
+(* ================================================================== *)
+(*  CORE-7A1 E3 -- Boolean_type + Equals + String_value               *)
+(* ================================================================== *)
+
+let test_equals_boolean_type_string_value () =
+  let program = mk_program
+    ~id:"P_e3"
+    ~input_facts:[ mk_eval_fact "F_active" "K_active" Boolean_type ]
+    ~entry_guards:[ mk_guard "F_active" Equals (String_value "true") ]
+    ~entry_origin:(Some (oid "O_anchor"))
+    ~origin_sites:[
+      mk_anchor_origin "O_anchor" "doc.received" [];
+      mk_action_origin "O_action" "cap.notify" "sha256:abc"
+        [ mk_lit_input "message" (String_value "start") ] [];
+    ]
+    ~success_continuations:[
+      mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+      mk_success_cont "O_action" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+    ()
+  in
+  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c_program = Tethers_core_canonical.canonical_program c in
+  let canonical_fid =
+    match c_program.entry_guards with
+    | g :: _ -> g.fact_id
+    | [] -> assert_true "E3 has guards" false; fid "missing"
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_e3"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_active" (`Bool true) ]
+      ()
+  in
+  assert_plan_error (Invalid_guard_comparison canonical_fid)
+    "E3 Boolean_type + Equals + String_value"
+    (match evaluate_canonicalized c ctx with
+     | Ok _ -> Error Unresolved_entry_guards
+     | Error e -> Error e)
+
+(* ================================================================== *)
+(*  CORE-7A1 E4 -- Valid String equality still works                   *)
+(* ================================================================== *)
+
+let test_valid_string_equals () =
+  let build_guard expected =
+    let program = mk_program
+      ~id:"P_e4"
+      ~input_facts:[ mk_eval_fact "F_name" "K_name" String_type ]
+      ~entry_guards:[ mk_guard "F_name" Equals (String_value expected) ]
+      ~entry_origin:(Some (oid "O_anchor"))
+      ~origin_sites:[
+        mk_anchor_origin "O_anchor" "doc.received" [];
+        mk_action_origin "O_action" "cap.notify" "sha256:abc"
+          [ mk_lit_input "message" (String_value "start") ] [];
+      ]
+      ~success_continuations:[
+        mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+        mk_success_cont "O_action" Program_complete;
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+      ()
+    in
+    assert_ok_canonical (Tethers_core_canonical.canonicalize program)
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_e4"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_name" (`String "hello") ]
+      ()
+  in
+  (* "hello" == "hello" -> Matched *)
+  (match evaluate_canonicalized (build_guard "hello") ctx with
+   | Ok (Matched _) -> incr tests_run; incr tests_passed
+   | _ ->
+       incr tests_run;
+       Printf.eprintf "FAIL: E4a expected Matched\n";
+       exit 1);
+  (* "hello" == "world" -> Not_matched *)
+  match evaluate_canonicalized (build_guard "world") ctx with
+  | Ok Not_matched -> incr tests_run; incr tests_passed
+  | _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: E4b expected Not_matched\n";
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A1 E5 -- Valid Integer equality still works                  *)
+(* ================================================================== *)
+
+let test_valid_integer_equals () =
+  let build_guard expected =
+    let program = mk_program
+      ~id:"P_e5"
+      ~input_facts:[ mk_eval_fact "F_size" "K_size" Integer_type ]
+      ~entry_guards:[ mk_guard "F_size" Equals (Integer_value expected) ]
+      ~entry_origin:(Some (oid "O_anchor"))
+      ~origin_sites:[
+        mk_anchor_origin "O_anchor" "doc.received" [];
+        mk_action_origin "O_action" "cap.notify" "sha256:abc"
+          [ mk_lit_input "message" (String_value "start") ] [];
+      ]
+      ~success_continuations:[
+        mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+        mk_success_cont "O_action" Program_complete;
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+      ()
+    in
+    assert_ok_canonical (Tethers_core_canonical.canonicalize program)
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_e5"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_size" (`Int 42) ]
+      ()
+  in
+  (* 42 == 42 -> Matched *)
+  (match evaluate_canonicalized (build_guard 42) ctx with
+   | Ok (Matched _) -> incr tests_run; incr tests_passed
+   | _ ->
+       incr tests_run;
+       Printf.eprintf "FAIL: E5a expected Matched\n";
+       exit 1);
+  (* 42 == 99 -> Not_matched *)
+  match evaluate_canonicalized (build_guard 99) ctx with
+  | Ok Not_matched -> incr tests_run; incr tests_passed
+  | _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: E5b expected Not_matched\n";
+      exit 1
+
+(* ================================================================== *)
+(*  CORE-7A1 E6 -- Valid Boolean equality still works                  *)
+(* ================================================================== *)
+
+let test_valid_boolean_equals () =
+  let build_guard expected =
+    let program = mk_program
+      ~id:"P_e6"
+      ~input_facts:[ mk_eval_fact "F_active" "K_active" Boolean_type ]
+      ~entry_guards:[ mk_guard "F_active" Equals (Boolean_value expected) ]
+      ~entry_origin:(Some (oid "O_anchor"))
+      ~origin_sites:[
+        mk_anchor_origin "O_anchor" "doc.received" [];
+        mk_action_origin "O_action" "cap.notify" "sha256:abc"
+          [ mk_lit_input "message" (String_value "start") ] [];
+      ]
+      ~success_continuations:[
+        mk_success_cont "O_anchor" (Origin_target (oid "O_action"));
+        mk_success_cont "O_action" Program_complete;
+      ]
+      ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
+      ()
+    in
+    assert_ok_canonical (Tethers_core_canonical.canonicalize program)
+  in
+  let ctx =
+    mk_context
+      ~evaluation_id:"eval_e6"
+      ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
+      ~facts:[ mk_fact_snapshot "K_active" (`Bool true) ]
+      ()
+  in
+  (* true == true -> Matched *)
+  (match evaluate_canonicalized (build_guard true) ctx with
+   | Ok (Matched _) -> incr tests_run; incr tests_passed
+   | _ ->
+       incr tests_run;
+       Printf.eprintf "FAIL: E6a expected Matched\n";
+       exit 1);
+  (* true == false -> Not_matched *)
+  match evaluate_canonicalized (build_guard false) ctx with
+  | Ok Not_matched -> incr tests_run; incr tests_passed
+  | _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: E6b expected Not_matched\n";
+      exit 1
+
+(* ================================================================== *)
 (*  RUN ALL TESTS                                                       *)
 (* ================================================================== *)
 
@@ -2920,4 +3187,11 @@ let () =
   test_program_digest_invariant_across_facts ();
   test_e2e_human_to_guard_to_plan ();
   test_canonical_identity_adversarial ();
+  (* CORE-7A1 tests *)
+  test_equals_string_type_integer_value ();
+  test_equals_integer_type_string_value ();
+  test_equals_boolean_type_string_value ();
+  test_valid_string_equals ();
+  test_valid_integer_equals ();
+  test_valid_boolean_equals ();
   Printf.printf "PASS all plan bridge tests (%d/%d)\n" !tests_passed !tests_run

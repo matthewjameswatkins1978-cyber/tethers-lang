@@ -318,7 +318,9 @@ let compare_guard operator (runtime_json : Yojson.Safe.t) (expected : Tethers_co
 let validate_guard_expected operator (expected : Tethers_core.core_value) (scalar_type : Tethers_core.core_scalar_type) =
   match operator, expected, scalar_type with
   | Contains, String_value _, String_type -> true
-  | Equals, _, _ -> true
+  | Equals, String_value _, String_type -> true
+  | Equals, Integer_value _, Integer_type -> true
+  | Equals, Boolean_value _, Boolean_type -> true
   | Greater_than, Integer_value _, Integer_type -> true
   | Greater_than_or_equal, Integer_value _, Integer_type -> true
   | _ -> false
