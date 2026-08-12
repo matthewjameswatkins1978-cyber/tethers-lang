@@ -44,6 +44,18 @@ CORE-8B created the request boundary module. Review found four gaps:
 - T3 not proving reception-before-guard semantics
 - T7 and T13 assertions too shallow
 
+## Required behaviour
+
+1. Remove all `raise Exit` paths from `resolve_one_capability` and `parse_one_fact`
+2. Use Result-returning `core_env_string` helper for core_environment field extraction
+3. Validate `core_environment` is an object before parsing
+4. Require `facts` field to be an object (missing/null = Invalid_request)
+5. Pass occurrence facts pairs through unchanged (no filter_map)
+6. Strengthen T3 with guarded tether, wrong event, no facts
+7. Strengthen T7 with exact HOST_KEY_771 key assertion
+8. Strengthen T13 with exact idempotency key assertions
+9. Add R1-R8 regression tests
+
 ## Relevant components
 
 - `tethers-0.1/engine-ocaml/bin/tethers_core_request_adapter.ml` -- modified
