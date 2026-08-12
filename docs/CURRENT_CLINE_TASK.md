@@ -2,11 +2,11 @@
 
 Control contract: `1`
 
-Task: `TETHERS CORE-8B2 — Truly Total JSON Shape Validation`
+Task: `TETHERS CORE-9A — Rust Semantic Environment Authority`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `203393ae0715d53122ce98da47e3d4d31079919f`
+Implementation checkpoint: `c1a46c26815cfeb3999a97a6bd0e51e16cbdd87f`
 
 Status: `COMPLETE`
 
@@ -14,95 +14,106 @@ Task colour: `Amber`
 
 Route: `OpenCode implementation + evidence, Lucy independent GitHub review`
 
-Worker note: `docs/worker-notes/2026-08-12-core-8b2-truly-total-json-validation.md`
+Worker note: `docs/worker-notes/2026-08-12-core-9a-rust-semantic-environment.md`
 
 Base branch: `feature/core-8b-request-boundary`
 
-Base commit: `10605078138ab7eab3e3cda8a5d4d14eec53d243`
+Base commit: `81722867840c3adf03794cbaeff761f414a96301`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
-Rust change class: `RUST_UNCHANGED`
+Rust change class: `RUST_CHANGED`
 
 ## Objective
 
-Finish the total-request invariant from CORE-8B1. evaluate_request must
-return request_error for malformed structural JSON. No Yojson.Safe.Util.Type_error
-or other structural exception may escape.
+Extend the Rust runtime configuration/preparation layer so each configured
+Tether MAY carry the explicit semantic environment required by the accepted
+CORE-8B request boundary. Authority + preparation only; no production
+evaluation injection yet.
 
 ## Relevant background and existing behaviour
 
-CORE-8B1 removed `raise Exit` paths and added `core_env_string` helper.
-But `json_string`, `json_list`, `json_member`, and `core_env_string` still
-call `Yojson.Safe.Util.member` on potentially non-object values. The root
-request, tether, event, and capability-list items were not validated as
-objects before field extraction.
+CORE-8B established the core_environment JSON wire shape in the OCaml
+request adapter. The Rust host must now have an honest, typed source for
+ProgramId, CoreVersion, capability identities, and fact identities.
 
 ## Required behaviour
 
-1. Replace Yojson.Util.member-based helpers with object-safe extraction
-   that proves `Assoc` before accessing fields
-2. Validate root request is object; tether is object; event is object
-3. Validate each capability list item is object before parse_capability
-4. Validate each core_environment capability binding is object
-5. Validate each input_facts declaration is object
-6. Require schema_description as mandatory string field (not optional "")
-7. Add Q1-Q12 regression tests
+1. Add CoreEnvironmentConfig, CoreCapabilityBindingConfig,
+   CoreInputFactBindingConfig, CoreScalarType types
+2. Add optional core_environment to TetherRef
+3. Validate structural host-owned invariants when present (9A.5)
+4. Validate runtime_name join (0 or 2+ matches fail closed) (9A.6)
+5. Add PreparedCoreEnvironment, PreparedCoreCapabilityBinding,
+   PreparedCoreInputFactBinding to configured_runtime.rs
+6. Carry core_environment through prepare_runtime()
+7. Add core_environment_json() pure serializer
+8. Add T1-T15 + adversarial tests
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_request_adapter.ml` -- modified
-- `tethers-0.1/engine-ocaml/bin/tethers_core_request_adapter.mli` -- unchanged
-- `tethers-0.1/engine-ocaml/bin/tethers_core_request_adapter_test.ml` -- modified
+- `tethers-0.1/host-rust/src/runtime_config.rs` -- modified
+- `tethers-0.1/host-rust/src/configured_runtime.rs` -- modified
+- `tethers-0.1/host-rust/src/host_execution.rs` -- modified (field init)
 
 ## Frozen decisions and invariants
 
-- evaluate_request is total: no structural parsing exceptions escape
-- Fact occurrence data passes through unchanged to CORE-8A
-- core_environment must be an object (not Null, not string, etc.)
-- facts must be an object (missing/null = Invalid_request)
-- Malformed core_environment fields return Invalid_core_environment
-- schema_description is required (not optional)
+- core_environment is optional; absent means no Core semantic authority
+- Never derive program_id from tether.id
+- Never derive capability_id from source_name, runtime_name, or manifest
+- Never derive contract_digest from pinned_digest or manifest digest
+- Never derive fact_id or host_snapshot_key from source_name
+- Core contract digest != manifest digest; do not compare or equate
+- scalar_type is exactly one of: string, integer, boolean
+- runtime_name join: 0 matches or 2+ matches fails closed
+- Preserve configured array order; no sorting, dedup, or canonicalisation
+- core_environment is dormant; not injected into production requests yet
 
 ## Acceptance criteria
 
-1. Q1: `evaluate_request `Null` → Invalid_request, no exception
-2. Q2: `evaluate_request (`String "oops")` → Invalid_request, no exception
-3. Q3: tether = `String "oops"` → Invalid_request
-4. Q4: event = `List []` → Invalid_request
-5. Q5: capabilities = [`Int 42] → Invalid_request
-6. Q6: core_environment.capabilities = [`Int 42] → Invalid_core_environment
-7. Q7: core_environment.input_facts = [`String "oops"] → Invalid_core_environment
-8. Q8: Fact declaration missing schema_description → Invalid_core_environment
-9. Q9: Fact declaration schema_description = `Int 7 → Invalid_core_environment
-10. Q10: program_id wrong type → Invalid_core_environment
-11. Q11: core_version wrong type → Invalid_core_environment
-12. Q12: all previous tests remain green
-13. dune build @all PASS
-14. dune runtest --force PASS
-15. git diff --check PASS
-16. task-packet checker PASS
+1. T1: existing config without core_environment remains valid
+2. T2: explicit environment parses with exact typed values
+3. T3: program_id not derived from tether.id
+4. T4: four capability identities differ and survive unchanged
+5. T5: contract_digest distinct from manifest digest
+6. T6: explicit Fact identities survive unchanged
+7. T7: all three scalar types accepted
+8. T8: invalid scalar type rejected
+9. T9: missing runtime_name target fails closed
+10. T10: ambiguous runtime_name fails closed
+11. T11: empty semantic identities rejected
+12. T12: exact CORE-8B JSON projection
+13. T13: missing environment has no JSON
+14. T14: serializer preserves configured order
+15. T15: all existing Rust tests stay green
+16. Adversarial test: no accidental derivation
+17. cargo fmt --check PASS
+18. cargo check PASS
+19. cargo test PASS (1431 passed)
+20. git diff --check PASS
+21. OCaml unchanged
+22. host_execution.rs prepared with core_environment: None
 
 ## Required verification
 
-1. OCaml build: `dune build @all` -- PASS (exit 0)
-2. All tests: `dune runtest --force` -- PASS
-3. Whitespace: `git diff --check` -- PASS
-4. Diff inspection: only authorised files changed
-5. Git status: clean worktree
-6. Task-packet checker at closeout: `control-v1/COMPLETE`
-7. Push branch to origin and confirm local HEAD == remote HEAD
+1. `cargo fmt --check` -- PASS
+2. `cargo check` -- PASS
+3. `cargo test` -- PASS (1431 passed, 0 failed)
+4. `git diff --check` -- PASS (LF/CRLF warnings only)
+5. Diff inspection: only authorised files changed
+6. Git status: clean worktree after push
+7. OCaml: zero diff against base
 
 ## Forbidden changes
 
-No production evaluator, no main.ml, no MCP, no Rust, no CORE-8A adapter
+No production evaluator, no main.ml, no MCP, no OCaml request adapter
 semantics, no lowerer, no Core, no validator, no canonicalisation, no planner
-semantics.
+semantics, no policy changes, no Trail changes, no provider execution changes.
 
 ## Stop conditions
 
-Commit CORE-8B2 implementation checkpoint. STOP.
+Commit CORE-9A implementation checkpoint. STOP.
 
 ## Expected pre-existing changes
 
-CORE-8B request boundary and CORE-8B1 total-parsing fixes (accepted).
+CORE-8B request boundary and CORE-8B2 total-parsing fixes (accepted).
