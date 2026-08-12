@@ -1376,6 +1376,7 @@ mod tests {
     use crate::stdio_provider::ManagedProvider;
     use crate::trusted_store::TrustedManifestStore;
     use serde_json::json;
+    use std::process::Command;
     use tethers_reference_host::cli::OutcomeStatus;
 
     // -----------------------------------------------------------------------
@@ -3336,5 +3337,312 @@ mod tests {
         assert_eq!(ik2, "eval_core9b_002/action_1");
 
         session.shutdown();
+    }
+
+    // -----------------------------------------------------------------------
+    // CORE-9C — real production HostExecutionService proof
+    //
+    // These tests deliberately use the public service seam rather than the
+    // request builder or EngineSession directly.  They prove the ordinary
+    // production route owns Core request construction and that matched Core
+    // plans continue through existing policy, replay, dispatch, and Trail
+    // machinery without a legacy planning fallback.
+    // -----------------------------------------------------------------------
+
+    const CORE_PRODUCTION_TETHER: &str =
+        "tether \"core production dispatch\"\n\nanchor\n    fixture.start\n\nwhen\n\ndo\n    notify\n        message: anchor.message\n        path: anchor.path\n";
+
+    fn core9c_prepared_runtime_for_dispatch(
+        with_core_environment: bool,
+        marker_path: &Path,
+    ) -> (PreparedRuntime, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "tethers-core9c-production-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(dir.join("tethers")).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        std::fs::write(
+            dir.join("tethers/core-production.tether"),
+            CORE_PRODUCTION_TETHER,
+        )
+        .unwrap();
+
+        let manifest =
+            include_str!("../../protocol/capability-manifests/fixture-ping-standing-allow.json");
+        let (_, manifest_digest) = crate::manifest::canonicalize_and_digest(manifest).unwrap();
+        std::fs::write(dir.join("manifests/fixture-ping.json"), manifest).unwrap();
+
+        let fixture_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts")
+            .join("tethers-stdio-fixture.ps1");
+        let mut tether = json!({
+            "id": "core-production",
+            "version": "1",
+            "source_path": "tethers/core-production.tether"
+        });
+        if with_core_environment {
+            tether.as_object_mut().unwrap().insert(
+                "core_environment".to_owned(),
+                json!({
+                    "program_id": "program.core9c.production",
+                    "core_version": "1",
+                    "capabilities": [{
+                        "source_name": "notify",
+                        "capability_id": "cap.semantic.notify",
+                        "contract_digest": "CORE-CONTRACT-9C",
+                        "runtime_name": "fixture.ping"
+                    }],
+                    "input_facts": []
+                }),
+            );
+        }
+
+        let config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "core9c.production.test",
+                "version": "1",
+                "tethers": [tether],
+                "capability_requirements": [{
+                    "name": "fixture.ping",
+                    "version": 1,
+                    "reason": "CORE-9C production dispatch proof"
+                }]
+            },
+            "providers": [{
+                "id": "tethers-stdio-fixture",
+                "display_name": "Tethers Stdio Fixture",
+                "transport": {
+                    "kind": "stdio",
+                    "command": "pwsh.exe",
+                    "args": [
+                        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                        fixture_script, "-Mode", "run-success", "-MarkerFile", marker_path
+                    ],
+                    "protocol_version": "2025-11-25"
+                },
+                "capabilities": [{
+                    "name": "fixture.ping",
+                    "version": 1,
+                    "manifest_path": "manifests/fixture-ping.json",
+                    "pinned_digest": manifest_digest,
+                    "scope_binding": {
+                        "kind": "path_prefix",
+                        "argument_json_pointer": "/path"
+                    }
+                }]
+            }],
+            "policy": {
+                "default": "deny",
+                "rules": [{
+                    "name": "fixture.ping",
+                    "version": 1,
+                    "decision": "allow"
+                }]
+            }
+        });
+        let config_path = dir.join("tethers-config.json");
+        std::fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        (prepare_runtime(&loaded).unwrap(), dir)
+    }
+
+    fn core9c_input(evaluation_id: &str, event_name: &str) -> PreparedEvaluationInput {
+        PreparedEvaluationInput {
+            tether_id: "core-production".to_owned(),
+            tether_version: "1".to_owned(),
+            evaluation_id: evaluation_id.to_owned(),
+            anchor_event: json!({
+                "id": format!("evt_{evaluation_id}"),
+                "name": event_name,
+                "data": {
+                    "message": "Hello Core Production",
+                    "path": "projects/core9c.txt"
+                }
+            }),
+            facts: json!({}),
+        }
+    }
+
+    fn marker_calls(marker_path: &Path) -> Vec<String> {
+        std::fs::read_to_string(marker_path)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn core9c_provision_replay_root(root: &Path) {
+        std::fs::create_dir_all(root).expect("T15: create replay root");
+        let acl_script = format!(
+            "$p='{}'; $identity=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name; $acl=[System.Security.AccessControl.DirectorySecurity]::new(); $acl.SetAccessRuleProtection($true,$false); $inherit=[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit; foreach($t in @($identity,'NT AUTHORITY\\SYSTEM','BUILTIN\\Administrators')) {{ $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($t,'FullControl',$inherit,'None','Allow')) }}; Set-Acl -LiteralPath $p -AclObject $acl",
+            root.to_string_lossy()
+        );
+        assert!(
+            Command::new("pwsh.exe")
+                .args(["-NoProfile", "-Command", &acl_script])
+                .status()
+                .expect("T15: set replay-root ACL")
+                .success(),
+            "T15: replay root must receive the accepted protected ACL"
+        );
+        assert!(matches!(
+            crate::replay_windows::provision_replay(root),
+            Ok(crate::replay_windows::ProvisionReplayOutcome::Provisioned)
+        ));
+    }
+
+    #[test]
+    fn core9c_t15_production_service_dispatches_core_plan_and_preserves_identity() {
+        let marker_path = std::env::temp_dir().join(format!(
+            "tethers-core9c-marker-{}.txt",
+            uuid::Uuid::new_v4()
+        ));
+        let (runtime, dir) = core9c_prepared_runtime_for_dispatch(true, &marker_path);
+        let (engine_path, _) = core9b_require_engine();
+        let trail_path = dir.join("trail.jsonl");
+        let host_data_root = dir.join("host-data");
+        core9c_provision_replay_root(&host_data_root);
+        let service =
+            HostExecutionService::new(&runtime, &engine_path, &trail_path, Some(&host_data_root));
+        let results = service
+            .run_selected(&[
+                core9c_input("eval_core9c_001", "fixture.start"),
+                core9c_input("eval_core9c_002", "fixture.start"),
+            ])
+            .expect("production service must complete");
+        assert_eq!(results.len(), 2);
+
+        let mut program_digests = Vec::new();
+        for (index, result) in results.iter().enumerate() {
+            let expected_evaluation_id = format!("eval_core9c_{:03}", index + 1);
+            let ExecutionServiceResult::Completed {
+                evaluation_id,
+                response,
+                ..
+            } = result
+            else {
+                panic!("T15: expected completed Core production result, got {result:?}");
+            };
+            assert_eq!(evaluation_id, &expected_evaluation_id);
+            assert_eq!(response["status"], "matched");
+            assert_eq!(response["evaluation_id"], expected_evaluation_id);
+            assert_eq!(
+                response.pointer("/plan/id"),
+                Some(&Value::String(format!("{expected_evaluation_id}/plan")))
+            );
+            let program_digest = response["program_digest"]
+                .as_str()
+                .expect("T15: program_digest must be top-level");
+            assert!(program_digest.starts_with("sha256:"));
+            assert!(response.pointer("/plan/program_digest").is_none());
+            assert_eq!(
+                response.pointer("/plan/actions/0/capability"),
+                Some(&Value::String("fixture.ping".to_owned()))
+            );
+            assert_eq!(
+                response.pointer("/plan/actions/0/arguments/path"),
+                Some(&Value::String("projects/core9c.txt".to_owned()))
+            );
+            program_digests.push(program_digest.to_owned());
+        }
+        assert_eq!(
+            program_digests[0], program_digests[1],
+            "ProgramDigest identifies the stable Core program, not an occurrence"
+        );
+
+        let calls = marker_calls(&marker_path);
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| call.as_str() == "tools/call")
+                .count(),
+            2,
+            "each matched occurrence must dispatch exactly once"
+        );
+        let trail: Vec<Value> = std::fs::read_to_string(&trail_path)
+            .expect("T15: Trail must exist after dispatch")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("T15: Trail JSONL"))
+            .collect();
+        assert_eq!(trail.len(), 4, "two actions must record intent and outcome");
+        assert_eq!(trail[0]["capability_name"], "fixture.ping");
+        assert_eq!(trail[1]["status"], "succeeded");
+        assert_eq!(trail[3]["status"], "succeeded");
+
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_file(marker_path);
+    }
+
+    #[test]
+    fn core9c_t16_wrong_event_never_dispatches() {
+        let marker_path = std::env::temp_dir().join(format!(
+            "tethers-core9c-wrong-event-{}.txt",
+            uuid::Uuid::new_v4()
+        ));
+        let (runtime, dir) = core9c_prepared_runtime_for_dispatch(true, &marker_path);
+        let (engine_path, _) = core9b_require_engine();
+        let trail_path = dir.join("trail.jsonl");
+        let host_data_root = dir.join("host-data");
+        let service =
+            HostExecutionService::new(&runtime, &engine_path, &trail_path, Some(&host_data_root));
+        let results = service
+            .run_selected(&[core9c_input("eval_core9c_wrong", "fixture.other")])
+            .expect("wrong event must be an ordinary planner outcome");
+        assert!(matches!(
+            &results[0],
+            ExecutionServiceResult::NoActions { evaluation_id, response }
+                if evaluation_id == "eval_core9c_wrong" && response["status"] == "not_matched"
+        ));
+        assert!(
+            !marker_calls(&marker_path)
+                .iter()
+                .any(|call| call == "tools/call"),
+            "wrong Core event must not cross the provider boundary"
+        );
+        assert!(
+            !trail_path.exists(),
+            "wrong Core event must not enter dispatch or create a host Trail"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_file(marker_path);
+    }
+
+    #[test]
+    fn core9c_t17_missing_core_environment_fails_closed_without_dispatch() {
+        let marker_path = std::env::temp_dir().join(format!(
+            "tethers-core9c-no-core-{}.txt",
+            uuid::Uuid::new_v4()
+        ));
+        let (runtime, dir) = core9c_prepared_runtime_for_dispatch(false, &marker_path);
+        let (engine_path, _) = core9b_require_engine();
+        let trail_path = dir.join("trail.jsonl");
+        let host_data_root = dir.join("host-data");
+        let service =
+            HostExecutionService::new(&runtime, &engine_path, &trail_path, Some(&host_data_root));
+        let results = service
+            .run_selected(&[core9c_input("eval_core9c_no_core", "fixture.start")])
+            .expect("missing Core authority is a service result, not transport failure");
+        assert!(matches!(
+            &results[0],
+            ExecutionServiceResult::InvalidData { message }
+                if message.contains("no core_environment")
+        ));
+        assert!(
+            !marker_calls(&marker_path)
+                .iter()
+                .any(|call| call == "tools/call"),
+            "missing Core authority must not fall back to legacy evaluation or dispatch"
+        );
+        assert!(
+            !trail_path.exists(),
+            "missing Core authority must fail before dispatch or Trail creation"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_file(marker_path);
     }
 }
