@@ -68,6 +68,8 @@ let assert_planning_error expected_tag msg = function
   | Error (Adapter_error (Tethers_core_evaluation_adapter.Planning_error e)) ->
       let tag = match e with
         | Tethers_core_plan.Missing_fact_snapshot _ -> "Missing_fact_snapshot"
+        | Tethers_core_plan.Fact_snapshot_type_mismatch _ ->
+            "Fact_snapshot_type_mismatch"
         | _ -> "other_planning_error"
       in
       if tag = expected_tag then begin
@@ -254,15 +256,17 @@ do
   | _ -> assert_true "T2 single action shape" false
 
 (* ================================================================== *)
-(*  T3 — Wrong event, missing facts → Not_matched                      *)
+(*  T3 — Guarded event, wrong name, no facts → Not_matched             *)
+(*  Proves reception-before-guard survives request boundary.            *)
 (* ================================================================== *)
 
 let test_t3_wrong_event () =
   let source =
-    {|tether "minimal"
+    {|tether "guarded"
 anchor
     document.received
 when
+    file_type is "pdf"
 do
     notify
         literal: "value"
@@ -273,7 +277,10 @@ do
     ~event_name:"document.deleted"
     ~capabilities:(`List [mk_cap "notify" "1.0.0" ()])
     ~core_environment:(mk_core_env "P_1" "0.1.0"
-      ~capabilities:(`List [mk_core_cap "notify" "cap.notify" "d1" "notify"]) ())
+      ~capabilities:(`List [mk_core_cap "notify" "cap.notify" "d1" "notify"])
+      ~input_facts:(`List [
+        mk_core_fact "file_type" "F_ft" "K_ft" "string" ()
+      ]) ())
     ()
   in
   let result = evaluate_request request in
@@ -380,7 +387,7 @@ do
   ignore (assert_matched "T6" result)
 
 (* ================================================================== *)
-(*  T7 — Explicit HostSnapshotKey                                      *)
+(*  T7 — Explicit HostSnapshotKey: exact key assertion                  *)
 (* ================================================================== *)
 
 let test_t7_explicit_host_snapshot_key () =
@@ -409,7 +416,22 @@ do
     ()
   in
   let result = evaluate_request request in
-  assert_planning_error "Missing_fact_snapshot" "T7" result
+  match result with
+  | Error (Adapter_error
+             (Tethers_core_evaluation_adapter.Planning_error
+                (Tethers_core_plan.Missing_fact_snapshot key))) ->
+      incr tests_run;
+      assert_true "T7 exact HOST_KEY_771"
+        (Tethers_core.string_of_host_snapshot_key key = "HOST_KEY_771");
+      incr tests_passed
+  | Error _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: T7 (expected Missing_fact_snapshot HOST_KEY_771, got other error)\n";
+      exit 1
+  | Ok _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: T7 (expected Error, got Ok)\n";
+      exit 1
 
 (* ================================================================== *)
 (*  T8 — Explicit FactId                                                *)
@@ -594,7 +616,7 @@ do
     (cp_a.runtime_plan.id <> cp_b.runtime_plan.id)
 
 (* ================================================================== *)
-(*  T13 — evaluation_id occurrence identity                             *)
+(*  T13 — evaluation_id occurrence identity + idempotency keys          *)
 (* ================================================================== *)
 
 let test_t13_evaluation_id_identity () =
@@ -628,7 +650,22 @@ do
   assert_true "T13 plan_a.id = eid_alpha/plan"
     (cp_a.runtime_plan.id = "eid_alpha/plan");
   assert_true "T13 plan_b.id = eid_beta/plan"
-    (cp_b.runtime_plan.id = "eid_beta/plan")
+    (cp_b.runtime_plan.id = "eid_beta/plan");
+  (* Verify idempotency keys differ *)
+  let get_idempotency_key action =
+    Yojson.Safe.Util.member "idempotency_key" action
+  in
+  match cp_a.runtime_plan.actions, cp_b.runtime_plan.actions with
+  | [a1], [b1] ->
+      let ik_a = get_idempotency_key a1 in
+      let ik_b = get_idempotency_key b1 in
+      assert_true "T13 different idempotency keys"
+        (ik_a <> ik_b);
+      assert_true "T13 ik_a = eid_alpha/action_1"
+        (ik_a = `String "eid_alpha/action_1");
+      assert_true "T13 ik_b = eid_beta/action_1"
+        (ik_b = `String "eid_beta/action_1")
+  | _ -> assert_true "T13 single action each" false
 
 (* ================================================================== *)
 (*  T14 — Runtime capability field fidelity                            *)
@@ -761,13 +798,6 @@ do
       ]) ())
     ()
   in
-  (* The test body MUST NOT call:
-     Tether_parser.parse_tether
-     Tethers_core_lowerer.lower
-     Tethers_core_canonical.canonicalize
-     Tethers_core_plan.evaluate_canonicalized
-     Tethers_core_evaluation_adapter.evaluate
-     Those calls belong inside the request adapter. *)
   let result = evaluate_request request in
   let cp = assert_matched "E2E" result in
   assert_true "E2E one action" (List.length cp.runtime_plan.actions = 1);
@@ -784,6 +814,303 @@ do
       assert_true "E2E plan uses runtime name"
         (cap = `String "notifications.send")
   | _ -> assert_true "E2E single action shape" false
+
+(* ================================================================== *)
+(*  R1 — Malformed core capability field (non-string capability_id)     *)
+(* ================================================================== *)
+
+let test_r1_malformed_core_cap () =
+  let source =
+    {|tether "minimal"
+anchor
+    document.received
+when
+do
+    notify
+        literal: "value"
+|}
+  in
+  let request = mk_request
+    ~tether_source:source
+    ~event_name:"document.received"
+    ~capabilities:(`List [mk_cap "notify" "1.0.0" ()])
+    ~core_environment:(mk_core_env "P_1" "0.1.0"
+      ~capabilities:(`List [
+        `Assoc [
+          ("source_name", `String "notify");
+          ("capability_id", `Int 42);
+          ("contract_digest", `String "d1");
+          ("runtime_name", `String "notify");
+        ]
+      ]) ())
+    ()
+  in
+  let result = evaluate_request request in
+  assert_request_error "Invalid_core_environment" "R1" result
+
+(* ================================================================== *)
+(*  R2 — Malformed Fact declaration (integer host_snapshot_key)         *)
+(* ================================================================== *)
+
+let test_r2_malformed_fact_decl () =
+  let source =
+    {|tether "minimal"
+anchor
+    document.received
+when
+do
+    notify
+        literal: "value"
+|}
+  in
+  let request = mk_request
+    ~tether_source:source
+    ~event_name:"document.received"
+    ~capabilities:(`List [mk_cap "notify" "1.0.0" ()])
+    ~core_environment:(mk_core_env "P_1" "0.1.0"
+      ~input_facts:(`List [
+        `Assoc [
+          ("source_name", `String "f");
+          ("fact_id", `String "F1");
+          ("host_snapshot_key", `Int 99);
+          ("scalar_type", `String "string");
+          ("schema_description", `String "d");
+        ]
+      ]) ())
+    ()
+  in
+  let result = evaluate_request request in
+  assert_request_error "Invalid_core_environment" "R2" result
+
+(* ================================================================== *)
+(*  R3 — Malformed core_environment structural type (string instead)    *)
+(* ================================================================== *)
+
+let test_r3_malformed_core_env_struct () =
+  let source =
+    {|tether "minimal"
+anchor
+    document.received
+when
+do
+    notify
+        literal: "value"
+|}
+  in
+  let request = mk_request
+    ~tether_source:source
+    ~event_name:"document.received"
+    ~capabilities:(`List [mk_cap "notify" "1.0.0" ()])
+    ~core_environment:(`String "oops")
+    ()
+  in
+  let result = evaluate_request request in
+  assert_request_error "Invalid_core_environment" "R3" result
+
+(* ================================================================== *)
+(*  R4 — Facts field missing/non-object                                 *)
+(* ================================================================== *)
+
+let test_r4_facts_missing () =
+  let source =
+    {|tether "minimal"
+anchor
+    document.received
+when
+do
+    notify
+        literal: "value"
+|}
+  in
+  let request_no_facts =
+    `Assoc [
+      ("protocol_version", `String "0.1");
+      ("language_version", `String "0.1");
+      ("evaluation_id", `String "eval_1");
+      ("tether", `Assoc [
+        ("id", `String "t_1");
+        ("version", `String "1.0");
+        ("source", `String source);
+      ]);
+      ("event", `Assoc [
+        ("id", `String "e_1");
+        ("name", `String "document.received");
+        ("data", `Null);
+      ]);
+      ("capabilities", `List [mk_cap "notify" "1.0.0" ()]);
+      ("core_environment", mk_core_env "P_1" "0.1.0"
+        ~capabilities:(`List [mk_core_cap "notify" "cap.notify" "d1" "notify"]) ());
+    ]
+  in
+  let result = evaluate_request request_no_facts in
+  assert_request_error "Invalid_request" "R4a" result;
+  let request_null_facts =
+    `Assoc [
+      ("protocol_version", `String "0.1");
+      ("language_version", `String "0.1");
+      ("evaluation_id", `String "eval_1");
+      ("tether", `Assoc [
+        ("id", `String "t_1");
+        ("version", `String "1.0");
+        ("source", `String source);
+      ]);
+      ("event", `Assoc [
+        ("id", `String "e_1");
+        ("name", `String "document.received");
+        ("data", `Null);
+      ]);
+      ("facts", `Null);
+      ("capabilities", `List [mk_cap "notify" "1.0.0" ()]);
+      ("core_environment", mk_core_env "P_1" "0.1.0"
+        ~capabilities:(`List [mk_core_cap "notify" "cap.notify" "d1" "notify"]) ());
+    ]
+  in
+  let result2 = evaluate_request request_null_facts in
+  assert_request_error "Invalid_request" "R4b" result2
+
+(* ================================================================== *)
+(*  R5 — Non-scalar occurrence Fact preserved → type mismatch           *)
+(* ================================================================== *)
+
+let test_r5_non_scalar_fact_preserved () =
+  let source =
+    {|tether "guarded"
+anchor
+    document.received
+when
+    file_type is "pdf"
+do
+    notify
+        literal: "value"
+|}
+  in
+  let request = mk_request
+    ~tether_source:source
+    ~event_name:"document.received"
+    ~facts:(`Assoc [("file_type", `List [`String "pdf"])])
+    ~capabilities:(`List [mk_cap "notify" "1.0.0" ()])
+    ~core_environment:(mk_core_env "P_1" "0.1.0"
+      ~capabilities:(`List [mk_core_cap "notify" "cap.notify" "d1" "notify"])
+      ~input_facts:(`List [
+        mk_core_fact "file_type" "F_ft" "K_ft" "string" ()
+      ]) ())
+    ()
+  in
+  let result = evaluate_request request in
+  assert_planning_error "Fact_snapshot_type_mismatch" "R5" result
+
+(* ================================================================== *)
+(*  R6 — Corrected guarded wrong-event/no-Fact T3 proof                 *)
+(*  (Identical to strengthened T3, kept as regression alias.)           *)
+(* ================================================================== *)
+
+let test_r6_guarded_wrong_event () =
+  let source =
+    {|tether "guarded"
+anchor
+    document.received
+when
+    file_type is "pdf"
+do
+    notify
+        literal: "value"
+|}
+  in
+  let request = mk_request
+    ~tether_source:source
+    ~event_name:"document.deleted"
+    ~capabilities:(`List [mk_cap "notify" "1.0.0" ()])
+    ~core_environment:(mk_core_env "P_1" "0.1.0"
+      ~capabilities:(`List [mk_core_cap "notify" "cap.notify" "d1" "notify"])
+      ~input_facts:(`List [
+        mk_core_fact "file_type" "F_ft" "K_ft" "string" ()
+      ]) ())
+    ()
+  in
+  let result = evaluate_request request in
+  assert_not_matched "R6" result
+
+(* ================================================================== *)
+(*  R7 — T7 exact HOST_KEY_771 assertion (regression alias)            *)
+(* ================================================================== *)
+
+let test_r7_t7_exact_key () =
+  let source =
+    {|tether "guarded"
+anchor
+    document.received
+when
+    file_type is "pdf"
+do
+    notify
+        literal: "value"
+|}
+  in
+  let request = mk_request
+    ~tether_source:source
+    ~event_name:"document.received"
+    ~event_data:`Null
+    ~facts:(`Assoc [])
+    ~capabilities:(`List [mk_cap "notify" "1.0.0" ()])
+    ~core_environment:(mk_core_env "P_1" "0.1.0"
+      ~capabilities:(`List [mk_core_cap "notify" "cap.notify" "d1" "notify"])
+      ~input_facts:(`List [
+        mk_core_fact "file_type" "F_938" "HOST_KEY_771" "string" ()
+      ]) ())
+    ()
+  in
+  let result = evaluate_request request in
+  match result with
+  | Error (Adapter_error
+             (Tethers_core_evaluation_adapter.Planning_error
+                (Tethers_core_plan.Missing_fact_snapshot key))) ->
+      incr tests_run;
+      assert_true "R7 exact HOST_KEY_771"
+        (Tethers_core.string_of_host_snapshot_key key = "HOST_KEY_771");
+      incr tests_passed
+  | _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: R7 (expected Missing_fact_snapshot HOST_KEY_771)\n";
+      exit 1
+
+(* ================================================================== *)
+(*  R8 — T13 exact idempotency keys (regression alias)                  *)
+(* ================================================================== *)
+
+let test_r8_t13_idempotency_keys () =
+  let source =
+    {|tether "minimal"
+anchor
+    document.received
+when
+do
+    notify
+        literal: "value"
+|}
+  in
+  let mk_request_with_eid eid =
+    mk_request
+      ~evaluation_id:eid
+      ~tether_source:source
+      ~event_name:"document.received"
+      ~capabilities:(`List [mk_cap "notify" "1.0.0" ()])
+      ~core_environment:(mk_core_env "P_1" "0.1.0"
+        ~capabilities:(`List [mk_core_cap "notify" "cap.notify" "d1" "notify"]) ())
+      ()
+  in
+  let cp_a = assert_matched "R8a" (evaluate_request (mk_request_with_eid "eid_alpha")) in
+  let cp_b = assert_matched "R8b" (evaluate_request (mk_request_with_eid "eid_beta")) in
+  match cp_a.runtime_plan.actions, cp_b.runtime_plan.actions with
+  | [a1], [b1] ->
+      let ik_a = Yojson.Safe.Util.member "idempotency_key" a1 in
+      let ik_b = Yojson.Safe.Util.member "idempotency_key" b1 in
+      assert_true "R8 ik_a = eid_alpha/action_1"
+        (ik_a = `String "eid_alpha/action_1");
+      assert_true "R8 ik_b = eid_beta/action_1"
+        (ik_b = `String "eid_beta/action_1");
+      assert_true "R8 keys differ"
+        (ik_a <> ik_b)
+  | _ -> assert_true "R8 single action each" false
 
 (* ================================================================== *)
 (*  Runner                                                             *)
@@ -807,4 +1134,12 @@ let () =
   test_t15_duplicate_top_level_cap ();
   test_t16_existing_tests ();
   test_e2e_one_call ();
+  test_r1_malformed_core_cap ();
+  test_r2_malformed_fact_decl ();
+  test_r3_malformed_core_env_struct ();
+  test_r4_facts_missing ();
+  test_r5_non_scalar_fact_preserved ();
+  test_r6_guarded_wrong_event ();
+  test_r7_t7_exact_key ();
+  test_r8_t13_idempotency_keys ();
   Printf.printf "PASS all request adapter tests (%d/%d)\n" !tests_passed !tests_run

@@ -53,17 +53,20 @@ let json_string field json =
   | `String s -> Ok s
   | _ -> Error (Invalid_request (field, "expected string"))
 
-let json_assoc field json =
-  match Yojson.Safe.Util.member field json with
-  | `Assoc a -> Ok a
-  | _ -> Error (Invalid_request (field, "expected object"))
-
 let json_list field json =
   match Yojson.Safe.Util.member field json with
   | `List l -> Ok l
   | _ -> Error (Invalid_request (field, "expected array"))
 
 let json_member field json = Yojson.Safe.Util.member field json
+
+(* String extraction for core_environment fields.  Returns
+   Invalid_core_environment on wrong type instead of raising. *)
+let core_env_string field json =
+  match Yojson.Safe.Util.member field json with
+  | `String s -> Ok s
+  | _ -> Error (Invalid_core_environment
+                  (field ^ ": expected string"))
 
 (* ================================================================== *)
 (*  Scalar type mapping                                                *)
@@ -81,17 +84,13 @@ let parse_scalar_type s =
 (* ================================================================== *)
 
 (* Resolve a core_environment capability binding's runtime_name against
-   the already-parsed top-level runtime capabilities. *)
+   the already-parsed top-level runtime capabilities.
+   All field extraction uses Result; no exceptions escape. *)
 let resolve_one_capability top_level_caps binding =
-  let open Yojson.Safe.Util in
-  let source_name = member "source_name" binding |> function
-    | `String s -> s | _ -> raise Exit in
-  let capability_id_str = member "capability_id" binding |> function
-    | `String s -> s | _ -> raise Exit in
-  let contract_digest_str = member "contract_digest" binding |> function
-    | `String s -> s | _ -> raise Exit in
-  let runtime_name = member "runtime_name" binding |> function
-    | `String s -> s | _ -> raise Exit in
+  core_env_string "source_name" binding >>= fun source_name ->
+  core_env_string "capability_id" binding >>= fun capability_id_str ->
+  core_env_string "contract_digest" binding >>= fun contract_digest_str ->
+  core_env_string "runtime_name" binding >>= fun runtime_name ->
   let matches =
     List.filter (fun c -> c.Tethers_protocol.name = runtime_name) top_level_caps
   in
@@ -119,17 +118,14 @@ let resolve_capabilities top_level_caps binding_jsons =
 (*  Core input fact declaration                                        *)
 (* ================================================================== *)
 
+(* Parse one input_fact declaration from core_environment.
+   All field extraction uses Result; no exceptions escape. *)
 let parse_one_fact fact_json =
-  let open Yojson.Safe.Util in
-  let source_name = member "source_name" fact_json |> function
-    | `String s -> s | _ -> raise Exit in
-  let fact_id_str = member "fact_id" fact_json |> function
-    | `String s -> s | _ -> raise Exit in
-  let host_snapshot_key_str = member "host_snapshot_key" fact_json |> function
-    | `String s -> s | _ -> raise Exit in
-  let scalar_type_str = member "scalar_type" fact_json |> function
-    | `String s -> s | _ -> raise Exit in
-  let schema_description = match member "schema_description" fact_json with
+  core_env_string "source_name" fact_json >>= fun source_name ->
+  core_env_string "fact_id" fact_json >>= fun fact_id_str ->
+  core_env_string "host_snapshot_key" fact_json >>= fun host_snapshot_key_str ->
+  core_env_string "scalar_type" fact_json >>= fun scalar_type_str ->
+  let schema_description = match Yojson.Safe.Util.member "schema_description" fact_json with
     | `String s -> s | _ -> "" in
   parse_scalar_type scalar_type_str >>= fun stype ->
   Ok { source_name;
@@ -162,7 +158,7 @@ let parse_core_env top_level_caps env_json =
   (match member "input_facts" env_json with
    | `List fact_jsons -> parse_facts fact_jsons
    | `Null -> Ok []
-   | _ -> Error (Invalid_request ("input_facts", "expected array or null")))
+   | _ -> Error (Invalid_core_environment "input_facts: expected array or null"))
   >>= fun input_facts ->
   Ok { program_id = program_id_of_string program_id_str;
        core_version = core_version_of_string core_version_str;
@@ -192,9 +188,11 @@ let parse_request request =
     json_string "id" event_json >>= fun event_id ->
     json_string "name" event_json >>= fun event_name ->
     let event_data = json_member "data" event_json in
-    (match json_assoc "facts" request with
-     | Ok facts -> Ok (`Assoc facts)
-     | Error _ -> Ok `Null)
+    (* Require facts to be an object.  Missing or non-object is invalid. *)
+    (match Yojson.Safe.Util.member "facts" request with
+     | `Assoc _ as obj -> Ok obj
+     | `Null -> Error (Invalid_request ("facts", "required object"))
+     | _ -> Error (Invalid_request ("facts", "expected object")))
     >>= fun facts_json ->
     json_list "capabilities" request >>= fun cap_jsons ->
     (try
@@ -224,8 +222,8 @@ let evaluate_request request =
       let core_env_json = json_member "core_environment" request in
       (match core_env_json with
        | `Null -> Error Missing_core_environment
-       | _ ->
-           match parse_core_env req.top_level_caps core_env_json with
+       | `Assoc _ ->
+           (match parse_core_env req.top_level_caps core_env_json with
            | Error (Invalid_request (f, m)) ->
                Error (Invalid_request (f, m))
            | Error (Missing_runtime_capability_binding n) ->
@@ -234,17 +232,16 @@ let evaluate_request request =
                Error (Ambiguous_runtime_capability_binding n)
            | Error (Invalid_scalar_type s) ->
                Error (Invalid_scalar_type s)
+           | Error (Invalid_core_environment msg) ->
+               Error (Invalid_core_environment msg)
            | Error _ ->
                Error (Invalid_core_environment "parse failure")
            | Ok env ->
+               (* Pass occurrence facts through unchanged.
+                  CORE owns semantic Fact type validation. *)
                let facts =
                  match req.facts_json with
-                 | `Assoc pairs ->
-                     List.filter_map (function
-                       | k, `String v -> Some (k, `String v)
-                       | k, `Int v -> Some (k, `Int v)
-                       | k, `Bool v -> Some (k, `Bool v)
-                       | _ -> None) pairs
+                 | `Assoc pairs -> pairs
                  | _ -> []
                in
                let input =
@@ -265,5 +262,6 @@ let evaluate_request request =
                match evaluate env input with
                | Ok evaluation ->
                    Ok { context; evaluation }
-               | Error adapter_err ->
-                   Error (Adapter_error adapter_err))
+                | Error adapter_err ->
+                    Error (Adapter_error adapter_err))
+       | _ -> Error (Invalid_core_environment "expected object"))
