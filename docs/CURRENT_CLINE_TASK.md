@@ -6,9 +6,9 @@ Task: `TETHERS CORE-8A - Human Request → Canonical Evaluation Adapter`
 
 Owner: `OpenCode`
 
-Implementation checkpoint: `TBD`
+Implementation checkpoint: `6bdd91babe4eaed5a84c3ecc650de1292edfe20c`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
@@ -37,6 +37,22 @@ The adapter MUST receive explicit semantic lowering identities from its caller.
 Do NOT switch the existing production `tethers.evaluate` MCP tool to this path yet.
 
 Do NOT invent capability identity from runtime capability names.
+
+## Relevant background and existing behaviour
+
+The accepted Core pipeline now includes:
+- Human parsing (Tether_parser)
+- Human AST → Core lowering (Tethers_core_lowerer)
+- Core validation (Tethers_core_validator)
+- canonicalisation + ProgramDigest (Tethers_core_canonical)
+- runtime event reception + guard evaluation + planning (Tethers_core_plan.evaluate_canonicalized)
+
+But callers currently have to manually assemble lowerer environment, runtime
+capability projections, Fact snapshots, and evaluation context. CORE-8A makes
+that assembly one explicit typed boundary.
+
+CORE-7B implemented canonical anchor reception and runtime event binding in
+`evaluate_canonicalized`, which this adapter delegates to.
 
 ## Required behaviour
 
