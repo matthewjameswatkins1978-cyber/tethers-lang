@@ -82,8 +82,9 @@ ERROR produces typed failure. Do not wire production execution.
 
 - Branch pushed: `feature/core-7a-entry-guards`
 - Implementation commit SHA: `c9cfc20fefae80a02ee9658317af65aaf699bfe2`
-- Local HEAD: `c9cfc20fefae80a02ee9658317af65aaf699bfe2`
-- Local HEAD == remote HEAD: to be confirmed after push
+- Final remote HEAD SHA: `c1d7a1470bec174b7b1459260c320d8ab3919563`
+- Local HEAD: `c1d7a1470bec174b7b1459260c320d8ab3919563`
+- Local HEAD == remote HEAD: confirmed
 - `git status --short`: clean
 
 ## Discoveries
