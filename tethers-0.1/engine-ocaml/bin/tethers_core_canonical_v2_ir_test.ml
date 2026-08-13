@@ -459,8 +459,63 @@ let test_persistent_branch_ir () =
   check_equal_int 1 (List.length uniq_digests) "persistent 1 digest IR";
   (* Report IR stats for witness — first perm *)
   let (_, stats0) = List.hd results in
+  check_equal_int 6 stats0.leaves_encoded "persistent Branch exact encoder reductions";
+  check_equal_int 570 stats0.leaves_avoided "persistent Branch leaves avoided";
   Printf.printf "Persistent Branch IR stats: nodes=%d leaves=%d rounds=%d prefix_pruned=%d orbit_pruned=%d dup_hits=%d leaves_avoided=%d\n"
     stats0.nodes stats0.leaves_encoded stats0.refinement_rounds stats0.prefix_subtrees_pruned stats0.orbit_branches_pruned stats0.duplicate_payload_hits stats0.leaves_avoided
+
+let test_single_collection_branch_shortcut () =
+  (* This deliberately has no graph-theoretic asymmetry to exploit: all eight
+     Branches are distinct occurrences with the same body.  The reduction is
+     purely the exact Enc_V2 property that Branch labels are otherwise unused
+     when this is the only physical Branch collection. *)
+  let anchor = oid "anchor" in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0";
+    input_facts = []; entry_guards = []; entry_origin = Some anchor;
+    success_continuations = [];
+    origin_sites = [Anchor_origin {
+      anchor_origin_id = anchor; event_name = "ev"; declared_facts = [];
+    }];
+    branches = List.init 8 (fun index -> {
+      branch_id = branch_id_of_string ("branch" ^ string_of_int index);
+      branch_subject = anchor;
+      outcome_branches = [(Success, Stop)];
+    });
+    roles = []; item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "single collection 8-Branch shortcut";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p)
+    "single collection 8-Branch IR" in
+  check_equal_int 1 stats.leaves_encoded "single collection 8-Branch exact leaf";
+  check_equal_int 40_319 stats.leaves_avoided
+    "single collection 8-Branch leaves avoided"
+
+let test_single_collection_branch_body_order () =
+  (* Unlike the eight-Branch factor witness, these bodies genuinely differ.
+     The oracle comparison pins the exact unsigned-byte ordering chosen by the
+     one-collection sorter, rather than merely checking a symmetric tie. *)
+  let anchor = oid "anchor" in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0";
+    input_facts = []; entry_guards = []; entry_origin = Some anchor;
+    success_continuations = [];
+    origin_sites = [Anchor_origin {
+      anchor_origin_id = anchor; event_name = "ev"; declared_facts = [];
+    }];
+    branches = [
+      { branch_id = branch_id_of_string "failure-first";
+        branch_subject = anchor; outcome_branches = [(Failure, Stop)] };
+      { branch_id = branch_id_of_string "success-second";
+        branch_subject = anchor; outcome_branches = [(Success, Stop)] };
+    ];
+    roles = []; item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "single collection distinct Branch bodies";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p)
+    "single collection distinct Branch bodies IR" in
+  check_equal_int 1 stats.leaves_encoded
+    "single collection distinct Branch bodies exact leaf"
 
 let test_7fact_beyond_oracle () =
   let anchor = oid "anchor" in
@@ -733,12 +788,15 @@ let test_generated_corpus () =
 let test_budget_fail_closed () =
   let p = {
     program_id = pid "test"; core_version = cv "0.1.0";
-    input_facts = List.init 8 (fun i -> { fact_id = fid ("f" ^ string_of_int i); schema_description = ""; provenance = Evaluation_input (hsk ("hk" ^ string_of_int i), String_type)});
-    entry_guards = []; entry_origin = Some (oid "anchor"); success_continuations = [];
-    origin_sites = [Anchor_origin { anchor_origin_id = oid "anchor"; event_name = "ev"; declared_facts = []}];
-    branches = []; roles = []; item_templates = []; capability_contracts = [];
+    input_facts = []; entry_guards = []; entry_origin = None; success_continuations = [];
+    origin_sites = []; branches = [];
+    roles = List.init 8 (fun i -> {
+      role_id = rid ("r" ^ string_of_int i); scope = Program_scope;
+      fact_contract = Role_fact_contract []; eligible_fulfillment = rf "same";
+    });
+    item_templates = []; capability_contracts = [];
   } in
-  (* 8! = 40320 > small budget *)
+  (* No exact reduction applies to this 8! Role completion space. *)
   let small_budget = { Tethers_core_canonical_v2_ir.max_nodes = 100; max_leaves = 100; max_refinement_rounds = 1000 } in
   (match Tethers_core_canonical_v2_ir.canonicalize_ir ~budget:small_budget p with
    | Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex -> ()
@@ -746,6 +804,40 @@ let test_budget_fail_closed () =
    | Error _ -> failwith "wrong error");
   (* No payload/digest on failure — checked by Error case *)
   Printf.printf "Budget fail-closed: PASS\n"
+
+let test_reduced_pre_admission_for_single_collection_branches () =
+  (* The exhaustive baseline must reject 11! leaves under its default budget.
+     The optimised engine reaches exactly one leaf because all 11 Branches are
+     in one collection and have byte-identical bodies. *)
+  let anchor = oid "anchor" in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0";
+    input_facts = []; entry_guards = []; entry_origin = Some anchor;
+    success_continuations = [];
+    origin_sites = [Anchor_origin {
+      anchor_origin_id = anchor; event_name = "ev"; declared_facts = [];
+    }];
+    branches = List.init 11 (fun index -> {
+      branch_id = branch_id_of_string ("branch" ^ string_of_int index);
+      branch_subject = anchor;
+      outcome_branches = [(Success, Stop)];
+    });
+    roles = []; item_templates = []; capability_contracts = [];
+  } in
+  let raw_candidate_count = match
+      Tethers_core_canonical_v2.candidate_count_within_budget ~limit:max_int p with
+    | Some count -> count
+    | None -> failwith "11-Branch raw candidate count overflowed unexpectedly"
+  in
+  check_equal_int 39_916_800 raw_candidate_count "11-Branch raw candidate count";
+  (match Tethers_core_canonical_v2.canonicalize p with
+   | Error Tethers_core_canonical_v2.Canonicalisation_too_complex -> ()
+   | Ok _ -> failwith "baseline should reject 11! candidates at its default budget"
+   | Error _ -> failwith "baseline returned the wrong 11-Branch error");
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p)
+    "11-Branch reduced pre-admission" in
+  check_equal_int 1 stats.leaves_encoded "11-Branch exact leaf after pre-admission";
+  check_equal_int 39_916_799 stats.leaves_avoided "11-Branch leaves avoided"
 
 (* ================================================================== *)
 (*  Performance evidence (non-gating)                                   *)
@@ -757,13 +849,39 @@ let time f =
   let t1 = Unix.gettimeofday () in
   (r, t1 -. t0)
 
+type gc_delta = {
+  minor_words : float;
+  major_words : float;
+  minor_collections : int;
+  major_collections : int;
+}
+
+let time_and_gc f =
+  let before = Gc.quick_stat () in
+  let (result, seconds) = time f in
+  let after = Gc.quick_stat () in
+  (result, seconds, {
+    minor_words = after.minor_words -. before.minor_words;
+    major_words = after.major_words -. before.major_words;
+    minor_collections = after.minor_collections - before.minor_collections;
+    major_collections = after.major_collections - before.major_collections;
+  })
+
 let bench_case name p =
   let baseline_candidates = match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:max_int p with Some n -> n | None -> -1 in
-  let (_, t_base) = time (fun () -> ignore (Tethers_core_canonical_v2.canonicalize p)) in
-  let (ir_res, t_ir) = time (fun () -> Tethers_core_canonical_v2_ir.canonicalize_ir p) in
-  let (ir_nodes, ir_leaves, ir_rounds, ir_prefix, ir_orbit, ir_dup) = match ir_res with Ok (_, s) -> (s.nodes, s.leaves_encoded, s.refinement_rounds, s.prefix_subtrees_pruned, s.orbit_branches_pruned, s.duplicate_payload_hits) | Error _ -> (-1, -1, -1, -1, -1, -1) in
-  Printf.printf "BENCH %s: baseline_candidates=%d baseline_time=%.4fs IR nodes=%d leaves=%d rounds=%d prefix_pruned=%d orbit_pruned=%d dup_hits=%d IR_time=%.4fs\n"
-    name baseline_candidates t_base ir_nodes ir_leaves ir_rounds ir_prefix ir_orbit ir_dup t_ir;
+  let (_, t_base, gc_base) = time_and_gc (fun () -> ignore (Tethers_core_canonical_v2.canonicalize p)) in
+  let ir_runs = 1000 in
+  let (ir_res, t_ir_total, gc_ir) = time_and_gc (fun () ->
+    let rec run remaining =
+      let result = Tethers_core_canonical_v2_ir.canonicalize_ir p in
+      if remaining = 1 then result else run (remaining - 1)
+    in
+    run ir_runs
+  ) in
+  let t_ir = t_ir_total /. float_of_int ir_runs in
+  let (ir_nodes, ir_leaves, ir_rounds, ir_prefix, ir_orbit, ir_dup, ir_avoided) = match ir_res with Ok (_, s) -> (s.nodes, s.leaves_encoded, s.refinement_rounds, s.prefix_subtrees_pruned, s.orbit_branches_pruned, s.duplicate_payload_hits, s.leaves_avoided) | Error _ -> (-1, -1, -1, -1, -1, -1, -1) in
+  Printf.printf "BENCH %s: baseline_candidates=%d baseline_time=%.4fs baseline_minor_words=%.0f baseline_major_words=%.0f baseline_minor_gc=%d baseline_major_gc=%d IR_nodes=%d IR_leaves=%d IR_rounds=%d prefix_pruned=%d orbit_pruned=%d dup_hits=%d leaves_avoided=%d IR_time_per_call=%.6fs IR_runs=%d IR_minor_words_per_call=%.1f IR_major_words_per_call=%.1f IR_minor_gc_total=%d IR_major_gc_total=%d\n"
+    name baseline_candidates t_base gc_base.minor_words gc_base.major_words gc_base.minor_collections gc_base.major_collections ir_nodes ir_leaves ir_rounds ir_prefix ir_orbit ir_dup ir_avoided t_ir ir_runs (gc_ir.minor_words /. float_of_int ir_runs) (gc_ir.major_words /. float_of_int ir_runs) gc_ir.minor_collections gc_ir.major_collections;
   (baseline_candidates, ir_nodes, ir_leaves)
 
 let test_performance_evidence () =
@@ -797,7 +915,21 @@ let test_performance_evidence () =
     branches = []; roles = []; item_templates = []; capability_contracts = [];
   } in
   ignore (bench_case "high-symmetry 4 origins" p_sym);
-  (* 5. mixed realistic small Core fixture *)
+  (* 5. one physical Branch collection, eight repeated Branch occurrences *)
+  let branch_anchor = oid "branch-anchor" in
+  let p_branch8 = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = []; entry_guards = [];
+    entry_origin = Some branch_anchor; success_continuations = [];
+    origin_sites = [Anchor_origin { anchor_origin_id = branch_anchor; event_name = "ev"; declared_facts = []}];
+    branches = List.init 8 (fun index -> {
+      branch_id = branch_id_of_string ("branch" ^ string_of_int index);
+      branch_subject = branch_anchor;
+      outcome_branches = [(Success, Stop)];
+    });
+    roles = []; item_templates = []; capability_contracts = [];
+  } in
+  ignore (bench_case "high-symmetry 8 branches" p_branch8);
+  (* 6. mixed realistic small Core fixture *)
   let p_mixed = {
     program_id = pid "test"; core_version = cv "0.1.0";
     input_facts = [{ fact_id = fid "f1"; schema_description = ""; provenance = Evaluation_input (hsk "hk1", String_type)}];
@@ -811,7 +943,7 @@ let test_performance_evidence () =
     roles = []; item_templates = []; capability_contracts = [{ capability_id = cid "cap.x"; contract_digest = ccd "sha256:abc"; schema_description = ""}];
   } in
   ignore (bench_case "mixed small" p_mixed);
-  (* 6. templates/roles *)
+  (* 7. templates/roles *)
   let tid_a = tid "TA" and tid_b = tid "TB" in
   let p_tpl = {
     program_id = pid "test"; core_version = cv "0.1.0"; input_facts = []; entry_guards = [];
@@ -943,6 +1075,106 @@ let test_structural_location_fact_trap () =
   let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) "structural-location IR" in
   check_equal_int 2 stats.leaves_encoded "structural-location retains both fact labellings"
 
+let test_evaluation_input_location_fact_trap () =
+  (* Both Facts are Evaluation_input values, but only [input] is emitted in
+     the top-level input_facts section.  The first byte-sensitive choice is
+     therefore [input]'s label, not the globally smallest provenance bytes.
+     A global Fact scalar ordering would incorrectly give label 1 to
+     [declared] because Enc_V2("z") < Enc_V2("aa") after length-prefixing. *)
+  let o = oid "origin" in
+  let input = {
+    fact_id = fid "input";
+    schema_description = "";
+    provenance = Evaluation_input (hsk "aa", String_type);
+  } in
+  let declared = {
+    fact_id = fid "declared";
+    schema_description = "";
+    provenance = Evaluation_input (hsk "z", String_type);
+  } in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0";
+    input_facts = [input]; entry_guards = []; entry_origin = Some o;
+    success_continuations = [];
+    origin_sites = [Anchor_origin {
+      anchor_origin_id = o; event_name = "ev"; declared_facts = [declared];
+    }];
+    branches = []; roles = []; item_templates = []; capability_contracts = [];
+  } in
+  check (Tethers_core_canonical_v2_format.compare_bytes_lex_unsigned "1:z" "2:aa" < 0)
+    "evaluation-input location trap precondition";
+  assert_ir_eq_oracle_and_baseline p "evaluation-input location Fact trap";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p)
+    "evaluation-input location IR" in
+  check_equal_int 2 stats.leaves_encoded
+    "evaluation-input location retains both fact labellings"
+
+let test_entry_origin_provenance_is_rejected_before_search () =
+  (* The apparent counterexample to the entry-label proof is outside Lambda(P):
+     valid input Facts are Evaluation_input only.  This must fail validation
+     before either search implementation can apply an Origin reduction. *)
+  let entry = oid "entry" and provenance_origin = oid "provenance" in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0";
+    input_facts = [{
+      fact_id = fid "f"; schema_description = "";
+      provenance = Origin_provenance provenance_origin;
+    }];
+    entry_guards = []; entry_origin = Some entry; success_continuations = [];
+    origin_sites = [
+      Anchor_origin { anchor_origin_id = entry; event_name = "ev"; declared_facts = []};
+      Anchor_origin { anchor_origin_id = provenance_origin; event_name = "ev"; declared_facts = []};
+    ];
+    branches = []; roles = []; item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "input Origin_provenance rejected before search"
+
+let test_multiple_branch_collections_remain_exhaustive () =
+  (* Branch labels are globally unique.  Once Branches are split across two
+     physical collections, the earlier program collection and later template
+     collection compete for the same labels, so the one-collection proof no
+     longer applies. *)
+  let program_origin = oid "program-origin" in
+  let template_origin = oid "template-origin" in
+  let template_id = tid "template" in
+  let template_role = rid "role" in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0";
+    input_facts = []; entry_guards = []; entry_origin = Some program_origin;
+    success_continuations = [];
+    origin_sites = [Anchor_origin {
+      anchor_origin_id = program_origin; event_name = "ev"; declared_facts = [];
+    }];
+    branches = [{
+      branch_id = branch_id_of_string "program-branch";
+      branch_subject = program_origin;
+      outcome_branches = [(Success, Stop)];
+    }];
+    roles = [];
+    item_templates = [{
+      item_template_id = template_id;
+      origin_sites = [Anchor_origin {
+        anchor_origin_id = template_origin; event_name = "ev"; declared_facts = [];
+      }];
+      branches = [{
+        branch_id = branch_id_of_string "template-branch";
+        branch_subject = template_origin;
+        outcome_branches = [(Success, Stop)];
+      }];
+      roles = [{
+        role_id = template_role; scope = Item_template_scope template_id;
+        fact_contract = Role_fact_contract []; eligible_fulfillment = rf "ok";
+      }];
+      objective = Required_role template_role;
+    }];
+    capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "multiple Branch collections";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p)
+    "multiple Branch collections IR" in
+  check_equal_int 2 stats.leaves_encoded
+    "multiple Branch collections retain both global label assignments"
+
 let test_role_completion_trap () =
   (* Storage order z, aa is not the minimum role completion.  A representative
      completion is not a prefix lower bound, so C-B4I3C never prunes it. *)
@@ -1046,6 +1278,8 @@ let () =
   test_integer_boundaries (); Printf.printf "PASS: integer boundaries\n";
   test_high_bytes (); Printf.printf "PASS: high bytes\n";
   test_persistent_branch_ir (); Printf.printf "PASS: Persistent Branch 24 perms\n";
+  test_single_collection_branch_shortcut (); Printf.printf "PASS: single-collection 8-Branch shortcut\n";
+  test_single_collection_branch_body_order (); Printf.printf "PASS: single-collection distinct Branch bodies\n";
   test_7fact_beyond_oracle (); Printf.printf "PASS: 7! beyond oracle\n";
   test_sym_all_identical_independent (); Printf.printf "PASS: symmetry A identical independent\n";
   test_sym_paired_branch_origin (); Printf.printf "PASS: symmetry C paired branch/origin\n";
@@ -1060,11 +1294,15 @@ let () =
   test_lexical_vs_scalar_order (); Printf.printf "PASS: counterexample lexical vs scalar order\n";
   test_length_prefix_string_trap (); Printf.printf "PASS: counterexample length-prefix string trap\n";
   test_structural_location_fact_trap (); Printf.printf "PASS: counterexample structural-location Fact trap\n";
+  test_evaluation_input_location_fact_trap (); Printf.printf "PASS: counterexample Evaluation_input location Fact trap\n";
+  test_entry_origin_provenance_is_rejected_before_search (); Printf.printf "PASS: input Origin_provenance rejected before search\n";
+  test_multiple_branch_collections_remain_exhaustive (); Printf.printf "PASS: counterexample multiple Branch collections\n";
   test_role_completion_trap (); Printf.printf "PASS: counterexample role completion trap\n";
   test_multi_round_refinement (); Printf.printf "PASS: counterexample multi-round refinement\n";
   test_branch_symmetry_broken_by_target (); Printf.printf "PASS: counterexample branch symmetry broken\n";
   test_refinement_fail_closed ();
   test_generated_corpus (); Printf.printf "PASS: generated corpus 1000\n";
   test_budget_fail_closed (); Printf.printf "PASS: deterministic budget fail-closed\n";
+  test_reduced_pre_admission_for_single_collection_branches (); Printf.printf "PASS: reduced pre-admission 11-Branch shortcut\n";
   test_performance_evidence (); Printf.printf "PASS: performance evidence (reported)\n";
   Printf.printf "\n=== All V2 IR Tests Complete ===\n"
