@@ -1,7 +1,7 @@
 # Tethers Canonical Format V2 — Specification Draft
 
-Status: `FROZEN — READY TO IMPLEMENT V2`
-Version: `V2-FROZEN-2026-08-13`
+Status: `FROZEN — READY FOR LUCY FINAL FREEZE`
+Version: `V2-FROZEN-C-B4S3-2026-08-13`
 Replaces: `V1 (TETHERS_CORE_CANON_V1)` — known-defective, never frozen for 1.0
 Author: OpenCode (C-B4S)
 Reviewer: Lucy (required before implementation)
@@ -57,7 +57,6 @@ integer labels:
 λ_batch    : BatchOccurrences(P)    ↔ {1..N_batch}
 λ_template : ItemTemplateOccurrences(P) ↔ {1..N_template}
 λ_role     : RoleOccurrences(P)     ↔ {1..N_role}
-λ_group    : GroupOccurrences(P)    ↔ {1..N_group}
 ```
 
 A **canonical labelling** λ is the disjoint union of those family-wise
@@ -126,8 +125,9 @@ definition and MUST NOT affect the result (see §13).
 
 ### 2.1 Entity families
 
-Each row is one independent permutation group. λ is the disjoint union of
-per-family labellings. Cross-family swaps are forbidden.
+`Λ(P)` contains exactly six anonymous entity families. Each row is one
+independent permutation group. λ is the disjoint union of per-family labellings.
+Cross-family swaps are forbidden.
 
 | # | Family | Core type(s) | Identity newtype(s) | Scope | Permutation group |
 |---|--------|--------------|---------------------|-------|-------------------|
@@ -280,12 +280,13 @@ therefore do not affect `ProgramDigest_V2`:
 - `fact.schema_description` — human-readable description, validator ignores it,
   canonicaliser MUST exclude it.
 - `capability_contract.schema_description` — same rationale.
-- `group_id` — neutral internal/operational identifier within `Together_origin`.
-  Raw group_id bytes are omitted from `Enc_V2`. Together multiplicity is
-  preserved by distinct `Together_origin` occurrences. Changing only raw
-  `group_id` MUST NOT change `ProgramDigest_V2`. Audit confirmed: `group_id`
-  is not referenced from any validator check, planner logic, fact provenance,
-  binding, or other code path outside of `Together_origin`.
+- `group_id` — operational/well-formedness identifier within `Together_origin`.
+  The validator may enforce `Duplicate_group_id` uniqueness, but `group_id` has
+  no canonical semantic relationship encoded in `ProgramDigest_V2`. Raw
+  `group_id` bytes are omitted from `Enc_V2`. Together multiplicity is
+  preserved by distinct `Together_origin` occurrences. A validity-preserving
+  fresh rename of `group_id` MUST NOT change the digest. Changing `group_id`
+  so that Core becomes invalid yields no digest.
 
 Rationale: they are not consumed by `Tethers_core_validator`, not included in
 the semantics that drive planning, and are explicitly declared neutral by
@@ -579,7 +580,7 @@ encode_role(r):
 
 encode_item_template(t):
     encode_int(label_of_template(t.item_template_id))
-    encode_list(sorted_origin_sites, encode_origin_site)
+    encode_list(sorted_origin_sites by frozen mixed-site sort key, encode_origin_site)
     encode_list(sorted_branches, encode_branch)
     encode_list(sorted_roles, encode_role)
     encode_item_objective(t.objective)    // tag 0 + role label (template-scoped)
@@ -599,7 +600,7 @@ encode_program(p, label_map):
         encode_int(label_of_origin(sc.from_origin))
         encode_control_target(sc.target)
     )
-    encode_list(sorted_origin_sites by canonical origin label, encode_origin_site)
+    encode_list(sorted_origin_sites by frozen mixed-site sort key, encode_origin_site)
     encode_list(sorted_branches by canonical branch label, encode_branch)
     encode_list(sorted_roles by canonical scoped role label, encode_role)
     encode_list(sorted_item_templates by canonical template label, encode_item_template)
@@ -626,11 +627,12 @@ Covered in primitive encoders. No further cases.
 
 ### 6.6 Decision: group_id is neutral and omitted
 
-`group_id` is an operational identifier inside `Together_origin`. Audit of
-Core source confirms:
-- `group_id` is only used inside `Together_origin` construction and validation
-- No validator check, planner logic, fact provenance, binding, or other code
-  path references `group_id` independently
+`group_id` is an operational/well-formedness identifier inside `Together_origin`.
+Audit of Core source confirms:
+- `group_id` is used inside `Together_origin` construction and validation
+- The validator enforces `Duplicate_group_id` well-formedness (uniqueness check)
+- However, `group_id` has no canonical semantic relationship encoded in
+  `ProgramDigest_V2`
 - Runtime plan group IDs are position-derived operational handles, not Core
   semantic references
 
@@ -641,7 +643,11 @@ Core source confirms:
 - Raw `group_id` bytes are entirely excluded from the preimage
 - Together multiplicity is preserved by distinct `Together_origin` occurrences
   (each has its own `together_origin_id` which IS relabelled via `λ_origin`)
-- Changing only raw `group_id` MUST NOT change `ProgramDigest_V2`
+- A validity-preserving fresh rename of `group_id` MUST NOT change the digest
+- Changing `group_id` so that Core becomes invalid yields no digest
+
+**Do NOT claim the validator never reads `group_id`.** The validator reads it
+for well-formedness; the canonicaliser excludes it from identity.
 
 This matches the prototype's group_id independence test
 (`tethers_core_canonical_test.ml:749-773`) and raw-ID independence (§3.2).
@@ -651,8 +657,14 @@ This matches the prototype's group_id independence test
 
 ### 6.7 Excluded fields are absent, not encoded as empty
 
-Neutral fields (`program_id`, `schema_description`) are **omitted entirely**.
-They are not encoded as empty strings, not encoded as absent options, not
+The complete frozen list of neutral fields (all omitted entirely from `Enc_V2`):
+
+- `program.program_id`
+- `fact.schema_description`
+- `capability_contract.schema_description`
+- `Together_origin.group_id`
+
+These fields are not encoded as empty strings, not encoded as absent options, not
 hashed. The encoder simply does not emit them.
 
 ---
@@ -671,7 +683,7 @@ distinct Core semantic values have distinct encodings.
 | Core scalar type | OCaml type | Canonical bytes | Notes |
 |------------------|------------|-----------------|-------|
 | Core string (event_name, capability_id, contract_digest, host_snapshot_key, Deadline, batch strings, fulfillment, capability_input_name) | `string` | **Exact OCaml string bytes** as supplied, length-prefixed via `encode_string`. Core uses OCaml's `string` type (arbitrary bytes, not guaranteed UTF-8). The encoding is length-prefixed, so NUL bytes do not cause ambiguity. No Unicode normalisation (NFC/NFD). No case folding. No trimming. No CRLF→LF. Empty string `""` is `0:` (length 0). | If the host supplies `"café"` as NFC vs NFD, those are **distinct** Core values and MUST yield distinct digests, because the language semantics do not declare them equal. A future decision could normalise, requiring `V3`. |
-| Integer | `int` (OCaml `int`) | Decimal ASCII, no leading zeros (except `"0"`), optional leading `"-"` for negative, terminated by `";"`. E.g., `42 → "42;"`, `-7 → "-7;"`, `0 → "0;"`. | **Platform-independent range:** The V2 semantic integer range is the intersection of what OCaml `int` can represent across all conforming implementations. On 64-bit OCaml (the standard), `int` is 63-bit tagged (range ±4.6×10¹⁸). On 32-bit OCaml, `int` is 31-bit. **Frozen V2 range:** signed 63-bit integers (−4_611_686_018_427_387_904 through 4_611_686_018_427_387_903) to ensure portability across conforming V2 implementations. The validator SHOULD reject integers outside this range. If a future version needs wider integers, that requires V3. |
+| Integer | `int` (OCaml `int`) | Decimal ASCII, no leading zeros (except `"0"`), optional leading `"-"` for negative, terminated by `";"`. E.g., `42 → "42;"`, `-7 → "-7;"`, `0 → "0;"`. | **V2 semantic integer domain (frozen):** Signed 62-bit integers: −2^62 through 2^62 − 1 (exactly −4_611_686_018_427_387_904 through 4_611_686_018_427_387_903). A conforming implementation MUST support this full semantic range. The current OCaml implementation of Canonical Format V2 requires a 64-bit OCaml runtime. **Do NOT claim 32-bit OCaml compatibility.** Any external parser/lowering boundary capable of receiving a wider integer MUST reject values outside the V2 range before producing validated Core. Encoding remains minimal decimal ASCII plus `;`. A future wider semantic integer domain requires V3. |
 | Boolean | `bool` | `Boolean_value true → tag 2 + "1;"`, `false → tag 2 + "0;"` inside `encode_value`. | |
 | Core scalar type tag | `String_type/Integer_type/Boolean_type` | `encode_tag 0/1/2` | |
 | Comparison operator | `comparison_operator` | `encode_tag 0..3` per table | |
@@ -775,19 +787,75 @@ The minimising `λ` is defined as the `λ` that yields the minimum `Enc_V2`.
 Any `λ` achieving that minimum is acceptable; the encoder does not define a
 secondary tie-breaker beyond the byte minimum.
 
+### 9.3.1 Mixed origin/Batch collection sort key (frozen)
+
+`origin_site` contains four variant kinds, but they use TWO different label
+families:
+
+- `Anchor_origin`, `Action_origin`, `Together_origin`: use `λ_origin`
+- `Batch_site`: uses `λ_batch`
+
+The frozen sort key for encoding any mixed `origin_sites` collection is:
+
+```
+Anchor_origin / Action_origin / Together_origin:
+    sort_key = (0, λ_origin(origin_id))
+
+Batch_site:
+    sort_key = (1, λ_batch(batch_id))
+```
+
+Sort ascending lexicographically by that pair.
+
+Therefore:
+
+- All ordinary Origin-family occurrences precede Batch-family occurrences
+- Within each family, canonical integer label determines order
+- Source/storage order is irrelevant
+
+This rule applies identically to both:
+
+- `program.origin_sites`
+- `item_template.origin_sites`
+
 ### 9.4 Labels and scope — frozen global role label space
 
 Labels are per-family as consecutive integers `1..N`. For roles, ONE global
-canonical integer label space is used for ALL role occurrences across all scopes:
+canonical integer label range `1..N_roles` exists for ALL role occurrences.
+Role scopes occupy deterministic contiguous blocks within that range.
 
-- Origin labels: `1..|origins|`
-- Fact labels: `1..|facts|`
-- Branch labels: `1..|branches|`
-- Batch labels: `1..|batches|`
-- Template labels: `1..|templates|`
-- Group labels: `1..|groups|`
-- Role labels: `1..|all_scoped_roles|` — a single global label space for every
-  role occurrence in the program, regardless of scope
+**Scope block order (frozen):**
+
+1. `Program_scope` first
+2. Item-template scopes in ascending canonical template label order
+
+For each scope `S` with `n` roles, assign that scope the next contiguous
+interval of `n` global role labels. Within each scope block, `λ_role` ranges
+over ALL bijections from role occurrences in that scope to that scope's
+assigned interval.
+
+**Example:**
+
+```
+Program has 2 roles        → labels 1..2
+Template label 1 has 3     → labels 3..5
+Template label 2 has 1     → label 6
+```
+
+**Frozen rules:**
+
+- No cross-scope role assignment is permitted. A role in `Program_scope` cannot
+  receive a label from a template scope block, and vice versa.
+- Template scope block ordering follows `λ_template`, never raw template ID.
+- Within each scope block, the bijection is unconstrained — `λ_role` may assign
+  any permutation of that block's labels to the scope's role occurrences.
+
+This gives:
+
+- One unique global role-label space
+- Scope preservation
+- No duplicate role labels
+- No raw-ID dependency
 
 Scope is an **encoded structural relationship**, not a label-space partition:
 
@@ -799,6 +867,9 @@ Scope is an **encoded structural relationship**, not a label-space partition:
 The global role label order is the sorted order of scoped roles by
 `(scope_label, role_label)` where `scope_label` is the template's canonical
 label or `0` for Program scope. This is the single frozen rule.
+
+No alternative role labelling scheme is conformant. The scope-block rule is
+mandatory.
 
 ---
 
@@ -855,19 +926,28 @@ Defined in §2.4 and §9.4. In `Enc_V2`:
 `Role_proxy(role_id)` in a fact's provenance references a role. The scope of
 that reference is resolved from the **containing fact's declaration site**:
 
-- For a fact declared in `input_facts` (program-level), `Role_proxy` resolves
-  against **Program scope**.
-- For a fact declared in an Anchor_origin's `declared_facts` (which is at
-  program scope), `Role_proxy` resolves against **Program scope**.
-- For a fact declared in an Action_origin's `declared_facts` inside a template
-  `T`, `Role_proxy` resolves against **Item_template_scope(T)**.
+**Frozen scope derivation rules:**
+
+- `program.input_facts` → **Program_scope**
+- Facts declared/aggregated by any site physically in `program.origin_sites` →
+  **Program_scope**
+- Facts declared/aggregated by any site physically in `item_template T.origin_sites` →
+  **Item_template_scope(T)**
+
+This includes:
+
+- `Anchor_origin.declared_facts`
+- `Action_origin.declared_facts`
+- `Batch_site.aggregate_facts`
+
+Therefore: an `Anchor_origin` inside `Item Template T` produces
+`Item_template_scope(T)` facts. Do NOT infer scope from origin variant.
 
 This is implemented via the canonicaliser's `fact_scope_map`
 (`tethers_core_canonical.ml:474-480`), which maps each fact occurrence to its
 containing declaration context's scope.
 
-For input/global facts (in `program.input_facts`), `Role_proxy` is legal and
-resolves to Program scope.
+`Role_proxy(rid)` resolves against that derived fact scope.
 
 The validator currently checks only that the referenced role exists
 (`tethers_core_validator.ml:444-446`). **Validator enforcement of scope
@@ -968,8 +1048,10 @@ Together_origin {
   duplicates would be a distinct set of member labels but such `P` is invalid
   and has no digest.
 - Group multiplicity: two `Together_origin` groups with identical members but
-  distinct `group_id`/`together_origin_id` are two occurrences; see §5. Their
-  encodings differ by group label.
+   distinct `together_origin_id` are two occurrences; see §5. Each
+   `Together_origin` is a distinct Origin-family occurrence and therefore has
+   a distinct `λ_origin` label. Multiplicity is preserved by `together_origin_id`
+   occurrence identity, NOT `group_id`.
 
 ### 11.3 Examples
 
@@ -1045,10 +1127,15 @@ The C-B3T 24-permutation witness MUST be expressible:
   branch_subject in origin partition O* (4 equivalent Action origins)
   outcome_branches = [Success→Continue_to(tgt), Failure→Stop, Uncertain→Stop, Cancelled→Stop]
   where tgt differs per origin but the pattern is symmetric
-
-Λ includes 4! = 24 labellings over origins+branches that preserve the structure.
-V2's minimum over Λ is unique — all 24 encodings collapse to the same minimum.
 ```
+
+**C-B3T input permutation witness:** 24 storage/raw permutations were tested.
+
+**Slow canonical-labelling candidate space for four Origins AND four Branches:**
+`4! × 4! = 576`
+
+The oracle enumerates this candidate space (576 labellings). V2's minimum over
+`Λ` is unique — all 576 encodings collapse to the same minimum.
 
 This was the V1 defect: V1 tied canonical ID assignment to raw `branch_subject`
 ordering and produced 24 distinct byte sequences. V2's `Λ`-minimum eliminates it.
@@ -1517,11 +1604,11 @@ P11: Search-heuristic independence: For small programs, brute-force oracle,
      largest-cell-first, smallest-cell-first, and reverse scheduling must all
      return exact oracle bytes if they complete.
 P12: Group-id neutrality: Changing only raw group_id yields identical
-     bytes/digest (if Correction 5 accepted).
+     bytes/digest (validity-preserving fresh rename; §3.3, §6.6).
 P13: Role-scope invalidity: Mismatched physical/declarative role scope fails
-     validation before canonicalisation (if Correction 3 accepted).
+     validation before canonicalisation (§10.1.1).
 P14: Role-contract duplicate: Duplicate fact membership fails validation
-     (if Correction 6 accepted).
+     (§4, §6).
 ```
 
 ### 24.3 Negative property
@@ -1551,7 +1638,7 @@ digraph must be precise:
 Proposed translation (for testing only):
 
 ```
-Vertex per entity occurrence, coloured by entity kind (Origin/Fact/Branch/Role/Batch/Template/Group)
+Vertex per entity occurrence, coloured by entity kind (Origin/Fact/Branch/Role/Batch/Template)
 Vertex per capability_contract (but NOT per ProgramDigest — scalar payloads are vertex colours, not identities)
 Edge types as labelled coloured edges:
   - origin_subject → branch_subject
@@ -1561,7 +1648,7 @@ Edge types as labelled coloured edges:
   - role → fact (fact_contract membership)
   - origin → role (Fact_through_role reference)
   - success_continuation (from_origin → target)
-  - together membership (group → origin)
+  - together membership (Together_origin occurrence → member Origin occurrences)
   - branch outcome (branch → origin via Continue_to)
 Scalar labels (strings/ints) encoded as vertex colour extensions (sorted scalar bytes hashed into colour int)
 Multiplicity: separate vertices for each occurrence (preserved)
@@ -1703,21 +1790,23 @@ C-B4I (§15.2).
 ## 29. Final verdict
 
 ```
-READY TO IMPLEMENT V2
+READY FOR LUCY FINAL FREEZE
 ```
 
-All 16 Lucy corrections have been applied. The spec now has:
+All C-B4S3 consistency corrections have been applied. The spec now has:
 
 1. ONE exact mathematical canonical-labelling definition (`Λ(P)`, §1.2)
 2. ONE exact `Enc_V2` byte schema (Core-shaped, §6.4)
 3. Every Core field classified (§3.1)
-4. Role scope unambiguous (§9.4 global labels, §10.1.1 validation invariant)
-5. Role_proxy scope unambiguous (§10.2.1 — derived from containing declaration)
-6. Group_id status frozen (neutral, §3.3, §6.6)
-7. Collection semantics internally consistent (§4)
-8. Scalar encoding/ranges platform-independent (§7)
-9. Slow oracle implementable from spec alone (§23)
-10. Two competent independent engineers could produce identical bytes
+4. Λ(P) contains exactly six entity families (§2.1)
+5. group_id completely neutral to canonical identity (§3.3, §6.6)
+6. Role labels have one exact global/block rule (§9.4)
+7. Mixed Origin/Batch collection ordering has one exact rule (§9.3.1)
+8. Role_proxy scope correct for template-local anchors/actions/batches (§10.2.1)
+9. Integer range has no platform contradiction (§7.2)
+10. Oracle candidate counts agree (§12.3: 24 witness, 576 candidate space)
+11. No byte-affecting alternative remains
+12. Two competent independent engineers could produce identical bytes
 
 **Remaining pre-implementation work (C-B4I scope, NOT spec defects):**
 
