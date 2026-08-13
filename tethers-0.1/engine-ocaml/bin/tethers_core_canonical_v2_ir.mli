@@ -53,7 +53,11 @@ type ir_stats = {
   nodes : int;
   leaves_encoded : int;
   refinement_rounds : int;
+  (** Retained for callers of the B4I3B telemetry shape; C-B4I3C has no
+      active prefix-pruning rule, so this is always zero. *)
   prefix_subtrees_pruned : int;
+  (** Retained for callers of the B4I3B telemetry shape; C-B4I3C has no
+      active orbit-pruning rule, so this is always zero. *)
   orbit_branches_pruned : int;
   duplicate_payload_hits : int;
   max_depth : int;

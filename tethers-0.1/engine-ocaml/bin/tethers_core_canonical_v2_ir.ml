@@ -1,5 +1,5 @@
 (* ==================================================================
-   CANONICAL FORMAT V2 — OPTIMISED IR SEARCH (C-B4I3B — REAL PRUNING)
+   CANONICAL FORMAT V2 — EXACT HYBRID SEARCH (C-B4I3C)
 
    FROZEN INVARIANT HEADER — obligations prominently stated:
 
@@ -21,18 +21,22 @@
    They never enter Enc_V2.
    They never decide canonical identity by themselves.
 
-   Architecture (C-B4I3B):
+   Architecture (C-B4I3C):
      Validated Core
        -> typed semantic search graph/state (six families, scope-qualified roles)
        -> initial invariant partition (per-family, scalar-only descriptors)
        -> BSP synchronous refinement to stable partition (immutable previous round)
           ** fail-closed on max_refinement_rounds **
-       -> if discrete -> construct complete λ from partition order (proved)
-          else -> individualisation/refinement recursion:
-                   refine_to_stable -> choose target cell (smallest non-singleton)
-                   -> individualise one member to singleton -> refine -> recurse
-                  Prefix bound and distinct-scalar / orbit pruning prove elimination.
+       -> exact family-wise enumeration of every remaining labelling
+       -> one specialised Fact fast path, enabled only when every Fact is a
+          distinct Evaluation_input and ordered by the exact provenance bytes
+          it contributes at the first Enc_V2-sensitive position
        -> exact minimum (leaf Enc_V2 comparison via compare_bytes_lex_unsigned)
+
+   This is deliberately a hybrid, not a claim of general IR pruning.  Stable
+   refinement is real diagnostic/budgeted work, but it does not discard a
+   branch: equal colours are never an automorphism certificate.  The sole
+   active search reduction is the Fact fast path below.
 
    Typed entity domain — exactly six anonymous canonical families:
      Origin, Fact, Branch, Batch, ItemTemplate, Role (scoped occurrence)
@@ -59,14 +63,14 @@
      Raw IDs never break equal-colour symmetry.  Hash collisions checked by
      exact descriptor equality.
 
-   Pruning (C-B4I3B — proven):
+   Active reductions (C-B4I3C — proven):
      A. deterministic resource-budget rejection (pre-admission)
      B. exact duplicate payload memoisation ONLY after complete encoding
         (duplicate_payload_hits — NOT counted as leaves avoided)
-     C. byte-prefix pruning ONLY when prefix provably fixed for every
-        completion below node and already exceeds current best
-     D. distinct-scalar ordering (Fact discrete → single minimal Fact labelling)
-     E. exact orbit / automorphism pruning for fully symmetric families
+     C. distinct-input-Fact ordering by exact encoded provenance bytes
+        (single minimal Fact labelling)
+     Prefix and orbit counters are retained as zero-valued compatibility
+     telemetry; neither rule is active.
      NOT allowed:
        "same WL colour so search one" without separate isomorphism proof
    ================================================================== *)
@@ -180,14 +184,6 @@ let candidate_count_within_budget_ir ~limit (p : program) : int option =
 (* ================================================================== *)
 (*  Typed semantic search graph — entity inventories                    *)
 (* ================================================================== *)
-
-type family =
-  | Family_origin
-  | Family_fact
-  | Family_branch
-  | Family_batch
-  | Family_template
-  | Family_role
 
 type fact_scalar = {
   provenance_kind : int;
@@ -603,69 +599,6 @@ let stable_refinement (ri : refinement_input) (max_rounds : int)
   else
     Ok (!current, !rounds)
 
-let is_discrete_arr arr =
-  let n = Array.length arr in
-  if n = 0 then true
-  else
-    let seen = Hashtbl.create n in
-    let ok = ref true in
-    Array.iter (fun c ->
-      if Hashtbl.mem seen c then ok := false else Hashtbl.add seen c ()
-    ) arr;
-    !ok
-
-let is_discrete (cp : colour_partition) (_ri : refinement_input) : bool =
-  is_discrete_arr cp.fact_colours &&
-  is_discrete_arr cp.origin_colours &&
-  is_discrete_arr cp.batch_colours &&
-  is_discrete_arr cp.branch_colours &&
-  is_discrete_arr cp.template_colours &&
-  is_discrete_arr cp.role_colours
-
-type target_cell = {
-  family : family;
-  colour : int;
-  members : int list;
-}
-
-let find_target_cell (cp : colour_partition) (_ri : refinement_input) : target_cell option =
-  let cells_of (arr : int array) (fam : family) : target_cell list =
-    let tbl = Hashtbl.create (Array.length arr) in
-    Array.iteri (fun idx col ->
-      let lst = match Hashtbl.find_opt tbl col with None -> [] | Some l -> l in
-      Hashtbl.replace tbl col (idx :: lst)
-    ) arr;
-    Hashtbl.fold (fun col members acc ->
-      if List.length members > 1 then
-        { family = fam; colour = col; members = List.sort Int.compare members } :: acc
-      else acc
-    ) tbl []
-  in
-  let all_cells =
-    cells_of cp.fact_colours Family_fact @
-    cells_of cp.origin_colours Family_origin @
-    cells_of cp.batch_colours Family_batch @
-    cells_of cp.branch_colours Family_branch @
-    cells_of cp.template_colours Family_template @
-    cells_of cp.role_colours Family_role
-  in
-  match all_cells with
-  | [] -> None
-  | _ ->
-      let rank_family = function
-        | Family_fact -> 0 | Family_origin -> 1 | Family_branch -> 2
-        | Family_batch -> 3 | Family_template -> 4 | Family_role -> 5
-      in
-      let sorted = List.sort (fun a b ->
-        let ca = compare (List.length a.members) (List.length b.members) in
-        if ca <> 0 then ca
-        else
-          let fa = compare (rank_family a.family) (rank_family b.family) in
-          if fa <> 0 then fa
-          else compare a.colour b.colour
-      ) all_cells in
-      Some (List.hd sorted)
-
 (* ================================================================== *)
 (*  Search budget tracking                                              *)
 (* ================================================================== *)
@@ -730,54 +663,46 @@ let rec enumerate_role_blocks_ir st callback =
   end
 
 (* ================================================================== *)
-(*  Distinct-scalar ordering — sound single-assignment for discrete facts *)
+(*  Distinct-input ordering — exact single-assignment fast path            *)
 (* ================================================================== *)
 
-(* For Evaluation_input facts where stable Fact partition is already discrete
-   (each fact has distinct colour derived solely from semantic scalar
-   (host_key, scalar_type)), the minimal Enc_V2 orders facts by provenance
-   encoding ascending.  Colour order equals provenance lex order because both
-   use same scalar tuple ordering.  Assigning labels sorted by provenance
-   yields min { Enc_V2(P,λ) } for the Fact family alone; other families
-   still permuted.  Soundness: swapping two facts with p_a < p_b so that
-   p_a gets smaller label yields strictly smaller payload at first fact
-   position (lex compare on encode_fact).  Therefore only the sorted order
-   can be minimal; all other Fact permutations are dominated.  This is NOT
-   colour-as-identity — we use scalar-derived provenance order, which
-   coincides with discrete colour order only because colours were scalar-derived. *)
+(* If every collected Fact is a distinct Evaluation_input, the first
+   Enc_V2-sensitive occurrence of every Fact is the top-level input_facts
+   list.  Giving the smaller exact provenance encoding the smaller label makes
+   the first differing input_fact smaller.  An adjacent inversion therefore
+   cannot be minimal, so the ascending byte order is the unique winner.  This
+   rule is deliberately unavailable as soon as a Fact occurs elsewhere. *)
 let fact_discrete_minimal_order (facts : fact list) : int list option =
-  (* Return permutation indices that sort facts by provenance encoding order,
-     if all Evaluation_input facts with distinct scalars; else None. *)
+  (* Return permutation indices in the exact bytes that Enc_V2 emits for an
+     input fact's provenance.  This deliberately does not use String.compare:
+     Enc_V2 length-prefixes strings, so raw string order is not byte order
+     (for example, "aa" encodes before "z" only if the encoded bytes say so). *)
   let n = List.length facts in
   if n <= 1 then Some (List.init n Fun.id)
   else
     let provenance_keys = List.mapi (fun i f ->
       match f.provenance with
       | Evaluation_input (Host_snapshot_key k, t) ->
-          let rank = match t with String_type -> 0 | Integer_type -> 1 | Boolean_type -> 2 in
-          Some (k, rank, i)
+          Some (encode_tag 0 ^ encode_string k ^ encode_scalar_type t, i)
       | _ -> None
     ) facts in
     if List.exists Option.is_none provenance_keys then None
     else
       let keys = List.filter_map Fun.id provenance_keys in
-      let sorted = List.sort (fun (k1,r1,_) (k2,r2,_) ->
-        let c = String.compare k1 k2 in if c <> 0 then c else Int.compare r1 r2
+      let sorted = List.sort (fun (a,_) (b,_) ->
+        compare_bytes_lex_unsigned a b
       ) keys in
       (* distinct check *)
       let distinct =
         let tbl = Hashtbl.create n in
         let ok = ref true in
-        List.iter (fun (k,r,_) ->
-          let key = k ^ ":" ^ string_of_int r in
-          if Hashtbl.mem tbl key then ok := false else Hashtbl.add tbl key ()
+        List.iter (fun (encoded,_) ->
+          if Hashtbl.mem tbl encoded then ok := false else Hashtbl.add tbl encoded ()
         ) keys;
         !ok
       in
       if not distinct then None
-      else
-        let order = List.map (fun (_,_,i) -> i) sorted in
-        Some order
+      else Some (List.map snd sorted)
 
 (* ================================================================== *)
 (*  Main canonicalize_ir — individualisation/refinement + proven pruning *)
@@ -794,7 +719,7 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
           let ri = build_refinement_input p in
           match stable_refinement ri budget.max_refinement_rounds with
           | Error e -> Error e
-          | Ok (stable_partition, refinement_rounds) ->
+          | Ok (_stable_partition, refinement_rounds) ->
 
           let all_facts_list = ri.facts in
           let all_origins_list = ri.origins in
@@ -808,22 +733,13 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
           let n_branches = List.length all_branches_list in
           let n_templates = List.length all_templates_list in
 
-          (* Distinct-scalar Fact optimisation (§5): if Fact partition discrete and facts are
-             distinguishable Evaluation_input, we can fix Fact assignment to single minimal order. *)
+          (* The proof is local to the first Enc_V2 input_facts section; it does
+             not rely on a colour number or on refinement being discrete. *)
           let fact_permutation_mode =
-            if is_discrete_arr stable_partition.fact_colours then
-              match fact_discrete_minimal_order all_facts_list with
-              | Some order -> `Single order
-              | None -> `All
-            else `All
+            match fact_discrete_minimal_order all_facts_list with
+            | Some order -> `Single order
+            | None -> `All
           in
-
-          (* Orbit pruning disabled in this cut: origin/branch symmetry via scalar alone
-             is unsound when entry_origin / branch subjects distinguish entities.
-             Retained only distinct-scalar Fact ordering (proven sound). *)
-          let origin_symmetric = false in
-          let branch_symmetric = false in
-          let _ = all_branches_list in
 
           let fact_state = make_perm_state_ir n_facts in
           let origin_state = make_perm_state_ir n_origins in
@@ -862,13 +778,6 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
               budget_exceeded := true
           in
 
-          (* Prefix helpers: compute Enc_V2 prefix up to origin_sites for pruning.
-             We compute payload with current fact/origin assignment plus an arbitrary
-             minimal completion for remaining families, then extract prefix bytes
-             that are invariant under remaining completions (up to origin_sites). *)
-          let last_target_cell = find_target_cell stable_partition ri in
-          let _ = last_target_cell in
-
           (* Helper to build label assignment from current perm states *)
           let build_label_assignment () =
             let fact_map = List.fold_left2 (fun (m : int FactMap.t) (f : fact) idx ->
@@ -903,56 +812,6 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
             |> List.map fst
           in
 
-          (* Byte-prefix pruning for fact/origin/branch levels:
-             After fixing facts/origins/batches/branches/templates, the prefix
-             up to item_templates is invariant under role completions.  If that
-             prefix already exceeds best's prefix, the entire role subtree can
-             be pruned.  We implement this at the la_base node before enumerating
-             role blocks. *)
-          let try_prefix_prune la_base =
-            if !best_payload = "" then false
-            else
-              (* Compute prefix bytes up to branches (which are fixed) — we encode
-                 a representative full payload with first role perm and compare its
-                 prefix to best.  To stay sound we extract the prefix that is
-                 identical for all role completions: bytes up to and including
-                 branches section.  Since roles appear after branches, this prefix
-                 is fixed.  We obtain it by encoding program with la_base extended
-                 with a minimal role assignment (sorted) and truncating before roles. *)
-              let sorted_template_ids = compute_template_label_order la_base in
-              (* Build minimal role map (labels in order of storage) for prefix *)
-              let dummy_role_map =
-                let m = ref ScopedRoleMap.empty in
-                let next = ref 1 in
-                List.iter (fun r ->
-                  m := ScopedRoleMap.add (Program_role r.role_id) !next !m; incr next
-                ) program_roles_list;
-                List.iter (fun tid ->
-                  let roles = try List.assoc tid template_roles_groups with Not_found -> [] in
-                  List.iter (fun (r : role) ->
-                    m := ScopedRoleMap.add (Template_role (tid, r.role_id)) !next !m; incr next
-                  ) roles
-                ) sorted_template_ids;
-                !m
-              in
-              let la_dummy = { la_base with role_labels = dummy_role_map } in
-              let payload_dummy = encode_program la_dummy p in
-              (* Find boundary of branches section: we can locate by re-encoding
-                 and slicing — simpler: compare full dummy payload prefix against
-                 best.  If dummy's prefix up to branches already > best's prefix
-                 at same length, prune.  We use heuristic: compare dummy payload
-                 lexicographically to best; if dummy payload > best at the branch
-                 boundary, all completions will be > best because role suffix
-                 cannot make prefix smaller.  This is sound because prefix is fixed. *)
-              (* Extract prefix length up to branches: encode core_version+input_facts+
-                 entry_guards+entry_origin+success_continuations+origin_sites+branches
-                 We approximate by encoding dummy and finding role section start
-                 via searching for roles encoding? Instead just compare dummy vs best
-                 full strings: if dummy already > best lexicographically, then the
-                 minimal possible completion (dummy) exceeds best, so subtree pruned. *)
-              compare_bytes_lex_unsigned payload_dummy !best_payload > 0
-          in
-
           let process_assignment (la : label_assignment) =
             incr stats_leaves;
             if !stats_leaves > !stats_max_depth then stats_max_depth := !stats_leaves;
@@ -985,19 +844,6 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
           in
           stats_leaves_avoided := fact_leaves_avoided;
 
-          (* Origin/branch orbit pruning leaf avoidance *)
-          let origin_orbit_avoided =
-            if origin_symmetric && n_origins > 1 then
-              match safe_fact n_origins budget.max_leaves with Some n -> n - 1 | None -> 0
-            else 0
-          in
-          let branch_orbit_avoided =
-            if branch_symmetric && n_branches > 1 then
-              match safe_fact n_branches budget.max_leaves with Some n -> n - 1 | None -> 0
-            else 0
-          in
-          stats_leaves_avoided := !stats_leaves_avoided + origin_orbit_avoided + branch_orbit_avoided;
-
           let search () =
             (* Fact enumeration — with distinct-scalar optimisation *)
             let enumerate_facts cont =
@@ -1021,31 +867,18 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
                     end)
             in
             let enumerate_origins cont =
-              if origin_symmetric then begin
-                (* Fix origin assignment to one canonical rep *)
-                for i = 0 to n_origins - 1 do origin_state.assigned.(i) <- i + 1 done;
-                incr stats_nodes;
-                incr stats_orbit_pruned;
-                cont ()
-              end else
-                assign_next_ir origin_state (fun _ ->
-                  if !budget_exceeded then () else begin
-                    incr stats_nodes;
-                    cont ()
-                  end)
+              assign_next_ir origin_state (fun _ ->
+                if !budget_exceeded then () else begin
+                  incr stats_nodes;
+                  cont ()
+                end)
             in
             let enumerate_branches cont =
-              if branch_symmetric then begin
-                for i = 0 to n_branches - 1 do branch_state.assigned.(i) <- i + 1 done;
-                incr stats_nodes;
-                incr stats_orbit_pruned;
-                cont ()
-              end else
-                assign_next_ir branch_state (fun _ ->
-                  if !budget_exceeded then () else begin
-                    incr stats_nodes;
-                    cont ()
-                  end)
+              assign_next_ir branch_state (fun _ ->
+                if !budget_exceeded then () else begin
+                  incr stats_nodes;
+                  cont ()
+                end)
             in
             enumerate_facts (fun () ->
               if !budget_exceeded then () else
@@ -1061,22 +894,10 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
                           if !budget_exceeded then () else begin
                             incr stats_nodes;
                             let la_base = build_label_assignment () in
-                            (* Prefix pruning: if even the minimal role completion under this
-                               la_base exceeds best, prune entire role subtree (§4) *)
-                            if try_prefix_prune la_base then begin
-                              incr stats_prefix_pruned;
-                              (* Estimate leaves avoided: product of remaining role perms *)
-                              let role_perm_product =
-                                let prog = match safe_fact n_program_roles budget.max_leaves with Some n -> n | None -> 1 in
-                                List.fold_left (fun acc (_, roles) ->
-                                  match safe_fact (List.length roles) budget.max_leaves with
-                                  | Some n -> (match safe_mul acc n budget.max_leaves with Some v -> v | None -> acc)
-                                  | None -> acc
-                                ) prog template_roles_groups
-                              in
-                              stats_leaves_avoided := !stats_leaves_avoided + role_perm_product
-                            end else begin
-                              let sorted_template_ids = compute_template_label_order la_base in
+                            (* No representative completion is a lower bound.  Roles are
+                               therefore enumerated exactly until an actual fixed-prefix
+                               encoder is available. *)
+                            let sorted_template_ids = compute_template_label_order la_base in
                               let program_block = {
                                 n_roles = n_program_roles;
                                 start_label = 1;
@@ -1116,7 +937,6 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
                                   process_assignment la
                                 end
                               )
-                            end
                           end
                         )
                       end

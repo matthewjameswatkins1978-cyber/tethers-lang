@@ -1,5 +1,5 @@
 (* ==================================================================
-   CANONICAL FORMAT V2 — OPTIMISED IR SEARCH TESTS (C-B4I3)
+   CANONICAL FORMAT V2 — EXACT HYBRID SEARCH TESTS (C-B4I3C)
 
    Proves IR returns EXACTLY the same CanonicalPayload_V2 and
    ProgramDigest_V2 as both the slow oracle (where it can run) and
@@ -410,8 +410,15 @@ let test_high_bytes () =
     origin_sites = []; branches = []; roles = []; item_templates = []; capability_contracts = [];
   } in
   let p_empty = { p_nul with input_facts = [{ fact_id = fid "f1"; schema_description = ""; provenance = Evaluation_input (hsk "", String_type)}]} in
+  let p_pair = { p_nul with input_facts = [
+    { fact_id = fid "hi"; schema_description = ""; provenance = Evaluation_input (hsk "\x80", String_type)};
+    { fact_id = fid "lo"; schema_description = ""; provenance = Evaluation_input (hsk "\x7f", String_type)};
+  ]} in
   assert_ir_eq_oracle_and_baseline p_nul "high bytes NUL";
   assert_ir_eq_oracle_and_baseline p_empty "high bytes empty";
+  assert_ir_eq_oracle_and_baseline p_pair "high bytes pair";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p_pair) "high bytes pair IR" in
+  check_equal_int 1 stats.leaves_encoded "high bytes pair shortcut";
   check (Tethers_core_canonical_v2_format.compare_bytes_lex_unsigned "\x7f" "\x80" < 0) "high byte compare"
 
 (* ================================================================== *)
@@ -901,6 +908,83 @@ let test_lexical_vs_scalar_order () =
   } in
   assert_ir_eq_oracle_and_baseline p "lexical vs scalar order"
 
+let test_length_prefix_string_trap () =
+  (* Raw string order is aa < z, but Enc_V2 orders the length-prefixed
+     provenance bytes 1:z < 2:aa.  This exercises the only active shortcut. *)
+  let facts = [
+    { fact_id = fid "aa"; schema_description = ""; provenance = Evaluation_input (hsk "aa", String_type)};
+    { fact_id = fid "z"; schema_description = ""; provenance = Evaluation_input (hsk "z", String_type)};
+  ] in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = facts;
+    entry_guards = []; entry_origin = None; success_continuations = [];
+    origin_sites = []; branches = []; roles = []; item_templates = []; capability_contracts = [];
+  } in
+  check (Tethers_core_canonical_v2_format.compare_bytes_lex_unsigned "1:z" "2:aa" < 0)
+    "length-prefix precondition";
+  assert_ir_eq_oracle_and_baseline p "length-prefix aa/z";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) "length-prefix IR" in
+  check_equal_int 1 stats.leaves_encoded "length-prefix shortcut encodes one exact leaf"
+
+let test_structural_location_fact_trap () =
+  (* A global scalar sort over collect_facts is invalid: one fact is emitted in
+     input_facts and the other in a later origin declaration.  The fast path
+     must be disabled and exact enumeration retained. *)
+  let o = oid "origin" in
+  let input = { fact_id = fid "input"; schema_description = ""; provenance = Evaluation_input (hsk "z", String_type)} in
+  let declared = { fact_id = fid "declared"; schema_description = ""; provenance = Origin_provenance o } in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = [input];
+    entry_guards = []; entry_origin = Some o; success_continuations = [];
+    origin_sites = [Anchor_origin { anchor_origin_id = o; event_name = "ev"; declared_facts = [declared]}];
+    branches = []; roles = []; item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "structural-location Fact trap";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) "structural-location IR" in
+  check_equal_int 2 stats.leaves_encoded "structural-location retains both fact labellings"
+
+let test_role_completion_trap () =
+  (* Storage order z, aa is not the minimum role completion.  A representative
+     completion is not a prefix lower bound, so C-B4I3C never prunes it. *)
+  let role name = {
+    role_id = rid name; scope = Program_scope; fact_contract = Role_fact_contract [];
+    eligible_fulfillment = rf name;
+  } in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = [];
+    entry_guards = []; entry_origin = None; success_continuations = [];
+    origin_sites = []; branches = []; roles = [role "z"; role "aa"];
+    item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "role-completion trap";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) "role-completion IR" in
+  check_equal_int 2 stats.leaves_encoded "role-completion enumerates both assignments";
+  check_equal_int 0 stats.prefix_subtrees_pruned "no representative-completion prefix pruning"
+
+let test_multi_round_refinement () =
+  (* Distinct initial origin scalars reach their roles only through the
+     Origin -> Fact -> Role path, requiring synchronous propagation. *)
+  let oa = oid "oa" and ob = oid "ob" in
+  let fa = { fact_id = fid "fa"; schema_description = ""; provenance = Origin_provenance oa } in
+  let fb = { fact_id = fid "fb"; schema_description = ""; provenance = Origin_provenance ob } in
+  let role name fact = {
+    role_id = rid name; scope = Program_scope; fact_contract = Role_fact_contract [fact];
+    eligible_fulfillment = rf "same";
+  } in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = [];
+    entry_guards = []; entry_origin = Some oa; success_continuations = [];
+    origin_sites = [
+      Anchor_origin { anchor_origin_id = oa; event_name = "event-a"; declared_facts = [fa]};
+      Anchor_origin { anchor_origin_id = ob; event_name = "event-b"; declared_facts = [fb]};
+    ];
+    branches = []; roles = [role "ra" (fid "fa"); role "rb" (fid "fb")];
+    item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "multi-round refinement";
+  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) "multi-round refinement IR" in
+  check (stats.refinement_rounds >= 2) "multi-round refinement must not reuse a partial round"
+
 let test_branch_symmetry_broken_by_target () =
   (* Branch symmetry broken by differing targets — must not be considered automorphic *)
   let a0 = oid "a0" and a1 = oid "a1" and a2 = oid "a2" in
@@ -944,7 +1028,7 @@ let test_refinement_fail_closed () =
 (* ================================================================== *)
 
 let () =
-  Printf.printf "=== V2 IR Search Tests (C-B4I3B) ===\n\n";
+  Printf.printf "=== V2 Exact Hybrid Search Tests (C-B4I3C) ===\n\n";
   test_empty (); Printf.printf "PASS: empty\n";
   test_simple_anchor (); Printf.printf "PASS: simple Anchor\n";
   test_anchor_action (); Printf.printf "PASS: Anchor+Action\n";
@@ -974,6 +1058,10 @@ let () =
   test_multi_round_distinction (); Printf.printf "PASS: counterexample multi-round distinction\n";
   test_role_proxy_scope_counterexample (); Printf.printf "PASS: counterexample Role_proxy scope\n";
   test_lexical_vs_scalar_order (); Printf.printf "PASS: counterexample lexical vs scalar order\n";
+  test_length_prefix_string_trap (); Printf.printf "PASS: counterexample length-prefix string trap\n";
+  test_structural_location_fact_trap (); Printf.printf "PASS: counterexample structural-location Fact trap\n";
+  test_role_completion_trap (); Printf.printf "PASS: counterexample role completion trap\n";
+  test_multi_round_refinement (); Printf.printf "PASS: counterexample multi-round refinement\n";
   test_branch_symmetry_broken_by_target (); Printf.printf "PASS: counterexample branch symmetry broken\n";
   test_refinement_fail_closed ();
   test_generated_corpus (); Printf.printf "PASS: generated corpus 1000\n";
