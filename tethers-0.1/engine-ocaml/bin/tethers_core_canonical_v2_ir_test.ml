@@ -930,18 +930,35 @@ let test_structural_location_fact_trap () =
   (* A global scalar sort over collect_facts is invalid: one fact is emitted in
      input_facts and the other in a later origin declaration.  The fast path
      must be disabled and exact enumeration retained. *)
-  let o = oid "origin" in
-  let input = { fact_id = fid "input"; schema_description = ""; provenance = Evaluation_input (hsk "z", String_type)} in
-  let declared = { fact_id = fid "declared"; schema_description = ""; provenance = Origin_provenance o } in
-  let p = {
-    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = [input];
-    entry_guards = []; entry_origin = Some o; success_continuations = [];
-    origin_sites = [Anchor_origin { anchor_origin_id = o; event_name = "ev"; declared_facts = [declared]}];
-    branches = []; roles = []; item_templates = []; capability_contracts = [];
-  } in
+  let make input_id declared_id anchor_id spare_id sites =
+    let anchor = oid anchor_id in
+    let input = { fact_id = fid input_id; schema_description = ""; provenance = Evaluation_input (hsk "aa", String_type)} in
+    let declared = { fact_id = fid declared_id; schema_description = ""; provenance = Evaluation_input (hsk "z", String_type)} in
+    let origin_for id =
+      if id = anchor_id then
+        Anchor_origin { anchor_origin_id = anchor; event_name = "ev"; declared_facts = [declared]}
+      else
+        Anchor_origin { anchor_origin_id = oid spare_id; event_name = "spare"; declared_facts = []}
+    in
+    {
+      program_id = pid "test"; core_version = cv "0.1.0"; input_facts = [input];
+      entry_guards = []; entry_origin = Some anchor; success_continuations = [];
+      origin_sites = List.map origin_for sites;
+      branches = []; roles = []; item_templates = []; capability_contracts = [];
+    }
+  in
+  let p = make "input-z" "declared-a" "anchor-z" "spare-a" ["anchor-z"; "spare-a"] in
+  let p_reversed = make "input-a" "declared-z" "anchor-a" "spare-z" ["spare-z"; "anchor-a"] in
   assert_ir_eq_oracle_and_baseline p "structural-location Fact trap";
-  let (_, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) "structural-location IR" in
-  check_equal_int 2 stats.leaves_encoded "structural-location retains both fact labellings"
+  assert_ir_eq_oracle_and_baseline p_reversed "structural-location Fact trap reversed";
+  let (ir, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) "structural-location IR" in
+  let (ir_reversed, stats_reversed) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p_reversed) "structural-location reversed IR" in
+  check_equal_int 4 stats.leaves_encoded "structural-location retains both fact labellings";
+  check_equal_int 4 stats_reversed.leaves_encoded "structural-location reversed retains both fact labellings";
+  check_equal_string
+    (Tethers_core_canonical_v2_ir.canonical_payload_ir ir)
+    (Tethers_core_canonical_v2_ir.canonical_payload_ir ir_reversed)
+    "structural-location raw-ID and storage invariance"
 
 let test_role_completion_trap () =
   (* Storage order z, aa is not the minimum role completion.  A representative

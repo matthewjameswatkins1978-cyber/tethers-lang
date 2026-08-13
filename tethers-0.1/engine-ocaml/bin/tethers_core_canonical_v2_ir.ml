@@ -672,6 +672,18 @@ let rec enumerate_role_blocks_ir st callback =
    the first differing input_fact smaller.  An adjacent inversion therefore
    cannot be minimal, so the ascending byte order is the unique winner.  This
    rule is deliberately unavailable as soon as a Fact occurs elsewhere. *)
+let facts_are_exactly_top_level_inputs (p : program) (facts : fact list) : bool =
+  (* The fast-path proof starts at the top-level input_facts section.  Provenance
+     alone is insufficient: an Evaluation_input Fact may be emitted later from
+     an origin, batch, or template.  Validator-backed IDs make this an exact
+     occurrence-inventory check, not an ordering decision. *)
+  List.length facts = List.length p.input_facts &&
+  let input_ids =
+    List.fold_left (fun ids (f : fact) -> FactIdMap.add f.fact_id () ids)
+      FactIdMap.empty p.input_facts
+  in
+  List.for_all (fun (f : fact) -> FactIdMap.mem f.fact_id input_ids) facts
+
 let fact_discrete_minimal_order (facts : fact list) : int list option =
   (* Return permutation indices in the exact bytes that Enc_V2 emits for an
      input fact's provenance.  This deliberately does not use String.compare:
@@ -736,9 +748,11 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
           (* The proof is local to the first Enc_V2 input_facts section; it does
              not rely on a colour number or on refinement being discrete. *)
           let fact_permutation_mode =
-            match fact_discrete_minimal_order all_facts_list with
-            | Some order -> `Single order
-            | None -> `All
+            if facts_are_exactly_top_level_inputs p all_facts_list then
+              match fact_discrete_minimal_order all_facts_list with
+              | Some order -> `Single order
+              | None -> `All
+            else `All
           in
 
           let fact_state = make_perm_state_ir n_facts in
