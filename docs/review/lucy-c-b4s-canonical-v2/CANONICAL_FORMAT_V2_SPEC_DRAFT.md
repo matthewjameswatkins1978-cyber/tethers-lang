@@ -164,9 +164,15 @@ Conceptual rule (frozen):
 λ_branch           : BranchId        → {1..N_branch}
 λ_batch            : BatchId         → {1..N_batch}
 λ_template         : ItemTemplateId  → {1..N_template}
-λ_role[Program]    : RoleId@Program  → {1..N_role_program}
-λ_role[Template t] : RoleId@Template(t) → {1..N_role_template_t}   (per t)
+λ_role             : RoleOccurrences(P) ↔ {1..N_role}
 ```
+
+Subject to the mandatory scope-block restriction (§9.4):
+
+- `Program_scope` gets the first contiguous interval of role labels
+- Template scopes get subsequent contiguous intervals in ascending `λ_template` order
+- Each scope's roles may permute only within its assigned global interval
+- No cross-scope assignment
 
 Each `λ_*` is bijective within its family; the family-wise union is `λ`.
 
@@ -428,7 +434,7 @@ same inputs, same facts), `P2 ≠ P1` because `|E(P2)| = |E(P1)|+1`.
   byte sequences. Every field boundary is unambiguous.
 - Explicitly tagged and length-prefixed. No JSON, no object-key ordering
   dependence, no whitespace ambiguity.
-- All strings are raw UTF-8 bytes with explicit length prefix; no terminators
+- All strings are exact Core/OCaml string byte sequences with explicit length prefix; no terminators
   other than the `:` after the decimal length.
 - All integers are decimal ASCII with `;` terminator (signed if needed; see §7).
 - All lists are length-prefixed: `N:` (decimal, then `:`) followed by `N` encodings.
@@ -916,10 +922,14 @@ Defined in §2.4 and §9.4. In `Enc_V2`:
   `Item_template_scope(label_of_template)`.
 - `Role_fact_contract` fact IDs are sorted by canonical fact label (fact identity
   is global, but the contract membership is template-scoped).
-- `Fact_through_role` bindings are resolved against the **origin's scope**:
-  an Action origin inside `IT_a` can only reference a role in `IT_a` (or Program
-  scope for anchors) per validator `Fact_through_role` checks. The encoder looks
-  up the role via its scoped key, so the correct label is emitted.
+- `Fact_through_role` bindings are resolved against the **containing origin's
+  structural scope**:
+  - origin physically in `program.origin_sites` → `Program_scope`
+  - origin physically in `item_template T.origin_sites` → `Item_template_scope(T)`
+  
+  This applies regardless of whether the containing origin is `Anchor_origin` or
+  `Action_origin`. Canonicalisation never selects scope from origin variant. The
+  encoder looks up the role via its scoped key, so the correct label is emitted.
 
 ### 10.2.1 Role_proxy scope resolution (frozen)
 
