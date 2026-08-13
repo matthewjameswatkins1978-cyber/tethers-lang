@@ -39,3 +39,20 @@ val canonical_preimage : canonicalized_v2 -> bytes
 
 (** Extract the external digest string: "tethers:v2:sha256:<hex>" *)
 val program_digest : canonicalized_v2 -> string
+
+(* ==================================================================
+   TESTING / INTERNAL — budget pre-admission arithmetic
+
+   Exposed only so focused budget-evidence tests can exercise the
+   deterministic pre-admission candidate count directly, without
+   enumerating millions of candidate leaves.  This is not part of the
+   public semantic identity API and is not used by production callers,
+   which reach admission only through [canonicalize].
+   ================================================================== *)
+
+(** Overflow-safe exact Λ(P) candidate count relative to a caller-supplied
+    budget limit.  Returns [Some exact_count] iff [exact_count <= limit];
+    [None] otherwise.  Never wraps: when the factorial/product would exceed
+    [limit] (including [max_int]), it returns [None] rather than computing an
+    overflowing product. *)
+val candidate_count_within_budget : limit:int -> Tethers_core.program -> int option

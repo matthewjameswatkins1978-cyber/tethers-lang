@@ -645,6 +645,173 @@ let test_budget_equivalent_raw_variants () =
   check both_failed "equivalent variants have same budget admission"
 
 (* ================================================================== *)
+(*  L2: Exact 7! (5040) budget boundary                                 *)
+(*                                                                     *)
+(*  The family-size-7 fixture has exactly 7! = 5040 candidate labels.   *)
+(*  Budget 5039 must reject during deterministic pre-admission;        *)
+(*  budget 5040 must admit and produce the same payload/digest as the  *)
+(*  normal-budget result.                                              *)
+(* ================================================================== *)
+
+let test_budget_5040_exact_boundary () =
+  let anchor = oid "anchor" in
+  let facts = List.init 7 (fun i ->
+    { fact_id = fid ("f" ^ string_of_int i);
+      schema_description = "";
+      provenance = Evaluation_input (hsk ("hk" ^ string_of_int i), String_type); }
+  ) in
+  let p = {
+    program_id = pid "test";
+    core_version = cv "0.1.0";
+    input_facts = facts;
+    entry_guards = [];
+    entry_origin = Some anchor;
+    success_continuations = [];
+    origin_sites = [
+      Anchor_origin {
+        anchor_origin_id = anchor;
+        event_name = "ev";
+        declared_facts = [];
+      };
+    ];
+    branches = [];
+    roles = [];
+    item_templates = [];
+    capability_contracts = [];
+  } in
+
+  (* Assert the exact candidate count is 5040, directly, not inferred. *)
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:max_int p with
+   | Some n -> check_equal_int 5040 n "family-7 exact candidate count"
+   | None -> failwith "FAIL: family-7 candidate count should be countable under max_int");
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:5039 p with
+   | None -> ()
+   | Some n -> failwith (Printf.sprintf "FAIL: limit 5039 should reject 5040 space, got %d" n));
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:5040 p with
+   | Some n -> check_equal_int 5040 n "family-7 candidate count at limit 5040"
+   | None -> failwith "FAIL: limit 5040 should admit exactly 5040");
+
+  (* Budget 5039 rejects during pre-admission *)
+  let budget_5039 = { Tethers_core_canonical_v2.max_candidates = 5039 } in
+  (match Tethers_core_canonical_v2.canonicalize ~budget:budget_5039 p with
+   | Error Tethers_core_canonical_v2.Canonicalisation_too_complex -> ()
+   | Ok _ -> failwith "FAIL: budget 5039 should fail for 5040-candidate space"
+   | Error (Tethers_core_canonical_v2.Invalid_core _) ->
+       failwith "FAIL: budget 5039 should not get Invalid_core for valid program");
+
+  (* Budget 5040 admits; result must equal normal-budget result *)
+  let budget_5040 = { Tethers_core_canonical_v2.max_candidates = 5040 } in
+  let result_5040 = check_ok (Tethers_core_canonical_v2.canonicalize ~budget:budget_5040 p) "budget_5040" in
+  let result_normal = check_ok (Tethers_core_canonical_v2.canonicalize p) "budget_normal" in
+  check_equal_string
+    (Tethers_core_canonical_v2.canonical_payload result_5040)
+    (Tethers_core_canonical_v2.canonical_payload result_normal)
+    "budget 5040 payload equals normal-budget payload";
+  check_equal_string
+    (Tethers_core_canonical_v2.program_digest result_5040)
+    (Tethers_core_canonical_v2.program_digest result_normal)
+    "budget 5040 digest equals normal-budget digest"
+
+(* ================================================================== *)
+(*  L3: Custom budget above the default 5,000,000 limit                 *)
+(*                                                                     *)
+(*  Prove admission is relative to the caller's limit, not secretly    *)
+(*  capped at the default.  Witness: 10 facts (10!) and 2 origins (2!) *)
+(*  -> 10! * 2! = 7,257,600 candidates.                                *)
+(*                                                                     *)
+(*  Only pre-admission arithmetic is exercised; we never call          *)
+(*  full canonicalize on the admitted 7.2m case.                       *)
+(* ================================================================== *)
+
+let test_custom_budget_above_default () =
+  let facts = List.init 10 (fun i ->
+    { fact_id = fid ("f" ^ string_of_int i);
+      schema_description = "";
+      provenance = Evaluation_input (hsk ("hk" ^ string_of_int i), String_type); }
+  ) in
+  let origins = List.init 2 (fun i ->
+    Anchor_origin {
+      anchor_origin_id = oid ("a" ^ string_of_int i);
+      event_name = "ev";
+      declared_facts = [];
+    }
+  ) in
+  let p = {
+    program_id = pid "test";
+    core_version = cv "0.1.0";
+    input_facts = facts;
+    entry_guards = [];
+    entry_origin = Some (oid "a0");
+    success_continuations = [];
+    origin_sites = origins;
+    branches = [];
+    roles = [];
+    item_templates = [];
+    capability_contracts = [];
+  } in
+  let exact = 7_257_600 in
+
+  (* limit = default (5,000,000) rejects *)
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:5_000_000 p with
+   | None -> ()
+   | Some n -> failwith (Printf.sprintf "FAIL: default 5m limit should reject 7.2m space, got %d" n));
+
+  (* limit = exact - 1 rejects *)
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:(exact - 1) p with
+   | None -> ()
+   | Some n -> failwith (Printf.sprintf "FAIL: limit %d should reject, got %d" (exact - 1) n));
+
+  (* limit = exact admits with exact count *)
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:exact p with
+   | Some n -> check_equal_int exact n "limit == exact count admits exact"
+   | None -> failwith "FAIL: limit == exact count should admit");
+
+  (* limit > exact admits with exact count *)
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:(exact + 1) p with
+   | Some n -> check_equal_int exact n "limit > exact count admits exact"
+   | None -> failwith "FAIL: limit > exact count should admit")
+
+(* ================================================================== *)
+(*  L4: Overflow / max_int safety                                       *)
+(*                                                                     *)
+(*  21! = 51,090,942,171,709,440,000 exceeds the signed 64-bit range   *)
+(*  (and OCaml's max_int).  Candidate counting must return None        *)
+(*  without wrapping into a negative or false-positive Some.           *)
+(* ================================================================== *)
+
+let test_overflow_max_int_safety () =
+  let make_p n =
+    let facts = List.init n (fun i ->
+      { fact_id = fid ("f" ^ string_of_int i);
+        schema_description = "";
+        provenance = Evaluation_input (hsk ("hk" ^ string_of_int i), String_type); }
+    ) in
+    {
+      program_id = pid "test";
+      core_version = cv "0.1.0";
+      input_facts = facts;
+      entry_guards = [];
+      entry_origin = None;
+      success_continuations = [];
+      origin_sites = [];
+      branches = [];
+      roles = [];
+      item_templates = [];
+      capability_contracts = [];
+    }
+  in
+
+  (* 21! overflows: must return None, no negative, no Some *)
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:max_int (make_p 21) with
+   | None -> ()
+   | Some n -> failwith (Printf.sprintf "FAIL: 21! must not wrap into a count, got %d" n));
+
+  (* Boundary sanity: 20! = 2,432,902,008,176,640,000 fits under max_int *)
+  (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:max_int (make_p 20) with
+   | Some n -> check_equal_int 2_432_902_008_176_640_000 n "20! exact under max_int"
+   | None -> failwith "FAIL: 20! should be countable under max_int")
+
+(* ================================================================== *)
 (*  N: Known vector lock — frozen literals                              *)
 (*                                                                     *)
 (*  Gold source: accepted B4I1 reference at                             *)
@@ -798,6 +965,12 @@ let () =
   Printf.printf "PASS: budget exact boundary\n";
   test_budget_equivalent_raw_variants ();
   Printf.printf "PASS: budget equivalent raw variants\n";
+  test_budget_5040_exact_boundary ();
+  Printf.printf "PASS: budget 5040 exact boundary\n";
+  test_custom_budget_above_default ();
+  Printf.printf "PASS: custom budget above default (10! x 2!)\n";
+  test_overflow_max_int_safety ();
+  Printf.printf "PASS: overflow / max_int safety (21!)\n";
   test_known_vectors ();
   Printf.printf "PASS: known frozen vectors\n";
   test_known_vector_simple_anchor ();
