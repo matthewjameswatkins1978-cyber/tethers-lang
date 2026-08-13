@@ -1,5 +1,5 @@
 (* ==================================================================
-   CANONICAL FORMAT V2 — EXACT HYBRID SEARCH TESTS (C-B4I3C)
+   CANONICAL FORMAT V2 — ROCKET ANCHOR TIE REPAIR TESTS (C-B4I3R2A)
 
    Proves IR returns EXACTLY the same CanonicalPayload_V2 and
    ProgramDigest_V2 as both the slow oracle (where it can run) and
@@ -8,7 +8,7 @@
    Covers:
      - frozen hard gates
      - Persistent Branch 24 perms
-     - generated differential corpus (10,000)
+     - dense generated differential corpus (5,000)
      - adversarial symmetry corpus (A-G)
      - metamorphic raw-ID / storage tests
      - 7! baseline-beyond-oracle
@@ -459,8 +459,8 @@ let test_persistent_branch_ir () =
   check_equal_int 1 (List.length uniq_digests) "persistent 1 digest IR";
   (* Report IR stats for witness — first perm *)
   let (_, stats0) = List.hd results in
-  check_equal_int 1 stats0.leaves_encoded "persistent Branch exact encoder reductions";
-  check_equal_int 575 stats0.leaves_avoided "persistent Branch leaves avoided";
+  check_equal_int 6 stats0.leaves_encoded "persistent Branch Anchor-tie residual search";
+  check_equal_int 570 stats0.leaves_avoided "persistent Branch leaves avoided";
   Printf.printf "Persistent Branch IR stats: nodes=%d leaves=%d rounds=%d prefix_pruned=%d orbit_pruned=%d dup_hits=%d leaves_avoided=%d\n"
     stats0.nodes stats0.leaves_encoded stats0.refinement_rounds stats0.prefix_subtrees_pruned stats0.orbit_branches_pruned stats0.duplicate_payload_hits stats0.leaves_avoided
 
@@ -534,7 +534,7 @@ let test_dependency_closed_program_anchor_origins () =
       if hostile_ids then Printf.sprintf "\xffraw-%02d" (count - index)
       else Printf.sprintf "origin-%02d" index
     ) in
-    let event index = match index mod 7 with
+    let event index = Printf.sprintf "%02d|" index ^ match index mod 7 with
       | 0 -> ""
       | 1 -> "\x00"
       | 2 -> "\x80"
@@ -558,13 +558,14 @@ let test_dependency_closed_program_anchor_origins () =
   assert_ir_eq_oracle_and_baseline projection "dependency-closed Anchor Origin projection";
   let projection_reversed = make 6 true true in
   assert_ir_eq_oracle_and_baseline projection_reversed "dependency-closed Anchor Origin hostile projection";
-  let payload p =
+  let payload label p =
     let (result, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p)
       "dependency-closed Anchor Origin IR" in
-    check_equal_int 1 stats.leaves_encoded "dependency-closed Anchor Origin one leaf";
+    check_equal_int 1 stats.leaves_encoded (label ^ " dependency-closed Anchor Origin one leaf");
     Tethers_core_canonical_v2_ir.canonical_payload_ir result
   in
-  check_equal_string (payload projection) (payload projection_reversed)
+  check_equal_string (payload "forward projection" projection)
+    (payload "reversed projection" projection_reversed)
     "dependency-closed Anchor Origin raw-ID/storage invariance";
   List.iter (fun count ->
     let p = make count false false in
@@ -575,7 +576,8 @@ let test_dependency_closed_program_anchor_origins () =
      | 12, Some n -> check_equal_int 479_001_600 n "12 Anchor Origin raw candidates"
      | 19, None | 20, None | 21, None -> ()
      | _ -> ());
-    check_equal_string (payload p) (payload p_reversed)
+    check_equal_string (payload (Printf.sprintf "forward %d" count) p)
+      (payload (Printf.sprintf "reversed %d" count) p_reversed)
       (Printf.sprintf "dependency-closed Anchor Origin %d metamorphic" count)
   ) [8; 9; 10; 11; 12; 19; 20; 21]
 
@@ -615,6 +617,169 @@ let test_program_anchor_origin_negative_guards () =
     "Anchor Origin Together guard IR" in
   check_equal_int 2 together_stats.leaves_encoded
     "Together disables Anchor Origin shortcut"
+
+let make_anchor_tie_witness ~reverse =
+  let a0 = oid "a0" and a1 = oid "a1" and a2 = oid "a2" in
+  let sites = [
+    Anchor_origin { anchor_origin_id = a0; event_name = "entry"; declared_facts = [] };
+    Anchor_origin { anchor_origin_id = a1; event_name = "tie"; declared_facts = [] };
+    Anchor_origin { anchor_origin_id = a2; event_name = "tie"; declared_facts = [] };
+  ] in
+  {
+    program_id = pid "anchor-tie-repro"; core_version = cv "0.1.0";
+    input_facts = []; entry_guards = []; entry_origin = Some a0;
+    success_continuations = [];
+    origin_sites = if reverse then List.rev sites else sites;
+    branches = [{
+      branch_id = branch_id_of_string "later-branch";
+      branch_subject = a2; outcome_branches = [(Success, Stop)];
+    }];
+    roles = []; item_templates = []; capability_contracts = [];
+  }
+
+let test_anchor_tie_repair_minimal () =
+  let p = make_anchor_tie_witness ~reverse:false in
+  let oracle = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p)
+    "Anchor tie repro oracle" in
+  let baseline = check_ok (Tethers_core_canonical_v2.canonicalize p)
+    "Anchor tie repro baseline" in
+  let (rocket, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p)
+    "Anchor tie repro Rocket" in
+  let baseline_payload = Tethers_core_canonical_v2.canonical_payload baseline in
+  let rocket_payload = Tethers_core_canonical_v2_ir.canonical_payload_ir rocket in
+  check_equal_string oracle.payload baseline_payload "Anchor tie repair oracle==baseline";
+  check_equal_string baseline_payload rocket_payload "Anchor tie repair baseline==Rocket";
+  check_equal_string oracle.digest_string
+    (Tethers_core_canonical_v2_ir.program_digest_ir rocket)
+    "Anchor tie repair digest";
+  check_equal_int 2 stats.leaves_encoded "Anchor tie residual 2!";
+  let reversed = make_anchor_tie_witness ~reverse:true in
+  assert_ir_eq_oracle_and_baseline reversed "Anchor tie reversed repair";
+  let reversed_payload = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir reversed)
+    "Anchor tie reversed Rocket" |> fst
+    |> Tethers_core_canonical_v2_ir.canonical_payload_ir in
+  check_equal_string rocket_payload reversed_payload "Anchor tie storage invariance"
+
+let make_anchor_tie_torture ~count ~reverse ~hostile_ids ~observer ~almost =
+  let raw index =
+    if hostile_ids then Printf.sprintf "\xff-hostile-%02d" (count - index)
+    else Printf.sprintf "anchor-%02d" index
+  in
+  let ids = List.init count (fun index -> oid (raw index)) in
+  let a0 = List.nth ids 0 and a1 = List.nth ids 1 and a2 = List.nth ids 2 in
+  let tie_event = "\x00\x80:tie" in
+  let sites = List.mapi (fun index origin_id ->
+    let event_name =
+      if index = 0 then "entry"
+      else if index = 1 then tie_event
+      else if index = 2 then (if almost then tie_event ^ "\x00late" else tie_event)
+      else Printf.sprintf "%02d:distinct:z\x80" index
+    in
+    Anchor_origin { anchor_origin_id = origin_id; event_name; declared_facts = [] }
+  ) ids in
+  let branches = match observer with
+    | `Subject -> [{
+        branch_id = branch_id_of_string "subject-observer";
+        branch_subject = a2; outcome_branches = [(Success, Stop)];
+      }]
+    | `Continue -> [{
+        branch_id = branch_id_of_string "continue-observer";
+        branch_subject = a0; outcome_branches = [(Success, Continue_to a2)];
+      }]
+    | `Multiple -> [
+        { branch_id = branch_id_of_string "multi-z"; branch_subject = a2;
+          outcome_branches = [(Failure, Continue_to a1); (Success, Stop)] };
+        { branch_id = branch_id_of_string "multi-aa"; branch_subject = a1;
+          outcome_branches = [(Cancelled, Continue_to a2); (Success, Continue_to a1)] };
+      ]
+  in
+  {
+    program_id = pid "anchor-tie-torture"; core_version = cv "0.1.0";
+    input_facts = []; entry_guards = []; entry_origin = Some a0;
+    success_continuations = [];
+    origin_sites = if reverse then List.rev sites else sites;
+    branches = if reverse then List.rev branches else branches;
+    roles = []; item_templates = []; capability_contracts = [];
+  }
+
+let test_anchor_tie_torture () =
+  let payload_and_stats p label =
+    let result, stats = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) label in
+    (Tethers_core_canonical_v2_ir.canonical_payload_ir result, stats)
+  in
+  List.iter (fun observer ->
+    let label = match observer with
+      | `Subject -> "branch_subject"
+      | `Continue -> "Continue_to"
+      | `Multiple -> "multiple later Branch references"
+    in
+    let p = make_anchor_tie_torture ~count:3 ~reverse:false ~hostile_ids:false
+      ~observer ~almost:false in
+    let reversed = make_anchor_tie_torture ~count:3 ~reverse:true ~hostile_ids:false
+      ~observer ~almost:false in
+    let hostile = make_anchor_tie_torture ~count:3 ~reverse:true ~hostile_ids:true
+      ~observer ~almost:false in
+    assert_ir_eq_oracle_and_baseline p ("Anchor tie " ^ label);
+    assert_ir_eq_oracle_and_baseline reversed ("Anchor tie reversed " ^ label);
+    assert_ir_eq_oracle_and_baseline hostile ("Anchor tie hostile " ^ label);
+    let payload, stats = payload_and_stats p ("Anchor tie stats " ^ label) in
+    let reversed_payload, reversed_stats = payload_and_stats reversed
+      ("Anchor tie reversed stats " ^ label) in
+    let hostile_payload, hostile_stats = payload_and_stats hostile
+      ("Anchor tie hostile stats " ^ label) in
+    check_equal_int 2 stats.leaves_encoded (label ^ " residual 2!");
+    check_equal_int 2 reversed_stats.leaves_encoded (label ^ " reversed residual 2!");
+    check_equal_int 2 hostile_stats.leaves_encoded (label ^ " hostile residual 2!");
+    check_equal_string payload reversed_payload (label ^ " storage invariance");
+    check_equal_string payload hostile_payload (label ^ " raw-ID invariance")
+  ) [`Subject; `Continue; `Multiple];
+  let almost = make_anchor_tie_torture ~count:3 ~reverse:false ~hostile_ids:false
+    ~observer:`Subject ~almost:true in
+  assert_ir_eq_oracle_and_baseline almost "almost-identical Anchor bodies";
+  let _, almost_stats = payload_and_stats almost "almost-identical Anchor stats" in
+  check_equal_int 1 almost_stats.leaves_encoded
+    "almost-identical Anchor bodies are decided by exact bytes";
+  let triple_tie =
+    let ids = List.init 5 (fun i -> oid (Printf.sprintf "triple-%d" i)) in
+    let sites = List.mapi (fun index origin_id -> Anchor_origin {
+      anchor_origin_id = origin_id;
+      event_name = if index = 0 then "entry" else if index = 1 then "distinct" else "tie";
+      declared_facts = [];
+    }) ids in
+    { program_id = pid "triple-tie"; core_version = cv "0.1.0";
+      input_facts = []; entry_guards = []; entry_origin = Some (List.hd ids);
+      success_continuations = []; origin_sites = sites;
+      branches = [{ branch_id = branch_id_of_string "triple-observer";
+        branch_subject = List.nth ids 4; outcome_branches = [(Success, Stop)] }];
+      roles = []; item_templates = []; capability_contracts = []; }
+  in
+  assert_ir_eq_oracle_and_baseline triple_tie "three-way Anchor body tie";
+  let _, triple_stats = payload_and_stats triple_tie "three-way Anchor tie stats" in
+  check_equal_int 6 triple_stats.leaves_encoded "distinct class plus tied x3 becomes residual 3!";
+  List.iter (fun count ->
+    let p = make_anchor_tie_torture ~count ~reverse:false ~hostile_ids:false
+      ~observer:`Multiple ~almost:false in
+    let reversed = make_anchor_tie_torture ~count ~reverse:true ~hostile_ids:true
+      ~observer:`Multiple ~almost:false in
+    let payload, stats = payload_and_stats p (Printf.sprintf "Anchor tie boundary %d" count) in
+    let reversed_payload, reversed_stats = payload_and_stats reversed
+      (Printf.sprintf "Anchor tie reversed boundary %d" count) in
+    check_equal_int 2 stats.leaves_encoded (Printf.sprintf "Anchor tie boundary %d residual" count);
+    check_equal_int 2 reversed_stats.leaves_encoded
+      (Printf.sprintf "Anchor tie reversed boundary %d residual" count);
+    check_equal_string payload reversed_payload
+      (Printf.sprintf "Anchor tie boundary %d metamorphic" count);
+    if count = 9 then assert_ir_eq_oracle_and_baseline p "Anchor tie boundary 9 exhaustive"
+  ) [9; 10; 11; 12];
+  let boundary12 = make_anchor_tie_torture ~count:12 ~reverse:false ~hostile_ids:false
+    ~observer:`Subject ~almost:false in
+  let budget_two = { Tethers_core_canonical_v2_ir.default_budget_ir with max_leaves = 2 } in
+  let budget_one = { Tethers_core_canonical_v2_ir.default_budget_ir with max_leaves = 1 } in
+  ignore (check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir ~budget:budget_two boundary12)
+    "Anchor tie pre-admission residual 2 accepted");
+  (match Tethers_core_canonical_v2_ir.canonicalize_ir ~budget:budget_one boundary12 with
+   | Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex -> ()
+   | _ -> failwith "Anchor tie pre-admission must reject residual 2 under leaf budget 1")
 
 let test_branch_label_count_boundaries () =
   let make count reverse =
@@ -1074,94 +1239,280 @@ let test_metamorphic_storage () =
 (* ================================================================== *)
 
 let generated_case n =
-  (* Deterministic program generation based on n.
-     Vary family cardinalities, scalar equality patterns, relation patterns.
-     Keep program valid. *)
-  let num_facts = n mod 3 in
-  let num_origins = (n / 3) mod 3 in
-  let num_branches = (n / 9) mod 2 in
-  let num_templates = (n / 18) mod 2 in
-  let scalar_variant = n / 36 in
-  let facts = List.init num_facts (fun i ->
-    let hk = if scalar_variant mod 2 = 0 then "hkA" else "hkB" in
-    { fact_id = fid ("f" ^ string_of_int n ^ "_" ^ string_of_int i);
-      schema_description = "";
-      provenance = Evaluation_input (hsk (hk ^ string_of_int i), if i mod 2 = 0 then String_type else Integer_type) }
-  ) in
-  let origins = List.init num_origins (fun i ->
-    let oid_str = "o" ^ string_of_int n ^ "_" ^ string_of_int i in
-    if i mod 2 = 0 then
-      Anchor_origin { anchor_origin_id = oid oid_str; event_name = (if scalar_variant mod 3 = 0 then "evA" else "evB"); declared_facts = []}
-    else
-      Action_origin { action_origin_id = oid oid_str; capability_id = cid "cap.x"; contract_digest = ccd "sha256:abc"; inputs = []; declared_facts = []; execution_constraints = []}
-  ) in
-  let entry_origin = match origins with
-    | Anchor_origin a :: _ -> Some a.anchor_origin_id
-    | Action_origin a :: _ -> Some a.action_origin_id
-    | _ -> None
+  (* Sixteen deliberately different valid structural archetypes, with 312+
+     deterministic scalar/order/reference variants apiece.  Every case stays
+     at or below 720 raw candidates so the slow oracle remains authoritative. *)
+  let shape = n mod 16 in
+  let variant = n / 16 in
+  let reverse = variant land 1 = 1 in
+  let choose offset values = List.nth values ((variant + offset) mod List.length values) in
+  let scalar offset = choose offset [""; "z"; "aa"; "\x00"; "\x80"; "1:x"; "2:aa\xff"] in
+  let raw stem =
+    if variant land 2 = 0 then Printf.sprintf "%s-%05d" stem n
+    else Printf.sprintf "\xff%s-hostile-%05d" stem (5000 - n)
   in
-  let branches = List.init num_branches (fun i ->
-    let bname = "b" ^ string_of_int n ^ "_" ^ string_of_int i in
-    let subj = match origins with
-      | Anchor_origin a :: _ -> a.anchor_origin_id
-      | Action_origin a :: _ -> a.action_origin_id
-      | _ -> oid "dummy"
-    in
-    { branch_id = branch_id_of_string bname; branch_subject = subj; outcome_branches = [(Success, Stop)]}
-  ) in
-  let branches = if origins = [] then [] else branches in
-  let templates = if num_templates = 0 then [] else
-    let tid_v = tid ("T" ^ string_of_int n) in
-    [{
-      item_template_id = tid_v; origin_sites = []; branches = [];
-      roles = [{ role_id = rid ("R" ^ string_of_int n); scope = Item_template_scope tid_v; fact_contract = Role_fact_contract []; eligible_fulfillment = rf "ok"}];
-      objective = Required_role (rid ("R" ^ string_of_int n))
-    }]
-  in
-  {
-    program_id = pid "test"; core_version = cv "0.1.0";
-    input_facts = facts; entry_guards = []; entry_origin = entry_origin;
-    success_continuations = []; origin_sites = origins; branches = branches;
-    roles = []; item_templates = templates;
-    capability_contracts = if num_origins > 0 && List.exists (function Action_origin _ -> true | _ -> false) origins
-      then [{ capability_id = cid "cap.x"; contract_digest = ccd "sha256:abc"; schema_description = ""}]
-      else []
-  }
+  let order xs = if reverse then List.rev xs else xs in
+  let pa = oid (raw "pa") and pb = oid (raw "pb") and pc = oid (raw "pc") in
+  let ta = oid (raw "ta") and tb = oid (raw "tb") in
+  let fin = fid (raw "fin") and fout = fid (raw "fout") and fproxy = fid (raw "fproxy") in
+  let ftproxy = fid (raw "ftproxy") in
+  let program_role_id = rid (raw "program-role") in
+  let shared_role_id = rid "same-raw-role" in
+  let template_id = tid (raw "template") in
+  let capability = cid "cap.dense" and digest = ccd "sha256:dense" in
+  let input_fact fact_id offset = {
+    fact_id; schema_description = scalar (offset + 1);
+    provenance = Evaluation_input (hsk (scalar offset),
+      if (variant + offset) mod 2 = 0 then String_type else Integer_type);
+  } in
+  let anchor origin_id event facts = Anchor_origin {
+    anchor_origin_id = origin_id; event_name = event; declared_facts = order facts;
+  } in
+  let action origin_id inputs facts = Action_origin {
+    action_origin_id = origin_id; capability_id = capability; contract_digest = digest;
+    inputs = order inputs; declared_facts = order facts;
+    execution_constraints = [Deadline ("deadline-" ^ scalar 4)];
+  } in
+  let program_role role_id facts = {
+    role_id; scope = Program_scope; fact_contract = Role_fact_contract facts;
+    eligible_fulfillment = rf ("program-" ^ scalar 5);
+  } in
+  let template_role role_id facts = {
+    role_id; scope = Item_template_scope template_id;
+    fact_contract = Role_fact_contract facts;
+    eligible_fulfillment = rf ("template-" ^ scalar 6);
+  } in
+  let branch name subject outcomes = {
+    branch_id = branch_id_of_string (raw name); branch_subject = subject;
+    outcome_branches = order outcomes;
+  } in
+  let contract = [{ capability_id = capability; contract_digest = digest;
+    schema_description = scalar 3 }] in
+  let empty = {
+    program_id = pid (raw "program"); core_version = cv "0.1.0";
+    input_facts = []; entry_guards = []; entry_origin = None;
+    success_continuations = []; origin_sites = []; branches = []; roles = [];
+    item_templates = []; capability_contracts = [];
+  } in
+  match shape with
+  | 0 ->
+      { empty with input_facts = order [input_fact fin 0; input_fact fout 2];
+        entry_guards = [{ fact_id = fin; operator = Equals;
+          expected = String_value (scalar 4) }] }
+  | 1 ->
+      let produced = { fact_id = fout; schema_description = scalar 2;
+        provenance = Origin_provenance pa } in
+      { empty with input_facts = [input_fact fin 0]; entry_origin = Some pa;
+        origin_sites = order [anchor pa (scalar 1) [produced];
+          action pb [{ input_name = capability_input_name_of_string "from-origin";
+            binding = Fact_from_origin (fout, pa) }] []];
+        capability_contracts = contract }
+  | 2 ->
+      let proxy = { fact_id = fproxy; schema_description = scalar 2;
+        provenance = Role_proxy program_role_id } in
+      { empty with input_facts = [input_fact fin 0]; entry_origin = Some pa;
+        origin_sites = [anchor pa (scalar 1) [proxy]];
+        roles = [program_role program_role_id [fin]] }
+  | 3 ->
+      let produced = { fact_id = fout; schema_description = scalar 2;
+        provenance = Origin_provenance pb } in
+      { empty with input_facts = [input_fact fin 0]; entry_origin = Some pa;
+        origin_sites = order [anchor pa (scalar 1) [];
+          action pb [{ input_name = capability_input_name_of_string "through-role";
+            binding = Fact_through_role (fin, program_role_id) }] [produced]];
+        roles = [program_role program_role_id [fin]];
+        capability_contracts = contract }
+  | 4 ->
+      { empty with entry_origin = Some pa;
+        origin_sites = order [anchor pa (scalar 0) []; action pb [] [];
+          Together_origin { together_origin_id = pc; group_id = gid (raw "group");
+            member_origin_ids = order [pa; pb]; objective = All_members_succeed }];
+        branches = order [
+          branch "branch-a" pc [(Success, Continue_to pb); (Failure, Stop)];
+          branch "branch-b" pa [(Cancelled, Continue_to pc); (Uncertain, Stop)]];
+        capability_contracts = contract }
+  | 5 ->
+      let role = template_role shared_role_id [] in
+      let template = { item_template_id = template_id; origin_sites = []; branches = [];
+        roles = [role]; objective = Required_role shared_role_id } in
+      { empty with origin_sites = [Batch_site {
+          batch_id = bid (raw "batch"); collection_provenance =
+            batch_collection_provenance_of_string (scalar 0);
+          item_template_id = template_id; traversal_policy =
+            batch_traversal_policy_of_string (scalar 1);
+          composite_objective = batch_objective_of_string (scalar 2);
+          aggregate_facts = [input_fact fout 3] }];
+        item_templates = [template] }
+  | 6 ->
+      let role = template_role shared_role_id [fin] in
+      let proxy = { fact_id = ftproxy; schema_description = scalar 2;
+        provenance = Role_proxy shared_role_id } in
+      let template = { item_template_id = template_id;
+        origin_sites = order [anchor ta (scalar 0) [proxy];
+          action tb [{ input_name = capability_input_name_of_string "template-through";
+            binding = Fact_through_role (fin, shared_role_id) }] []];
+        branches = []; roles = [role]; objective = Required_role shared_role_id } in
+      { empty with input_facts = [input_fact fin 1]; item_templates = [template];
+        capability_contracts = contract }
+  | 7 ->
+      let program_proxy = { fact_id = fproxy; schema_description = scalar 2;
+        provenance = Role_proxy shared_role_id } in
+      let template_proxy = { fact_id = ftproxy; schema_description = scalar 3;
+        provenance = Role_proxy shared_role_id } in
+      let template = { item_template_id = template_id;
+        origin_sites = [anchor ta (scalar 1) [template_proxy]]; branches = [];
+        roles = [template_role shared_role_id [fin]];
+        objective = Required_role shared_role_id } in
+      { empty with input_facts = [input_fact fin 0]; entry_origin = Some pa;
+        origin_sites = [anchor pa (scalar 1) [program_proxy]];
+        roles = [program_role shared_role_id [fin]]; item_templates = [template] }
+  | 8 ->
+      { empty with entry_origin = Some pa;
+        success_continuations = order [
+          { from_origin = pa; target = Origin_target pb };
+          { from_origin = pb; target = Program_complete }];
+        origin_sites = order [anchor pa (scalar 0) []; anchor pb (scalar 1) [];
+          anchor pc (scalar 2) []];
+        branches = order [
+          branch "multi-a" pc [(Success, Continue_to pb); (Failure, Continue_to pa)];
+          branch "multi-b" pb [(Cancelled, Stop); (Uncertain, Continue_to pc)]] }
+  | 9 ->
+      let template = { item_template_id = template_id;
+        origin_sites = [anchor ta (scalar 1) []];
+        branches = [branch "template-branch" ta [(Success, Continue_to pa)]];
+        roles = [template_role shared_role_id []];
+        objective = Required_role shared_role_id } in
+      { empty with entry_origin = Some pa; origin_sites = [anchor pa (scalar 0) []];
+        branches = [branch "program-branch" pa [(Success, Continue_to ta)]];
+        item_templates = [template] }
+  | 10 ->
+      let proxy = { fact_id = fproxy; schema_description = scalar 2;
+        provenance = Role_proxy program_role_id } in
+      { empty with input_facts = [input_fact fin 0]; entry_origin = Some pa;
+        success_continuations = if variant mod 3 = 0 then
+          [{ from_origin = pa; target = Origin_target pb }] else [];
+        origin_sites = order [anchor pa (scalar 1) [proxy];
+          action pb [{ input_name = capability_input_name_of_string "dense-through";
+            binding = Fact_through_role (fin, program_role_id) }] [];
+          Together_origin { together_origin_id = pc; group_id = gid (raw "dense-group");
+            member_origin_ids = order [pa; pb]; objective = All_members_succeed }];
+        branches = [branch "dense-branch" pc
+          [(Success, Continue_to pb); (Failure, Stop); (Cancelled, Continue_to pa)]];
+        roles = [program_role program_role_id [fin]]; capability_contracts = contract }
+  | 11 ->
+      let proxy = { fact_id = ftproxy; schema_description = scalar 2;
+        provenance = Role_proxy shared_role_id } in
+      let template = { item_template_id = template_id;
+        origin_sites = order [anchor ta (scalar 0) [proxy];
+          action tb [{ input_name = capability_input_name_of_string "template-role-input";
+            binding = Fact_through_role (fin, shared_role_id) }] []];
+        branches = [branch "template-dense-branch" tb
+          [(Success, Continue_to ta); (Failure, Stop)]];
+        roles = [template_role shared_role_id [fin]];
+        objective = Required_role shared_role_id } in
+      { empty with input_facts = [input_fact fin 1]; entry_origin = Some pa;
+        origin_sites = order [anchor pa (scalar 3) []; Batch_site {
+          batch_id = bid (raw "dense-batch"); collection_provenance =
+            batch_collection_provenance_of_string (scalar 4);
+          item_template_id = template_id; traversal_policy =
+            batch_traversal_policy_of_string (scalar 5);
+          composite_objective = batch_objective_of_string (scalar 6);
+          aggregate_facts = [] }];
+        item_templates = [template]; capability_contracts = contract }
+  | 12 ->
+      make_anchor_tie_torture ~count:3 ~reverse ~hostile_ids:(variant land 2 <> 0)
+        ~observer:(match variant mod 3 with 0 -> `Subject | 1 -> `Continue | _ -> `Multiple)
+        ~almost:(variant mod 5 = 0)
+  | 13 ->
+      let role = template_role shared_role_id [] in
+      let template = { item_template_id = template_id; origin_sites = []; branches = [];
+        roles = [role]; objective = Required_role shared_role_id } in
+      let batch index fact_id = Batch_site {
+        batch_id = bid (raw ("batch-" ^ string_of_int index));
+        collection_provenance = batch_collection_provenance_of_string (scalar index);
+        item_template_id = template_id;
+        traversal_policy = batch_traversal_policy_of_string (scalar (index + 1));
+        composite_objective = batch_objective_of_string (scalar (index + 2));
+        aggregate_facts = [input_fact fact_id (index + 3)] } in
+      { empty with origin_sites = order [batch 0 fout; batch 1 fproxy];
+        item_templates = [template] }
+  | 14 ->
+      let template which origin_id =
+        let template_id_local = tid (raw ("template-" ^ string_of_int which)) in
+        let role = { role_id = shared_role_id; scope = Item_template_scope template_id_local;
+          fact_contract = Role_fact_contract [];
+          eligible_fulfillment = rf (scalar which) } in
+        { item_template_id = template_id_local;
+          origin_sites = [anchor origin_id (scalar (which + 2)) []]; branches = [];
+          roles = [role]; objective = Required_role shared_role_id }
+      in
+      { empty with item_templates = order [template 0 ta; template 1 tb] }
+  | _ ->
+      let program_proxy = { fact_id = fproxy; schema_description = scalar 2;
+        provenance = Role_proxy shared_role_id } in
+      let template_proxy = { fact_id = ftproxy; schema_description = scalar 3;
+        provenance = Role_proxy shared_role_id } in
+      let template = { item_template_id = template_id;
+        origin_sites = [anchor ta (scalar 4) [template_proxy]];
+        branches = [branch "cross-template" ta
+          [(Success, Continue_to pb); (Failure, Stop)]];
+        roles = [template_role shared_role_id [fin]];
+        objective = Required_role shared_role_id } in
+      { empty with input_facts = [input_fact fin 0]; entry_origin = Some pa;
+        success_continuations = if variant mod 2 = 0 then
+          [{ from_origin = pa; target = Origin_target pb }] else [];
+        origin_sites = order [anchor pa (scalar 1) [program_proxy];
+          action pb [{ input_name = capability_input_name_of_string "combined-through";
+            binding = Fact_through_role (fin, shared_role_id) }] [];
+          Together_origin { together_origin_id = pc; group_id = gid (raw "combined-group");
+            member_origin_ids = order [pa; pb]; objective = All_members_succeed };
+          Batch_site { batch_id = bid (raw "combined-batch");
+            collection_provenance = batch_collection_provenance_of_string (scalar 4);
+            item_template_id = template_id;
+            traversal_policy = batch_traversal_policy_of_string (scalar 5);
+            composite_objective = batch_objective_of_string (scalar 6);
+            aggregate_facts = [] }];
+        branches = [branch "cross-program" pc
+          [(Success, Continue_to ta); (Cancelled, Continue_to pa)]];
+        roles = [program_role shared_role_id [fin]]; item_templates = [template];
+        capability_contracts = contract }
 
 let test_generated_corpus () =
-  let total = 10_000 in
+  let seed = 0x4B4A2 in
+  let total = 5_000 in
   let valid = ref 0 in
-  let mismatches = ref 0 in
   for n = 0 to total - 1 do
     let p = generated_case n in
     match Tethers_core_validator.validate p with
-    | Error _ -> ()
+    | Error _ ->
+        failwith (Printf.sprintf "dense generator invalid seed=%d case=%d" seed n)
     | Ok () ->
         incr valid;
+        (match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:720 p with
+         | Some _ -> ()
+         | None -> failwith (Printf.sprintf
+             "dense generator exceeds oracle envelope seed=%d case=%d" seed n));
         let oracle_res = Tethers_core_canonical_v2_reference.slow_oracle p in
         let baseline_res = Tethers_core_canonical_v2.canonicalize p in
         let ir_res = Tethers_core_canonical_v2_ir.canonicalize_ir p in
-        let mismatch =
-          match oracle_res, baseline_res, ir_res with
-          | Ok oracle, Ok baseline, Ok (ir, _) ->
-              let ir_p = Tethers_core_canonical_v2_ir.canonical_payload_ir ir in
-              let ir_d = Tethers_core_canonical_v2_ir.program_digest_ir ir in
-              oracle.payload <> ir_p || oracle.digest_string <> ir_d ||
-              Tethers_core_canonical_v2.canonical_payload baseline <> ir_p ||
-              Tethers_core_canonical_v2.program_digest baseline <> ir_d
-          | Error Tethers_core_canonical_v2_reference.Oracle_too_large, Ok baseline, Ok (ir, _) ->
-              let ir_p = Tethers_core_canonical_v2_ir.canonical_payload_ir ir in
-              let ir_d = Tethers_core_canonical_v2_ir.program_digest_ir ir in
-              Tethers_core_canonical_v2.canonical_payload baseline <> ir_p ||
-              Tethers_core_canonical_v2.program_digest baseline <> ir_d
-          | Error (Tethers_core_canonical_v2_reference.Invalid_core _), Error (Tethers_core_canonical_v2.Invalid_core _), Error (Tethers_core_canonical_v2_ir.Invalid_core _) -> false
-          | Error Tethers_core_canonical_v2_reference.Oracle_too_large, Error Tethers_core_canonical_v2.Canonicalisation_too_complex, Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex -> false
-          | _ -> true
-        in
-        if mismatch then incr mismatches
+        (match oracle_res, baseline_res, ir_res with
+         | Ok oracle, Ok baseline, Ok (ir, _) ->
+             let ir_payload = Tethers_core_canonical_v2_ir.canonical_payload_ir ir in
+             let ir_digest = Tethers_core_canonical_v2_ir.program_digest_ir ir in
+             if oracle.payload <> ir_payload || oracle.digest_string <> ir_digest ||
+                Tethers_core_canonical_v2.canonical_payload baseline <> ir_payload ||
+                Tethers_core_canonical_v2.program_digest baseline <> ir_digest then begin
+               Printf.eprintf "STOP-THE-LINE dense mismatch seed=%d case=%d shape=%d\n%!"
+                 seed n (n mod 16);
+               failwith "dense differential mismatch"
+             end
+         | _ ->
+             Printf.eprintf "STOP-THE-LINE dense result-shape mismatch seed=%d case=%d shape=%d\n%!"
+               seed n (n mod 16);
+             failwith "dense differential result-shape mismatch")
   done;
-  Printf.printf "Generated corpus: total=%d valid=%d mismatches=%d\n" total !valid !mismatches;
-  check_equal_int 0 !mismatches "generated corpus mismatches"
+  Printf.printf "Dense generated corpus: seed=%d total=%d valid=%d mismatches=0 archetypes=16\n"
+    seed total !valid
 
 (* ================================================================== *)
 (*  Deterministic budget fail-closed                                    *)
@@ -1745,6 +2096,8 @@ let () =
   test_single_collection_branch_body_order (); Printf.printf "PASS: single-collection distinct Branch bodies\n";
   test_dependency_closed_program_anchor_origins (); Printf.printf "PASS: dependency-closed program Anchor Origins\n";
   test_program_anchor_origin_negative_guards (); Printf.printf "PASS: program Anchor Origin negative guards\n";
+  test_anchor_tie_repair_minimal (); Printf.printf "PASS: repaired minimal Anchor tie mismatch\n";
+  test_anchor_tie_torture (); Printf.printf "PASS: Anchor tie torture and residual pre-admission\n";
   test_branch_label_count_boundaries (); Printf.printf "PASS: Branch label count 8/9/10/11/12/19/20/21\n";
   test_decimal_label_family_boundaries (); Printf.printf "PASS: Fact/Program Role/Template Role decimal label boundaries\n";
   test_compound_factor_collapses (); Printf.printf "PASS: compound factorial factor collapses\n";
@@ -1771,7 +2124,7 @@ let () =
   test_multi_round_refinement (); Printf.printf "PASS: counterexample multi-round refinement\n";
   test_branch_symmetry_broken_by_target (); Printf.printf "PASS: counterexample branch symmetry broken\n";
   test_refinement_fail_closed ();
-  test_generated_corpus (); Printf.printf "PASS: generated corpus 10000\n";
+  test_generated_corpus (); Printf.printf "PASS: dense generated corpus 5000\n";
   test_budget_fail_closed (); Printf.printf "PASS: deterministic budget fail-closed\n";
   test_reduced_pre_admission_for_single_collection_branches (); Printf.printf "PASS: reduced pre-admission 11-Branch shortcut\n";
   test_performance_evidence (); Printf.printf "PASS: performance evidence (reported)\n";

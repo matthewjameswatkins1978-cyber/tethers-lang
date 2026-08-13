@@ -33,7 +33,8 @@
           * all Facts are top-level distinct Evaluation_input occurrences
           * entry_origin is the first Origin-sensitive field
           * one physical program-origin collection contains only self-label
-            Anchor bodies after entry_origin is fixed
+            Anchor bodies after entry_origin is fixed; distinct body classes
+            are ordered and equal-body classes remain exhaustively permuted
           * one physical collection owns every Branch occurrence
           * Program Roles have no earlier role-sensitive occurrence
           * Template Roles have no earlier occurrence and distinct exact bodies
@@ -76,8 +77,9 @@
      C. distinct top-level input-Fact ordering by exact encoded provenance
         bytes (single minimal Fact labelling)
      D. entry_origin's exact minimum label when it is first Origin-sensitive
-     E. exact Anchor-origin body ordering in one dependency-closed program
-        collection after entry_origin is fixed
+     E. exact Anchor-origin body-class ordering in one dependency-closed
+        program collection after entry_origin is fixed; equal-body class
+        permutations remain live for later Enc_V2 fields
      F. exact Branch-body ordering when one collection owns all Branches
      G. exact Program Role-body ordering when no earlier program field reads a
         Program Role label
@@ -802,6 +804,42 @@ let program_anchor_origins_are_dependency_closed
         | Action_origin _ | Together_origin _ | Batch_site _ -> false
       ) p.origin_sites
 
+(* Exact Anchor-body equality is label-independent here.  The body begins with
+   the event string, then contains the declared Fact multiset sorted by an
+   injective Fact labelling.  Therefore two free Anchor bodies can be equal iff
+   their event strings and declared Fact-ID multisets are equal.  Raw IDs are
+   used only for reference equality in this grouping, never to order classes.
+   The fixed entry Origin is excluded because it is not exchanged. *)
+let free_program_anchor_body_class_sizes (p : program) : int list =
+  match p.entry_origin with
+  | None -> []
+  | Some entry ->
+      let add_class classes key =
+        let rec loop prefix = function
+          | [] -> List.rev_append prefix [(key, 1)]
+          | (existing, count) :: rest when existing = key ->
+              List.rev_append prefix ((existing, count + 1) :: rest)
+          | item :: rest -> loop (item :: prefix) rest
+        in
+        loop [] classes
+      in
+      List.fold_left (fun classes -> function
+        | Anchor_origin a when a.anchor_origin_id <> entry ->
+            let fact_ids = List.map (fun (f : fact) -> string_of_fact_id f.fact_id)
+              a.declared_facts |> List.sort String.compare in
+            add_class classes (a.event_name, fact_ids)
+        | Anchor_origin _ | Action_origin _ | Together_origin _ | Batch_site _ -> classes
+      ) [] p.origin_sites
+      |> List.map snd
+
+let program_anchor_residual_permutations ~limit (p : program) : int option =
+  List.fold_left (fun current class_size ->
+    let ( let* ) = Option.bind in
+    let* product = current in
+    let* class_perms = safe_fact class_size limit in
+    safe_mul product class_perms limit
+  ) (Some 1) (free_program_anchor_body_class_sizes p)
+
 (* Branch IDs are not referenced by any V2 field.  When all Branch occurrences
    live in one physical Branch collection, every candidate emits the fixed
    numeric label sequence 1..N and differs only in the suffix after each label.
@@ -902,7 +940,8 @@ let reduced_candidate_count_within_budget_ir ~limit (p : program) : int option =
   in
   let origin_perms =
     let count = List.length origins in
-    if program_anchor_origins_are_dependency_closed p origins then Some 1
+    if program_anchor_origins_are_dependency_closed p origins then
+      program_anchor_residual_permutations ~limit p
     else match entry_origin_minimal_label p origins with
       | Some _ -> safe_fact (count - 1) limit
       | None -> safe_fact count limit
@@ -979,7 +1018,7 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
           let n_templates = List.length all_templates_list in
           let origin_permutation_mode =
             if program_anchor_origins_are_dependency_closed p all_origins_list
-            then `Single_program_anchors else `All
+            then `Try_single_program_anchors else `All
           in
           let branch_permutation_mode =
             if all_branches_in_one_collection p n_branches then `Single else `All
@@ -1087,7 +1126,7 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
             ) sorted
           in
 
-          let assign_single_program_anchor_origin_order () =
+          let enumerate_program_anchor_origin_orders cont =
             (* [entry_origin] may own a non-numeric-minimum label when decimal
                encodings cross 9/10/11.  The remaining labels are nevertheless
                fixed collection positions, so their bodies alone are sorted. *)
@@ -1113,9 +1152,45 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
               let compared = compare_bytes_lex_unsigned left_body right_body in
               if compared <> 0 then compared else Int.compare left_index right_index
             ) bodies in
-            List.iter2 (fun label (origin_index, _) ->
-              origin_state.assigned.(origin_index) <- label
-            ) free_labels sorted
+            let rec body_groups = function
+              | [] -> []
+              | (first_index, body) :: rest ->
+                  let same, remaining = List.partition (fun (_, candidate) ->
+                    candidate = body
+                  ) rest in
+                  (first_index :: List.map fst same) :: body_groups remaining
+            in
+            let rec split_at count prefix values =
+              if count = 0 then (List.rev prefix, values)
+              else match values with
+                | [] -> invalid_arg "Anchor tie label partition"
+                | value :: rest -> split_at (count - 1) (value :: prefix) rest
+            in
+            let rec remove_once target prefix = function
+              | [] -> invalid_arg "Anchor tie label removal"
+              | value :: rest when value = target -> List.rev_append prefix rest
+              | value :: rest -> remove_once target (value :: prefix) rest
+            in
+            let rec enumerate_group indices labels callback =
+              match indices with
+              | [] -> callback ()
+              | index :: rest ->
+                  List.iter (fun label ->
+                    origin_state.assigned.(index) <- label;
+                    enumerate_group rest (remove_once label [] labels) callback
+                  ) labels
+            in
+            let rec enumerate_groups groups labels =
+              match groups with
+              | [] -> cont ()
+              | indices :: rest ->
+                  let group_labels, remaining_labels =
+                    split_at (List.length indices) [] labels in
+                  enumerate_group indices group_labels (fun () ->
+                    enumerate_groups rest remaining_labels
+                  )
+            in
+            enumerate_groups (body_groups sorted) free_labels
           in
 
           let program_role_body_order (la_base : label_assignment) =
@@ -1222,10 +1297,13 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
             in
             let enumerate_origins cont =
               match origin_permutation_mode with
-              | `Single_program_anchors ->
-                  assign_single_program_anchor_origin_order ();
-                  incr stats_nodes;
-                  cont ()
+              | `Try_single_program_anchors ->
+                  enumerate_program_anchor_origin_orders (fun () ->
+                    if not !budget_exceeded then begin
+                      incr stats_nodes;
+                      cont ()
+                    end
+                  )
               | `All ->
                   assign_next_ir origin_state (fun _ ->
                     if !budget_exceeded then () else begin
