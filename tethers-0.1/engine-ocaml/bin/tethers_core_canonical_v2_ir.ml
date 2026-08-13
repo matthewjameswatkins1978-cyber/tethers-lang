@@ -28,15 +28,18 @@
        -> BSP synchronous refinement to stable partition (immutable previous round)
           ** fail-closed on max_refinement_rounds **
        -> exact family-wise enumeration of every remaining labelling
-       -> one specialised Fact fast path, enabled only when every Fact is a
-          distinct Evaluation_input and ordered by the exact provenance bytes
-          it contributes at the first Enc_V2-sensitive position
+       -> three encoder-derived reductions, each enabled only when its
+          first-differing-byte proof applies:
+          * all Facts are top-level distinct Evaluation_input occurrences
+          * entry_origin is the first Origin-sensitive field
+          * one physical collection owns every Branch occurrence
+          * Program Roles have no earlier role-sensitive occurrence
        -> exact minimum (leaf Enc_V2 comparison via compare_bytes_lex_unsigned)
 
    This is deliberately a hybrid, not a claim of general IR pruning.  Stable
    refinement is real diagnostic/budgeted work, but it does not discard a
-   branch: equal colours are never an automorphism certificate.  The sole
-   active search reduction is the Fact fast path below.
+   branch: equal colours are never an automorphism certificate.  Every active
+   reduction below is justified directly by Enc_V2's earliest differing bytes.
 
    Typed entity domain — exactly six anonymous canonical families:
      Origin, Fact, Branch, Batch, ItemTemplate, Role (scoped occurrence)
@@ -67,8 +70,12 @@
      A. deterministic resource-budget rejection (pre-admission)
      B. exact duplicate payload memoisation ONLY after complete encoding
         (duplicate_payload_hits — NOT counted as leaves avoided)
-     C. distinct-input-Fact ordering by exact encoded provenance bytes
-        (single minimal Fact labelling)
+     C. distinct top-level input-Fact ordering by exact encoded provenance
+        bytes (single minimal Fact labelling)
+     D. entry_origin's exact minimum label when it is first Origin-sensitive
+     E. exact Branch-body ordering when one collection owns all Branches
+     F. exact Program Role-body ordering when no earlier program field reads a
+        Program Role label
      Prefix and orbit counters are retained as zero-valued compatibility
      telemetry; neither rule is active.
      NOT allowed:
@@ -606,6 +613,7 @@ let stable_refinement (ri : refinement_input) (max_rounds : int)
 type perm_state_ir = {
   assigned : int array;
   used : bool array;
+  fixed : bool array;
   mutable next_pos : int;
   count : int;
 }
@@ -613,6 +621,7 @@ type perm_state_ir = {
 let make_perm_state_ir n = {
   assigned = Array.make n 0;
   used = Array.make (n + 1) false;
+  fixed = Array.make n false;
   next_pos = 0;
   count = n;
 }
@@ -621,17 +630,29 @@ let rec assign_next_ir st callback =
   if st.next_pos >= st.count then callback st.assigned
   else begin
     let pos = st.next_pos in
-    for label = 1 to st.count do
-      if not st.used.(label) then begin
-        st.assigned.(pos) <- label;
-        st.used.(label) <- true;
-        st.next_pos <- pos + 1;
-        assign_next_ir st callback;
-        st.used.(label) <- false
-      end
-    done;
+    if st.fixed.(pos) then begin
+      st.next_pos <- pos + 1;
+      assign_next_ir st callback
+    end else
+      for label = 1 to st.count do
+        if not st.used.(label) then begin
+          st.assigned.(pos) <- label;
+          st.used.(label) <- true;
+          st.next_pos <- pos + 1;
+          assign_next_ir st callback;
+          st.used.(label) <- false
+        end
+      done;
     st.next_pos <- pos
   end
+
+let fix_label_ir (st : perm_state_ir) ~(index : int) ~(label : int) : unit =
+  if index < 0 || index >= st.count || label < 1 || label > st.count ||
+     st.fixed.(index) || st.used.(label) then
+    invalid_arg "invalid fixed permutation assignment";
+  st.assigned.(index) <- label;
+  st.used.(label) <- true;
+  st.fixed.(index) <- true
 
 type role_block_ir = {
   n_roles : int;
@@ -716,6 +737,146 @@ let fact_discrete_minimal_order (facts : fact list) : int list option =
       if not distinct then None
       else Some (List.map snd sorted)
 
+(* [entry_origin] is emitted after only the core version, input Facts, and
+   entry guards.  Valid input Facts are Evaluation_input, so those earlier bytes
+   are independent of every Origin label.  Consequently the entry Origin must
+   receive the available label whose exact [encode_int] bytes are smallest;
+   every other choice loses at that first Origin-sensitive byte. *)
+let entry_origin_minimal_label
+    (p : program) (origins : (origin_id * origin_site) list) : (int * int) option =
+  match p.entry_origin with
+  | None -> None
+  | Some entry_origin when List.exists (fun (f : fact) ->
+      match f.provenance with Origin_provenance _ -> true | _ -> false
+    ) p.input_facts ->
+      None
+  | Some entry_origin ->
+      let rec find_index index = function
+        | [] -> None
+        | (origin_id, _) :: rest ->
+            if origin_id = entry_origin then Some index
+            else find_index (index + 1) rest
+      in
+      match find_index 0 origins with
+      | None -> None
+      | Some index ->
+          let count = List.length origins in
+          if count = 0 then None
+          else begin
+            let best = ref 1 in
+            for label = 2 to count do
+              if compare_bytes_lex_unsigned (encode_int label) (encode_int !best) < 0 then
+                best := label
+            done;
+            Some (index, !best)
+          end
+
+(* Branch IDs are not referenced by any V2 field.  When all Branch occurrences
+   live in one physical Branch collection, every candidate emits the fixed
+   numeric label sequence 1..N and differs only in the suffix after each label.
+   Sorting those exact suffixes is therefore an adjacent-inversion proof of the
+   byte minimum.  Multiple physical collections remain exhaustive because their
+   shared global label space couples earlier and later Enc_V2 sections. *)
+let all_branches_in_one_collection (p : program) (total : int) : bool =
+  if total = 0 then false
+  else
+    let occupied =
+      (if p.branches = [] then [] else [()]) @
+      List.filter_map (fun (t : item_template) ->
+        if t.branches = [] then None else Some ()
+      ) p.item_templates
+    in
+    List.length occupied = 1
+
+(* Program Roles are emitted after every program Origin site.  A Role_proxy
+   Fact or Fact_through_role binding in such a site would make a role label
+   visible earlier, so the local exchange proof must be disabled.  Template
+   sites are emitted after program Roles and therefore do not affect this test. *)
+let program_roles_unreferenced_before_own_collection (p : program) : bool =
+  let site_uses_program_role = function
+    | Anchor_origin a ->
+        List.exists (fun (f : fact) -> match f.provenance with
+          | Role_proxy _ -> true | _ -> false
+        ) a.declared_facts
+    | Action_origin a ->
+        List.exists (fun (f : fact) -> match f.provenance with
+          | Role_proxy _ -> true | _ -> false
+        ) a.declared_facts ||
+        List.exists (fun (input : action_input) -> match input.binding with
+          | Fact_through_role _ -> true | _ -> false
+        ) a.inputs
+    | Together_origin _ -> false
+    | Batch_site b ->
+        List.exists (fun (f : fact) -> match f.provenance with
+          | Role_proxy _ -> true | _ -> false
+        ) b.aggregate_facts
+  in
+  not (List.exists site_uses_program_role p.origin_sites)
+
+(* The deterministic leaf budget measures leaves this engine can actually
+   reach after its proven exact reductions, not the discarded raw Lambda(P)
+   permutations.  The public helper above intentionally remains the raw-space
+   count used by exhaustive-baseline evidence. *)
+let reduced_candidate_count_within_budget_ir ~limit (p : program) : int option =
+  let ( let* ) = Option.bind in
+  let facts = collect_facts p in
+  let origins = collect_origins p in
+  let batches = collect_batches p in
+  let branches = collect_branches p in
+  let templates = p.item_templates in
+  let roles = collect_roles p in
+  let fact_perms =
+    if facts_are_exactly_top_level_inputs p facts then
+      match fact_discrete_minimal_order facts with
+      | Some _ -> Some 1
+      | None -> safe_fact (List.length facts) limit
+    else
+      safe_fact (List.length facts) limit
+  in
+  let origin_perms =
+    let count = List.length origins in
+    match entry_origin_minimal_label p origins with
+    | Some _ -> safe_fact (count - 1) limit
+    | None -> safe_fact count limit
+  in
+  let branch_perms =
+    if all_branches_in_one_collection p (List.length branches) then Some 1
+    else safe_fact (List.length branches) limit
+  in
+  let program_role_count =
+    List.fold_left (fun count (_, scope) ->
+      match scope with `Program -> count + 1 | `Template _ -> count
+  ) 0 roles
+  in
+  let program_role_perms =
+    if program_roles_unreferenced_before_own_collection p then Some 1
+    else safe_fact program_role_count limit
+  in
+  let template_role_counts = List.filter_map (fun (t : item_template) ->
+    let count = List.fold_left (fun count (_, scope) ->
+      match scope with
+      | `Template tid when tid = t.item_template_id -> count + 1
+      | _ -> count
+    ) 0 roles in
+    if count = 0 then None else Some count
+  ) templates in
+  let* fact_perms = fact_perms in
+  let* origin_perms = origin_perms in
+  let* batch_perms = safe_fact (List.length batches) limit in
+  let* branch_perms = branch_perms in
+  let* template_perms = safe_fact (List.length templates) limit in
+  let* role_perms = program_role_perms in
+  let* role_perms = List.fold_left (fun current count ->
+    let* product = current in
+    let* factor = safe_fact count limit in
+    safe_mul product factor limit
+  ) (Some role_perms) template_role_counts in
+  let* total = safe_mul fact_perms origin_perms limit in
+  let* total = safe_mul total batch_perms limit in
+  let* total = safe_mul total branch_perms limit in
+  let* total = safe_mul total template_perms limit in
+  safe_mul total role_perms limit
+
 (* ================================================================== *)
 (*  Main canonicalize_ir — individualisation/refinement + proven pruning *)
 (* ================================================================== *)
@@ -725,7 +886,8 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
   match Tethers_core_validator.validate p with
   | Error errs -> Error (Invalid_core errs)
   | Ok () -> begin
-      match candidate_count_within_budget_ir ~limit:budget.max_leaves p with
+      let raw_candidate_count = candidate_count_within_budget_ir ~limit:max_int p in
+      match reduced_candidate_count_within_budget_ir ~limit:budget.max_leaves p with
       | None -> Error Canonicalisation_too_complex
       | Some _ -> begin
           let ri = build_refinement_input p in
@@ -744,6 +906,9 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
           let n_batches = List.length all_batches_list in
           let n_branches = List.length all_branches_list in
           let n_templates = List.length all_templates_list in
+          let branch_permutation_mode =
+            if all_branches_in_one_collection p n_branches then `Single else `All
+          in
 
           (* The proof is local to the first Enc_V2 input_facts section; it does
              not rely on a colour number or on refinement being discrete. *)
@@ -760,10 +925,16 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
           let batch_state = make_perm_state_ir n_batches in
           let branch_state = make_perm_state_ir n_branches in
           let template_state = make_perm_state_ir n_templates in
+          (match entry_origin_minimal_label p all_origins_list with
+           | None -> ()
+           | Some (index, label) -> fix_label_ir origin_state ~index ~label);
           let program_roles_list = List.filter_map (fun (r, scope) ->
             match scope with `Program -> Some r | _ -> None
           ) all_roles_list in
           let n_program_roles = List.length program_roles_list in
+          let program_role_permutation_mode =
+            if program_roles_unreferenced_before_own_collection p then `Single else `All
+          in
           let template_roles_groups : (item_template_id * role list) list =
             List.filter_map (fun (t : item_template) ->
               let roles = List.filter_map (fun (r, scope) ->
@@ -782,7 +953,6 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
           let stats_prefix_pruned = ref 0 in
           let stats_orbit_pruned = ref 0 in
           let stats_duplicate_hits = ref 0 in
-          let stats_leaves_avoided = ref 0 in
           let stats_max_depth = ref 0 in
           let budget_exceeded = ref false in
           let memo_payloads = Hashtbl.create 1024 in
@@ -818,6 +988,51 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
             }
           in
 
+          let assign_single_collection_branch_order () =
+            (* A provisional complete Branch map lets the frozen encoder expose
+               the exact suffix after a Branch's own label.  That suffix has no
+               Branch-label dependency, so it is safe to sort. *)
+            for index = 0 to n_branches - 1 do
+              branch_state.assigned.(index) <- index + 1
+            done;
+            let probe = build_label_assignment () in
+            let bodies = List.mapi (fun index (branch, _) ->
+              let encoded = encode_branch probe branch in
+              let label_prefix = encode_int branch_state.assigned.(index) in
+              let prefix_length = String.length label_prefix in
+              let body_length = String.length encoded - prefix_length in
+              (index, String.sub encoded prefix_length body_length)
+            ) all_branches_list in
+            let sorted = List.sort (fun (left_index, left_body) (right_index, right_body) ->
+              let compared = compare_bytes_lex_unsigned left_body right_body in
+              if compared <> 0 then compared else Int.compare left_index right_index
+            ) bodies in
+            List.iteri (fun label_index (branch_index, _) ->
+              branch_state.assigned.(branch_index) <- label_index + 1
+            ) sorted
+          in
+
+          let program_role_body_order (la_base : label_assignment) =
+            let probe_roles = List.mapi (fun index (role : role) ->
+              (Program_role role.role_id, index + 1)
+            ) program_roles_list
+              |> List.fold_left (fun labels (key, label) ->
+                ScopedRoleMap.add key label labels
+              ) ScopedRoleMap.empty in
+            let probe = { la_base with role_labels = probe_roles } in
+            let bodies = List.mapi (fun index (role : role) ->
+              let encoded = encode_role probe ~role_scope:Program_scope role in
+              let prefix_length = String.length (encode_int (index + 1)) in
+              let body_length = String.length encoded - prefix_length in
+              (index, String.sub encoded prefix_length body_length)
+            ) program_roles_list in
+            List.sort (fun (left_index, left_body) (right_index, right_body) ->
+              let compared = compare_bytes_lex_unsigned left_body right_body in
+              if compared <> 0 then compared else Int.compare left_index right_index
+            ) bodies
+            |> List.map fst
+          in
+
           let compute_template_label_order (la : label_assignment) =
             let template_labels = List.map (fun t ->
               (t.item_template_id, lookup_template la t.item_template_id)
@@ -846,17 +1061,6 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
               end
             end
           in
-
-          (* Compute leaves avoided for fact optimisation *)
-          let fact_leaves_avoided =
-            match fact_permutation_mode with
-            | `Single _ ->
-                (match safe_fact n_facts budget.max_leaves with
-                 | Some n -> n - 1
-                 | None -> 0)
-            | `All -> 0
-          in
-          stats_leaves_avoided := fact_leaves_avoided;
 
           let search () =
             (* Fact enumeration — with distinct-scalar optimisation *)
@@ -888,11 +1092,17 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
                 end)
             in
             let enumerate_branches cont =
-              assign_next_ir branch_state (fun _ ->
-                if !budget_exceeded then () else begin
+              match branch_permutation_mode with
+              | `Single ->
+                  assign_single_collection_branch_order ();
                   incr stats_nodes;
                   cont ()
-                end)
+              | `All ->
+                  assign_next_ir branch_state (fun _ ->
+                    if !budget_exceeded then () else begin
+                      incr stats_nodes;
+                      cont ()
+                    end)
             in
             enumerate_facts (fun () ->
               if !budget_exceeded then () else
@@ -908,9 +1118,6 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
                           if !budget_exceeded then () else begin
                             incr stats_nodes;
                             let la_base = build_label_assignment () in
-                            (* No representative completion is a lower bound.  Roles are
-                               therefore enumerated exactly until an actual fixed-prefix
-                               encoder is available. *)
                             let sorted_template_ids = compute_template_label_order la_base in
                               let program_block = {
                                 n_roles = n_program_roles;
@@ -932,6 +1139,14 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
                               ) sorted_template_ids in
                               let all_blocks = Array.of_list (program_block :: template_blocks) in
                               let role_state = make_role_block_state_ir all_blocks in
+                              (match program_role_permutation_mode with
+                               | `All -> ()
+                               | `Single ->
+                                   let order = program_role_body_order la_base in
+                                   List.iteri (fun label_index role_index ->
+                                     fix_label_ir role_state.block_perms.(0)
+                                       ~index:role_index ~label:(label_index + 1)
+                                   ) order);
                               enumerate_role_blocks_ir role_state (fun blocks ->
                                 if !budget_exceeded then () else begin
                                   let role_map = ref ScopedRoleMap.empty in
@@ -972,7 +1187,9 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
               orbit_branches_pruned = !stats_orbit_pruned;
               duplicate_payload_hits = !stats_duplicate_hits;
               max_depth = !stats_max_depth;
-              leaves_avoided = !stats_leaves_avoided;
+              leaves_avoided = (match raw_candidate_count with
+                | Some count -> max 0 (count - !stats_leaves)
+                | None -> 0);
             } in
             Ok ({
               canonical_payload = !best_payload;
