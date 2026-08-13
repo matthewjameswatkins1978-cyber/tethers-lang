@@ -54,13 +54,13 @@ let rf s = role_fulfillment_of_string s
 
 let test_domain_v2 () =
   let expected = "TETHERS_CORE_CANON_V2\x00" in
-  let actual = Bytes.to_string Tethers_core_canonical_v2_reference.domain_v2 in
+  let actual = Bytes.to_string Tethers_core_canonical_v2_format.domain_v2 in
   check_equal_string expected actual "DOMAIN_V2"
 
 let test_digest_string_format () =
   let hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" in
   let expected = "tethers:v2:sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" in
-  let actual = Tethers_core_canonical_v2_reference.digest_string_v2 hex in
+  let actual = Tethers_core_canonical_v2_format.digest_string_v2 hex in
   check_equal_string expected actual "digest_string_v2"
 
 (* ================================================================== *)
@@ -453,7 +453,7 @@ let test_role_fact_contract_duplicate () =
 
 let test_integer_boundaries () =
   let test_encode_int n expected =
-    let result = Tethers_core_canonical_v2_reference.encode_int n in
+    let result = Tethers_core_canonical_v2_format.encode_int n in
     check_equal_string expected result (Printf.sprintf "encode_int %d" n)
   in
   test_encode_int 0 "0;";
@@ -468,7 +468,7 @@ let test_integer_boundaries () =
 
 let test_string_encoding () =
   let test_encode_string s expected =
-    let result = Tethers_core_canonical_v2_reference.encode_string s in
+    let result = Tethers_core_canonical_v2_format.encode_string s in
     check_equal_string expected result (Printf.sprintf "encode_string %S" s)
   in
   test_encode_string "" "0:";
@@ -1006,7 +1006,7 @@ let test_group_id_neutrality () =
 
 let test_string_bytes () =
   let test_encode_string s expected label =
-    let result = Tethers_core_canonical_v2_reference.encode_string s in
+    let result = Tethers_core_canonical_v2_format.encode_string s in
     check_equal_string expected result label
   in
   test_encode_string "" "0:" "string empty";
@@ -1019,7 +1019,7 @@ let test_string_bytes () =
 
 let test_integer_exact () =
   let test n expected label =
-    let result = Tethers_core_canonical_v2_reference.encode_int n in
+    let result = Tethers_core_canonical_v2_format.encode_int n in
     check_equal_string expected result label
   in
   (* -2^62 *)
