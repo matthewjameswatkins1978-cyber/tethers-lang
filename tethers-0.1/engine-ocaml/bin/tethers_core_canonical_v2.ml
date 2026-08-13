@@ -38,19 +38,32 @@ let default_budget = { max_candidates = 5_000_000 }
 
 (* ================================================================== *)
 (*  Overflow-safe candidate counting                                    *)
+(*                                                                     *)
+(*  All arithmetic is relative to the caller's budget limit.            *)
+(*  Multiplication aborts immediately if product would exceed limit,    *)
+(*  without computing the product first (safe when limit = max_int).    *)
 (* ================================================================== *)
 
-(* Saturating multiplication: if product would exceed limit, return limit + 1 *)
-let sat_mul a b limit =
-  if a > limit || b > limit then limit + 1
-  else
-    let product = a * b in
-    if product < 0 || product > limit then limit + 1
-    else product
+(* Overflow-safe multiply: returns Some product iff product <= limit *)
+let safe_mul a b limit =
+  if a = 0 || b = 0 then Some 0
+  else if a > limit / b then None
+  else Some (a * b)
 
-(* Compute exact Λ(P) candidate count using saturating arithmetic *)
-let compute_candidate_count (p : program) : int =
-  let limit = 5_000_000 in
+(* Overflow-safe factorial: returns Some n! iff n! <= limit *)
+let safe_fact n limit =
+  let rec go i acc =
+    if i > n then Some acc
+    else match safe_mul acc i limit with
+    | None -> None
+    | Some acc' -> go (i + 1) acc'
+  in
+  if n <= 0 then Some 1 else go 2 1
+
+(* Compute exact Λ(P) candidate count relative to a budget limit.
+   Returns Some exact_count iff count <= limit, None otherwise. *)
+let candidate_count_within_budget ~limit (p : program) : int option =
+  let ( let* ) = Option.bind in
   let all_facts = collect_facts p in
   let all_origins = collect_origins p in
   let all_batches = collect_batches p in
@@ -64,51 +77,45 @@ let compute_candidate_count (p : program) : int =
   let n_branches = List.length all_branches in
   let n_templates = List.length all_templates in
 
-  (* Factorial with saturation *)
-  let rec fact_sat n acc limit =
-    if n <= 1 then acc
-    else
-      let acc' = sat_mul acc n limit in
-      if acc' > limit then limit + 1
-      else fact_sat (n - 1) acc' limit
-  in
-
-  let fact_perms = fact_sat n_facts 1 limit in
-  let origin_perms = fact_sat n_origins 1 limit in
-  let batch_perms = fact_sat n_batches 1 limit in
-  let branch_perms = fact_sat n_branches 1 limit in
-  let template_perms = fact_sat n_templates 1 limit in
+  (* Factorial per family *)
+  let* fact_perms = safe_fact n_facts limit in
+  let* origin_perms = safe_fact n_origins limit in
+  let* batch_perms = safe_fact n_batches limit in
+  let* branch_perms = safe_fact n_branches limit in
+  let* template_perms = safe_fact n_templates limit in
 
   (* Role permutations: product of factorials per scope *)
-  let program_roles = List.filter_map (fun (r, scope) ->
-    match scope with `Program -> Some r | _ -> None
+  let program_roles = List.filter_map (fun (_r, scope) ->
+    match scope with `Program -> Some () | _ -> None
   ) all_roles in
   let n_program_roles = List.length program_roles in
 
   let template_roles_groups =
     List.filter_map (fun (t : item_template) ->
-      let roles = List.filter_map (fun (r, scope) ->
+      let roles = List.filter_map (fun (_r, scope) ->
         match scope with
-        | `Template tid when tid = t.item_template_id -> Some r
+        | `Template tid when tid = t.item_template_id -> Some ()
         | _ -> None
       ) all_roles in
       if roles = [] then None else Some (List.length roles)
     ) all_templates
   in
 
-  let role_perms = fact_sat n_program_roles 1 limit in
-  let role_perms = List.fold_left (fun acc n ->
-    let p = fact_sat n 1 limit in
-    sat_mul acc p limit
-  ) role_perms template_roles_groups in
+  let* role_perms = safe_fact n_program_roles limit in
+  let* role_perms =
+    List.fold_left (fun acc_opt n ->
+      let* acc = acc_opt in
+      let* p = safe_fact n limit in
+      safe_mul acc p limit
+    ) (Some role_perms) template_roles_groups
+  in
 
   (* Total = fact_perms * origin_perms * ... * role_perms *)
-  let total = sat_mul fact_perms origin_perms limit in
-  let total = sat_mul total batch_perms limit in
-  let total = sat_mul total branch_perms limit in
-  let total = sat_mul total template_perms limit in
-  let total = sat_mul total role_perms limit in
-  total
+  let* total = safe_mul fact_perms origin_perms limit in
+  let* total = safe_mul total batch_perms limit in
+  let* total = safe_mul total branch_perms limit in
+  let* total = safe_mul total template_perms limit in
+  safe_mul total role_perms limit
 
 (* ================================================================== *)
 (*  Streaming permutation traversal (backtracking)                     *)
@@ -201,11 +208,10 @@ let canonicalize ?(budget = default_budget) (p : program) :
   match Tethers_core_validator.validate p with
   | Error errs -> Error (Invalid_core errs)
   | Ok () -> begin
-    (* Check budget before starting *)
-    let candidate_count = compute_candidate_count p in
-    if candidate_count > budget.max_candidates then
-      Error Canonicalisation_too_complex
-    else begin
+    (* Pre-admission: compute candidate space relative to budget *)
+    match candidate_count_within_budget ~limit:budget.max_candidates p with
+    | None -> Error Canonicalisation_too_complex
+    | Some _ -> begin
       (* Collect all entity families *)
       let all_facts_list = collect_facts p in
       let all_origins_list = collect_origins p in

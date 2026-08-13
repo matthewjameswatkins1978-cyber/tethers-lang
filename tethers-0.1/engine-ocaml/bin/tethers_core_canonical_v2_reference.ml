@@ -278,7 +278,7 @@ let slow_oracle (p : program) : (oracle_result, oracle_error) result =
           ) labellings in
 
           let payload = List.fold_left (fun best candidate ->
-            if best = "" || String.compare candidate best < 0 then
+            if best = "" || compare_bytes_lex_unsigned candidate best < 0 then
               candidate
             else
               best

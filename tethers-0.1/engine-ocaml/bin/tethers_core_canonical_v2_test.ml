@@ -441,7 +441,7 @@ let test_strings_prod () =
   check_equal_string oracle_nul.payload (Tethers_core_canonical_v2.canonical_payload prod_nul) "NUL string key payload"
 
 (* ================================================================== *)
-(*  J9: Integer boundaries                                              *)
+(*  J9: Integer boundaries — value actually enters Enc_V2               *)
 (* ================================================================== *)
 
 let test_integer_boundaries_prod () =
@@ -454,7 +454,11 @@ let test_integer_boundaries_prod () =
         schema_description = "";
         provenance = Evaluation_input (hsk "hk", Integer_type);
       }];
-      entry_guards = [];
+      entry_guards = [{
+        fact_id = fid "f1";
+        operator = Equals;
+        expected = Integer_value n;
+      }];
       entry_origin = None;
       success_continuations = [];
       origin_sites = [];
@@ -470,9 +474,31 @@ let test_integer_boundaries_prod () =
     check_equal_string oracle.payload (Tethers_core_canonical_v2.canonical_payload prod)
       (Printf.sprintf "integer boundary %d payload" n)
   in
+  test_int (-4611686018427387904);
+  test_int (-1);
   test_int 0;
   test_int 1;
-  test_int (-1)
+  test_int 4611686018427387903
+
+(* ================================================================== *)
+(*  HIGH-BYTE: compare_bytes_lex_unsigned direct tests                  *)
+(* ================================================================== *)
+
+let test_high_byte_comparator () =
+  let cmp = Tethers_core_canonical_v2_format.compare_bytes_lex_unsigned in
+  (* \x7f < \x80 because 0x7f < 0x80 *)
+  check (cmp "\x7f" "\x80" < 0) "\\x7f < \\x80";
+  (* \x80 < \xff because 0x80 < 0xff *)
+  check (cmp "\x80" "\xff" < 0) "\\x80 < \\xff";
+  (* \xff > \x80 *)
+  check (cmp "\xff" "\x80" > 0) "\\xff > \\x80";
+  (* \x80 < \x80\x00 because \x80 is prefix of \x80\x00 *)
+  check (cmp "\x80" "\x80\x00" < 0) "\\x80 < \\x80\\x00";
+  (* Empty string is prefix of everything *)
+  check (cmp "" "a" < 0) "empty < a";
+  check (cmp "" "\xff" < 0) "empty < \\xff";
+  (* Same string *)
+  check (cmp "\x80" "\x80" = 0) "\\x80 = \\x80"
 
 (* ================================================================== *)
 (*  K: Production beyond oracle limit (family size 7)                   *)
@@ -619,16 +645,28 @@ let test_budget_equivalent_raw_variants () =
   check both_failed "equivalent variants have same budget admission"
 
 (* ================================================================== *)
-(*  N: Known vector lock                                                 *)
+(*  N: Known vector lock — frozen literals                              *)
+(*                                                                     *)
+(*  Gold source: accepted B4I1 reference at                             *)
+(*  838251d75c41005c4057b278fca31b26b779b2d8                            *)
+(*  These are hard-coded expected values.  Do NOT generate at runtime.  *)
 (* ================================================================== *)
 
-(* These are frozen bytes from accepted reference output.
-   Do NOT generate at test runtime.
-   To update: run oracle on the fixture, capture output, hardcode here. *)
+let frozen_empty_payload_sha256 = "03882b01ddaffd0944e1b38e3f55495e8e34d11bc25def374883cc262700c938"
+let frozen_empty_digest = "tethers:v2:sha256:750a06eea394bb38eefc073cd77d6c36b291efa13f6ff5173eacce35ca7b4619"
+
+let frozen_simple_payload_sha256 = "9dd7aeb4e3bec49aed88ea4844461d0c1cb4846ebc781b7d3816458b8ce3ecdd"
+let frozen_simple_digest = "tethers:v2:sha256:1bba9a344584c9b32d066a6de1e69ec196222682546ad7f40c51f04c061e3932"
+
+let frozen_persistent_payload_sha256 = "b0877dbca6b7c04634bb9e61fed850e4a832ec60fdfa7b25f51c1185a92a940b"
+let frozen_persistent_digest = "tethers:v2:sha256:6eae6604bb65580646be8cbc077284cf520c87eecbd81438ae8b4031606eb0f8"
+
+let sha256_hex_of_string s =
+  Digestif.SHA256.(to_hex (digest_string s))
 
 let test_known_vectors () =
-  (* Empty program: verify against reference oracle frozen output *)
-  let p = {
+  (* Fixture A: Empty program *)
+  let p_empty = {
     program_id = pid "test";
     core_version = cv "0.1.0";
     input_facts = [];
@@ -641,11 +679,14 @@ let test_known_vectors () =
     item_templates = [];
     capability_contracts = [];
   } in
-  let oracle = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p) "known_empty_oracle" in
-  let prod = check_ok (Tethers_core_canonical_v2.canonicalize p) "known_empty" in
-  (* Production must be byte-identical to oracle *)
-  check_equal_string oracle.payload (Tethers_core_canonical_v2.canonical_payload prod) "known empty payload";
-  check_equal_string oracle.digest_string (Tethers_core_canonical_v2.program_digest prod) "known empty digest"
+  let oracle_empty = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p_empty) "known_empty_oracle" in
+  let prod_empty = check_ok (Tethers_core_canonical_v2.canonicalize p_empty) "known_empty_prod" in
+  let prod_empty_payload = Tethers_core_canonical_v2.canonical_payload prod_empty in
+  let prod_empty_digest = Tethers_core_canonical_v2.program_digest prod_empty in
+  check_equal_string frozen_empty_digest oracle_empty.digest_string "oracle empty digest";
+  check_equal_string frozen_empty_digest prod_empty_digest "production empty digest";
+  check_equal_string frozen_empty_payload_sha256 (sha256_hex_of_string prod_empty_payload) "production empty payload SHA256";
+  check_equal_string oracle_empty.payload prod_empty_payload "empty oracle==prod payload"
 
 (* ================================================================== *)
 (*  N: Frozen vector — simple anchor/action                              *)
@@ -653,7 +694,7 @@ let test_known_vectors () =
 
 let test_known_vector_simple_anchor () =
   let anchor_id = oid "anchor1" in
-  let p = {
+  let p_simple = {
     program_id = pid "test";
     core_version = cv "0.1.0";
     input_facts = [];
@@ -672,10 +713,58 @@ let test_known_vector_simple_anchor () =
     item_templates = [];
     capability_contracts = [];
   } in
-  let oracle = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p) "frozen_simple_oracle" in
-  let prod = check_ok (Tethers_core_canonical_v2.canonicalize p) "frozen_simple_prod" in
-  check_equal_string oracle.payload (Tethers_core_canonical_v2.canonical_payload prod) "frozen simple payload";
-  check_equal_string oracle.digest_string (Tethers_core_canonical_v2.program_digest prod) "frozen simple digest"
+  let oracle_simple = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p_simple) "frozen_simple_oracle" in
+  let prod_simple = check_ok (Tethers_core_canonical_v2.canonicalize p_simple) "frozen_simple_prod" in
+  let prod_simple_payload = Tethers_core_canonical_v2.canonical_payload prod_simple in
+  let prod_simple_digest = Tethers_core_canonical_v2.program_digest prod_simple in
+  check_equal_string frozen_simple_digest oracle_simple.digest_string "oracle simple digest";
+  check_equal_string frozen_simple_digest prod_simple_digest "production simple digest";
+  check_equal_string frozen_simple_payload_sha256 (sha256_hex_of_string prod_simple_payload) "production simple payload SHA256";
+  check_equal_string oracle_simple.payload prod_simple_payload "simple oracle==prod payload"
+
+(* ================================================================== *)
+(*  N: Frozen vector — Persistent Branch witness                        *)
+(* ================================================================== *)
+
+let test_known_vector_persistent_branch () =
+  let make_persistent names =
+    let origins = List.map (fun name ->
+      Anchor_origin {
+        anchor_origin_id = oid name;
+        event_name = "ev";
+        declared_facts = [];
+      }
+    ) names in
+    let branches = List.map2 (fun bname oname ->
+      {
+        branch_id = branch_id_of_string bname;
+        branch_subject = oid oname;
+        outcome_branches = [(Success, Stop)];
+      }
+    ) ["b0";"b1";"b2";"b3"] names in
+    {
+      program_id = pid "test";
+      core_version = cv "0.1.0";
+      input_facts = [];
+      entry_guards = [];
+      entry_origin = Some (oid (List.hd names));
+      success_continuations = [];
+      origin_sites = origins;
+      branches = branches;
+      roles = [];
+      item_templates = [];
+      capability_contracts = [];
+    }
+  in
+  let p_persistent = make_persistent ["a0";"a1";"a2";"a3"] in
+  let oracle_persistent = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p_persistent) "frozen_persistent_oracle" in
+  let prod_persistent = check_ok (Tethers_core_canonical_v2.canonicalize p_persistent) "frozen_persistent_prod" in
+  let prod_persistent_payload = Tethers_core_canonical_v2.canonical_payload prod_persistent in
+  let prod_persistent_digest = Tethers_core_canonical_v2.program_digest prod_persistent in
+  check_equal_string frozen_persistent_digest oracle_persistent.digest_string "oracle persistent digest";
+  check_equal_string frozen_persistent_digest prod_persistent_digest "production persistent digest";
+  check_equal_string frozen_persistent_payload_sha256 (sha256_hex_of_string prod_persistent_payload) "production persistent payload SHA256";
+  check_equal_string oracle_persistent.payload prod_persistent_payload "persistent oracle==prod payload"
 
 (* ================================================================== *)
 (*  Main test runner                                                   *)
@@ -701,6 +790,8 @@ let () =
   Printf.printf "PASS: strings production\n";
   test_integer_boundaries_prod ();
   Printf.printf "PASS: integer boundaries production\n";
+  test_high_byte_comparator ();
+  Printf.printf "PASS: high-byte comparator\n";
   test_family_size_7 ();
   Printf.printf "PASS: family size 7 (beyond oracle limit)\n";
   test_budget_exact_boundary ();
@@ -711,4 +802,6 @@ let () =
   Printf.printf "PASS: known frozen vectors\n";
   test_known_vector_simple_anchor ();
   Printf.printf "PASS: frozen simple anchor vector\n";
+  test_known_vector_persistent_branch ();
+  Printf.printf "PASS: frozen persistent branch vector\n";
   Printf.printf "\n=== All V2 Production Tests Complete ===\n"
