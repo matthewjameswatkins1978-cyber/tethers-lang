@@ -42,6 +42,10 @@ type validation_error =
   | Item_objective_missing_role of item_template_id * role_id
   | Item_template_duplicate_origin_id of item_template_id * origin_id
   | Batch_missing_item_template of batch_id
+  | Role_scope_storage_mismatch of role_id
+  | Role_scope_template_mismatch of role_id * item_template_id * item_template_id
+  | Role_fact_contract_duplicate_fact of role_id * fact_id
+  | Role_proxy_scope_mismatch of fact_id * role_id
   | Deadline_empty of origin_id
 
 (* ------------------------------------------------------------------ *)
@@ -639,6 +643,88 @@ let validate program =
         add (Role_fact_contract_invalid_fact (r.role_id, fid))
     ) fact_ids
   ) all_roles_list;
+
+  (* A1: Role physical/declarative scope consistency *)
+  (* A program role must declare Program_scope *)
+  List.iter (fun (r : role) ->
+    match r.scope with
+    | Item_template_scope _ ->
+        if List.mem r.role_id (List.map (fun (r : role) -> r.role_id) program.roles) then
+          add (Role_scope_storage_mismatch r.role_id)
+    | Program_scope -> ()
+  ) program.roles;
+
+  (* A template role must declare Item_template_scope of the same template *)
+  List.iter (fun (t : item_template) ->
+    List.iter (fun (r : role) ->
+      match r.scope with
+      | Program_scope ->
+          add (Role_scope_storage_mismatch r.role_id)
+      | Item_template_scope declared_tid ->
+          if declared_tid <> t.item_template_id then
+            add (Role_scope_template_mismatch (r.role_id, t.item_template_id, declared_tid))
+    ) t.roles
+  ) program.item_templates;
+
+  (* A2: Role_fact_contract duplicates *)
+  List.iter (fun (r : role) ->
+    let (Role_fact_contract fact_ids) = r.fact_contract in
+    let dup_facts = find_duplicates fact_ids in
+    List.iter (fun fid -> add (Role_fact_contract_duplicate_fact (r.role_id, fid))) dup_facts
+  ) all_roles_list;
+
+  (* A3: Role_proxy scope consistency *)
+  (* Build a map: fact_id -> scope of its containing declaration site *)
+  let fact_scope_map =
+    let add_fact_scope fid scope acc =
+      (fid, scope) :: acc
+    in
+    let acc = [] in
+    (* input_facts are Program_scope *)
+    let acc = List.fold_left (fun acc (f : fact) ->
+      add_fact_scope f.fact_id `Program acc
+    ) acc program.input_facts in
+    (* program origin sites -> Program_scope *)
+    let acc = List.fold_left (fun acc site ->
+      let facts = declared_facts_of site in
+      List.fold_left (fun acc (f : fact) -> add_fact_scope f.fact_id `Program acc) acc facts
+    ) acc program_sites in
+    (* template origin sites -> Item_template_scope(tid) *)
+    List.fold_left (fun acc (t : item_template) ->
+      List.fold_left (fun acc site ->
+        let facts = declared_facts_of site in
+        List.fold_left (fun acc (f : fact) ->
+          add_fact_scope f.fact_id (`Template t.item_template_id) acc
+        ) acc facts
+      ) acc t.origin_sites
+    ) acc program.item_templates
+  in
+
+  (* For each Role_proxy, check that the role is visible in the fact's scope *)
+  List.iter (fun site ->
+    let facts = declared_facts_of site in
+    List.iter (fun (f : fact) ->
+      match f.provenance with
+      | Role_proxy rid ->
+          let fact_scope =
+            List.assoc_opt f.fact_id fact_scope_map
+          in
+          (match fact_scope with
+           | Some `Program ->
+               if not (List.mem rid program_role_ids) then
+                 add (Role_proxy_scope_mismatch (f.fact_id, rid))
+           | Some (`Template tid) ->
+               let template_role_ids =
+                 match List.find_opt (fun (t : item_template) -> t.item_template_id = tid) program.item_templates with
+                 | Some t -> List.map (fun (r : role) -> r.role_id) t.roles
+                 | None -> []
+               in
+               if not (List.mem rid template_role_ids) then
+                 add (Role_proxy_scope_mismatch (f.fact_id, rid))
+           | None -> ())
+      | _ -> ()
+    ) facts
+  ) all_sites;
 
   (* ------------------------------------------------------------------ *)
   (*  14. Together integrity                                               *)

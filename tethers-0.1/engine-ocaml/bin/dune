@@ -31,6 +31,11 @@
   (libraries yojson digestif))
 
 (test
+  (name tethers_core_canonical_v2_reference_test)
+  (modules tethers_core_canonical_v2_reference_test tethers_core_canonical_v2_reference tethers_core_validator tethers_core tethers_core_lowerer tether_parser tethers_error)
+  (libraries yojson digestif))
+
+(test
   (name tethers_core_plan_test)
   (modules tethers_core_plan_test tethers_core_plan tethers_core_canonical tethers_core_validator tethers_core tethers_core_lowerer tethers_outcome tethers_protocol tether_parser tethers_error)
   (libraries yojson digestif))

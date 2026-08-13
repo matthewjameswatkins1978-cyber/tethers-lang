@@ -59,6 +59,11 @@ type validation_error =
   | Item_template_duplicate_origin_id of Tethers_core.item_template_id * Tethers_core.origin_id
   (* Batch *)
   | Batch_missing_item_template of Tethers_core.batch_id
+  (* V2 additions *)
+  | Role_scope_storage_mismatch of Tethers_core.role_id
+  | Role_scope_template_mismatch of Tethers_core.role_id * Tethers_core.item_template_id * Tethers_core.item_template_id
+  | Role_fact_contract_duplicate_fact of Tethers_core.role_id * Tethers_core.fact_id
+  | Role_proxy_scope_mismatch of Tethers_core.fact_id * Tethers_core.role_id
   (* Deadline *)
   | Deadline_empty of Tethers_core.origin_id
 
