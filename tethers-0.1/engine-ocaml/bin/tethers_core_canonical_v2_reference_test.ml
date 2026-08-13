@@ -1455,6 +1455,167 @@ let test_action_input_binding_sort () =
   check_equal_string r1.digest_string r2.digest_string "action input binding sort digest"
 
 (* ================================================================== *)
+(*  Test L: Adversarial constraint string-value ordering               *)
+(*  Deadline "z" vs Deadline "aa" — encoded-form order differs from    *)
+(*  string-value order. Proves the comparator uses raw strings.        *)
+(* ================================================================== *)
+
+let test_constraint_adversarial_order () =
+  let anchor_id = oid "anchor" in
+  let make_p constraint_list =
+    {
+      program_id = pid "test";
+      core_version = cv "0.1.0";
+      input_facts = [];
+      entry_guards = [];
+      entry_origin = Some anchor_id;
+      success_continuations = [];
+      origin_sites = [
+        Anchor_origin {
+          anchor_origin_id = anchor_id; event_name = "ev";
+          declared_facts = [];
+        };
+        Action_origin {
+          action_origin_id = oid "act1";
+          capability_id = cid "cap.x";
+          contract_digest = ccd "sha256:abc";
+          inputs = [];
+          declared_facts = [];
+          execution_constraints = constraint_list;
+        };
+      ];
+      branches = [];
+      roles = [];
+      item_templates = [];
+      capability_contracts = [{
+        capability_id = cid "cap.x";
+        contract_digest = ccd "sha256:abc";
+        schema_description = "";
+      }];
+    }
+  in
+  (* P1: storage order z before aa *)
+  let p1 = make_p [Deadline "z"; Deadline "aa"] in
+  (* P2: storage order aa before z *)
+  let p2 = make_p [Deadline "aa"; Deadline "z"] in
+  let r1 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p1) "constraint_adversarial_1" in
+  let r2 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p2) "constraint_adversarial_2" in
+  check_equal_int r1.candidate_count r2.candidate_count "constraint adversarial candidate count";
+  check_equal_string r1.payload r2.payload "constraint adversarial payload";
+  check_equal_string r1.digest_string r2.digest_string "constraint adversarial digest"
+
+(* ================================================================== *)
+(*  Test M: Comprehensive nested-collection reversal coverage           *)
+(*  One program with ≥2 elements in every feasible nested collection.  *)
+(*  Reverse each between P1/P2. Assert identical payload + digest.     *)
+(* ================================================================== *)
+
+let test_comprehensive_collection_reversal () =
+  let anchor_id = oid "anchor" in
+  let batch_id_val = batch_id_of_string "bat1" in
+  let itid_batch = tid "IT_b" in
+  let make_p
+    ~af_order ~ec_order ~bf_order ~ob_order
+    =
+    let fact_decl1 = { fact_id = fid "fd1"; schema_description = "";
+      provenance = Evaluation_input (hsk "hk1", String_type) } in
+    let fact_decl2 = { fact_id = fid "fd2"; schema_description = "";
+      provenance = Evaluation_input (hsk "hk2", Integer_type) } in
+    let declared_facts = match af_order with
+      | `ABCD -> [fact_decl1; fact_decl2]
+      | `DCBA -> [fact_decl2; fact_decl1]
+    in
+    let ec_list = match ec_order with
+      | `ABCD -> [Deadline "z"; Deadline "aa"]
+      | `DCBA -> [Deadline "aa"; Deadline "z"]
+    in
+    let batch_fact1 = { fact_id = fid "bf1"; schema_description = "";
+      provenance = Evaluation_input (hsk "hk_bf1", Boolean_type) } in
+    let batch_fact2 = { fact_id = fid "bf2"; schema_description = "";
+      provenance = Evaluation_input (hsk "hk_bf2", String_type) } in
+    let batch_facts = match bf_order with
+      | `ABCD -> [batch_fact1; batch_fact2]
+      | `DCBA -> [batch_fact2; batch_fact1]
+    in
+    let make_outcome_branch o1 o2 =
+      match ob_order with
+      | `ABCD -> [(Success, o1); (Failure, o2)]
+      | `DCBA -> [(Failure, o2); (Success, o1)]
+    in
+    {
+      program_id = pid "test";
+      core_version = cv "0.1.0";
+      input_facts = [];
+      entry_guards = [];
+      entry_origin = Some anchor_id;
+      success_continuations = [];
+      origin_sites = [];
+      branches = [];
+      roles = [];
+      item_templates = [{
+        item_template_id = tid "IT1";
+        origin_sites = [
+          Anchor_origin {
+            anchor_origin_id = anchor_id; event_name = "ev";
+            declared_facts = [];
+          };
+          Action_origin {
+            action_origin_id = oid "act1";
+            capability_id = cid "cap.x";
+            contract_digest = ccd "sha256:abc";
+            inputs = [];
+            declared_facts = declared_facts;
+            execution_constraints = ec_list;
+          };
+          Batch_site {
+            batch_id = batch_id_val;
+            collection_provenance = batch_collection_provenance_of_string "prov";
+            item_template_id = itid_batch;
+            traversal_policy = batch_traversal_policy_of_string "seq";
+            composite_objective = batch_objective_of_string "all";
+            aggregate_facts = batch_facts;
+          };
+        ];
+        branches = [{
+          branch_id = branch_id_of_string "br1";
+          branch_subject = anchor_id;
+          outcome_branches = make_outcome_branch Stop (Continue_to (oid "act1"));
+        }];
+        roles = [{
+          role_id = rid "R1";
+          scope = Item_template_scope (tid "IT1");
+          fact_contract = Role_fact_contract [];
+          eligible_fulfillment = rf "ok";
+        }];
+        objective = Required_role (rid "R1");
+      }; {
+        item_template_id = itid_batch;
+        origin_sites = [];
+        branches = [];
+        roles = [{
+          role_id = rid "R_batch";
+          scope = Item_template_scope itid_batch;
+          fact_contract = Role_fact_contract [];
+          eligible_fulfillment = rf "ok";
+        }];
+        objective = Required_role (rid "R_batch");
+      }];
+      capability_contracts = [{
+        capability_id = cid "cap.x";
+        contract_digest = ccd "sha256:abc";
+        schema_description = "";
+      }];
+    }
+  in
+  let p1 = make_p ~af_order:`ABCD ~ec_order:`ABCD ~bf_order:`ABCD ~ob_order:`ABCD in
+  let p2 = make_p ~af_order:`DCBA ~ec_order:`DCBA ~bf_order:`DCBA ~ob_order:`DCBA in
+  let r1 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p1) "comprehensive_rev_1" in
+  let r2 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p2) "comprehensive_rev_2" in
+  check_equal_int r1.candidate_count r2.candidate_count "comprehensive reversal candidate count";
+  check_equal_string r1.payload r2.payload "comprehensive reversal payload";
+  check_equal_string r1.digest_string r2.digest_string "comprehensive reversal digest"
+
+(* ================================================================== *)
 (*  Main test runner                                                   *)
 (* ================================================================== *)
 
@@ -1526,4 +1687,8 @@ let () =
   Printf.printf "PASS: role_fact_contract adversarial label ordering\n";
   test_action_input_binding_sort ();
   Printf.printf "PASS: action input secondary binding sort\n";
+  test_constraint_adversarial_order ();
+  Printf.printf "PASS: constraint adversarial string-value ordering\n";
+  test_comprehensive_collection_reversal ();
+  Printf.printf "PASS: comprehensive nested-collection reversal coverage\n";
   Printf.printf "\n=== All Tests Complete ===\n"

@@ -292,7 +292,8 @@ let encode_origin_site (la : label_assignment) ~(origin_scope : role_scope) (sit
         Int.compare (lookup_fact la x.fact_id) (lookup_fact la y.fact_id)
       ) a.declared_facts in
       let sorted_constraints = List.sort (fun x y ->
-        String.compare (encode_constraint x) (encode_constraint y)
+        match (x, y) with
+        | Deadline s1, Deadline s2 -> String.compare s1 s2
       ) a.execution_constraints in
       encode_tag 1 ^
       encode_int (lookup_origin la a.action_origin_id) ^
