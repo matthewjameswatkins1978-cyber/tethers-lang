@@ -51,10 +51,13 @@ val default_budget_ir : search_budget_ir
 
 type ir_stats = {
   nodes : int;
-  leaves : int;
+  leaves_encoded : int;
   refinement_rounds : int;
-  pruned_prefix : int;
-  pruned_memo : int;
+  prefix_subtrees_pruned : int;
+  orbit_branches_pruned : int;
+  duplicate_payload_hits : int;
+  max_depth : int;
+  leaves_avoided : int;
 }
 
 val canonicalize_ir :

@@ -53,23 +53,21 @@ let assert_ir_eq_oracle_and_baseline p label =
       check_equal_string baseline_payload ir_payload (label ^ " baseline==IR payload");
       check_equal_string baseline_digest ir_digest (label ^ " baseline==IR digest")
   | Error Tethers_core_canonical_v2_reference.Oracle_too_large, Ok baseline, Ok (ir, _) ->
-      (* Beyond oracle — check IR == baseline *)
       let ir_payload = Tethers_core_canonical_v2_ir.canonical_payload_ir ir in
       let ir_digest = Tethers_core_canonical_v2_ir.program_digest_ir ir in
       let baseline_payload = Tethers_core_canonical_v2.canonical_payload baseline in
       let baseline_digest = Tethers_core_canonical_v2.program_digest baseline in
       check_equal_string baseline_payload ir_payload (label ^ " baseline==IR payload (beyond oracle)");
       check_equal_string baseline_digest ir_digest (label ^ " baseline==IR digest (beyond oracle)")
+  | Error (Tethers_core_canonical_v2_reference.Invalid_core _), Error (Tethers_core_canonical_v2.Invalid_core _), Error (Tethers_core_canonical_v2_ir.Invalid_core _) -> ()
+  | Error Tethers_core_canonical_v2_reference.Oracle_too_large, Error Tethers_core_canonical_v2.Canonicalisation_too_complex, Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex -> ()
+  | Error Tethers_core_canonical_v2_reference.Oracle_too_large, Error (Tethers_core_canonical_v2.Invalid_core _), Error (Tethers_core_canonical_v2_ir.Invalid_core _) -> ()
   | _ ->
-      (* If baseline fails but IR fails similarly, or invalid core — just check both error *)
-      (match baseline_res, ir_res with
-       | Error Tethers_core_canonical_v2.Canonicalisation_too_complex, Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex -> ()
-       | Error (Tethers_core_canonical_v2.Invalid_core _), Error (Tethers_core_canonical_v2_ir.Invalid_core _) -> ()
-       | _ ->
-           (* If oracle succeeded, IR must succeed *)
-           (match oracle_res with
-            | Ok _ -> failwith ("FAIL " ^ label ^ " IR should succeed where oracle succeeded")
-            | _ -> ()))
+      let shape s = match s with Ok _ -> "Ok" | Error _ -> "Error" in
+      let o = (match oracle_res with Ok _ -> "Ok" | Error Tethers_core_canonical_v2_reference.Oracle_too_large -> "Oracle_too_large" | Error _ -> "Invalid_core") in
+      let b = shape baseline_res in
+      let ir = shape ir_res in
+      failwith (Printf.sprintf "FAIL %s result-shape mismatch oracle=%s baseline=%s ir=%s" label o b ir)
 
 let _assert_payload_ir_eq p label expected_payload_opt =
   let ir = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) (label ^ " IR") in
@@ -454,8 +452,8 @@ let test_persistent_branch_ir () =
   check_equal_int 1 (List.length uniq_digests) "persistent 1 digest IR";
   (* Report IR stats for witness — first perm *)
   let (_, stats0) = List.hd results in
-  Printf.printf "Persistent Branch IR stats: nodes=%d leaves=%d rounds=%d pruned_prefix=%d pruned_memo=%d\n"
-    stats0.nodes stats0.leaves stats0.refinement_rounds stats0.pruned_prefix stats0.pruned_memo
+  Printf.printf "Persistent Branch IR stats: nodes=%d leaves=%d rounds=%d prefix_pruned=%d orbit_pruned=%d dup_hits=%d leaves_avoided=%d\n"
+    stats0.nodes stats0.leaves_encoded stats0.refinement_rounds stats0.prefix_subtrees_pruned stats0.orbit_branches_pruned stats0.duplicate_payload_hits stats0.leaves_avoided
 
 let test_7fact_beyond_oracle () =
   let anchor = oid "anchor" in
@@ -474,7 +472,7 @@ let test_7fact_beyond_oracle () =
   let (ir, stats) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p) "IR 7!" in
   check_equal_string (Tethers_core_canonical_v2.canonical_payload baseline) (Tethers_core_canonical_v2_ir.canonical_payload_ir ir) "7! payload";
   check_equal_string (Tethers_core_canonical_v2.program_digest baseline) (Tethers_core_canonical_v2_ir.program_digest_ir ir) "7! digest";
-  Printf.printf "7! stats: baseline candidates=5040 IR nodes=%d leaves=%d rounds=%d\n" stats.nodes stats.leaves stats.refinement_rounds;
+  Printf.printf "7! stats: baseline candidates=5040 IR nodes=%d leaves=%d rounds=%d prefix_pruned=%d orbit_pruned=%d dup_hits=%d avoided=%d\n" stats.nodes stats.leaves_encoded stats.refinement_rounds stats.prefix_subtrees_pruned stats.orbit_branches_pruned stats.duplicate_payload_hits stats.leaves_avoided;
   (* Storage permutations invariance *)
   let p_rev = { p with input_facts = List.rev facts } in
   let (ir_rev, _) = check_ok (Tethers_core_canonical_v2_ir.canonicalize_ir p_rev) "IR rev" in
@@ -687,7 +685,7 @@ let generated_case n =
   }
 
 let test_generated_corpus () =
-  let total = 500 in
+  let total = 1000 in
   let valid = ref 0 in
   let mismatches = ref 0 in
   for n = 0 to total - 1 do
@@ -707,15 +705,14 @@ let test_generated_corpus () =
               oracle.payload <> ir_p || oracle.digest_string <> ir_d ||
               Tethers_core_canonical_v2.canonical_payload baseline <> ir_p ||
               Tethers_core_canonical_v2.program_digest baseline <> ir_d
-          | _ ->
-              (* Beyond oracle: baseline vs IR must match if both succeed *)
-              (match baseline_res, ir_res with
-               | Ok baseline, Ok (ir, _) ->
-                   Tethers_core_canonical_v2.canonical_payload baseline <> Tethers_core_canonical_v2_ir.canonical_payload_ir ir ||
-                   Tethers_core_canonical_v2.program_digest baseline <> Tethers_core_canonical_v2_ir.program_digest_ir ir
-               | Error Tethers_core_canonical_v2.Canonicalisation_too_complex, Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex -> false
-               | Error (Tethers_core_canonical_v2.Invalid_core _), Error (Tethers_core_canonical_v2_ir.Invalid_core _) -> false
-               | _ -> false)
+          | Error Tethers_core_canonical_v2_reference.Oracle_too_large, Ok baseline, Ok (ir, _) ->
+              let ir_p = Tethers_core_canonical_v2_ir.canonical_payload_ir ir in
+              let ir_d = Tethers_core_canonical_v2_ir.program_digest_ir ir in
+              Tethers_core_canonical_v2.canonical_payload baseline <> ir_p ||
+              Tethers_core_canonical_v2.program_digest baseline <> ir_d
+          | Error (Tethers_core_canonical_v2_reference.Invalid_core _), Error (Tethers_core_canonical_v2.Invalid_core _), Error (Tethers_core_canonical_v2_ir.Invalid_core _) -> false
+          | Error Tethers_core_canonical_v2_reference.Oracle_too_large, Error Tethers_core_canonical_v2.Canonicalisation_too_complex, Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex -> false
+          | _ -> true
         in
         if mismatch then incr mismatches
   done;
@@ -757,9 +754,9 @@ let bench_case name p =
   let baseline_candidates = match Tethers_core_canonical_v2.candidate_count_within_budget ~limit:max_int p with Some n -> n | None -> -1 in
   let (_, t_base) = time (fun () -> ignore (Tethers_core_canonical_v2.canonicalize p)) in
   let (ir_res, t_ir) = time (fun () -> Tethers_core_canonical_v2_ir.canonicalize_ir p) in
-  let (ir_nodes, ir_leaves, ir_rounds) = match ir_res with Ok (_, s) -> (s.nodes, s.leaves, s.refinement_rounds) | Error _ -> (-1, -1, -1) in
-  Printf.printf "BENCH %s: baseline_candidates=%d baseline_time=%.4fs IR nodes=%d leaves=%d rounds=%d IR_time=%.4fs\n"
-    name baseline_candidates t_base ir_nodes ir_leaves ir_rounds t_ir;
+  let (ir_nodes, ir_leaves, ir_rounds, ir_prefix, ir_orbit, ir_dup) = match ir_res with Ok (_, s) -> (s.nodes, s.leaves_encoded, s.refinement_rounds, s.prefix_subtrees_pruned, s.orbit_branches_pruned, s.duplicate_payload_hits) | Error _ -> (-1, -1, -1, -1, -1, -1) in
+  Printf.printf "BENCH %s: baseline_candidates=%d baseline_time=%.4fs IR nodes=%d leaves=%d rounds=%d prefix_pruned=%d orbit_pruned=%d dup_hits=%d IR_time=%.4fs\n"
+    name baseline_candidates t_base ir_nodes ir_leaves ir_rounds ir_prefix ir_orbit ir_dup t_ir;
   (baseline_candidates, ir_nodes, ir_leaves)
 
 let test_performance_evidence () =
@@ -828,11 +825,126 @@ let test_performance_evidence () =
   Printf.printf "=== End Performance Evidence ===\n\n"
 
 (* ================================================================== *)
+(*  Counterexample-driven pruning tests (§9)                            *)
+(* ================================================================== *)
+
+let test_equal_colour_non_automorphic_not_pruned () =
+  (* Two facts share initial scalar (same host_key) but differ via origin link.
+     Equal initial colour != automorphism — IR must not prune one. *)
+  let f1 = { fact_id = fid "f1"; schema_description = ""; provenance = Evaluation_input (hsk "same", String_type)} in
+  let f2 = { fact_id = fid "f2"; schema_description = ""; provenance = Evaluation_input (hsk "same", String_type)} in
+  let o1 = oid "o1" in
+  let f1_linked = { fact_id = fid "f3"; schema_description = ""; provenance = Origin_provenance o1 } in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0";
+    input_facts = [f1; f2; f1_linked];
+    entry_guards = []; entry_origin = Some o1; success_continuations = [];
+    origin_sites = [Anchor_origin { anchor_origin_id = o1; event_name = "ev"; declared_facts = []}];
+    branches = []; roles = []; item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "equal colour non-automorphic"
+
+let test_multi_round_distinction () =
+  (* Two origins identical scalar, distinguished only after one refinement round via fact degree. *)
+  let fA = { fact_id = fid "fA"; schema_description = ""; provenance = Evaluation_input (hsk "hkA", String_type)} in
+  let fB = { fact_id = fid "fB"; schema_description = ""; provenance = Evaluation_input (hsk "hkB", String_type)} in
+  let o1 = oid "o1" and o2 = oid "o2" in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0";
+    input_facts = [fA; fB];
+    entry_guards = []; entry_origin = Some o1; success_continuations = [];
+    origin_sites = [
+      Anchor_origin { anchor_origin_id = o1; event_name = "ev"; declared_facts = [fA]};
+      Anchor_origin { anchor_origin_id = o2; event_name = "ev"; declared_facts = []};
+    ];
+    branches = []; roles = []; item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "multi-round distinction"
+
+let test_role_proxy_scope_counterexample () =
+  (* Same raw RoleId R in two template scopes; Role_proxy in each template must resolve to local R.
+     Naive global lookup would merge them incorrectly. *)
+  let tid_a = tid "TA" and tid_b = tid "TB" in
+  let r = rid "R" in
+  let fA = { fact_id = fid "fA"; schema_description = ""; provenance = Role_proxy r } in
+  let fB = { fact_id = fid "fB"; schema_description = ""; provenance = Role_proxy r } in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = []; entry_guards = [];
+    entry_origin = None; success_continuations = [];
+    origin_sites = []; branches = []; roles = [];
+    item_templates = [{
+      item_template_id = tid_a;
+      origin_sites = [Anchor_origin { anchor_origin_id = oid "oa"; event_name = "evA"; declared_facts = [fA]}];
+      branches = []; roles = [{ role_id = r; scope = Item_template_scope tid_a; fact_contract = Role_fact_contract []; eligible_fulfillment = rf "okA"}];
+      objective = Required_role r;
+    }; {
+      item_template_id = tid_b;
+      origin_sites = [Anchor_origin { anchor_origin_id = oid "ob"; event_name = "evB"; declared_facts = [fB]}];
+      branches = []; roles = [{ role_id = r; scope = Item_template_scope tid_b; fact_contract = Role_fact_contract []; eligible_fulfillment = rf "okB"}];
+      objective = Required_role r;
+    }];
+    capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "Role_proxy scope counterexample"
+
+let test_lexical_vs_scalar_order () =
+  (* Storage/raw-ID order opposite scalar order — scalar order must win. *)
+  let facts = [
+    { fact_id = fid "zzz"; schema_description = ""; provenance = Evaluation_input (hsk "hk_a", String_type)};
+    { fact_id = fid "aaa"; schema_description = ""; provenance = Evaluation_input (hsk "hk_z", String_type)};
+  ] in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = facts;
+    entry_guards = []; entry_origin = Some (oid "anchor"); success_continuations = [];
+    origin_sites = [Anchor_origin { anchor_origin_id = oid "anchor"; event_name = "ev"; declared_facts = []}];
+    branches = []; roles = []; item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "lexical vs scalar order"
+
+let test_branch_symmetry_broken_by_target () =
+  (* Branch symmetry broken by differing targets — must not be considered automorphic *)
+  let a0 = oid "a0" and a1 = oid "a1" and a2 = oid "a2" in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = []; entry_guards = [];
+    entry_origin = Some a0; success_continuations = [];
+    origin_sites = List.map (fun oid -> Anchor_origin { anchor_origin_id = oid; event_name = "ev"; declared_facts = []}) [a0;a1;a2];
+    branches = [
+      { branch_id = branch_id_of_string "b0"; branch_subject = a0; outcome_branches = [(Success, Continue_to a1)]};
+      { branch_id = branch_id_of_string "b1"; branch_subject = a0; outcome_branches = [(Success, Continue_to a2)]};
+    ];
+    roles = []; item_templates = []; capability_contracts = [];
+  } in
+  assert_ir_eq_oracle_and_baseline p "branch symmetry broken by target"
+
+let test_refinement_fail_closed () =
+  let facts = List.init 3 (fun i -> { fact_id = fid ("f" ^ string_of_int i); schema_description = ""; provenance = Evaluation_input (hsk ("hk" ^ string_of_int i), String_type)}) in
+  let p = {
+    program_id = pid "test"; core_version = cv "0.1.0"; input_facts = facts;
+    entry_guards = []; entry_origin = None; success_continuations = [];
+    origin_sites = []; branches = []; roles = []; item_templates = []; capability_contracts = [];
+  } in
+  let tiny = { Tethers_core_canonical_v2_ir.default_budget_ir with max_refinement_rounds = 1 } in
+  (* With only 1 round, refinement may not converge for programs needing more rounds — must fail closed if not stable.
+     For this tiny program it actually converges in 1 round, so we test a case that needs more:
+     Use a chain where 2 rounds needed — if not stable, must error. *)
+  let _ = tiny in
+  (* Directly test that budget 0 still works (no refinement limit hit) and that a program with needing many rounds would fail.
+     We force fail by using max_refinement_rounds=0 which means no stable check passes for non-empty? Instead test limit 0 with non-empty: stable_refinement should require at least 1 round and thus fail. *)
+  let zero_budget = { Tethers_core_canonical_v2_ir.default_budget_ir with max_refinement_rounds = 0 } in
+  let res = Tethers_core_canonical_v2_ir.canonicalize_ir ~budget:zero_budget p in
+  (match res with
+   | Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex -> ()
+   | Ok _ when List.length facts = 0 -> ()
+   | Ok _ -> if List.length facts > 0 then failwith "expected fail-closed on max_refinement_rounds=0" else ()
+   | Error _ -> failwith "wrong error kind");
+  Printf.printf "PASS: refinement fail-closed\n"
+
+(* ================================================================== *)
 (*  Main                                                                *)
 (* ================================================================== *)
 
 let () =
-  Printf.printf "=== V2 IR Search Tests (C-B4I3) ===\n\n";
+  Printf.printf "=== V2 IR Search Tests (C-B4I3B) ===\n\n";
   test_empty (); Printf.printf "PASS: empty\n";
   test_simple_anchor (); Printf.printf "PASS: simple Anchor\n";
   test_anchor_action (); Printf.printf "PASS: Anchor+Action\n";
@@ -858,7 +970,13 @@ let () =
   test_sym_together_groups (); Printf.printf "PASS: symmetry F Together groups\n";
   test_sym_regular_biregular (); Printf.printf "PASS: symmetry G regular/biregular\n";
   test_metamorphic_storage (); Printf.printf "PASS: metamorphic raw-ID/storage\n";
-  test_generated_corpus (); Printf.printf "PASS: generated corpus 500\n";
+  test_equal_colour_non_automorphic_not_pruned (); Printf.printf "PASS: counterexample equal colour non-automorphic\n";
+  test_multi_round_distinction (); Printf.printf "PASS: counterexample multi-round distinction\n";
+  test_role_proxy_scope_counterexample (); Printf.printf "PASS: counterexample Role_proxy scope\n";
+  test_lexical_vs_scalar_order (); Printf.printf "PASS: counterexample lexical vs scalar order\n";
+  test_branch_symmetry_broken_by_target (); Printf.printf "PASS: counterexample branch symmetry broken\n";
+  test_refinement_fail_closed ();
+  test_generated_corpus (); Printf.printf "PASS: generated corpus 1000\n";
   test_budget_fail_closed (); Printf.printf "PASS: deterministic budget fail-closed\n";
   test_performance_evidence (); Printf.printf "PASS: performance evidence (reported)\n";
   Printf.printf "\n=== All V2 IR Tests Complete ===\n"
