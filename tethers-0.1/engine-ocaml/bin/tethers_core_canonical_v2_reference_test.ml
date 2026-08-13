@@ -653,80 +653,98 @@ let test_role_block_count () =
   check_equal_int 8 result.candidate_count "role block count (2 templates x 2 roles each)"
 
 (* ================================================================== *)
-(*  Test D: Nested storage order permutation invariance                 *)
-(*  Reverse/permutate each D/B collection.                             *)
+(*  Test D: Real template-local storage-order permutation invariance    *)
+(*  Permutate all D/B collections inside an item_template.             *)
 (*  Oracle payload and digest MUST remain byte-identical.              *)
 (* ================================================================== *)
 
 let test_nested_storage_order () =
-  (* Build one valid program, then build a second with the same entities
-     but reversed storage order in input_facts and origin_sites.
-     The oracle must produce the same canonical payload. *)
-  let anchor_id = oid "anchor" in
-  let action_id1 = oid "act1" in
-  let action_id2 = oid "act2" in
-  let make_p anchor_first =
-    let origins =
-      if anchor_first then [
-        Anchor_origin {
-          anchor_origin_id = anchor_id;
-          event_name = "ev";
-          declared_facts = [];
-        };
-        Action_origin {
-          action_origin_id = action_id1;
-          capability_id = cid "cap.x";
-          contract_digest = ccd "sha256:abc";
-          inputs = [];
-          declared_facts = [];
-          execution_constraints = [Deadline "10s"; Deadline "5s"];
-        };
-        Action_origin {
-          action_origin_id = action_id2;
-          capability_id = cid "cap.x";
-          contract_digest = ccd "sha256:abc";
-          inputs = [];
-          declared_facts = [];
-          execution_constraints = [];
-        };
-      ] else [
-        Action_origin {
-          action_origin_id = action_id2;
-          capability_id = cid "cap.x";
-          contract_digest = ccd "sha256:abc";
-          inputs = [];
-          declared_facts = [];
-          execution_constraints = [];
-        };
-        Action_origin {
-          action_origin_id = action_id1;
-          capability_id = cid "cap.x";
-          contract_digest = ccd "sha256:abc";
-          inputs = [];
-          declared_facts = [];
-          execution_constraints = [Deadline "10s"; Deadline "5s"];
-        };
-        Anchor_origin {
-          anchor_origin_id = anchor_id;
-          event_name = "ev";
-          declared_facts = [];
-        };
-      ]
+  let anchor1 = oid "anc1" and anchor2 = oid "anc2" in
+  let action1 = oid "act1" and action2 = oid "act2" in
+  let br1 = branch_id_of_string "br1" and br2 = branch_id_of_string "br2" in
+  let fact_a1 = fid "fa1" and fact_a2 = fid "fa2" in
+  let r1 = rid "R1" and r2 = rid "R2" in
+  let itid = tid "IT1" in
+
+  let make_p ~origin_order ~branch_order ~role_order =
+    (* Origin sites inside the template *)
+    let anchor_origin1 = Anchor_origin {
+      anchor_origin_id = anchor1; event_name = "ev1";
+      declared_facts = [{
+        fact_id = fact_a1; schema_description = "";
+        provenance = Evaluation_input (hsk "hk_a1", String_type);
+      }];
+    } in
+    let anchor_origin2 = Anchor_origin {
+      anchor_origin_id = anchor2; event_name = "ev2";
+      declared_facts = [{
+        fact_id = fact_a2; schema_description = "";
+        provenance = Evaluation_input (hsk "hk_a2", Integer_type);
+      }];
+    } in
+    let action_origin1 = Action_origin {
+      action_origin_id = action1; capability_id = cid "cap.x";
+      contract_digest = ccd "sha256:abc";
+      inputs = [];
+      declared_facts = [];
+      execution_constraints = [];
+    } in
+    let action_origin2 = Action_origin {
+      action_origin_id = action2; capability_id = cid "cap.x";
+      contract_digest = ccd "sha256:abc";
+      inputs = [];
+      declared_facts = [];
+      execution_constraints = [];
+    } in
+    let template_origins = match origin_order with
+      | `ABCD -> [anchor_origin1; action_origin1; anchor_origin2; action_origin2]
+      | `DCBA -> [action_origin2; anchor_origin2; action_origin1; anchor_origin1]
+      | `ABCD_B -> [anchor_origin1; action_origin1; anchor_origin2; action_origin2]
+      | `DCBA_B -> [action_origin2; anchor_origin2; action_origin1; anchor_origin1]
     in
+    (* Branches *)
+    let make_branch bid succ =
+      { branch_id = bid; branch_subject = anchor1;
+        outcome_branches = [(Success, succ)]; }
+    in
+    let template_branches = match branch_order with
+      | `ABCD -> [make_branch br1 Stop; make_branch br2 Stop]
+      | `DCBA -> [make_branch br2 Stop; make_branch br1 Stop]
+    in
+    (* Roles with Role_fact_contract *)
+    let fc_r1 = Role_fact_contract [] in
+    let template_roles = match role_order with
+      | `ABCD -> [
+          { role_id = r1; scope = Item_template_scope itid;
+            fact_contract = Role_fact_contract []; eligible_fulfillment = rf "ok" };
+          { role_id = r2; scope = Item_template_scope itid;
+            fact_contract = fc_r1; eligible_fulfillment = rf "ok" };
+        ]
+      | `DCBA -> [
+          { role_id = r2; scope = Item_template_scope itid;
+            fact_contract = fc_r1; eligible_fulfillment = rf "ok" };
+          { role_id = r1; scope = Item_template_scope itid;
+            fact_contract = Role_fact_contract []; eligible_fulfillment = rf "ok" };
+        ]
+    in
+    let program_input_facts = [] in
     {
       program_id = pid "test";
       core_version = cv "0.1.0";
-      input_facts = [
-        { fact_id = fid "f1"; schema_description = ""; provenance = Evaluation_input (hsk "hk1", String_type) };
-        { fact_id = fid "f2"; schema_description = ""; provenance = Evaluation_input (hsk "hk2", String_type) };
-      ];
+      input_facts = program_input_facts;
       entry_guards = [];
-      entry_origin = Some anchor_id;
+      entry_origin = Some anchor1;
       success_continuations = [];
-      origin_sites = origins;
+      origin_sites = [];
       branches = [];
       roles = [];
-      item_templates = [];
+      item_templates = [{
+        item_template_id = itid;
+        origin_sites = template_origins;
+        branches = template_branches;
+        roles = template_roles;
+        objective = Required_role r1;
+      }];
       capability_contracts = [{
         capability_id = cid "cap.x";
         contract_digest = ccd "sha256:abc";
@@ -734,57 +752,204 @@ let test_nested_storage_order () =
       }];
     }
   in
-  let r1 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle (make_p true)) "nested_order_1" in
-  let r2 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle (make_p false)) "nested_order_2" in
-  Printf.printf "nested_order: c1=%d c2=%d\n%!" r1.candidate_count r2.candidate_count;
-  if r1.payload <> r2.payload then begin
-    Printf.printf "  p1 first 80: %S\n%!" (String.sub r1.payload 0 (min 80 (String.length r1.payload)));
-    Printf.printf "  p2 first 80: %S\n%!" (String.sub r2.payload 0 (min 80 (String.length r2.payload)));
-  end;
-  (* For now, just check that both are valid and have the same candidate count *)
-  check_equal_int r1.candidate_count r2.candidate_count "nested storage order candidate count";
-  (* The canonical payload for storage-order variants should match.
-     If it doesn't, it reveals a bug in the oracle's permutation coverage. *)
-  check_equal_string r1.payload r2.payload "nested storage order permutation invariance payload"
+  (* P1: canonical storage order *)
+  let p1 = make_p ~origin_order:`ABCD ~branch_order:`ABCD ~role_order:`ABCD in
+  (* P2: reversed/permutated storage order *)
+  let p2 = make_p ~origin_order:`DCBA ~branch_order:`DCBA ~role_order:`DCBA in
+  let r1 = match Tethers_core_canonical_v2_reference.slow_oracle p1 with
+    | Ok r -> r
+    | Error (Tethers_core_canonical_v2_reference.Invalid_core errs) ->
+        failwith (Printf.sprintf "FAIL: template_perm_1 validation: %d errors: %s"
+          (List.length errs)
+          (String.concat "; " (List.map (fun _ -> "err") errs)))
+    | Error Tethers_core_canonical_v2_reference.Oracle_too_large ->
+        failwith "FAIL: template_perm_1 oracle_too_large"
+  in
+  let r2 = match Tethers_core_canonical_v2_reference.slow_oracle p2 with
+    | Ok r -> r
+    | Error _ -> failwith "FAIL: template_perm_2 error"
+  in
+  check_equal_int r1.candidate_count r2.candidate_count "template storage perm candidate count";
+  check_equal_string r1.payload r2.payload "template storage order permutation invariance payload";
+  check_equal_string r1.digest_string r2.digest_string "template storage order permutation invariance digest"
 
 (* ================================================================== *)
-(*  Test E: Persistent Branch Gold Test (C-B3T witness)                *)
+(*  Test D2: Extended template-local permutation with Batch_site        *)
+(* ================================================================== *)
+
+let test_nested_storage_order_with_batch () =
+  let anchor1 = oid "anc1" and anchor2 = oid "anc2" in
+  let br1 = branch_id_of_string "br1" and br2 = branch_id_of_string "br2" in
+  let fact_a1 = fid "fa1" and fact_a2 = fid "fa2" in
+  let r1 = rid "R1" and r2 = rid "R2" in
+  let itid = tid "IT1" in
+  let itid_batch = tid "IT_batch" in
+  let batch_id = batch_id_of_string "batch1" in
+  let batch_fact = fid "bf1" in
+
+  let make_p ~origin_order ~branch_order ~role_order =
+    let anchor_origin1 = Anchor_origin {
+      anchor_origin_id = anchor1; event_name = "ev1";
+      declared_facts = [{
+        fact_id = fact_a1; schema_description = "";
+        provenance = Evaluation_input (hsk "hk_a1", String_type);
+      }];
+    } in
+    let anchor_origin2 = Anchor_origin {
+      anchor_origin_id = anchor2; event_name = "ev2";
+      declared_facts = [{
+        fact_id = fact_a2; schema_description = "";
+        provenance = Evaluation_input (hsk "hk_a2", Integer_type);
+      }];
+    } in
+    let batch_site = Batch_site {
+      batch_id = batch_id;
+      collection_provenance = batch_collection_provenance_of_string "prov";
+      item_template_id = itid_batch;
+      traversal_policy = batch_traversal_policy_of_string "seq";
+      composite_objective = batch_objective_of_string "all";
+      aggregate_facts = [{
+        fact_id = batch_fact; schema_description = "";
+        provenance = Evaluation_input (hsk "hk_bf", Boolean_type);
+      }];
+    } in
+    let template_origins = match origin_order with
+      | `ABCD -> [anchor_origin1; anchor_origin2; batch_site]
+      | `CBA -> [batch_site; anchor_origin2; anchor_origin1]
+    in
+    let make_branch bid = {
+      branch_id = bid; branch_subject = anchor1;
+      outcome_branches = [(Success, Stop)];
+    } in
+    let template_branches = match branch_order with
+      | `ABCD -> [make_branch br1; make_branch br2]
+      | `CBA -> [make_branch br2; make_branch br1]
+    in
+    let template_roles = match role_order with
+      | `ABCD -> [
+          { role_id = r1; scope = Item_template_scope itid;
+            fact_contract = Role_fact_contract [fact_a1]; eligible_fulfillment = rf "ok" };
+          { role_id = r2; scope = Item_template_scope itid;
+            fact_contract = Role_fact_contract [fact_a2]; eligible_fulfillment = rf "ok" };
+        ]
+      | `CBA -> [
+          { role_id = r2; scope = Item_template_scope itid;
+            fact_contract = Role_fact_contract [fact_a2]; eligible_fulfillment = rf "ok" };
+          { role_id = r1; scope = Item_template_scope itid;
+            fact_contract = Role_fact_contract [fact_a1]; eligible_fulfillment = rf "ok" };
+        ]
+    in
+    {
+      program_id = pid "test";
+      core_version = cv "0.1.0";
+      input_facts = [];
+      entry_guards = [];
+      entry_origin = Some anchor1;
+      success_continuations = [];
+      origin_sites = [];
+      branches = [];
+      roles = [];
+      item_templates = [{
+        item_template_id = itid;
+        origin_sites = template_origins;
+        branches = template_branches;
+        roles = template_roles;
+        objective = Required_role r1;
+      }; {
+        item_template_id = itid_batch;
+        origin_sites = [];
+        branches = [];
+        roles = [{
+          role_id = rid "R_batch";
+          scope = Item_template_scope itid_batch;
+          fact_contract = Role_fact_contract [];
+          eligible_fulfillment = rf "ok";
+        }];
+        objective = Required_role (rid "R_batch");
+      }];
+      capability_contracts = [];
+    }
+  in
+  let p1 = make_p ~origin_order:`ABCD ~branch_order:`ABCD ~role_order:`ABCD in
+  let p2 = make_p ~origin_order:`CBA ~branch_order:`CBA ~role_order:`CBA in
+  let r1 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p1) "template_perm_batch_1" in
+  let r2 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p2) "template_perm_batch_2" in
+  check_equal_int r1.candidate_count r2.candidate_count "template perm with batch candidate count";
+  check_equal_string r1.payload r2.payload "template perm with batch payload";
+  check_equal_string r1.digest_string r2.digest_string "template perm with batch digest"
+
+(* ================================================================== *)
+(*  Test E: Real 24-permutation Persistent Branch Test (C-B3T)         *)
 (*  4 equivalent Origins + 4 equivalent Branches                       *)
-(*  Expected: 4! x 4! = 576 candidates                                *)
-(*  All produce identical canonical payload.                           *)
+(*  For each of 24 raw-ID storage permutations:                        *)
+(*    run slow_oracle, assert candidate_count = 576                    *)
+(*  Collect payloads and digests.                                      *)
+(*  Assert: 24 tested permutations, 1 unique payload, 1 unique digest  *)
 (* ================================================================== *)
 
 let test_persistent_branch_gold () =
-  let origins = List.init 4 (fun i ->
-    Anchor_origin {
-      anchor_origin_id = oid ("a" ^ string_of_int i);
-      event_name = "ev";
-      declared_facts = [];
-    }
-  ) in
-  let branches = List.init 4 (fun i ->
+  let make_p origin_names branch_names =
+    let origins = List.map (fun name ->
+      Anchor_origin {
+        anchor_origin_id = oid name;
+        event_name = "ev";
+        declared_facts = [];
+      }
+    ) origin_names in
+    let branches = List.map2 (fun bname oname ->
+      {
+        branch_id = branch_id_of_string bname;
+        branch_subject = oid oname;
+        outcome_branches = [(Success, Stop)];
+      }
+    ) branch_names origin_names in
     {
-      branch_id = branch_id_of_string ("b" ^ string_of_int i);
-      branch_subject = oid ("a" ^ string_of_int i);
-      outcome_branches = [(Success, Stop)];
+      program_id = pid "test";
+      core_version = cv "0.1.0";
+      input_facts = [];
+      entry_guards = [];
+      entry_origin = Some (oid (List.hd origin_names));
+      success_continuations = [];
+      origin_sites = origins;
+      branches = branches;
+      roles = [];
+      item_templates = [];
+      capability_contracts = [];
     }
-  ) in
-  let p = {
-    program_id = pid "test";
-    core_version = cv "0.1.0";
-    input_facts = [];
-    entry_guards = [];
-    entry_origin = Some (oid "a0");
-    success_continuations = [];
-    origin_sites = origins;
-    branches = branches;
-    roles = [];
-    item_templates = [];
-    capability_contracts = [];
-  } in
-  let result = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p) "persistent_branch_gold" in
-  (* 4! origins x 4! branches = 24 x 24 = 576 *)
-  check_equal_int 576 result.candidate_count "persistent branch candidate count (4! x 4! = 576)"
+  in
+  (* 24 permutations of 4 elements *)
+  let perms = Tethers_core_canonical_v2_reference.perm [0;1;2;3] in
+  let names = ["a0";"a1";"a2";"a3"] in
+  let branch_names = ["b0";"b1";"b2";"b3"] in
+  let map_names perm = List.map (fun i -> List.nth names i) perm in
+  let map_branches perm = List.map (fun i -> List.nth branch_names i) perm in
+  let run_one (perm : int list) : Tethers_core_canonical_v2_reference.oracle_result =
+    let onames = map_names perm in
+    let bnames = map_branches perm in
+    let p = make_p onames bnames in
+    check_ok (Tethers_core_canonical_v2_reference.slow_oracle p)
+      (Printf.sprintf "persistent_branch_perm_%s" (String.concat "," (List.map string_of_int perm)))
+  in
+  let results = List.map run_one perms in
+  (* Assert every run has candidate_count = 576 *)
+  List.iteri (fun i (r : Tethers_core_canonical_v2_reference.oracle_result) ->
+    check_equal_int 576 r.candidate_count
+      (Printf.sprintf "persistent branch perm %d candidate_count" i)
+  ) results;
+  (* Collect unique payloads and digests *)
+  let payloads = List.map (fun (r : Tethers_core_canonical_v2_reference.oracle_result) -> r.payload) results in
+  let digests = List.map (fun (r : Tethers_core_canonical_v2_reference.oracle_result) -> r.digest_string) results in
+  let unique_payloads = List.sort_uniq String.compare payloads in
+  let unique_digests = List.sort_uniq String.compare digests in
+  let num_tested = List.length perms in
+  let num_unique_payloads = List.length unique_payloads in
+  let num_unique_digests = List.length unique_digests in
+  (* Assert: tested 24 input permutations *)
+  check_equal_int 24 num_tested "persistent branch: tested input permutations";
+  (* Assert: exactly 1 unique payload *)
+  check_equal_int 1 num_unique_payloads "persistent branch: unique payload count";
+  (* Assert: exactly 1 unique digest *)
+  check_equal_int 1 num_unique_digests "persistent branch: unique digest count"
 
 (* ================================================================== *)
 (*  Test F: group_id neutrality                                         *)
@@ -1168,6 +1333,128 @@ let test_validator_same_raw_role_wrong_template () =
   check has "same raw role ID in wrong template must fail"
 
 (* ================================================================== *)
+(*  Test J: Role_fact_contract adversarial label ordering               *)
+(*  Same role contract contains two facts whose raw lexical order is   *)
+(*  opposite their candidate canonical label order.                    *)
+(*  Consistent raw-ID renaming must not change payload/digest.         *)
+(* ================================================================== *)
+
+let test_role_fact_contract_adversarial_order () =
+  (* P1: raw IDs "fA" and "fB" — lexical order matches label order *)
+  let p1 = {
+    program_id = pid "test";
+    core_version = cv "0.1.0";
+    input_facts = [
+      { fact_id = fid "fA"; schema_description = "";
+        provenance = Evaluation_input (hsk "hkA", String_type) };
+      { fact_id = fid "fB"; schema_description = "";
+        provenance = Evaluation_input (hsk "hkB", String_type) };
+    ];
+    entry_guards = [];
+    entry_origin = None;
+    success_continuations = [];
+    origin_sites = [];
+    branches = [];
+    roles = [{
+      role_id = rid "R1";
+      scope = Program_scope;
+      fact_contract = Role_fact_contract [fid "fA"; fid "fB"];
+      eligible_fulfillment = rf "ok";
+    }];
+    item_templates = [];
+    capability_contracts = [];
+  } in
+  (* P2: rename so raw lexical order is OPPOSITE label order *)
+  let p2 = {
+    program_id = pid "test";
+    core_version = cv "0.1.0";
+    input_facts = [
+      { fact_id = fid "fB"; schema_description = "";
+        provenance = Evaluation_input (hsk "hkB", String_type) };
+      { fact_id = fid "fA"; schema_description = "";
+        provenance = Evaluation_input (hsk "hkA", String_type) };
+    ];
+    entry_guards = [];
+    entry_origin = None;
+    success_continuations = [];
+    origin_sites = [];
+    branches = [];
+    roles = [{
+      role_id = rid "R1";
+      scope = Program_scope;
+      fact_contract = Role_fact_contract [fid "fB"; fid "fA"];
+      eligible_fulfillment = rf "ok";
+    }];
+    item_templates = [];
+    capability_contracts = [];
+  } in
+  let r1 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p1) "adversarial_order_1" in
+  let r2 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle p2) "adversarial_order_2" in
+  check_equal_int r1.candidate_count r2.candidate_count "adversarial role_fact_contract candidate count";
+  check_equal_string r1.payload r2.payload "adversarial role_fact_contract payload";
+  check_equal_string r1.digest_string r2.digest_string "adversarial role_fact_contract digest"
+
+(* ================================================================== *)
+(*  Test K: Action input secondary binding sort                        *)
+(*  Two inputs with same name but different bindings.                  *)
+(*  Storage order reversed must not change payload/digest.             *)
+(* ================================================================== *)
+
+let test_action_input_binding_sort () =
+  let anchor_id = oid "anchor" in
+  let make_p ~input_order =
+    let inputs = match input_order with
+      | `AB -> [
+          { input_name = capability_input_name_of_string "x";
+            binding = Literal_value (String_value "alpha") };
+          { input_name = capability_input_name_of_string "x";
+            binding = Literal_value (String_value "beta") };
+        ]
+      | `BA -> [
+          { input_name = capability_input_name_of_string "x";
+            binding = Literal_value (String_value "beta") };
+          { input_name = capability_input_name_of_string "x";
+            binding = Literal_value (String_value "alpha") };
+        ]
+    in
+    {
+      program_id = pid "test";
+      core_version = cv "0.1.0";
+      input_facts = [];
+      entry_guards = [];
+      entry_origin = Some anchor_id;
+      success_continuations = [];
+      origin_sites = [
+        Anchor_origin {
+          anchor_origin_id = anchor_id; event_name = "ev";
+          declared_facts = [];
+        };
+        Action_origin {
+          action_origin_id = oid "act1";
+          capability_id = cid "cap.x";
+          contract_digest = ccd "sha256:abc";
+          inputs = inputs;
+          declared_facts = [];
+          execution_constraints = [];
+        };
+      ];
+      branches = [];
+      roles = [];
+      item_templates = [];
+      capability_contracts = [{
+        capability_id = cid "cap.x";
+        contract_digest = ccd "sha256:abc";
+        schema_description = "";
+      }];
+    }
+  in
+  let r1 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle (make_p ~input_order:`AB)) "input_sort_ab" in
+  let r2 = check_ok (Tethers_core_canonical_v2_reference.slow_oracle (make_p ~input_order:`BA)) "input_sort_ba" in
+  check_equal_int r1.candidate_count r2.candidate_count "action input binding sort candidate count";
+  check_equal_string r1.payload r2.payload "action input binding sort payload";
+  check_equal_string r1.digest_string r2.digest_string "action input binding sort digest"
+
+(* ================================================================== *)
 (*  Main test runner                                                   *)
 (* ================================================================== *)
 
@@ -1207,8 +1494,10 @@ let () =
   Printf.printf "PASS: role-block enumeration count\n";
   test_nested_storage_order ();
   Printf.printf "PASS: nested storage order\n";
+  test_nested_storage_order_with_batch ();
+  Printf.printf "PASS: nested storage order with batch\n";
   test_persistent_branch_gold ();
-  Printf.printf "PASS: persistent branch gold (576 candidates)\n";
+  Printf.printf "PASS: persistent branch gold (24 permutations, 576 candidates each)\n";
   test_group_id_neutrality ();
   Printf.printf "PASS: group_id neutrality\n";
   test_string_bytes ();
@@ -1233,4 +1522,8 @@ let () =
   Printf.printf "PASS: validator template Role_proxy resolves\n";
   test_validator_same_raw_role_wrong_template ();
   Printf.printf "PASS: validator same raw role wrong template fails\n";
+  test_role_fact_contract_adversarial_order ();
+  Printf.printf "PASS: role_fact_contract adversarial label ordering\n";
+  test_action_input_binding_sort ();
+  Printf.printf "PASS: action input secondary binding sort\n";
   Printf.printf "\n=== All Tests Complete ===\n"

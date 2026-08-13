@@ -68,3 +68,6 @@ val slow_oracle : program -> (oracle_result, oracle_error) result
 
 (** Convenience: compute just the digest string *)
 val compute_digest : program -> (string * string, oracle_error) result
+
+(** Generate all permutations of a list (test-only helper) *)
+val perm : 'a list -> 'a list list

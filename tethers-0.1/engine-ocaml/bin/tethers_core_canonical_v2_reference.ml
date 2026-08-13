@@ -279,9 +279,14 @@ let encode_origin_site (la : label_assignment) ~(origin_scope : role_scope) (sit
       encode_list (encode_fact la ~fact_scope:origin_scope) sorted_facts
   | Action_origin a ->
       let sorted_inputs = List.sort (fun (x : action_input) (y : action_input) ->
-        String.compare
+        let c = String.compare
           (string_of_capability_input_name x.input_name)
           (string_of_capability_input_name y.input_name)
+        in
+        if c <> 0 then c
+        else String.compare
+          (encode_binding la ~origin_scope x.binding)
+          (encode_binding la ~origin_scope y.binding)
       ) a.inputs in
       let sorted_facts = List.sort (fun (x : fact) (y : fact) ->
         Int.compare (lookup_fact la x.fact_id) (lookup_fact la y.fact_id)
@@ -344,7 +349,7 @@ let encode_role (la : label_assignment) ~(role_scope : role_scope) (r : role) : 
   in
   let (Role_fact_contract fids) = r.fact_contract in
   let sorted_fids = List.sort (fun a b ->
-    String.compare (string_of_fact_id a) (string_of_fact_id b)
+    Int.compare (lookup_fact la a) (lookup_fact la b)
   ) fids in
   encode_int (lookup_scoped_role la scoped_key) ^
   encode_role_scope la r.scope ^
@@ -357,18 +362,6 @@ let encode_role (la : label_assignment) ~(role_scope : role_scope) (r : role) : 
 let encode_item_objective (la : label_assignment) ~(template_scope : item_template_id) = function
   | Required_role rid ->
       encode_tag 0 ^ encode_int (lookup_role_in_scope la (Item_template_scope template_scope) rid)
-
-let encode_item_template (la : label_assignment) (t : item_template) : string =
-  encode_int (lookup_template la t.item_template_id) ^
-  encode_list (encode_origin_site la ~origin_scope:(Item_template_scope t.item_template_id)) t.origin_sites ^
-  encode_list (encode_branch la) t.branches ^
-  encode_list (encode_role la ~role_scope:(Item_template_scope t.item_template_id)) t.roles ^
-  encode_item_objective la ~template_scope:t.item_template_id t.objective
-
-let encode_capability_contract (_la : label_assignment) (c : capability_contract) : string =
-  encode_string (string_of_capability_id c.capability_id) ^
-  encode_string (string_of_capability_contract_digest c.contract_digest)
-  (* schema_description EXCLUDED — neutral (§6.7) *)
 
 (* ================================================================== *)
 (*  Frozen mixed-origin/Batch sort key (§9.3.1)                        *)
@@ -393,6 +386,33 @@ let sort_origin_sites (la : label_assignment) (sites : origin_site list) : origi
     let kb = origin_sort_key la b in
     compare ka kb
   ) sites
+
+let encode_item_template (la : label_assignment) (t : item_template) : string =
+  let sorted_origin_sites = sort_origin_sites la t.origin_sites in
+  let sorted_branches = List.sort (fun (a : branch) (b : branch) ->
+    Int.compare (lookup_branch la a.branch_id) (lookup_branch la b.branch_id)
+  ) t.branches in
+  let sorted_roles = List.sort (fun (a : role) (b : role) ->
+    let key_a = match a.scope with
+      | Program_scope -> Program_role a.role_id
+      | Item_template_scope tid -> Template_role (tid, a.role_id)
+    in
+    let key_b = match b.scope with
+      | Program_scope -> Program_role b.role_id
+      | Item_template_scope tid -> Template_role (tid, b.role_id)
+    in
+    Int.compare (lookup_scoped_role la key_a) (lookup_scoped_role la key_b)
+  ) t.roles in
+  encode_int (lookup_template la t.item_template_id) ^
+  encode_list (encode_origin_site la ~origin_scope:(Item_template_scope t.item_template_id)) sorted_origin_sites ^
+  encode_list (encode_branch la) sorted_branches ^
+  encode_list (encode_role la ~role_scope:(Item_template_scope t.item_template_id)) sorted_roles ^
+  encode_item_objective la ~template_scope:t.item_template_id t.objective
+
+let encode_capability_contract (_la : label_assignment) (c : capability_contract) : string =
+  encode_string (string_of_capability_id c.capability_id) ^
+  encode_string (string_of_capability_contract_digest c.contract_digest)
+  (* schema_description EXCLUDED — neutral (§6.7) *)
 
 (* ================================================================== *)
 (*  Top-level encoder                                                   *)
