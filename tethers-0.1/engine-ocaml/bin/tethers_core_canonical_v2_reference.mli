@@ -16,14 +16,32 @@ val sha256_hex : bytes -> string
 (** Construct the external digest string *)
 val digest_string_v2 : string -> string
 
-(** Label map from entity raw key to canonical label *)
-module StringMap : Map.S with type key = string
+(** Family-safe typed label maps *)
+module OriginMap : Map.S with type key = origin_id
+module FactMap : Map.S with type key = fact_id
+module BranchMap : Map.S with type key = branch_id
+module BatchMap : Map.S with type key = batch_id
+module TemplateMap : Map.S with type key = item_template_id
+module RoleMap : Map.S with type key = role_id
 
-type label_map = int StringMap.t
+type scoped_role_key =
+  | Program_role of role_id
+  | Template_role of item_template_id * role_id
 
-(** Encode a validated program with the given label map.
+module ScopedRoleMap : Map.S with type key = scoped_role_key
+
+type label_assignment = {
+  origin_labels   : int OriginMap.t;
+  fact_labels     : int FactMap.t;
+  branch_labels   : int BranchMap.t;
+  batch_labels    : int BatchMap.t;
+  template_labels : int TemplateMap.t;
+  role_labels     : int ScopedRoleMap.t;
+}
+
+(** Encode a validated program with the given label assignment.
     This is the frozen Enc_V2 encoder (§6). *)
-val encode_program : label_map -> program -> string
+val encode_program : label_assignment -> program -> string
 
 (** Primitive encoders (§6.2) *)
 val encode_string : string -> string
