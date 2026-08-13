@@ -28,7 +28,7 @@ use tethers_reference_host::installation_trust::ExactCandidateTrustStore;
 use tethers_reference_host::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use tethers_reference_host::launch_profile::LaunchProfileEvidenceStore;
 use tethers_reference_host::package;
-use tethers_reference_host::pdf_tools;
+use tethers_reference_host::test_fixture_package;
 use tethers_reference_host::trust::{
     DeveloperApprovalStore, PackageTrustEvidence, PublisherTrustStore,
 };
@@ -83,12 +83,12 @@ fn setup_candidate(
     PathBuf,
 ) {
     let quarantine_root = base.join("quarantine");
-    let archive = base.join("pdf-tools.tetherplug");
+    let archive = base.join("fixture.tetherplug");
     let provider_bytes =
-        fs::read(env!("CARGO_BIN_EXE_pdf_tools_provider")).expect("compiled provider");
+        fs::read(env!("CARGO_BIN_EXE_m3_fixture_provider")).expect("compiled provider");
     fs::write(
         &archive,
-        pdf_tools::build_reference_package(&provider_bytes).unwrap(),
+        test_fixture_package::build_fixture_package(&provider_bytes).unwrap(),
     )
     .unwrap();
     let report = package::inspect(&archive).unwrap();

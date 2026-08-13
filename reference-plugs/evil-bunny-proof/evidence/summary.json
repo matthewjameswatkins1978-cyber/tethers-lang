@@ -1,0 +1,142 @@
+[
+  {
+    "case": "EB-00-good",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 0,
+    "approved_status": "ok",
+    "disposition": "passed"
+  },
+  {
+    "case": "EB-01-identity-liar",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-02-protocol-version-liar",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-03-missing-operation",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-04-surprise-operation",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-05-wrong-operation-name",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-06-input-schema-liar",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-07a-output-schema-mismatch",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-07b-output-schema-omitted",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-08-malformed-stdout",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-09-wrong-response-id",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-10-early-death",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-11-silent-hang",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  },
+  {
+    "case": "EB-12-shutdown-refusal",
+    "pack": 0,
+    "inspect": 0,
+    "denied": 5,
+    "denied_status": "approval_required",
+    "approved": 6,
+    "approved_status": "failed",
+    "disposition": "failed"
+  }
+]

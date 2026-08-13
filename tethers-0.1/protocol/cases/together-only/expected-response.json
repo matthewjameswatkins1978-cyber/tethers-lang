@@ -1,0 +1,84 @@
+{
+  "protocol_version": "0.1",
+  "evaluation_id": "eval_together_only_001",
+  "event_id": "evt_together_only_001",
+  "tether_id": "pure-fan-out",
+  "tether_version": "c1-v1",
+  "status": "matched",
+  "plan": {
+    "id": "eval_together_only_001/plan",
+    "required_effects": ["files.read"],
+    "actions": [
+      {
+        "action_id": "action_1",
+        "idempotency_key": "eval_together_only_001/action_1",
+        "capability": "files.inspect",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "path": "one.txt"
+        },
+        "effects": ["files.read"]
+      },
+      {
+        "action_id": "action_2",
+        "idempotency_key": "eval_together_only_001/action_2",
+        "capability": "files.inspect",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "path": "two.txt"
+        },
+        "effects": ["files.read"]
+      }
+    ],
+    "groups": [
+      {
+        "group_id": "group_1",
+        "member_action_ids": ["action_1", "action_2"]
+      }
+    ]
+  },
+  "trail": [
+    {
+      "sequence": 1,
+      "phase": "reception",
+      "kind": "event_received",
+      "outcome": "accepted",
+      "message": "Received morning.started"
+    },
+    {
+      "sequence": 2,
+      "phase": "evaluation",
+      "kind": "anchor_checked",
+      "outcome": "matched",
+      "message": "Anchor morning.started matched"
+    },
+    {
+      "sequence": 3,
+      "phase": "evaluation",
+      "kind": "condition_checked",
+      "outcome": "matched",
+      "message": "ready is true"
+    },
+    {
+      "sequence": 4,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned files.inspect"
+    },
+    {
+      "sequence": 5,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned files.inspect"
+    },
+    {
+      "sequence": 6,
+      "phase": "evaluation",
+      "kind": "group_planned",
+      "outcome": "accepted",
+      "message": "Planned group group_1 (2 members)"
+    }
+  ]
+}

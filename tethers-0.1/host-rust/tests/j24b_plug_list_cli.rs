@@ -12,7 +12,7 @@ use tethers_reference_host::installed::{
 };
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
 use tethers_reference_host::operational_scope::OperationalScopeEvidence;
-use tethers_reference_host::pdf_tools::{self};
+use tethers_reference_host::test_fixture_package;
 
 fn make_scope(installed_id: &str, root: &Path) -> OperationalScopeEvidence {
     let schema = serde_json::json!({
@@ -29,8 +29,8 @@ fn make_scope(installed_id: &str, root: &Path) -> OperationalScopeEvidence {
     let schema_digest = format!("sha256:{:x}", Sha256::digest(schema_bytes));
     OperationalScopeEvidence::create(
         installed_id,
-        "tethers.pdf-tools",
-        "tethers-pdf-provider",
+        "tethers.fixture",
+        "tethers-stdio-fixture",
         &schema_digest,
         &serde_json::json!({"query_root": root.to_string_lossy(), "max_bytes": 1024}),
         "Matthew",
@@ -139,15 +139,15 @@ fn assert_plug_shape(envelope: &Value, installed_id: &str, state: &str) {
         ]
     );
     assert_eq!(plug["installed_id"], installed_id);
-    assert_eq!(plug["package_id"], "tethers.pdf-tools");
+    assert_eq!(plug["package_id"], "tethers.fixture");
     assert_eq!(plug["package_version"], "1.0.0");
-    assert_eq!(plug["provider_id"], "tethers-pdf-provider");
+    assert_eq!(plug["provider_id"], "tethers-stdio-fixture");
     assert_eq!(plug["state"], state);
     let capabilities = plug["capabilities"].as_array().unwrap();
     assert_eq!(capabilities.len(), 1);
-    assert_eq!(capabilities[0]["name"], "pdf.inspect");
+    assert_eq!(capabilities[0]["name"], "fixture.ping");
     assert_eq!(capabilities[0]["version"], 1);
-    assert_eq!(capabilities[0]["provider_operation_name"], "pdf_inspect");
+    assert_eq!(capabilities[0]["provider_operation_name"], "fixture_ping");
     assert_eq!(capabilities[0].as_object().unwrap().len(), 4);
     for forbidden in [
         "installation_relative_path",
@@ -187,11 +187,11 @@ fn install_pdf(
     tethers_reference_host::installed::InstalledPlugRecord,
     PathBuf,
 ) {
-    let archive = root.join("pdf-tools.tetherplug");
-    let provider = fs::read(env!("CARGO_BIN_EXE_pdf_tools_provider")).unwrap();
+    let archive = root.join("fixture.tetherplug");
+    let provider = fs::read(env!("CARGO_BIN_EXE_m3_fixture_provider")).unwrap();
     fs::write(
         &archive,
-        pdf_tools::build_reference_package(&provider).unwrap(),
+        test_fixture_package::build_fixture_package(&provider).unwrap(),
     )
     .unwrap();
     let report = tethers_reference_host::package::inspect(&archive).unwrap();
@@ -392,7 +392,7 @@ fn compiled_list_orders_plugs_and_capabilities_stably() {
     assert_eq!(code, 0, "{envelope}");
     let plugs = envelope["data"]["plugs"].as_array().unwrap();
     assert_eq!(plugs.len(), 2);
-    assert_eq!(plugs[0]["package_id"], "tethers.pdf-tools");
+    assert_eq!(plugs[0]["package_id"], "tethers.fixture");
     assert_eq!(plugs[1]["package_id"], "tethers.z-pdf");
     let capabilities = plugs[1]["capabilities"].as_array().unwrap();
     assert_eq!(capabilities[0]["name"], "a.first");

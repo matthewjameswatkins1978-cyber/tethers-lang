@@ -10,7 +10,7 @@ use tethers_reference_host::enablement::{EnablementRecord, EnablementState, Enab
 use tethers_reference_host::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use tethers_reference_host::launch_profile::PreparedSupervisedLaunch;
 use tethers_reference_host::operational_scope::OperationalScopeEvidence;
-use tethers_reference_host::pdf_tools::{self};
+use tethers_reference_host::test_fixture_package;
 
 fn make_scope(installed_id: &str, root: &Path, max_bytes: u64) -> OperationalScopeEvidence {
     let schema = serde_json::json!({
@@ -27,8 +27,8 @@ fn make_scope(installed_id: &str, root: &Path, max_bytes: u64) -> OperationalSco
     let schema_digest = format!("sha256:{:x}", Sha256::digest(schema_bytes));
     OperationalScopeEvidence::create(
         installed_id,
-        "tethers.pdf-tools",
-        "tethers-pdf-provider",
+        "tethers.fixture",
+        "tethers-stdio-fixture",
         &schema_digest,
         &serde_json::json!({"query_root": root.to_string_lossy(), "max_bytes": max_bytes}),
         "Matthew",
@@ -158,11 +158,11 @@ fn install_pdf(
     tethers_reference_host::installed::InstalledPlugRecord,
     PathBuf,
 ) {
-    let archive = root.join("pdf-tools.tetherplug");
-    let provider = fs::read(env!("CARGO_BIN_EXE_pdf_tools_provider")).unwrap();
+    let archive = root.join("fixture.tetherplug");
+    let provider = fs::read(env!("CARGO_BIN_EXE_m3_fixture_provider")).unwrap();
     fs::write(
         &archive,
-        pdf_tools::build_reference_package(&provider).unwrap(),
+        test_fixture_package::build_fixture_package(&provider).unwrap(),
     )
     .unwrap();
     let report = tethers_reference_host::package::inspect(&archive).unwrap();
@@ -515,7 +515,7 @@ fn duplicate_json_keys_in_scope_file_fail() {
 
     let scope_file = root.join("duplicate.json");
     let content = format!(
-        r#"{{"schema":"tethers.plug-scope/1","capability":{{"name":"pdf.inspect","version":1,"version":1}},"permissions":{{"query_root":"{}","max_bytes":{} }}}}"#,
+        r#"{{"schema":"tethers.plug-scope/1","capability":{{"name":"fixture.ping","version":1,"version":1}},"permissions":{{"query_root":"{}","max_bytes":{} }}}}"#,
         scope_root.display(),
         1024
     );
@@ -541,7 +541,7 @@ fn unknown_fields_in_scope_file_fail() {
 
     let scope_file = root.join("extra.json");
     let content = format!(
-        r#"{{"schema":"tethers.plug-scope/1","capability":{{"name":"pdf.inspect","version":1}},"permissions":{{"query_root":"{}","max_bytes":1024}},"extra":"bad"}}"#,
+        r#"{{"schema":"tethers.plug-scope/1","capability":{{"name":"fixture.ping","version":1}},"permissions":{{"query_root":"{}","max_bytes":1024}},"extra":"bad"}}"#,
         scope_root.display()
     );
     fs::write(&scope_file, content.as_bytes()).unwrap();
@@ -676,7 +676,7 @@ fn missing_query_root_in_scope_file_fails() {
     let (installed, _scope_root) = install_pdf(&root);
 
     let scope_file = root.join("no_query.json");
-    let content = r#"{"schema":"tethers.plug-scope/1","capability":{"name":"pdf.inspect","version":1},"permissions":{"max_bytes":1024}}"#;
+    let content = r#"{"schema":"tethers.plug-scope/1","capability":{"name":"fixture.ping","version":1},"permissions":{"max_bytes":1024}}"#;
     fs::write(&scope_file, content.as_bytes()).unwrap();
 
     let before = snapshot(&root);
@@ -699,7 +699,7 @@ fn wrong_schema_in_scope_file_fails() {
 
     let scope_file = root.join("wrong.json");
     let content = format!(
-        r#"{{"schema":"tethers.plug-scope/2","capability":{{"name":"pdf.inspect","version":1}},"permissions":{{"query_root":"{}","max_bytes":1024}}}}"#,
+        r#"{{"schema":"tethers.plug-scope/2","capability":{{"name":"fixture.ping","version":1}},"permissions":{{"query_root":"{}","max_bytes":1024}}}}"#,
         scope_root.display()
     );
     fs::write(&scope_file, content.as_bytes()).unwrap();

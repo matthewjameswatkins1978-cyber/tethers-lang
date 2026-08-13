@@ -49,11 +49,11 @@ fn run(args: Vec<OsString>) -> (i32, serde_json::Value) {
 
 fn write_package(root: &Path, name: &str) -> PathBuf {
     let provider_bytes =
-        std::fs::read(env!("CARGO_BIN_EXE_pdf_tools_provider")).expect("read provider binary");
+        std::fs::read(env!("CARGO_BIN_EXE_m3_fixture_provider")).expect("read provider binary");
     let package = root.join(name);
     std::fs::write(
         &package,
-        tethers_reference_host::pdf_tools::build_reference_package(&provider_bytes)
+        tethers_reference_host::test_fixture_package::build_fixture_package(&provider_bytes)
             .expect("deterministic package"),
     )
     .expect("package bytes");
@@ -241,7 +241,7 @@ fn j24l2_e2e_fresh_install_and_reinstall() {
     let host = root.join("host-data");
     fs::create_dir_all(&host).unwrap();
 
-    let package = write_package(&root, "pdf-tools.tetherplug");
+    let package = write_package(&root, "fixture.tetherplug");
 
     // 1. Stage the package
     let (code, envelope) = run(wrap_args(&[

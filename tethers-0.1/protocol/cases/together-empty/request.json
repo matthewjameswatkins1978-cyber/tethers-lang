@@ -1,0 +1,29 @@
+{
+  "protocol_version": "0.1",
+  "language_version": "0.1",
+  "evaluation_id": "eval_together_empty_001",
+  "tether": {
+    "id": "empty-together",
+    "version": "c1-v1",
+    "source": "tether \"Empty together\"\n\nanchor\n    morning.started\n\nwhen\n    ready is true\n\ndo\n    together\n"
+  },
+  "event": {
+    "id": "evt_together_empty_001",
+    "name": "morning.started",
+    "data": {}
+  },
+  "facts": {
+    "ready": true
+  },
+  "capabilities": [
+    {
+      "name": "files.inspect",
+      "version": "1.0.0",
+      "inputs": {
+        "path": "string"
+      },
+      "effects": ["files.read"],
+      "reversibility": "none"
+    }
+  ]
+}

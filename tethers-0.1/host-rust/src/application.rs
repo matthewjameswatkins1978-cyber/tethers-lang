@@ -1150,6 +1150,16 @@ pub(crate) fn inject_bridge_projection_into_request(
 pub(crate) fn extract_proposed_action(
     response: &Value,
 ) -> Result<policy::ProposedAction, Box<dyn std::error::Error>> {
+    extract_proposed_action_at(response, 0)
+}
+
+/// Extract the proposed Action at `action_index` from a plan, with the same
+/// validation contract as [`extract_proposed_action`].  The C1 plan-level
+/// executor uses this to resolve policy for every planned Action.
+pub(crate) fn extract_proposed_action_at(
+    response: &Value,
+    action_index: usize,
+) -> Result<policy::ProposedAction, Box<dyn std::error::Error>> {
     let evaluation_id = required_str(response, "evaluation_id")?.to_owned();
     let plan_id = response
         .get("plan")
@@ -1162,7 +1172,7 @@ pub(crate) fn extract_proposed_action(
         .get("plan")
         .and_then(|plan| plan.get("actions"))
         .and_then(Value::as_array)
-        .and_then(|actions| actions.first())
+        .and_then(|actions| actions.get(action_index))
         .ok_or("plan had no actions")?;
 
     let action_id = required_str(action, "action_id")?.to_owned();
@@ -1191,6 +1201,26 @@ pub(crate) fn extract_proposed_action(
         bridge_provider_identity,
         arguments,
     })
+}
+
+/// Extract the one and only Action of a single-Action plan, failing closed
+/// for empty or multi-Action plans.
+///
+/// This is the deliberate boundary for the legacy coordinator route and the
+/// installed-adapter seams, which remain single-Action and must never
+/// silently reinterpret a larger plan (including a `together` group).
+pub(crate) fn extract_single_action(
+    response: &Value,
+) -> Result<&Value, Box<dyn std::error::Error>> {
+    let actions = response
+        .get("plan")
+        .and_then(|plan| plan.get("actions"))
+        .and_then(Value::as_array)
+        .ok_or("plan had no actions")?;
+    if actions.len() != 1 {
+        return Err(format!("expected exactly one Action in Plan, got {}", actions.len()).into());
+    }
+    Ok(&actions[0])
 }
 
 // ---------------------------------------------------------------------------
@@ -1567,8 +1597,10 @@ fn authorise_and_execute_with_writer(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let clock = outcome::ProductionMonotonicClock::new();
     let mut replay_authority = replay_runtime::FileReplayAuthority::new(host_data_root);
+    let action = extract_single_action(response)?.clone();
     authorise_and_execute_inner(
         response,
+        &action,
         decision,
         resolved,
         trail,
@@ -1785,8 +1817,10 @@ fn resume_and_execute_exact_approval_with_authority(
     let clock = outcome::ProductionMonotonicClock::new();
     let mut anchor_writer = ResponseResultAnchorWriter;
     let context = InputEventContext::for_initial(original_event_id);
+    let action = extract_single_action(response)?.clone();
     authorise_and_execute_inner(
         response,
+        &action,
         decision,
         &resolved,
         trail,
@@ -1850,8 +1884,10 @@ fn authorise_and_execute_with_test_replay(
     let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
     let mut anchor_writer = ResponseResultAnchorWriter;
     let context = InputEventContext::for_initial(original_event_id);
+    let action = extract_single_action(response)?.clone();
     authorise_and_execute_inner(
         response,
+        &action,
         decision,
         resolved,
         trail,
@@ -1900,8 +1936,10 @@ fn authorise_and_execute_without_bridge_pins_with_clock(
     let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
     let mut anchor_writer = ResponseResultAnchorWriter;
     let context = InputEventContext::for_initial(original_event_id);
+    let action = extract_single_action(response)?.clone();
     authorise_and_execute_inner(
         response,
+        &action,
         decision,
         resolved,
         trail,
@@ -1968,6 +2006,7 @@ pub enum SharedExecutionOutcome {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_shared_boundary(
     response: &mut Value,
+    action: &Value,
     decision: PermissionDecision,
     resolved: &ResolvedCapability,
     trail: &mut dyn dispatch::Trail,
@@ -1981,6 +2020,7 @@ pub(crate) fn execute_shared_boundary(
 ) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
     let mut result = execute_boundary_impl(
         response,
+        action,
         decision,
         resolved,
         trail,
@@ -2005,6 +2045,7 @@ pub(crate) fn execute_shared_boundary(
 #[allow(clippy::too_many_arguments)]
 fn authorise_and_execute_inner(
     response: &mut Value,
+    action: &Value,
     decision: PermissionDecision,
     resolved: &ResolvedCapability,
     trail: &mut dyn dispatch::Trail,
@@ -2018,6 +2059,7 @@ fn authorise_and_execute_inner(
 ) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
     execute_shared_boundary(
         response,
+        action,
         decision,
         resolved,
         trail,
@@ -2034,6 +2076,7 @@ fn authorise_and_execute_inner(
 #[allow(clippy::too_many_arguments)]
 fn execute_boundary_impl(
     response: &mut Value,
+    action: &Value,
     decision: PermissionDecision,
     resolved: &ResolvedCapability,
     trail: &mut dyn dispatch::Trail,
@@ -2046,17 +2089,6 @@ fn execute_boundary_impl(
     anchor_writer: &mut dyn ResultAnchorWriter,
 ) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
     let original_event_id = input_context.event_id.as_str();
-    let plan = response.get("plan").ok_or("matched response had no plan")?;
-    let actions = plan
-        .get("actions")
-        .and_then(Value::as_array)
-        .ok_or("plan had no actions")?;
-
-    // Exactly one Action is required for the 0.1 demo boundary.
-    if actions.len() != 1 {
-        return Err(format!("expected exactly one Action in Plan, got {}", actions.len()).into());
-    }
-    let action = &actions[0];
 
     let action_id_str = required_str(action, "action_id")?;
     let action_capability = required_str(action, "capability")?;
@@ -2134,7 +2166,9 @@ fn execute_boundary_impl(
 
     // Replay persistence is opened lazily here, after all ordinary fresh gates
     // above and only for a branch that may dispatch.
-    let mut replay_admission = match replay_authority.admit(&logical_key, &binding) {
+    let mut replay_admission = match crate::bench_timing::timed("replay_admit", || {
+        replay_authority.admit(&logical_key, &binding)
+    }) {
         Ok(admission) => admission,
         Err(_) => {
             set_replay_result(
@@ -2190,7 +2224,11 @@ fn execute_boundary_impl(
     let mut sequence = json_trail.len() as u64 + 1;
 
     // The immutable replay intent boundary precedes the existing Trail intent.
-    if replay_admission.publish_intent().is_err() {
+    if crate::bench_timing::timed("replay_publish_intent", || {
+        replay_admission.publish_intent()
+    })
+    .is_err()
+    {
         set_replay_result(
             response,
             replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
@@ -2204,14 +2242,16 @@ fn execute_boundary_impl(
     }
 
     // Attempt durable Trail intent recording.
-    let ready = match dispatch::prepare_and_record(
-        decision,
-        resolved,
-        execution_id,
-        action_id.clone(),
-        arguments,
-        trail,
-    ) {
+    let ready = match crate::bench_timing::timed("trail_intent", || {
+        dispatch::prepare_and_record(
+            decision,
+            resolved,
+            execution_id,
+            action_id.clone(),
+            arguments,
+            trail,
+        )
+    }) {
         Ok(ready) => ready,
         Err(err) => {
             json_trail.push(trail_entry(
@@ -2259,7 +2299,9 @@ fn execute_boundary_impl(
     // This durable boundary is immediately before provider invocation. The
     // held admission guard retains cross-process exclusion through the call
     // and final publication.
-    if replay_admission.publish_armed().is_err() {
+    if crate::bench_timing::timed("replay_publish_armed", || replay_admission.publish_armed())
+        .is_err()
+    {
         set_replay_result(
             response,
             replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
@@ -2284,7 +2326,9 @@ fn execute_boundary_impl(
         Some(&ready.action_id().0),
     ));
     sequence += 1;
-    let provider_result = executor.execute_classified(&ready, remaining);
+    let provider_result = crate::bench_timing::timed("provider_call", || {
+        executor.execute_classified(&ready, remaining)
+    });
     let observed_after_deadline = outcome::deadline_expired(clock, deadline_start, deadline);
     let timestamp_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2362,7 +2406,8 @@ fn execute_boundary_impl(
         timestamp_unix_ms: timestamp_ms,
     };
 
-    if trail.append_outcome(&outcome_entry).is_err() {
+    if crate::bench_timing::timed("trail_outcome", || trail.append_outcome(&outcome_entry)).is_err()
+    {
         // The in-memory classification above remains truthful, but it is not
         // auditable enough for a Result Anchor or retry authority.
         json_trail.push(trail_entry(
@@ -2419,9 +2464,10 @@ fn execute_boundary_impl(
             });
         }
     };
-    if replay_admission
-        .publish_terminal(terminal_state, outcome_digest)
-        .is_err()
+    if crate::bench_timing::timed("replay_publish_terminal", || {
+        replay_admission.publish_terminal(terminal_state, outcome_digest)
+    })
+    .is_err()
     {
         set_replay_result(
             response,
@@ -2488,7 +2534,9 @@ fn execute_boundary_impl(
             &input_context.event_id,
             next_generation,
         );
-        if anchor_writer.write(response, &anchor).is_err() {
+        if crate::bench_timing::timed("result_anchor", || anchor_writer.write(response, &anchor))
+            .is_err()
+        {
             if let Some(object) = response.as_object_mut() {
                 object.remove("result_anchor");
             }
@@ -3389,7 +3437,13 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 17: Multiple actions in plan is rejected (0.1 enforces exactly 1).
+    // Test 17: Multi-action plans are rejected by the single-Action seam.
+    //
+    // The shared boundary now dispatches exactly the Action it is given; the
+    // exactly-one gate lives at the single-Action seams (legacy coordinator,
+    // installed-adapter).  Multi-action plans (including `together` groups)
+    // execute through the C1 plan-level executor instead, which this test
+    // must not silently reinterpret.
     // -----------------------------------------------------------------------
 
     #[test]
@@ -5510,8 +5564,12 @@ mod tests {
             let (_, resolved) = resolved_lantern();
             let mut response = runtime_response(&resolved);
             let context = InputEventContext::for_initial("evt-j09-001");
+            let action = crate::extract_single_action(&response)
+                .expect("runtime response has exactly one Action")
+                .clone();
             authorise_and_execute_inner(
                 &mut response,
+                &action,
                 decision,
                 &resolved,
                 trail,
@@ -7174,8 +7232,12 @@ mod tests {
                 inner: ResponseResultAnchorWriter,
                 queue: &mut shared_queue,
             };
+            let action = crate::extract_single_action(&initial_response)
+                .expect("initial response has exactly one Action")
+                .clone();
             authorise_and_execute_inner(
                 &mut initial_response,
+                &action,
                 allow_decision_for(&resolved),
                 &resolved,
                 &mut trail,
@@ -7213,8 +7275,12 @@ mod tests {
                 inner: ResponseResultAnchorWriter,
                 queue: &mut shared_queue,
             };
+            let action = crate::extract_single_action(&a_response)
+                .expect("A response has exactly one Action")
+                .clone();
             authorise_and_execute_inner(
                 &mut a_response,
+                &action,
                 allow_decision_for(&resolved),
                 &resolved,
                 &mut trail,
@@ -7563,8 +7629,12 @@ mod tests {
             "trail": [],
         });
 
+        let action = crate::extract_single_action(&response)
+            .expect("response has exactly one Action")
+            .clone();
         authorise_and_execute_inner(
             &mut response,
+            &action,
             allow_decision_for(&resolved),
             &resolved,
             &mut trail,
@@ -7846,9 +7916,14 @@ mod tests {
             queue: &mut shared_queue,
         };
         let mut response = json!({"trail": []});
+        // The response deliberately has no plan; the seam must still fail
+        // closed (here at Action extraction inside the boundary) while the
+        // event-admission gate persists.
+        let malformed_action = json!({});
 
         let result = authorise_and_execute_inner(
             &mut response,
+            &malformed_action,
             allow_decision_for(&resolved),
             &resolved,
             &mut trail,
@@ -8532,8 +8607,12 @@ mod tests {
         let context = InputEventContext::for_initial("evt_input_001");
         let mut anchor_writer = ResponseResultAnchorWriter;
 
+        let action = crate::extract_single_action(&response)
+            .expect("response has exactly one Action")
+            .clone();
         let result = execute_shared_boundary(
             &mut response,
+            &action,
             decision,
             &resolved,
             &mut trail,

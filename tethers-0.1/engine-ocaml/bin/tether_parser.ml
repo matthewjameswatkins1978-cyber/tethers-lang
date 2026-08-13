@@ -20,11 +20,15 @@ type action = {
   arguments : (string * value) list;
 }
 
+type action_item =
+  | Action of action
+  | Together of action list
+
 type tether = {
   title : string;
   anchor : string;
   conditions : condition list;
-  actions : action list;
+  actions : action_item list;
 }
 
 let trim = String.trim
@@ -122,6 +126,17 @@ let parse_argument line =
       if name = "" || raw = "" then fail "parse_error" ("Malformed action argument: " ^ body);
       (name, parse_value raw)
 
+let parse_member_argument line =
+  require_indent 12 "Action argument" line;
+  let body = trim line in
+  match String.index_opt body ':' with
+  | None -> fail "parse_error" ("Malformed action argument: " ^ body)
+  | Some index ->
+      let name = String.sub body 0 index |> trim in
+      let raw = String.sub body (index + 1) (String.length body - index - 1) |> trim in
+      if name = "" || raw = "" then fail "parse_error" ("Malformed action argument: " ^ body);
+      (name, parse_value raw)
+
 let check_unique_arguments action_name arguments =
   let names = List.map fst arguments in
   let rec check = function
@@ -140,7 +155,58 @@ let parse_actions lines =
     | Some (name, arguments) ->
         let args = List.rev arguments in
         check_unique_arguments name args;
-        { capability = name; arguments = args } :: result
+        Action { capability = name; arguments = args } :: result
+  in
+  let check_group_size members =
+    match members with
+    | [] | [ _ ] ->
+        fail "parse_error" "A together block must contain at least two Actions"
+    | _ -> ()
+  in
+  let rec parse_group_lines remaining current members =
+    let finish_member current members =
+      match current with
+      | None -> members
+      | Some (name, arguments) ->
+          let args = List.rev arguments in
+          check_unique_arguments name args;
+          { capability = name; arguments = args } :: members
+    in
+    match remaining with
+    | [] ->
+        let members = finish_member current members in
+        let members = List.rev members in
+        check_group_size members;
+        (members, [])
+    | line :: rest ->
+        let indent = indentation line in
+        if indent >= 8 then
+          if indent = 8 then
+            let name = trim line in
+            if name = "together" then
+              fail "parse_error" "Nested together blocks are not supported"
+            else
+              let members = finish_member current members in
+              parse_group_lines rest (Some (name, [])) members
+          else if indent = 12 then
+            (match current with
+             | None ->
+                 fail "parse_error" "Action argument appeared before an Action"
+             | Some (name, arguments) ->
+                 parse_group_lines rest
+                   (Some (name, parse_member_argument line :: arguments))
+                   members)
+          else
+            fail "parse_error"
+              ("Expected 8-space together member indentation: " ^ trim line)
+        else if indent = 4 then
+          let members = finish_member current members in
+          let members = List.rev members in
+          check_group_size members;
+          (members, line :: rest)
+        else
+          fail "parse_error"
+            ("Expected 8-space together member indentation: " ^ trim line)
   in
   let rec loop remaining current result =
     match remaining with
@@ -154,7 +220,10 @@ let parse_actions lines =
                loop rest (Some (name, parse_argument line :: arguments)) result)
         else if indent = 4 then
           let result = finish current result in
-          loop rest (Some (trim line, [])) result
+          if trim line = "together" then
+            let members, remaining = parse_group_lines rest None [] in
+            loop remaining None (Together members :: result)
+          else loop rest (Some (trim line, [])) result
         else
           fail "parse_error" ("Expected 4-space Action indentation: " ^ trim line)
   in

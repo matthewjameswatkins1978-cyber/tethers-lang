@@ -1,0 +1,14 @@
+[package]
+name = "tethers-evil-bunny-provider"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.97"
+description = "Adversarial MCP stdio protocol fixture for the P6 Evil Bunny Test."
+license = "MIT"
+
+[[bin]]
+name = "tethers_evil_bunny_provider"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"

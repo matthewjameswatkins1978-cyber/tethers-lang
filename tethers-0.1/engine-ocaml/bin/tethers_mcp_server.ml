@@ -8,6 +8,12 @@ type server_state =
 
 let server_state = ref Uninitialized
 
+let rec count_planned_actions = function
+  | [] -> 0
+  | Action _ :: rest -> 1 + count_planned_actions rest
+  | Together members :: rest ->
+      List.length members + count_planned_actions rest
+
 let supported_protocol_versions = ["2025-06-18"; "2025-11-25"]
 
 let json_member_opt name fields = List.assoc_opt name fields
@@ -90,8 +96,9 @@ let handle_tools_list id =
               ("name", `String "tethers.evaluate");
               ( "description",
                 `String
-                  "Evaluate one complete Tethers 0.1 request and return the \
-                   Tethers response envelope without executing Actions." );
+                  "Evaluate one complete Tethers 0.1 request through the \
+                   Core pipeline and return the canonical response envelope \
+                   without executing Actions." );
               ( "inputSchema",
                 `Assoc
                   [
@@ -105,7 +112,8 @@ let handle_tools_list id =
                                 ("type", `String "object");
                                 ( "description",
                                   `String
-                                    "Complete Tethers 0.1 request envelope" );
+                                    "Complete extended Tethers 0.1 request \
+                                     envelope with core_environment" );
                               ] );
                         ] );
                     ("required", `List [ `String "request" ]);
@@ -163,18 +171,8 @@ let handle_tools_call id fields =
       | Some (`Assoc args) -> (
           match json_member_opt "request" args with
           | Some request ->
-              let response =
-                try Tethers_evaluator.evaluate_request request with
-                | Tethers_error (code, message) ->
-                    Tethers_outcome.error_response code message
-                | Yojson.Json_error message ->
-                    Tethers_outcome.error_response "invalid_json" message
-                | exn ->
-                    Tethers_outcome.error_response "internal_error"
-                      (Printexc.to_string exn)
-              in
               let tethers_response =
-                Tethers_outcome.json_of_response response
+                Tethers_core_wire.evaluate_request_json request
               in
               let compact_json = Yojson.Safe.to_string tethers_response in
               let result =
@@ -221,7 +219,7 @@ let handle_tools_call id fields =
                       ("anchor", `String parsed.anchor);
                       ( "condition_count",
                         `Int (List.length parsed.conditions) );
-                      ("action_count", `Int (List.length parsed.actions));
+                      ("action_count", `Int (count_planned_actions parsed.actions));
                     ]
                 with
                 | Tethers_error (code, message) ->

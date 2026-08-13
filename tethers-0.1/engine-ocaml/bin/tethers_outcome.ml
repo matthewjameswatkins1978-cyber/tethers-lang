@@ -7,10 +7,16 @@ type planned_action = Yojson.Safe.t
 
 type trail_entry = Yojson.Safe.t
 
+type group_plan = {
+  group_id : string;
+  member_action_ids : string list;
+}
+
 type plan = {
   id : string;
   required_effects : string list;
   actions : planned_action list;
+  groups : group_plan list;
 }
 
 type evaluation_context = {
@@ -53,15 +59,36 @@ let json_of_response = function
       in
       let status, plan, error_field, trail_field =
         match payload with
-        | Matched { id; required_effects; actions } ->
+        | Matched { id; required_effects; actions; groups } ->
+            let group_fields =
+              if groups = [] then []
+              else
+                [
+                  ( "groups",
+                    `List
+                      (List.map
+                         (fun group ->
+                           `Assoc
+                             [
+                               ("group_id", `String group.group_id);
+                               ( "member_action_ids",
+                                 `List
+                                   (List.map
+                                      (fun member_id -> `String member_id)
+                                      group.member_action_ids) );
+                             ])
+                         groups) );
+                ]
+            in
             ( "matched",
               `Assoc
-                [
-                  ("id", `String id);
-                  ( "required_effects",
-                    `List (List.map (fun e -> `String e) required_effects) );
-                  ("actions", `List actions);
-                ],
+                ([
+                   ("id", `String id);
+                   ( "required_effects",
+                     `List (List.map (fun e -> `String e) required_effects) );
+                   ("actions", `List actions);
+                 ]
+                @ group_fields),
               [],
               [ ("trail", `List trail) ] )
         | Not_matched ->

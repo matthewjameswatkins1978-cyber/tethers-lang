@@ -1,0 +1,54 @@
+{
+  "description": "Adversarial protocol fixture: The Evil Bunny Test",
+  "payloads": [
+    {
+      "path": "manifests/evil-probe-v1.json",
+      "role": "capability_manifest"
+    },
+    {
+      "path": "provider/tethers_evil_bunny_provider.exe",
+      "role": "provider_executable"
+    }
+  ],
+  "package_format_version": "1",
+  "package_version": "1.0.0",
+  "display_name": "Tethers Evil Bunny Proof",
+  "package_id": "tethers.evil-bunny-proof",
+  "capabilities": [
+    {
+      "provider_operation_name": "evil_probe",
+      "capability_name": "evil.probe",
+      "capability_version": 1,
+      "manifest_path": "manifests/evil-probe-v1.json"
+    }
+  ],
+  "publisher": "tethers-evil-bunny",
+  "licence": "MIT",
+  "protocol_bindings": [
+    {
+      "transport": "stdio",
+      "version": "2025-11-25",
+      "protocol": "MCP"
+    }
+  ],
+  "provider": {
+    "working_directory": "provider",
+    "capability_operation_namespace": "evil",
+    "provider_version": "1.0.0",
+    "provider_id": "tethers-evil-bunny-provider",
+    "launch": {
+      "path": "provider/tethers_evil_bunny_provider.exe",
+      "arguments": [
+        "--mode",
+        "shutdown-refusal"
+      ]
+    }
+  },
+  "platforms": [
+    {
+      "architecture": "x86_64",
+      "os": "windows"
+    }
+  ],
+  "socket_major": 1
+}

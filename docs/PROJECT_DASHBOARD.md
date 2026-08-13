@@ -1,47 +1,37 @@
 # Tethers Project Dashboard
 
-Updated: 2026-08-10
+Updated: 2026-08-11
 
 ## Current Milestone
 
-Tethers 0.3 public Plug authoring. P1 and P2 are FINAL ACCEPTED. P3 — PDF Tools
-Reference Plug Crucible — is next.
+Tethers 0.3 public Plug authoring is complete: P1, P2, P3, P4, and P5 are FINAL
+ACCEPTED; P6 — The Evil Bunny Test — is FINAL ACCEPTED at
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`. The active increment is 0.4 C1 —
+Together: Deterministic Fan-Out / Join Foundation.
 
 ## Verified Checkpoint
 
-P2 final independently reviewed evidence head:
-`84f1002904dd54929fa8002d1634c42c85112f54`.
-
-Canonical P2C implementation checkpoint:
-`4c32b96446e7ae3e20d2994056d0fd435dcc32f3`.
+P6 final implementation checkpoint:
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`.
 
 ## Active Task
 
-- Task: none issued yet
-- State: ready for P3 discovery / packet compilation
-- Owner: Lucy for architecture and packet compilation
-- Risk: Green until P3 implementation begins
+- Task: TETHERS-0.4-C1C — Together Execution / Join Correction
+- State: implementation complete; awaiting Lucy independent GitHub review
+- Owner: OpenCode (implementation); Lucy (independent GitHub review and acceptance)
+- Risk: Amber; first host execution change for `together` — plan-level
+  fan-out/join execution through the shared boundary, with the Three Bunny
+  Breakfast production-path crucible
 
 ## Last Accepted Result
 
-P2 — Public pack / inspect / conform authoring surface — FINAL ACCEPTED.
+P6 — The Evil Bunny Test — FINAL ACCEPTED at
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`.
 
-The real public author journey is proven end to end:
-
-```text
-plug pack
-→ plug inspect
-→ explicit conform execution approval
-→ plug conform
-```
-
-Final gate evidence:
-
-- full Cargo test: 1714 passed, 0 failed, 2 ignored
-- Nextest: 1714 passed, 2 skipped
-- `just verify-agent`: PASS
-- P2C production changes: 0
-- P2C dependency changes: 0
+A safe, deterministic adversarial protocol fixture (`reference-plugs/evil-bunny-proof/`)
+proved that hostile providers cannot turn bad evidence into conformance
+success; three genuine generic conformance gaps were corrected in
+`tethers-0.1/host-rust/src/conformance.rs`.
 
 ## Matthew Decision Required
 
@@ -49,9 +39,12 @@ None.
 
 ## Next Route
 
-P3 discovery, then a bounded implementation packet to move PDF Tools across the
-public boundary into `reference-plugs/pdf-tools/` without PDF-specific knowledge
-in generic host machinery.
+Lucy review of C1C: the pushed branch `feature/0.4-c1-together-fan-out-join`
+(implementation checkpoint `6519d92a06b54c64a38f931c65da446dcebd323a`), the
+plan-level executor and schedule validation in `plan_execution.rs`, the
+shared-boundary Action parameter refactor, the `GroupJoinEntry` Trail
+extension, the Three Bunny Breakfast crucible and malformed-metadata tests,
+and `docs/ROAD_TO_0_4.md`. C2–C5 are provisional and have NOT started.
 
 ## Operating Mode
 
@@ -68,7 +61,18 @@ in generic host machinery.
 - One implementation owner per bounded task.
 - Broad discovery before packet compilation.
 - Cheap checks early. Expensive proof once.
-- No speculative P3 implementation before the packet is frozen.
+- P6 proved the conformance suite itself still accepted an advertised-only
+  `inputSchema` / mismatched `outputSchema`, an uncorrelated JSON-RPC response
+  id, and a shutdown-refusing provider; those three generic gaps were corrected
+  in `conformance.rs` with before/after evidence and regression tests.
+- C1 introduced the first real concurrency primitive (`together`) as
+  deterministic language semantics only: no scheduler, no threads, no
+  physical-parallel execution; the flat `plan.actions` list remains a valid
+  serial schedule and `plan.groups` is additive.
+- C1C completed the execution half: the reference host now attempts every
+  group member before the join, a non-success join blocks later Actions, and
+  the serial schedule matches what a future genuinely concurrent runtime
+  would observe (failure stops at the join, not inside the fan-out).
 
 ## Where Details Live
 

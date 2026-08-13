@@ -626,11 +626,6 @@ fn j24k3c2_unsafe_expected_absolute_path_fail_closed() {
     let destination = install_root.join(&record.installation_relative_path);
     fs::create_dir(&destination).unwrap();
     write_payload(&destination, &record.plug_json.path, plug_json_bytes);
-    let abs_path = std::path::Path::new("/abs.txt");
-    if let Some(parent) = abs_path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(&abs_path, payload_bytes).unwrap();
     record.payloads[0].sha256 = sha256(payload_bytes);
     record.payloads[0].size_bytes = payload_bytes.len() as u64;
     let mut covered = record.clone();

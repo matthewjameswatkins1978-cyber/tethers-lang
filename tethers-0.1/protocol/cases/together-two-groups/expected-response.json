@@ -1,0 +1,163 @@
+{
+  "protocol_version": "0.1",
+  "evaluation_id": "eval_together_two_groups_001",
+  "event_id": "evt_together_two_groups_001",
+  "tether_id": "two-groups",
+  "tether_version": "c1-v1",
+  "status": "matched",
+  "plan": {
+    "id": "eval_together_two_groups_001/plan",
+    "required_effects": ["weather.read", "calendar.read", "email.read", "brief.write", "files.read"],
+    "actions": [
+      {
+        "action_id": "action_1",
+        "idempotency_key": "eval_together_two_groups_001/action_1",
+        "capability": "weather.fetch",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "location": "first"
+        },
+        "effects": ["weather.read"]
+      },
+      {
+        "action_id": "action_2",
+        "idempotency_key": "eval_together_two_groups_001/action_2",
+        "capability": "calendar.fetch",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "day": "monday"
+        },
+        "effects": ["calendar.read"]
+      },
+      {
+        "action_id": "action_3",
+        "idempotency_key": "eval_together_two_groups_001/action_3",
+        "capability": "email.fetch",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "account": "main"
+        },
+        "effects": ["email.read"]
+      },
+      {
+        "action_id": "action_4",
+        "idempotency_key": "eval_together_two_groups_001/action_4",
+        "capability": "brief.compose",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "format": "short"
+        },
+        "effects": ["brief.write"]
+      },
+      {
+        "action_id": "action_5",
+        "idempotency_key": "eval_together_two_groups_001/action_5",
+        "capability": "files.inspect",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "path": "one.txt"
+        },
+        "effects": ["files.read"]
+      },
+      {
+        "action_id": "action_6",
+        "idempotency_key": "eval_together_two_groups_001/action_6",
+        "capability": "files.inspect",
+        "capability_version": "1.0.0",
+        "arguments": {
+          "path": "two.txt"
+        },
+        "effects": ["files.read"]
+      }
+    ],
+    "groups": [
+      {
+        "group_id": "group_1",
+        "member_action_ids": ["action_2", "action_3"]
+      },
+      {
+        "group_id": "group_2",
+        "member_action_ids": ["action_5", "action_6"]
+      }
+    ]
+  },
+  "trail": [
+    {
+      "sequence": 1,
+      "phase": "reception",
+      "kind": "event_received",
+      "outcome": "accepted",
+      "message": "Received morning.started"
+    },
+    {
+      "sequence": 2,
+      "phase": "evaluation",
+      "kind": "anchor_checked",
+      "outcome": "matched",
+      "message": "Anchor morning.started matched"
+    },
+    {
+      "sequence": 3,
+      "phase": "evaluation",
+      "kind": "condition_checked",
+      "outcome": "matched",
+      "message": "ready is true"
+    },
+    {
+      "sequence": 4,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned weather.fetch"
+    },
+    {
+      "sequence": 5,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned calendar.fetch"
+    },
+    {
+      "sequence": 6,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned email.fetch"
+    },
+    {
+      "sequence": 7,
+      "phase": "evaluation",
+      "kind": "group_planned",
+      "outcome": "accepted",
+      "message": "Planned group group_1 (2 members)"
+    },
+    {
+      "sequence": 8,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned brief.compose"
+    },
+    {
+      "sequence": 9,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned files.inspect"
+    },
+    {
+      "sequence": 10,
+      "phase": "evaluation",
+      "kind": "action_planned",
+      "outcome": "accepted",
+      "message": "Planned files.inspect"
+    },
+    {
+      "sequence": 11,
+      "phase": "evaluation",
+      "kind": "group_planned",
+      "outcome": "accepted",
+      "message": "Planned group group_2 (2 members)"
+    }
+  ]
+}

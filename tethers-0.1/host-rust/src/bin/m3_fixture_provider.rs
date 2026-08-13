@@ -110,10 +110,17 @@ fn main() {
                         "additionalProperties":false
                     })
                 };
+                let output_schema = json!({
+                    "type":"object",
+                    "properties":{"echo":{"type":"string"}},
+                    "required":["echo"],
+                    "additionalProperties":false
+                });
                 json!({
                 "jsonrpc":"2.0","id":id,"result":{"tools":[{
                     "name":"fixture_ping",
-                    "inputSchema":input_schema
+                    "inputSchema":input_schema,
+                    "outputSchema":output_schema
                 }]}
                 })
             }

@@ -1,0 +1,43 @@
+{
+  "protocol_version": "0.1",
+  "evaluation_id": "eval_together_unknown_001",
+  "event_id": "evt_together_unknown_001",
+  "tether_id": "unknown-member-capability",
+  "tether_version": "c1-v1",
+  "status": "error",
+  "plan": null,
+  "error": {
+    "code": "unknown_capability",
+    "message": "Unknown Capability: files.copy"
+  },
+  "trail": [
+    {
+      "sequence": 1,
+      "phase": "reception",
+      "kind": "event_received",
+      "outcome": "accepted",
+      "message": "Received morning.started"
+    },
+    {
+      "sequence": 2,
+      "phase": "evaluation",
+      "kind": "anchor_checked",
+      "outcome": "matched",
+      "message": "Anchor morning.started matched"
+    },
+    {
+      "sequence": 3,
+      "phase": "evaluation",
+      "kind": "condition_checked",
+      "outcome": "matched",
+      "message": "ready is true"
+    },
+    {
+      "sequence": 4,
+      "phase": "evaluation",
+      "kind": "action_planning_failed",
+      "outcome": "error",
+      "message": "Unknown Capability: files.copy"
+    }
+  ]
+}

@@ -61,6 +61,25 @@ pub struct RetainedProviderSession {
 }
 
 impl RetainedProviderSession {
+    /// Enter the normal retained MCP session after the generic installed
+    /// launch boundary has already produced a supervised child.
+    pub fn from_supervised_child(
+        child: crate::child_process::SupervisedChild,
+        protocol_version: &str,
+        server_name: &str,
+        identity: String,
+    ) -> Result<Self, StdioProviderError> {
+        let mut provider = ManagedProvider::from_supervised_child(child);
+        provider.initialize(protocol_version, server_name)?;
+        Ok(Self {
+            provider,
+            next_request_id: 2,
+            identity,
+            catalogue_stale: true,
+            catalogue: None,
+        })
+    }
+
     /// Wrap a provider that has already completed initialize and tools/list.
     #[cfg(test)]
     pub(crate) fn from_discovered(provider: ManagedProvider, identity: String) -> Self {

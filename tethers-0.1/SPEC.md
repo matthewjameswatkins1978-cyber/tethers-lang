@@ -24,6 +24,7 @@ application data.
 | Action | A requested capability invocation |
 | Capability | A typed operation exposed by a host or adapter |
 | Effect | An external consequence declared by a capability |
+| Concurrency group | Several independent Actions declared as members of one fan-out / join block |
 | Plan | Ordered Actions proposed by Tethers |
 | Trail | Causal record of evaluation, authorisation, and execution |
 | Host | Application supplying inputs and enforcing policy |
@@ -66,14 +67,22 @@ reported by the host and may be emitted as new events for another Tether.
 ## 5. Minimal grammar
 
 ```text
-tether      := 'tether' STRING NEWLINE anchor conditions actions
-anchor      := 'anchor' NEWLINE INDENT NAME NEWLINE
-conditions  := 'when' NEWLINE condition (NEWLINE condition)*
-condition   := INDENT ['and'] PATH OPERATOR VALUE
-actions     := 'do' NEWLINE action (NEWLINE action)*
-action      := INDENT NAME NEWLINE argument+
-argument    := INDENT INDENT NAME ':' VALUE_OR_PATH
+tether          := 'tether' STRING NEWLINE anchor conditions actions
+anchor          := 'anchor' NEWLINE INDENT NAME NEWLINE
+conditions      := 'when' NEWLINE condition (NEWLINE condition)*
+condition       := INDENT ['and'] PATH OPERATOR VALUE
+actions         := 'do' NEWLINE action_item (NEWLINE action_item)*
+action_item     := action | together_block
+action          := INDENT NAME NEWLINE argument+
+argument        := INDENT INDENT NAME ':' VALUE_OR_PATH
+together_block  := 'together' NEWLINE member (NEWLINE member)+
+member          := INDENT INDENT NAME NEWLINE member_argument+
+member_argument := INDENT INDENT INDENT NAME ':' VALUE_OR_PATH
 ```
+
+The `together` keyword at the `do` level opens a fan-out / join block and is
+reserved; it may not be used as an Action name. A `together` block closes when
+the next Action item appears at the `do` level or the source ends.
 
 Supported 0.1 operators:
 
@@ -125,6 +134,34 @@ Each planned Action has:
 - declared Effects copied from its Capability schema
 
 A plan is a request, not permission.
+
+### 6.1 `together` fan-out / join blocks
+
+A `together` block declares a concurrency group. Its member Actions are
+independent of each other and are planned in source order with contiguous
+position-derived `action_id`s. An Action whose source position follows the
+block is planned after the whole group and becomes executable only after every
+member has reached a terminal outcome and the group has joined.
+
+C1 establishes these concurrency semantics only; it does not require physical
+parallelism. The flat, ordered `plan.actions` array is the deterministic serial
+schedule and is a valid C1 execution schedule.
+
+C1 restrictions on a `together` block:
+
+- it must contain at least two Actions and cannot be empty;
+- it cannot contain another `together` block (no nested concurrency);
+- it cannot contain Conditions, branching, loops, Action-result references,
+  retries, compensation, or dynamically added members.
+
+Only an explicit `together` block creates concurrent semantics. Two adjacent
+ordinary Actions remain sequential.
+
+When at least one `together` block is planned, the matched plan includes an
+additive `groups` array. Each entry declares a position-derived `group_id`
+(`group_1`, `group_2`, …) and the `member_action_ids` of the group in source
+order. A plan without a `together` block omits `groups` entirely, so a Tether
+without `together` produces output identical to the pre-C1 contract.
 
 ## 7. Capabilities and policy
 

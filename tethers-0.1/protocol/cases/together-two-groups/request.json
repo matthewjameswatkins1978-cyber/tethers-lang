@@ -1,0 +1,65 @@
+{
+  "protocol_version": "0.1",
+  "language_version": "0.1",
+  "evaluation_id": "eval_together_two_groups_001",
+  "tether": {
+    "id": "two-groups",
+    "version": "c1-v1",
+    "source": "tether \"Two groups\"\n\nanchor\n    morning.started\n\nwhen\n    ready is true\n\ndo\n    weather.fetch\n        location: \"first\"\n\n    together\n        calendar.fetch\n            day: \"monday\"\n\n        email.fetch\n            account: \"main\"\n\n    brief.compose\n        format: \"short\"\n\n    together\n        files.inspect\n            path: \"one.txt\"\n\n        files.inspect\n            path: \"two.txt\"\n"
+  },
+  "event": {
+    "id": "evt_together_two_groups_001",
+    "name": "morning.started",
+    "data": {}
+  },
+  "facts": {
+    "ready": true
+  },
+  "capabilities": [
+    {
+      "name": "weather.fetch",
+      "version": "1.0.0",
+      "inputs": {
+        "location": "string"
+      },
+      "effects": ["weather.read"],
+      "reversibility": "none"
+    },
+    {
+      "name": "calendar.fetch",
+      "version": "1.0.0",
+      "inputs": {
+        "day": "string"
+      },
+      "effects": ["calendar.read"],
+      "reversibility": "none"
+    },
+    {
+      "name": "email.fetch",
+      "version": "1.0.0",
+      "inputs": {
+        "account": "string"
+      },
+      "effects": ["email.read"],
+      "reversibility": "none"
+    },
+    {
+      "name": "brief.compose",
+      "version": "1.0.0",
+      "inputs": {
+        "format": "string"
+      },
+      "effects": ["brief.write"],
+      "reversibility": "none"
+    },
+    {
+      "name": "files.inspect",
+      "version": "1.0.0",
+      "inputs": {
+        "path": "string"
+      },
+      "effects": ["files.read"],
+      "reversibility": "none"
+    }
+  ]
+}

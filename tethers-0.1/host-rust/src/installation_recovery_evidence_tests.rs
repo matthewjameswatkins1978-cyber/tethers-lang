@@ -205,7 +205,7 @@ impl RecoveryFixture {
         let archive = base.join("test.tetherplug");
         fs::write(
             &archive,
-            crate::pdf_tools::build_reference_package(b"j24k3c3-test").unwrap(),
+            crate::test_fixture_package::build_fixture_package(b"j24k3c3-test").unwrap(),
         )
         .unwrap();
         let quarantine_root = base.join("quarantine");
@@ -744,7 +744,7 @@ fn j24k3c3_approval_reviewed_capability_drift_fails_stale() {
     let manifest_path = fixture
         .quarantine_root
         .join(&fixture.candidate.quarantine_relative_path)
-        .join("manifests/pdf-inspect-v1.json");
+        .join("manifests/fixture-ping.json");
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
     manifest["effects"] = serde_json::json!(["unexpected"]);

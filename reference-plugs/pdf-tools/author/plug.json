@@ -1,0 +1,15 @@
+{
+  "package_format_version": "1",
+  "package_id": "tethers.pdf-tools",
+  "package_version": "1.0.0",
+  "display_name": "Tethers PDF Tools",
+  "description": "Credential-free bounded local PDF inspection Plug",
+  "publisher": "Tethers reference material",
+  "licence": "MIT",
+  "socket_major": 1,
+  "protocol_bindings": [{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],
+  "platforms": [{"os":"windows","architecture":"x86_64"}],
+  "provider": {"provider_id":"tethers-pdf-provider","provider_version":"1.0.0","launch":{"path":"provider/pdf_tools_provider.exe","arguments":[]},"working_directory":"provider","capability_operation_namespace":"pdf","operational_scope_schema":{"type":"object","properties":{"query_root":{"type":"string","x-tethers-path":"canonical-directory"},"max_bytes":{"type":"integer","minimum":1,"maximum":67108864}},"required":["query_root","max_bytes"],"additionalProperties":false}},
+  "capabilities": [{"capability_name":"pdf.inspect","capability_version":1,"manifest_path":"manifests/pdf-inspect-v1.json","provider_operation_name":"pdf_inspect"}],
+  "payloads": [{"path":"manifests/pdf-inspect-v1.json","role":"capability_manifest"},{"path":"provider/pdf_tools_provider.exe","role":"provider_executable"}]
+}

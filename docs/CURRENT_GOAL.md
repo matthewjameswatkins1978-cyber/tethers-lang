@@ -1,44 +1,42 @@
 # Current Goal
 
-Updated: 2026-08-10
+Updated: 2026-08-11
 
 ## Goal
 
 Tethers 0.3 public Plug authoring. P1 (Generic Operational Scope Evidence) is
 ACCEPTED. P2 (public pack / inspect / conform authoring surface) is FINAL
-ACCEPTED. P3 (PDF Tools Reference Plug Crucible) is next.
+ACCEPTED. P3 (PDF Tools Reference Plug Crucible) is FINAL ACCEPTED. P4 (Plug
+Author Manual) is FINAL ACCEPTED. P5 (fresh-agent authoring proof) is FINAL
+ACCEPTED. P6 (The Evil Bunny Test) is FINAL ACCEPTED at
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`. The active increment is 0.4 C1
+(Together: Deterministic Fan-Out / Join Foundation); P7 / physical-parallel 0.4
+work has NOT started.
 
-P2 acceptance is anchored to final independently reviewed evidence head
-`84f1002904dd54929fa8002d1634c42c85112f54`, with canonical P2C implementation
-checkpoint `4c32b96446e7ae3e20d2994056d0fd435dcc32f3`.
+P6 acceptance is anchored to accepted head
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`.
 
 ## Last accepted increment
 
-P2 — Public pack / inspect / conform authoring surface.
+P6 — The Evil Bunny Test — FINAL ACCEPTED at
+`5ed7634d8abc4056e0faa1ff09924377dec6e645`.
 
-Proven public workflow:
-
-```text
-plug pack
-→ plug inspect
-→ plug conform
-```
-
-P2 final gate evidence:
-
-- full Cargo test: 1714 passed, 0 failed, 2 ignored
-- Nextest: 1714 passed, 2 skipped
-- `just verify-agent`: PASS
-- no production or dependency drift in P2C
+A safe, deterministic adversarial protocol fixture under
+`reference-plugs/evil-bunny-proof/` proved that hostile providers cannot turn
+bad evidence into conformance success; three genuine generic conformance gaps
+were corrected in `tethers-0.1/host-rust/src/conformance.rs`.
+Experiment log: `docs/p6-evil-bunny-proof.md`.
 
 ## Active increment
 
-No P3 implementation packet has been issued yet.
+0.4 C1 — Together: Deterministic Fan-Out / Join Foundation — is in progress.
+The OCaml engine introduces the `together` fan-out / join block as deterministic
+language semantics: independent Actions in one concurrency group, a join before
+later Actions, an additive `groups` plan field, and a deterministic
+`group_planned` Trail entry, without any scheduler or physical-parallel
+requirement.
 
-Next: P3 — PDF Tools Reference Plug Crucible. The goal is to move PDF Tools
-across the public Plug boundary into `reference-plugs/pdf-tools/` and prove that
-a real existing capability can operate without PDF-specific knowledge in the
-generic host.
+P7 / physical-parallel 0.4 work comes after C1 and has NOT started.
 
 ## Foundation Pass boundaries
 
@@ -49,7 +47,11 @@ generic host.
 - Every packet reports each required command as PASS, FAIL, or NOT RUN; a
   mandatory NOT RUN blocks COMPLETE.
 - Final packet verification is serial after the last permitted code/test edit.
-- P3 must not smuggle PDF-specific semantics back into generic Plug machinery.
+- P6 must not smuggle adversarial-provider-specific knowledge into generic host
+  code; every production correction is generic and regression-backed.
+- 0.4 C1 establishes concurrency semantics only; it must not introduce a
+  scheduler, threads, or physical-parallel execution, and a Tether without
+  `together` must keep producing the pre-C1 semantic output.
 
 ## Authoritative references
 

@@ -21,6 +21,10 @@ Tethers-0.1-Prototype.tar.gz
 .tethers/handshake/
 .tethers/timings.jsonl
 
+# Timestamped benchmark run output (preserved baseline lives under
+# docs/performance/b0-original-baseline and docs/performance/pf1)
+docs/performance/runs/
+
 # Editor-local files
 .vscode/
 .idea/

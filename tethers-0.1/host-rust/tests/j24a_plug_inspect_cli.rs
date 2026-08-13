@@ -4,7 +4,7 @@ use std::fs;
 use std::process::Command;
 
 use serde_json::Value;
-use tethers_reference_host::pdf_tools;
+use tethers_reference_host::test_fixture_package;
 
 fn host_binary() -> std::path::PathBuf {
     std::env::var_os("CARGO_BIN_EXE_tethers-reference-host")
@@ -21,12 +21,13 @@ fn host_binary() -> std::path::PathBuf {
 }
 
 fn package_path() -> (std::path::PathBuf, Vec<u8>) {
-    let provider =
-        fs::read(env!("CARGO_BIN_EXE_pdf_tools_provider")).expect("compiled PDF provider binary");
-    let bytes = pdf_tools::build_reference_package(&provider).expect("deterministic package");
+    let provider = fs::read(env!("CARGO_BIN_EXE_m3_fixture_provider"))
+        .expect("compiled fixture provider binary");
+    let bytes =
+        test_fixture_package::build_fixture_package(&provider).expect("deterministic package");
     let root = std::env::temp_dir().join(format!("tethers-j24a-{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(&root).expect("test directory");
-    let package = root.join("pdf-tools.tetherplug");
+    let package = root.join("fixture.tetherplug");
     fs::write(&package, &bytes).expect("package bytes");
     (package, bytes)
 }
@@ -53,10 +54,10 @@ fn public_inspect_emits_complete_read_only_success_envelope() {
     assert_eq!(envelope["exit_code"], 0);
     assert!(envelope["error"].is_null());
     let inspection = &envelope["data"]["inspection"];
-    assert_eq!(inspection["package"]["package_id"], "tethers.pdf-tools");
+    assert_eq!(inspection["package"]["package_id"], "tethers.fixture");
     assert_eq!(inspection["package"]["package_version"], "1.0.0");
-    assert_eq!(inspection["provider_id"], "tethers-pdf-provider");
-    assert_eq!(inspection["capabilities"][0]["name"], "pdf.inspect");
+    assert_eq!(inspection["provider_id"], "tethers-stdio-fixture");
+    assert_eq!(inspection["capabilities"][0]["name"], "fixture.ping");
     assert_eq!(inspection["capabilities"][0]["version"], 1);
     let evidence_digest = inspection["inspection_evidence_digest"].as_str().unwrap();
     assert_eq!(evidence_digest.len(), 71);

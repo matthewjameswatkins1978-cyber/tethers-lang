@@ -322,7 +322,8 @@ $requiredCases = @(
     "clean-eof-shutdown",
     "validate-valid",
     "validate-invalid",
-    "validate-missing-source"
+    "validate-missing-source",
+    "validate-together"
 )
 
 Test-SemanticComparisonSelfChecks

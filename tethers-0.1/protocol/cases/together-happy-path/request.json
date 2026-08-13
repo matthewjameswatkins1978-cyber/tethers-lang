@@ -1,0 +1,59 @@
+{
+  "protocol_version": "0.1",
+  "language_version": "0.1",
+  "evaluation_id": "eval_together_happy_001",
+  "tether": {
+    "id": "morning-brief",
+    "version": "c1-v1",
+    "source": "tether \"Morning brief\"\n\nanchor\n    morning.started\n\nwhen\n    ready is true\n\ndo\n    together\n        weather.fetch\n            location: anchor.location\n\n        calendar.fetch\n            day: anchor.day\n\n        email.fetch\n            account: \"main\"\n\n    brief.compose\n        format: \"short\"\n"
+  },
+  "event": {
+    "id": "evt_together_happy_001",
+    "name": "morning.started",
+    "data": {
+      "location": "london",
+      "day": "monday"
+    }
+  },
+  "facts": {
+    "ready": true
+  },
+  "capabilities": [
+    {
+      "name": "weather.fetch",
+      "version": "1.0.0",
+      "inputs": {
+        "location": "string"
+      },
+      "effects": ["weather.read"],
+      "reversibility": "none"
+    },
+    {
+      "name": "calendar.fetch",
+      "version": "1.0.0",
+      "inputs": {
+        "day": "string"
+      },
+      "effects": ["calendar.read"],
+      "reversibility": "none"
+    },
+    {
+      "name": "email.fetch",
+      "version": "1.0.0",
+      "inputs": {
+        "account": "string"
+      },
+      "effects": ["email.read"],
+      "reversibility": "none"
+    },
+    {
+      "name": "brief.compose",
+      "version": "1.0.0",
+      "inputs": {
+        "format": "string"
+      },
+      "effects": ["brief.write"],
+      "reversibility": "none"
+    }
+  ]
+}

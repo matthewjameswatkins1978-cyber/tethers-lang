@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tethers_reference_host::pdf_tools;
+use tethers_reference_host::test_fixture_package;
 use uuid::Uuid;
 
 fn host_binary() -> PathBuf {
@@ -32,7 +32,7 @@ fn write_package(root: &Path, name: &str, provider_bytes: &[u8]) -> PathBuf {
     let package = root.join(name);
     fs::write(
         &package,
-        pdf_tools::build_reference_package(provider_bytes).expect("deterministic package"),
+        test_fixture_package::build_fixture_package(provider_bytes).expect("deterministic package"),
     )
     .expect("package bytes");
     package
@@ -140,7 +140,7 @@ fn first_stage_emits_allowlisted_created_candidate_and_only_candidate_state() {
     let root = temp_dir("created");
     let host = root.join("host-data");
     fs::create_dir_all(&host).unwrap();
-    let package = write_package(&root, "pdf-tools.tetherplug", b"non-executable-provider");
+    let package = write_package(&root, "fixture.tetherplug", b"non-executable-provider");
 
     let (code, envelope) = stage(&host, &package, false);
     assert_eq!(code, 0);
@@ -171,10 +171,10 @@ fn first_stage_emits_allowlisted_created_candidate_and_only_candidate_state() {
     );
     assert_eq!(candidate["disposition"], "created");
     assert_eq!(candidate["state"], "quarantined_installation_candidate");
-    assert_eq!(candidate["package_id"], "tethers.pdf-tools");
+    assert_eq!(candidate["package_id"], "tethers.fixture");
     assert_eq!(candidate["package_version"], "1.0.0");
-    assert_eq!(candidate["provider_id"], "tethers-pdf-provider");
-    assert_eq!(candidate["provider_version"], "1.0.0");
+    assert_eq!(candidate["provider_id"], "tethers-stdio-fixture");
+    assert_eq!(candidate["provider_version"], "0.1.0");
     assert_keys(&candidate["platform"], &["os", "architecture"]);
     assert_eq!(candidate["platform"]["os"], "windows");
     assert_eq!(candidate["platform"]["architecture"], "x86_64");
@@ -184,9 +184,9 @@ fn first_stage_emits_allowlisted_created_candidate_and_only_candidate_state() {
         &capabilities[0],
         &["name", "version", "manifest_digest", "operation"],
     );
-    assert_eq!(capabilities[0]["name"], "pdf.inspect");
+    assert_eq!(capabilities[0]["name"], "fixture.ping");
     assert_eq!(capabilities[0]["version"], 1);
-    assert_eq!(capabilities[0]["operation"], "pdf_inspect");
+    assert_eq!(capabilities[0]["operation"], "fixture_ping");
 
     for forbidden in [
         "quarantine_relative_path",
@@ -229,7 +229,7 @@ fn exact_replay_emits_existing_same_id_and_changes_no_host_bytes() {
     let root = temp_dir("replay");
     let host = root.join("host-data");
     fs::create_dir_all(&host).unwrap();
-    let package = write_package(&root, "pdf-tools.tetherplug", b"non-executable-replay");
+    let package = write_package(&root, "fixture.tetherplug", b"non-executable-replay");
 
     let (_, first) = stage(&host, &package, false);
     let first_id = first["data"]["candidate"]["candidate_id"].clone();

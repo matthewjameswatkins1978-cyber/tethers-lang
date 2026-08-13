@@ -28,7 +28,7 @@ use crate::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use crate::launch_profile::{LaunchProfileEvidenceStore, PreparedSupervisedLaunch};
 use crate::m3_store::{canonical, sha256};
 use crate::package;
-use crate::pdf_tools;
+use crate::test_fixture_package;
 use crate::trust::PackageTrustEvidence;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -59,10 +59,10 @@ fn complete_test_base() -> (
 ) {
     let base = std::env::temp_dir().join(format!("tethers-j24k2-complete-{}", Uuid::new_v4()));
     fs::create_dir_all(&base).unwrap();
-    let archive = base.join("pdf-tools.tetherplug");
+    let archive = base.join("fixture.tetherplug");
     fs::write(
         &archive,
-        pdf_tools::build_reference_package(b"complete-test-provider").unwrap(),
+        test_fixture_package::build_fixture_package(b"complete-test-provider").unwrap(),
     )
     .unwrap();
     let quarantine_root = base.join("quarantine");

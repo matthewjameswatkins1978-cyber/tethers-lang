@@ -5,6 +5,32 @@ edition = "2021"
 rust-version = "1.97"
 publish = false
 
+[[bin]]
+name = "tethers-reference-host"
+path = "src/main.rs"
+
+[[bin]]
+name = "bench_mcp"
+path = "src/bin/bench_mcp.rs"
+
+[[bin]]
+name = "bench_prod"
+path = "src/bin/bench_prod.rs"
+
+[[bin]]
+name = "bench_cold"
+path = "src/bin/bench_cold.rs"
+
+[[bin]]
+name = "bench_retained"
+path = "src/bin/bench_retained.rs"
+
+[features]
+default = []
+# Observation-only stage timing for the PF1 benchmark binaries. Disabled in
+# every normal build; see src/bench_timing.rs.
+bench-timing = []
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -6,7 +6,13 @@
 
 ## Status
 
-P1 COMPLETE / ACCEPTED. P2 FINAL / ACCEPTED. P3 — PDF Tools Reference Plug Crucible — is next.
+P1 COMPLETE / ACCEPTED. P2 FINAL / ACCEPTED. P3 FINAL / ACCEPTED. P4 — Plug Author
+Manual — FINAL ACCEPTED at `1e1f9b8738a48f727187316dd0078b7f9435f1c6`. P5 —
+Fresh-Agent Authoring Proof — FINAL ACCEPTED at
+`ffbe25e1c36123301182383c97265a6174b5dd98`. P6 — The Evil Bunny Test — FINAL
+ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`. The active increment is
+0.4 C1 (Together: Deterministic Fan-Out / Join Foundation); P7 / physical-parallel
+0.4 work has NOT started.
 
 ## Sequence
 
@@ -51,23 +57,57 @@ Expose the generic author workflow: `plug pack`, `plug inspect`, `plug conform`.
   - full Cargo gate: 1714 passed, 0 failed, 2 ignored
   - Nextest: 1714 passed, 2 skipped
 
-### P3 — PDF Tools Reference Plug Crucible
+### P3 — PDF Tools Reference Plug Crucible ✓
 
 Move PDF Tools across the public boundary into `reference-plugs/pdf-tools/`.
 
-P3 must prove that a real existing capability can live outside the generic host and use only the public Plug boundary established by P1–P2.
+P3 proved that a real existing capability can live outside the generic host and
+use only the public Plug boundary established by P1–P2.
 
-### P4 — Plug author manual
+FINAL ACCEPTED at `e23030ad5e9820373133b25222680194af967c39`; final P3
+implementation correction checkpoint `fcf22bff911393869d8dd560efeee1442a50b119`.
+
+### P4 — Plug author manual ✓
 
 Write the complete Plug-authoring manual using only interfaces proven by P1–P3.
+Canonical public manual: `docs/PLUG_AUTHORING.md`.
 
-### P5 — Fresh-agent authoring proof
+FINAL ACCEPTED at `1e1f9b8738a48f727187316dd0078b7f9435f1c6`.
+
+### P5 — Fresh-agent authoring proof ✓
 
 A clean agent with only released Tethers and the manual builds a new Plug.
 
-### P6 — Adversarial-provider proof
+A fresh DeepSeek V4 Flash / High-thinking author, guided only by
+`docs/PLUG_AUTHORING.md`, built a new non-PDF Plug (`tethers.text-stats`) under
+`reference-plugs/text-stats-proof/` and completed the full public journey:
+build → pack → inspect → conform-refusal → approved conform. Provider semantic
+tests pass; digest continuity and source immutability proven; one genuine narrow
+manual gap surfaced (advertise both `inputSchema` and `outputSchema` in
+`tools/list`) and was fixed in the manual. Experiment log:
+`docs/p5-fresh-agent-proof.md`.
+
+FINAL ACCEPTED at `ffbe25e1c36123301182383c97265a6174b5dd98`.
+
+### P6 — Adversarial-provider proof ✓
 
 Hostile providers must not compromise host protocol correctness.
+
+The Evil Bunny Test: a safe, deterministic adversarial protocol fixture
+(`reference-plugs/evil-bunny-proof/`, `tethers.evil-bunny-proof` /
+`tethers-evil-bunny-provider`) proved that hostile providers cannot turn bad
+evidence into conformance success. EB-00 Good Bunny control passes; EB-01
+through EB-12 are each deterministically refused. P6 surfaced three genuine
+generic conformance gaps — `outputSchema` not verified during discovery,
+no JSON-RPC response id/envelope correlation, and shutdown-refusal recorded as
+clean success — and corrected them with the smallest generic production changes
+in `tethers-0.1/host-rust/src/conformance.rs`, each backed by regression
+evidence at the real discovery/conformance seam. Experiment log:
+`docs/p6-evil-bunny-proof.md`.
+
+FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`. The active
+increment is 0.4 C1 (Together: Deterministic Fan-Out / Join Foundation);
+P7 / physical-parallel 0.4 work has NOT started.
 
 ## Future
 

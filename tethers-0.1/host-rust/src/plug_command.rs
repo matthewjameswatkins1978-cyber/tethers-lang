@@ -1181,8 +1181,8 @@ mod tests {
         let schema_digest = sha256(&schema_bytes);
         let a = OperationalScopeEvidence::create(
             "00000000-0000-0000-0000-000000000001",
-            "tethers.pdf-tools",
-            "tethers-pdf-provider",
+            "tethers.fixture",
+            "tethers-stdio-fixture",
             &schema_digest,
             &scope,
             "R1B-test",
@@ -1190,8 +1190,8 @@ mod tests {
         .unwrap();
         let b = OperationalScopeEvidence::create(
             "00000000-0000-0000-0000-000000000001",
-            "tethers.pdf-tools",
-            "tethers-pdf-provider",
+            "tethers.fixture",
+            "tethers-stdio-fixture",
             &schema_digest,
             &scope,
             "R1B-test",
@@ -1209,8 +1209,8 @@ mod tests {
         let scope = serde_json::json!({"query_root": "C:\\pdf", "max_bytes": 4096});
         let evidence = OperationalScopeEvidence::create(
             "00000000-0000-0000-0000-000000000001",
-            "tethers.pdf-tools",
-            "tethers-pdf-provider",
+            "tethers.fixture",
+            "tethers-stdio-fixture",
             &schema_digest,
             &scope,
             "R1B-test",
@@ -1239,8 +1239,8 @@ mod tests {
                 .unwrap();
         let evidence = OperationalScopeEvidence::create(
             "00000000-0000-0000-0000-000000000010",
-            "tethers.pdf-tools",
-            "tethers-pdf-provider",
+            "tethers.fixture",
+            "tethers-stdio-fixture",
             &schema_digest,
             &canonical_scope,
             "R1C-test",
@@ -1267,8 +1267,8 @@ mod tests {
                 .unwrap();
         let evidence = OperationalScopeEvidence::create(
             "00000000-0000-0000-0000-000000000011",
-            "tethers.pdf-tools",
-            "tethers-pdf-provider",
+            "tethers.fixture",
+            "tethers-stdio-fixture",
             &schema_digest,
             &canonical_scope,
             "R1C-test",
@@ -1294,8 +1294,8 @@ mod tests {
         assert_eq!(canonical_a, canonical_b);
         let evidence_a = OperationalScopeEvidence::create(
             "00000000-0000-0000-0000-000000000012",
-            "tethers.pdf-tools",
-            "tethers-pdf-provider",
+            "tethers.fixture",
+            "tethers-stdio-fixture",
             &schema_digest,
             &canonical_a,
             "R1C-test",
@@ -1303,8 +1303,8 @@ mod tests {
         .unwrap();
         let evidence_b = OperationalScopeEvidence::create(
             "00000000-0000-0000-0000-000000000012",
-            "tethers.pdf-tools",
-            "tethers-pdf-provider",
+            "tethers.fixture",
+            "tethers-stdio-fixture",
             &schema_digest,
             &canonical_b,
             "R1C-test",

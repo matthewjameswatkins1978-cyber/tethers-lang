@@ -2,6 +2,7 @@ extern crate self as tethers_reference_host;
 
 pub mod application;
 pub mod approval;
+pub mod bench_timing;
 pub mod candidate;
 pub mod candidate_preparation;
 pub mod check_command;
@@ -62,6 +63,7 @@ mod installation_recovery_tests;
 pub mod installation_request;
 pub mod installation_trust;
 pub mod installed;
+pub mod installed_provider_executor;
 pub mod launch_profile;
 pub mod local_anchor;
 mod m3_store;
@@ -69,7 +71,7 @@ pub mod manifest;
 pub mod operational_scope;
 mod outcome;
 pub mod package;
-pub mod pdf_tools;
+pub mod plan_execution;
 pub mod plug_command;
 pub mod plug_conform;
 mod plug_install_command;
@@ -87,13 +89,14 @@ pub mod run_input;
 pub mod runtime_config;
 pub mod socket;
 pub mod stdio_provider;
+pub mod test_fixture_package;
 pub mod trail_command;
 pub mod trust;
 pub mod trusted_store;
 mod validation;
 pub(crate) use application::{
     build_event_admission_entry, execute_shared_boundary, extract_proposed_action,
-    inject_bridge_projection_into_request, now_unix_ms, request_exact_approval, InputEventContext,
-    ResponseResultAnchorWriter,
+    extract_proposed_action_at, extract_single_action, inject_bridge_projection_into_request,
+    now_unix_ms, request_exact_approval, InputEventContext, ResponseResultAnchorWriter,
 };
 pub use application::{SharedExecutionOutcome, SharedExecutionResult};

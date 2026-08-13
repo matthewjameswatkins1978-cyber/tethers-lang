@@ -23,6 +23,17 @@ pub struct ManagedProvider {
 }
 
 impl ManagedProvider {
+    /// Adopt a child already launched by the installed-provider trust boundary.
+    /// The caller retains no alternate handle, so normal retained-session close
+    /// and Drop behaviour stay authoritative.
+    pub fn from_supervised_child(child: SupervisedChild) -> Self {
+        Self {
+            child: Some(child),
+            read_timeout: Duration::from_secs(10),
+            catalogue_change_observed: false,
+        }
+    }
+
     /// Launch the provider with explicit current directory.
     pub fn launch(
         command: &str,

@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":"init-1","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"tethers","version":"0.2.0"}}}
+{"jsonrpc":"2.0","id":"validate-together-1","result":{"structuredContent":{"valid":true,"title":"Morning brief","anchor":"morning.started","condition_count":1,"action_count":4},"content":[{"type":"text","text":"{\"valid\":true,\"title\":\"Morning brief\",\"anchor\":\"morning.started\",\"condition_count\":1,\"action_count\":4}"}],"isError":false}}

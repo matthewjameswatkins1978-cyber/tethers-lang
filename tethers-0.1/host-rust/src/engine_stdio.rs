@@ -263,6 +263,32 @@ impl EngineSession {
         classify_wire_response(evaluation_id, structured)
     }
 
+    /// List available tools via tools/list.
+    pub fn list_tools(&mut self) -> Result<Vec<Value>, EngineError> {
+        let request_id = self.next_request_id;
+        self.next_request_id += 1;
+
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/list",
+            "params": {}
+        });
+
+        Self::write_json(&mut self.child, &request)?;
+        let result = Self::read_json(&mut self.child, request_id, "tools/list", self.read_timeout)?;
+
+        let tools = result
+            .get("tools")
+            .and_then(Value::as_array)
+            .cloned()
+            .ok_or_else(|| {
+                EngineError::ProtocolError("tools/list result missing tools array".to_owned())
+            })?;
+
+        Ok(tools)
+    }
+
     pub fn stderr_tail(&self) -> String {
         self.child.stderr_tail()
     }
@@ -438,29 +464,7 @@ mod tests {
     fn j13b_retained_engine_uses_arguments_request_for_multiple_evaluations() {
         let (engine_path, working_dir) = require_engine();
         let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
-        let request = serde_json::json!({
-            "protocol_version": "0.1",
-            "language_version": "0.1",
-            "evaluation_id": "eval_j13b_real_001",
-            "tether": {
-                "id": "test.tether",
-                "version": "1.0.0",
-                "source": VALID_TETHER
-            },
-            "event": {
-                "id": "evt_j13b_real_001",
-                "name": "coding.task_completed",
-                "data": {"project": "tethers"}
-            },
-            "facts": {"project.type": "software"},
-            "capabilities": [{
-                "name": "lantern.task.record",
-                "version": "1.0.0",
-                "inputs": {"project": "string"},
-                "effects": ["lantern.write"],
-                "reversibility": "compensatable"
-            }]
-        });
+        let request = core9b_valid_request("eval_j13b_real_001", "fixture.start");
         let wire = session
             .evaluate_tether("eval_j13b_real_001", &request)
             .expect("real retained tethers.evaluate call");
@@ -468,20 +472,18 @@ mod tests {
             panic!("expected Matched wire, got {wire:?}");
         };
         assert_eq!(response["evaluation_id"], "eval_j13b_real_001");
-        assert_eq!(response["event_id"], "evt_j13b_real_001");
+        assert_eq!(response["event_id"], "evt_eval_j13b_real_001");
         assert_eq!(response["status"], "matched");
 
-        let mut second_request = request;
-        second_request["evaluation_id"] = Value::String("eval_j13b_real_002".to_owned());
-        second_request["event"]["id"] = Value::String("evt_j13b_real_002".to_owned());
-        let second_wire = session
+        let second_request = core9b_valid_request("eval_j13b_real_002", "fixture.start");
+        let wire = session
             .evaluate_tether("eval_j13b_real_002", &second_request)
             .expect("second real retained tethers.evaluate call");
-        let PlannerResponseWire::Matched(second) = second_wire else {
-            panic!("expected Matched wire, got {second_wire:?}");
+        let PlannerResponseWire::Matched(second) = wire else {
+            panic!("expected Matched wire, got {wire:?}");
         };
         assert_eq!(second["evaluation_id"], "eval_j13b_real_002");
-        assert_eq!(second["event_id"], "evt_j13b_real_002");
+        assert_eq!(second["event_id"], "evt_eval_j13b_real_002");
         assert_eq!(second["status"], "matched");
         session.shutdown();
     }
@@ -499,5 +501,558 @@ mod tests {
         let unknown_string = serde_json::json!({"status": "completed", "evaluation_id": "eval-1"});
         let result = classify_wire_response("eval-1", unknown_string);
         assert!(matches!(result, Ok(PlannerResponseWire::Unknown { .. })));
+    }
+
+    // =====================================================================
+    // CORE-9B cross-language rehearsal tests (T4–T14)
+    // =====================================================================
+
+    const CORE_REHEARSAL_TETHER: &str = "tether \"core rehearsal\"\n\nanchor\n    fixture.start\n\nwhen\n\ndo\n    notify\n        message: anchor.message\n";
+
+    /// Build a valid CORE-8B extended request matching the OCaml wire test
+    /// fixture.  Capabilities include bridge metadata for the real
+    /// fixture-ping provider.
+    fn core9b_valid_request(evaluation_id: &str, event_name: &str) -> Value {
+        serde_json::json!({
+            "protocol_version": "0.1",
+            "language_version": "0.1",
+            "evaluation_id": evaluation_id,
+            "tether": {
+                "id": "core-rehearsal",
+                "version": "1",
+                "source": CORE_REHEARSAL_TETHER
+            },
+            "event": {
+                "id": format!("evt_{evaluation_id}"),
+                "name": event_name,
+                "data": { "message": "Hello Core" }
+            },
+            "facts": {},
+            "capabilities": [{
+                "name": "fixture.ping",
+                "version": "1.0.0",
+                "inputs": {"message": "string"},
+                "effects": ["fixture.test"],
+                "reversibility": "compensatable",
+                "manifest_digest": "sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b",
+                "bridge_capability_version": 1,
+                "bridge_provider_identity": "tethers-stdio-fixture"
+            }],
+            "core_environment": {
+                "program_id": "program.core9b",
+                "core_version": "1",
+                "capabilities": [{
+                    "source_name": "notify",
+                    "capability_id": "cap.semantic.notify",
+                    "contract_digest": "CORE-CONTRACT-9B",
+                    "runtime_name": "fixture.ping"
+                }],
+                "input_facts": []
+            }
+        })
+    }
+
+    /// Build a request without core_environment for legacy evaluation.
+    fn core9b_legacy_request(evaluation_id: &str, event_name: &str) -> Value {
+        serde_json::json!({
+            "protocol_version": "0.1",
+            "language_version": "0.1",
+            "evaluation_id": evaluation_id,
+            "tether": {
+                "id": "core-rehearsal",
+                "version": "1",
+                "source": CORE_REHEARSAL_TETHER
+            },
+            "event": {
+                "id": format!("evt_{evaluation_id}"),
+                "name": event_name,
+                "data": { "message": "Hello Core" }
+            },
+            "facts": {},
+            "capabilities": [{
+                "name": "fixture.ping",
+                "version": "1.0.0",
+                "inputs": {"message": "string"},
+                "effects": ["fixture.test"],
+                "reversibility": "compensatable"
+            }]
+        })
+    }
+
+    // T4: MCP tools/list contains tethers.validate and tethers.evaluate
+    //     only.  No legacy or rehearsal tools remain.
+    #[test]
+    fn core9b_t4_mcp_tools_list_contains_two() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let tools = session.list_tools().expect("tools/list");
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t.get("name").and_then(Value::as_str))
+            .collect();
+        assert!(
+            names.contains(&"tethers.validate"),
+            "tethers.validate missing: {names:?}"
+        );
+        assert!(
+            names.contains(&"tethers.evaluate"),
+            "tethers.evaluate missing: {names:?}"
+        );
+        assert_eq!(names.len(), 2, "expected exactly 2 tools, got {names:?}");
+        session.shutdown();
+    }
+
+    // T5: tethers.evaluate now uses the Core pipeline.  A request with
+    //     core_environment produces Matched with program_digest.
+    #[test]
+    fn core9b_t5_evaluate_is_core() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_valid_request("eval_t5_core", "fixture.start");
+        let wire = session
+            .evaluate_tether("eval_t5_core", &request)
+            .expect("evaluate_tether");
+        let PlannerResponseWire::Matched(response) = wire else {
+            panic!("T5: expected Matched, got {wire:?}");
+        };
+        assert_eq!(response["status"], "matched");
+        assert_eq!(response["evaluation_id"], "eval_t5_core");
+        // program_digest must be top-level
+        let pd = response
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("program_digest missing");
+        assert!(pd.starts_with("sha256:"));
+        session.shutdown();
+    }
+
+    // T6: tethers.evaluate with core_environment reaches Core pipeline
+    //     and returns Matched with program_digest.
+    #[test]
+    fn core9b_t6_new_evaluate_reaches_core() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_valid_request("eval_t6_core", "fixture.start");
+        let wire = session
+            .evaluate_tether("eval_t6_core", &request)
+            .expect("evaluate_tether");
+        let PlannerResponseWire::Matched(response) = wire else {
+            panic!("T6: expected Matched, got {wire:?}");
+        };
+        assert_eq!(response["status"], "matched");
+        assert_eq!(response["evaluation_id"], "eval_t6_core");
+        assert_eq!(response["event_id"], "evt_eval_t6_core");
+        // program_digest must be a top-level sibling of plan
+        let pd = response
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("program_digest missing from top level");
+        assert!(
+            pd.starts_with("sha256:"),
+            "program_digest must start with sha256:"
+        );
+        assert_eq!(pd.len(), 71, "program_digest must be sha256: + 64 hex");
+        // plan must NOT contain program_digest
+        let plan = response.get("plan").expect("plan missing");
+        assert!(
+            plan.get("program_digest").is_none(),
+            "program_digest must NOT be inside plan"
+        );
+        session.shutdown();
+    }
+
+    // T7: tethers.evaluate with core_environment is the single production
+    //     route.  Verify it works with a valid extended request.
+    #[test]
+    fn core9b_t7_core_evaluate_works() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_valid_request("eval_t7_core_method", "fixture.start");
+        let wire = session
+            .evaluate_tether("eval_t7_core_method", &request)
+            .expect("evaluate_tether");
+        match wire {
+            PlannerResponseWire::Matched(response) => {
+                assert_eq!(response["status"], "matched");
+                assert_eq!(response["evaluation_id"], "eval_t7_core_method");
+            }
+            other => panic!("T7: expected Matched from core evaluate, got {other:?}"),
+        }
+        session.shutdown();
+    }
+
+    // T8: tethers.evaluate with core_environment returns Matched for a
+    //     valid extended request.
+    #[test]
+    fn core9b_t8_core_evaluate_returns_matched() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_valid_request("eval_t8_core_method", "fixture.start");
+        let wire = session
+            .evaluate_tether("eval_t8_core_method", &request)
+            .expect("evaluate_tether");
+        match wire {
+            PlannerResponseWire::Matched(response) => {
+                assert_eq!(response["status"], "matched");
+                assert_eq!(response["evaluation_id"], "eval_t8_core_method");
+            }
+            other => panic!("T8: expected Matched from core evaluate, got {other:?}"),
+        }
+        session.shutdown();
+    }
+
+    // T9: Core request without core_environment fails with
+    //     missing_core_environment through the public tethers.evaluate.
+    #[test]
+    fn core9b_t9_no_core_environment_fails() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_legacy_request("eval_t9_no_core", "fixture.start");
+        let wire = session
+            .evaluate_tether("eval_t9_no_core", &request)
+            .expect("evaluate_tether");
+        match wire {
+            PlannerResponseWire::Error(response) => {
+                let code = response
+                    .pointer("/error/code")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                assert_eq!(
+                    code, "missing_core_environment",
+                    "expected missing_core_environment error, got {code}"
+                );
+            }
+            other => panic!("T9: expected Error for missing core_environment, got {other:?}"),
+        }
+        session.shutdown();
+    }
+
+    // T10: Identity separation — source_name, capability_id, contract_digest
+    //      are Core identities; runtime_name, capability are runtime
+    //      identities.  No derivation between them.
+    #[test]
+    fn core9b_t10_identity_separation() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_valid_request("eval_t10_identity", "fixture.start");
+        let wire = session
+            .evaluate_tether("eval_t10_identity", &request)
+            .expect("evaluate_tether");
+        let PlannerResponseWire::Matched(response) = wire else {
+            panic!("T10: expected Matched, got {wire:?}");
+        };
+        let plan = response.get("plan").expect("plan missing");
+        let actions = plan
+            .get("actions")
+            .and_then(Value::as_array)
+            .expect("actions missing");
+        assert_eq!(actions.len(), 1);
+        let action = &actions[0];
+        // Runtime identity: the capability the provider will execute
+        assert_eq!(
+            action.get("capability").and_then(Value::as_str),
+            Some("fixture.ping"),
+            "runtime capability must be fixture.ping"
+        );
+        // The request capabilities must have the Core semantic identity
+        let caps = request
+            .get("capabilities")
+            .and_then(Value::as_array)
+            .expect("capabilities");
+        assert_eq!(caps.len(), 1);
+        let cap = &caps[0];
+        assert_eq!(
+            cap.get("name").and_then(Value::as_str),
+            Some("fixture.ping"),
+            "runtime capability name must be fixture.ping"
+        );
+        // Core binding in core_environment
+        let core_caps = request
+            .pointer("/core_environment/capabilities")
+            .and_then(Value::as_array)
+            .expect("core_environment.capabilities");
+        assert_eq!(core_caps.len(), 1);
+        let cc = &core_caps[0];
+        assert_eq!(
+            cc.get("source_name").and_then(Value::as_str),
+            Some("notify"),
+            "Core source_name must be notify"
+        );
+        assert_eq!(
+            cc.get("capability_id").and_then(Value::as_str),
+            Some("cap.semantic.notify"),
+            "Core capability_id must be cap.semantic.notify"
+        );
+        assert_eq!(
+            cc.get("contract_digest").and_then(Value::as_str),
+            Some("CORE-CONTRACT-9B"),
+            "Core contract_digest must be CORE-CONTRACT-9B"
+        );
+        assert_eq!(
+            cc.get("runtime_name").and_then(Value::as_str),
+            Some("fixture.ping"),
+            "runtime_name must be fixture.ping"
+        );
+        session.shutdown();
+    }
+
+    // T11: Bridge metadata separation — core_environment must NOT contain
+    //      manifest_digest, bridge_capability_version, or
+    //      bridge_provider_identity.  The top-level runtime capability
+    //      MUST contain them.
+    #[test]
+    fn core9b_t11_bridge_metadata_separation() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_valid_request("eval_t11_bridge", "fixture.start");
+        // core_environment must NOT contain bridge metadata
+        let core_env = request.get("core_environment").expect("core_environment");
+        assert!(
+            core_env.get("manifest_digest").is_none(),
+            "core_environment must not contain manifest_digest"
+        );
+        assert!(
+            core_env.get("bridge_capability_version").is_none(),
+            "core_environment must not contain bridge_capability_version"
+        );
+        assert!(
+            core_env.get("bridge_provider_identity").is_none(),
+            "core_environment must not contain bridge_provider_identity"
+        );
+        // Top-level runtime capability MUST contain bridge metadata
+        let caps = request
+            .get("capabilities")
+            .and_then(Value::as_array)
+            .expect("capabilities");
+        assert_eq!(caps.len(), 1);
+        let cap = &caps[0];
+        assert_eq!(
+            cap.get("manifest_digest").and_then(Value::as_str),
+            Some("sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b"),
+            "runtime capability must have manifest_digest"
+        );
+        assert_eq!(
+            cap.get("bridge_capability_version").and_then(Value::as_i64),
+            Some(1),
+            "runtime capability must have bridge_capability_version = 1"
+        );
+        assert_eq!(
+            cap.get("bridge_provider_identity").and_then(Value::as_str),
+            Some("tethers-stdio-fixture"),
+            "runtime capability must have bridge_provider_identity"
+        );
+        // Send through core and verify it still matches
+        let wire = session
+            .evaluate_tether("eval_t11_bridge", &request)
+            .expect("evaluate_tether");
+        let PlannerResponseWire::Matched(_) = wire else {
+            panic!("T11: expected Matched, got {wire:?}");
+        };
+        session.shutdown();
+    }
+
+    // T12: Real cross-language E2E — Rust request → real OCaml MCP binary
+    //      → tethers.evaluate → Tethers_core_wire → CORE-8B → canonical
+    //      Core → Runtime Plan.
+    //
+    //      This is the mandatory proof that the public production route
+    //      delivers a canonical Core plan.
+    #[test]
+    fn core9b_t12_real_cross_language_e2e() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_valid_request("eval_core9b_001", "fixture.start");
+        let wire = session
+            .evaluate_tether("eval_core9b_001", &request)
+            .expect("evaluate_tether E2E");
+        let PlannerResponseWire::Matched(response) = wire else {
+            panic!("T12: expected Matched, got {wire:?}");
+        };
+
+        // Correlation fields
+        assert_eq!(response["protocol_version"], "0.1");
+        assert_eq!(response["evaluation_id"], "eval_core9b_001");
+        assert_eq!(response["event_id"], "evt_eval_core9b_001");
+        assert_eq!(response["tether_id"], "core-rehearsal");
+        assert_eq!(response["tether_version"], "1");
+
+        // Plan structure
+        let plan = response.get("plan").expect("plan missing");
+        let plan_id = plan.get("id").and_then(Value::as_str).expect("plan.id");
+        assert_eq!(
+            plan_id, "eval_core9b_001/plan",
+            "plan.id must be eval_id/plan"
+        );
+
+        // program_digest at top level (sibling of plan), NOT inside plan
+        let pd = response
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("program_digest missing from top level");
+        assert!(
+            pd.starts_with("sha256:"),
+            "program_digest must start with sha256:"
+        );
+        assert_eq!(
+            pd.len(),
+            71,
+            "program_digest must be sha256: + 64 hex chars"
+        );
+        assert!(
+            plan.get("program_digest").is_none(),
+            "program_digest must NOT be inside plan"
+        );
+
+        // Actions
+        let actions = plan
+            .get("actions")
+            .and_then(Value::as_array)
+            .expect("actions");
+        assert_eq!(actions.len(), 1, "expected exactly one action");
+        let action = &actions[0];
+        assert_eq!(
+            action.get("capability").and_then(Value::as_str),
+            Some("fixture.ping"),
+            "action capability must be fixture.ping"
+        );
+        let args = action.get("arguments").expect("action arguments");
+        assert_eq!(
+            args.get("message").and_then(Value::as_str),
+            Some("Hello Core"),
+            "action arguments.message must be Hello Core"
+        );
+        assert_eq!(
+            action.get("idempotency_key").and_then(Value::as_str),
+            Some("eval_core9b_001/action_1"),
+            "idempotency_key must be eval_id/action_1"
+        );
+
+        // Effects
+        let effects = action
+            .get("effects")
+            .and_then(Value::as_array)
+            .expect("effects");
+        assert!(
+            effects.iter().any(|e| e.as_str() == Some("fixture.test")),
+            "effects must contain fixture.test"
+        );
+
+        // Bridge metadata in the plan action
+        assert_eq!(
+            action.get("manifest_digest").and_then(Value::as_str),
+            Some("sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b"),
+            "action manifest_digest must match fixture-ping"
+        );
+        assert_eq!(
+            action
+                .get("bridge_capability_version")
+                .and_then(Value::as_i64),
+            Some(1),
+            "action bridge_capability_version must be 1"
+        );
+        assert_eq!(
+            action
+                .get("bridge_provider_identity")
+                .and_then(Value::as_str),
+            Some("tethers-stdio-fixture"),
+            "action bridge_provider_identity must be tethers-stdio-fixture"
+        );
+
+        // Trail is empty (compatibility scaffolding)
+        let trail = response.get("trail").expect("trail");
+        assert!(
+            trail.is_array() && trail.as_array().unwrap().is_empty(),
+            "trail must be empty array"
+        );
+
+        // No Action is dispatched — this is a planner-only boundary
+        session.shutdown();
+    }
+
+    // T13: Wrong event through the real Core flow — expect NotMatched.
+    #[test]
+    fn core9b_t13_wrong_event_not_matched() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+        let request = core9b_valid_request("eval_t13_wrong", "fixture.other");
+        let wire = session
+            .evaluate_tether("eval_t13_wrong", &request)
+            .expect("evaluate_tether wrong event");
+        match wire {
+            PlannerResponseWire::NotMatched(response) => {
+                assert_eq!(response["status"], "not_matched");
+                assert_eq!(response["evaluation_id"], "eval_t13_wrong");
+                assert_eq!(response["event_id"], "evt_eval_t13_wrong");
+            }
+            other => panic!("T13: expected NotMatched, got {other:?}"),
+        }
+        session.shutdown();
+    }
+
+    // T14: Occurrence identity — same semantic program, different
+    //      evaluation_id produces same ProgramDigest but different
+    //      plan.id and idempotency keys.
+    #[test]
+    fn core9b_t14_occurrence_identity() {
+        let (engine_path, working_dir) = require_engine();
+        let mut session = EngineSession::launch(&engine_path, &working_dir).expect("engine launch");
+
+        let req1 = core9b_valid_request("eval_core9b_001", "fixture.start");
+        let wire1 = session
+            .evaluate_tether("eval_core9b_001", &req1)
+            .expect("first evaluation");
+        let PlannerResponseWire::Matched(resp1) = wire1 else {
+            panic!("T14: expected Matched for first eval, got {wire1:?}")
+        };
+
+        let req2 = core9b_valid_request("eval_core9b_002", "fixture.start");
+        let wire2 = session
+            .evaluate_tether("eval_core9b_002", &req2)
+            .expect("second evaluation");
+        let PlannerResponseWire::Matched(resp2) = wire2 else {
+            panic!("T14: expected Matched for second eval, got {wire2:?}")
+        };
+
+        let pd1 = resp1
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("first program_digest");
+        let pd2 = resp2
+            .get("program_digest")
+            .and_then(Value::as_str)
+            .expect("second program_digest");
+        assert_eq!(pd1, pd2, "same program must produce same program_digest");
+
+        let pid1 = resp1
+            .pointer("/plan/id")
+            .and_then(Value::as_str)
+            .expect("first plan.id");
+        let pid2 = resp2
+            .pointer("/plan/id")
+            .and_then(Value::as_str)
+            .expect("second plan.id");
+        assert_ne!(
+            pid1, pid2,
+            "different evaluations must produce different plan.id"
+        );
+        assert_eq!(pid1, "eval_core9b_001/plan");
+        assert_eq!(pid2, "eval_core9b_002/plan");
+
+        let ik1 = resp1
+            .pointer("/plan/actions/0/idempotency_key")
+            .and_then(Value::as_str)
+            .expect("first idempotency_key");
+        let ik2 = resp2
+            .pointer("/plan/actions/0/idempotency_key")
+            .and_then(Value::as_str)
+            .expect("second idempotency_key");
+        assert_ne!(
+            ik1, ik2,
+            "different evaluations must produce different idempotency keys"
+        );
+        assert_eq!(ik1, "eval_core9b_001/action_1");
+        assert_eq!(ik2, "eval_core9b_002/action_1");
+
+        session.shutdown();
     }
 }

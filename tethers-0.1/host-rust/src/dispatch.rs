@@ -117,6 +117,24 @@ pub struct AuthorisationEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Group join entry
+// ---------------------------------------------------------------------------
+
+/// A durable record of one `together` group's join decision, written after
+/// every member reached a terminal outcome.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct GroupJoinEntry {
+    pub evaluation_id: String,
+    pub group_id: String,
+    pub member_action_ids: Vec<String>,
+    /// True only when every member succeeded (Completed or replay-blocked
+    /// completed-success); a non-success join blocks all later Actions.
+    pub joined: bool,
+    /// Host-supplied wall-clock timestamp in milliseconds since Unix epoch.
+    pub timestamp_unix_ms: u64,
+}
+
+// ---------------------------------------------------------------------------
 // DispatchReadyAction — proof token
 // ---------------------------------------------------------------------------
 
@@ -285,6 +303,14 @@ pub trait Trail: sealed::Sealed {
     /// Called before evaluation continues or stops.  On failure, the
     /// caller must return an error and neither evaluate nor dispatch.
     fn append_event_admission(&mut self, entry: &EventAdmissionEntry) -> Result<(), TrailError>;
+    /// Serialize, append, flush, and sync one `together` group's join
+    /// decision to durable storage.  Returns Ok(()) only when the record
+    /// is durable.
+    ///
+    /// Called after every group member reached a terminal outcome.  On
+    /// failure the members have already occurred; callers must record an
+    /// audit-failure result rather than claiming the join succeeded.
+    fn append_group_join(&mut self, entry: &GroupJoinEntry) -> Result<(), TrailError>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -402,6 +428,24 @@ impl Trail for FileTrail {
 
         Ok(())
     }
+
+    fn append_group_join(&mut self, entry: &GroupJoinEntry) -> Result<(), TrailError> {
+        let line = serde_json::to_string(entry)
+            .map_err(|e| TrailError::WriteFailed(format!("serialization failed: {e}")))?;
+
+        writeln!(self.file, "{line}")
+            .map_err(|e| TrailError::WriteFailed(format!("write failed: {e}")))?;
+
+        self.file
+            .flush()
+            .map_err(|e| TrailError::FlushFailed(format!("flush failed: {e}")))?;
+
+        self.file
+            .sync_data()
+            .map_err(|e| TrailError::FlushFailed(format!("sync_data failed: {e}")))?;
+
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -425,6 +469,7 @@ pub struct RecordingTrail {
     pub event_log: Option<std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>>,
     pub event_admission_entries: Vec<EventAdmissionEntry>,
     pub injected_event_admission_error: Option<TrailError>,
+    pub group_join_entries: Vec<GroupJoinEntry>,
 }
 
 #[cfg(test)]
@@ -440,6 +485,7 @@ impl RecordingTrail {
             event_log: None,
             event_admission_entries: Vec::new(),
             injected_event_admission_error: None,
+            group_join_entries: Vec::new(),
         }
     }
 }
@@ -489,6 +535,10 @@ impl Trail for RecordingTrail {
             return Err(err);
         }
         self.event_admission_entries.push(entry.clone());
+        Ok(())
+    }
+    fn append_group_join(&mut self, entry: &GroupJoinEntry) -> Result<(), TrailError> {
+        self.group_join_entries.push(entry.clone());
         Ok(())
     }
 }

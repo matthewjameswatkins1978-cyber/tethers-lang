@@ -1,0 +1,29 @@
+{
+  "protocol_version": "0.1",
+  "language_version": "0.1",
+  "evaluation_id": "eval_together_indent_001",
+  "tether": {
+    "id": "wrong-member-indent",
+    "version": "c1-v1",
+    "source": "tether \"Wrong member indent\"\n\nanchor\n    morning.started\n\nwhen\n    ready is true\n\ndo\n    together\n      files.inspect\n        path: \"one.txt\"\n\n      files.inspect\n        path: \"two.txt\"\n"
+  },
+  "event": {
+    "id": "evt_together_indent_001",
+    "name": "morning.started",
+    "data": {}
+  },
+  "facts": {
+    "ready": true
+  },
+  "capabilities": [
+    {
+      "name": "files.inspect",
+      "version": "1.0.0",
+      "inputs": {
+        "path": "string"
+      },
+      "effects": ["files.read"],
+      "reversibility": "none"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"schema":"tethers.cli/1","command":"plug conform","status":"approval_required","exit_code":5,"data":{},"error":{"code":"conformance_execution_approval_required","message":"conformance executes provider code under process supervision, not isolation; pass --allow-non-isolated-supervised-execution to proceed"}}

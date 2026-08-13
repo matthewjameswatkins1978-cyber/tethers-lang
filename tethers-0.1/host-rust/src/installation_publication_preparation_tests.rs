@@ -138,7 +138,7 @@ impl Fixture {
         let archive = base.join("test.tetherplug");
         fs::write(
             &archive,
-            crate::pdf_tools::build_reference_package(b"j24k3e1-test").unwrap(),
+            crate::test_fixture_package::build_fixture_package(b"j24k3e1-test").unwrap(),
         )
         .unwrap();
         let quarantine_root = base.join("quarantine");
@@ -681,7 +681,7 @@ fn j24k3e1_non_publication_action_is_refused_without_mutation() {
     let archive = base.join("test.tetherplug");
     fs::write(
         &archive,
-        crate::pdf_tools::build_reference_package(b"j24k3e1-early").unwrap(),
+        crate::test_fixture_package::build_fixture_package(b"j24k3e1-early").unwrap(),
     )
     .unwrap();
     let quarantine_root = base.join("quarantine");
