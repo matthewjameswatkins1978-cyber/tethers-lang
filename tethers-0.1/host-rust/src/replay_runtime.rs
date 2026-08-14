@@ -50,19 +50,22 @@ pub trait ReplayAdmissionGuard {
 }
 
 pub trait ReplayAuthority {
-    fn admit<'a>(
-        &'a mut self,
+    fn admit(
+        &self,
         logical_key: &LogicalExecutionKey,
         binding: &ExecutionBinding,
-    ) -> Result<Box<dyn ReplayAdmissionGuard + 'a>, ReplayError>;
+    ) -> Result<Box<dyn ReplayAdmissionGuard>, ReplayError>;
 }
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// Lazy normal-execution authority. Merely constructing this value neither
 /// opens nor provisions replay storage.
 pub struct FileReplayAuthority {
     root: Option<PathBuf>,
     #[cfg(windows)]
-    ledger: Option<crate::replay_windows::ReplayLedger>,
+    ledger: RefCell<Option<Rc<crate::replay_windows::ReplayLedger>>>,
 }
 
 impl FileReplayAuthority {
@@ -70,13 +73,13 @@ impl FileReplayAuthority {
         Self {
             root: root.map(Path::to_path_buf),
             #[cfg(windows)]
-            ledger: None,
+            ledger: RefCell::new(None),
         }
     }
 }
 
 #[cfg(windows)]
-impl ReplayAdmissionGuard for crate::replay_windows::ReplayAdmission<'_> {
+impl ReplayAdmissionGuard for crate::replay_windows::ReplayAdmission {
     fn execution_id(&self) -> &str {
         crate::replay_windows::ReplayAdmission::execution_id(self)
     }
@@ -107,25 +110,31 @@ impl ReplayAdmissionGuard for crate::replay_windows::ReplayAdmission<'_> {
 }
 
 impl ReplayAuthority for FileReplayAuthority {
-    fn admit<'a>(
-        &'a mut self,
+    fn admit(
+        &self,
         logical_key: &LogicalExecutionKey,
         binding: &ExecutionBinding,
-    ) -> Result<Box<dyn ReplayAdmissionGuard + 'a>, ReplayError> {
+    ) -> Result<Box<dyn ReplayAdmissionGuard>, ReplayError> {
         let root = self
             .root
             .as_deref()
             .ok_or(ReplayError::PersistenceUnavailable)?;
         #[cfg(windows)]
         {
-            if self.ledger.is_none() {
-                self.ledger = Some(crate::replay_windows::ReplayLedger::open(root)?);
+            let mut ledger_ref = self.ledger.borrow_mut();
+            if ledger_ref.is_none() {
+                *ledger_ref = Some(Rc::new(crate::replay_windows::ReplayLedger::open(root)?));
             }
-            let admission = self
-                .ledger
-                .as_ref()
-                .ok_or(ReplayError::PersistenceUnavailable)?
-                .admit_or_recover(logical_key.clone(), binding.clone())?;
+            let ledger = Rc::clone(
+                ledger_ref
+                    .as_ref()
+                    .ok_or(ReplayError::PersistenceUnavailable)?,
+            );
+            let admission = crate::replay_windows::ReplayLedger::admit_or_recover_owned(
+                &ledger,
+                logical_key.clone(),
+                binding.clone(),
+            )?;
             Ok(Box::new(admission))
         }
         #[cfg(not(windows))]
@@ -158,9 +167,9 @@ pub mod test_support {
         pub fail_at: Option<FailPoint>,
         pub events: Rc<RefCell<Vec<&'static str>>>,
         pub guard_held: Rc<Cell<bool>>,
-        pub admissions: usize,
-        pub logical_keys: Vec<LogicalExecutionKey>,
-        pub bindings: Vec<ExecutionBinding>,
+        pub admissions: Rc<RefCell<usize>>,
+        pub logical_keys: Rc<RefCell<Vec<LogicalExecutionKey>>>,
+        pub bindings: Rc<RefCell<Vec<ExecutionBinding>>>,
     }
 
     impl Default for TestReplayAuthority {
@@ -171,9 +180,9 @@ pub mod test_support {
                 fail_at: None,
                 events: Rc::new(RefCell::new(Vec::new())),
                 guard_held: Rc::new(Cell::new(false)),
-                admissions: 0,
-                logical_keys: Vec::new(),
-                bindings: Vec::new(),
+                admissions: Rc::new(RefCell::new(0)),
+                logical_keys: Rc::new(RefCell::new(Vec::new())),
+                bindings: Rc::new(RefCell::new(Vec::new())),
             }
         }
     }
@@ -239,15 +248,15 @@ pub mod test_support {
     }
 
     impl ReplayAuthority for TestReplayAuthority {
-        fn admit<'a>(
-            &'a mut self,
+        fn admit(
+            &self,
             logical_key: &LogicalExecutionKey,
             binding: &ExecutionBinding,
-        ) -> Result<Box<dyn ReplayAdmissionGuard + 'a>, ReplayError> {
+        ) -> Result<Box<dyn ReplayAdmissionGuard>, ReplayError> {
             self.events.borrow_mut().push("admit");
-            self.admissions += 1;
-            self.logical_keys.push(logical_key.clone());
-            self.bindings.push(binding.clone());
+            *self.admissions.borrow_mut() += 1;
+            self.logical_keys.borrow_mut().push(logical_key.clone());
+            self.bindings.borrow_mut().push(binding.clone());
             if self.fail_at == Some(FailPoint::Admit) {
                 return Err(ReplayError::PersistenceUnavailable);
             }

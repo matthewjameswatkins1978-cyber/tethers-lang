@@ -13,6 +13,7 @@ use std::ffi::c_void;
 use std::mem::{size_of, MaybeUninit};
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf, Prefix};
+use std::rc::Rc;
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND,
@@ -1421,18 +1422,20 @@ impl ReplayLedger {
         open_or_create_directory(&prefix, &execution_digest)
     }
 
-    pub fn admit_or_recover(
-        &self,
+    pub fn admit_or_recover_owned(
+        ledger: &Rc<ReplayLedger>,
         logical_key: LogicalExecutionKey,
         binding: ExecutionBinding,
-    ) -> Result<ReplayAdmission<'_>, ReplayError> {
-        let lock = LogicalKeyLock::acquire(&self.locks, &logical_key)?;
-        if let Some(claim) = self.existing_claim(&logical_key, PersistenceFaultPoint::ClaimRead)? {
+    ) -> Result<ReplayAdmission, ReplayError> {
+        let lock = LogicalKeyLock::acquire(&ledger.locks, &logical_key)?;
+        if let Some(claim) =
+            ledger.existing_claim(&logical_key, PersistenceFaultPoint::ClaimRead)?
+        {
             persistence_fault(PersistenceFaultPoint::ClaimCollisionReopen)?;
             claim.require_binding(&binding)?;
-            let (state, generations) = self.reconstruct(&claim)?;
+            let (state, generations) = ledger.reconstruct(&claim)?;
             return Ok(ReplayAdmission {
-                ledger: self,
+                ledger: Rc::clone(ledger),
                 _lock: lock,
                 claim,
                 generations,
@@ -1449,18 +1452,15 @@ impl ReplayLedger {
             claim.logical_key.filename_digest()
         ))?;
         match publish_new_canonical_file_with_temporary_stem(
-            &self.claims,
+            &ledger.claims,
             &name,
             claim.logical_key.filename_digest(),
             &bytes,
         ) {
             Ok(PublishNewOutcome::Published) => {}
-            // The native primitive intentionally retains its keyed temporary
-            // after an ambiguous or collision failure. Such evidence can
-            // never accompany a usable admission.
             Err(_) => return unavailable(),
         }
-        let published = self
+        let published = ledger
             .existing_claim(
                 &claim.logical_key,
                 PersistenceFaultPoint::ClaimCollisionReopen,
@@ -1470,7 +1470,7 @@ impl ReplayLedger {
             return unavailable();
         }
         Ok(ReplayAdmission {
-            ledger: self,
+            ledger: Rc::clone(ledger),
             _lock: lock,
             claim,
             generations: Vec::new(),
@@ -1480,8 +1480,8 @@ impl ReplayLedger {
     }
 }
 
-pub struct ReplayAdmission<'a> {
-    ledger: &'a ReplayLedger,
+pub struct ReplayAdmission {
+    ledger: Rc<ReplayLedger>,
     _lock: LogicalKeyLock,
     claim: Claim,
     generations: Vec<Generation>,
@@ -1489,7 +1489,7 @@ pub struct ReplayAdmission<'a> {
     fresh: bool,
 }
 
-impl ReplayAdmission<'_> {
+impl ReplayAdmission {
     pub fn execution_id(&self) -> &str {
         self.claim.execution_id.as_str()
     }
@@ -1691,6 +1691,10 @@ mod tests {
             Ok(ProvisionReplayOutcome::Provisioned)
         );
         Some(root)
+    }
+
+    fn open_ledger(root: &Path) -> Rc<ReplayLedger> {
+        Rc::new(ReplayLedger::open(root).unwrap())
     }
 
     fn claim_path(root: &Path, key: &LogicalExecutionKey) -> PathBuf {
@@ -2128,13 +2132,17 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-lock-faults") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
+        let ledger = Rc::new(ReplayLedger::open(&root).unwrap());
         for point in [
             PersistenceFaultPoint::LockFileOpen,
             PersistenceFaultPoint::LockAcquisition,
         ] {
             let result = with_persistence_fault(point, || {
-                ledger.admit_or_recover(test_key("lock-fault"), test_binding("lock-fault"))
+                ReplayLedger::admit_or_recover_owned(
+                    &ledger,
+                    test_key("lock-fault"),
+                    test_binding("lock-fault"),
+                )
             });
             assert!(matches!(result, Err(ReplayError::PersistenceUnavailable)));
         }
@@ -2146,10 +2154,10 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-fresh-claim") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let admission = ledger
-            .admit_or_recover(test_key("fresh"), test_binding("fresh"))
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, test_key("fresh"), test_binding("fresh"))
+                .unwrap();
         assert!(admission.is_fresh());
         assert!(ExecutionId::parse(admission.execution_id().to_owned()).is_ok());
         assert_eq!(
@@ -2165,15 +2173,14 @@ mod tests {
         };
         let key = test_key("restart");
         let binding = test_binding("restart");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let first = ledger
-            .admit_or_recover(key.clone(), binding.clone())
+        let ledger = open_ledger(&root);
+        let first = ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone())
             .unwrap()
             .execution_id()
             .to_owned();
         drop(ledger);
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        let ledger = open_ledger(&root);
+        let recovered = ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
         assert!(!recovered.is_fresh());
         assert_eq!(recovered.execution_id(), first);
     }
@@ -2183,17 +2190,23 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-siblings") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let first = ledger
-            .admit_or_recover(test_key("sibling-a"), test_binding("sibling-a"))
-            .unwrap()
-            .execution_id()
-            .to_owned();
-        let second = ledger
-            .admit_or_recover(test_key("sibling-b"), test_binding("sibling-b"))
-            .unwrap()
-            .execution_id()
-            .to_owned();
+        let ledger = open_ledger(&root);
+        let first = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("sibling-a"),
+            test_binding("sibling-a"),
+        )
+        .unwrap()
+        .execution_id()
+        .to_owned();
+        let second = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("sibling-b"),
+            test_binding("sibling-b"),
+        )
+        .unwrap()
+        .execution_id()
+        .to_owned();
         assert_ne!(test_key("sibling-a"), test_key("sibling-b"));
         assert_ne!(first, second);
         assert_eq!(
@@ -2209,15 +2222,14 @@ mod tests {
         };
         let key = test_key("claim-collision");
         let binding = test_binding("claim-collision");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let winner = ledger
-            .admit_or_recover(key.clone(), binding.clone())
+        let ledger = open_ledger(&root);
+        let winner = ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone())
             .unwrap()
             .execution_id()
             .to_owned();
         drop(ledger);
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        let ledger = open_ledger(&root);
+        let recovered = ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
         assert!(!recovered.is_fresh());
         assert_eq!(recovered.execution_id(), winner);
     }
@@ -2228,16 +2240,19 @@ mod tests {
             return;
         };
         let key = test_key("binding-mismatch");
-        let ledger = ReplayLedger::open(&root).unwrap();
+        let ledger = open_ledger(&root);
         drop(
-            ledger
-                .admit_or_recover(key.clone(), test_binding("binding-mismatch"))
-                .unwrap(),
+            ReplayLedger::admit_or_recover_owned(
+                &ledger,
+                key.clone(),
+                test_binding("binding-mismatch"),
+            )
+            .unwrap(),
         );
         let mut changed = test_binding("binding-mismatch");
         changed.argument_digest = test_digest("changed");
         assert!(matches!(
-            ledger.admit_or_recover(key, changed),
+            ReplayLedger::admit_or_recover_owned(&ledger, key, changed),
             Err(ReplayError::BindingMismatch)
         ));
     }
@@ -2248,11 +2263,14 @@ mod tests {
             return;
         };
         let key = test_key("malformed-claim");
-        let ledger = ReplayLedger::open(&root).unwrap();
+        let ledger = open_ledger(&root);
         drop(
-            ledger
-                .admit_or_recover(key.clone(), test_binding("malformed-claim"))
-                .unwrap(),
+            ReplayLedger::admit_or_recover_owned(
+                &ledger,
+                key.clone(),
+                test_binding("malformed-claim"),
+            )
+            .unwrap(),
         );
         drop(ledger);
         let path = claim_path(&root, &key);
@@ -2273,9 +2291,10 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-claim-publication-fault") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
+        let ledger = open_ledger(&root);
         let result = with_persistence_fault(PersistenceFaultPoint::ClaimPublication, || {
-            ledger.admit_or_recover(
+            ReplayLedger::admit_or_recover_owned(
+                &ledger,
                 test_key("claim-publication-fault"),
                 test_binding("claim-publication-fault"),
             )
@@ -2289,10 +2308,10 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-g0") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(test_key("g0"), test_binding("g0"))
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, test_key("g0"), test_binding("g0"))
+                .unwrap();
         admission.publish_intent().unwrap();
         assert_eq!(admission.state(), ReplayState::IntentRecorded);
         let path = execution_directory(&root, admission.execution_id());
@@ -2304,10 +2323,10 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-g1") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(test_key("g1"), test_binding("g1"))
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, test_key("g1"), test_binding("g1"))
+                .unwrap();
         admission.publish_intent().unwrap();
         admission.publish_armed().unwrap();
         assert_eq!(admission.state(), ReplayState::InvocationArmed);
@@ -2324,10 +2343,13 @@ mod tests {
                 return;
             };
             let action = format!("g2-{state:?}");
-            let ledger = ReplayLedger::open(&root).unwrap();
-            let mut admission = ledger
-                .admit_or_recover(test_key(&action), test_binding(&action))
-                .unwrap();
+            let ledger = open_ledger(&root);
+            let mut admission = ReplayLedger::admit_or_recover_owned(
+                &ledger,
+                test_key(&action),
+                test_binding(&action),
+            )
+            .unwrap();
             admission.publish_intent().unwrap();
             admission.publish_armed().unwrap();
             admission
@@ -2342,10 +2364,13 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-g1-without-g0") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let admission = ledger
-            .admit_or_recover(test_key("g1-without-g0"), test_binding("g1-without-g0"))
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let admission = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("g1-without-g0"),
+            test_binding("g1-without-g0"),
+        )
+        .unwrap();
         let g0 = Generation::intent(&admission.claim).unwrap();
         let g1 = Generation::armed(&admission.claim, &g0).unwrap();
         let directory = execution_directory(&root, admission.execution_id());
@@ -2365,10 +2390,13 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-g2-without-g1") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let admission = ledger
-            .admit_or_recover(test_key("g2-without-g1"), test_binding("g2-without-g1"))
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let admission = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("g2-without-g1"),
+            test_binding("g2-without-g1"),
+        )
+        .unwrap();
         let g0 = Generation::intent(&admission.claim).unwrap();
         let g1 = Generation::armed(&admission.claim, &g0).unwrap();
         let g2 = Generation::terminal(
@@ -2400,13 +2428,13 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-illegal-transition") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let admission = ledger
-            .admit_or_recover(
-                test_key("illegal-transition"),
-                test_binding("illegal-transition"),
-            )
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let admission = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("illegal-transition"),
+            test_binding("illegal-transition"),
+        )
+        .unwrap();
         let g0 = Generation::intent(&admission.claim).unwrap();
         let mut value: Value = serde_json::from_slice(&g0.canonical_bytes().unwrap()).unwrap();
         let object = value.as_object_mut().unwrap();
@@ -2430,10 +2458,13 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-predecessor") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let admission = ledger
-            .admit_or_recover(test_key("predecessor"), test_binding("predecessor"))
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let admission = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("predecessor"),
+            test_binding("predecessor"),
+        )
+        .unwrap();
         let g0 = Generation::intent(&admission.claim).unwrap();
         let g1 = Generation::armed(&admission.claim, &g0).unwrap();
         let mut value: Value = serde_json::from_slice(&g1.canonical_bytes().unwrap()).unwrap();
@@ -2465,13 +2496,13 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-generation-collision") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(
-                test_key("generation-collision"),
-                test_binding("generation-collision"),
-            )
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("generation-collision"),
+            test_binding("generation-collision"),
+        )
+        .unwrap();
         let g0 = Generation::intent(&admission.claim).unwrap();
         let directory = execution_directory(&root, admission.execution_id());
         std::fs::create_dir_all(&directory).unwrap();
@@ -2496,13 +2527,13 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-generation-three") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(
-                test_key("generation-three"),
-                test_binding("generation-three"),
-            )
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("generation-three"),
+            test_binding("generation-three"),
+        )
+        .unwrap();
         admission.publish_intent().unwrap();
         admission.publish_armed().unwrap();
         admission
@@ -2520,15 +2551,11 @@ mod tests {
         };
         let key = test_key("reconstruct-claim");
         let binding = test_binding("reconstruct-claim");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        drop(
-            ledger
-                .admit_or_recover(key.clone(), binding.clone())
-                .unwrap(),
-        );
+        let ledger = open_ledger(&root);
+        drop(ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap());
         drop(ledger);
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        let ledger = open_ledger(&root);
+        let recovered = ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
         assert!(!recovered.is_fresh());
         assert_eq!(recovered.state(), ReplayState::ClaimedNoState);
     }
@@ -2540,15 +2567,14 @@ mod tests {
         };
         let key = test_key("reconstruct-g0");
         let binding = test_binding("reconstruct-g0");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(key.clone(), binding.clone())
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
         admission.publish_intent().unwrap();
         drop(admission);
         drop(ledger);
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        let ledger = open_ledger(&root);
+        let recovered = ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
         assert_eq!(recovered.state(), ReplayState::IntentRecorded);
     }
 
@@ -2559,17 +2585,18 @@ mod tests {
         };
         let key = test_key("reconstruct-g1");
         let binding = test_binding("reconstruct-g1");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(key.clone(), binding.clone())
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
         admission.publish_intent().unwrap();
         admission.publish_armed().unwrap();
         drop(admission);
         drop(ledger);
-        let ledger = ReplayLedger::open(&root).unwrap();
+        let ledger = open_ledger(&root);
         assert_eq!(
-            ledger.admit_or_recover(key, binding).unwrap().state(),
+            ReplayLedger::admit_or_recover_owned(&ledger, key, binding)
+                .unwrap()
+                .state(),
             ReplayState::InvocationArmed
         );
     }
@@ -2596,10 +2623,9 @@ mod tests {
         let action = format!("reconstruct-{label}");
         let key = test_key(&action);
         let binding = test_binding(&action);
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(key.clone(), binding.clone())
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
         admission.publish_intent().unwrap();
         admission.publish_armed().unwrap();
         admission
@@ -2607,8 +2633,8 @@ mod tests {
             .unwrap();
         drop(admission);
         drop(ledger);
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        let ledger = open_ledger(&root);
+        let recovered = ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
         assert!(!recovered.is_fresh());
         assert_eq!(recovered.state(), state);
     }
@@ -2622,10 +2648,10 @@ mod tests {
             let action = format!("recovered-{label}");
             let key = test_key(&action);
             let binding = test_binding(&action);
-            let ledger = ReplayLedger::open(&root).unwrap();
-            let mut fresh = ledger
-                .admit_or_recover(key.clone(), binding.clone())
-                .unwrap();
+            let ledger = open_ledger(&root);
+            let mut fresh =
+                ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone())
+                    .unwrap();
             if generations >= 1 {
                 fresh.publish_intent().unwrap();
             }
@@ -2635,8 +2661,9 @@ mod tests {
             drop(fresh);
             drop(ledger);
 
-            let ledger = ReplayLedger::open(&root).unwrap();
-            let mut recovered = ledger.admit_or_recover(key, binding).unwrap();
+            let ledger = open_ledger(&root);
+            let mut recovered =
+                ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
             assert!(!recovered.is_fresh());
             let before = tree_snapshot(&root);
             let result = match generations {
@@ -2657,10 +2684,9 @@ mod tests {
         };
         let key = test_key("recovered-terminal");
         let binding = test_binding("recovered-terminal");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut fresh = ledger
-            .admit_or_recover(key.clone(), binding.clone())
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut fresh =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
         fresh.publish_intent().unwrap();
         fresh.publish_armed().unwrap();
         fresh
@@ -2669,8 +2695,8 @@ mod tests {
         drop(fresh);
         drop(ledger);
 
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut recovered = ledger.admit_or_recover(key, binding).unwrap();
+        let ledger = open_ledger(&root);
+        let mut recovered = ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
         assert!(!recovered.is_fresh());
         let before = tree_snapshot(&root);
         assert!(recovered.publish_intent().is_err());
@@ -2706,10 +2732,13 @@ mod tests {
         let Some(root) = provisioned_test_root("ledger-malformed-chain") else {
             return;
         };
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let admission = ledger
-            .admit_or_recover(test_key("malformed-chain"), test_binding("malformed-chain"))
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let admission = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("malformed-chain"),
+            test_binding("malformed-chain"),
+        )
+        .unwrap();
         let directory = execution_directory(&root, admission.execution_id());
         drop(admission);
         drop(ledger);
@@ -2745,19 +2774,18 @@ mod tests {
         };
         let key = test_key("no-new-uuid");
         let binding = test_binding("no-new-uuid");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let first = ledger
-            .admit_or_recover(key.clone(), binding.clone())
+        let ledger = open_ledger(&root);
+        let first = ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone())
             .unwrap()
             .execution_id()
             .to_owned();
         drop(ledger);
         let claim_before = std::fs::read(claim_path(&root, &key)).unwrap();
         for _ in 0..2 {
-            let ledger = ReplayLedger::open(&root).unwrap();
-            let recovered = ledger
-                .admit_or_recover(key.clone(), binding.clone())
-                .unwrap();
+            let ledger = open_ledger(&root);
+            let recovered =
+                ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone())
+                    .unwrap();
             assert_eq!(recovered.execution_id(), first);
         }
         assert_eq!(
@@ -2773,10 +2801,9 @@ mod tests {
         };
         let key = test_key("populated-reopen");
         let binding = test_binding("populated-reopen");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(key.clone(), binding.clone())
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
         admission.publish_intent().unwrap();
         admission.publish_armed().unwrap();
         admission
@@ -2790,9 +2817,11 @@ mod tests {
             Ok(ProvisionReplayOutcome::AlreadyProvisioned)
         );
         assert_eq!(tree_snapshot(&root), before);
-        let ledger = ReplayLedger::open(&root).unwrap();
+        let ledger = open_ledger(&root);
         assert_eq!(
-            ledger.admit_or_recover(key, binding).unwrap().state(),
+            ReplayLedger::admit_or_recover_owned(&ledger, key, binding)
+                .unwrap()
+                .state(),
             ReplayState::Succeeded
         );
     }
@@ -2814,10 +2843,9 @@ mod tests {
 
         let key = test_key("fault-seams");
         let binding = test_binding("fault-seams");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(key.clone(), binding.clone())
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
         for point in [
             PersistenceFaultPoint::ChainDirectoryValidation,
             PersistenceFaultPoint::GenerationZeroPublication,
@@ -2850,20 +2878,21 @@ mod tests {
             PersistenceFaultPoint::DigestVerification,
             PersistenceFaultPoint::ChainDirectoryValidation,
         ] {
-            let ledger = ReplayLedger::open(&root).unwrap();
+            let ledger = open_ledger(&root);
             assert!(matches!(
                 with_persistence_fault(point, || {
-                    ledger.admit_or_recover(key.clone(), binding.clone())
+                    ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone())
                 }),
                 Err(ReplayError::PersistenceUnavailable)
             ));
         }
 
         let collision_root = provisioned_test_root("ledger-collision-reopen-fault").unwrap();
-        let collision_ledger = ReplayLedger::open(&collision_root).unwrap();
+        let collision_ledger = open_ledger(&collision_root);
         assert!(
             with_persistence_fault(PersistenceFaultPoint::ClaimCollisionReopen, || {
-                collision_ledger.admit_or_recover(
+                ReplayLedger::admit_or_recover_owned(
+                    &collision_ledger,
                     test_key("collision-reopen"),
                     test_binding("collision-reopen"),
                 )
@@ -3195,10 +3224,9 @@ mod tests {
         let key_a = test_key("claim-a");
         let key_b = test_key("claim-b");
         assert_ne!(key_a.as_digest(), key_b.as_digest());
-        let ledger = ReplayLedger::open(&root).unwrap();
+        let ledger = open_ledger(&root);
         drop(
-            ledger
-                .admit_or_recover(key_a.clone(), test_binding("claim-a"))
+            ReplayLedger::admit_or_recover_owned(&ledger, key_a.clone(), test_binding("claim-a"))
                 .unwrap(),
         );
         drop(ledger);
@@ -3224,10 +3252,9 @@ mod tests {
         };
         let key = test_key("exact-bytes");
         let binding = test_binding("exact-bytes");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(key.clone(), binding.clone())
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
         admission.publish_intent().unwrap();
         admission.publish_armed().unwrap();
         admission
@@ -3242,8 +3269,8 @@ mod tests {
         let g2_before = std::fs::read(&g2_path).unwrap();
         drop(admission);
         drop(ledger);
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let recovered = ledger.admit_or_recover(key, binding).unwrap();
+        let ledger = open_ledger(&root);
+        let recovered = ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
         assert_eq!(recovered.state(), ReplayState::Succeeded);
         let g0_after = std::fs::read(&g0_path).unwrap();
         let g1_after = std::fs::read(&g1_path).unwrap();
@@ -3260,10 +3287,9 @@ mod tests {
         };
         let key = test_key("filename-content");
         let binding = test_binding("filename-content");
-        let ledger = ReplayLedger::open(&root).unwrap();
-        let mut admission = ledger
-            .admit_or_recover(key.clone(), binding.clone())
-            .unwrap();
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
         admission.publish_intent().unwrap();
         admission.publish_armed().unwrap();
         let dir = execution_directory(&root, admission.execution_id());
@@ -3281,5 +3307,51 @@ mod tests {
             .with_file_name("g0000000000000000.json.tmp")
             .exists());
         assert!(ReplayLedger::open(&root).is_err());
+    }
+
+    #[test]
+    fn c2a2a_same_key_exclusion_while_admission_is_live() {
+        let Some(root) = provisioned_test_root("c2a2a-same-key") else {
+            return;
+        };
+        let ledger = open_ledger(&root);
+        let key = test_key("same-key-exclusive");
+        let binding = test_binding("same-key-exclusive");
+        let _first =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
+        let second = ReplayLedger::admit_or_recover_owned(&ledger, key, binding);
+        assert!(
+            second.is_err(),
+            "second admission for the same logical key must fail while the first is live"
+        );
+    }
+
+    #[test]
+    fn c2a2a_distinct_key_admissions_coexist_as_independently_owned_values() {
+        let Some(root) = provisioned_test_root("c2a2a-distinct-keys") else {
+            return;
+        };
+        let ledger = open_ledger(&root);
+        let admission_a = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("distinct-a"),
+            test_binding("distinct-a"),
+        )
+        .unwrap();
+        let admission_b = ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            test_key("distinct-b"),
+            test_binding("distinct-b"),
+        )
+        .unwrap();
+        assert_ne!(
+            admission_a.execution_id(),
+            admission_b.execution_id(),
+            "distinct logical keys must produce distinct execution identities"
+        );
+        assert!(admission_a.is_fresh());
+        assert!(admission_b.is_fresh());
+        drop(admission_a);
+        drop(admission_b);
     }
 }
