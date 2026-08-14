@@ -1310,6 +1310,59 @@ pub fn verify_manifest(json: &str) -> Result<VerifiedManifest, ManifestError> {
     })
 }
 
+/// A minimal test `VerifiedManifest` for constructing mock `DispatchReadyAction`
+/// values in concurrent execution preparation-failure paths.
+///
+/// This is NOT a valid manifest for provider invocation.  It is only used
+/// as a placeholder when a member fails preparation and the
+/// `DispatchReadyAction` is never actually dispatched.
+pub fn test_manifest() -> VerifiedManifest {
+    VerifiedManifest {
+        capability_name: "test.capability".to_owned(),
+        capability_version: 1,
+        verified_digest: "test-digest".to_owned(),
+        manifest: TrustedManifest {
+            manifest_format_version: "1.0".to_owned(),
+            capability_name: "test.capability".to_owned(),
+            capability_version: 1,
+            title: "Test".to_owned(),
+            description: "Test manifest".to_owned(),
+            input_schema: serde_json::json!({"type": "object"}),
+            output_schema: serde_json::json!({"type": "object"}),
+            effects: vec![],
+            permission_scope: PermissionScope::Unrestricted,
+            reversibility: Reversibility::Reversible,
+            determinism: Determinism::Deterministic,
+            idempotency: Idempotency::NoMechanism,
+            confirmation_policy: ConfirmationPolicy {
+                standing_permitted: true,
+                per_call_required: false,
+                description: None,
+            },
+            timeout_ms: 5000,
+            retry_policy: RetryPolicy {
+                max_retries: 0,
+                backoff_ms: 500,
+                allowed_on: vec![],
+                requires_idempotency_proof: false,
+            },
+            provider: ProviderIdentity {
+                identity: "test-provider".to_owned(),
+                display_name: "Test Provider".to_owned(),
+                identity_source: IdentitySource::HostConfiguration,
+                description: None,
+            },
+            binding: Binding {
+                kind: BindingKind::Mcp,
+                server_name: "test".to_owned(),
+                tool_name: "test".to_owned(),
+                adapter: None,
+            },
+            digest: None,
+        },
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

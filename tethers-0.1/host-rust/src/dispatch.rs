@@ -386,6 +386,33 @@ pub struct DispatchReadyAction {
 }
 
 impl DispatchReadyAction {
+    /// Construct a dispatch-ready action from prepared state.
+    ///
+    /// Used by the concurrent group execution path where `prepare_and_record`
+    /// has already produced the intent and the `DispatchReadyAction` must be
+    /// moved into a worker thread.
+    pub fn new(
+        execution_id: ExecutionId,
+        action_id: ActionId,
+        capability_name: String,
+        capability_version: u32,
+        provider_identity: String,
+        manifest_digest: String,
+        verified_manifest: crate::manifest::VerifiedManifest,
+        arguments: serde_json::Value,
+    ) -> Self {
+        Self {
+            execution_id,
+            action_id,
+            capability_name,
+            capability_version,
+            provider_identity,
+            manifest_digest,
+            verified_manifest,
+            arguments,
+        }
+    }
+
     pub fn execution_id(&self) -> &ExecutionId {
         &self.execution_id
     }

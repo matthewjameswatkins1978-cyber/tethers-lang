@@ -110,6 +110,24 @@ pub struct ResolvedCapability {
 }
 
 impl ResolvedCapability {
+    /// Construct a resolved capability from its parts.
+    ///
+    /// Used by the concurrent group execution path to create mock resolved
+    /// capabilities for preparation-failed members.
+    pub(crate) fn new(
+        identity: CapabilityIdentity,
+        provider_identity: String,
+        manifest_digest: String,
+        manifest: VerifiedManifest,
+    ) -> Self {
+        Self {
+            identity,
+            provider_identity,
+            manifest_digest,
+            manifest,
+        }
+    }
+
     pub fn identity(&self) -> &CapabilityIdentity {
         &self.identity
     }
@@ -303,6 +321,27 @@ pub fn resolve_capability(
         manifest_digest: verified.verified_digest().to_owned(),
         manifest: verified.clone(),
     })
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+/// A minimal test `ResolvedCapability` for constructing mock `PreparedInvoke`
+/// values in concurrent execution preparation-failure paths.
+///
+/// This is NOT a valid resolved capability for provider invocation.  It is
+/// only used as a placeholder when a member fails preparation.
+pub fn test_resolved_capability() -> ResolvedCapability {
+    ResolvedCapability {
+        identity: CapabilityIdentity {
+            name: "test.capability".to_owned(),
+            version: 1,
+        },
+        provider_identity: "test-provider".to_owned(),
+        manifest_digest: "test-digest".to_owned(),
+        manifest: crate::manifest::test_manifest(),
+    }
 }
 
 // ---------------------------------------------------------------------------

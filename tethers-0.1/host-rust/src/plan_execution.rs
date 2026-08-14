@@ -211,7 +211,7 @@ pub enum ActionStep {
 }
 
 /// The host execution identity of a succeeded step, when it has one.
-fn succeeded_execution_id(step: &ActionStep) -> Option<String> {
+pub fn succeeded_execution_id(step: &ActionStep) -> Option<String> {
     match step {
         ActionStep::Boundary(result) => match &result.outcome {
             crate::SharedExecutionOutcome::Completed
@@ -396,7 +396,7 @@ pub fn execute_plan(
 }
 
 /// The `action_id` of one planned Action.
-fn action_id_of(actions: &[Value], action_index: usize) -> String {
+pub fn action_id_of(actions: &[Value], action_index: usize) -> String {
     actions[action_index]
         .get("action_id")
         .and_then(Value::as_str)
@@ -407,7 +407,7 @@ fn action_id_of(actions: &[Value], action_index: usize) -> String {
 /// Aggregate one non-success step into the plan result, preserving the
 /// member's exact outcome distinction (Failed, Uncertain, Denied, replay,
 /// approval-required, …) rather than flattening it.
-fn aggregate_step(
+pub fn aggregate_step(
     step: ActionStep,
     evaluation_id: &str,
     action_id: &str,
