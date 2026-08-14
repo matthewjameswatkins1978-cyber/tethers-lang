@@ -8,7 +8,9 @@ Tethers is in the 0.4 concurrency programme.
 
 The deterministic `together` fan-out / join semantic foundation (C1) is complete and accepted. C2-A1, the Core-native Together semantic bridge, is complete, independently accepted, and merged to current `main` at `ec56220220fd6d668d74007d6a2f44e76320349f`. It preserves Canonical V2 / Rocket meaning while allowing Core to emit flat Runtime Plan actions with additive non-empty `together` groups; Rust execution remains the serial C1 reference mechanism.
 
-The next planned work is **C2-A2 — replay ownership + Trail semantic/physical ordering foundation** design review. There is **no active C2-A2 implementation packet** and no agent is authorised to implement it merely because it is named here. Physical concurrency, provider overlap, replay/Trail concurrency work, approval work, and result-anchor work have **not** started.
+C2-A2a (replay admission ownership) and C2-A2b (Trail semantic/physical ordering) are complete and merged at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`.
+
+C2-A3 physical concurrency design is complete (`docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`). Physical concurrency is **NOT YET IMPLEMENTED**.
 
 ## Last completed development state
 
@@ -16,19 +18,20 @@ The next planned work is **C2-A2 — replay ownership + Trail semantic/physical 
 - P6 — The Evil Bunny Test: FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`.
 - Tethers 0.4 C1 — deterministic `together` fan-out / join semantics and serial reference-host join behaviour: complete / accepted.
 - Tethers 0.4 C2-A1 — Core-native Together semantic bridge: COMPLETE / ACCEPTED / MERGED at `ec56220220fd6d668d74007d6a2f44e76320349f`.
+- Tethers 0.4 C2-A2a — Replay admission ownership foundation: COMPLETE / ACCEPTED / MERGED at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`.
+- Tethers 0.4 C2-A2b — Trail semantic/physical ordering foundation: COMPLETE / ACCEPTED / MERGED at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`.
+- Tethers 0.4 C2-A3 — Physical concurrency design: COMPLETE (design artifact only; implementation NOT STARTED).
 - Core phases 1–9: accepted and cut over to the production evaluation path.
 - Performance R1 / Phase A / C-B1: accepted.
 - Canonical V2 and Rocket V2: frozen, implemented, differentially proved, integrated, and reconciled into the current `main` history. The final reconciliation records the cutover as cleared.
 
 ## Active increment
 
-**None.** C2-A2 is design review / packet compilation only, not an implementation task.
-
-C2-A1 is merged; C2-A2 must be reviewed and separately authorised before implementation.
+**None.** C2-A3 design is complete. Next implementation is C2-A3a if the design is not BLOCKED. Requires a separately approved task packet.
 
 ## C2 boundary
 
-C2-A2 may establish replay ownership and Trail ordering foundations while execution remains serial. Later C2 work may introduce real concurrent member execution only under a separately reviewed packet.
+C2-A3a introduces real provider overlap for Together group members while preserving all C1 observable semantics. The design is at `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`.
 
 It must not casually redefine:
 
@@ -41,7 +44,7 @@ It must not casually redefine:
 - failure semantics,
 - Canonical V2 identity or ordering rules.
 
-No C2-A2 packet is implementation authority until separately approved; physical concurrency remains a later boundary.
+No C2-A3a packet is implementation authority until separately approved.
 
 ## Enduring project boundaries
 
@@ -59,5 +62,6 @@ No C2-A2 packet is implementation authority until separately approved; physical 
 - Road to 0.4: `docs/ROAD_TO_0_4.md`
 - Road to 0.3 historical programme: `docs/ROAD_TO_0_3.md`
 - Final Rocket reconciliation: `docs/perf/FINAL_ROCKET_CUTOVER_BASE_RECONCILIATION.md`
+- C2-A3 design: `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`
 - Enduring principles: `docs/CONSTITUTION.md`
 - Language semantics: `tethers-0.1/SPEC.md`

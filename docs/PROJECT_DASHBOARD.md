@@ -8,16 +8,13 @@ Tethers 0.4 — Concurrency.
 
 C1, the deterministic `together` fan-out / join semantic foundation, is complete and accepted. C2-A1, the Core-native Together semantic bridge, is complete, independently accepted, and merged at `ec56220220fd6d668d74007d6a2f44e76320349f`. Core can now carry `Together_origin` semantics into flat Runtime Plan actions plus additive non-empty groups. Canonical V2 and Rocket meaning remain frozen and preserved; Rust execution remains the serial C1 reference mechanism.
 
+C2-A2a, replay admission ownership foundation, is complete and merged at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`. C2-A2b, Trail semantic/physical ordering foundation, is complete and merged at the same SHA.
+
 ## Current State
 
 There is **no active implementation packet**.
 
-The next planned work is design review / packet compilation for:
-
-- **C2-A2 — replay ownership + Trail semantic/physical ordering foundation**
-- State: design review required; **no active C2-A2 implementation packet**
-- Purpose: establish bounded future-concurrency foundations while keeping execution serial
-- Risk: Red; physical concurrency, provider overlap, replay/Trail concurrency work, approval work, and result-anchor work have **not** started
+C2-A3 physical concurrency design is complete (`docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`). Physical concurrency is **NOT YET IMPLEMENTED**.
 
 ## Last Completed Development State
 
@@ -25,6 +22,9 @@ The next planned work is design review / packet compilation for:
 - Evil Bunny adversarial proof: FINAL ACCEPTED
 - 0.4 C1 Together semantics and reference-host join behaviour: complete / accepted
 - 0.4 C2-A1 Core-native Together semantic bridge: COMPLETE / ACCEPTED / MERGED at `ec56220220fd6d668d74007d6a2f44e76320349f`
+- 0.4 C2-A2a Replay admission ownership foundation: COMPLETE / ACCEPTED / MERGED at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`
+- 0.4 C2-A2b Trail semantic/physical ordering foundation: COMPLETE / ACCEPTED / MERGED at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`
+- 0.4 C2-A3 Physical concurrency design: COMPLETE (design artifact only)
 - Core phases 1–9: accepted; production evaluation route cut over to Core
 - Performance R1 / Phase A / C-B1: accepted
 - Canonical V2: frozen, implemented and heavily differential-tested
@@ -37,14 +37,14 @@ None.
 
 ## Next Route
 
-Lucy reviews the present runtime architecture and the proposed C2-A2 boundary. No agent is authorised to implement C2-A2 merely because it is named in these status documents; physical concurrency remains out of scope.
+Next implementation is C2-A3a (provider invocation overlap under coordinator ownership) if the design is not BLOCKED. Requires a separately approved task packet.
 
 The intended 0.4 sequence remains:
 
 1. C1 — semantic fan-out / join foundation ✓
 2. C2-A1 — Core-native Together semantic bridge ✓
-3. C2-A2 — replay and Trail foundation design review
-4. C2-A3 — later physical execution design / implementation
+3. C2-A2 — replay and Trail foundation ✓ (A2a + A2b complete)
+4. C2-A3 — physical concurrency design ✓, implementation NOT STARTED
 5. C3–C5 — resource bounds, adversarial proof, and fresh-agent proof
 
 ## Operating Mode
@@ -73,4 +73,5 @@ The intended 0.4 sequence remains:
 - Completed Plug programme: `docs/ROAD_TO_0_3.md`
 - Final Rocket reconciliation: `docs/perf/FINAL_ROCKET_CUTOVER_BASE_RECONCILIATION.md`
 - Foundation architecture: `docs/architecture/TETHERS_FOUNDATION_PASS.md`
+- C2-A3 design: `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`
 - Evidence and reviews: `docs/worker-notes/`, `docs/review/`, `docs/perf/`
