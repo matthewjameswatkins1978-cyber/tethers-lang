@@ -1612,14 +1612,14 @@ pub(crate) struct WorkerResult {
     pub provider_result: Result<Value, outcome::ProviderDiagnostic>,
 }
 
-// Thread-local flag for test-only worker panic injection.
+// Test-only cross-thread panic injection seam.
 //
-// When set to `true`, the next call to [`worker_invoke_provider`] will panic
-// before sending its result, exercising the coordinator's catch_unwind path.
+// Stores the `action_index` of the worker that should panic.  `usize::MAX`
+// means disabled.  Set before calling `execute_group_concurrent`; the value
+// is visible to the spawned worker threads.
 #[cfg(test)]
-thread_local! {
-    static INJECT_WORKER_PANIC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
+static INJECT_WORKER_PANIC_ACTION_INDEX: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(usize::MAX);
 
 /// Perform the full Socket establishment / discovery / invocation path in a
 /// worker thread.  Uses the same trusted contract as the serial path:
@@ -1632,14 +1632,16 @@ thread_local! {
 /// Worker panics are caught via `catch_unwind` to prevent the coordinator
 /// from hanging when a worker thread terminates without sending its result.
 pub(crate) fn worker_invoke_provider(input: WorkerInput, tx: mpsc::Sender<WorkerResult>) {
-    #[cfg(test)]
-    if INJECT_WORKER_PANIC.with(|f| f.get()) {
-        INJECT_WORKER_PANIC.with(|f| f.set(false));
-        panic!("test-induced worker panic");
-    }
-
-    let result =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker_invoke_inner(&input)));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        #[cfg(test)]
+        {
+            let target = INJECT_WORKER_PANIC_ACTION_INDEX.load(std::sync::atomic::Ordering::SeqCst);
+            if target == input.action_index {
+                panic!("injected C2-A3a worker panic");
+            }
+        }
+        worker_invoke_inner(&input)
+    }));
     let provider_result = match result {
         Ok(r) => r,
         Err(_) => Err(outcome::ProviderDiagnostic::NoFinalResponse),
@@ -3742,7 +3744,7 @@ mod tests {
         std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
 
         let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
-        let prepared = crate::configured_runtime::prepare_runtime(&loaded).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
         (prepared, dir)
     }
 
@@ -4806,10 +4808,10 @@ mod tests {
     // and worker panic handling for the concurrent Together path.
     // -----------------------------------------------------------------------
 
-    /// Build a PreparedRuntime with two barrier-fixture providers sharing the
-    /// same capability.  Each provider points at `barrier_dir` for
+    /// Build a PreparedRuntime with two barrier-fixture providers, each with
+    /// a unique capability name.  Each provider points at `barrier_dir` for
     /// deterministic file-system synchronization.
-    fn c2a3a_barrier_runtime(barrier_dir: &Path) -> (PreparedRuntime, PathBuf) {
+    fn c2a3a_barrier_runtime(barrier_dir: &Path) -> (PreparedRuntime, PathBuf, String, String) {
         let dir = std::env::temp_dir().join(format!(
             "tethers-c2a3a-obs-{}",
             std::time::SystemTime::now()
@@ -4822,13 +4824,40 @@ mod tests {
 
         std::fs::write(
             dir.join("tethers/together-test.tether"),
-            "when event.test if true do fixture.ping",
+            "when event.test if true do fixture.ping-a do fixture.ping-b",
         )
         .unwrap();
 
         let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
-        let (_, digest) = crate::manifest::canonicalize_and_digest(manifest_json).unwrap();
-        std::fs::write(dir.join("manifests/fixture-ping.json"), manifest_json).unwrap();
+        // Create two manifests with distinct capability names, provider identities, and valid digests.
+        let mut manifest_a: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+        manifest_a["capability_name"] = serde_json::json!("fixture.ping-a");
+        manifest_a["provider"]["identity"] = serde_json::json!("provider-a");
+        manifest_a["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+        manifest_a["permission_scope"] =
+            serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+        manifest_a["confirmation_policy"] =
+            serde_json::json!({"standing_permitted": true, "per_call_required": false});
+        let manifest_a_str = serde_json::to_string(&manifest_a).unwrap();
+        let (_, digest_a) = crate::manifest::canonicalize_and_digest(&manifest_a_str).unwrap();
+        manifest_a["digest"] = serde_json::json!(digest_a);
+        let manifest_a_final = serde_json::to_string_pretty(&manifest_a).unwrap();
+
+        let mut manifest_b: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+        manifest_b["capability_name"] = serde_json::json!("fixture.ping-b");
+        manifest_b["provider"]["identity"] = serde_json::json!("provider-b");
+        manifest_b["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+        manifest_b["permission_scope"] =
+            serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+        manifest_b["confirmation_policy"] =
+            serde_json::json!({"standing_permitted": true, "per_call_required": false});
+        let manifest_b_str = serde_json::to_string(&manifest_b).unwrap();
+        let (_, digest_b) = crate::manifest::canonicalize_and_digest(&manifest_b_str).unwrap();
+        manifest_b["digest"] = serde_json::json!(digest_b);
+        let manifest_b_final = serde_json::to_string_pretty(&manifest_b).unwrap();
+
+        std::fs::write(dir.join("manifests/fixture-ping-a.json"), &manifest_a_final).unwrap();
+        std::fs::write(dir.join("manifests/fixture-ping-b.json"), &manifest_b_final).unwrap();
 
         let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -4846,11 +4875,10 @@ mod tests {
                     "version": "1",
                     "source_path": "tethers/together-test.tether"
                 }],
-                "capability_requirements": [{
-                    "name": "fixture.ping",
-                    "version": 1,
-                    "reason": "concurrency observability"
-                }]
+                "capability_requirements": [
+                    {"name": "fixture.ping-a", "version": 1, "reason": "concurrency observability"},
+                    {"name": "fixture.ping-b", "version": 1, "reason": "concurrency observability"}
+                ]
             },
             "providers": [
                 {
@@ -4868,10 +4896,11 @@ mod tests {
                         "protocol_version": "2025-11-25"
                     },
                     "capabilities": [{
-                        "name": "fixture.ping",
+                        "name": "fixture.ping-a",
                         "version": 1,
-                        "manifest_path": "manifests/fixture-ping.json",
-                        "pinned_digest": &digest
+                        "manifest_path": "manifests/fixture-ping-a.json",
+                        "pinned_digest": &digest_a,
+                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
                     }]
                 },
                 {
@@ -4889,16 +4918,20 @@ mod tests {
                         "protocol_version": "2025-11-25"
                     },
                     "capabilities": [{
-                        "name": "fixture.ping",
+                        "name": "fixture.ping-b",
                         "version": 1,
-                        "manifest_path": "manifests/fixture-ping.json",
-                        "pinned_digest": &digest
+                        "manifest_path": "manifests/fixture-ping-b.json",
+                        "pinned_digest": &digest_b,
+                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
                     }]
                 }
             ],
             "policy": {
-                "default": "allow",
-                "rules": []
+                "default": "deny",
+                "rules": [
+                    {"name": "fixture.ping-a", "version": 1, "decision": "allow"},
+                    {"name": "fixture.ping-b", "version": 1, "decision": "allow"}
+                ]
             }
         });
 
@@ -4907,7 +4940,7 @@ mod tests {
 
         let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
         let prepared = prepare_runtime(&loaded).unwrap();
-        (prepared, dir)
+        (prepared, dir, digest_a, digest_b)
     }
 
     /// Establish retained sessions with the given providers.  The barrier
@@ -4934,25 +4967,27 @@ mod tests {
     }
 
     /// Build a two-member Together group actions and groups array.
-    fn c2a3a_actions() -> (Vec<Value>, Vec<Value>) {
+    fn c2a3a_actions(digest_a: &str, digest_b: &str) -> (Vec<Value>, Vec<Value>) {
         let actions = vec![
             json!({
                 "action_id": "member-a",
                 "idempotency_key": "eval-obs/member-a",
-                "capability": "fixture.ping",
+                "capability": "fixture.ping-a",
                 "capability_version": "1.0.0",
                 "bridge_capability_version": 1,
                 "bridge_provider_identity": "provider-a",
-                "arguments": {"message": "hello-from-a"},
+                "manifest_digest": digest_a,
+                "arguments": {"message": "member/a"},
             }),
             json!({
                 "action_id": "member-b",
                 "idempotency_key": "eval-obs/member-b",
-                "capability": "fixture.ping",
+                "capability": "fixture.ping-b",
                 "capability_version": "1.0.0",
                 "bridge_capability_version": 1,
                 "bridge_provider_identity": "provider-b",
-                "arguments": {"message": "hello-from-b"},
+                "manifest_digest": digest_b,
+                "arguments": {"message": "member/b"},
             }),
         ];
         let groups = vec![json!({
@@ -5022,83 +5057,402 @@ mod tests {
             .collect()
     }
 
-    /// Count barrier active files: how many providers have reached tools/call.
-    fn barrier_active_count(barrier_dir: &Path) -> usize {
+    /// Count barrier entered files: how many providers have reached tools/call.
+    fn barrier_entered_count(barrier_dir: &Path) -> usize {
         std::fs::read_dir(barrier_dir)
             .unwrap_or_else(|_| std::fs::read_dir(".").unwrap())
             .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().starts_with("active-"))
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("entered-"))
             .count()
     }
 
-    /// TEST 1 — Prompt Stage C durability while a sibling remains blocked.
-    ///
-    /// Both providers enter the barrier.  `release` is created so both
-    /// proceed; B's tools/call completes first by construction of the
-    /// barrier fixture (both complete nearly simultaneously, but we poll
-    /// for B's outcome first).  After `execute_group_concurrent` returns,
-    /// the durable Trail file must contain B's OutcomeEntry — proving
-    /// Stage C wrote it to disk during concurrent execution.
+    /// Check whether a specific member's OutcomeEntry is present in the durable Trail.
+    fn trail_has_member_outcome(trail_path: &Path, member: &str) -> bool {
+        trail_outcome_action_ids(trail_path)
+            .iter()
+            .any(|id| id == member)
+    }
+
+    /// Poll until a condition becomes true or deadline expires.
+    fn poll_until(deadline: std::time::Instant, desc: &str, mut check: impl FnMut() -> bool) {
+        while !check() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "poll timed out: {desc}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    // ===================================================================
+    // C2-A3a Group Test Harness
+    //
+    // One reusable execute_group_concurrent harness for all group-level
+    // observability tests: durability, ordering, GroupJoin, panic.
+    // ===================================================================
+
+    struct C2A3aGroupHarness {
+        runtime: PreparedRuntime,
+        _runtime_dir: PathBuf,
+        trail_path: PathBuf,
+        replay_dir: PathBuf,
+        barrier_dir: PathBuf,
+    }
+
+    impl C2A3aGroupHarness {
+        fn new(test_name: &str) -> Self {
+            let barrier_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-{test_name}-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&barrier_dir).unwrap();
+
+            let runtime_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-{test_name}-rt-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(runtime_dir.join("tethers")).unwrap();
+            std::fs::create_dir_all(runtime_dir.join("manifests")).unwrap();
+
+            std::fs::write(
+                runtime_dir.join("tethers/together-test.tether"),
+                "when event.test if true do fixture.ping-a do fixture.ping-b",
+            )
+            .unwrap();
+
+            let manifest_json =
+                include_str!("../../protocol/capability-manifests/fixture-ping.json");
+            let make_manifest = |cap_name: &str, provider_id: &str| -> String {
+                let mut m: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+                m["capability_name"] = serde_json::json!(cap_name);
+                m["provider"]["identity"] = serde_json::json!(provider_id);
+                m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+                m["permission_scope"] =
+                    serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+                m["confirmation_policy"] =
+                    serde_json::json!({"standing_permitted": true, "per_call_required": false});
+                let s = serde_json::to_string(&m).unwrap();
+                let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+                m["digest"] = serde_json::json!(digest);
+                serde_json::to_string_pretty(&m).unwrap()
+            };
+            let manifest_a = make_manifest("fixture.ping-a", "provider-a");
+            let manifest_b = make_manifest("fixture.ping-b", "provider-b");
+            std::fs::write(
+                runtime_dir.join("manifests/fixture-ping-a.json"),
+                &manifest_a,
+            )
+            .unwrap();
+            std::fs::write(
+                runtime_dir.join("manifests/fixture-ping-b.json"),
+                &manifest_b,
+            )
+            .unwrap();
+
+            let (_, digest_a) = crate::manifest::canonicalize_and_digest(&manifest_a).unwrap();
+            let (_, digest_b) = crate::manifest::canonicalize_and_digest(&manifest_b).unwrap();
+
+            let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("scripts")
+                .join("tethers-stdio-fixture.ps1");
+            let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+
+            let config = json!({
+                "format_version": "0.1",
+                "tether_set": {
+                    "id": "test.together",
+                    "version": "1",
+                    "tethers": [{
+                        "id": "together-test",
+                        "version": "1",
+                        "source_path": "tethers/together-test.tether"
+                    }],
+                    "capability_requirements": [
+                        {"name": "fixture.ping-a", "version": 1, "reason": "concurrency observability"},
+                        {"name": "fixture.ping-b", "version": 1, "reason": "concurrency observability"}
+                    ]
+                },
+                "providers": [
+                    {
+                        "id": "provider-a",
+                        "display_name": "Provider A",
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "pwsh.exe",
+                            "args": [
+                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                barrier_script.to_str().unwrap(),
+                                "-Mode", "c2-overlap-barrier",
+                                "-BarrierDirectory", &barrier_str
+                            ],
+                            "protocol_version": "2025-11-25"
+                        },
+                        "capabilities": [{
+                            "name": "fixture.ping-a",
+                            "version": 1,
+                            "manifest_path": "manifests/fixture-ping-a.json",
+                            "pinned_digest": &digest_a,
+                            "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                        }]
+                    },
+                    {
+                        "id": "provider-b",
+                        "display_name": "Provider B",
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "pwsh.exe",
+                            "args": [
+                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                barrier_script.to_str().unwrap(),
+                                "-Mode", "c2-overlap-barrier",
+                                "-BarrierDirectory", &barrier_str
+                            ],
+                            "protocol_version": "2025-11-25"
+                        },
+                        "capabilities": [{
+                            "name": "fixture.ping-b",
+                            "version": 1,
+                            "manifest_path": "manifests/fixture-ping-b.json",
+                            "pinned_digest": &digest_b,
+                            "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                        }]
+                    }
+                ],
+                "policy": {
+                    "default": "deny",
+                    "rules": [
+                        {"name": "fixture.ping-a", "version": 1, "decision": "allow"},
+                        {"name": "fixture.ping-b", "version": 1, "decision": "allow"}
+                    ]
+                }
+            });
+
+            let config_path = runtime_dir.join("tethers-config.json");
+            std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+            let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+            let runtime = prepare_runtime(&loaded).unwrap();
+
+            let trail_path = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-{test_name}-trail-{}.jsonl",
+                uuid::Uuid::new_v4()
+            ));
+            let replay_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-{test_name}-replay-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&replay_dir).unwrap();
+
+            Self {
+                runtime,
+                _runtime_dir: runtime_dir,
+                trail_path,
+                replay_dir,
+                barrier_dir,
+            }
+        }
+
+        /// Run execute_group_concurrent in a spawned thread.
+        /// Returns the ExecutionServiceResult.
+        fn run_group(&self, eval_id: &str) -> ExecutionServiceResult {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("barrier provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            // Extract manifest digests from the prepared runtime providers.
+            let providers = self.runtime.providers();
+            let digest_a = providers
+                .iter()
+                .find(|p| p.identity == "provider-a")
+                .unwrap()
+                .capabilities[0]
+                .verified_manifest
+                .verified_digest()
+                .to_owned();
+            let digest_b = providers
+                .iter()
+                .find(|p| p.identity == "provider-b")
+                .unwrap()
+                .capabilities[0]
+                .verified_manifest
+                .verified_digest()
+                .to_owned();
+
+            let actions = vec![
+                json!({
+                    "action_id": "member-a",
+                    "idempotency_key": format!("{eval_id}/member-a"),
+                    "capability": "fixture.ping-a",
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": "provider-a",
+                    "manifest_digest": digest_a,
+                    "arguments": {"message": "member/a"},
+                }),
+                json!({
+                    "action_id": "member-b",
+                    "idempotency_key": format!("{eval_id}/member-b"),
+                    "capability": "fixture.ping-b",
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": "provider-b",
+                    "manifest_digest": digest_b,
+                    "arguments": {"message": "member/b"},
+                }),
+            ];
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": ["member-a", "member-b"],
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let availability = ProviderAvailability::from_identities(["provider-a", "provider-b"]);
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let mut replay_authority =
+                crate::replay_runtime::test_support::TestReplayAuthority::default();
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            let result = execute_group_concurrent(
+                "together-1",
+                &[0, 1],
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                &mut replay_authority,
+            );
+            eprintln!("execute_group_concurrent returned: {result:?}");
+            result
+        }
+
+        /// Wait until the barrier directory has at least `count` entered-* files.
+        fn wait_barrier_entries(&self, count: usize) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while barrier_entered_count(&self.barrier_dir) < count {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "only {} of {count} providers entered tools/call",
+                    barrier_entered_count(&self.barrier_dir)
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        /// Release a specific member via per-member release file.
+        fn release_member(&self, member: &str) {
+            std::fs::write(
+                self.barrier_dir.join(format!("release-member-{member}")),
+                "release",
+            )
+            .unwrap();
+        }
+
+        /// Read physical OutcomeEntry action_ids from the durable Trail.
+        fn outcome_ids(&self) -> Vec<String> {
+            trail_outcome_action_ids(&self.trail_path)
+        }
+
+        /// Read entry kinds from the durable Trail.
+        fn entry_kinds(&self) -> Vec<String> {
+            trail_entry_kinds(&self.trail_path)
+        }
+
+        /// Check if a member's OutcomeEntry exists in the Trail.
+        fn has_member_outcome(&self, member: &str) -> bool {
+            trail_has_member_outcome(&self.trail_path, member)
+        }
+
+        /// Read the raw Trail content.
+        fn trail_content(&self) -> String {
+            std::fs::read_to_string(&self.trail_path).unwrap_or_default()
+        }
+    }
+
+    impl Drop for C2A3aGroupHarness {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.barrier_dir);
+            let _ = std::fs::remove_dir_all(&self._runtime_dir);
+            let _ = std::fs::remove_dir_all(&self.replay_dir);
+            let _ = std::fs::remove_file(&self.trail_path);
+        }
+    }
+
+    // ===================================================================
+    // TEST 1 — Prompt Stage C durability while sibling blocked
+    // ===================================================================
+
     #[test]
     fn c2a3a_stage_c_durability_while_sibling_blocked() {
-        let barrier_dir =
-            std::env::temp_dir().join(format!("tethers-c2a3a-durability-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&barrier_dir).unwrap();
+        let h = C2A3aGroupHarness::new("durability");
 
-        let (runtime, _runtime_dir) = c2a3a_barrier_runtime(&barrier_dir);
-        let trail_path = std::env::temp_dir().join(format!(
-            "tethers-c2a3a-durability-trail-{}.jsonl",
-            uuid::Uuid::new_v4()
-        ));
-        let input = PreparedEvaluationInput {
-            tether_id: "together-test".to_owned(),
-            tether_version: "1".to_owned(),
-            evaluation_id: "eval-durability-1".to_owned(),
-            anchor_event: json!({"id": "evt-durability-1", "name": "test"}),
-            facts: json!({}),
-        };
-
-        // All mutable state is created inside the spawned thread so
-        // RetainedProviderSession (non-Clone) doesn't need cloning.
         std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let providers = runtime.providers().to_vec();
-                let mut sessions = c2a3a_establish_sessions(&providers);
-                let (actions, groups) = c2a3a_actions();
-                let mut response = c2a3a_matched_response("eval-durability-1", actions, groups);
-                let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
-                let availability =
-                    ProviderAvailability::from_identities(["provider-a", "provider-b"]);
-                let mut trail = dispatch::FileTrail::open(&trail_path).unwrap();
-                let mut approvals = crate::approval::ApprovalStore::default();
-                let mut replay_authority = FileReplayAuthority::new(None);
-                let engine_path = PathBuf::from("unused-engine");
-                let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
-                execute_group_concurrent(
-                    "together-1",
-                    &[0, 1],
-                    &member_actions,
-                    &mut response,
-                    "eval-durability-1",
-                    &mut trail,
-                    &service,
-                    &input,
-                    &mut sessions,
-                    &availability,
-                    &mut approvals,
-                    &mut replay_authority,
-                )
-            });
+            let handle = s.spawn(|| h.run_group("eval-durability-1"));
 
-            let deadline = std::time::Instant::now() + Duration::from_secs(12);
-            while barrier_active_count(&barrier_dir) < 2 {
+            // Both must enter real tools/call.
+            h.wait_barrier_entries(2);
+
+            // Release B only.  A remains blocked.
+            h.release_member("b");
+
+            // Poll until B's OutcomeEntry is durable in the Trail.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !h.has_member_outcome("member-b") {
                 assert!(
                     std::time::Instant::now() < deadline,
-                    "both providers did not reach tools/call"
+                    "B outcome never appeared in Trail"
                 );
                 std::thread::sleep(Duration::from_millis(10));
             }
-            std::fs::write(barrier_dir.join("release"), "release").unwrap();
+
+            // INTERMEDIATE ASSERTIONS: B present, A absent, GroupJoin absent.
+            assert!(
+                h.has_member_outcome("member-b"),
+                "B OutcomeEntry must be present before A release"
+            );
+            assert!(
+                !h.has_member_outcome("member-a"),
+                "A OutcomeEntry must NOT be present while A is still blocked"
+            );
+            assert!(
+                !h.entry_kinds().iter().any(|k| k == "group_join"),
+                "GroupJoinEntry must NOT be present while A is still blocked"
+            );
+
+            // Now release A.
+            h.release_member("a");
 
             let result = handle.join().expect("concurrent group must not panic");
             assert!(
@@ -5107,387 +5461,232 @@ mod tests {
             );
         });
 
-        let outcome_ids = trail_outcome_action_ids(&trail_path);
-        assert!(
-            outcome_ids.contains(&"member-a".to_owned()),
-            "Trail must contain member-a outcome"
-        );
-        assert!(
-            outcome_ids.contains(&"member-b".to_owned()),
-            "Trail must contain member-b outcome"
-        );
-        assert_eq!(
-            outcome_ids.len(),
-            2,
-            "exactly two OutcomeEntry records expected, got: {outcome_ids:?}"
-        );
-
-        let _ = std::fs::remove_dir_all(&_runtime_dir);
-        let _ = std::fs::remove_file(&trail_path);
+        // FINAL: both outcomes present, GroupJoin last.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 2, "need exactly 2 outcomes: {ids:?}");
+        assert!(ids.contains(&"member-a".to_owned()));
+        assert!(ids.contains(&"member-b".to_owned()));
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
     }
 
-    /// TEST 2 — Physical Trail order: B completes before A.
-    ///
-    /// Semantic Runtime Plan order is A, B.  The barrier releases both
-    /// simultaneously; whichever completes first gets its OutcomeEntry
-    /// appended first.  SemanticPosition must remain A=0, B=1 regardless
-    /// of physical order.
+    // ===================================================================
+    // TEST 2 — Physical Trail order: B before A
+    // ===================================================================
+
     #[test]
     fn c2a3a_trail_physical_order_b_before_a() {
-        let barrier_dir =
-            std::env::temp_dir().join(format!("tethers-c2a3a-order-ba-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&barrier_dir).unwrap();
-
-        let (runtime, _runtime_dir) = c2a3a_barrier_runtime(&barrier_dir);
-        let trail_path = std::env::temp_dir().join(format!(
-            "tethers-c2a3a-order-ba-trail-{}.jsonl",
-            uuid::Uuid::new_v4()
-        ));
-        let input = PreparedEvaluationInput {
-            tether_id: "together-test".to_owned(),
-            tether_version: "1".to_owned(),
-            evaluation_id: "eval-order-ba".to_owned(),
-            anchor_event: json!({"id": "evt-order-ba", "name": "test"}),
-            facts: json!({}),
-        };
+        let h = C2A3aGroupHarness::new("order-ba");
 
         std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let providers = runtime.providers().to_vec();
-                let mut sessions = c2a3a_establish_sessions(&providers);
-                let (actions, groups) = c2a3a_actions();
-                let mut response = c2a3a_matched_response("eval-order-ba", actions, groups);
-                let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
-                let availability =
-                    ProviderAvailability::from_identities(["provider-a", "provider-b"]);
-                let mut trail = dispatch::FileTrail::open(&trail_path).unwrap();
-                let mut approvals = crate::approval::ApprovalStore::default();
-                let mut replay_authority = FileReplayAuthority::new(None);
-                let engine_path = PathBuf::from("unused-engine");
-                let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
-                execute_group_concurrent(
-                    "together-1",
-                    &[0, 1],
-                    &member_actions,
-                    &mut response,
-                    "eval-order-ba",
-                    &mut trail,
-                    &service,
-                    &input,
-                    &mut sessions,
-                    &availability,
-                    &mut approvals,
-                    &mut replay_authority,
-                )
-            });
+            let handle = s.spawn(|| h.run_group("eval-order-ba"));
 
-            let deadline = std::time::Instant::now() + Duration::from_secs(12);
-            while barrier_active_count(&barrier_dir) < 2 {
+            h.wait_barrier_entries(2);
+
+            // Release B first, keep A blocked.
+            h.release_member("b");
+
+            // Wait until B is durable.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !h.has_member_outcome("member-b") {
                 assert!(
                     std::time::Instant::now() < deadline,
-                    "both providers did not reach tools/call"
+                    "B outcome never appeared"
                 );
                 std::thread::sleep(Duration::from_millis(10));
             }
-            std::fs::write(barrier_dir.join("release"), "release").unwrap();
-            let result = handle.join().expect("concurrent group must not panic");
-            assert!(
-                matches!(result, ExecutionServiceResult::Completed { .. }),
-                "expected Completed, got: {result:?}"
-            );
+
+            // Release A.
+            h.release_member("a");
+
+            let result = handle.join().expect("group must not panic");
+            assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
         });
 
-        let outcome_ids = trail_outcome_action_ids(&trail_path);
-        assert_eq!(outcome_ids.len(), 2, "need exactly 2 outcomes");
-        assert!(outcome_ids.contains(&"member-a".to_owned()));
-        assert!(outcome_ids.contains(&"member-b".to_owned()));
+        // Physical append order must be exactly [B, A].
+        assert_eq!(
+            h.outcome_ids(),
+            vec!["member-b".to_owned(), "member-a".to_owned()],
+            "physical append order must be B then A"
+        );
 
-        let trail_entries: Vec<Value> = std::fs::read_to_string(&trail_path)
-            .unwrap_or_default()
+        // Semantic positions: A=0, B=1.
+        let entries: Vec<Value> = h
+            .trail_content()
             .lines()
-            .filter_map(|line| serde_json::from_str(line).ok())
+            .filter_map(|l| serde_json::from_str(l).ok())
             .collect();
-        for entry in &trail_entries {
+        for entry in &entries {
             if let Some(pos) = entry.get("semantic_position") {
                 if pos.get("phase").and_then(Value::as_str) == Some("member") {
-                    let ordinal = pos.get("member_ordinal").and_then(Value::as_u64);
-                    let action_ord = pos.get("action_ordinal").and_then(Value::as_u64);
-                    if entry.get("action_id").and_then(Value::as_str) == Some("member-a") {
-                        assert_eq!(ordinal, Some(0));
-                        assert_eq!(action_ord, Some(0));
-                    }
-                    if entry.get("action_id").and_then(Value::as_str) == Some("member-b") {
-                        assert_eq!(ordinal, Some(1));
-                        assert_eq!(action_ord, Some(1));
+                    let ord = pos.get("member_ordinal").and_then(Value::as_u64);
+                    let aord = pos.get("action_ordinal").and_then(Value::as_u64);
+                    match entry.get("action_id").and_then(Value::as_str) {
+                        Some("member-a") => {
+                            assert_eq!(ord, Some(0));
+                            assert_eq!(aord, Some(0));
+                        }
+                        Some("member-b") => {
+                            assert_eq!(ord, Some(1));
+                            assert_eq!(aord, Some(1));
+                        }
+                        _ => {}
                     }
                 }
             }
         }
-
-        let _ = std::fs::remove_dir_all(&_runtime_dir);
-        let _ = std::fs::remove_file(&trail_path);
     }
 
-    /// TEST 3 — Physical Trail order: A completes before B.
-    ///
-    /// Same semantic Runtime Plan order (A, B).  Verifies
-    /// semantic-position stability: SemanticPosition is identical to Test 2.
+    // ===================================================================
+    // TEST 3 — Physical Trail order: A before B
+    // ===================================================================
+
     #[test]
     fn c2a3a_trail_physical_order_a_before_b() {
-        let barrier_dir =
-            std::env::temp_dir().join(format!("tethers-c2a3a-order-ab-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&barrier_dir).unwrap();
-
-        let (runtime, _runtime_dir) = c2a3a_barrier_runtime(&barrier_dir);
-        let trail_path = std::env::temp_dir().join(format!(
-            "tethers-c2a3a-order-ab-trail-{}.jsonl",
-            uuid::Uuid::new_v4()
-        ));
-        let input = PreparedEvaluationInput {
-            tether_id: "together-test".to_owned(),
-            tether_version: "1".to_owned(),
-            evaluation_id: "eval-order-ab".to_owned(),
-            anchor_event: json!({"id": "evt-order-ab", "name": "test"}),
-            facts: json!({}),
-        };
+        let h = C2A3aGroupHarness::new("order-ab");
 
         std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let providers = runtime.providers().to_vec();
-                let mut sessions = c2a3a_establish_sessions(&providers);
-                let (actions, groups) = c2a3a_actions();
-                let mut response = c2a3a_matched_response("eval-order-ab", actions, groups);
-                let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
-                let availability =
-                    ProviderAvailability::from_identities(["provider-a", "provider-b"]);
-                let mut trail = dispatch::FileTrail::open(&trail_path).unwrap();
-                let mut approvals = crate::approval::ApprovalStore::default();
-                let mut replay_authority = FileReplayAuthority::new(None);
-                let engine_path = PathBuf::from("unused-engine");
-                let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
-                execute_group_concurrent(
-                    "together-1",
-                    &[0, 1],
-                    &member_actions,
-                    &mut response,
-                    "eval-order-ab",
-                    &mut trail,
-                    &service,
-                    &input,
-                    &mut sessions,
-                    &availability,
-                    &mut approvals,
-                    &mut replay_authority,
-                )
-            });
+            let handle = s.spawn(|| h.run_group("eval-order-ab"));
 
-            let deadline = std::time::Instant::now() + Duration::from_secs(12);
-            while barrier_active_count(&barrier_dir) < 2 {
+            h.wait_barrier_entries(2);
+
+            // Release A first, keep B blocked.
+            h.release_member("a");
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !h.has_member_outcome("member-a") {
                 assert!(
                     std::time::Instant::now() < deadline,
-                    "both providers did not reach tools/call"
+                    "A outcome never appeared"
                 );
                 std::thread::sleep(Duration::from_millis(10));
             }
-            std::fs::write(barrier_dir.join("release"), "release").unwrap();
-            let result = handle.join().expect("concurrent group must not panic");
-            assert!(
-                matches!(result, ExecutionServiceResult::Completed { .. }),
-                "expected Completed, got: {result:?}"
-            );
+
+            // Release B.
+            h.release_member("b");
+
+            let result = handle.join().expect("group must not panic");
+            assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
         });
 
-        let outcome_ids = trail_outcome_action_ids(&trail_path);
-        assert_eq!(outcome_ids.len(), 2);
-        assert!(outcome_ids.contains(&"member-a".to_owned()));
-        assert!(outcome_ids.contains(&"member-b".to_owned()));
+        // Physical append order must be exactly [A, B].
+        assert_eq!(
+            h.outcome_ids(),
+            vec!["member-a".to_owned(), "member-b".to_owned()],
+            "physical append order must be A then B"
+        );
 
-        let trail_entries: Vec<Value> = std::fs::read_to_string(&trail_path)
-            .unwrap_or_default()
+        // Semantic positions: A=0, B=1.
+        let entries: Vec<Value> = h
+            .trail_content()
             .lines()
-            .filter_map(|line| serde_json::from_str(line).ok())
+            .filter_map(|l| serde_json::from_str(l).ok())
             .collect();
-        for entry in &trail_entries {
+        for entry in &entries {
             if let Some(pos) = entry.get("semantic_position") {
                 if pos.get("phase").and_then(Value::as_str) == Some("member") {
-                    let ordinal = pos.get("member_ordinal").and_then(Value::as_u64);
-                    let action_ord = pos.get("action_ordinal").and_then(Value::as_u64);
-                    if entry.get("action_id").and_then(Value::as_str) == Some("member-a") {
-                        assert_eq!(ordinal, Some(0));
-                        assert_eq!(action_ord, Some(0));
-                    }
-                    if entry.get("action_id").and_then(Value::as_str) == Some("member-b") {
-                        assert_eq!(ordinal, Some(1));
-                        assert_eq!(action_ord, Some(1));
+                    let ord = pos.get("member_ordinal").and_then(Value::as_u64);
+                    let aord = pos.get("action_ordinal").and_then(Value::as_u64);
+                    match entry.get("action_id").and_then(Value::as_str) {
+                        Some("member-a") => {
+                            assert_eq!(ord, Some(0));
+                            assert_eq!(aord, Some(0));
+                        }
+                        Some("member-b") => {
+                            assert_eq!(ord, Some(1));
+                            assert_eq!(aord, Some(1));
+                        }
+                        _ => {}
                     }
                 }
             }
         }
-
-        let _ = std::fs::remove_dir_all(&_runtime_dir);
-        let _ = std::fs::remove_file(&trail_path);
     }
 
-    /// TEST 4 — GroupJoin after all member terminals.
-    ///
-    /// GroupJoinEntry must appear after every member OutcomeEntry in the
-    /// durable Trail.
+    // ===================================================================
+    // TEST 4 — GroupJoin after all terminals
+    // ===================================================================
+
     #[test]
     fn c2a3a_group_join_after_all_terminals() {
-        let barrier_dir =
-            std::env::temp_dir().join(format!("tethers-c2a3a-join-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&barrier_dir).unwrap();
-
-        let (runtime, _runtime_dir) = c2a3a_barrier_runtime(&barrier_dir);
-        let trail_path = std::env::temp_dir().join(format!(
-            "tethers-c2a3a-join-trail-{}.jsonl",
-            uuid::Uuid::new_v4()
-        ));
-        let input = PreparedEvaluationInput {
-            tether_id: "together-test".to_owned(),
-            tether_version: "1".to_owned(),
-            evaluation_id: "eval-join-1".to_owned(),
-            anchor_event: json!({"id": "evt-join-1", "name": "test"}),
-            facts: json!({}),
-        };
+        let h = C2A3aGroupHarness::new("join");
 
         std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let providers = runtime.providers().to_vec();
-                let mut sessions = c2a3a_establish_sessions(&providers);
-                let (actions, groups) = c2a3a_actions();
-                let mut response = c2a3a_matched_response("eval-join-1", actions, groups);
-                let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
-                let availability =
-                    ProviderAvailability::from_identities(["provider-a", "provider-b"]);
-                let mut trail = dispatch::FileTrail::open(&trail_path).unwrap();
-                let mut approvals = crate::approval::ApprovalStore::default();
-                let mut replay_authority = FileReplayAuthority::new(None);
-                let engine_path = PathBuf::from("unused-engine");
-                let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
-                execute_group_concurrent(
-                    "together-1",
-                    &[0, 1],
-                    &member_actions,
-                    &mut response,
-                    "eval-join-1",
-                    &mut trail,
-                    &service,
-                    &input,
-                    &mut sessions,
-                    &availability,
-                    &mut approvals,
-                    &mut replay_authority,
-                )
-            });
+            let handle = s.spawn(|| h.run_group("eval-join-1"));
 
-            let deadline = std::time::Instant::now() + Duration::from_secs(12);
-            while barrier_active_count(&barrier_dir) < 2 {
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "both providers did not reach tools/call"
-                );
+            h.wait_barrier_entries(2);
+
+            // Release B only.
+            h.release_member("b");
+
+            // Wait for B outcome.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !h.has_member_outcome("member-b") {
+                assert!(std::time::Instant::now() < deadline);
                 std::thread::sleep(Duration::from_millis(10));
             }
-            std::fs::write(barrier_dir.join("release"), "release").unwrap();
-            let result = handle.join().expect("concurrent group must not panic");
+
+            // INTERMEDIATE: no GroupJoin while A is blocked.
             assert!(
-                matches!(result, ExecutionServiceResult::Completed { .. }),
-                "expected Completed, got: {result:?}"
+                !h.entry_kinds().iter().any(|k| k == "group_join"),
+                "GroupJoin must NOT exist while A is still blocked"
             );
+
+            // Release A.
+            h.release_member("a");
+
+            let result = handle.join().expect("group must not panic");
+            assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
         });
 
-        let entry_kinds = trail_entry_kinds(&trail_path);
-        let outcome_count = entry_kinds
-            .iter()
-            .filter(|k| k.as_str() == "outcome")
-            .count();
-        let join_count = entry_kinds
-            .iter()
-            .filter(|k| k.as_str() == "group_join")
-            .count();
-        assert_eq!(outcome_count, 2, "need 2 member outcomes");
-        assert_eq!(join_count, 1, "need 1 GroupJoin");
-        let last_kind = entry_kinds.last().expect("trail must have entries");
+        // FINAL: GroupJoin is last.
+        let kinds = h.entry_kinds();
+        assert_eq!(kinds.iter().filter(|k| k.as_str() == "outcome").count(), 2);
         assert_eq!(
-            last_kind, "group_join",
-            "GroupJoin must be the last trail entry"
+            kinds.iter().filter(|k| k.as_str() == "group_join").count(),
+            1
         );
-        let join_pos = entry_kinds.iter().position(|k| k == "group_join").unwrap();
+        assert_eq!(kinds.last(), Some(&"group_join".to_owned()));
+        let join_pos = kinds.iter().position(|k| k == "group_join").unwrap();
         assert!(
             join_pos >= 2,
             "GroupJoin at position {join_pos} must be after both outcomes"
         );
-
-        let _ = std::fs::remove_dir_all(&_runtime_dir);
-        let _ = std::fs::remove_file(&trail_path);
     }
 
-    /// TEST 5 — Worker panic yields uncertain non-success join.
-    ///
-    /// Injects a panic into one worker via INJECT_WORKER_PANIC.
-    /// catch_unwind converts the panic into NoFinalResponse (Uncertain).
+    // ===================================================================
+    // TEST 5 — Worker panic yields uncertain non-success join
+    // ===================================================================
+
+    struct PanicGuard;
+    impl PanicGuard {
+        fn target(action_index: usize) -> Self {
+            INJECT_WORKER_PANIC_ACTION_INDEX
+                .store(action_index, std::sync::atomic::Ordering::SeqCst);
+            Self
+        }
+    }
+    impl Drop for PanicGuard {
+        fn drop(&mut self) {
+            INJECT_WORKER_PANIC_ACTION_INDEX.store(usize::MAX, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
     #[test]
     fn c2a3a_worker_panic_yields_uncertain_non_success_join() {
-        let barrier_dir =
-            std::env::temp_dir().join(format!("tethers-c2a3a-panic-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&barrier_dir).unwrap();
+        let h = C2A3aGroupHarness::new("panic");
 
-        let (runtime, _runtime_dir) = c2a3a_barrier_runtime(&barrier_dir);
-        let trail_path = std::env::temp_dir().join(format!(
-            "tethers-c2a3a-panic-trail-{}.jsonl",
-            uuid::Uuid::new_v4()
-        ));
-        let input = PreparedEvaluationInput {
-            tether_id: "together-test".to_owned(),
-            tether_version: "1".to_owned(),
-            evaluation_id: "eval-panic-1".to_owned(),
-            anchor_event: json!({"id": "evt-panic-1", "name": "test"}),
-            facts: json!({}),
-        };
-
-        // Inject panic into the next worker.
-        INJECT_WORKER_PANIC.with(|f| f.set(true));
+        // Target worker action_index=1 (member-b) for panic injection.
+        // PanicGuard resets to usize::MAX on drop (even if test panics).
+        let _guard = PanicGuard::target(1);
 
         std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let providers = runtime.providers().to_vec();
-                let mut sessions = c2a3a_establish_sessions(&providers);
-                let (actions, groups) = c2a3a_actions();
-                let mut response = c2a3a_matched_response("eval-panic-1", actions, groups);
-                let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
-                let availability =
-                    ProviderAvailability::from_identities(["provider-a", "provider-b"]);
-                let mut trail = dispatch::FileTrail::open(&trail_path).unwrap();
-                let mut approvals = crate::approval::ApprovalStore::default();
-                let mut replay_authority = FileReplayAuthority::new(None);
-                let engine_path = PathBuf::from("unused-engine");
-                let service = HostExecutionService::new(&runtime, &engine_path, &trail_path, None);
-                execute_group_concurrent(
-                    "together-1",
-                    &[0, 1],
-                    &member_actions,
-                    &mut response,
-                    "eval-panic-1",
-                    &mut trail,
-                    &service,
-                    &input,
-                    &mut sessions,
-                    &availability,
-                    &mut approvals,
-                    &mut replay_authority,
-                )
-            });
+            let handle = s.spawn(|| h.run_group("eval-panic-1"));
 
-            let deadline = std::time::Instant::now() + Duration::from_secs(12);
-            while barrier_active_count(&barrier_dir) < 2 {
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "providers did not reach tools/call"
-                );
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            std::fs::write(barrier_dir.join("release"), "release").unwrap();
+            // Wait for A to enter the barrier (B panics before entering).
+            h.wait_barrier_entries(1);
+
+            // Release A.
+            h.release_member("a");
 
             let result = handle.join().expect("coordinator must not hang");
             assert!(
@@ -5496,23 +5695,17 @@ mod tests {
             );
         });
 
-        let entry_kinds = trail_entry_kinds(&trail_path);
-        let outcome_count = entry_kinds
-            .iter()
-            .filter(|k| k.as_str() == "outcome")
-            .count();
-        let join_count = entry_kinds
-            .iter()
-            .filter(|k| k.as_str() == "group_join")
-            .count();
+        // Verify Trail: at least one outcome, GroupJoin joined=false.
+        let kinds = h.entry_kinds();
+        let outcome_count = kinds.iter().filter(|k| k.as_str() == "outcome").count();
+        let join_count = kinds.iter().filter(|k| k.as_str() == "group_join").count();
         assert!(
             outcome_count >= 1,
             "at least one outcome expected, got {outcome_count}"
         );
         assert_eq!(join_count, 1, "exactly one GroupJoin expected");
 
-        let trail_content = std::fs::read_to_string(&trail_path).unwrap_or_default();
-        for line in trail_content.lines() {
+        for line in h.trail_content().lines() {
             if let Ok(v) = serde_json::from_str::<Value>(line) {
                 if v.get("group_id").is_some() && v.get("joined").is_some() {
                     assert_eq!(
@@ -5523,8 +5716,21 @@ mod tests {
                 }
             }
         }
+    }
 
-        let _ = std::fs::remove_dir_all(&_runtime_dir);
-        let _ = std::fs::remove_file(&trail_path);
+    // ===================================================================
+    // Low-level direct-worker overlap controls
+    // (These test provider invocation, not coordinator behaviour.)
+    // ===================================================================
+
+    fn c2a3a_member_provider(barrier_dir: &Path, identity: &str) -> PreparedProvider {
+        let mut provider = catalogue_test_provider("c2-overlap-barrier");
+        provider.identity = identity.to_owned();
+        provider.stdio_config.provider_config.identity = identity.to_owned();
+        provider.stdio_config.args.extend([
+            "-BarrierDirectory".to_owned(),
+            barrier_dir.to_string_lossy().into_owned(),
+        ]);
+        provider
     }
 }

@@ -223,7 +223,15 @@ try {
                         continue
                     }
                     [System.IO.Directory]::CreateDirectory($BarrierDirectory) | Out-Null
-                    $token = "$PID-$([guid]::NewGuid().ToString('N'))"
+                    $message = $request.params.arguments.message
+                    # Extract member identity from message for per-member release control.
+                    # Messages like "hello-from-a" or "member-a" yield member tag "a".
+                    # Falls back to PID-based token for legacy/shared-release tests.
+                    $memberTag = $null
+                    if ($message -match '(?:hello-from-|member[-/])([a-z0-9]+)$') {
+                        $memberTag = $Matches[1]
+                    }
+                    $token = if ($memberTag) { "member-$memberTag" } else { "$PID-$([guid]::NewGuid().ToString('N'))" }
                     $entered = Join-Path $BarrierDirectory "entered-$token"
                     $active = Join-Path $BarrierDirectory "active-$token"
                     [System.IO.File]::WriteAllText($entered, "entered")
@@ -236,14 +244,16 @@ try {
                         Start-Sleep -Milliseconds 10
                     }
                     [System.IO.File]::WriteAllText($active, "active")
-                    while (-not (Test-Path -LiteralPath (Join-Path $BarrierDirectory 'release'))) {
+                    # Wait for per-member release file (release-member-{tag}) or shared release.
+                    $releaseMember = Join-Path $BarrierDirectory "release-$token"
+                    $releaseShared = Join-Path $BarrierDirectory 'release'
+                    while (-not ((Test-Path -LiteralPath $releaseMember) -or (Test-Path -LiteralPath $releaseShared))) {
                         if ([DateTime]::UtcNow -gt $limit) {
                             Write-ErrorResponse $request.id -32000 "overlap release timed out"
                             continue 2
                         }
                         Start-Sleep -Milliseconds 10
                     }
-                    $message = $request.params.arguments.message
                     Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id; result = @{ echo = $message } }
                     continue
                 }
