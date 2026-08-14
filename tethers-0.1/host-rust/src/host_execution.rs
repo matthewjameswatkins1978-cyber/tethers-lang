@@ -5735,56 +5735,101 @@ mod tests {
     }
 
     // ===================================================================
-    // Selective Replay Authority
+    // Observing Replay Authority (test-only)
     //
-    // Allows per-action replay state: some actions are fresh, others
-    // are recovered as terminal.  This enables replay-blocked tests
-    // where only specific members are blocked.
+    // A coordinator-owned replay authority that:
+    // - selectively recovers specific members as terminal (blocked), and
+    // - records a Send+Sync trace of G0 (intent) / G1 (armed) / G2 (terminal)
+    //   events observable from the test coordinator thread.
+    //
+    // Production ReplayAdmission ownership and !Send boundaries are unchanged;
+    // this is a test seam only.
     // ===================================================================
 
-    struct SelectiveReplayAuthority {
-        blocked_actions: std::collections::HashSet<String>,
-        blocked_state: ReplayState,
+    #[derive(Clone)]
+    struct ReplayTrace {
+        events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     }
 
-    impl SelectiveReplayAuthority {
-        fn new(blocked_actions: &[&str], state: ReplayState) -> Self {
+    impl ReplayTrace {
+        fn new() -> Self {
             Self {
-                blocked_actions: blocked_actions.iter().map(|s| s.to_string()).collect(),
-                blocked_state: state,
+                events: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            }
+        }
+
+        fn record(&self, event: String) {
+            self.events.lock().unwrap().push(event);
+        }
+
+        fn snapshot(&self) -> Vec<String> {
+            self.events.lock().unwrap().clone()
+        }
+
+        fn has(&self, needle: &str) -> bool {
+            self.events.lock().unwrap().iter().any(|e| e == needle)
+        }
+    }
+
+    struct ObservingReplayAuthority {
+        blocked: std::collections::HashMap<String, ReplayState>,
+        trace: ReplayTrace,
+    }
+
+    impl ObservingReplayAuthority {
+        fn new(blocked: &[(&str, ReplayState)]) -> Self {
+            Self::with_trace(blocked, ReplayTrace::new())
+        }
+
+        fn with_trace(blocked: &[(&str, ReplayState)], trace: ReplayTrace) -> Self {
+            Self {
+                blocked: blocked
+                    .iter()
+                    .map(|(id, state)| (id.to_string(), *state))
+                    .collect(),
+                trace,
             }
         }
     }
 
-    impl crate::replay_runtime::ReplayAuthority for SelectiveReplayAuthority {
+    impl crate::replay_runtime::ReplayAuthority for ObservingReplayAuthority {
         fn admit(
             &self,
-            logical_key: &crate::replay::LogicalExecutionKey,
+            _logical_key: &crate::replay::LogicalExecutionKey,
             binding: &crate::replay::ExecutionBinding,
         ) -> Result<Box<dyn crate::replay_runtime::ReplayAdmissionGuard>, crate::replay::ReplayError>
         {
-            let is_blocked = self.blocked_actions.contains(&binding.action_id);
-            Ok(Box::new(SelectiveAdmission {
-                fresh: !is_blocked,
-                state: if is_blocked {
-                    self.blocked_state
-                } else {
-                    ReplayState::ClaimedNoState
-                },
-                execution_id: format!("exec_{}", uuid::Uuid::new_v4()),
+            let action_id = binding.action_id.clone();
+            let (fresh, state) = match self.blocked.get(&action_id) {
+                Some(state) => {
+                    self.trace
+                        .record(format!("admit:{action_id}:blocked:{state:?}"));
+                    (false, *state)
+                }
+                None => {
+                    self.trace.record(format!("admit:{action_id}:fresh"));
+                    (true, ReplayState::ClaimedNoState)
+                }
+            };
+            Ok(Box::new(ObservingAdmission {
+                action_id,
+                fresh,
+                state,
+                trace: self.trace.clone(),
             }))
         }
     }
 
-    struct SelectiveAdmission {
+    struct ObservingAdmission {
+        action_id: String,
         fresh: bool,
         state: ReplayState,
-        execution_id: String,
+        trace: ReplayTrace,
     }
 
-    impl crate::replay_runtime::ReplayAdmissionGuard for SelectiveAdmission {
+    impl crate::replay_runtime::ReplayAdmissionGuard for ObservingAdmission {
         fn execution_id(&self) -> &str {
-            &self.execution_id
+            crate::replay_runtime::test_support::TEST_EXECUTION_ID
         }
         fn state(&self) -> ReplayState {
             self.state
@@ -5793,9 +5838,11 @@ mod tests {
             self.fresh
         }
         fn publish_intent(&mut self) -> Result<(), crate::replay::ReplayError> {
+            self.trace.record(format!("g0:{}", self.action_id));
             Ok(())
         }
         fn publish_armed(&mut self) -> Result<(), crate::replay::ReplayError> {
+            self.trace.record(format!("g1:{}", self.action_id));
             Ok(())
         }
         fn publish_terminal(
@@ -5803,6 +5850,7 @@ mod tests {
             _state: ReplayState,
             _durable_outcome_digest: String,
         ) -> Result<(), crate::replay::ReplayError> {
+            self.trace.record(format!("g2:{}", self.action_id));
             Ok(())
         }
     }
@@ -5824,17 +5872,19 @@ mod tests {
         trail_path: PathBuf,
         replay_dir: PathBuf,
         barrier_dir: PathBuf,
+        provider_a_unavailable: bool,
     }
 
     struct TerminalHarnessBuilder {
         test_name: String,
         policy_a: PolicyDecision,
         policy_b: PolicyDecision,
-        replay_fresh: bool,
-        replay_state: ReplayState,
         timeout_a_ms: Option<u64>,
         timeout_b_ms: Option<u64>,
-        remove_provider_a: bool,
+        provider_a_unavailable: bool,
+        peer_count: usize,
+        outcome_a: OutcomeMode,
+        outcome_b: OutcomeMode,
     }
 
     #[derive(Clone, Copy)]
@@ -5844,17 +5894,25 @@ mod tests {
         Ask,
     }
 
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum OutcomeMode {
+        Success,
+        Failed,
+        Uncertain,
+    }
+
     impl TerminalHarnessBuilder {
         fn new(test_name: &str) -> Self {
             Self {
                 test_name: test_name.to_owned(),
                 policy_a: PolicyDecision::Allow,
                 policy_b: PolicyDecision::Allow,
-                replay_fresh: true,
-                replay_state: ReplayState::ClaimedNoState,
                 timeout_a_ms: None,
                 timeout_b_ms: None,
-                remove_provider_a: false,
+                provider_a_unavailable: false,
+                peer_count: 2,
+                outcome_a: OutcomeMode::Success,
+                outcome_b: OutcomeMode::Success,
             }
         }
 
@@ -5868,16 +5926,6 @@ mod tests {
             self
         }
 
-        fn replay_fresh(mut self, fresh: bool) -> Self {
-            self.replay_fresh = fresh;
-            self
-        }
-
-        fn replay_state(mut self, state: ReplayState) -> Self {
-            self.replay_state = state;
-            self
-        }
-
         fn timeout_a_ms(mut self, ms: u64) -> Self {
             self.timeout_a_ms = Some(ms);
             self
@@ -5888,8 +5936,27 @@ mod tests {
             self
         }
 
-        fn remove_provider_a(mut self) -> Self {
-            self.remove_provider_a = true;
+        /// Keep provider-a fully configured but exclude it from the host's
+        /// availability snapshot so the semantic member becomes exactly
+        /// `Unavailable` without being removed from the Runtime Plan.
+        fn provider_a_unavailable(mut self) -> Self {
+            self.provider_a_unavailable = true;
+            self
+        }
+
+        /// Number of providers that must reach tools/call before any proceeds.
+        fn peer_count(mut self, count: usize) -> Self {
+            self.peer_count = count;
+            self
+        }
+
+        fn outcome_a(mut self, mode: OutcomeMode) -> Self {
+            self.outcome_a = mode;
+            self
+        }
+
+        fn outcome_b(mut self, mode: OutcomeMode) -> Self {
+            self.outcome_b = mode;
             self
         }
 
@@ -6016,18 +6083,17 @@ mod tests {
                 }),
             ];
 
-            if self.remove_provider_a {
-                providers.remove(0);
-            }
-
-            let mut capability_requirements = vec![];
-            let mut policy_rules_list = vec![];
-            if !self.remove_provider_a {
-                capability_requirements.push(json!({"name": "fixture.ping-a", "version": 1, "reason": "concurrency observability"}));
-                policy_rules_list.push(policy_rules("fixture.ping-a", self.policy_a));
-            }
-            capability_requirements.push(json!({"name": "fixture.ping-b", "version": 1, "reason": "concurrency observability"}));
-            policy_rules_list.push(policy_rules("fixture.ping-b", self.policy_b));
+            // Both providers remain configured.  `provider_a_unavailable`
+            // only affects the runtime availability snapshot, so member-a's
+            // semantic Action always remains in the plan.
+            let capability_requirements = vec![
+                json!({"name": "fixture.ping-a", "version": 1, "reason": "concurrency observability"}),
+                json!({"name": "fixture.ping-b", "version": 1, "reason": "concurrency observability"}),
+            ];
+            let policy_rules_list = vec![
+                policy_rules("fixture.ping-a", self.policy_a),
+                policy_rules("fixture.ping-b", self.policy_b),
+            ];
 
             let config = json!({
                 "format_version": "0.1",
@@ -6053,6 +6119,19 @@ mod tests {
             let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
             let runtime = prepare_runtime(&loaded).unwrap();
 
+            // Write barrier control files: peer count and per-member outcome.
+            std::fs::write(barrier_dir.join("peer-count"), self.peer_count.to_string()).unwrap();
+            let outcome_file = |tag: &str, mode: OutcomeMode| {
+                let text = match mode {
+                    OutcomeMode::Success => "success",
+                    OutcomeMode::Failed => "failed",
+                    OutcomeMode::Uncertain => "uncertain",
+                };
+                std::fs::write(barrier_dir.join(format!("outcome-member-{tag}")), text).unwrap();
+            };
+            outcome_file("a", self.outcome_a);
+            outcome_file("b", self.outcome_b);
+
             let trail_path = std::env::temp_dir().join(format!(
                 "tethers-c2a3a-terminal-{}-trail-{}.jsonl",
                 self.test_name,
@@ -6071,6 +6150,7 @@ mod tests {
                 trail_path,
                 replay_dir,
                 barrier_dir,
+                provider_a_unavailable: self.provider_a_unavailable,
             }
         }
     }
@@ -6160,8 +6240,7 @@ mod tests {
                 "trail": [],
             });
             let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
-            let all_identities: Vec<&str> = providers.iter().map(|p| p.identity.as_str()).collect();
-            let availability = ProviderAvailability::from_identities(all_identities);
+            let availability = self.availability();
             let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
             let mut approvals = crate::approval::ApprovalStore::default();
             let mut replay_authority = replay_authority;
@@ -6189,6 +6268,19 @@ mod tests {
                 &mut approvals,
                 replay_authority.as_mut(),
             )
+        }
+
+        /// Build the host availability snapshot for the group, excluding
+        /// provider-a when the harness was built with
+        /// `provider_a_unavailable`.
+        fn availability(&self) -> ProviderAvailability {
+            let identities = self
+                .runtime
+                .providers()
+                .iter()
+                .map(|p| p.identity.as_str())
+                .filter(|id| !(self.provider_a_unavailable && *id == "provider-a"));
+            ProviderAvailability::from_identities(identities)
         }
 
         fn run_group_with_replay(
@@ -6275,8 +6367,7 @@ mod tests {
                 "trail": [],
             });
             let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
-            let all_identities: Vec<&str> = providers.iter().map(|p| p.identity.as_str()).collect();
-            let availability = ProviderAvailability::from_identities(all_identities);
+            let availability = self.availability();
             let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
             let mut approvals = crate::approval::ApprovalStore::default();
             let mut replay_authority = replay_config();
@@ -6468,9 +6559,12 @@ mod tests {
 
     #[test]
     fn c2a3a_terminal_unavailable_plus_success() {
-        // Remove provider-a entirely so capability resolution fails.
+        // Keep both semantic Actions in the plan.  Exclude provider-a from the
+        // host availability snapshot so member-a becomes exactly Unavailable
+        // without being removed from the Runtime Plan.  B stays eligible.
         let h = TerminalHarnessBuilder::new("unavailable")
-            .remove_provider_a()
+            .provider_a_unavailable()
+            .peer_count(1)
             .policy_a(PolicyDecision::Allow)
             .policy_b(PolicyDecision::Allow)
             .build();
@@ -6483,14 +6577,8 @@ mod tests {
                 })
             });
 
-            // B may or may not enter depending on timing; release it eagerly.
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
-            while barrier_entered_count(&h.barrier_dir) < 1 {
-                if std::time::Instant::now() >= deadline {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
+            // B must enter real provider tools/call.
+            h.wait_barrier_entries(1);
             h.release_member("b");
 
             result = Some(handle.join().expect("group must not panic"));
@@ -6498,14 +6586,45 @@ mod tests {
 
         let result = result.expect("group must have produced a result");
 
-        // Group must be non-success because member-a cannot resolve.
+        // Exact terminal classification, not a flattened non-success.
         assert!(
-            !matches!(&result, ExecutionServiceResult::Completed { .. }),
-            "expected non-success (member-a unavailable), got: {result:?}"
+            matches!(result, ExecutionServiceResult::Unavailable { .. }),
+            "expected exact Unavailable, got: {result:?}"
         );
 
+        // GroupJoin joined=false.
         let join = h.group_join_entry().expect("GroupJoin must exist");
         assert_eq!(join["joined"].as_bool(), Some(false));
+
+        // member-a was NOT silently removed: member_action_ids holds BOTH.
+        let member_ids: Vec<String> = join["member_action_ids"]
+            .as_array()
+            .expect("GroupJoin must carry member_action_ids")
+            .iter()
+            .map(|v| v.as_str().expect("member id must be a string").to_owned())
+            .collect();
+        assert!(
+            member_ids.contains(&"member-a".to_owned()),
+            "member-a must remain a semantic member, got: {member_ids:?}"
+        );
+        assert!(
+            member_ids.contains(&"member-b".to_owned()),
+            "member-b must remain a semantic member, got: {member_ids:?}"
+        );
+
+        // A is a preparation terminal: no OutcomeEntry.  B completes.
+        assert!(
+            !h.has_member_outcome("member-a"),
+            "Unavailable member must NOT have an OutcomeEntry"
+        );
+        let b_outcome = h
+            .outcome_entry("member-b")
+            .expect("B must have an OutcomeEntry");
+        assert_eq!(
+            b_outcome["status"].as_str(),
+            Some("succeeded"),
+            "B must complete successfully, got: {b_outcome:?}"
+        );
     }
 
     // ===================================================================
@@ -6515,6 +6634,7 @@ mod tests {
     #[test]
     fn c2a3a_terminal_replay_blocked_completed_failure() {
         let h = TerminalHarnessBuilder::new("replay-fail")
+            .peer_count(1)
             .policy_a(PolicyDecision::Allow)
             .policy_b(PolicyDecision::Allow)
             .build();
@@ -6524,10 +6644,10 @@ mod tests {
             let handle = s.spawn(|| {
                 h.run_group_with_boxed_replay(
                     "eval-replay-fail-1",
-                    Box::new(SelectiveReplayAuthority::new(
-                        &["member-a"],
+                    Box::new(ObservingReplayAuthority::new(&[(
+                        "member-a",
                         ReplayState::Failed,
-                    )),
+                    )])),
                 )
             });
 
@@ -6554,9 +6674,13 @@ mod tests {
             !h.has_member_outcome("member-a"),
             "replay-blocked member must NOT have an OutcomeEntry"
         );
-        assert!(
-            h.has_member_outcome("member-b"),
-            "successful sibling must have an OutcomeEntry"
+        let b_outcome = h
+            .outcome_entry("member-b")
+            .expect("B must have an OutcomeEntry");
+        assert_eq!(
+            b_outcome["status"].as_str(),
+            Some("succeeded"),
+            "successful sibling must succeed, got: {b_outcome:?}"
         );
     }
 
@@ -6566,19 +6690,25 @@ mod tests {
 
     #[test]
     fn c2a3a_terminal_replay_blocked_completed_success() {
+        // A = ReplayBlockedCompletedSuccess (recovered Succeeded state),
+        // B = normal provider success.  No infrastructure failure permitted.
         let h = TerminalHarnessBuilder::new("replay-success")
+            .peer_count(1)
             .policy_a(PolicyDecision::Allow)
             .policy_b(PolicyDecision::Allow)
             .build();
+
+        let trace = ReplayTrace::new();
+        let trace_for_thread = trace.clone();
 
         let mut result: Option<ExecutionServiceResult> = None;
         std::thread::scope(|s| {
             let handle = s.spawn(|| {
                 h.run_group_with_boxed_replay(
                     "eval-replay-success-1",
-                    Box::new(SelectiveReplayAuthority::new(
-                        &["member-a"],
-                        ReplayState::Succeeded,
+                    Box::new(ObservingReplayAuthority::with_trace(
+                        &[("member-a", ReplayState::Succeeded)],
+                        trace_for_thread,
                     )),
                 )
             });
@@ -6592,22 +6722,32 @@ mod tests {
 
         let result = result.expect("group must have produced a result");
 
-        // ReplayBlockedCompletedSuccess counts as success.
-        // If B also succeeds, group joins.  If B fails for infrastructure
-        // reasons, the result is still non-success but NOT due to replay.
-        // The key invariant: member-a's replay-blocked-success does NOT
-        // cause group failure.
-        let is_completed = matches!(&result, ExecutionServiceResult::Completed { .. });
-        let is_non_success = !is_completed;
-        if is_non_success {
-            // If non-success, it must NOT be ReplayBlockedCompletedFailure
-            // for member-a (that would mean replay-blocked-success was
-            // incorrectly classified as failure).
-            assert!(
-                !matches!(&result, ExecutionServiceResult::ReplayBlockedCompletedFailure { action_id, .. } if action_id == "member-a"),
-                "replay-blocked-success must NOT be classified as failure, got: {result:?}"
-            );
-        }
+        // ReplayBlockedCompletedSuccess counts as success: the group must join.
+        assert!(
+            matches!(&result, ExecutionServiceResult::Completed { .. }),
+            "expected Completed (replay-blocked-success counts as success), got: {result:?}"
+        );
+
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(true));
+
+        // B completed successfully.
+        let b_outcome = h
+            .outcome_entry("member-b")
+            .expect("B must have an OutcomeEntry");
+        assert_eq!(
+            b_outcome["status"].as_str(),
+            Some("succeeded"),
+            "B must complete successfully, got: {b_outcome:?}"
+        );
+
+        // A was admitted as a recovered Succeeded state, which maps to
+        // ReplayBlockedCompletedSuccess (the only success replay classification).
+        assert!(
+            trace.has("admit:member-a:blocked:Succeeded"),
+            "A must be admitted as replay-blocked success, trace: {:?}",
+            trace.snapshot()
+        );
     }
 
     // ===================================================================
@@ -6713,23 +6853,19 @@ mod tests {
 
     #[test]
     fn c2a3a_terminal_deterministic_result_independent_of_order() {
-        // Semantic order: A (Uncertain), B (Failed).
-        // We inject panic into action_index=0 (member-a) to get Uncertain.
-        // We need member-b to also fail.  We can achieve this by removing
-        // provider-b so capability resolution fails with Unavailable/Failed.
+        // Semantic order: A (Uncertain), B (Failed).  Both reach the real
+        // provider boundary and produce distinct terminal results whose
+        // physical delivery order can be inverted via independent release.
         //
-        // Actually, the simpler approach: use the existing harness to prove
-        // that two runs with inverted physical completion order produce the
-        // same semantic result.  We use panic injection for A (Uncertain)
-        // and let B succeed normally.
-
-        for (run_label, release_first) in &[("B-first", "b"), ("A-first", "a")] {
+        // The final aggregate must always be semantic member A's Uncertain,
+        // regardless of which member physically completes first.
+        for (run_label, first, second) in [("B-first", "b", "a"), ("A-first", "a", "b")] {
             let h = TerminalHarnessBuilder::new(&format!("order-{run_label}"))
                 .policy_a(PolicyDecision::Allow)
                 .policy_b(PolicyDecision::Allow)
+                .outcome_a(OutcomeMode::Uncertain)
+                .outcome_b(OutcomeMode::Failed)
                 .build();
-
-            let _guard = PanicGuard::target(0); // Panic in member-a → Uncertain
 
             let mut result: Option<ExecutionServiceResult> = None;
             std::thread::scope(|s| {
@@ -6739,31 +6875,62 @@ mod tests {
                     })
                 });
 
-                h.wait_barrier_entries(1);
-                // Release in the specified order.
-                h.release_member(release_first);
-                if *release_first == "b" {
-                    h.release_member("a");
-                } else {
-                    h.release_member("b");
+                // Both members must reach real tools/call.
+                h.wait_barrier_entries(2);
+
+                // Release one member and require its durable Stage C outcome
+                // before allowing the second member to complete.
+                h.release_member(first);
+
+                let first_action_id = format!("member-{first}");
+                let deadline = std::time::Instant::now() + Duration::from_secs(15);
+                while !h.has_member_outcome(&first_action_id) {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "[{run_label}] {first_action_id} outcome never became durable"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
                 }
 
-                result = Some(handle.join().expect("group must not panic"));
+                // The second provider is still physically blocked here.
+                assert!(
+                    !h.has_member_outcome(&format!("member-{second}")),
+                    "[{run_label}] second member completed before release"
+                );
+
+                h.release_member(second);
+
+                result = Some(handle.join().expect("group coordinator must not panic"));
             });
 
-            let result = result.expect("group must have produced a result");
+            let result = result.expect("group must produce a result");
 
-            // Both runs: first non-success is Uncertain for member-a.
+            // Semantic order is always A then B.  A = Uncertain, B = Failed.
+            // Therefore A must win aggregate selection regardless of physical order.
             assert!(
-                matches!(&result, ExecutionServiceResult::Uncertain { action_id, .. } if action_id == "member-a"),
-                "[{run_label}] expected Uncertain for member-a, got: {result:?}"
+                matches!(
+                    &result,
+                    ExecutionServiceResult::Uncertain { action_id, .. } if action_id == "member-a"
+                ),
+                "[{run_label}] expected semantic member-a Uncertain, got {result:?}"
+            );
+
+            let expected_order = if first == "b" {
+                vec!["member-b".to_owned(), "member-a".to_owned()]
+            } else {
+                vec!["member-a".to_owned(), "member-b".to_owned()]
+            };
+            assert_eq!(
+                h.outcome_ids(),
+                expected_order,
+                "[{run_label}] durable physical OutcomeEntry order"
             );
 
             let join = h.group_join_entry().expect("GroupJoin must exist");
             assert_eq!(
                 join["joined"].as_bool(),
                 Some(false),
-                "[{run_label}] GroupJoin must be non-success"
+                "[{run_label}] two non-success members must not join successfully"
             );
         }
     }
@@ -6774,7 +6941,11 @@ mod tests {
 
     #[test]
     fn c2a3a_terminal_panic_exact_uncertain() {
+        // member-b (semantic ordinal 1) panics inside the real spawned worker.
+        // member-a reaches the provider and succeeds.  The final aggregate
+        // must be EXACTLY Uncertain for member-b.
         let h = TerminalHarnessBuilder::new("panic-exact")
+            .peer_count(1)
             .policy_a(PolicyDecision::Allow)
             .policy_b(PolicyDecision::Allow)
             .build();
@@ -6790,13 +6961,8 @@ mod tests {
                 })
             });
 
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
-            while barrier_entered_count(&h.barrier_dir) < 1 {
-                if std::time::Instant::now() >= deadline {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
+            // member-a reaches the barrier (member-b panics before entering).
+            h.wait_barrier_entries(1);
             h.release_member("a");
 
             result = Some(handle.join().expect("group must not panic"));
@@ -6804,21 +6970,21 @@ mod tests {
 
         let result = result.expect("group must have produced a result");
 
-        // Panic injection makes the group non-success.
-        // The exact member depends on timing; verify the group is NOT Completed.
+        // Exact returned final result: Uncertain for semantic member-b.
         assert!(
-            !matches!(&result, ExecutionServiceResult::Completed { .. }),
-            "panic must prevent Completed, got: {result:?}"
+            matches!(&result, ExecutionServiceResult::Uncertain { action_id, .. } if action_id == "member-b"),
+            "expected exact Uncertain for member-b, got: {result:?}"
         );
 
-        // Verify at least one outcome has status "uncertain" in the Trail.
-        let entries = h.trail_entries();
-        let has_uncertain = entries
-            .iter()
-            .any(|e| e.get("status").and_then(Value::as_str) == Some("uncertain"));
-        assert!(
-            has_uncertain,
-            "Trail must contain at least one uncertain outcome"
+        // member-a succeeded, member-b has no OutcomeEntry (panic is a
+        // pre-provider classification carried through Stage C).
+        let a_outcome = h
+            .outcome_entry("member-a")
+            .expect("A must have an OutcomeEntry");
+        assert_eq!(
+            a_outcome["status"].as_str(),
+            Some("succeeded"),
+            "member-a must succeed, got: {a_outcome:?}"
         );
 
         let join = h.group_join_entry().expect("GroupJoin must exist");
@@ -6831,19 +6997,15 @@ mod tests {
 
     #[test]
     fn c2a3a_terminal_intent_before_effect() {
-        // Both members use the barrier fixture.  We prove that after
-        // Stage A preparation completes (both members are Prepared) and
-        // before either provider can perform an effect (tools/call), the
-        // Trail already contains intent entries.
-        //
-        // Strategy: release both members immediately and check that
-        // Trail intent entries exist before any OutcomeEntry.
+        // Both members use the barrier fixture.  Before either provider can
+        // perform an effect, each member's durable Trail intent must exist.
         let h = TerminalHarnessBuilder::new("intent")
             .policy_a(PolicyDecision::Allow)
             .policy_b(PolicyDecision::Allow)
             .build();
 
-        // Run in a thread so we can poll the Trail.
+        // Run in a thread so we can poll the Trail while both providers are
+        // blocked at the effect gate.
         std::thread::scope(|s| {
             let handle = s.spawn(|| {
                 h.run_group_with_replay("eval-intent-1", || {
@@ -6854,23 +7016,24 @@ mod tests {
             // Wait for both to enter the barrier (both reached tools/call).
             h.wait_barrier_entries(2);
 
-            // At this point both providers are at tools/call but haven't
-            // been released.  Check the Trail for intent entries.
-            // Intent entries have execution_id and action_id but no status.
+            // Before releasing provider effect, BOTH members must already have
+            // durable Trail intent.
             let entries = h.trail_entries();
-            let intent_entries: Vec<&Value> = entries
-                .iter()
-                .filter(|e| {
+            let has_intent = |member: &str| {
+                entries.iter().any(|e| {
                     e.get("execution_id").is_some()
-                        && e.get("action_id").is_some()
+                        && e.get("action_id").and_then(Value::as_str) == Some(member)
                         && e.get("status").is_none()
                         && e.get("capability_name").is_some()
                 })
-                .collect();
-
+            };
             assert!(
-                !intent_entries.is_empty(),
-                "Trail must contain intent entries before provider effect"
+                has_intent("member-a"),
+                "member-a must have durable Trail intent before provider effect"
+            );
+            assert!(
+                has_intent("member-b"),
+                "member-b must have durable Trail intent before provider effect"
             );
 
             // Release both.
@@ -6881,22 +7044,29 @@ mod tests {
             assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
         });
 
-        // Final verification: Trail has intent before outcome.
+        // After completion, each member's intent must precede its outcome.
         let entries = h.trail_entries();
-        let first_intent_pos = entries.iter().position(|e| {
-            e.get("execution_id").is_some()
-                && e.get("action_id").is_some()
-                && e.get("status").is_none()
-                && e.get("capability_name").is_some()
-        });
-        let first_outcome_pos = entries
-            .iter()
-            .position(|e| e.get("execution_id").is_some() && e.get("status").is_some());
-
-        if let (Some(intent_pos), Some(outcome_pos)) = (first_intent_pos, first_outcome_pos) {
+        for member in ["member-a", "member-b"] {
+            let intent_pos = entries
+                .iter()
+                .position(|e| {
+                    e.get("execution_id").is_some()
+                        && e.get("action_id").and_then(Value::as_str) == Some(member)
+                        && e.get("status").is_none()
+                        && e.get("capability_name").is_some()
+                })
+                .expect("intent entry must exist for {member}");
+            let outcome_pos = entries
+                .iter()
+                .position(|e| {
+                    e.get("execution_id").is_some()
+                        && e.get("status").is_some()
+                        && e.get("action_id").and_then(Value::as_str) == Some(member)
+                })
+                .expect("outcome entry must exist for {member}");
             assert!(
                 intent_pos < outcome_pos,
-                "intent entry (pos {intent_pos}) must precede outcome entry (pos {outcome_pos})"
+                "intent (pos {intent_pos}) must precede outcome (pos {outcome_pos}) for {member}"
             );
         }
     }
@@ -6907,25 +7077,42 @@ mod tests {
 
     #[test]
     fn c2a3a_terminal_g1_before_effect() {
-        // Prove that the replay G1/armed state is published before the
-        // provider can perform its actual effect.  We verify this through
-        // Trail ordering: intent entries must precede action_started entries,
-        // which must precede outcome entries.  The G1 (armed) boundary
-        // happens between Trail intent and action_started.
+        // Directly observe replay G0 (intent) / G1 (armed) / G2 (terminal)
+        // through an instrumented test-only replay authority.  G1 must be
+        // observed before any provider effect is released, and G2 after
+        // completion, with G0 -> G1 -> G2 ordering per member.
         let h = TerminalHarnessBuilder::new("g1-before")
             .policy_a(PolicyDecision::Allow)
             .policy_b(PolicyDecision::Allow)
             .build();
 
+        let trace = ReplayTrace::new();
+        let trace_for_thread = trace.clone();
+
         std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                h.run_group_with_replay("eval-g1-1", || {
-                    crate::replay_runtime::test_support::TestReplayAuthority::default()
-                })
+                h.run_group_with_boxed_replay(
+                    "eval-g1-1",
+                    Box::new(ObservingReplayAuthority::with_trace(&[], trace_for_thread)),
+                )
             });
 
-            // Wait for both to enter the barrier.
+            // Wait for both to enter the barrier (both reached tools/call).
             h.wait_barrier_entries(2);
+
+            // BEFORE releasing provider effect, G0 and G1 must be observed
+            // for BOTH invoked members.
+            for member in ["member-a", "member-b"] {
+                assert!(
+                    trace.has(&format!("g0:{member}")),
+                    "G0 for {member} must be observed before provider effect"
+                );
+                assert!(
+                    trace.has(&format!("g1:{member}")),
+                    "G1 for {member} must be observed before provider effect, trace: {:?}",
+                    trace.snapshot()
+                );
+            }
 
             // Release both.
             h.release_member("a");
@@ -6935,43 +7122,29 @@ mod tests {
             assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
         });
 
-        // Verify Trail ordering: intent entries precede action_started
-        // entries, which must precede outcome entries.  This proves
-        // G0 → intent → deadline → G1 → action_started → provider effect.
-        let entries = h.trail_entries();
-
-        let first_intent_pos = entries.iter().position(|e| {
-            e.get("execution_id").is_some()
-                && e.get("action_id").is_some()
-                && e.get("status").is_none()
-                && e.get("capability_name").is_some()
-        });
-        let first_started_pos = entries.iter().position(|e| {
-            e.get("kind")
-                .and_then(Value::as_str)
-                .map(|k| k == "action_started")
-                .unwrap_or(false)
-        });
-        let first_outcome_pos = entries
-            .iter()
-            .position(|e| e.get("execution_id").is_some() && e.get("status").is_some());
-
-        if let (Some(intent_pos), Some(started_pos)) = (first_intent_pos, first_started_pos) {
+        // After completion, G2 must be observed, and ordering per member is
+        // G0 -> G1 -> G2.
+        let snapshot = trace.snapshot();
+        for member in ["member-a", "member-b"] {
+            let g0 = format!("g0:{member}");
+            let g1 = format!("g1:{member}");
+            let g2 = format!("g2:{member}");
+            let pos = |e: &String| {
+                snapshot
+                    .iter()
+                    .position(|x| x == e)
+                    .unwrap_or_else(|| panic!("{e} must be observed"))
+            };
+            let g0_pos = pos(&g0);
+            let g1_pos = pos(&g1);
+            let g2_pos = pos(&g2);
             assert!(
-                intent_pos < started_pos,
-                "intent (pos {intent_pos}) must precede action_started (pos {started_pos})"
+                g0_pos < g1_pos,
+                "G0 (pos {g0_pos}) before G1 (pos {g1_pos}) for {member}"
             );
-        }
-        if let (Some(started_pos), Some(outcome_pos)) = (first_started_pos, first_outcome_pos) {
             assert!(
-                started_pos < outcome_pos,
-                "action_started (pos {started_pos}) must precede outcome (pos {outcome_pos})"
-            );
-        }
-        if let (Some(intent_pos), Some(outcome_pos)) = (first_intent_pos, first_outcome_pos) {
-            assert!(
-                intent_pos < outcome_pos,
-                "intent (pos {intent_pos}) must precede outcome (pos {outcome_pos})"
+                g1_pos < g2_pos,
+                "G1 (pos {g1_pos}) before G2 (pos {g2_pos}) for {member}"
             );
         }
     }

@@ -140,6 +140,49 @@ Lucy review of the five coordinator-observability proofs. If accepted, the
 remaining deferred matrices (semantic, replay, unattempted, intent/G1) may be
 assigned as separate tasks.
 
+## Correction pass — terminal semantic matrix hardening
+
+Owner `DeepSeek Flash`. Four review defects were corrected without widening
+the accepted architecture.
+
+1. **Unavailable (Defect 1).** `remove_provider_a` deleted member-a's semantic
+   Action from the Runtime Plan. Replaced with `provider_a_unavailable`, which
+   keeps provider-a configured and member-a's Action present, and only excludes
+   provider-a from the host availability snapshot. The exact production
+   `ExecutionServiceResult::Unavailable` path is reached, member-b still invokes
+   and succeeds, `member_action_ids` holds both members, and `joined == false`.
+
+2. **ReplayBlockedCompletedSuccess (Defect 2).** The prior test permitted a
+   weakened "not failure" assertion. Rewritten to require exactly
+   `ExecutionServiceResult::Completed`, `joined == true`, member-b success, and
+   member-a admitted as recovered `Succeeded` (via an observing replay trace).
+
+3. **Inverse physical completion (Defect 3).** The prior test panicked A before
+   any provider completion, so no physical order was actually inverted. Now A
+   produces a real provider `Uncertain` and B a real provider `Failed` via
+   per-member fixture outcome control, with independent release. Both runs
+   assert physical OutcomeEntry order (B→A and A→B) and that the final
+   aggregate is always semantic member-a `Uncertain`.
+
+4. **G1-before-effect (Defect 4).** Replaced Trail-order inference with a
+   test-only `ObservingReplayAuthority` / `ReplayTrace` that records G0/G1/G2
+   per member. G1 is asserted observed before releasing provider effect, and
+   G0→G1→G2 ordering is asserted after completion. Replay admission ownership
+   remains coordinator-owned and `!Send`.
+
+Panic exact classification now asserts exactly `Uncertain` for member-b; intent
+evidence uses mandatory `expect`/`assert` rather than optional `if let`.
+
+### Fixture defect discovered and fixed
+
+`tethers-stdio-fixture.ps1` used
+`(Get-ChildItem -Filter 'entered-*').Count`, which throws
+`ParentContainsErrorRecordException` under `Set-StrictMode -Version Latest`
+when exactly one file matches (scalar `FileInfo` has no `.Count`). This made
+member-b fail with `NoFinalResponse` in every single-member test. Fixed to
+`@(Get-ChildItem ...).Count`. Added `peer-count` and per-member
+`outcome-{tag}` control files.
+
 ## References
 
 - `docs/CURRENT_CLINE_TASK.md`

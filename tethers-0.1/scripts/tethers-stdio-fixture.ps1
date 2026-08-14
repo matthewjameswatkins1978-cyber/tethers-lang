@@ -235,8 +235,18 @@ try {
                     $entered = Join-Path $BarrierDirectory "entered-$token"
                     $active = Join-Path $BarrierDirectory "active-$token"
                     [System.IO.File]::WriteAllText($entered, "entered")
+
+                    # Optional per-test peer count: how many providers must reach
+                    # tools/call before either proceeds.  Default 2 (real overlap).
+                    # Single-member tests (e.g. replay-blocked sibling) set 1.
+                    $peerCount = 2
+                    $peerCountFile = Join-Path $BarrierDirectory "peer-count"
+                    if (Test-Path -LiteralPath $peerCountFile) {
+                        $peerCount = [int](Get-Content -LiteralPath $peerCountFile -Raw).Trim()
+                    }
+
                     $limit = [DateTime]::UtcNow.AddSeconds(10)
-                    while ((Get-ChildItem -LiteralPath $BarrierDirectory -Filter 'entered-*').Count -lt 2) {
+                    while (@(Get-ChildItem -LiteralPath $BarrierDirectory -Filter 'entered-*').Count -lt $peerCount) {
                         if ([DateTime]::UtcNow -gt $limit) {
                             Write-ErrorResponse $request.id -32000 "overlap peer did not enter"
                             continue 2
@@ -254,8 +264,33 @@ try {
                         }
                         Start-Sleep -Milliseconds 10
                     }
-                    Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id; result = @{ echo = $message } }
-                    continue
+
+                    # Optional per-member outcome control file.  After release the
+                    # provider returns either a real success result, an explicit
+                    # JSON-RPC error (Failed), or a response lacking both result and
+                    # error (NoFinalResponse -> Uncertain).
+                    $outcomeFile = Join-Path $BarrierDirectory "outcome-$token"
+                    $outcome = if (Test-Path -LiteralPath $outcomeFile) {
+                        (Get-Content -LiteralPath $outcomeFile -Raw).Trim()
+                    } else {
+                        "success"
+                    }
+                    switch ($outcome) {
+                        "uncertain" {
+                            # No result and no error: the host classifies this as
+                            # NoFinalResponse -> Uncertain.
+                            Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id }
+                            continue
+                        }
+                        "failed" {
+                            Write-ErrorResponse $request.id -32000 "controlled provider failure"
+                            continue
+                        }
+                        default {
+                            Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id; result = @{ echo = $message } }
+                            continue
+                        }
+                    }
                 }
                 if ($Mode -eq "run-success") {
                     if ($MarkerFile) { Add-Content -Path $MarkerFile -Value "tools/call" }
