@@ -379,6 +379,7 @@ pub fn execute_enabled_installed_action(
         &mut replay_authority,
         None,
         &mut anchor_writer,
+        None,
     )
 }
 
@@ -1032,7 +1033,10 @@ impl<'a> HostExecutionService<'a> {
             &actions,
             &evaluation_id,
             &mut trail,
-            |response: &mut Value, action_index: usize, trail: &mut dyn dispatch::Trail| {
+            |response: &mut Value,
+             action_index: usize,
+             trail: &mut dyn dispatch::Trail,
+             _position: &dispatch::SemanticPosition| {
                 let proposed = match crate::extract_proposed_action_at(response, action_index) {
                     Ok(proposed) => proposed,
                     Err(error) => {
@@ -1242,6 +1246,7 @@ impl<'a> HostExecutionService<'a> {
                 replay_authority,
                 None,
                 &mut anchor_writer,
+                None,
             )
         });
         match shared_result {
@@ -1968,6 +1973,7 @@ mod tests {
             ActionId("act-1".to_owned()),
             proposed.arguments,
             &mut trail,
+            None,
         );
         assert_eq!(ready.unwrap_err(), dispatch::PrepareError::Deny);
         assert!(trail.entries.is_empty());

@@ -1611,6 +1611,7 @@ fn authorise_and_execute_with_writer(
         &replay_authority,
         None,
         anchor_writer,
+        None,
     )
     .map(|_| ())
 }
@@ -1831,6 +1832,7 @@ fn resume_and_execute_exact_approval_with_authority(
         replay_authority,
         Some(&mut consumption),
         &mut anchor_writer,
+        None,
     )
     .map(|_| ())
 }
@@ -1898,6 +1900,7 @@ fn authorise_and_execute_with_test_replay(
         &replay_authority,
         None,
         &mut anchor_writer,
+        None,
     )
     .map(|_| ())
 }
@@ -1950,6 +1953,7 @@ fn authorise_and_execute_without_bridge_pins_with_clock(
         &replay_authority,
         None,
         &mut anchor_writer,
+        None,
     )
     .map(|_| ())
 }
@@ -2017,6 +2021,7 @@ pub(crate) fn execute_shared_boundary(
     replay_authority: &dyn replay_runtime::ReplayAuthority,
     approval_consumption: Option<&mut dyn ApprovalConsumption>,
     anchor_writer: &mut dyn ResultAnchorWriter,
+    semantic_position: Option<&dispatch::SemanticPosition>,
 ) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
     let mut result = execute_boundary_impl(
         response,
@@ -2031,6 +2036,7 @@ pub(crate) fn execute_shared_boundary(
         replay_authority,
         approval_consumption,
         anchor_writer,
+        semantic_position,
     )?;
     if response
         .get("trail")
@@ -2056,6 +2062,7 @@ fn authorise_and_execute_inner(
     replay_authority: &dyn replay_runtime::ReplayAuthority,
     approval_consumption: Option<&mut dyn ApprovalConsumption>,
     anchor_writer: &mut dyn ResultAnchorWriter,
+    semantic_position: Option<&dispatch::SemanticPosition>,
 ) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
     execute_shared_boundary(
         response,
@@ -2070,6 +2077,7 @@ fn authorise_and_execute_inner(
         replay_authority,
         approval_consumption,
         anchor_writer,
+        semantic_position,
     )
 }
 
@@ -2087,6 +2095,7 @@ fn execute_boundary_impl(
     replay_authority: &dyn replay_runtime::ReplayAuthority,
     approval_consumption: Option<&mut dyn ApprovalConsumption>,
     anchor_writer: &mut dyn ResultAnchorWriter,
+    semantic_position: Option<&dispatch::SemanticPosition>,
 ) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
     let original_event_id = input_context.event_id.as_str();
 
@@ -2250,6 +2259,7 @@ fn execute_boundary_impl(
             action_id.clone(),
             arguments,
             trail,
+            semantic_position.cloned(),
         )
     }) {
         Ok(ready) => ready,
@@ -2404,6 +2414,7 @@ fn execute_boundary_impl(
         error_message: reason.as_ref().map(|reason| reason.message.to_string()),
         reason_code: reason.as_ref().map(|reason| reason.code.to_string()),
         timestamp_unix_ms: timestamp_ms,
+        semantic_position: semantic_position.cloned(),
     };
 
     if crate::bench_timing::timed("trail_outcome", || trail.append_outcome(&outcome_entry)).is_err()
@@ -2928,6 +2939,7 @@ mod tests {
             ActionId("action_1".into()),
             args.clone(),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -2960,6 +2972,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({"project": "p", "task": "t"}),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -3040,6 +3053,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -3075,6 +3089,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -3102,6 +3117,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -3124,6 +3140,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -3150,6 +3167,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -3181,6 +3199,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -3209,6 +3228,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({"project": "p", "task": "t"}),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -3244,6 +3264,7 @@ mod tests {
                 ActionId("action_1".into()),
                 json!({"project": "lantern-keeper", "task": "LK-39"}),
                 &mut trail,
+                None,
             )
             .unwrap();
 
@@ -3277,6 +3298,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({"project": "lantern-keeper", "task": "LK-39"}),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -3505,6 +3527,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({"project": "p", "task": "t"}),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -5580,6 +5603,7 @@ mod tests {
                 authority,
                 approval,
                 anchor_writer,
+                None,
             )
             .unwrap();
             response
@@ -7254,6 +7278,7 @@ mod tests {
                 &authority,
                 None,
                 &mut anchor_writer,
+                None,
             )
             .expect("initial dispatch");
         }
@@ -7297,6 +7322,7 @@ mod tests {
                 &authority,
                 None,
                 &mut anchor_writer,
+                None,
             )
             .expect("A dispatch");
         }
@@ -7651,6 +7677,7 @@ mod tests {
             &authority,
             None,
             &mut anchor_writer,
+            None,
         )
         .expect("first dispatch");
 
@@ -7940,6 +7967,7 @@ mod tests {
             &authority,
             None,
             &mut anchor_writer,
+            None,
         );
         assert!(result.is_err());
 
@@ -8629,6 +8657,7 @@ mod tests {
             &replay_authority,
             None,
             &mut anchor_writer,
+            None,
         )
         .unwrap();
 

@@ -52,6 +52,35 @@ impl ExecutionId {
 pub struct ActionId(pub String);
 
 // ---------------------------------------------------------------------------
+// Semantic position
+// ---------------------------------------------------------------------------
+
+/// Deterministic semantic position of a Trail record within the Runtime Plan.
+///
+/// Distinguishes physical append order (the order records hit durable
+/// storage) from semantic position (where an event belongs in the plan's
+/// deterministic execution schedule).  Under serial execution these are
+/// identical; under future physical concurrency they may diverge.
+///
+/// The representation does not depend on timestamps, completion order,
+/// provider timing, thread identity, or canonical V2 member sorting.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SemanticPosition {
+    /// 0-indexed ordinal of this Action in the flat Runtime Plan actions array.
+    pub action_ordinal: u64,
+    /// Together group identity when this Action is a group member.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
+    /// 0-indexed ordinal within the Together group, derived from the
+    /// deterministic `member_action_ids` order (NOT canonical V2 sorting).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member_ordinal: Option<u64>,
+    /// Execution phase: `"action"` (sequential), `"member"` (Together member),
+    /// or `"join"` (GroupJoin).
+    pub phase: String,
+}
+
+// ---------------------------------------------------------------------------
 // Intent entry
 // ---------------------------------------------------------------------------
 
@@ -74,6 +103,10 @@ pub struct IntentEntry {
     /// is a later boundary.  This increment preserves arguments without
     /// validating them.
     pub arguments: serde_json::Value,
+    /// Deterministic semantic position within the Runtime Plan.
+    /// Absent in pre-C2-A2b records.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_position: Option<SemanticPosition>,
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +134,10 @@ pub struct OutcomeEntry {
     pub reason_code: Option<String>,
     /// Host-supplied wall-clock timestamp in milliseconds since Unix epoch.
     pub timestamp_unix_ms: u64,
+    /// Deterministic semantic position within the Runtime Plan.
+    /// Absent in pre-C2-A2b records.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_position: Option<SemanticPosition>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -562,6 +599,7 @@ impl Trail for RecordingTrail {
 /// * `action_id` — caller-supplied stable action identifier.
 /// * `arguments` — proposed action arguments (preserved raw).
 /// * `trail` — durable intent recorder.
+/// * `semantic_position` — optional deterministic semantic position.
 pub fn prepare_and_record(
     decision: PermissionDecision,
     resolved: &ResolvedCapability,
@@ -569,6 +607,7 @@ pub fn prepare_and_record(
     action_id: ActionId,
     arguments: serde_json::Value,
     trail: &mut dyn Trail,
+    semantic_position: Option<SemanticPosition>,
 ) -> Result<DispatchReadyAction, PrepareError> {
     // 1. Decision must be Allow and must carry a policy-created token.
     let allowed = match decision {
@@ -619,6 +658,7 @@ pub fn prepare_and_record(
         provider_identity: provider_identity.to_owned(),
         manifest_digest: manifest_digest.to_owned(),
         arguments: arguments.clone(),
+        semantic_position,
     };
 
     // 5. Durably append and flush intent.
@@ -791,6 +831,7 @@ mod tests {
             action_id.clone(),
             args.clone(),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -824,6 +865,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({"path": "projects/test.md"}),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -856,6 +898,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -883,6 +926,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -905,6 +949,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -950,6 +995,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -1002,6 +1048,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -1036,6 +1083,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({"path": "test.md"}),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -1065,6 +1113,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -1095,6 +1144,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -1129,6 +1179,7 @@ mod tests {
             action_id.clone(),
             json!({"path": "x.md"}),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -1160,6 +1211,7 @@ mod tests {
                 ActionId("action_1".into()),
                 json!({"path": "projects/test.md"}),
                 &mut trail,
+                None,
             )
             .unwrap();
 
@@ -1188,6 +1240,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({"path": "test.md"}),
             &mut trail,
+            None,
         )
         .unwrap();
 
@@ -1220,6 +1273,7 @@ mod tests {
                 ActionId("action_file_1".into()),
                 json!({"path": "projects/file-test.md"}),
                 &mut trail,
+                None,
             )
             .unwrap();
         }
@@ -1266,6 +1320,7 @@ mod tests {
             ActionId("action_1".into()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -1294,6 +1349,7 @@ mod tests {
             ActionId(String::new()),
             json!({}),
             &mut trail,
+            None,
         )
         .unwrap_err();
 
@@ -1317,6 +1373,7 @@ mod tests {
                 provider_identity: "test-prov".into(),
                 manifest_digest: "sha256:abc".into(),
                 arguments: json!({}),
+                semantic_position: None,
             })
             .unwrap();
 
@@ -1329,6 +1386,7 @@ mod tests {
                 error_message: None,
                 reason_code: None,
                 timestamp_unix_ms: 1000,
+                semantic_position: None,
             })
             .unwrap();
 
@@ -1351,6 +1409,7 @@ mod tests {
                 error_message: None,
                 reason_code: None,
                 timestamp_unix_ms: 42,
+                semantic_position: None,
             })
             .unwrap();
 
@@ -1379,6 +1438,7 @@ mod tests {
                 error_message: Some("executor failed as requested".into()),
                 reason_code: Some("provider_error".into()),
                 timestamp_unix_ms: 99,
+                semantic_position: None,
             })
             .unwrap();
 
@@ -1406,6 +1466,7 @@ mod tests {
                 provider_identity: "test-prov".into(),
                 manifest_digest: "sha256:abc".into(),
                 arguments: json!({}),
+                semantic_position: None,
             })
             .unwrap();
 
@@ -1420,6 +1481,7 @@ mod tests {
                 error_message: None,
                 reason_code: None,
                 timestamp_unix_ms: 1000,
+                semantic_position: None,
             })
             .unwrap_err();
 
@@ -1440,6 +1502,7 @@ mod tests {
             error_message: None,
             reason_code: None,
             timestamp_unix_ms: 1000,
+            semantic_position: None,
         };
 
         let line1 = serde_json::to_string(&entry).unwrap();
@@ -1466,6 +1529,7 @@ mod tests {
                 ActionId("action_out_1".into()),
                 json!({"path": "projects/outcome-test.md"}),
                 &mut trail,
+                None,
             )
             .unwrap();
 
@@ -1478,6 +1542,7 @@ mod tests {
                     error_message: None,
                     reason_code: None,
                     timestamp_unix_ms: 5000,
+                    semantic_position: None,
                 })
                 .unwrap();
         }
@@ -1551,6 +1616,7 @@ mod tests {
                 provider_identity: "prov-1".into(),
                 manifest_digest: "sha256:deadbeef".into(),
                 arguments: serde_json::json!({"msg": "intent before close"}),
+                semantic_position: None,
             })
             .expect("append");
         }
@@ -1581,6 +1647,7 @@ mod tests {
                     provider_identity: "prov-m".into(),
                     manifest_digest: format!("sha256:multi{i:x}"),
                     arguments: serde_json::json!({"idx": i}),
+                    semantic_position: None,
                 })
                 .expect("append");
             }
@@ -1726,5 +1793,190 @@ mod tests {
             "F3e1: relative path resolved to cwd and file created"
         );
         let _ = std::fs::remove_file(&abs_path);
+    }
+
+    // -------------------------------------------------------------------
+    // C2-A2b: Semantic position tests
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn c2a2b_intent_entry_serializes_semantic_position_when_present() {
+        let entry = IntentEntry {
+            execution_id: "exec-001".into(),
+            action_id: "action_1".into(),
+            capability_name: "test.cap".into(),
+            capability_version: 1,
+            provider_identity: "test-prov".into(),
+            manifest_digest: "sha256:abc".into(),
+            arguments: json!({}),
+            semantic_position: Some(SemanticPosition {
+                action_ordinal: 0,
+                group_id: None,
+                member_ordinal: None,
+                phase: "action".to_owned(),
+            }),
+        };
+        let line = serde_json::to_string(&entry).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(parsed["semantic_position"]["action_ordinal"], 0);
+        assert_eq!(parsed["semantic_position"]["phase"], "action");
+        assert!(parsed["semantic_position"].get("group_id").is_none());
+        assert!(parsed["semantic_position"].get("member_ordinal").is_none());
+    }
+
+    #[test]
+    fn c2a2b_intent_entry_omits_semantic_position_when_absent() {
+        let entry = IntentEntry {
+            execution_id: "exec-001".into(),
+            action_id: "action_1".into(),
+            capability_name: "test.cap".into(),
+            capability_version: 1,
+            provider_identity: "test-prov".into(),
+            manifest_digest: "sha256:abc".into(),
+            arguments: json!({}),
+            semantic_position: None,
+        };
+        let line = serde_json::to_string(&entry).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert!(parsed.get("semantic_position").is_none());
+    }
+
+    #[test]
+    fn c2a2b_outcome_entry_serializes_semantic_position_when_present() {
+        let entry = OutcomeEntry {
+            execution_id: "exec-001".into(),
+            action_id: "action_1".into(),
+            status: "succeeded".into(),
+            result: Some(json!({"ok": true})),
+            error_message: None,
+            reason_code: None,
+            timestamp_unix_ms: 1000,
+            semantic_position: Some(SemanticPosition {
+                action_ordinal: 2,
+                group_id: Some("group_1".to_owned()),
+                member_ordinal: Some(1),
+                phase: "member".to_owned(),
+            }),
+        };
+        let line = serde_json::to_string(&entry).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(parsed["semantic_position"]["action_ordinal"], 2);
+        assert_eq!(parsed["semantic_position"]["group_id"], "group_1");
+        assert_eq!(parsed["semantic_position"]["member_ordinal"], 1);
+        assert_eq!(parsed["semantic_position"]["phase"], "member");
+    }
+
+    #[test]
+    fn c2a2b_outcome_entry_omits_semantic_position_when_absent() {
+        let entry = OutcomeEntry {
+            execution_id: "exec-001".into(),
+            action_id: "action_1".into(),
+            status: "succeeded".into(),
+            result: Some(json!({"ok": true})),
+            error_message: None,
+            reason_code: None,
+            timestamp_unix_ms: 1000,
+            semantic_position: None,
+        };
+        let line = serde_json::to_string(&entry).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert!(parsed.get("semantic_position").is_none());
+    }
+
+    #[test]
+    fn c2a2b_old_trail_records_without_semantic_position_remain_readable() {
+        let dir = std::env::temp_dir().join(format!("c2a2b-old-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let target = "exec_00000000-0000-4000-8000-000000000001";
+        // Write an old-format intent (no semantic_position field).
+        let old_intent = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "capability_name": "test.cap",
+            "capability_version": 1,
+            "provider_identity": "test-prov",
+            "manifest_digest": "sha256:abc",
+            "arguments": {}
+        });
+        let old_outcome = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "status": "succeeded",
+            "result": {"ok": true},
+            "timestamp_unix_ms": 1000
+        });
+        std::fs::write(
+            &trail_path,
+            format!(
+                "{}\n{}\n",
+                serde_json::to_string(&old_intent).unwrap(),
+                serde_json::to_string(&old_outcome).unwrap()
+            ),
+        )
+        .unwrap();
+
+        // Read back and verify the trail command accepts old records.
+        let result = crate::trail_command::run_trail(&trail_path, target);
+        let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "ok");
+        assert_eq!(envelope["data"]["entry_count"], 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn c2a2b_malformed_semantic_position_in_trail_fails_closed() {
+        let dir = std::env::temp_dir().join(format!("c2a2b-malformed-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let target = "exec_00000000-0000-4000-8000-000000000002";
+        // Write a record with malformed semantic_position (not an object).
+        let malformed = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "capability_name": "test.cap",
+            "capability_version": 1,
+            "provider_identity": "test-prov",
+            "manifest_digest": "sha256:abc",
+            "arguments": {},
+            "semantic_position": "not_an_object"
+        });
+        std::fs::write(
+            &trail_path,
+            format!("{}\n", serde_json::to_string(&malformed).unwrap()),
+        )
+        .unwrap();
+
+        // The trail_command reads it — it's valid JSON with an object root.
+        // Semantic position is opaque to the reader; it just passes through.
+        let result = crate::trail_command::run_trail(&trail_path, target);
+        let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "ok");
+        assert_eq!(envelope["data"]["entry_count"], 1);
+        // The malformed semantic_position is preserved as a parsed JSON value.
+        let entry = &envelope["data"]["entries"][0];
+        assert_eq!(entry["semantic_position"], "not_an_object");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn c2a2b_semantic_position_deterministic_serialization() {
+        let pos = SemanticPosition {
+            action_ordinal: 3,
+            group_id: Some("group_1".to_owned()),
+            member_ordinal: Some(1),
+            phase: "member".to_owned(),
+        };
+        let line1 = serde_json::to_string(&pos).unwrap();
+        let line2 = serde_json::to_string(&pos).unwrap();
+        assert_eq!(line1, line2);
+        assert_eq!(
+            line1,
+            r#"{"action_ordinal":3,"group_id":"group_1","member_ordinal":1,"phase":"member"}"#
+        );
     }
 }

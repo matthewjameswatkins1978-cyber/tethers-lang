@@ -14,7 +14,7 @@
 // genuinely concurrent runtime would observe: failure stops at the join,
 // not inside the fan-out.
 
-use crate::dispatch::{GroupJoinEntry, Trail};
+use crate::dispatch::{GroupJoinEntry, SemanticPosition, Trail};
 use crate::host_execution::ExecutionServiceResult;
 use crate::SharedExecutionResult;
 use serde_json::Value;
@@ -247,16 +247,25 @@ pub fn execute_plan(
         &mut Value,
         usize,
         &mut dyn Trail,
+        &SemanticPosition,
     ) -> Result<SharedExecutionResult, ExecutionServiceResult>,
 ) -> ExecutionServiceResult {
     let mut response = response;
     let mut last_succeeded: Option<(String, Option<String>)> = None;
+    let mut global_ordinal: u64 = 0;
 
     for item in items {
         match item {
             PlanItem::Sequential { action_index } => {
                 let action_id = action_id_of(actions, *action_index);
-                let step = match execute_action(&mut response, *action_index, trail) {
+                let position = SemanticPosition {
+                    action_ordinal: global_ordinal,
+                    group_id: None,
+                    member_ordinal: None,
+                    phase: "action".to_owned(),
+                };
+                global_ordinal += 1;
+                let step = match execute_action(&mut response, *action_index, trail, &position) {
                     Ok(result) => ActionStep::Boundary(result),
                     Err(result) => ActionStep::Stopped(result),
                 };
@@ -271,9 +280,17 @@ pub fn execute_plan(
                 member_indexes,
             } => {
                 let mut steps: Vec<(String, ActionStep)> = Vec::with_capacity(member_indexes.len());
-                for action_index in member_indexes {
+                for (member_ordinal, action_index) in member_indexes.iter().enumerate() {
                     let action_id = action_id_of(actions, *action_index);
-                    let step = match execute_action(&mut response, *action_index, trail) {
+                    let position = SemanticPosition {
+                        action_ordinal: global_ordinal,
+                        group_id: Some(group_id.clone()),
+                        member_ordinal: Some(member_ordinal as u64),
+                        phase: "member".to_owned(),
+                    };
+                    global_ordinal += 1;
+                    let step = match execute_action(&mut response, *action_index, trail, &position)
+                    {
                         Ok(result) => ActionStep::Boundary(result),
                         Err(result) => ActionStep::Stopped(result),
                     };
@@ -868,7 +885,10 @@ mod tests {
                 &actions,
                 "eval_tb_001",
                 &mut trail,
-                |response: &mut Value, action_index: usize, trail: &mut dyn Trail| {
+                |response: &mut Value,
+                 action_index: usize,
+                 trail: &mut dyn Trail,
+                 _position: &SemanticPosition| {
                     let action = &actions[action_index];
                     let proposed = crate::extract_proposed_action_at(response, action_index)
                         .expect("valid bunny action");
@@ -892,6 +912,7 @@ mod tests {
                         &mut replay_authority,
                         None,
                         &mut anchor_writer,
+                        Some(_position),
                     )
                     .map_err(|error| ExecutionServiceResult::AuditFailed {
                         evaluation_id: "eval_tb_001".to_owned(),
@@ -1233,6 +1254,162 @@ mod tests {
             assert!(
                 response["plan"]["groups"][0]["group_id"] == json!("group_1"),
                 "the planner's group declaration remains the only group-wide identity"
+            );
+        }
+
+        // TB-05 — semantic position on sequential actions.
+        #[test]
+        fn tb_05_sequential_actions_carry_semantic_position() {
+            let actions = vec![
+                bunny_action("action_1", CARROT),
+                bunny_action("action_2", TOAST),
+            ];
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let run = run_bunny_plan(actions, None, outcomes);
+            assert!(matches!(
+                run.result,
+                ExecutionServiceResult::Completed { .. }
+            ));
+
+            let entries = read_trail(&run.trail_path);
+            let intents: Vec<&serde_json::Value> = entries
+                .iter()
+                .filter(|e| e.get("capability_name").is_some())
+                .collect();
+            assert_eq!(intents.len(), 2);
+            assert_eq!(intents[0]["semantic_position"]["action_ordinal"], 0);
+            assert_eq!(intents[0]["semantic_position"]["phase"], "action");
+            assert!(intents[0]["semantic_position"].get("group_id").is_none());
+            assert_eq!(intents[1]["semantic_position"]["action_ordinal"], 1);
+            assert_eq!(intents[1]["semantic_position"]["phase"], "action");
+        }
+
+        // TB-06 — semantic position on Together group members.
+        #[test]
+        fn tb_06_together_members_carry_semantic_position_from_flat_plan_order() {
+            let actions = bunny_group();
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+                (COFFEE.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let groups = vec![group("group_1", &["action_1", "action_2", "action_3"])];
+            let run = run_bunny_plan(actions, Some(groups), outcomes);
+            assert!(matches!(
+                run.result,
+                ExecutionServiceResult::Completed { .. }
+            ));
+
+            let entries = read_trail(&run.trail_path);
+            let intents: Vec<&serde_json::Value> = entries
+                .iter()
+                .filter(|e| e.get("capability_name").is_some())
+                .collect();
+            assert_eq!(intents.len(), 3);
+            // Members have global action_ordinal from flat plan order.
+            assert_eq!(intents[0]["semantic_position"]["action_ordinal"], 0);
+            assert_eq!(intents[0]["semantic_position"]["group_id"], "group_1");
+            assert_eq!(intents[0]["semantic_position"]["member_ordinal"], 0);
+            assert_eq!(intents[0]["semantic_position"]["phase"], "member");
+
+            assert_eq!(intents[1]["semantic_position"]["action_ordinal"], 1);
+            assert_eq!(intents[1]["semantic_position"]["group_id"], "group_1");
+            assert_eq!(intents[1]["semantic_position"]["member_ordinal"], 1);
+            assert_eq!(intents[1]["semantic_position"]["phase"], "member");
+
+            assert_eq!(intents[2]["semantic_position"]["action_ordinal"], 2);
+            assert_eq!(intents[2]["semantic_position"]["group_id"], "group_1");
+            assert_eq!(intents[2]["semantic_position"]["member_ordinal"], 2);
+            assert_eq!(intents[2]["semantic_position"]["phase"], "member");
+        }
+
+        // TB-07 — intent and outcome carry matching semantic position.
+        #[test]
+        fn tb_07_intent_and_outcome_carry_matching_semantic_position() {
+            let actions = vec![bunny_action("action_1", CARROT)];
+            let outcomes = HashMap::from([(CARROT.to_owned(), BunnyOutcome::Succeed)]);
+            let run = run_bunny_plan(actions, None, outcomes);
+            assert!(matches!(
+                run.result,
+                ExecutionServiceResult::Completed { .. }
+            ));
+
+            let entries = read_trail(&run.trail_path);
+            let intent = entries
+                .iter()
+                .find(|e| e.get("capability_name").is_some())
+                .unwrap();
+            let outcome = entries.iter().find(|e| e.get("status").is_some()).unwrap();
+            assert_eq!(
+                intent["semantic_position"]["action_ordinal"],
+                outcome["semantic_position"]["action_ordinal"]
+            );
+            assert_eq!(
+                intent["semantic_position"]["phase"],
+                outcome["semantic_position"]["phase"]
+            );
+        }
+
+        // TB-08 — physical append order is preserved (no semantic sorting).
+        #[test]
+        fn tb_08_physical_append_order_preserved() {
+            let actions = bunny_group();
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+                (COFFEE.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let groups = vec![group("group_1", &["action_1", "action_2", "action_3"])];
+            let run = run_bunny_plan(actions, Some(groups), outcomes);
+            assert!(matches!(
+                run.result,
+                ExecutionServiceResult::Completed { .. }
+            ));
+
+            let entries = read_trail(&run.trail_path);
+            // Physical order: intent_1, outcome_1, intent_2, outcome_2, intent_3, outcome_3, join
+            let kinds: Vec<String> = entries
+                .iter()
+                .map(|e| {
+                    if e.get("capability_name").is_some() {
+                        "intent".to_string()
+                    } else if e.get("group_id").is_some() && e.get("joined").is_some() {
+                        "join".to_string()
+                    } else {
+                        "outcome".to_string()
+                    }
+                })
+                .collect();
+            assert_eq!(
+                kinds,
+                vec!["intent", "outcome", "intent", "outcome", "intent", "outcome", "join"]
+            );
+        }
+
+        // TB-09 — GroupJoinEntry remains after all member terminal outcomes.
+        #[test]
+        fn tb_09_group_join_appended_after_all_member_outcomes() {
+            let actions = bunny_group();
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Fail),
+                (COFFEE.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let groups = vec![group("group_1", &["action_1", "action_2", "action_3"])];
+            let run = run_bunny_plan(actions, Some(groups), outcomes);
+
+            let entries = read_trail(&run.trail_path);
+            let join_idx = entries
+                .iter()
+                .position(|e| e.get("joined").is_some())
+                .expect("join entry must exist");
+            // Join must be after all 3 member outcomes.
+            assert!(
+                join_idx >= 6,
+                "join at {join_idx} must be after 6 member entries"
             );
         }
     }
