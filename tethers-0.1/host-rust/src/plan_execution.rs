@@ -14,7 +14,7 @@
 // genuinely concurrent runtime would observe: failure stops at the join,
 // not inside the fan-out.
 
-use crate::dispatch::{GroupJoinEntry, SemanticPosition, Trail};
+use crate::dispatch::{GroupJoinEntry, SemanticPhase, SemanticPosition, Trail};
 use crate::host_execution::ExecutionServiceResult;
 use crate::SharedExecutionResult;
 use serde_json::Value;
@@ -262,7 +262,7 @@ pub fn execute_plan(
                     action_ordinal: global_ordinal,
                     group_id: None,
                     member_ordinal: None,
-                    phase: "action".to_owned(),
+                    phase: SemanticPhase::Action,
                 };
                 global_ordinal += 1;
                 let step = match execute_action(&mut response, *action_index, trail, &position) {
@@ -286,7 +286,7 @@ pub fn execute_plan(
                         action_ordinal: global_ordinal,
                         group_id: Some(group_id.clone()),
                         member_ordinal: Some(member_ordinal as u64),
-                        phase: "member".to_owned(),
+                        phase: SemanticPhase::Member,
                     };
                     global_ordinal += 1;
                     let step = match execute_action(&mut response, *action_index, trail, &position)
@@ -304,12 +304,23 @@ pub fn execute_plan(
                     .iter()
                     .map(|action_index| action_id_of(actions, *action_index))
                     .collect();
+                // Join semantic position: action_ordinal is the ordinal after
+                // the last group member, derived deterministically from the
+                // flat Runtime Plan order.  This places the join at the group
+                // boundary without depending on physical completion timing.
+                let join_position = SemanticPosition {
+                    action_ordinal: global_ordinal,
+                    group_id: None,
+                    member_ordinal: None,
+                    phase: SemanticPhase::Join,
+                };
                 let join_entry = GroupJoinEntry {
                     evaluation_id: evaluation_id.to_owned(),
                     group_id: group_id.clone(),
                     member_action_ids: member_action_ids.clone(),
                     joined,
                     timestamp_unix_ms: crate::now_unix_ms(),
+                    semantic_position: Some(join_position),
                 };
                 let sequence = response
                     .get("trail")
@@ -1410,6 +1421,205 @@ mod tests {
             assert!(
                 join_idx >= 6,
                 "join at {join_idx} must be after 6 member entries"
+            );
+        }
+
+        // TB-10 — Join semantic position is present and has phase "join".
+        #[test]
+        fn tb_10_join_semantic_position_present_and_phase_join() {
+            let actions = bunny_group();
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+                (COFFEE.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let groups = vec![group("group_1", &["action_1", "action_2", "action_3"])];
+            let run = run_bunny_plan(actions, Some(groups), outcomes);
+
+            let entries = read_trail(&run.trail_path);
+            let join = entries
+                .iter()
+                .find(|e| e.get("joined").is_some())
+                .expect("join entry must exist");
+            let sp = join
+                .get("semantic_position")
+                .expect("join must have semantic_position");
+            assert_eq!(sp["phase"], "join");
+            assert_eq!(sp["action_ordinal"], 3);
+            assert!(sp.get("group_id").is_none());
+            assert!(sp.get("member_ordinal").is_none());
+        }
+
+        // TB-11 — Join semantic position ordinal equals last member ordinal + 1.
+        #[test]
+        fn tb_11_join_determinism_ordinal_equals_last_member_plus_one() {
+            let actions = bunny_group();
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+                (COFFEE.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let groups = vec![group("group_1", &["action_1", "action_2", "action_3"])];
+            let run = run_bunny_plan(actions, Some(groups), outcomes);
+
+            let entries = read_trail(&run.trail_path);
+            let intents: Vec<&serde_json::Value> = entries
+                .iter()
+                .filter(|e| e.get("capability_name").is_some())
+                .collect();
+            let last_member_ordinal = intents.last().unwrap()["semantic_position"]
+                ["action_ordinal"]
+                .as_u64()
+                .unwrap();
+
+            let join = entries.iter().find(|e| e.get("joined").is_some()).unwrap();
+            let join_ordinal = join["semantic_position"]["action_ordinal"]
+                .as_u64()
+                .unwrap();
+            assert_eq!(
+                join_ordinal,
+                last_member_ordinal + 1,
+                "join ordinal must equal last member ordinal + 1"
+            );
+        }
+
+        // TB-12 — Mixed plan: sequential + group + sequential.
+        // Flat action ordinals must be continuous across plan items.
+        #[test]
+        fn tb_12_flat_action_ordinals_continuous_across_plan_items() {
+            let actions = vec![
+                bunny_action("action_1", CARROT),
+                bunny_action("action_2", TOAST),
+                bunny_action("action_3", COFFEE),
+                bunny_action("action_4", CARROT),
+            ];
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+                (COFFEE.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let groups = vec![group("group_1", &["action_2", "action_3"])];
+            let run = run_bunny_plan(actions, Some(groups), outcomes);
+            assert!(matches!(
+                run.result,
+                ExecutionServiceResult::Completed { .. }
+            ));
+
+            let entries = read_trail(&run.trail_path);
+            let intents: Vec<&serde_json::Value> = entries
+                .iter()
+                .filter(|e| e.get("capability_name").is_some())
+                .collect();
+            // action_1 = ordinal 0, action_2 = ordinal 1, action_3 = ordinal 2,
+            // action_4 = ordinal 3
+            assert_eq!(intents[0]["semantic_position"]["action_ordinal"], 0);
+            assert_eq!(intents[0]["semantic_position"]["phase"], "action");
+            assert_eq!(intents[1]["semantic_position"]["action_ordinal"], 1);
+            assert_eq!(intents[1]["semantic_position"]["phase"], "member");
+            assert_eq!(intents[2]["semantic_position"]["action_ordinal"], 2);
+            assert_eq!(intents[2]["semantic_position"]["phase"], "member");
+            assert_eq!(intents[3]["semantic_position"]["action_ordinal"], 3);
+            assert_eq!(intents[3]["semantic_position"]["phase"], "action");
+        }
+
+        // TB-13 — Flat action ordinal equals the actual flat Runtime Plan
+        // action index for sequential actions (no group offset).
+        #[test]
+        fn tb_13_flat_action_ordinal_equals_plan_action_index() {
+            let actions = vec![
+                bunny_action("action_1", CARROT),
+                bunny_action("action_2", TOAST),
+            ];
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let run = run_bunny_plan(actions, None, outcomes);
+
+            let entries = read_trail(&run.trail_path);
+            let intents: Vec<&serde_json::Value> = entries
+                .iter()
+                .filter(|e| e.get("capability_name").is_some())
+                .collect();
+            // action_1 is at flat plan index 0, action_2 at index 1.
+            assert_eq!(intents[0]["semantic_position"]["action_ordinal"], 0);
+            assert_eq!(intents[1]["semantic_position"]["action_ordinal"], 1);
+        }
+
+        // TB-14 — Group member order follows member_action_ids, not canonical V2.
+        #[test]
+        fn tb_14_group_member_order_follows_runtime_plan_ids() {
+            let actions = bunny_group();
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+                (COFFEE.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let groups = vec![group("group_1", &["action_1", "action_2", "action_3"])];
+            let run = run_bunny_plan(actions, Some(groups), outcomes);
+
+            let entries = read_trail(&run.trail_path);
+            let intents: Vec<&serde_json::Value> = entries
+                .iter()
+                .filter(|e| e.get("capability_name").is_some())
+                .collect();
+            // member_ordinal 0, 1, 2 must match Runtime Plan source order.
+            assert_eq!(intents[0]["semantic_position"]["member_ordinal"], 0);
+            assert_eq!(intents[1]["semantic_position"]["member_ordinal"], 1);
+            assert_eq!(intents[2]["semantic_position"]["member_ordinal"], 2);
+        }
+
+        // TB-15 — Trail contains join semantic_position and preserves physical
+        // order (no semantic sorting).
+        #[test]
+        fn tb_15_trail_contains_join_position_in_physical_order() {
+            let actions = bunny_group();
+            let outcomes = HashMap::from([
+                (CARROT.to_owned(), BunnyOutcome::Succeed),
+                (TOAST.to_owned(), BunnyOutcome::Succeed),
+                (COFFEE.to_owned(), BunnyOutcome::Succeed),
+            ]);
+            let groups = vec![group("group_1", &["action_1", "action_2", "action_3"])];
+            let run = run_bunny_plan(actions, Some(groups), outcomes);
+
+            let entries = read_trail(&run.trail_path);
+            assert_eq!(entries.len(), 7, "expected 7 trail entries");
+
+            // Verify join entry has semantic_position with phase "join".
+            let join = entries
+                .iter()
+                .find(|e| e.get("joined").is_some())
+                .expect("join entry must exist");
+            let sp = join
+                .get("semantic_position")
+                .expect("join must have semantic_position");
+            assert_eq!(sp["phase"], "join");
+
+            // Verify raw trail output preserves join position.
+            let raw = std::fs::read_to_string(&run.trail_path).unwrap();
+            assert!(
+                raw.contains("\"phase\":\"join\""),
+                "join position must appear in Trail: {raw}"
+            );
+
+            // Verify physical order: intents and outcomes appear interleaved
+            // before the join (intent, outcome, intent, outcome, ... join).
+            let kinds: Vec<String> = entries
+                .iter()
+                .map(|e| {
+                    if e.get("capability_name").is_some() {
+                        "intent".to_string()
+                    } else if e.get("joined").is_some() {
+                        "join".to_string()
+                    } else {
+                        "outcome".to_string()
+                    }
+                })
+                .collect();
+            assert_eq!(
+                kinds,
+                vec!["intent", "outcome", "intent", "outcome", "intent", "outcome", "join"],
+                "physical append order must be preserved"
             );
         }
     }

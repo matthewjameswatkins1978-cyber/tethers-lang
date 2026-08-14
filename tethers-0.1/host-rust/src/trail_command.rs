@@ -5,6 +5,7 @@
 //! It never executes a Tether, starts the OCaml engine, starts a provider,
 //! consults replay persistence, or mutates any file.
 
+use crate::dispatch;
 use crate::manifest;
 use crate::replay::ExecutionId;
 use serde_json::{json, Value};
@@ -216,6 +217,17 @@ fn read_and_filter(
             Value::Object(obj) => {
                 match obj.get("execution_id") {
                     Some(Value::String(id)) if id == execution_id => {
+                        // Validate semantic_position structure when present.
+                        // Old records without the field are accepted.
+                        // Null is treated as absent (matches skip_serializing_if).
+                        match obj.get("semantic_position") {
+                            Some(Value::Null) | None => {}
+                            Some(sp) => {
+                                if let Err(e) = dispatch::validate_semantic_position_json(sp) {
+                                    return Err(invalid_trail_reason(line_count, &e.to_string()));
+                                }
+                            }
+                        }
                         // Store the exact raw validated text.
                         entries.push(line_str.to_owned());
                     }
@@ -303,6 +315,28 @@ fn invalid_trail(line_number: u64) -> TrailResult {
         "error": {
             "code": "TRAIL_INVALID",
             "message": "trail file content is invalid"
+        },
+        "data": {
+            "line": line_number
+        }
+    });
+    let json_output = serde_json::to_string(&envelope_with_data)
+        .unwrap_or_else(|_| r#"{"schema":"tethers.cli/1"}"#.into());
+    TrailResult {
+        json_output,
+        exit_code: 8,
+    }
+}
+
+fn invalid_trail_reason(line_number: u64, reason: &str) -> TrailResult {
+    let envelope_with_data = json!({
+        "schema": "tethers.cli/1",
+        "command": "trail",
+        "status": "audit_failed",
+        "exit_code": 8,
+        "error": {
+            "code": "TRAIL_INVALID",
+            "message": format!("trail file content is invalid: {reason}")
         },
         "data": {
             "line": line_number

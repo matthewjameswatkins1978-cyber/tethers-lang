@@ -55,6 +55,48 @@ pub struct ActionId(pub String);
 // Semantic position
 // ---------------------------------------------------------------------------
 
+/// Validated semantic phase within the Runtime Plan.
+///
+/// A closed enum ensures only structurally meaningful phases enter durable
+/// Trail records.  Arbitrary free text is rejected at the write boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SemanticPhase {
+    /// Ordinary sequential action.
+    Action,
+    /// Together group member.
+    Member,
+    /// Group join record appended after all members reach terminal.
+    Join,
+}
+
+impl SemanticPhase {
+    /// Parse a phase string, rejecting unknown values.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "action" => Some(Self::Action),
+            "member" => Some(Self::Member),
+            "join" => Some(Self::Join),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for SemanticPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Action => f.write_str("action"),
+            Self::Member => f.write_str("member"),
+            Self::Join => f.write_str("join"),
+        }
+    }
+}
+
+impl serde::Serialize for SemanticPhase {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 /// Deterministic semantic position of a Trail record within the Runtime Plan.
 ///
 /// Distinguishes physical append order (the order records hit durable
@@ -75,9 +117,141 @@ pub struct SemanticPosition {
     /// deterministic `member_action_ids` order (NOT canonical V2 sorting).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub member_ordinal: Option<u64>,
-    /// Execution phase: `"action"` (sequential), `"member"` (Together member),
-    /// or `"join"` (GroupJoin).
-    pub phase: String,
+    /// Validated execution phase.
+    pub phase: SemanticPhase,
+}
+
+/// Result of validating a `semantic_position` JSON value against the
+/// C2-A2b contract.
+pub enum SemanticPositionValidationError {
+    /// semantic_position was not a JSON object.
+    NotAnObject,
+    /// A required field was missing or had the wrong type.
+    InvalidField(&'static str),
+    /// The phase string was not a recognised SemanticPhase variant.
+    UnknownPhase(String),
+    /// A field was present that contradicts the declared phase.
+    ContradictoryFields(&'static str),
+}
+
+impl std::fmt::Display for SemanticPositionValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotAnObject => write!(f, "semantic_position must be a JSON object"),
+            Self::InvalidField(name) => write!(f, "semantic_position.{name} is invalid"),
+            Self::UnknownPhase(p) => write!(f, "unknown semantic phase: {p}"),
+            Self::ContradictoryFields(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+/// Validate a `semantic_position` JSON value against the C2-A2b model.
+///
+/// Old records without `semantic_position` are not passed through this
+/// function — they are accepted by the reader unconditionally.
+///
+/// Returns `Ok(())` if the value is structurally valid,
+/// `Err(...)` describing the first defect found otherwise.
+pub fn validate_semantic_position_json(
+    value: &serde_json::Value,
+) -> Result<(), SemanticPositionValidationError> {
+    use serde_json::Value;
+
+    let obj = match value {
+        Value::Object(m) => m,
+        _ => return Err(SemanticPositionValidationError::NotAnObject),
+    };
+
+    // action_ordinal: required, non-negative integer.
+    let ordinal =
+        obj.get("action_ordinal")
+            .ok_or(SemanticPositionValidationError::InvalidField(
+                "action_ordinal",
+            ))?;
+    match ordinal {
+        Value::Number(n) if n.is_u64() || n.is_i64() && n.as_i64().unwrap() >= 0 => {}
+        _ => {
+            return Err(SemanticPositionValidationError::InvalidField(
+                "action_ordinal",
+            ))
+        }
+    }
+
+    // phase: required, recognised variant.
+    let phase_str = obj
+        .get("phase")
+        .and_then(Value::as_str)
+        .ok_or(SemanticPositionValidationError::InvalidField("phase"))?;
+    let phase = SemanticPhase::parse(phase_str)
+        .ok_or_else(|| SemanticPositionValidationError::UnknownPhase(phase_str.to_owned()))?;
+
+    // group_id: optional string; when present must be non-empty.
+    if let Some(gid) = obj.get("group_id") {
+        match gid {
+            Value::String(s) if !s.is_empty() => {}
+            Value::String(_) => {
+                return Err(SemanticPositionValidationError::InvalidField("group_id"))
+            }
+            _ => return Err(SemanticPositionValidationError::InvalidField("group_id")),
+        }
+    }
+
+    // member_ordinal: optional non-negative integer.
+    if let Some(mord) = obj.get("member_ordinal") {
+        match mord {
+            Value::Number(n) if n.is_u64() || n.is_i64() && n.as_i64().unwrap() >= 0 => {}
+            _ => {
+                return Err(SemanticPositionValidationError::InvalidField(
+                    "member_ordinal",
+                ))
+            }
+        }
+    }
+
+    // Phase-specific field constraints.
+    match phase {
+        SemanticPhase::Action => {
+            // action: no group_id, no member_ordinal.
+            if obj.contains_key("group_id") {
+                return Err(SemanticPositionValidationError::ContradictoryFields(
+                    "phase action must not have group_id",
+                ));
+            }
+            if obj.contains_key("member_ordinal") {
+                return Err(SemanticPositionValidationError::ContradictoryFields(
+                    "phase action must not have member_ordinal",
+                ));
+            }
+        }
+        SemanticPhase::Member => {
+            // member: must have group_id and member_ordinal.
+            if !obj.contains_key("group_id") {
+                return Err(SemanticPositionValidationError::ContradictoryFields(
+                    "phase member must have group_id",
+                ));
+            }
+            if !obj.contains_key("member_ordinal") {
+                return Err(SemanticPositionValidationError::ContradictoryFields(
+                    "phase member must have member_ordinal",
+                ));
+            }
+        }
+        SemanticPhase::Join => {
+            // join: no group_id, no member_ordinal.
+            if obj.contains_key("group_id") {
+                return Err(SemanticPositionValidationError::ContradictoryFields(
+                    "phase join must not have group_id",
+                ));
+            }
+            if obj.contains_key("member_ordinal") {
+                return Err(SemanticPositionValidationError::ContradictoryFields(
+                    "phase join must not have member_ordinal",
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +343,10 @@ pub struct GroupJoinEntry {
     pub joined: bool,
     /// Host-supplied wall-clock timestamp in milliseconds since Unix epoch.
     pub timestamp_unix_ms: u64,
+    /// Deterministic semantic position within the Runtime Plan.
+    /// Absent in pre-C2-A2b records.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_position: Option<SemanticPosition>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1813,7 +1991,7 @@ mod tests {
                 action_ordinal: 0,
                 group_id: None,
                 member_ordinal: None,
-                phase: "action".to_owned(),
+                phase: SemanticPhase::Action,
             }),
         };
         let line = serde_json::to_string(&entry).unwrap();
@@ -1855,7 +2033,7 @@ mod tests {
                 action_ordinal: 2,
                 group_id: Some("group_1".to_owned()),
                 member_ordinal: Some(1),
-                phase: "member".to_owned(),
+                phase: SemanticPhase::Member,
             }),
         };
         let line = serde_json::to_string(&entry).unwrap();
@@ -1950,15 +2128,11 @@ mod tests {
         )
         .unwrap();
 
-        // The trail_command reads it — it's valid JSON with an object root.
-        // Semantic position is opaque to the reader; it just passes through.
+        // The trail_command must reject malformed semantic_position.
         let result = crate::trail_command::run_trail(&trail_path, target);
         let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
-        assert_eq!(envelope["status"], "ok");
-        assert_eq!(envelope["data"]["entry_count"], 1);
-        // The malformed semantic_position is preserved as a parsed JSON value.
-        let entry = &envelope["data"]["entries"][0];
-        assert_eq!(entry["semantic_position"], "not_an_object");
+        assert_eq!(envelope["status"], "audit_failed");
+        assert_eq!(envelope["error"]["code"], "TRAIL_INVALID");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1969,7 +2143,7 @@ mod tests {
             action_ordinal: 3,
             group_id: Some("group_1".to_owned()),
             member_ordinal: Some(1),
-            phase: "member".to_owned(),
+            phase: SemanticPhase::Member,
         };
         let line1 = serde_json::to_string(&pos).unwrap();
         let line2 = serde_json::to_string(&pos).unwrap();
@@ -1978,5 +2152,422 @@ mod tests {
             line1,
             r#"{"action_ordinal":3,"group_id":"group_1","member_ordinal":1,"phase":"member"}"#
         );
+    }
+
+    // ---------------------------------------------------------------
+    // Semantic position validation (tests B–E)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn c2a2b_malformed_semantic_position_type_rejected_list() {
+        let result = validate_semantic_position_json(&json!([1, 2, 3]));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::NotAnObject)
+        ));
+    }
+
+    #[test]
+    fn c2a2b_malformed_semantic_position_type_rejected_number() {
+        let result = validate_semantic_position_json(&json!(42));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::NotAnObject)
+        ));
+    }
+
+    #[test]
+    fn c2a2b_malformed_semantic_position_type_rejected_null() {
+        let result = validate_semantic_position_json(&json!(null));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::NotAnObject)
+        ));
+    }
+
+    #[test]
+    fn c2a2b_unknown_phase_rejected() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 0,
+            "phase": "unknown_phase"
+        }));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::UnknownPhase(ref p)) if p == "unknown_phase"
+        ));
+    }
+
+    #[test]
+    fn c2a2b_phase_action_with_group_id_rejected() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 0,
+            "phase": "action",
+            "group_id": "group_1"
+        }));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::ContradictoryFields(_))
+        ));
+    }
+
+    #[test]
+    fn c2a2b_phase_action_with_member_ordinal_rejected() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 0,
+            "phase": "action",
+            "member_ordinal": 0
+        }));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::ContradictoryFields(_))
+        ));
+    }
+
+    #[test]
+    fn c2a2b_phase_member_without_group_id_rejected() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 0,
+            "phase": "member",
+            "member_ordinal": 0
+        }));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::ContradictoryFields(_))
+        ));
+    }
+
+    #[test]
+    fn c2a2b_phase_member_without_member_ordinal_rejected() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 0,
+            "phase": "member",
+            "group_id": "group_1"
+        }));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::ContradictoryFields(_))
+        ));
+    }
+
+    #[test]
+    fn c2a2b_phase_member_empty_group_id_rejected() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 0,
+            "phase": "member",
+            "group_id": "",
+            "member_ordinal": 0
+        }));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::InvalidField("group_id"))
+        ));
+    }
+
+    // ---------------------------------------------------------------
+    // Valid semantic position acceptance (tests F, G, H)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn c2a2b_valid_action_position_accepted() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 5,
+            "phase": "action"
+        }));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn c2a2b_valid_member_position_accepted() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 2,
+            "group_id": "group_1",
+            "member_ordinal": 1,
+            "phase": "member"
+        }));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn c2a2b_valid_join_position_accepted() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 3,
+            "phase": "join"
+        }));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn c2a2b_phase_join_with_group_id_rejected() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 3,
+            "phase": "join",
+            "group_id": "group_1"
+        }));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::ContradictoryFields(_))
+        ));
+    }
+
+    #[test]
+    fn c2a2b_phase_join_with_member_ordinal_rejected() {
+        let result = validate_semantic_position_json(&json!({
+            "action_ordinal": 3,
+            "phase": "join",
+            "member_ordinal": 0
+        }));
+        assert!(matches!(
+            result,
+            Err(SemanticPositionValidationError::ContradictoryFields(_))
+        ));
+    }
+
+    // ---------------------------------------------------------------
+    // Join position serialization
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn c2a2b_join_entry_serializes_semantic_position_when_present() {
+        let entry = GroupJoinEntry {
+            evaluation_id: "eval-001".into(),
+            group_id: "group_1".into(),
+            member_action_ids: vec!["a1".into(), "a2".into()],
+            joined: true,
+            timestamp_unix_ms: 1000,
+            semantic_position: Some(SemanticPosition {
+                action_ordinal: 3,
+                group_id: None,
+                member_ordinal: None,
+                phase: SemanticPhase::Join,
+            }),
+        };
+        let line = serde_json::to_string(&entry).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(parsed["semantic_position"]["action_ordinal"], 3);
+        assert_eq!(parsed["semantic_position"]["phase"], "join");
+        assert!(parsed["semantic_position"].get("group_id").is_none());
+        assert!(parsed["semantic_position"].get("member_ordinal").is_none());
+    }
+
+    #[test]
+    fn c2a2b_join_entry_omits_semantic_position_when_absent() {
+        let entry = GroupJoinEntry {
+            evaluation_id: "eval-001".into(),
+            group_id: "group_1".into(),
+            member_action_ids: vec!["a1".into()],
+            joined: true,
+            timestamp_unix_ms: 1000,
+            semantic_position: None,
+        };
+        let line = serde_json::to_string(&entry).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert!(parsed.get("semantic_position").is_none());
+    }
+
+    // ---------------------------------------------------------------
+    // Trail reader rejection of malformed semantic_position (test B — trail)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn c2a2b_trail_reader_rejects_malformed_semantic_position_number() {
+        let dir = std::env::temp_dir().join(format!("c2a2b-sp-num-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let target = "exec_00000000-0000-4000-8000-000000000003";
+        let malformed = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "capability_name": "test.cap",
+            "capability_version": 1,
+            "provider_identity": "test-prov",
+            "manifest_digest": "sha256:abc",
+            "arguments": {},
+            "semantic_position": 42
+        });
+        std::fs::write(
+            &trail_path,
+            format!("{}\n", serde_json::to_string(&malformed).unwrap()),
+        )
+        .unwrap();
+
+        let result = crate::trail_command::run_trail(&trail_path, target);
+        let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn c2a2b_trail_reader_rejects_malformed_semantic_position_list() {
+        let dir = std::env::temp_dir().join(format!("c2a2b-sp-list-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let target = "exec_00000000-0000-4000-8000-000000000004";
+        let malformed = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "capability_name": "test.cap",
+            "capability_version": 1,
+            "provider_identity": "test-prov",
+            "manifest_digest": "sha256:abc",
+            "arguments": {},
+            "semantic_position": [1, 2]
+        });
+        std::fs::write(
+            &trail_path,
+            format!("{}\n", serde_json::to_string(&malformed).unwrap()),
+        )
+        .unwrap();
+
+        let result = crate::trail_command::run_trail(&trail_path, target);
+        let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn c2a2b_trail_reader_rejects_malformed_semantic_position_null() {
+        let dir = std::env::temp_dir().join(format!("c2a2b-sp-null-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let target = "exec_00000000-0000-4000-8000-000000000005";
+        let malformed = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "capability_name": "test.cap",
+            "capability_version": 1,
+            "provider_identity": "test-prov",
+            "manifest_digest": "sha256:abc",
+            "arguments": {},
+            "semantic_position": null
+        });
+        std::fs::write(
+            &trail_path,
+            format!("{}\n", serde_json::to_string(&malformed).unwrap()),
+        )
+        .unwrap();
+
+        let result = crate::trail_command::run_trail(&trail_path, target);
+        let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
+        // null semantic_position is the same as absent — should be accepted.
+        assert_eq!(envelope["status"], "ok");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------------------------------------------------------------
+    // Trail reader rejects unknown phase (test C — trail)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn c2a2b_trail_reader_rejects_unknown_phase() {
+        let dir = std::env::temp_dir().join(format!("c2a2b-sp-phase-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let target = "exec_00000000-0000-4000-8000-000000000006";
+        let malformed = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "capability_name": "test.cap",
+            "capability_version": 1,
+            "provider_identity": "test-prov",
+            "manifest_digest": "sha256:abc",
+            "arguments": {},
+            "semantic_position": {
+                "action_ordinal": 0,
+                "phase": "unknown_phase"
+            }
+        });
+        std::fs::write(
+            &trail_path,
+            format!("{}\n", serde_json::to_string(&malformed).unwrap()),
+        )
+        .unwrap();
+
+        let result = crate::trail_command::run_trail(&trail_path, target);
+        let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "audit_failed");
+        assert_eq!(envelope["error"]["code"], "TRAIL_INVALID");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------------------------------------------------------------
+    // Trail reader accepts valid positions (tests F, G — trail)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn c2a2b_trail_reader_accepts_valid_action_position() {
+        let dir = std::env::temp_dir().join(format!("c2a2b-sp-act-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let target = "exec_00000000-0000-4000-8000-000000000007";
+        let valid = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "capability_name": "test.cap",
+            "capability_version": 1,
+            "provider_identity": "test-prov",
+            "manifest_digest": "sha256:abc",
+            "arguments": {},
+            "semantic_position": {
+                "action_ordinal": 5,
+                "phase": "action"
+            }
+        });
+        std::fs::write(
+            &trail_path,
+            format!("{}\n", serde_json::to_string(&valid).unwrap()),
+        )
+        .unwrap();
+
+        let result = crate::trail_command::run_trail(&trail_path, target);
+        let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "ok");
+        assert_eq!(envelope["data"]["entry_count"], 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn c2a2b_trail_reader_accepts_valid_member_position() {
+        let dir = std::env::temp_dir().join(format!("c2a2b-sp-mem-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let trail_path = dir.join("trail.jsonl");
+
+        let target = "exec_00000000-0000-4000-8000-000000000008";
+        let valid = json!({
+            "execution_id": target,
+            "action_id": "action_1",
+            "capability_name": "test.cap",
+            "capability_version": 1,
+            "provider_identity": "test-prov",
+            "manifest_digest": "sha256:abc",
+            "arguments": {},
+            "semantic_position": {
+                "action_ordinal": 2,
+                "group_id": "group_1",
+                "member_ordinal": 1,
+                "phase": "member"
+            }
+        });
+        std::fs::write(
+            &trail_path,
+            format!("{}\n", serde_json::to_string(&valid).unwrap()),
+        )
+        .unwrap();
+
+        let result = crate::trail_command::run_trail(&trail_path, target);
+        let envelope: serde_json::Value = serde_json::from_str(&result.json_output).unwrap();
+        assert_eq!(envelope["status"], "ok");
+        assert_eq!(envelope["data"]["entry_count"], 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
