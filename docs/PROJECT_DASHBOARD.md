@@ -6,24 +6,25 @@ Updated: 2026-08-14
 
 Tethers 0.4 — Concurrency.
 
-C1, the deterministic `together` fan-out / join semantic foundation, is complete and accepted. The repository subsequently completed Core phases 1–9, the production Core cutover, performance work, Canonical V2, and Rocket V2 integration. The final Rocket reconciliation is recorded at `cce91229935d77a7f2ea79d2cae5b9b7cd535a59` and marks the cutover cleared.
+C1, the deterministic `together` fan-out / join semantic foundation, is complete and accepted. C2-A1, the Core-native Together semantic bridge, is complete, independently accepted, and merged at `ec56220220fd6d668d74007d6a2f44e76320349f`. Core can now carry `Together_origin` semantics into flat Runtime Plan actions plus additive non-empty groups. Canonical V2 and Rocket meaning remain frozen and preserved; Rust execution remains the serial C1 reference mechanism.
 
 ## Current State
 
 There is **no active implementation packet**.
 
-The next planned increment is:
+The next planned work is design review / packet compilation for:
 
-- **C2 — Physical Parallel Execution**
-- State: design / task compilation required; implementation NOT STARTED
-- Purpose: execute members of a `together` group concurrently while preserving the observable semantics established by C1
-- Risk: Red until the present post-Core / Canonical-V2 runtime boundary has been reviewed
+- **C2-A2 — replay ownership + Trail semantic/physical ordering foundation**
+- State: design review required; **no active C2-A2 implementation packet**
+- Purpose: establish bounded future-concurrency foundations while keeping execution serial
+- Risk: Red; physical concurrency, provider overlap, replay/Trail concurrency work, approval work, and result-anchor work have **not** started
 
 ## Last Completed Development State
 
 - 0.3 Plug authoring P1–P6: FINAL ACCEPTED
 - Evil Bunny adversarial proof: FINAL ACCEPTED
 - 0.4 C1 Together semantics and reference-host join behaviour: complete / accepted
+- 0.4 C2-A1 Core-native Together semantic bridge: COMPLETE / ACCEPTED / MERGED at `ec56220220fd6d668d74007d6a2f44e76320349f`
 - Core phases 1–9: accepted; production evaluation route cut over to Core
 - Performance R1 / Phase A / C-B1: accepted
 - Canonical V2: frozen, implemented and heavily differential-tested
@@ -36,15 +37,15 @@ None.
 
 ## Next Route
 
-Lucy reviews the present runtime architecture and compiles the bounded C2 design / implementation packet. No C2 code should begin merely from the old C1 assumptions.
+Lucy reviews the present runtime architecture and the proposed C2-A2 boundary. No agent is authorised to implement C2-A2 merely because it is named in these status documents; physical concurrency remains out of scope.
 
 The intended 0.4 sequence remains:
 
 1. C1 — semantic fan-out / join foundation ✓
-2. C2 — physical parallel execution
-3. C3 — concurrency limits / resource bounds
-4. C4 — adversarial concurrency crucible
-5. C5 — fresh-agent concurrency proof
+2. C2-A1 — Core-native Together semantic bridge ✓
+3. C2-A2 — replay and Trail foundation design review
+4. C2-A3 — later physical execution design / implementation
+5. C3–C5 — resource bounds, adversarial proof, and fresh-agent proof
 
 ## Operating Mode
 

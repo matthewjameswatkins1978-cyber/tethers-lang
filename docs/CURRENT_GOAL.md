@@ -6,28 +6,29 @@ Updated: 2026-08-14
 
 Tethers is in the 0.4 concurrency programme.
 
-The deterministic `together` fan-out / join semantic foundation (C1) is complete and accepted. Since C1, the repository has also completed the Core phases 1–9 production route, performance work, Canonical V2, and Rocket V2 integration. The current `main` history includes the final Rocket cutover reconciliation at `cce91229935d77a7f2ea79d2cae5b9b7cd535a59`.
+The deterministic `together` fan-out / join semantic foundation (C1) is complete and accepted. C2-A1, the Core-native Together semantic bridge, is complete, independently accepted, and merged to current `main` at `ec56220220fd6d668d74007d6a2f44e76320349f`. It preserves Canonical V2 / Rocket meaning while allowing Core to emit flat Runtime Plan actions with additive non-empty `together` groups; Rust execution remains the serial C1 reference mechanism.
 
-The next planned concurrency increment is **C2 — Physical Parallel Execution**. C2 has **not started** and there is currently no active implementation packet. Before implementation, C2 must be designed against the present post-Core / Canonical-V2 runtime rather than assumed from the older C1 architecture.
+The next planned work is **C2-A2 — replay ownership + Trail semantic/physical ordering foundation** design review. There is **no active C2-A2 implementation packet** and no agent is authorised to implement it merely because it is named here. Physical concurrency, provider overlap, replay/Trail concurrency work, approval work, and result-anchor work have **not** started.
 
 ## Last completed development state
 
 - Tethers 0.3 public Plug authoring P1–P6: FINAL ACCEPTED.
 - P6 — The Evil Bunny Test: FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`.
 - Tethers 0.4 C1 — deterministic `together` fan-out / join semantics and serial reference-host join behaviour: complete / accepted.
+- Tethers 0.4 C2-A1 — Core-native Together semantic bridge: COMPLETE / ACCEPTED / MERGED at `ec56220220fd6d668d74007d6a2f44e76320349f`.
 - Core phases 1–9: accepted and cut over to the production evaluation path.
 - Performance R1 / Phase A / C-B1: accepted.
 - Canonical V2 and Rocket V2: frozen, implemented, differentially proved, integrated, and reconciled into the current `main` history. The final reconciliation records the cutover as cleared.
 
 ## Active increment
 
-**None.**
+**None.** C2-A2 is design review / packet compilation only, not an implementation task.
 
-C2 is the next planned increment, but it is not yet an implementation task.
+C2-A1 is merged; C2-A2 must be reviewed and separately authorised before implementation.
 
 ## C2 boundary
 
-C2 is intended to introduce real concurrent member execution while preserving the observable semantics established by C1.
+C2-A2 may establish replay ownership and Trail ordering foundations while execution remains serial. Later C2 work may introduce real concurrent member execution only under a separately reviewed packet.
 
 It must not casually redefine:
 
@@ -40,7 +41,7 @@ It must not casually redefine:
 - failure semantics,
 - Canonical V2 identity or ordering rules.
 
-The C2 task packet must be compiled from the current runtime architecture before code changes begin.
+No C2-A2 packet is implementation authority until separately approved; physical concurrency remains a later boundary.
 
 ## Enduring project boundaries
 

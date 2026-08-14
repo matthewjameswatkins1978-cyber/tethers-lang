@@ -6,13 +6,13 @@ A Tether declares which Actions are independent. The engine does not declare thr
 
 ## Status
 
-C1 — Together semantic foundation — is complete and accepted. The OCaml engine provides the deterministic `together` fan-out / join semantic model (flat source-order `plan.actions` plus additive `plan.groups`, planner Trail evidence, malformed-group refusal, and compatible output when `together` is absent), and the reference host respects the group boundary: every group member is attempted once, the join succeeds only when every member succeeded, and a non-success join blocks later Actions.
+C1 — Together semantic foundation — is complete and accepted. C2-A1 — Core-native Together semantic bridge — is complete, independently accepted, and merged at `ec56220220fd6d668d74007d6a2f44e76320349f`. Core now carries `Together_origin` semantics into flat source-order Runtime Plan `actions` plus additive non-empty `groups`; Canonical V2 / Rocket meaning remains frozen and the reference host remains the serial C1 schedule.
 
 Since C1, the repository has also completed the Core phases 1–9 production route, performance work, Canonical V2 and Rocket V2 integration. The final Rocket reconciliation is present in current `main` at `cce91229935d77a7f2ea79d2cae5b9b7cd535a59` and records the cutover as cleared.
 
-**C2–C5 have NOT started.** There is currently no active C2 implementation packet.
+**Physical concurrency has NOT started.** There is currently no active C2-A2 implementation packet. Replay/Trail/provider/approval/result-anchor concurrency work has not started.
 
-C2 remains the next planned increment, but its design must be compiled against the present post-Core / Canonical-V2 runtime rather than copied mechanically from older C1 assumptions.
+C2-A2 design review / packet compilation is next. It must be compiled against the present post-C2-A1 runtime rather than copied mechanically from older C1 assumptions; no agent is authorised to implement it merely because this roadmap names it.
 
 ## Sequence
 
@@ -29,9 +29,19 @@ End state:
 - The reference host's serial execution is a valid C1 schedule.
 - Tethers without `together` retains the established non-group behaviour.
 
-### C2 — Physical parallel execution
+### C2-A1 — Core-native Together semantic bridge ✓
 
-**NEXT PLANNED — NOT STARTED.**
+Core-native propagation of `Together_origin` into Runtime Plan groups is complete, accepted, and merged at `ec56220220fd6d668d74007d6a2f44e76320349f`. This is a semantic bridge only; it did not add physical provider overlap.
+
+### C2-A2 — replay ownership + Trail ordering foundation
+
+**NEXT DESIGN REVIEW — IMPLEMENTATION NOT STARTED.**
+
+Evaluate the smallest safe replay-admission ownership and Trail semantic/physical ordering foundations while retaining the serial C1 executor. The work must preserve per-logical-key replay exclusion, intent-before-effect, prompt durable outcomes, group joins, and external Trail/recovery compatibility. It must not introduce provider overlap, async execution, worker pools, coordinator lanes, retries, approval redesign, result-anchor redesign, or any Canonical V2 / Rocket semantic change.
+
+### Later C2 — physical parallel execution
+
+**NOT STARTED.**
 
 Execute members of a `together` group concurrently in the runtime while preserving C1 observable semantics.
 

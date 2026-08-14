@@ -10,30 +10,26 @@ Updated: 2026-08-14
 
 The previous packet, `TETHERS CORE-9C - Canonical Core Production Cutover`, is complete and is preserved in the worker-note / commit history. This file is the living handoff location and must not continue presenting that completed packet as current work.
 
-Tethers is now in the 0.4 concurrency programme. C1 (`together` deterministic fan-out / join semantics plus reference-host join behaviour) is complete. Since C1, Core phases 1–9, performance work, Canonical V2 and Rocket V2 have also been completed and integrated into the current `main` history.
+Tethers is now in the 0.4 concurrency programme. C1 (`together` deterministic fan-out / join semantics plus reference-host join behaviour) is complete. C2-A1, the Core-native Together semantic bridge, is COMPLETE, independently ACCEPTED, and MERGED at `ec56220220fd6d668d74007d6a2f44e76320349f`. It allows Core to emit flat Runtime Plan actions plus additive non-empty groups while preserving frozen Canonical V2 / Rocket meaning and the Rust serial C1 execution mechanism.
 
 ## Next planned task
 
-**C2 — Physical Parallel Execution**
+**C2-A2 — replay ownership + Trail semantic/physical ordering foundation**
 
-C2 has **NOT STARTED**.
+C2-A2 design review / packet compilation is the next route. C2-A2 implementation has **NOT STARTED**.
 
-No implementation owner is assigned and no code-authorisation packet exists yet.
+No implementation owner is assigned and no code-authorisation packet exists yet. Naming C2-A2 here is not authority to implement it.
 
-Before a C2 packet is issued, Lucy must review the present post-Core / Canonical-V2 runtime execution boundary and compile a bounded design that preserves C1 observable semantics.
+Before an implementation packet is issued, Lucy must review the present replay and Trail boundaries and compile a bounded design that preserves C1 observable semantics. Physical concurrency, provider overlap, approval consumption, result anchors, and follow-up queues remain unstarted and out of scope.
 
 ## Required C2 design questions
 
 The future packet must explicitly settle, at minimum:
 
-1. Where physical concurrency lives in the current Rust runtime.
-2. How all members of one `together` group are started / attempted without changing the C1 join contract.
-3. How results are collected and ordered deterministically.
-4. How failure, cancellation and later-Action blocking remain truthful.
-5. How Trail evidence records physical concurrency without inventing an order that did not occur.
-6. How approval, provider dispatch, replay identity and recovery interact with concurrent members.
-7. What is deliberately postponed to C3 resource limits.
-8. What serial compatibility behaviour must remain byte- or semantics-compatible.
+1. Whether replay-admission ownership can be separated from logical-key exclusion without changing replay identity, persistence, or terminal-state semantics.
+2. Whether Trail needs distinct semantic-position and physical-append information before future physical overlap.
+3. Which Trail compatibility and recovery constraints require an additive change or a separate migration decision.
+4. What remains serial and is explicitly deferred to later physical-concurrency work.
 
 ## Frozen boundaries
 
