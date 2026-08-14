@@ -12,9 +12,16 @@ C2-A2a, replay admission ownership foundation, is complete and merged at `a07e25
 
 ## Current State
 
-There is **no active implementation packet**.
+C2-A3 physical concurrency design is complete and accepted
+(`docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`).
 
-C2-A3 physical concurrency design is complete (`docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`). Physical concurrency is **NOT YET IMPLEMENTED**.
+C2-A3a implementation exists at base `58aecd0c789802cdfea57d4560b51fd21d5340ae`
+but is **REJECTED pending correction**. Physical concurrency is **NOT YET
+ACCEPTED/MERGED**.
+
+Active task: **C2-A3a final provider overlap correction** — Owner: `Codex`,
+Status: `READY`, Base: `58aecd0c789802cdfea57d4560b51fd21d5340ae`.
+Packet: `docs/CURRENT_CLINE_TASK.md`.
 
 ## Last Completed Development State
 
@@ -37,14 +44,17 @@ None.
 
 ## Next Route
 
-Next implementation is C2-A3a (provider invocation overlap under coordinator ownership) if the design is not BLOCKED. Requires a separately approved task packet.
+C2-A3a (provider invocation overlap under coordinator ownership) is the active
+correction task — a READY Red packet assigned to Codex at base
+`58aecd0c789802cdfea57d4560b51fd21d5340ae`. It corrects the REJECTED A3a
+implementation rather than starting fresh.
 
 The intended 0.4 sequence remains:
 
 1. C1 — semantic fan-out / join foundation ✓
 2. C2-A1 — Core-native Together semantic bridge ✓
 3. C2-A2 — replay and Trail foundation ✓ (A2a + A2b complete)
-4. C2-A3 — physical concurrency design ✓, implementation NOT STARTED
+4. C2-A3 — physical concurrency design ✓, implementation under correction (C2-A3a)
 5. C3–C5 — resource bounds, adversarial proof, and fresh-agent proof
 
 ## Operating Mode
