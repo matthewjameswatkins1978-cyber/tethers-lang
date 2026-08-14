@@ -587,10 +587,10 @@ do
   | _ -> ()
 
 (* ------------------------------------------------------------------ *)
-(*  H. Together Refusal                                                *)
+(*  H. Together lowering                                               *)
 (* ------------------------------------------------------------------ *)
 
-let test_together_refused () =
+let test_together_lowened () =
   let source = {|
 tether "test"
 anchor
@@ -606,8 +606,27 @@ do
 |} in
   match parse source with
   | Ok tether ->
-      assert_error_eq "together refused"
-        (Unsupported_construct "together") (lower default_env tether)
+      (match lower default_env tether with
+       | Ok program ->
+           let together_origins =
+             List.filter_map
+               (function Together_origin t -> Some t | _ -> None)
+               program.origin_sites
+           in
+           assert_equal "one together origin" 1 (List.length together_origins);
+           let tg = List.hd together_origins in
+           assert_equal "group has 2 members" 2 (List.length tg.member_origin_ids);
+           assert_true "objective is All_members_succeed"
+             (tg.objective = All_members_succeed);
+           let action_sites =
+             List.filter_map
+               (function Action_origin a -> Some a | _ -> None)
+               program.origin_sites
+           in
+           assert_equal "two action origins" 2 (List.length action_sites)
+       | Error _ ->
+           Printf.eprintf "FAIL: together lowering returned error\n";
+           exit 1)
   | _ -> ()
 
 (* ------------------------------------------------------------------ *)
@@ -700,7 +719,7 @@ let () =
   test_same_contract_two_source_names ();
   test_conflicting_contract_fails ();
   test_unused_conflict_ignored ();
-  test_together_refused ();
+  test_together_lowened ();
   test_determinism ();
   test_non_anchor_reference_rejected ();
   test_no_actions_handled ();

@@ -135,13 +135,30 @@ let lower_guards all_facts conditions =
 (*  Together detection                                                 *)
 (* ------------------------------------------------------------------ *)
 
-let extract_sequential_actions items =
-  let rec loop acc = function
-    | [] -> Ok (List.rev acc)
-    | Tether_parser.Action a :: rest -> loop (a :: acc) rest
-    | Tether_parser.Together _ :: _ -> Error (Unsupported_construct "together")
+type lowered_group = {
+  group_id : group_id;
+  member_origin_ids : origin_id list;
+}
+
+let extract_actions_and_groups items =
+  let rec loop acc_actions acc_groups = function
+    | [] -> Ok (List.rev acc_actions, List.rev acc_groups)
+    | Tether_parser.Action a :: rest ->
+        loop (a :: acc_actions) acc_groups rest
+    | Tether_parser.Together members :: rest ->
+        let member_count = List.length acc_actions in
+        let group_id = group_id_of_string ("G_group_" ^ string_of_int (List.length acc_groups + 1)) in
+        let member_ids =
+          List.init (List.length members) (fun i ->
+            action_origin_id (member_count + i + 1))
+        in
+        let member_actions = List.map (fun m -> (m, true)) members in
+        loop
+          (List.map fst member_actions @ acc_actions)
+          ({ group_id; member_origin_ids = member_ids } :: acc_groups)
+          rest
   in
-  loop [] items
+  loop [] [] items
 
 (* ------------------------------------------------------------------ *)
 (*  Result monad binding operator for lowering_error                    *)
@@ -154,7 +171,7 @@ let ( let* ) = Result.bind
 (* ------------------------------------------------------------------ *)
 
 let lower env (tether : Tether_parser.tether) =
-  let* actions = extract_sequential_actions tether.actions in
+  let* actions, groups = extract_actions_and_groups tether.actions in
   let* guards = lower_guards env.input_facts tether.conditions in
   let* action_origins_rev, used_cap_contracts_rev =
     let rec loop i acc_origins acc_contracts actions =
@@ -200,6 +217,17 @@ let lower env (tether : Tether_parser.tether) =
     in
     build_chain action_origin_ids
   in
+  let together_origins =
+    List.map (fun (g : lowered_group) ->
+      Together_origin {
+        together_origin_id = origin_id_of_string
+          ("O_together_" ^ string_of_group_id g.group_id);
+        group_id = g.group_id;
+        member_origin_ids = g.member_origin_ids;
+        objective = All_members_succeed;
+      }
+    ) groups
+  in
   let entry_origin =
     match action_origins_rev with
     | first :: _ -> Some first.action_origin_id
@@ -242,7 +270,7 @@ let lower env (tether : Tether_parser.tether) =
     entry_guards = guards;
     entry_origin;
     success_continuations;
-    origin_sites = Anchor_origin anchor_origin_record :: action_origin_sites;
+    origin_sites = Anchor_origin anchor_origin_record :: action_origin_sites @ together_origins;
     branches = [];
     roles = [];
     item_templates = [];

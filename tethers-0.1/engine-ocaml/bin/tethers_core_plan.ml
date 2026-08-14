@@ -126,24 +126,19 @@ let action_inputs_of_site = function
 
 let unsupported program =
   let sites = program.origin_sites in
-  let has_together =
-    List.exists (function Together_origin _ -> true | _ -> false) sites
+  let has_batch_site =
+    List.exists (function Batch_site _ -> true | _ -> false) sites
   in
-  if has_together then Some Unsupported_together
-  else
-    let has_batch_site =
-      List.exists (function Batch_site _ -> true | _ -> false) sites
-    in
-    let has_batch_item =
-      List.exists
-        (fun (ai : action_input) ->
-          match ai.binding with
-          | Batch_item_context _ -> true
-          | _ -> false)
-        (List.concat_map action_inputs_of_site sites)
-    in
-    if has_batch_site || has_batch_item then Some Unsupported_batch
-    else if program.branches <> [] then Some Unsupported_branch
+  let has_batch_item =
+    List.exists
+      (fun (ai : action_input) ->
+        match ai.binding with
+        | Batch_item_context _ -> true
+        | _ -> false)
+      (List.concat_map action_inputs_of_site sites)
+  in
+  if has_batch_site || has_batch_item then Some Unsupported_batch
+  else if program.branches <> [] then Some Unsupported_branch
     else if program.item_templates <> [] then Some Unsupported_item_template
     else
       let has_role_proxy =
@@ -472,6 +467,11 @@ let plan_core program (context : planning_context) =
       | None -> Error Missing_entry_origin
       | Some entry_oid ->
           let sites = program.origin_sites in
+          let together_sites =
+            List.filter_map
+              (function Together_origin t -> Some t | _ -> None)
+              sites
+          in
           let continuation_of oid =
             List.assoc_opt oid
               (List.map
@@ -499,7 +499,8 @@ let plan_core program (context : planning_context) =
                           advance (oid :: visited) (index + 1)
                             (planned_action :: planned)
                             (List.rev_append action_effects effects) oid)
-                  | Together_origin _ -> Error Unsupported_together
+                  | Together_origin _ ->
+                      advance (oid :: visited) index planned effects oid
                   | Batch_site _ -> Error Unsupported_batch)
           and advance visited index planned effects oid =
             match continuation_of oid with
@@ -512,12 +513,47 @@ let plan_core program (context : planning_context) =
           match walk [] 1 [] [] entry_oid with
           | Error _ as err -> err
           | Ok (actions, required_effects) ->
+              let action_plan_index =
+                let rec collect acc idx = function
+                  | [] -> List.rev acc
+                  | site :: rest ->
+                      (match site with
+                       | Action_origin a ->
+                           collect ((a.action_origin_id, idx) :: acc) (idx + 1) rest
+                       | _ -> collect acc idx rest)
+                in
+                collect [] 1 sites
+              in
+              let plan_idx_of_oid oid =
+                match List.assoc_opt oid action_plan_index with
+                | Some i -> i
+                | None -> -1
+              in
+              let groups =
+                let open Tethers_core in
+                List.filter_map (fun (t : together_origin) ->
+                  let member_action_ids =
+                    List.filter_map (fun (member_oid : origin_id) ->
+                      let idx = plan_idx_of_oid member_oid in
+                      if idx >= 0 then
+                        Some (idx, "action_" ^ string_of_int idx)
+                      else None
+                    ) t.member_origin_ids
+                    |> List.sort (fun (a, _) (b, _) -> compare a b)
+                    |> List.map snd
+                  in
+                  Some {
+                    group_id = string_of_group_id t.group_id;
+                    member_action_ids;
+                  }
+                ) together_sites
+              in
               Ok
                 {
                   id = context.evaluation_id ^ "/plan";
                   required_effects;
                   actions;
-                  groups = [];
+                  groups;
                 })
 
 let plan program (context : planning_context) =
