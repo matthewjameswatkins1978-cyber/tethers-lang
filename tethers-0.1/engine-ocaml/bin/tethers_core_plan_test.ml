@@ -37,6 +37,7 @@ let string_of_planning_error = function
   | Ambiguous_capability_projection _ -> "Ambiguous_capability_projection"
   | Flow_cycle _ -> "Flow_cycle"
   | Unresolved_origin _ -> "Unresolved_origin"
+  | Unresolved_together_member _ -> "Unresolved_together_member"
   | Missing_anchor_snapshot _ -> "Missing_anchor_snapshot"
   | Ambiguous_anchor_snapshot _ -> "Ambiguous_anchor_snapshot"
   | Anchor_path_missing _ -> "Anchor_path_missing"
@@ -671,6 +672,81 @@ let test_together_member_order () =
   let g = List.hd p.groups in
   assert_true "TG2 member_action_ids are action_1 and action_2"
     (g.member_action_ids = [ "action_1"; "action_2" ])
+
+let test_together_unresolved_member_two () =
+  let together =
+    Together_origin
+      { together_origin_id = oid "TG";
+        group_id = gid "G1";
+        member_origin_ids = [ oid "A"; oid "MISSING" ];
+        objective = All_members_succeed }
+  in
+  let program = mk_program
+    ~id:"P_tg_um2"
+    ~entry_origin:(Some (oid "ent"))
+    ~origin_sites:[
+      mk_anchor_origin "ent" "ev" [];
+      mk_action_origin "A" "cap.a" "sha256:a"
+        [ mk_lit_input "x" (String_value "a1") ] [];
+      together;
+    ]
+    ~success_continuations:[
+      mk_success_cont "ent" (Origin_target (oid "A"));
+      mk_success_cont "A" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.a" "sha256:a" ]
+    ()
+  in
+  let ctx = mk_context ~evaluation_id:"eval_tg_um2"
+    ~capabilities:[ mk_projection "cap.a" "sha256:a" ~name:"cap.a" () ]
+    ()
+  in
+  (match plan program ctx with
+   | Error _ ->
+       incr tests_run; incr tests_passed
+   | Ok _ ->
+       incr tests_run;
+       Printf.eprintf "FAIL: TG-UM2 unresolved two-member must fail, got Ok\n";
+       exit 1)
+
+let test_together_unresolved_member_three () =
+  let together =
+    Together_origin
+      { together_origin_id = oid "TG";
+        group_id = gid "G1";
+        member_origin_ids = [ oid "A"; oid "B"; oid "MISSING" ];
+        objective = All_members_succeed }
+  in
+  let program = mk_program
+    ~id:"P_tg_um3"
+    ~entry_origin:(Some (oid "ent"))
+    ~origin_sites:[
+      mk_anchor_origin "ent" "ev" [];
+      mk_action_origin "A" "cap.a" "sha256:a"
+        [ mk_lit_input "x" (String_value "a1") ] [];
+      mk_action_origin "B" "cap.a" "sha256:a"
+        [ mk_lit_input "x" (String_value "a2") ] [];
+      together;
+    ]
+    ~success_continuations:[
+      mk_success_cont "ent" (Origin_target (oid "A"));
+      mk_success_cont "A" (Origin_target (oid "B"));
+      mk_success_cont "B" Program_complete;
+    ]
+    ~capability_contracts:[ mk_cap_contract "cap.a" "sha256:a" ]
+    ()
+  in
+  let ctx = mk_context ~evaluation_id:"eval_tg_um3"
+    ~capabilities:[ mk_projection "cap.a" "sha256:a" ~name:"cap.a" () ]
+    ()
+  in
+  (match plan program ctx with
+   | Error _ ->
+       incr tests_run; incr tests_passed
+   | Ok _ ->
+       incr tests_run;
+       Printf.eprintf "FAIL: TG-UM3 unresolved three-member must fail, got Ok\n";
+       exit 1)
 
 let test_unsupported_batch () =
   let batch =
@@ -4170,6 +4246,8 @@ let () =
   test_unsupported_together ();
   test_together_valid_plan ();
   test_together_member_order ();
+  test_together_unresolved_member_two ();
+  test_together_unresolved_member_three ();
   test_unsupported_batch ();
   test_unsupported_branch ();
   test_unsupported_role_binding ();

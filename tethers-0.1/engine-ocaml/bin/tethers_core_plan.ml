@@ -26,6 +26,7 @@ type planning_error =
   | Ambiguous_capability_projection of capability_id
   | Flow_cycle of origin_id list
   | Unresolved_origin of origin_id
+  | Unresolved_together_member of origin_id
   | Missing_anchor_snapshot of origin_id
   | Ambiguous_anchor_snapshot of origin_id
   | Anchor_path_missing of origin_id * string list
@@ -531,23 +532,36 @@ let plan_core program (context : planning_context) =
               in
               let groups =
                 let open Tethers_core in
-                List.filter_map (fun (t : together_origin) ->
-                  let member_action_ids =
-                    List.filter_map (fun (member_oid : origin_id) ->
-                      let idx = plan_idx_of_oid member_oid in
-                      if idx >= 0 then
-                        Some (idx, "action_" ^ string_of_int idx)
-                      else None
-                    ) t.member_origin_ids
-                    |> List.sort (fun (a, _) (b, _) -> compare a b)
-                    |> List.map snd
-                  in
-                  Some {
-                    group_id = string_of_group_id t.group_id;
-                    member_action_ids;
-                  }
-                ) together_sites
+                let rec resolve_groups acc = function
+                  | [] -> Ok (List.rev acc)
+                  | t :: rest ->
+                      let rec resolve_members acc_ids = function
+                        | [] -> Ok (List.rev acc_ids)
+                        | member_oid :: mrest ->
+                            (match plan_idx_of_oid member_oid with
+                             | -1 -> Error (Unresolved_together_member member_oid)
+                             | idx ->
+                                 resolve_members
+                                   ((idx, "action_" ^ string_of_int idx) :: acc_ids)
+                                   mrest)
+                      in
+                      match resolve_members [] t.member_origin_ids with
+                      | Error _ as err -> err
+                      | Ok unsorted ->
+                          let member_action_ids =
+                            List.sort (fun (a, _) (b, _) -> compare a b) unsorted
+                            |> List.map snd
+                          in
+                          resolve_groups
+                            ({ group_id = string_of_group_id t.group_id;
+                               member_action_ids } :: acc)
+                            rest
+                in
+                resolve_groups [] together_sites
               in
+              match groups with
+              | Error _ as err -> err
+              | Ok groups ->
               Ok
                 {
                   id = context.evaluation_id ^ "/plan";

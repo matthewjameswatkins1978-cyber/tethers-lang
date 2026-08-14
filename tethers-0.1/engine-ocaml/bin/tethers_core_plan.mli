@@ -117,6 +117,9 @@ type planning_error =
   (** Defensive: unreachable for validated Core, which rejects success
       cycles.  Guards the walk against a hang. *)
   | Unresolved_origin of Tethers_core.origin_id
+  (** A Together_origin member [origin_id] does not resolve to any planned
+      Action.  Fail-closed: the group is never silently shrunk. *)
+  | Unresolved_together_member of Tethers_core.origin_id
   (** Defensive: unreachable for validated Core, which rejects unknown
       entry origins and missing continuation targets. *)
   | Missing_anchor_snapshot of Tethers_core.origin_id
