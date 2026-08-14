@@ -37,7 +37,8 @@ For each PlanItem (Sequential or Group):
        b. replay admission       (admit — creates ReplayAdmission)
        c. replay G0 intent      (publish_intent)
        d. dispatch intent        (prepare_and_record → Trail append)
-       e. deadline preparation
+       --- boundary: preparation complete, invocation not yet begun ---
+       e. deadline preparation   (clock.now() — per-member, not shared)
        f. replay G1 armed       (publish_armed)
        g. presentation entry    (response trail push)
        h. provider invocation   (executor.execute_classified)
@@ -70,7 +71,7 @@ Key ownership observations:
 | CapabilityExecutor trait | `&mut self` on execute | A — MUST CHANGE | Workers need independent invocation |
 | Policy/resolution | Runtime shared read | C — CAN REMAIN UNCHANGED | Prepared before overlap |
 | ApprovalStore | `&mut` in HostExecutionService | C — CAN REMAIN UNCHANGED | Prepared before overlap |
-| Deadline clock | `ProductionMonotonicClock` | C — CAN REMAIN UNCHANGED | Created per-invocation |
+| Deadline clock | `ProductionMonotonicClock` | C — CAN REMAIN UNCHANGED | Created per-invocation in STAGE B, not shared across group |
 | ResultAnchorWriter | `&mut dyn ResultAnchorWriter` | C — CAN REMAIN UNCHANGED | Coordinator writes anchors |
 | Provider catalogue | Runtime shared read | C — CAN REMAIN UNCHANGED | Refreshed per-session |
 
@@ -83,13 +84,14 @@ Everything that must remain deterministically coordinated stays on a single coor
 - policy / permission decisions
 - capability resolution
 - provider availability checks
-- replay admission (G0, G1, G2)
+- replay admission (G0 intent, G1 armed, G2 terminal)
 - durable Trail writes (intent, outcome, join)
 - result anchor writes
 - response presentation
 - join evaluation
+- deadline establishment (per-member, immediately before launch)
 
-The coordinator is the single source of truth. Workers are stateless invocation carriers.
+The coordinator is the single source of truth. Workers are stateless invocation carriers that establish independent ephemeral provider sessions.
 
 ## 4. Staged Execution Model
 
@@ -104,23 +106,34 @@ For every Together member in Runtime Plan order:
 5. Replay admission (`admit`)
 6. Replay G0 intent (`publish_intent`)
 7. Durable Trail intent (`prepare_and_record`)
-8. Deadline preparation
-9. Replay G1 armed (`publish_armed`)
 
 All of this is coordinator-owned, serial, deterministic.
 
-**If member B fails preparation (policy denied, unavailable, replay blocked), member A is still armed.** The "all members are attempted" rule applies at the provider invocation boundary, not the preparation boundary. A preparation failure is an honest early classification — the member was attempted through preparation and classified before invocation.
+**Deadline and G1 are NOT prepared in STAGE A.** These must happen immediately before each member's worker launch (STAGE B). See §4a for why.
+
+**If member B fails preparation (policy denied, unavailable, replay blocked), member A is still eligible for invocation.** The "all members are attempted" rule applies at the provider invocation boundary, not the preparation boundary. A preparation failure is an honest early classification — the member was attempted through preparation and classified before invocation.
 
 ### STAGE B — Physical Provider Invocation
 
-Once eligible members are armed:
+Once all eligible members are prepared (STAGE A complete):
 
-- Each armed member's provider invocation executes in an independent scope (thread or scoped task).
-- No Trail writer ownership in workers.
-- No shared mutable response in workers.
-- No ReplayAdmission in workers.
-- Workers receive: `DispatchReadyAction` + remaining deadline + provider identity + tool name.
-- Workers return: raw provider result or classified diagnostic + timing evidence.
+For each armed member, immediately before worker launch:
+
+1. **Establish deadline start** (`clock.now()`) — per-member, not shared across group
+2. **Calculate remaining deadline** from member's `timeout_ms`
+3. **Final pre-invocation deadline check** — if expired, classify as Unattempted (do not launch)
+4. **Replay G1 armed** (`publish_armed`) — immediately before launch, per-member
+5. **Launch worker** in scoped thread
+
+This preserves the accepted meaning: a member's provider execution timeout does not begin merely because unrelated siblings are still being prepared. The deadline starts only when that specific member is about to invoke.
+
+**Critical ordering for each member:**
+
+```
+G0 intent (STAGE A) → durable Trail intent (STAGE A) → deadline start (STAGE B) → G1 armed (STAGE B) → provider invocation (STAGE B)
+```
+
+No worker may cause an effect before the coordinator has successfully published G1 for that specific member.
 
 ### STAGE C — Durable Result Collection
 
@@ -132,7 +145,7 @@ As provider results physically become available (coordinator receives from worke
 4. Write Result Anchor if semantically required.
 5. Preserve each member's SemanticPosition.
 
-Physical Trail append order is intentionally allowed to differ from semantic order because it is truthful runtime evidence. Do not sort Trail physically after the fact.
+**Physical Trail append order is durable append order, not provider completion order.** The coordinator appends outcomes in the order it receives worker results. Two providers completing almost simultaneously may have their results received in an order that does not exactly match physical completion. This is truthful: the Trail records when the coordinator learned about each completion. Do not sort Trail physically after the fact.
 
 ### STAGE D — Join
 
@@ -144,34 +157,129 @@ After every member has a terminal Trail record:
 
 ## 5. Provider Session Decision
 
-**Chosen: Option 2 — one independent invocation handle per worker.**
+### Provider concepts: session, process, identity
 
-Each worker creates an independent MCP stdio connection to the provider, invokes the tool, and returns the result. The connection is dropped after invocation.
+| Concept | Definition | Ownership |
+|---------|-----------|-----------|
+| Provider identity | Capability-resolved name (e.g. `github.com/org/repo/provider`). Determined by `resolve_exact_capability`, not by process count. | Capability resolution — immutable per action |
+| Session | A `RetainedProviderSession` that owns one `ManagedProvider` which owns one `SupervisedChild`. Carries: request ID sequence, catalogue freshness flag, cached catalogue. | Coordinator-owned `HashMap<String, RetainedProviderSession>` |
+| Process | One OS child process launched by `ManagedProvider::launch`. Each session holds exactly one process. | Session-owned (via `ManagedProvider`) |
+
+Key invariant: **Provider identity is intentionally independent of process instance.** Two sessions with the same provider identity are two independent child processes running the same provider binary. The Tethers contract does not require a 1:1 mapping between identity and process.
+
+### Retained process-local state question
+
+`RetainedProviderSession` maintains per-session state:
+
+- `next_request_id: u64` — monotonic JSON-RPC request ID sequence
+- `catalogue_stale: bool` — dirty flag blocking invocation until rediscovery
+- `catalogue: Option<SocketCatalogue>` — cached tool catalogue
+- `catalogue_change_observed: bool` (in `ManagedProvider`) — notification flag
+
+These are session-local concerns, not provider-identity state. The MCP protocol is stateless per `tools/call` — each invocation is an independent JSON-RPC request/response.
+
+**However:** Tethers does not guarantee that provider implementations are stateless between calls. A provider could retain process-local state (in-memory caches, connection pools, external state). If a provider relies on retained state between serial Actions, using ephemeral sessions for Together members would break that assumption.
+
+**Accepted A3a rule:** Sequential Actions continue using retained sessions exactly as today. Together members may use independent ephemeral sessions only where provider binding semantics make process-instance independence valid. This is safe for C2-A3a because:
+
+1. Together members are independent actions — they do not share provider state by definition.
+2. The serial path retains its sessions for post-group catalogue state.
+3. If a provider implementation requires inter-call state, that is a provider-specific concern, not a Tethers semantic — and the serial path (which uses retained sessions) already handles it.
+
+### Correct provider worker path
+
+The current serial provider path is:
+
+```
+RetainedProviderSession::establish(SocketEstablishment{...})
+  → ManagedProvider::launch(command, args, working_dir)
+  → ManagedProvider::initialize(protocol, server_name)
+  → catalogue_stale = true, catalogue = None
+
+refresh_prepared_catalogue(prepared, session)
+  → session.discover()
+    → refresh_notification_state()
+    → invalidate_catalogue()
+    → provider.list_tools_paginated()
+    → validate catalogue-change
+    → catalogue_stale = false, catalogue = Some(...)
+  → validate_prepared_discovery(catalogue, prepared)
+
+session.tools_call(tool_name, arguments, remaining)
+  → refresh_notification_state()
+  → require_fresh_catalogue()           ← BLOCKS if stale
+  → provider.tools_call_with_timeout()
+  → observe catalogue-change notifications
+```
+
+The proposed A3a worker path **must preserve this exact contract:**
+
+```
+Worker receives: PreparedProvider (config, identity, trusted bindings), tool_name, arguments, deadline_remaining
+
+Worker establishes ephemeral session:
+  1. ManagedProvider::launch(command, args, working_dir)
+  2. ManagedProvider::initialize(protocol_version, server_name)
+     → catalogue_stale = true, catalogue = None
+
+Worker discovers catalogue:
+  3. session.discover()
+     → refresh_notification_state()
+     → invalidate_catalogue()
+     → provider.list_tools_paginated()
+     → catalogue_stale = false, catalogue = Some(...)
+
+Worker validates trusted binding:
+  4. verify required operation remains the trusted resolved operation
+     (validate_prepared_discovery equivalent against PreparedProvider bindings)
+
+Worker invokes:
+  5. session.tools_call(tool_name, arguments, deadline_remaining)
+     → refresh_notification_state()
+     → require_fresh_catalogue()        ← passes (catalogue is fresh)
+     → provider.tools_call_with_timeout()
+
+Worker observes notifications:
+  6. observe catalogue-change notifications (informational only for ephemeral session)
+
+Worker returns:
+  7. Result<Value, ProviderDiagnostic>
+     or classified error
+
+Worker closes:
+  8. session.close()
+     → ManagedProvider shutdown child process
+```
+
+**Why this is safe:** The worker uses the same `RetainedProviderSession::establish` + `discover` + `tools_call` path as the serial coordinator. No contract is bypassed. The ephemeral session is established, discovered, validated, invoked, and closed — identical to a serial session, but scoped to a single invocation.
+
+**Do NOT call `ManagedProvider::tools_call` directly.** Always go through `RetainedProviderSession` to honour the Socket freshness contract.
+
+**Session lifecycle in workers (corrected):**
+
+```text
+Worker receives: PreparedProvider, tool_name, arguments, deadline_remaining
+Worker establishes: RetainedProviderSession::establish(SocketEstablishment{
+    command, args, working_directory, protocol_version, server_name, identity
+})
+Worker discovers: refresh_prepared_catalogue(prepared, &mut session)
+Worker invokes: session.tools_call(tool_name, arguments, deadline_remaining)
+Worker returns: Result<Value, ProviderDiagnostic>
+Worker closes: session.close()
+```
+
+### Same-provider overlap
 
 | Question | Answer |
 |----------|--------|
-| Can two members targeting the SAME provider overlap? | YES — each gets its own stdio connection |
-| Can two members targeting DIFFERENT providers overlap? | YES — independent connections |
-| Should C2 guarantee overlap only when independent sessions exist? | N/A — all invocations get independent connections |
-| Would such a limitation alter Tethers semantics? | N/A |
+| Can two members targeting the SAME provider overlap? | YES — each gets its own child process (independent sessions) |
+| Can two members targeting DIFFERENT providers overlap? | YES — independent sessions |
 | Does provider identity remain unchanged? | YES — identity is determined by capability resolution, not session count |
+| Are there twice as many provider processes? | Only for the duration of the Together group. Ephemeral sessions are closed after invocation. |
 
-**Why not mutex one session:** That would produce concurrency-shaped code with serial provider calls — no actual overlap.
+**Why independent connections are safe:** The MCP protocol is stateless per tool invocation. Each `tools_call` sends a JSON-RPC request and waits for a response. Multiple concurrent child processes for the same provider identity are independent OS processes with independent stdio channels. The provider process handles each independently — that is the provider's runtime detail, not Tethers' concern.
 
-**Why independent connections are safe:** The MCP protocol is stateless per tool invocation. The `tools_call` method sends a JSON-RPC request and waits for a response. Multiple concurrent connections to the same provider process are independent TCP/stdio channels. The provider process itself may or may not handle them concurrently — that is the provider's runtime detail, not Tethers' concern.
-
-**Session lifecycle in workers:**
-
-```
-Worker receives: provider_identity, tool_name, arguments, deadline_remaining
-Worker creates: ManagedProvider::launch(provider_config)
-Worker calls: provider.initialize(protocol, server_name)
-Worker calls: provider.tools_call(tool_name, arguments, remaining)
-Worker returns: Result<Value, ProviderDiagnostic>
-Worker drops: provider (closes child process)
-```
-
-The coordinator retains its existing `RetainedProviderSession` instances for serial Actions and for any post-group catalogue state. The worker sessions are ephemeral invocation-only connections.
+The coordinator retains its existing `RetainedProviderSession` instances for serial Actions and for post-group catalogue state. The worker sessions are ephemeral invocation-only connections.
 
 ## 6. Replay Ownership Decision
 
@@ -181,8 +289,9 @@ The coordinator retains its existing `RetainedProviderSession` instances for ser
 |----------|--------|
 | Does ReplayAdmission move between threads? | NO |
 | Must Rc change to Arc? | NO — admission stays on coordinator |
-| How is G1 published before launch? | Coordinator publishes G1 in STAGE A, before spawning workers |
-| How is G2 published after result? | Coordinator publishes G2 in STAGE C, after receiving worker result |
+| How is G0 published? | Coordinator publishes G0 in STAGE A, before worker launch |
+| How is G1 published? | Coordinator publishes G1 in STAGE B, immediately before each member's worker launch |
+| How is G2 published? | Coordinator publishes G2 in STAGE C, after receiving worker result |
 
 The admission lifecycle remains identical to serial execution:
 
@@ -190,9 +299,11 @@ The admission lifecycle remains identical to serial execution:
 admit() → publish_intent() → [provider invocation] → publish_terminal()
 ```
 
-The only change is that "provider invocation" happens in a worker thread while the coordinator holds the admission. The coordinator publishes G2 after the worker returns.
+The key change is that G1 is published in STAGE B (immediately before worker launch), not in STAGE A. This preserves the accepted meaning: G1 armed means "this member is about to invoke" — and it must not be armed while other members are still being prepared.
 
-**Why this works:** `ReplayAdmission` uses `Rc<ReplayLedger>` which is !Send. Since the admission never crosses a thread boundary, this is not a problem. The worker never needs the admission — it only needs the `DispatchReadyAction` (which is an owned value) and the remaining deadline.
+**G1 exact relationship to worker launch:** G1 is published immediately before the scoped thread is spawned for that specific member. No worker may cause an effect before the coordinator has successfully published G1 for that specific member. The admission guard retains cross-process exclusion through the call and final publication.
+
+**Why this works:** `ReplayAdmission` uses `Rc<ReplayLedger>` which is !Send. Since the admission never crosses a thread boundary, this is not a problem. The worker never needs the admission — it only needs the `DispatchReadyAction` (which is an owned value), the `PreparedProvider` (for ephemeral session establishment), and the remaining deadline.
 
 ## 7. Trail Ownership Decision
 
@@ -207,11 +318,19 @@ The only change is that "provider invocation" happens in a worker thread while t
 | SemanticPosition | Deterministic — flat Runtime Plan index + phase |
 | GroupJoin | Appended after all member terminal records |
 
-**Physical ordering meaning:**
+**Physical ordering meaning (corrected):**
 
-When result messages cross a channel (worker → coordinator), the coordinator receives them in physical completion order. The coordinator appends outcomes in that receive order. This means Trail physical order = **coordinator receive order** = durable append completion order.
+Authoritative physical Trail order is **durable append order** — the order in which the coordinator durably recorded each outcome.
 
-This is truthful: the Trail physically records when the coordinator learned about each completion. Under serial execution this matches semantic order; under concurrency it may differ. Both are truthful.
+Coordinator receive order is the order in which the coordinator observes worker results via channel. This is *usually* the same as durable append order (coordinator receives, then immediately appends). But two providers completing almost simultaneously may have their results received in an order that does not exactly match physical completion — channel scheduling, thread wakeup, and OS scheduling can reverse observation order.
+
+**Trail proves:** "the coordinator durably recorded B before A."
+
+**Trail does NOT necessarily prove:** "B's provider physically completed before A's provider."
+
+Under serial execution, physical order matches semantic order. Under concurrency, it may differ. Both are truthful.
+
+**SemanticPosition preserves program order.** Regardless of physical Trail append order, each member's `action_ordinal` remains its flat Runtime Plan index. This is the deterministic program-order anchor.
 
 ## 8. Deterministic Result Rule
 
@@ -225,7 +344,7 @@ The following remain deterministic regardless of physical completion order:
 | Join result (success/failure) | YES | All-success test is commutative |
 | Later Action eligibility | YES | Join result determines continuation |
 | Final plan result classification | YES | Deterministic member selection (see below) |
-| Trail physical append order | NO (intentionally) | Reflects physical completion timing |
+| Trail physical append order | NO (intentionally) | Reflects coordinator receive order, which may differ from provider physical completion order |
 
 **Final failure selection:** When a join is non-success, the "first non-success member" is selected in **semantic Runtime Plan member order** (the order of `member_action_ids`), NOT physical completion order. This preserves deterministic plan results.
 
@@ -235,15 +354,23 @@ The following remain deterministic regardless of physical completion order:
 
 C1 says all members are attempted before join. Physical concurrency does not change this.
 
+### Attempted semantics (corrected)
+
+"Member attempted through the Together fan-out semantics" is broader than "provider invocation attempted."
+
+- **Attempted through preparation:** The member was processed through the preparation pipeline (scope, policy, resolution, replay admission, intent). A preparation failure (policy denied, unavailable, replay blocked, intent write failure) is an honest early classification — the member was attempted and classified before invocation.
+- **Attempted through invocation:** The member's provider invocation crossed the invocation boundary (G1 armed, worker launched, `tools_call` sent). This is the stronger claim.
+- **Not attempted:** The member failed preparation before reaching the invocation boundary. This is NOT the same as "not attempted through the Together fan-out." The member was attempted through preparation.
+
 ### Preparation failures
 
 If member A prepares successfully but member B fails before provider invocation (policy denied, unavailable, replay blocked, intent write failure):
 
-- Member A **is still invoked** (it is already armed).
+- Member A **is still invoked** (it is eligible for STAGE B).
 - Member B is classified as its preparation failure result (Denied, Unavailable, etc.).
 - The join evaluates all terminal members.
 
-"Attempted" means: the member was processed through the preparation pipeline. A preparation failure is an honest classification, not a skipped attempt.
+A preparation failure does not mark a provider invocation as attempted — it never crossed its invocation boundary. But it IS an attempted member through the Together fan-out semantics.
 
 ### Provider failures
 
@@ -293,10 +420,11 @@ C2-A3a — provider invocation overlap under coordinator ownership.
 
 - Sequential Actions unchanged (serial, byte-compatible).
 - Only Together group provider calls overlap.
-- Group members all prepared deterministically in STAGE A.
+- Group members prepared deterministically in STAGE A (scope, policy, resolution, replay admission, G0 intent, Trail intent).
+- Deadline + G1 armed established per-member in STAGE B, immediately before worker launch.
 - Replay admission remains coordinator-owned.
 - Trail remains coordinator-owned.
-- Provider invocation executes in scoped threads (STAGE B).
+- Provider invocation executes in scoped threads (STAGE B), each worker establishing an independent ephemeral `RetainedProviderSession`.
 - Results returned to coordinator via channel.
 - Coordinator persists terminal evidence (STAGE C).
 - GroupJoin remains after all terminal (STAGE D).
@@ -308,32 +436,34 @@ C2-A3a — provider invocation overlap under coordinator ownership.
 | File | Change |
 |------|--------|
 | `plan_execution.rs` | Add concurrent group execution path (new function or branch) |
-| `host_execution.rs` | New worker function for provider invocation; modified `execute_one_action` to return armed member context |
-| `application.rs` | New worker result type; modified `execute_boundary_impl` to separate preparation from invocation |
-| `socket.rs` | New function to create ephemeral provider connection for workers |
+| `host_execution.rs` | New worker function for provider invocation; modified `execute_one_action` to return prepared context (not armed) |
+| `application.rs` | New worker result type; modified `execute_boundary_impl` to separate preparation from invocation; deadline + G1 moved to per-member launch |
+| `socket.rs` | New function to create ephemeral provider connection for workers (using existing `RetainedProviderSession::establish` + `refresh_prepared_catalogue`) |
 | `executor.rs` | New worker-scoped executor type (not trait change) |
 
 ### Ownership changes
 
 - `DispatchReadyAction` — already owned, passed to worker by value.
-- Worker receives: `DispatchReadyAction`, provider config, tool name, deadline.
+- Worker receives: `DispatchReadyAction`, `PreparedProvider` (for ephemeral session establishment), tool name, deadline.
+- Worker establishes: `RetainedProviderSession::establish` → `refresh_prepared_catalogue` → `session.tools_call` → `session.close`.
 - Worker returns: `WorkerResult` (action_index, semantic_position, provider result/diagnostic, timing).
 - Coordinator retains: Trail, ReplayAdmission, response, approvals, anchor writer.
-- `ProviderSessionExecutor` — no change to existing type; workers use a new ephemeral executor.
+- `ProviderSessionExecutor` — no change to existing type; workers use a new ephemeral executor that follows the full Socket establishment/discovery/invocation path.
 
-### Explicit non-goals
+### A3a proposal — revised answers
 
-- General resource scheduling (C3)
-- Worker pool sizing beyond group membership
-- Provider rate limiting
-- Retry logic
-- Cancellation propagation
-- Execution DAG
-- Nested Together
-- Physical concurrency for sequential Actions
-- Trail schema changes
-- Replay identity changes
-- Canonical V2 / Rocket changes
+| # | Question | Answer |
+|---|----------|--------|
+| 1 | What state is prepared serially before fan-out? | Scope, policy, resolution, replay admission, G0 intent, Trail intent (STAGE A). Deadline + G1 are NOT prepared serially. |
+| 2 | When exactly does each member's deadline start? | In STAGE B, immediately before that member's worker launch, after all other members are prepared. Per-member `clock.now()`. |
+| 3 | When exactly is G1 written? | In STAGE B, immediately before that member's worker launch, after deadline establishment. Per-member. |
+| 4 | What exact object/config enters the worker? | `DispatchReadyAction` (owned), `PreparedProvider` (cloned — contains config, identity, trusted bindings), tool name, deadline remaining. |
+| 5 | How does the worker establish a trusted provider invocation path? | `RetainedProviderSession::establish(SocketEstablishment{...})` → `refresh_prepared_catalogue(prepared, session)` → `session.tools_call(tool_name, args, remaining)` → `session.close()`. |
+| 6 | Does it launch a new process? | YES — each worker launches an independent child process via `ManagedProvider::launch`. Process is closed after invocation. |
+| 7 | Does same-provider overlap remain supported? | YES — two workers can launch two child processes for the same provider identity. |
+| 8 | Are retained provider session semantics preserved? | YES — the serial path retains its `RetainedProviderSession` instances for serial Actions and post-group state. Workers use independent ephemeral sessions. |
+| 9 | What worker result returns to the coordinator? | `WorkerResult` containing: action_index, semantic_position, `Result<Value, ProviderDiagnostic>`, timing evidence. |
+| 10 | What does Trail physical order actually prove? | "The coordinator durably recorded B before A." It does NOT prove "B's provider physically completed before A's provider." SemanticPosition preserves program order. |
 
 ## 12. Required A3a Tests
 
@@ -351,7 +481,7 @@ Different physical completion orders yield the same semantic final member failur
 
 ### 4. TRAIL PHYSICAL ORDER TRUTH
 
-Outcome append order reflects coordinator receive order, not semantic sorting. Verify that Trail entries are appended in the order the coordinator receives worker results.
+Outcome append order reflects coordinator receive order, not semantic sorting. Verify that Trail entries are appended in the order the coordinator receives worker results. Acknowledge that coordinator receive order may not exactly match provider physical completion order.
 
 ### 5. SEMANTIC POSITION STABILITY
 
@@ -379,11 +509,23 @@ Non-Together plans remain physically serial and byte/behaviour compatible with p
 
 ### 11. SAME PROVIDER
 
-Explicitly test or document whether two calls to same provider can physically overlap in A3a. With independent connections: YES.
+Two calls to same provider physically overlap via independent child processes. Each worker establishes its own `RetainedProviderSession` → `ManagedProvider::launch` → `initialize` → `discover` → `tools_call` → `close`.
 
 ### 12. DIFFERENT PROVIDERS
 
 Prove expected overlap behaviour with two different providers.
+
+### 13. DEADLINE PER MEMBER (NEW)
+
+Member A's deadline does not begin until STAGE B, after all members are prepared. Verify that preparing member B does not consume member A's timeout. Use a slow preparation for B and verify A's deadline starts fresh.
+
+### 14. PROVIDER SESSION ESTABLISHMENT (NEW)
+
+Verify that each worker establishes the full Socket contract: `establish` → `discover` → `tools_call`. Verify that `require_fresh_catalogue` passes (catalogue is not stale). Verify that the worker does NOT call `ManagedProvider::tools_call` directly.
+
+### 15. G1 BEFORE INVOCATION (NEW)
+
+Verify that G1 is published immediately before each member's worker launch, not in STAGE A. Verify that a member's G1 is published only when that specific member is about to invoke.
 
 ## 13. Explicit Non-Goals
 
@@ -399,16 +541,25 @@ Prove expected overlap behaviour with two different providers.
 - Canonical V2 / Rocket changes
 - Approval redesign
 - Result anchor redesign
+- Bypassing Socket establishment/discovery/invocation contract
+- Shared deadline across group members
+- G1 publication before all members are prepared
 
 ## 14. Unresolved Blockers
 
 None. The design is implementable within existing architecture constraints.
 
-The primary architectural risk is the ephemeral provider connection lifecycle: creating a new MCP stdio connection per invocation adds process launch overhead. This is acceptable for C2-A3a because:
-
+**Provider process overhead:** Creating a new child process per invocation adds launch overhead. This is acceptable for C2-A3a because:
 1. It is the smallest safe boundary.
 2. The overhead is a runtime cost, not a semantic change.
 3. C3 can introduce connection pooling or session reuse if evidence shows it matters.
+
+**Retained provider state:** Tethers does not guarantee that provider implementations are stateless between calls. For C2-A3a this is safe because:
+1. Together members are independent actions — they do not share provider state by definition.
+2. The serial path retains its sessions for post-group catalogue state.
+3. If a provider requires inter-call state, that is a provider-specific concern handled by the serial path.
+
+**Deadline semantics:** The corrected deadline model (per-member in STAGE B) preserves the accepted meaning that a member's provider execution timeout does not begin merely because unrelated siblings are still being prepared. This is consistent with the serial path where `deadline_start = clock.now()` occurs immediately before provider invocation.
 
 ## 15. Platform Considerations
 
