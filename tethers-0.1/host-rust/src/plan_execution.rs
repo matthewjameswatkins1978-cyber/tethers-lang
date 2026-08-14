@@ -252,19 +252,17 @@ pub fn execute_plan(
 ) -> ExecutionServiceResult {
     let mut response = response;
     let mut last_succeeded: Option<(String, Option<String>)> = None;
-    let mut global_ordinal: u64 = 0;
 
     for item in items {
         match item {
             PlanItem::Sequential { action_index } => {
                 let action_id = action_id_of(actions, *action_index);
                 let position = SemanticPosition {
-                    action_ordinal: global_ordinal,
+                    action_ordinal: *action_index as u64,
                     group_id: None,
                     member_ordinal: None,
                     phase: SemanticPhase::Action,
                 };
-                global_ordinal += 1;
                 let step = match execute_action(&mut response, *action_index, trail, &position) {
                     Ok(result) => ActionStep::Boundary(result),
                     Err(result) => ActionStep::Stopped(result),
@@ -283,12 +281,11 @@ pub fn execute_plan(
                 for (member_ordinal, action_index) in member_indexes.iter().enumerate() {
                     let action_id = action_id_of(actions, *action_index);
                     let position = SemanticPosition {
-                        action_ordinal: global_ordinal,
+                        action_ordinal: *action_index as u64,
                         group_id: Some(group_id.clone()),
                         member_ordinal: Some(member_ordinal as u64),
                         phase: SemanticPhase::Member,
                     };
-                    global_ordinal += 1;
                     let step = match execute_action(&mut response, *action_index, trail, &position)
                     {
                         Ok(result) => ActionStep::Boundary(result),
@@ -304,12 +301,13 @@ pub fn execute_plan(
                     .iter()
                     .map(|action_index| action_id_of(actions, *action_index))
                     .collect();
-                // Join semantic position: action_ordinal is the ordinal after
-                // the last group member, derived deterministically from the
-                // flat Runtime Plan order.  This places the join at the group
-                // boundary without depending on physical completion timing.
+                // Join semantic position: action_ordinal is the flat Runtime
+                // Plan index of the final member Action.  The semantic
+                // coordinate (action_ordinal + phase) distinguishes the join
+                // from its last member without inventing a phantom position.
+                let last_member_index = *member_indexes.last().unwrap();
                 let join_position = SemanticPosition {
-                    action_ordinal: global_ordinal,
+                    action_ordinal: last_member_index as u64,
                     group_id: None,
                     member_ordinal: None,
                     phase: SemanticPhase::Join,
@@ -1445,14 +1443,16 @@ mod tests {
                 .get("semantic_position")
                 .expect("join must have semantic_position");
             assert_eq!(sp["phase"], "join");
-            assert_eq!(sp["action_ordinal"], 3);
+            // action_ordinal is the final member's flat action index (2),
+            // not a phantom position after the group.
+            assert_eq!(sp["action_ordinal"], 2);
             assert!(sp.get("group_id").is_none());
             assert!(sp.get("member_ordinal").is_none());
         }
 
-        // TB-11 — Join semantic position ordinal equals last member ordinal + 1.
+        // TB-11 — Join ordinal equals the final member's flat action index.
         #[test]
-        fn tb_11_join_determinism_ordinal_equals_last_member_plus_one() {
+        fn tb_11_join_determinism_ordinal_equals_final_member_action_index() {
             let actions = bunny_group();
             let outcomes = HashMap::from([
                 (CARROT.to_owned(), BunnyOutcome::Succeed),
@@ -1467,7 +1467,7 @@ mod tests {
                 .iter()
                 .filter(|e| e.get("capability_name").is_some())
                 .collect();
-            let last_member_ordinal = intents.last().unwrap()["semantic_position"]
+            let last_member_flat_index = intents.last().unwrap()["semantic_position"]
                 ["action_ordinal"]
                 .as_u64()
                 .unwrap();
@@ -1477,9 +1477,8 @@ mod tests {
                 .as_u64()
                 .unwrap();
             assert_eq!(
-                join_ordinal,
-                last_member_ordinal + 1,
-                "join ordinal must equal last member ordinal + 1"
+                join_ordinal, last_member_flat_index,
+                "join ordinal must equal the final member's flat action index"
             );
         }
 
