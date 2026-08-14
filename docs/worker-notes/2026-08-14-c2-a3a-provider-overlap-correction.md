@@ -4,7 +4,7 @@ Task: `C2-A3a — Final Provider Overlap Correction`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
-Owner: `Codex`
+Owner: `MiMo Pro`
 
 Status: `IN_PROGRESS`
 

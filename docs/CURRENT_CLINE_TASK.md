@@ -6,9 +6,9 @@ Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
-Owner: `Codex`
+Owner: `MiMo Pro`
 
-Route: `Codex — targeted C2-A3a Rust ownership/semantic correction`
+Route: `MiMo Pro — C2-A3a concurrency observability crucible`
 
 Base commit: `58aecd0c789802cdfea57d4560b51fd21d5340ae`
 
