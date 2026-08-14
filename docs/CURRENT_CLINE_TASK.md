@@ -6,9 +6,9 @@ Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
-Owner: `MiMo Pro`
+Owner: `DeepSeek Flash`
 
-Route: `MiMo Pro — C2-A3a concurrency observability crucible`
+Route: `DeepSeek Flash — C2-A3a terminal semantic matrix`
 
 Base commit: `58aecd0c789802cdfea57d4560b51fd21d5340ae`
 
