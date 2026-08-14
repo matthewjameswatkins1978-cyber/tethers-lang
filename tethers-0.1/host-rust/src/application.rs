@@ -2576,8 +2576,8 @@ fn execute_boundary_impl(
 ///
 /// Contains everything required to complete the invocation phase on the
 /// coordinator after a worker returns the raw provider result.  The
-/// `DispatchReadyAction` is moved into the worker; the coordinator retains
-/// the rest.
+/// `DispatchReadyAction` remains coordinator-owned; worker inputs are
+/// projected from it for provider invocation only.
 pub(crate) struct PreparedInvoke {
     pub resolved: ResolvedCapability,
     pub decision: PermissionDecision,
@@ -2601,8 +2601,8 @@ pub(crate) struct PreparedInvoke {
 /// 6. Replay G0 intent.
 /// 7. Durable Trail intent.
 ///
-/// Returns the `DispatchReadyAction` (to be moved into a worker) and the
-/// `PreparedInvoke` state (retained by the coordinator for the invoke phase).
+/// Returns the coordinator-owned `DispatchReadyAction` and `PreparedInvoke`
+/// state for the invoke phase.
 ///
 /// The replay admission is returned separately so the coordinator can
 /// publish G1 and G2 at the correct points.
@@ -2821,8 +2821,6 @@ pub(crate) fn execute_boundary_invoke_only(
     ready: &dispatch::DispatchReadyAction,
     prepared: &PreparedInvoke,
     trail: &mut dyn dispatch::Trail,
-    _executor: &mut dyn CapabilityExecutor,
-    _clock: &dyn outcome::MonotonicClock,
     replay_admission: &mut dyn replay_runtime::ReplayAdmissionGuard,
     anchor_writer: &mut dyn ResultAnchorWriter,
     provider_result: Result<Value, outcome::ProviderDiagnostic>,

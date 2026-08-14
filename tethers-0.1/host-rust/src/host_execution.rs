@@ -1551,7 +1551,7 @@ pub(crate) enum GroupMemberState {
         action_index: usize,
         action_id: String,
         semantic_position: dispatch::SemanticPosition,
-        succeeded: bool,
+        step: crate::plan_execution::ActionStep,
     },
 
     /// Serial preparation succeeded.  Ready for Stage B launch.
@@ -1561,7 +1561,7 @@ pub(crate) enum GroupMemberState {
         semantic_position: dispatch::SemanticPosition,
         ready: dispatch::DispatchReadyAction,
         prepared: crate::application::PreparedInvoke,
-        admission: Box<dyn crate::replay_runtime::ReplayAdmissionGuard>,
+        admission: Option<Box<dyn crate::replay_runtime::ReplayAdmissionGuard>>,
         deadline: Duration,
     },
 
@@ -1574,14 +1574,23 @@ pub(crate) enum GroupMemberState {
         semantic_position: dispatch::SemanticPosition,
         ready: Option<dispatch::DispatchReadyAction>,
         prepared: Option<crate::application::PreparedInvoke>,
-        admission: Box<dyn crate::replay_runtime::ReplayAdmissionGuard>,
+        admission: Option<Box<dyn crate::replay_runtime::ReplayAdmissionGuard>>,
+    },
+
+    /// Owns no domain object while a Prepared member is being moved into the
+    /// next state.  This is a Rust ownership transition, not a semantic state.
+    Transitioning {
+        action_index: usize,
+        action_id: String,
+        semantic_position: dispatch::SemanticPosition,
     },
 
     /// Member has reached its final terminal classification.
     Terminal {
         action_index: usize,
         action_id: String,
-        succeeded: bool,
+        semantic_position: dispatch::SemanticPosition,
+        step: crate::plan_execution::ActionStep,
     },
 }
 
@@ -1734,32 +1743,16 @@ pub(crate) fn execute_group_concurrent(
 
         let proposed = match crate::extract_proposed_action_at(response, *action_index) {
             Ok(proposed) => proposed,
-            Err(_) => {
-                // Preparation failure — exact terminal, continue siblings.
-                let outcome_entry = dispatch::OutcomeEntry {
-                    execution_id: String::new(),
-                    action_id: action_id.clone(),
-                    status: "failed".into(),
-                    result: None,
-                    error_message: Some("invalid planned action".into()),
-                    reason_code: Some("preparation_failed".into()),
-                    timestamp_unix_ms: crate::now_unix_ms(),
-                    semantic_position: Some(position.clone()),
-                };
-                let _ = trail.append_outcome(&outcome_entry);
-                append_trail_entry(
-                    response,
-                    "execution",
-                    "action_failed",
-                    "failed",
-                    format!("Preparation failed: invalid action {action_id}"),
-                    Some(&action_id),
-                );
+            Err(error) => {
                 member_states.push(GroupMemberState::PreparationTerminal {
                     action_index: *action_index,
-                    action_id,
+                    action_id: action_id.clone(),
                     semantic_position: position,
-                    succeeded: false,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::InvalidData {
+                            message: format!("invalid planned Action: {error}"),
+                        },
+                    ),
                 });
                 continue;
             }
@@ -1783,88 +1776,69 @@ pub(crate) fn execute_group_concurrent(
         // Policy must allow.  Deny / Ask / Unavailable are terminal failures.
         match &policy_evaluation.decision {
             PermissionDecision::Deny => {
-                let outcome_entry = dispatch::OutcomeEntry {
-                    execution_id: String::new(),
-                    action_id: action_id.clone(),
-                    status: "denied".into(),
-                    result: None,
-                    error_message: Some("permission denied".into()),
-                    reason_code: Some("denied".into()),
-                    timestamp_unix_ms: crate::now_unix_ms(),
-                    semantic_position: Some(position.clone()),
-                };
-                let _ = trail.append_outcome(&outcome_entry);
-                append_trail_entry(
-                    response,
-                    "authorisation",
-                    "action_denied",
-                    "denied",
-                    format!("Denied {action_id}"),
-                    Some(&action_id),
-                );
                 member_states.push(GroupMemberState::PreparationTerminal {
                     action_index: *action_index,
-                    action_id,
+                    action_id: action_id.clone(),
                     semantic_position: position,
-                    succeeded: false,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Denied {
+                            evaluation_id: proposed.evaluation_id.clone(),
+                            action_id,
+                            reason: format!("{:?}", policy_evaluation.reason),
+                            execution_id: None,
+                        },
+                    ),
                 });
                 continue;
             }
             PermissionDecision::Ask => {
-                // Ask requires interactive approval — not available in
-                // concurrent path.  Treat as terminal failure.
-                let outcome_entry = dispatch::OutcomeEntry {
-                    execution_id: String::new(),
-                    action_id: action_id.clone(),
-                    status: "denied".into(),
-                    result: None,
-                    error_message: Some("approval required".into()),
-                    reason_code: Some("approval_required".into()),
-                    timestamp_unix_ms: crate::now_unix_ms(),
-                    semantic_position: Some(position.clone()),
+                let result = match crate::request_exact_approval(
+                    &proposed,
+                    service.runtime.requirements(),
+                    service.runtime.trusted_store(),
+                    provider_availability,
+                    service.runtime.policy(),
+                    scope_assessment,
+                    approvals,
+                    trail,
+                ) {
+                    Ok(Some(_)) => approval_required_result(
+                        proposed.evaluation_id.clone(),
+                        action_id.clone(),
+                        &policy_evaluation.reason,
+                    ),
+                    Ok(None) => ExecutionServiceResult::AuditFailed {
+                        evaluation_id: proposed.evaluation_id.clone(),
+                        action_id: action_id.clone(),
+                        reason: "approval request could not be established".to_owned(),
+                        execution_id: None,
+                    },
+                    Err(_) => ExecutionServiceResult::AuditFailed {
+                        evaluation_id: proposed.evaluation_id.clone(),
+                        action_id: action_id.clone(),
+                        reason: "approval request Trail recording failed".to_owned(),
+                        execution_id: None,
+                    },
                 };
-                let _ = trail.append_outcome(&outcome_entry);
-                append_trail_entry(
-                    response,
-                    "authorisation",
-                    "action_denied",
-                    "denied",
-                    format!("Approval required for {action_id}"),
-                    Some(&action_id),
-                );
                 member_states.push(GroupMemberState::PreparationTerminal {
                     action_index: *action_index,
                     action_id,
                     semantic_position: position,
-                    succeeded: false,
+                    step: crate::plan_execution::ActionStep::Stopped(result),
                 });
                 continue;
             }
             PermissionDecision::Unavailable => {
-                let outcome_entry = dispatch::OutcomeEntry {
-                    execution_id: String::new(),
-                    action_id: action_id.clone(),
-                    status: "failed".into(),
-                    result: None,
-                    error_message: Some("capability unavailable".into()),
-                    reason_code: Some("unavailable".into()),
-                    timestamp_unix_ms: crate::now_unix_ms(),
-                    semantic_position: Some(position.clone()),
-                };
-                let _ = trail.append_outcome(&outcome_entry);
-                append_trail_entry(
-                    response,
-                    "execution",
-                    "action_failed",
-                    "failed",
-                    format!("Unavailable {action_id}"),
-                    Some(&action_id),
-                );
                 member_states.push(GroupMemberState::PreparationTerminal {
                     action_index: *action_index,
                     action_id,
                     semantic_position: position,
-                    succeeded: false,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Unavailable {
+                            evaluation_id: proposed.evaluation_id.clone(),
+                            reason: format!("{:?}", policy_evaluation.reason),
+                        },
+                    ),
                 });
                 continue;
             }
@@ -1875,31 +1849,12 @@ pub(crate) fn execute_group_concurrent(
             service.resolve_exact_capability(&proposed, provider_availability)
         }) {
             Ok(resolved) => resolved,
-            Err(_) => {
-                let outcome_entry = dispatch::OutcomeEntry {
-                    execution_id: String::new(),
-                    action_id: action_id.clone(),
-                    status: "failed".into(),
-                    result: None,
-                    error_message: Some("capability resolution failed".into()),
-                    reason_code: Some("resolution_failed".into()),
-                    timestamp_unix_ms: crate::now_unix_ms(),
-                    semantic_position: Some(position.clone()),
-                };
-                let _ = trail.append_outcome(&outcome_entry);
-                append_trail_entry(
-                    response,
-                    "execution",
-                    "action_failed",
-                    "failed",
-                    format!("Resolution failed {action_id}"),
-                    Some(&action_id),
-                );
+            Err(result) => {
                 member_states.push(GroupMemberState::PreparationTerminal {
                     action_index: *action_index,
                     action_id,
                     semantic_position: position,
-                    succeeded: false,
+                    step: crate::plan_execution::ActionStep::Stopped(result),
                 });
                 continue;
             }
@@ -1907,30 +1862,16 @@ pub(crate) fn execute_group_concurrent(
 
         let binding = &resolved.manifest().manifest().binding;
         if binding.kind != BindingKind::Mcp {
-            let outcome_entry = dispatch::OutcomeEntry {
-                execution_id: String::new(),
-                action_id: action_id.clone(),
-                status: "failed".into(),
-                result: None,
-                error_message: Some("non-MCP binding kind".into()),
-                reason_code: Some("unsupported_binding".into()),
-                timestamp_unix_ms: crate::now_unix_ms(),
-                semantic_position: Some(position.clone()),
-            };
-            let _ = trail.append_outcome(&outcome_entry);
-            append_trail_entry(
-                response,
-                "execution",
-                "action_failed",
-                "failed",
-                format!("Unsupported binding {action_id}"),
-                Some(&action_id),
-            );
             member_states.push(GroupMemberState::PreparationTerminal {
                 action_index: *action_index,
-                action_id,
+                action_id: action_id.clone(),
                 semantic_position: position,
-                succeeded: false,
+                step: crate::plan_execution::ActionStep::Stopped(ExecutionServiceResult::Denied {
+                    evaluation_id: proposed.evaluation_id.clone(),
+                    action_id,
+                    reason: "capability binding is not MCP".to_owned(),
+                    execution_id: None,
+                }),
             });
             continue;
         }
@@ -1940,30 +1881,19 @@ pub(crate) fn execute_group_concurrent(
             .get(resolved.provider_identity())
             .is_none()
         {
-            let outcome_entry = dispatch::OutcomeEntry {
-                execution_id: String::new(),
-                action_id: action_id.clone(),
-                status: "failed".into(),
-                result: None,
-                error_message: Some("provider session unavailable".into()),
-                reason_code: Some("no_session".into()),
-                timestamp_unix_ms: crate::now_unix_ms(),
-                semantic_position: Some(position.clone()),
-            };
-            let _ = trail.append_outcome(&outcome_entry);
-            append_trail_entry(
-                response,
-                "execution",
-                "action_failed",
-                "failed",
-                format!("No provider session {action_id}"),
-                Some(&action_id),
-            );
             member_states.push(GroupMemberState::PreparationTerminal {
                 action_index: *action_index,
                 action_id,
                 semantic_position: position,
-                succeeded: false,
+                step: crate::plan_execution::ActionStep::Stopped(
+                    ExecutionServiceResult::Unavailable {
+                        evaluation_id: proposed.evaluation_id.clone(),
+                        reason: format!(
+                            "provider '{}' has no retained session",
+                            resolved.provider_identity()
+                        ),
+                    },
+                ),
             });
             continue;
         }
@@ -1975,30 +1905,19 @@ pub(crate) fn execute_group_concurrent(
             .iter()
             .find(|provider| provider.identity == resolved.provider_identity())
         else {
-            let outcome_entry = dispatch::OutcomeEntry {
-                execution_id: String::new(),
-                action_id: action_id.clone(),
-                status: "failed".into(),
-                result: None,
-                error_message: Some("provider unavailable".into()),
-                reason_code: Some("no_provider".into()),
-                timestamp_unix_ms: crate::now_unix_ms(),
-                semantic_position: Some(position.clone()),
-            };
-            let _ = trail.append_outcome(&outcome_entry);
-            append_trail_entry(
-                response,
-                "execution",
-                "action_failed",
-                "failed",
-                format!("Provider unavailable {action_id}"),
-                Some(&action_id),
-            );
             member_states.push(GroupMemberState::PreparationTerminal {
                 action_index: *action_index,
                 action_id,
                 semantic_position: position,
-                succeeded: false,
+                step: crate::plan_execution::ActionStep::Stopped(
+                    ExecutionServiceResult::Unavailable {
+                        evaluation_id: proposed.evaluation_id.clone(),
+                        reason: format!(
+                            "provider '{}' has no prepared catalogue authority",
+                            resolved.provider_identity()
+                        ),
+                    },
+                ),
             });
             continue;
         };
@@ -2011,30 +1930,15 @@ pub(crate) fn execute_group_concurrent(
         {
             Some(event_id) => event_id,
             None => {
-                let outcome_entry = dispatch::OutcomeEntry {
-                    execution_id: String::new(),
-                    action_id: action_id.clone(),
-                    status: "failed".into(),
-                    result: None,
-                    error_message: Some("missing event id".into()),
-                    reason_code: Some("no_event_id".into()),
-                    timestamp_unix_ms: crate::now_unix_ms(),
-                    semantic_position: Some(position.clone()),
-                };
-                let _ = trail.append_outcome(&outcome_entry);
-                append_trail_entry(
-                    response,
-                    "execution",
-                    "action_failed",
-                    "failed",
-                    format!("Missing event id {action_id}"),
-                    Some(&action_id),
-                );
                 member_states.push(GroupMemberState::PreparationTerminal {
                     action_index: *action_index,
                     action_id,
                     semantic_position: position,
-                    succeeded: false,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::InvalidData {
+                            message: "Anchor event requires a non-empty string id".to_owned(),
+                        },
+                    ),
                 });
                 continue;
             }
@@ -2061,11 +1965,11 @@ pub(crate) fn execute_group_concurrent(
                     semantic_position: position,
                     ready,
                     prepared,
-                    admission,
+                    admission: Some(admission),
                     deadline: Duration::from_millis(resolved.manifest().manifest().timeout_ms),
                 });
             }
-            Err(_result) => {
+            Err(result) => {
                 // Prepare phase failed (replay, Trail intent, etc.).
                 // The prepare function already updated response and Trail.
                 // Record the terminal classification.
@@ -2073,7 +1977,7 @@ pub(crate) fn execute_group_concurrent(
                     action_index: *action_index,
                     action_id,
                     semantic_position: position,
-                    succeeded: false,
+                    step: crate::plan_execution::ActionStep::Boundary(result),
                 });
             }
         }
@@ -2086,44 +1990,66 @@ pub(crate) fn execute_group_concurrent(
     let mut launched_count: usize = 0;
 
     struct PendingLaunch {
-        action_index: usize,
-        action_id: String,
-        semantic_position: dispatch::SemanticPosition,
         worker_input: WorkerInput,
     }
     let mut pending_launches: Vec<PendingLaunch> = Vec::new();
 
-    // Mutable pass: deadline, G1, extract material, transition to Launched.
+    // Whole-enum movement prevents fabricated domain values when the real
+    // coordinator-owned state moves from Prepared to Launched.
     for state in member_states.iter_mut() {
-        let (action_index, action_id, position, ready, admission, deadline) = match state {
+        let transition = match state {
             GroupMemberState::Prepared {
                 action_index,
                 action_id,
                 semantic_position,
-                ready,
-                admission,
-                deadline,
                 ..
-            } => (
-                *action_index,
-                action_id.clone(),
-                semantic_position.clone(),
-                ready,
-                admission,
-                *deadline,
-            ),
+            } => GroupMemberState::Transitioning {
+                action_index: *action_index,
+                action_id: action_id.clone(),
+                semantic_position: semantic_position.clone(),
+            },
             _ => continue,
         };
+        let prior = std::mem::replace(state, transition);
+        let (action_index, action_id, position, ready, prepared, mut admission, deadline) =
+            match prior {
+                GroupMemberState::Prepared {
+                    action_index,
+                    action_id,
+                    semantic_position,
+                    ready,
+                    prepared,
+                    admission: Some(admission),
+                    deadline,
+                } => (
+                    action_index,
+                    action_id,
+                    semantic_position,
+                    ready,
+                    prepared,
+                    admission,
+                    deadline,
+                ),
+                _ => unreachable!("only Prepared members enter the launch transition"),
+            };
 
         let deadline_start = clock.now();
         let remaining =
             match crate::outcome::remaining_until_deadline(&clock, deadline_start, deadline) {
-                Some(r) => r,
+                Some(remaining) => remaining,
                 None => {
                     *state = GroupMemberState::Terminal {
                         action_index,
-                        action_id,
-                        succeeded: false,
+                        action_id: action_id.clone(),
+                        semantic_position: position,
+                        step: crate::plan_execution::ActionStep::Stopped(
+                            ExecutionServiceResult::Unattempted {
+                                evaluation_id: evaluation_id.to_owned(),
+                                action_id,
+                                reason: "deadline expired before provider invocation".to_owned(),
+                                execution_id: Some(ready.execution_id().0.clone()),
+                            },
+                        ),
                     };
                     continue;
                 }
@@ -2132,8 +2058,15 @@ pub(crate) fn execute_group_concurrent(
         if admission.publish_armed().is_err() {
             *state = GroupMemberState::Terminal {
                 action_index,
-                action_id,
-                succeeded: false,
+                action_id: action_id.clone(),
+                semantic_position: position,
+                step: crate::plan_execution::ActionStep::Stopped(
+                    ExecutionServiceResult::ReplayPersistenceUnavailable {
+                        evaluation_id: evaluation_id.to_owned(),
+                        action_id,
+                        execution_id: Some(ready.execution_id().0.clone()),
+                    },
+                ),
             };
             continue;
         }
@@ -2145,12 +2078,18 @@ pub(crate) fn execute_group_concurrent(
             .iter()
             .find(|p| p.identity == provider_identity)
         {
-            Some(p) => p.clone(),
+            Some(provider) => provider.clone(),
             None => {
                 *state = GroupMemberState::Terminal {
                     action_index,
                     action_id,
-                    succeeded: false,
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Unavailable {
+                            evaluation_id: evaluation_id.to_owned(),
+                            reason: format!("provider '{provider_identity}' has no prepared catalogue authority"),
+                        },
+                    ),
                 };
                 continue;
             }
@@ -2163,58 +2102,15 @@ pub(crate) fn execute_group_concurrent(
             .tool_name
             .clone();
         let arguments = ready.arguments().clone();
-
-        // Transition to Launched — move real objects out.
-        let taken_ready = std::mem::replace(
-            ready,
-            dispatch::DispatchReadyAction::new(
-                dispatch::ExecutionId::from_replay("tmp"),
-                dispatch::ActionId("tmp".to_owned()),
-                String::new(),
-                0,
-                String::new(),
-                String::new(),
-                crate::manifest::test_manifest(),
-                Value::Null,
-            ),
-        );
-        let taken_prepared = std::mem::replace(
-            match state {
-                GroupMemberState::Prepared { prepared, .. } => prepared,
-                _ => unreachable!(),
-            },
-            crate::application::PreparedInvoke {
-                resolved: crate::resolver::test_resolved_capability(),
-                decision: PermissionDecision::Deny,
-                input_context: crate::InputEventContext::for_initial("tmp"),
-                bridge_pins_required: false,
-                execution_id_str: "tmp".to_owned(),
-                action_id: dispatch::ActionId("tmp".to_owned()),
-                action: Value::Null,
-                semantic_position: None,
-            },
-        );
-        let taken_admission = std::mem::replace(
-            match state {
-                GroupMemberState::Prepared { admission, .. } => admission,
-                _ => unreachable!(),
-            },
-            Box::new(NoopReplayAdmissionGuard),
-        );
-
         *state = GroupMemberState::Launched {
             action_index,
             action_id: action_id.clone(),
             semantic_position: position.clone(),
-            ready: Some(taken_ready),
-            prepared: Some(taken_prepared),
-            admission: taken_admission,
+            ready: Some(ready),
+            prepared: Some(prepared),
+            admission: Some(admission),
         };
-
         pending_launches.push(PendingLaunch {
-            action_index,
-            action_id,
-            semantic_position: position,
             worker_input: WorkerInput {
                 action_index,
                 arguments,
@@ -2247,6 +2143,7 @@ pub(crate) fn execute_group_concurrent(
                     let mut found: Option<(
                         usize,
                         String,
+                        dispatch::SemanticPosition,
                         dispatch::DispatchReadyAction,
                         crate::application::PreparedInvoke,
                         Box<dyn crate::replay_runtime::ReplayAdmissionGuard>,
@@ -2256,6 +2153,7 @@ pub(crate) fn execute_group_concurrent(
                         if let GroupMemberState::Launched {
                             action_index,
                             action_id,
+                            semantic_position,
                             ready,
                             prepared,
                             admission,
@@ -2268,13 +2166,13 @@ pub(crate) fn execute_group_concurrent(
                                     ready.take().expect("Launched state must have ready");
                                 let taken_prepared =
                                     prepared.take().expect("Launched state must have prepared");
-                                let taken_admission = std::mem::replace(
-                                    admission,
-                                    Box::new(NoopReplayAdmissionGuard),
-                                );
+                                let taken_admission = admission
+                                    .take()
+                                    .expect("Launched state must have replay admission");
                                 found = Some((
                                     *action_index,
                                     action_id.clone(),
+                                    semantic_position.clone(),
                                     taken_ready,
                                     taken_prepared,
                                     taken_admission,
@@ -2284,27 +2182,33 @@ pub(crate) fn execute_group_concurrent(
                         }
                     }
 
-                    let (action_index, action_id, ready, mut prepared, mut admission) = match found
-                    {
-                        Some(v) => v,
-                        None => continue,
-                    };
+                    let (action_index, action_id, position, ready, prepared, mut admission) =
+                        match found {
+                            Some(v) => v,
+                            None => continue,
+                        };
 
                     // Stage C: classify outcome, Trail outcome, G2, result anchor.
-                    let _ = crate::application::execute_boundary_invoke_only(
+                    let step = match crate::application::execute_boundary_invoke_only(
                         response,
                         &ready,
                         &prepared,
                         trail,
-                        &mut crate::executor::NoopCapabilityExecutor,
-                        &clock,
                         admission.as_mut(),
                         &mut anchor_writer,
-                        worker_result.provider_result.clone(),
+                        worker_result.provider_result,
                         false,
-                    );
-
-                    let succeeded = matches!(worker_result.provider_result, Ok(_));
+                    ) {
+                        Ok(result) => crate::plan_execution::ActionStep::Boundary(result),
+                        Err(error) => crate::plan_execution::ActionStep::Stopped(
+                            ExecutionServiceResult::AuditFailed {
+                                evaluation_id: evaluation_id.to_owned(),
+                                action_id: action_id.clone(),
+                                reason: format!("shared execution boundary failed: {error}"),
+                                execution_id: Some(ready.execution_id().0.clone()),
+                            },
+                        ),
+                    };
 
                     // Transition to Terminal.
                     for s in member_states.iter_mut() {
@@ -2316,7 +2220,8 @@ pub(crate) fn execute_group_concurrent(
                                 *s = GroupMemberState::Terminal {
                                     action_index,
                                     action_id,
-                                    succeeded,
+                                    semantic_position: position,
+                                    step,
                                 };
                                 break;
                             }
@@ -2337,8 +2242,10 @@ pub(crate) fn execute_group_concurrent(
     // ── STAGE D: Join ──────────────────────────────────────────────────
     // Determine which members succeeded.  Every member must be Terminal.
     let all_joined = member_states.iter().all(|s| match s {
-        GroupMemberState::Terminal { succeeded, .. } => *succeeded,
-        GroupMemberState::PreparationTerminal { succeeded, .. } => *succeeded,
+        GroupMemberState::Terminal { step, .. }
+        | GroupMemberState::PreparationTerminal { step, .. } => {
+            crate::plan_execution::step_succeeded(step)
+        }
         _ => false,
     });
 
@@ -2348,7 +2255,8 @@ pub(crate) fn execute_group_concurrent(
             GroupMemberState::Terminal { action_id, .. }
             | GroupMemberState::PreparationTerminal { action_id, .. }
             | GroupMemberState::Prepared { action_id, .. }
-            | GroupMemberState::Launched { action_id, .. } => action_id.clone(),
+            | GroupMemberState::Launched { action_id, .. }
+            | GroupMemberState::Transitioning { action_id, .. } => action_id.clone(),
         })
         .collect();
 
@@ -2421,41 +2329,9 @@ pub(crate) fn execute_group_concurrent(
         };
     }
 
-    // Find the first non-success member in semantic Runtime Plan order.
-    for state in member_states.iter() {
-        match state {
-            GroupMemberState::Terminal {
-                action_index,
-                action_id,
-                succeeded: false,
-                ..
-            }
-            | GroupMemberState::PreparationTerminal {
-                action_index,
-                action_id,
-                succeeded: false,
-                ..
-            } => {
-                let action_id = action_id.clone();
-                let has_result = member_states.iter().any(|s| match s {
-                    GroupMemberState::Terminal {
-                        action_index: idx, ..
-                    } => *idx == *action_index,
-                    _ => false,
-                });
-                return ExecutionServiceResult::Failed {
-                    evaluation_id: evaluation_id.to_owned(),
-                    action_id,
-                    reason: if has_result {
-                        "provider returned a known failure".to_owned()
-                    } else {
-                        "preparation failed".to_owned()
-                    },
-                    execution_id: None,
-                };
-            }
-            _ => continue,
-        }
+    // Select the first semantic non-success, not the first completion.
+    if let Some((action_id, step)) = first_non_success_member_step(member_states) {
+        return crate::plan_execution::aggregate_step(step, evaluation_id, &action_id);
     }
 
     ExecutionServiceResult::AuditFailed {
@@ -2466,67 +2342,23 @@ pub(crate) fn execute_group_concurrent(
     }
 }
 
-/// Append a trail entry to the response JSON.
-fn append_trail_entry(
-    response: &mut Value,
-    phase: &str,
-    kind: &str,
-    outcome: &str,
-    message: String,
-    action_id: Option<&str>,
-) {
-    let json_trail = match response.get_mut("trail").and_then(Value::as_array_mut) {
-        Some(trail) => trail,
-        None => return,
-    };
-    let sequence = json_trail.len() as u64 + 1;
-    let timestamp_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or_default();
-    let mut entry = serde_json::json!({
-        "sequence": sequence,
-        "phase": phase,
-        "kind": kind,
-        "outcome": outcome,
-        "message": message,
-        "host_timestamp_unix_ms": timestamp_ms
-    });
-    if let Some(value) = action_id {
-        entry["action_id"] = Value::String(value.to_owned());
-    }
-    json_trail.push(entry);
-}
-
-/// A no-op replay admission guard for placeholder transitions.
-///
-/// Used only during the Launched state transition to move the real
-/// admission out of the Prepared state.  Never persists anything.
-struct NoopReplayAdmissionGuard;
-
-impl crate::replay_runtime::ReplayAdmissionGuard for NoopReplayAdmissionGuard {
-    fn is_fresh(&self) -> bool {
-        false
-    }
-    fn execution_id(&self) -> &str {
-        ""
-    }
-    fn state(&self) -> crate::replay::ReplayState {
-        crate::replay::ReplayState::Uncertain
-    }
-    fn publish_intent(&mut self) -> Result<(), crate::replay::ReplayError> {
-        Err(crate::replay::ReplayError::PersistenceUnavailable)
-    }
-    fn publish_armed(&mut self) -> Result<(), crate::replay::ReplayError> {
-        Err(crate::replay::ReplayError::PersistenceUnavailable)
-    }
-    fn publish_terminal(
-        &mut self,
-        _state: crate::replay::ReplayState,
-        _durable_outcome_digest: String,
-    ) -> Result<(), crate::replay::ReplayError> {
-        Err(crate::replay::ReplayError::PersistenceUnavailable)
-    }
+/// Return the first terminal non-success in the original Runtime Plan member
+/// order, retaining its complete C1 ActionStep for exact aggregation.
+fn first_non_success_member_step(
+    member_states: Vec<GroupMemberState>,
+) -> Option<(String, crate::plan_execution::ActionStep)> {
+    member_states.into_iter().find_map(|state| {
+        let (action_id, step) = match state {
+            GroupMemberState::Terminal {
+                action_id, step, ..
+            }
+            | GroupMemberState::PreparationTerminal {
+                action_id, step, ..
+            } => (action_id, step),
+            _ => return None,
+        };
+        (!crate::plan_execution::step_succeeded(&step)).then_some((action_id, step))
+    })
 }
 
 // ===========================================================================
@@ -2544,6 +2376,48 @@ mod tests {
     use crate::stdio_provider::ManagedProvider;
     use crate::trusted_store::TrustedManifestStore;
     use serde_json::json;
+
+    #[test]
+    fn c2_a3a_semantic_first_non_success_preserves_exact_step() {
+        let position = |ordinal| dispatch::SemanticPosition {
+            action_ordinal: ordinal,
+            group_id: Some("group".to_owned()),
+            member_ordinal: Some(ordinal),
+            phase: dispatch::SemanticPhase::Member,
+        };
+        let states = vec![
+            GroupMemberState::Terminal {
+                action_index: 0,
+                action_id: "first".to_owned(),
+                semantic_position: position(0),
+                step: crate::plan_execution::ActionStep::Boundary(crate::SharedExecutionResult {
+                    outcome: crate::SharedExecutionOutcome::Uncertain,
+                    execution_id: Some("exec-first".to_owned()),
+                }),
+            },
+            GroupMemberState::Terminal {
+                action_index: 1,
+                action_id: "second".to_owned(),
+                semantic_position: position(1),
+                step: crate::plan_execution::ActionStep::Boundary(crate::SharedExecutionResult {
+                    outcome: crate::SharedExecutionOutcome::Failed,
+                    execution_id: Some("exec-second".to_owned()),
+                }),
+            },
+        ];
+
+        let (action_id, step) = first_non_success_member_step(states).expect("non-success");
+        let result = crate::plan_execution::aggregate_step(step, "eval", &action_id);
+        assert!(matches!(
+            result,
+            ExecutionServiceResult::Uncertain {
+                evaluation_id,
+                action_id,
+                execution_id: Some(execution_id),
+                ..
+            } if evaluation_id == "eval" && action_id == "first" && execution_id == "exec-first"
+        ));
+    }
     use std::process::Command;
     use tethers_reference_host::cli::OutcomeStatus;
 
@@ -2667,6 +2541,91 @@ mod tests {
             identity: &prepared.identity,
         })
         .unwrap()
+    }
+
+    fn barrier_test_provider(barrier_dir: &Path, identity: &str) -> PreparedProvider {
+        let mut provider = catalogue_test_provider("c2-overlap-barrier");
+        provider.identity = identity.to_owned();
+        provider.stdio_config.provider_config.identity = identity.to_owned();
+        provider.stdio_config.args.extend([
+            "-BarrierDirectory".to_owned(),
+            barrier_dir.to_string_lossy().into_owned(),
+        ]);
+        provider
+    }
+
+    fn prove_actual_worker_overlap(same_provider: bool) {
+        let barrier_dir = std::env::temp_dir().join(format!(
+            "tethers-c2-a3a-overlap-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&barrier_dir).unwrap();
+        let left = barrier_test_provider(&barrier_dir, "tethers-stdio-fixture");
+        let right = barrier_test_provider(
+            &barrier_dir,
+            if same_provider {
+                "tethers-stdio-fixture"
+            } else {
+                "tethers-stdio-fixture-2"
+            },
+        );
+        let (tx, rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            for (action_index, provider) in [(0, left), (1, right)] {
+                let sender = tx.clone();
+                scope.spawn(move || {
+                    worker_invoke_provider(
+                        WorkerInput {
+                            action_index,
+                            arguments: json!({"message": format!("member-{action_index}")}),
+                            provider,
+                            tool_name: "fixture_ping".to_owned(),
+                            remaining: Duration::from_secs(15),
+                        },
+                        sender,
+                    )
+                });
+            }
+            drop(tx);
+            let deadline = std::time::Instant::now() + Duration::from_secs(12);
+            loop {
+                let active = std::fs::read_dir(&barrier_dir)
+                    .unwrap()
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.file_name().to_string_lossy().starts_with("active-"))
+                    .count();
+                if active >= 2 {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "both provider child processes did not reach tools/call"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            std::fs::write(barrier_dir.join("release"), "release").unwrap();
+            for _ in 0..2 {
+                assert!(rx
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap()
+                    .provider_result
+                    .is_ok());
+            }
+        });
+        std::fs::remove_dir_all(&barrier_dir).unwrap();
+    }
+
+    #[test]
+    fn c2_a3a_same_provider_tools_call_overlap_is_real() {
+        prove_actual_worker_overlap(true);
+    }
+
+    #[test]
+    fn c2_a3a_different_provider_tools_call_overlap_is_real() {
+        prove_actual_worker_overlap(false);
     }
 
     #[test]

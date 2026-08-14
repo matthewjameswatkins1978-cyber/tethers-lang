@@ -47,19 +47,3 @@ pub trait CapabilityExecutor {
             .map_err(|_| outcome::ProviderDiagnostic::NoFinalResponse)
     }
 }
-
-/// A no-op executor used by the coordinator during concurrent group
-/// execution.  The coordinator does not invoke providers directly; workers
-/// do.  This executor satisfies the trait bound for
-/// `execute_boundary_invoke_only` without touching any provider session.
-pub(crate) struct NoopCapabilityExecutor;
-
-impl CapabilityExecutor for NoopCapabilityExecutor {
-    fn provider_identity(&self) -> &str {
-        ""
-    }
-
-    fn execute(&mut self, _ready: &DispatchReadyAction) -> Result<Value, String> {
-        Err("NoopCapabilityExecutor cannot invoke providers".to_owned())
-    }
-}

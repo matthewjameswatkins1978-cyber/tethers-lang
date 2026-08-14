@@ -10,11 +10,13 @@ param(
         "catalogue-change-unchanged", "catalogue-change-drift",
         "catalogue-change-on-probe",
         "record-methods", "record-cwd", "run-success", "run-hang-initialize",
-        "run-explicit-error", "run-invalid-output", "run-hang-call"
+        "run-explicit-error", "run-invalid-output", "run-hang-call",
+        "c2-overlap-barrier"
     )]
     [string]$Mode = "valid",
     [string]$MarkerFile = "",
-    [string]$CwdMarkerFile = ""
+    [string]$CwdMarkerFile = "",
+    [string]$BarrierDirectory = ""
 )
 
 Set-StrictMode -Version Latest
@@ -215,6 +217,36 @@ try {
                 }
             }
             "tools/call" {
+                if ($Mode -eq "c2-overlap-barrier") {
+                    if ([string]::IsNullOrWhiteSpace($BarrierDirectory)) {
+                        Write-ErrorResponse $request.id -32602 "BarrierDirectory is required"
+                        continue
+                    }
+                    [System.IO.Directory]::CreateDirectory($BarrierDirectory) | Out-Null
+                    $token = "$PID-$([guid]::NewGuid().ToString('N'))"
+                    $entered = Join-Path $BarrierDirectory "entered-$token"
+                    $active = Join-Path $BarrierDirectory "active-$token"
+                    [System.IO.File]::WriteAllText($entered, "entered")
+                    $limit = [DateTime]::UtcNow.AddSeconds(10)
+                    while ((Get-ChildItem -LiteralPath $BarrierDirectory -Filter 'entered-*').Count -lt 2) {
+                        if ([DateTime]::UtcNow -gt $limit) {
+                            Write-ErrorResponse $request.id -32000 "overlap peer did not enter"
+                            continue 2
+                        }
+                        Start-Sleep -Milliseconds 10
+                    }
+                    [System.IO.File]::WriteAllText($active, "active")
+                    while (-not (Test-Path -LiteralPath (Join-Path $BarrierDirectory 'release'))) {
+                        if ([DateTime]::UtcNow -gt $limit) {
+                            Write-ErrorResponse $request.id -32000 "overlap release timed out"
+                            continue 2
+                        }
+                        Start-Sleep -Milliseconds 10
+                    }
+                    $message = $request.params.arguments.message
+                    Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id; result = @{ echo = $message } }
+                    continue
+                }
                 if ($Mode -eq "run-success") {
                     if ($MarkerFile) { Add-Content -Path $MarkerFile -Value "tools/call" }
                     $message = $request.params.arguments.message

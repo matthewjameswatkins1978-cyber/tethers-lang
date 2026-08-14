@@ -324,27 +324,6 @@ pub fn resolve_capability(
 }
 
 // ---------------------------------------------------------------------------
-// Test helpers
-// ---------------------------------------------------------------------------
-
-/// A minimal test `ResolvedCapability` for constructing mock `PreparedInvoke`
-/// values in concurrent execution preparation-failure paths.
-///
-/// This is NOT a valid resolved capability for provider invocation.  It is
-/// only used as a placeholder when a member fails preparation.
-pub fn test_resolved_capability() -> ResolvedCapability {
-    ResolvedCapability {
-        identity: CapabilityIdentity {
-            name: "test.capability".to_owned(),
-            version: 1,
-        },
-        provider_identity: "test-provider".to_owned(),
-        manifest_digest: "test-digest".to_owned(),
-        manifest: crate::manifest::test_manifest(),
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

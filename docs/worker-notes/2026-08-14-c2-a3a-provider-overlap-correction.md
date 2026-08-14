@@ -6,7 +6,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `READY`
+Status: `IN_PROGRESS`
 
 Base commit: `58aecd0c789802cdfea57d4560b51fd21d5340ae`
 
@@ -14,20 +14,23 @@ Implementation checkpoint: `WORKTREE`
 
 ## Requested outcome
 
-Activate the already-reviewed C2-A3a correction as a formal READY Red task
-assigned to Codex. Codex must surgically correct the existing C2-A3a
-implementation at 58aecd0c789802cdfea57d4560b51fd21d5340ae without rewriting
-it from scratch, proving real provider-effect overlap and exact C1 terminal
-semantics. This note records task activation only; implementation is not yet
-started.
+Implement only the approved C2-A3a narrow core correction at
+58aecd0c789802cdfea57d4560b51fd21d5340ae: retain each member's exact C1
+ActionStep through terminal state and semantic-order aggregation, use
+structural ownership movement without fabricated production placeholders, and
+prove real two-member provider-effect overlap. The broader C2-A3a matrix is
+explicitly deferred to separately authorised work.
 
 ## Changes made
 
-Implementation changes have not started yet; only task activation has been
-recorded. The control packet in `docs/CURRENT_CLINE_TASK.md` was replaced with
-the control-v1 READY packet, `docs/PROJECT_DASHBOARD.md` was updated to record
-the active correction, and this worker note was created. No production code was
-touched.
+The task is now `IN_PROGRESS`. The concurrent-group state retains complete
+`ActionStep` values at every terminal path and uses `step_succeeded` plus
+`aggregate_step` in Runtime Plan member order. Stage B/C now move the real
+ready action, prepared invocation data, and replay admission through enum
+transitions and `Option::take`; the no-op replay guard and dummy executor/test
+capability/manifest production helpers were removed. The Stage C mpsc worker
+channel remains intact. A child-process barrier fixture and same-provider and
+different-provider overlap tests prove two simultaneous `tools/call` effects.
 
 ## Decisions and assumptions
 
@@ -44,12 +47,16 @@ material only, and no Tokio/async or C3 resource scheduling.
 ## Evidence
 
 Baseline verified before editing: branch `feature/c2-a3a-provider-overlap`,
-local HEAD `58aecd0c789802cdfea57d4560b51fd21d5340ae`, fetched
+formal base `58aecd0c789802cdfea57d4560b51fd21d5340ae`, activation HEAD
+`671e95931d375424949041a2d35a958dfae5d6ae`, fetched
 `origin/main` `1703fb4aadc06980daea8fe5afbeaf3a6218b256`. Device-tool diagnostic
 (`scripts/check-dev-tools.ps1`) reported all required tools present. The 16
 pre-existing untracked paths are recorded in the packet's Expected pre-existing
 changes section and preserved exactly. Packet-checker result
-(`.github/scripts/check-tethers-task-packet.ps1`) is recorded after activation.
+(`.github/scripts/check-tethers-task-packet.ps1`) passed in `IN_PROGRESS`
+state. Focused C2-A3a overlap tests and focused host execution tests are the
+required narrow-core evidence; the full deferred matrix is not a completion
+claim.
 
 ## Discoveries
 
@@ -60,19 +67,17 @@ resolves that exact defect without changing any implementation.
 
 ## Remaining risks
 
-Active implementation risks for Codex: exact terminal-result algebra must not
-flatten Denied, ApprovalRequired, Unavailable, Uncertain, Unattempted,
-AuditFailed, replay classifications, or Completed/Failed; Rust ownership
-transitions must use structural state movement (Option::take / whole-enum
-transitions) with no fabricated semantic objects; and the provider-overlap
-crucible must prove real simultaneous provider effects deterministically.
+The narrow core leaves intentionally unproved: durable Stage C persistence
+under concurrency; Trail B/A ordering and sequencing; preparation, replay,
+unattempted/uncertain, intent/G1, and join-after-terminal matrices; and the
+full closeout suite. The formal task must remain `IN_PROGRESS` until those
+separately assigned proofs complete.
 
 ## Smallest next action
 
-Codex executes the authorised correction packet: surgical correction of the
-C2-A3a implementation at base `58aecd0c789802cdfea57d4560b51fd21d5340ae`,
-then the required verification set, worker note closeout, and a normal branch
-push.
+Run the narrow focused verification and publish the review commit without
+closing the formal C2-A3a task. Lucy's review gate must precede assignment of
+the deferred Cline/DeepSeek matrix work.
 
 ## References
 
