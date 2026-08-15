@@ -1,4 +1,4 @@
-# C3-D2 — Adversarial Bounded Concurrency Design Review
+# C3-A1 — Minimal Bounded Launch Window
 
 Control contract: `1`
 
@@ -6,121 +6,115 @@ Status: `COMPLETE`
 
 Task colour: `Red`
 
-Owner: `C3-D2 Independent Design Reviewer`
+Owner: `C3-A1 Implementation Agent`
 
-Route: `C3-D2 hostile review — no implementation authorised`
+Route: `C3-A1 bounded launch implementation — awaiting Lucy review`
 
-Base commit: `8268fb9e0284b7e9f2268279b4dea5d37f01a9bc`
+Base commit: `d01e41ec00c89b548e6641e9c7661c7ffd2ccfe8`
 
-Worker note: `docs/worker-notes/2026-08-15-c3-d2-adversarial-design-review.md`
+Worker note: `docs/worker-notes/2026-08-15-c3-a1-bounded-launch-window.md`
 
 Updated: 2026-08-15
 
-**This task is review and narrow design correction only. No Rust implementation is
-authorised. C3-A1 remains NOT authorised. C2-A3a semantics are frozen inputs,
-not redesign candidates.**
+**C3-D1/D2 design is accepted by Lucy. C3-A1 may implement ONLY the minimal bounded
+launch mechanism. C3-A2/A3/A4 are NOT authorised. No configuration schema change
+is authorised. No C3 redesign is authorised. Production Rust changes are restricted
+to host_execution.rs.**
 
 ## Objective
 
-Independently attack the proposed C3 bounded-concurrency design against the
-actual merged runtime, correct documentation where the code or frozen A3
-semantics prove the current design text wrong or internally inconsistent, and
-deliver a rigorous adversarial design review without redesigning C3 or changing
-production code.
+Implement the minimal bounded launch window for Together group execution as
+frozen by accepted design C3-D1/D2, bounding active provider invocations to an
+internal/test-injectable parameter `max_active_together_invocations: usize` (N >= 1)
+without altering Together source semantics, Runtime Plan semantic identity,
+member SemanticPosition, replay G0/G1/G2 meaning, Trail truthfulness, terminal
+taxonomy, deterministic final non-success selection, or sequential Action behaviour.
 
 ## Relevant background and existing behaviour
 
-- C2-A3a physical concurrency design is accepted at `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`.
-- C2-A3a implementation is merged to `main` at `f189361e80bdb43c13989200e48513cdb68bd004`.
-- C3-D1 produced candidate design `docs/concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md` at `8268fb9e0284b7e9f2268279b4dea5d37f01a9bc`.
-- Replay recovery runtime (`replay_runtime.rs`) maps `ReplayState::IntentRecorded` (`G0=yes, G1=no`) to `ReplayDispatchResult::RequiresManualResolution`.
-- Stage C coordinator execution (`host_execution.rs`, `application.rs`) executes `execute_boundary_invoke_only` (durable `OutcomeEntry`, G2 `publish_terminal`, presentation/response updates, Result Anchor) before transitioning `GroupMemberState` to `Terminal`.
-- Worker execution wraps `worker_invoke_inner` with `catch_unwind` and sends `WorkerResult` via mpsc; unexpected channel closure causes coordinator receive to break and un-terminalised members to fail closed with `AuditFailed` at join.
+- C2-A3a physical concurrency is complete and merged to `main` at `f189361e80bdb43c13989200e48513cdb68bd004`.
+- C3-D1/D2 architecture design `docs/concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md` is accepted at `d01e41ec00c89b548e6641e9c7661c7ffd2ccfe8`.
+- In A3a, `execute_group_concurrent` prepares all members in Stage A and immediately spawns all eligible prepared workers into scoped threads with unbounded physical concurrency.
+- In C3-A1, Stage A still prepares all members in semantic order, but worker launches are gated by `active_count < N` in semantic order.
+- Capacity is strictly derived from `GroupMemberState` (active = crossed G1, not yet completed Stage C terminalisation).
 
 ## Required behaviour
 
-1. Known Issue 1 (G0 recovery claim): Correct the design text to distinguish effect certainty (G0 present + G1 absent proves invocation boundary was not armed, no external effect occurred) from replay authority (existing replay recovery policy remains authoritative, mapping recovered `IntentRecorded` to `RequiresManualResolution`).
+1. Parameterised Bounded Execution: Provide an internal/test-injectable group-local execution parameter `max_active_together_invocations: usize` (N >= 1), while preserving existing `execute_group_concurrent` callers by defaulting to group width (A3a-compatible full overlap).
 
-2. Known Issue 2 (Slot release boundary): Unify the slot release definition so that capacity is released only after the complete Stage C boundary (`execute_boundary_invoke_only` including durable `OutcomeEntry`, G2 `publish_terminal`, presentation/response updates, and Result Anchor writing) and `GroupMemberState` transition to `Terminal`.
+2. State-Derived Capacity: Derive active invocation capacity directly from `member_states` (counting members that have crossed G1 / launch boundary and have not yet transitioned to `Terminal` after complete Stage C processing) with no independent mutable counter as authority.
 
-3. Adversarial Check 3 (Channel failure): Clarify channel failure handling against actual `worker_invoke_provider` and `execute_group_concurrent` behaviour, confirming fail-closed `AuditFailed` behaviour when channel disconnects.
+3. Semantic-Order Admission: When capacity exists (`active_count < N`), admit and launch the earliest semantic-order `Prepared` waiting member without provider-aware skipping, randomisation, or priority.
 
-4. Adversarial Check 4 (Failure stop rule): Verify and confirm the rule that trusted Stage C / persistence failure stops further launches while allowing in-flight scoped threads to finish without fabricating ordinary provider results.
+4. Launch-Boundary Invariants: For each selected member at launch time, establish per-member monotonic deadline start (`clock.now()`), calculate remaining timeout, perform pre-invocation deadline check, publish G1 (`publish_armed`), and spawn worker. Provider timeout does NOT run while waiting for capacity.
 
-5. Adversarial Check 5 (Capacity definition): Verify that state-derived capacity from `GroupMemberState` is sound, unambiguous, and free from double-counting or counter drift.
+5. Singular Stage C Release Point: Release capacity (decrement active count) only after complete coordinator Stage C processing (`execute_boundary_invoke_only` including durable `OutcomeEntry`, G2 `publish_terminal`, presentation/response updates, and Result Anchor writing) and transition of `GroupMemberState` to `Terminal`.
 
-6. Adversarial Check 6 (No scope creep): Verify that the design strictly excludes host-global scheduling, provider-specific quotas, worker pools, fairness, priority, adaptive concurrency, queue timeouts, new taxonomy, JIT G0, and provider-aware queue skipping.
+6. Fail-Closed Launch Halt: On trusted Stage C durability or G2 failure, halt any further launches immediately, allow in-flight scoped threads to drain, and fail closed with existing taxonomy (`AuditFailed` / `ReplayPersistenceUnavailable`).
+
+7. Focused Concurrency Verification: Prove with real provider/barrier tests that N=1 limits active provider invocations to at most 1, N=2 limits active invocations to at most 2 while reaching 2, and N>=group_size preserves full physical overlap.
 
 ## Relevant components
 
-Design document: `docs/concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md`
-
-Context files (read-only):
-
-- `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`
-- `tethers-0.1/host-rust/src/replay_runtime.rs`
 - `tethers-0.1/host-rust/src/host_execution.rs`
-- `tethers-0.1/host-rust/src/application.rs`
+- `docs/concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md`
+- `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`
 
 ## Frozen decisions and invariants
 
-- all Together members are attempted through fan-out semantics
-- sibling failure does not cancel siblings (except fatal trusted-state failure)
-- join waits for all semantic members terminal
-- join succeeds iff all members are successful under existing C1 rules
-- ReplayBlockedCompletedSuccess counts as success
-- first non-success is selected by semantic Runtime Plan member order
-- SemanticPosition derives from flat Runtime Plan indexes
-- Trail physical order is durable append order
-- ReplayAdmission remains coordinator-owned and need not become Send
-- workers own provider invocation material only
-- no group-wide replay identity
-- sequential Actions remain physically serial
-- no Tokio/async
-- no host-wide scheduler
-- G0 without G1 is unambiguous pre-invocation evidence of no provider effect
-- recovered IntentRecorded requires manual resolution under existing replay policy
-- provider timeout does not run during capacity wait
-- Stage C / G2 failure halts further launches
-- C3-A1 remains NOT authorised
+- Stage A remains serial and unchanged in Runtime Plan order
+- G0 published in Stage A; G1 published in Stage B immediately before launch
+- ReplayAdmission remains coordinator-owned (!Send)
+- Trail remains coordinator-owned (single writer)
+- provider timeout does not run while waiting for capacity
+- no queue timeout, no new terminal taxonomy
+- same-provider overlap via ephemeral child processes preserved
+- join occurs only after all members reach terminal state
+- first non-success selected in semantic Runtime Plan order
+- sequential Actions remain serial
+- no Tokio / async, no worker pool, no host-wide scheduler
 
 ## Acceptance criteria
 
-1. The design document `docs/concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md` accurately describes G0/G1 effect certainty and strictly records that recovered `IntentRecorded` maps to `RequiresManualResolution`.
+1. An internal helper `execute_group_concurrent_with_limit` accepts `max_active_together_invocations: usize` (N >= 1), and `execute_group_concurrent` preserves A3a-compatible full-width behavior.
 
-2. The slot release boundary is singular and unambiguous across all sections, naming the full Stage C boundary including Result Anchor writing and response updates.
+2. Capacity calculation derives active count exclusively from `member_states` lifecycle transitions.
 
-3. Channel failure is accurately documented as fail-closed `AuditFailed` matching the actual runtime implementation.
+3. Prepared waiting members are launched strictly in earliest semantic Runtime Plan order when slots become available.
 
-4. Failure stop rules for Stage C durability and G2 failures are confirmed compatible with existing taxonomy and boundaries.
+4. Monotonic deadline starts and G1 publication occur per-member at physical launch, keeping queue wait isolated from provider timeout.
 
-5. State-derived capacity from `GroupMemberState` is confirmed sound without second mutable counters.
+5. Capacity is released only upon full completion of `execute_boundary_invoke_only` and transition to `GroupMemberState::Terminal`.
 
-6. All C3 scope creep items remain explicitly excluded from C3-A requirements.
+6. Coordinator halts new launches if Stage C persistence or G2 publication fails, failing closed through existing error types.
+
+7. Deterministic barrier/counter tests prove N=1 never exceeds 1 active provider invocation, N=2 reaches 2 without exceeding 2, and full-width preserves overlap.
 
 ## Required verification
 
-1. `git diff --check` — no whitespace errors
-2. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` — packet consistency PASS
+1. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`
+2. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml`
+3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1`
+4. `git diff --check`
+5. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
 
 ## Forbidden changes
 
-- Rust source code
-- PowerShell fixtures
-- scheduler implementation code
-- config fields
-- tests
-- worker pool introduction
-- A3 replay semantics redesign
-- G0 relocation
-- queue deadlines
-- new result taxonomy
-- provider-aware scheduling
-- host-global concurrency
+- Rust production files other than `tethers-0.1/host-rust/src/host_execution.rs`
+- External configuration schemas or public CLI/API changes
+- Replay ledger / ReplayAdmission ownership or Sendness changes
+- Worker pools, thread pools, or async/Tokio runtimes
+- Host-global schedulers or cross-group semaphores
+- Provider-specific priority, fairness, or queue-skipping logic
+- New terminal outcome taxonomy or queue deadlines
+- Modifying OCaml code, SPEC, CONSTITUTION, or DECISIONS
 
 ## Stop conditions
 
-If the existing implementation contradicts one of the frozen assumptions in a way that materially changes C3 semantics, STOP. Do not solve it in code. Report: `BLOCKED — <one exact architectural contradiction>`.
+- A required production change outside `host_execution.rs` is needed (STOP and report blocker).
+- ReplayAdmission requires `Send` / `Arc` / `Mutex` (STOP).
+- A frozen design invariant cannot be satisfied without redesign (STOP).
+- Repeated failure rule: 2 materially similar failed attempts on the same underlying problem.
 
 ## Expected pre-existing changes
 
@@ -128,13 +122,11 @@ If the existing implementation contradicts one of the frozen assumptions in a wa
 - `docs/CANONICAL_FORMAT_V2_SPEC_DRAFT.md`
 - `docs/performance/CORE_PHASE_A_IMPLEMENTATION_PACKET.md`
 - `docs/performance/R1_PERFORMANCE_PROOF.md`
-- `docs/performance/core-phase-a/RESULT.md`
-- `docs/performance/core-phase-a/after-stage-profile.txt`
-- `docs/performance/core-phase-a/before-stage-profile.txt`
-- `docs/performance/r1/retained-p10-after.csv`
-- `docs/performance/r1/retained-p10-after.json`
+- `docs/performance/core-phase-a/`
+- `docs/performance/r1/`
 - `docs/worker-notes/2026-08-12-c-core-cheap-structural-fixes.md`
 - `docs/worker-notes/2026-08-14-c2a1-together-semantic-bridge.md`
+- `docs/worker-notes/2026-08-15-c3-d2-adversarial-design-review.md`
 - `scripts/assert-worktree.ps1`
 - `tethers-0.1/engine-ocaml/bin/tethers_cb3t_tie_audit.ml`
 - `tethers-0.1/engine-ocaml/bin/tethers_rank_avalanche.ml`
