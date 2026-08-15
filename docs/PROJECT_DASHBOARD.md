@@ -4,84 +4,83 @@ Updated: 2026-08-15
 
 ## Current Milestone
 
-Tethers 0.4 — Concurrency.
+**Tethers 0.4 — Concurrency: COMPLETE / ACCEPTED on the current integration chain.**
 
-C1, the deterministic `together` fan-out / join semantic foundation, is complete and accepted. C2-A1, the Core-native Together semantic bridge, is complete, independently accepted, and merged at `ec56220220fd6d668d74007d6a2f44e76320349f`. Core can now carry `Together_origin` semantics into flat Runtime Plan actions plus additive non-empty groups. Canonical V2 and Rocket meaning remain frozen and preserved; Rust execution remains the serial C1 reference mechanism.
+Accepted integration tip before this documentation refresh:
 
-C2-A2a, replay admission ownership foundation, is complete and merged at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`. C2-A2b, Trail semantic/physical ordering foundation, is complete and merged at the same SHA.
+`14b2c65d1a830b4fc0a7a893ee3e72b684b09740`
+
+`origin/main` remains:
+
+`f189361e80bdb43c13989200e48513cdb68bd004`
+
+So the code is accepted but not yet fully integrated into `main`.
 
 ## Current State
 
-C2-A3 physical concurrency design is complete and accepted
-(`docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`).
+- C1 — Together semantic fan-out / join foundation: ACCEPTED.
+- C2 — Core bridge, replay/Trail foundation, physical provider overlap: ACCEPTED.
+- C3 — bounded Together concurrency: ACCEPTED.
+- C4 — adversarial concurrency crucible / **Bunny Baptism**: ACCEPTED.
+- C5 — fresh-agent proof: RETIRED as a redundant concurrency gate.
+- `check` provider server-name bug discovered during C5 salvage: FIXED / ACCEPTED.
+- Full Rust suite at the accepted bugfix checkpoint: 1550 passed, 0 failed, 2 ignored.
 
-C2-A3a implementation exists at base `58aecd0c789802cdfea57d4560b51fd21d5340ae`
-and is **COMPLETE, awaiting Lucy merge review**. Physical concurrency is **NOT
-YET MERGED**.
+No further concurrency feature work is currently justified.
 
-Active task: **C2-A3a final provider overlap correction** — Owner: `Mini 2.5
-Pro — independent final verification`, Status: `COMPLETE`, Base:
-`58aecd0c789802cdfea57d4560b51fd21d5340ae`. Packet:
-`docs/CURRENT_CLINE_TASK.md`.
+## Last Useful Discovery
 
-## Last Completed Development State
+The abandoned C5 exploration was salvaged rather than chased through another loop. It revealed:
 
-- 0.3 Plug authoring P1–P6: FINAL ACCEPTED
-- Evil Bunny adversarial proof: FINAL ACCEPTED
-- 0.4 C1 Together semantics and reference-host join behaviour: complete / accepted
-- 0.4 C2-A1 Core-native Together semantic bridge: COMPLETE / ACCEPTED / MERGED at `ec56220220fd6d668d74007d6a2f44e76320349f`
-- 0.4 C2-A2a Replay admission ownership foundation: COMPLETE / ACCEPTED / MERGED at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`
-- 0.4 C2-A2b Trail semantic/physical ordering foundation: COMPLETE / ACCEPTED / MERGED at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`
-- 0.4 C2-A3 Physical concurrency design: COMPLETE (design artifact only)
-- Core phases 1–9: accepted; production evaluation route cut over to Core
-- Performance R1 / Phase A / C-B1: accepted
-- Canonical V2: frozen, implemented and heavily differential-tested
-- Rocket V2 reductions: integrated into the production canonicaliser
-- Final Rocket cutover reconciliation: CUTOVER CLEARED
+- a real `check` server-name bug, now fixed;
+- an undocumented `core_environment` requirement on the current run path;
+- scope-binding / permission configuration friction.
+
+The remaining findings belong to later authoring/HQ usability work, not to 0.4 concurrency correctness.
 
 ## Matthew Decision Required
 
-None.
+**Integration to `main`.**
+
+Lucy will not merge the accepted chain into `main` without Matthew's explicit authorisation.
 
 ## Next Route
 
-C2-A3a (provider invocation overlap under coordinator ownership) is COMPLETE at
-base `58aecd0c789802cdfea57d4560b51fd21d5340ae` and published on
-`feature/c2-a3a-provider-overlap`, awaiting Lucy merge review.
-
-The intended 0.4 sequence remains:
-
-1. C1 — semantic fan-out / join foundation ✓
-2. C2-A1 — Core-native Together semantic bridge ✓
-3. C2-A2 — replay and Trail foundation ✓ (A2a + A2b complete)
-4. C2-A3 — physical concurrency design ✓, implementation COMPLETE (C2-A3a, awaiting merge)
-5. C3–C5 — resource bounds, adversarial proof, and fresh-agent proof
+1. Merge/integrate the accepted chain when Matthew says yes.
+2. Freeze 0.4 concurrency.
+3. Pivot to the active hackathons.
+4. Return later to 0.5 HQ / authoring-surface improvements.
 
 ## Operating Mode
 
-**Gorilla Coding 🦄**
+**Gorilla Bunny Coding Shop 🦍🐇**
 
-- Lucy: architecture, task compilation, GitHub review, acceptance, continuation.
-- OpenCode: ordinary Green and Amber implementation, checks, report, worker note.
-- Codex: Red work, difficult local diagnosis, Git/environment/recovery, and machine-required verification.
-- Matthew: product authority and the short report-routing bridge.
+- **Matthew:** product direction, taste, priorities, final human judgement, and useful copy/paste relay that keeps him visibly in the loop.
+- **Lucy:** architecture department and operational controller: decomposes work, freezes important decisions, routes agents, reviews evidence, accepts/rejects work, and continuously improves the shop.
+- **Gem:** peer senior technical sparring partner for genuinely difficult architecture or areas where another strong technical model can challenge Lucy's assumptions.
+- **Agents:** replaceable specialist labour, scouts, implementers, reviewers, proof engineers and adversarial attackers chosen according to the job and economics.
+
+The shop optimises for accepted correct work with minimum unnecessary compute, retries, elapsed time and Matthew effort. Process must earn its keep.
 
 ## Cost And Drift Rules
 
-- One implementation owner per bounded task.
-- Broad discovery before packet compilation.
-- Cheap checks early. Expensive proof once.
-- Historical acceptance reports, worker notes, frozen specs and performance evidence are records of their time and are not rewritten merely to sound current.
-- Living status documents must agree with current `main` and accepted evidence.
-- C2 must preserve C1 observable semantics and the post-Core / Canonical-V2 identity, replay, Trail, permission and failure boundaries unless an explicit design decision says otherwise.
+- Use the cheapest capable route, not automatically the cheapest model.
+- Count retries and human intervention as real cost.
+- One bounded implementation owner at a time unless a task explicitly benefits from another structure.
+- Use independent review when it removes meaningful uncertainty, not as ceremony.
+- Broad architecture discussion belongs with Lucy and, when valuable, Gem; implementation packets should stay bounded.
+- Historical acceptance reports, worker notes, frozen specs and performance evidence remain records of their time and are not rewritten merely to sound current.
+- Living status documents must agree with accepted evidence.
+- Stop when evidence is enough.
 
 ## Where Details Live
 
 - Present goal and boundaries: `docs/CURRENT_GOAL.md`
-- Current / next task packet: `docs/CURRENT_CLINE_TASK.md`
+- Current / last task packet: `docs/CURRENT_CLINE_TASK.md`
 - Concurrency roadmap: `docs/ROAD_TO_0_4.md`
+- Operating procedure: `docs/PROJECT_CONTROL.md`
+- Gorilla Bunny doctrine: `docs/GORILLA_BUNNY_MANIFESTO.md`
 - Completed Plug programme: `docs/ROAD_TO_0_3.md`
-- Final Rocket reconciliation: `docs/perf/FINAL_ROCKET_CUTOVER_BASE_RECONCILIATION.md`
 - Foundation architecture: `docs/architecture/TETHERS_FOUNDATION_PASS.md`
-- C2-A3 design: `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`
+- Concurrency designs: `docs/concurrency/`
 - Evidence and reviews: `docs/worker-notes/`, `docs/review/`, `docs/perf/`

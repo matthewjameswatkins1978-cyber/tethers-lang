@@ -32,6 +32,11 @@ use crate::resolver::ResolvedCapability;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 // ---------------------------------------------------------------------------
 // Identifiers
@@ -673,6 +678,11 @@ impl Trail for FileTrail {
 ///
 /// `injected_intent_error` simulates an intent write or flush failure.
 /// `injected_outcome_error` simulates an outcome write or flush failure.
+///
+/// `outcome_error_signal` is an optional `Arc<AtomicBool>` that is set to
+/// `true` when `append_outcome` consumes `injected_outcome_error`.  This
+/// allows deterministic cross-thread synchronization in tests that need
+/// to observe when a fatal Stage C durability failure has been processed.
 #[cfg(test)]
 pub struct RecordingTrail {
     pub entries: Vec<IntentEntry>,
@@ -685,6 +695,7 @@ pub struct RecordingTrail {
     pub event_admission_entries: Vec<EventAdmissionEntry>,
     pub injected_event_admission_error: Option<TrailError>,
     pub group_join_entries: Vec<GroupJoinEntry>,
+    pub outcome_error_signal: Option<Arc<AtomicBool>>,
 }
 
 #[cfg(test)]
@@ -701,6 +712,7 @@ impl RecordingTrail {
             event_admission_entries: Vec::new(),
             injected_event_admission_error: None,
             group_join_entries: Vec::new(),
+            outcome_error_signal: None,
         }
     }
 }
@@ -737,6 +749,9 @@ impl Trail for RecordingTrail {
             events.borrow_mut().push("trail_outcome");
         }
         if let Some(err) = self.injected_outcome_error.take() {
+            if let Some(signal) = &self.outcome_error_signal {
+                signal.store(true, Ordering::SeqCst);
+            }
             return Err(err);
         }
         self.outcome_entries.push(entry.clone());

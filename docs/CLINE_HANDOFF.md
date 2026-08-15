@@ -1,4 +1,4 @@
-# Gorilla Coding Worker Handoff 🦄
+# Gorilla Bunny Coding Shop Worker Handoff 🦍🐇
 
 Historical filename: `docs/CLINE_HANDOFF.md`. Cline is not part of the current
 active route. This document is the current worker-neutral handoff guide.
@@ -7,10 +7,9 @@ active route. This document is the current worker-neutral handoff guide.
 
 ```text
 Lucy compiles tasks, architecture, and reviews
-    -> OpenCode implements ordinary Green and Amber work
-    -> Codex enters for Red work, local/Git/environment recovery, or
-       machine-required diagnosis
-    -> Matthew routes concise worker reports back to Lucy
+    -> Gem joins when peer technical debate is worth the compute
+    -> a suitable named agent implements bounded work
+    -> Matthew may route concise worker reports back to Lucy
 ```
 
 `docs/CURRENT_CLINE_TASK.md` is a historical filename; the named packet
@@ -40,9 +39,9 @@ Lucy then inspects the pushed GitHub evidence and decides one of:
 
 1. `ACCEPTED`;
 2. one bounded correction;
-3. escalation to Codex.
+3. escalation or a more suitable route.
 
-Pasting the report is an accepted Gorilla Coding handoff. The report is not
+Pasting the report is an accepted Gorilla Bunny handoff. The report is not
 the source of truth; the packet, worker note, code, tests, and Git remain the
 durable evidence.
 
@@ -50,7 +49,7 @@ durable evidence.
 
 Return to Lucy. The worker must not invent, compile, authorise, or begin the
 next task. Lucy inspects GitHub, reviews the previous result, and provides the
-next bounded task or routes the work to Codex.
+next bounded task or selects its route.
 
 ## Safety
 
@@ -65,5 +64,5 @@ next bounded task or routes the work to Codex.
 - Work, evidence, report, and worker note are required before `COMPLETE`.
 - The worker stops after its task.
 - Lucy controls continuation and acceptance.
-- Codex handles Red work, difficult local failures, Git/environment recovery,
-  and machine-required diagnosis.
+- Agents and tools are replaceable: select stronger reasoning, peer debate or
+  local-machine capability only where the risk and evidence needs justify it.

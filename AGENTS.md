@@ -69,19 +69,21 @@ mutation. It supports the task packet; it does not replace its authority.
 
 ## Current Operating Mode
 
-**Gorilla Coding 🦄**
+**Gorilla Bunny Coding Shop 🦍🐇**
 
-- Lucy in ordinary chat controls architecture, task compilation, GitHub-visible
-  review, acceptance, and continuation.
-- OpenCode is the default implementation owner for ordinary Green and Amber
-  work when the current packet names it.
-- Codex handles Red implementation or sign-off, difficult local failure,
-  Git/environment/recovery, and machine-required diagnosis.
-- Matthew may paste OpenCode's concise report to Lucy as the normal return
-  handoff.
-- Cline and Goose are not part of the active route. Historical filenames,
-  branches, packets, and worker notes may retain their names.
-- Copilot is not part of the active route.
+- Matthew supplies product direction, taste, priorities and final human
+  judgement. He may be the short copy/paste relay when that keeps him visibly
+  in the loop.
+- Lucy controls architecture, task compilation, evidence review, acceptance,
+  routing and improvement of the shop itself.
+- Gem is Lucy's peer technical sparring partner when a difficult or
+  consequential decision benefits from a second senior technical view.
+- Agents and tools are replaceable specialists selected for task fit, risk,
+  local-machine needs and economics; no particular coding agent has a permanent
+  role.
+
+Historical filenames, branches, packets and worker notes may retain earlier
+agent names. They do not define the active route.
 
 No implementation agent invents or begins the next task. Lucy controls
 continuation.
@@ -182,7 +184,11 @@ Avoid casual synonyms when a canonical term applies.
   adapter contract.
 - AI judgement is an explicit Capability Action whose structured result becomes
   visible data for a later Anchor. It never runs invisibly in Conditions.
-- Actions are ordered and initially dispatched serially.
+- Action execution must preserve the deterministic semantic ordering, grouping,
+  join behaviour, identity and failure-selection rules defined by the current
+  Tethers specification and accepted architecture. Physical scheduling,
+  concurrency and execution strategy are runtime concerns and must not change
+  source-level meaning unless an explicit semantic change authorises it.
 - No automatic retry until idempotency is proved end to end.
 - Tethers must not claim that an Action happened when it only proposed it.
 - Do not change 0.1 syntax or semantics without an explicit design gate.
@@ -192,9 +198,11 @@ Avoid casual synonyms when a canonical term applies.
 A Tether contains one Anchor, zero or more Conditions, and one or more Actions.
 The current precise syntax is defined only by `tethers-0.1/SPEC.md`.
 
-Do not use this guidance file as a substitute for the specification. In
-particular, do not invent loops, arithmetic, functions, hidden coercion,
-parallel Actions, branching inside `do`, or direct Action-result chaining.
+Do not use this guidance file as a substitute for the specification. Do not
+invent language constructs, execution relationships or control-flow semantics
+that are not defined by the current Tethers specification. In particular, do
+not infer new looping, branching, chaining or concurrency forms from runtime
+implementation details.
 
 ## Working Rules
 

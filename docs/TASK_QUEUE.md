@@ -1,8 +1,14 @@
-# Task Queue
+# Task Queue — Historical 0.2/J18 Planning Record
 
-Updated: 2026-08-01
+Status: historical planning record, not current task authority
 
-## Current State
+This queue records the 0.2/J18 planning state as of 2026-08-01. It is retained
+for historical context and must not be used to infer the current milestone,
+route or authorised work. Use `docs/CURRENT_GOAL.md`,
+`docs/PROJECT_DASHBOARD.md`, `docs/CURRENT_CLINE_TASK.md`, and
+`docs/PROJECT_CONTROL.md` instead.
+
+## Recorded Historical State
 
 Tethers 0.2.0 is published at
 `b5546411661dcbcb53e1cf2538eaec594c6f76f2` with annotated tag `v0.2.0`.
@@ -57,7 +63,7 @@ The ten-minute implementation-step limit is a runaway brake, not a deadline.
 Stop at a coherent recoverable point and return exact evidence rather than rush,
 repeat attempts blindly, or invent missing decisions.
 
-## Gorilla Coding Route
+## Historical Gorilla Coding Route
 
 ```text
 Lucy inspects and compiles

@@ -31,11 +31,15 @@ The previous published release was Tethers 0.2.0. Plug functionality is not part
 Development is ahead of the latest public release.
 
 - Tethers 0.3 public Plug authoring P1–P6: complete / accepted.
-- Tethers 0.4 C1 deterministic `together` fan-out / join semantics: complete / accepted.
+- Tethers 0.4 concurrency C1–C4: complete / accepted on the current integration chain.
+- C5 fresh-agent proof: retired as a redundant concurrency gate.
+- The `check` provider server-name bug found during C5 salvage: fixed / accepted.
 - Core phases 1–9 and production Core cutover: complete / accepted.
 - Canonical V2 and Rocket V2: implemented, proved and integrated into current `main`.
-- Next planned increment: **0.4 C2 — Physical Parallel Execution**.
-- C2 has **not started** and there is currently no active implementation packet.
+- Immediate action: integrate the accepted 0.4 chain into `main` only when
+  Matthew explicitly authorises it.
+- Next active focus: hackathon work; later 0.5 HQ/authoring-surface work is not
+  an authorised implementation increment.
 
 For live project state, use [`docs/PROJECT_DASHBOARD.md`](docs/PROJECT_DASHBOARD.md). For the concurrency programme, use [`docs/ROAD_TO_0_4.md`](docs/ROAD_TO_0_4.md).
 
@@ -50,26 +54,28 @@ Tethers uses a layered set of authoritative, operational and historical document
 - `docs/MCP_PLAN.md` records the approved post-0.1 direction for an OCaml Tethers MCP interface.
 - `docs/OCAML_GUIDE_FOR_AGENTS.md` gives version-specific OCaml environment and project guidance.
 - `docs/PROJECT_CONTROL.md` defines task ownership, evidence, worker notes, and review.
-- `docs/AGENT_WORKFLOW.md` defines the current **Gorilla Coding 🦄** route.
-- `docs/CLINE_HANDOFF.md` is the current worker-neutral Gorilla handoff guide (historical filename).
+- `docs/AGENT_WORKFLOW.md` defines the current **Gorilla Bunny Coding Shop 🦍🐇** route.
+- `docs/CLINE_HANDOFF.md` is the current worker-neutral handoff guide (historical filename).
 - `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the two durable sides of each implementation handoff.
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
 - `docs/CURRENT_GOAL.md` records the current development goal and boundaries.
 - `docs/CURRENT_CLINE_TASK.md` is the living implementation-packet handoff location; when no packet is active it must say so explicitly.
 - `docs/ROAD_TO_0_3.md` is the completed 0.3 Plug-authoring programme.
-- `docs/ROAD_TO_0_4.md` is the current concurrency programme.
+- `docs/ROAD_TO_0_4.md` is the completed concurrency programme and its accepted state.
 - `docs/perf/`, `docs/review/`, and `docs/worker-notes/` contain evidence and historical records. These are not rewritten merely to make old reports sound current.
 
 Current operating route:
 
 ```text
 Lucy controls architecture, tasks, review, and continuation
-    -> OpenCode implements bounded Green and ordinary Amber work
-    -> Codex handles Red work, machine failures, and release gates
-    -> Matthew routes concise worker reports back to Lucy
+    -> Gem joins only when peer technical debate adds value
+    -> a suitable named agent implements bounded work
+    -> Matthew may route concise worker reports back to Lucy
 ```
 
-Copilot, Cline, and Goose are not part of the current active workflow. Transient model names are not encoded in durable repository guidance.
+Agents and tools are replaceable and selected for fit, risk, economics and any
+local-machine requirement. Transient model names are not encoded in durable
+repository guidance.
 
 The active prototype and runtime development tree is `tethers-0.1/`.
 

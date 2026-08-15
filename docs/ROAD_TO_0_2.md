@@ -1,6 +1,6 @@
 # Tethers Road To 0.2
 
-Status: current release programme  
+Status: completed historical release programme
 Owner and final product authority: Matthew  
 Programme architect and controller: Lucy  
 Red implementation and machine escalation: Codex  
@@ -99,7 +99,7 @@ following:
 17. The release is documented, reproducible from a clean checkout, and signed
     off independently.
 
-## 4. Gorilla Coding Operating Rule 🦄
+## 4. Historical Operating Rule (July 2026) 🦄
 
 The release programme describes outcomes and dependencies. It does not pre-write
 stale implementation packets.
@@ -116,7 +116,7 @@ Lucy inspects live GitHub state
 -> Lucy inspects evidence and accepts, corrects, or escalates
 ```
 
-Current routes:
+Historical routes:
 
 | Work | Route |
 | --- | --- |

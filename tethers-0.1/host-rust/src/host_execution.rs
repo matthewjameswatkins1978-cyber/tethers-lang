@@ -1709,32 +1709,27 @@ fn classify_worker_session_error(error: &StdioProviderError) -> outcome::Provide
     }
 }
 
+fn count_active_members(member_states: &[GroupMemberState]) -> usize {
+    member_states
+        .iter()
+        .filter(|s| {
+            matches!(
+                s,
+                GroupMemberState::Launched { .. } | GroupMemberState::Transitioning { .. }
+            )
+        })
+        .count()
+}
+
+fn has_prepared_members(member_states: &[GroupMemberState]) -> bool {
+    member_states
+        .iter()
+        .any(|s| matches!(s, GroupMemberState::Prepared { .. }))
+}
+
 /// Execute one `together` group with real provider invocation overlap.
 ///
-/// This is the C2-A3a concurrent execution path.  It replaces the serial
-/// `execute_plan` call for Group items only.  Sequential items continue
-/// using the existing serial path.
-///
-/// ## Execution phases
-///
-/// **STAGE A — Serial deterministic preparation** (coordinator-owned):
-/// For every member, in Runtime Plan order: scope, policy, resolution,
-/// replay admission, G0 intent, Trail intent.  No deadline, no G1, no
-/// provider effect.  Prep failures are recorded immediately as terminal
-/// states with exact classification.
-///
-/// **STAGE B — Physical provider invocation** (concurrent workers):
-/// For each eligible member, immediately before launch: deadline start,
-/// G1 armed, scoped thread spawn.  Workers return raw provider results
-/// through an mpsc channel.
-///
-/// **STAGE C — Durable result collection** (coordinator-owned):
-/// As results arrive on the channel: classify outcome, Trail outcome, G2,
-/// result anchor.  Stage C runs per-result immediately, not in member
-/// order.
-///
-/// **STAGE D — Join** (coordinator-owned):
-/// After all members terminal: GroupJoinEntry, all-success test.
+/// Preserves existing callers by defaulting to group width (A3a-compatible full overlap).
 pub(crate) fn execute_group_concurrent(
     group_id: &str,
     member_indexes: &[usize],
@@ -1749,6 +1744,67 @@ pub(crate) fn execute_group_concurrent(
     approvals: &mut crate::approval::ApprovalStore,
     replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
 ) -> ExecutionServiceResult {
+    let limit = service.runtime.max_active_together_invocations();
+    execute_group_concurrent_with_limit(
+        group_id,
+        member_indexes,
+        actions,
+        response,
+        evaluation_id,
+        trail,
+        service,
+        input,
+        provider_sessions,
+        provider_availability,
+        approvals,
+        replay_authority,
+        limit,
+    )
+}
+
+/// Execute one `together` group with bounded provider invocation overlap.
+///
+/// This is the C3-A1 parameterised execution path.  It bounds active
+/// provider invocations to `max_active_together_invocations` (N >= 1)
+/// while maintaining strict semantic ordering and Stage C release boundaries.
+///
+/// ## Execution phases
+///
+/// **STAGE A — Serial deterministic preparation** (coordinator-owned):
+/// For every member, in Runtime Plan order: scope, policy, resolution,
+/// replay admission, G0 intent, Trail intent.  No deadline, no G1, no
+/// provider effect.  Prep failures are recorded immediately as terminal
+/// states with exact classification.
+///
+/// **STAGE B — Physical provider invocation** (bounded launch window):
+/// While active_count < N, the earliest semantic-order Prepared member is
+/// launched: deadline start (clock.now()), remaining calculation, G1 armed,
+/// and scoped worker thread spawn.
+///
+/// **STAGE C — Durable result collection** (coordinator-owned):
+/// When results arrive, coordinator executes complete Stage C processing
+/// (`execute_boundary_invoke_only`) and transitions state to `Terminal`.
+/// Only after full terminalisation does active_count decrease to free capacity.
+///
+/// **STAGE D — Join** (coordinator-owned):
+/// After all members terminal: GroupJoinEntry, all-success test.
+pub(crate) fn execute_group_concurrent_with_limit(
+    group_id: &str,
+    member_indexes: &[usize],
+    actions: &[Value],
+    response: &mut Value,
+    evaluation_id: &str,
+    trail: &mut dyn dispatch::Trail,
+    service: &HostExecutionService<'_>,
+    input: &PreparedEvaluationInput,
+    provider_sessions: &mut HashMap<String, RetainedProviderSession>,
+    provider_availability: &ProviderAvailability,
+    approvals: &mut crate::approval::ApprovalStore,
+    replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
+    max_active_together_invocations: usize,
+) -> ExecutionServiceResult {
+    let max_active = max_active_together_invocations.max(1);
+
     // ── STAGE A: Serial deterministic preparation ──────────────────────
     //
     // Every member gets a state slot immediately.  Prep failures are
@@ -2006,163 +2062,171 @@ pub(crate) fn execute_group_concurrent(
         }
     }
 
-    // ── STAGE B: Launch workers through mpsc channel ───────────────────
+    // ── STAGE B & C: Bounded launch window and durable collection ───────
     let clock = ProductionMonotonicClock::new();
     let mut anchor_writer = crate::ResponseResultAnchorWriter;
     let (tx, rx) = mpsc::channel::<WorkerResult>();
-    let mut launched_count: usize = 0;
 
-    struct PendingLaunch {
-        worker_input: WorkerInput,
-    }
-    let mut pending_launches: Vec<PendingLaunch> = Vec::new();
+    std::thread::scope(|s| {
+        let mut launches_halted = false;
 
-    // Whole-enum movement prevents fabricated domain values when the real
-    // coordinator-owned state moves from Prepared to Launched.
-    for state in member_states.iter_mut() {
-        let transition = match state {
-            GroupMemberState::Prepared {
-                action_index,
-                action_id,
-                semantic_position,
-                ..
-            } => GroupMemberState::Transitioning {
-                action_index: *action_index,
-                action_id: action_id.clone(),
-                semantic_position: semantic_position.clone(),
-            },
-            _ => continue,
-        };
-        let prior = std::mem::replace(state, transition);
-        let (action_index, action_id, position, ready, prepared, mut admission, deadline) =
-            match prior {
-                GroupMemberState::Prepared {
-                    action_index,
-                    action_id,
-                    semantic_position,
-                    ready,
-                    prepared,
-                    admission: Some(admission),
+        loop {
+            // Stage B: Launch eligible Prepared members in semantic order while capacity allows.
+            while !launches_halted && count_active_members(&member_states) < max_active {
+                let next_prepared_idx = member_states
+                    .iter()
+                    .position(|st| matches!(st, GroupMemberState::Prepared { .. }));
+                let idx = match next_prepared_idx {
+                    Some(i) => i,
+                    None => break,
+                };
+
+                let transition = match &member_states[idx] {
+                    GroupMemberState::Prepared {
+                        action_index,
+                        action_id,
+                        semantic_position,
+                        ..
+                    } => GroupMemberState::Transitioning {
+                        action_index: *action_index,
+                        action_id: action_id.clone(),
+                        semantic_position: semantic_position.clone(),
+                    },
+                    _ => unreachable!("guaranteed by position check"),
+                };
+                let prior = std::mem::replace(&mut member_states[idx], transition);
+
+                let (action_index, action_id, position, ready, prepared, mut admission, deadline) =
+                    match prior {
+                        GroupMemberState::Prepared {
+                            action_index,
+                            action_id,
+                            semantic_position,
+                            ready,
+                            prepared,
+                            admission: Some(admission),
+                            deadline,
+                        } => (
+                            action_index,
+                            action_id,
+                            semantic_position,
+                            ready,
+                            prepared,
+                            admission,
+                            deadline,
+                        ),
+                        _ => unreachable!("only Prepared members enter the launch transition"),
+                    };
+
+                let deadline_start = clock.now();
+                let remaining = match crate::outcome::remaining_until_deadline(
+                    &clock,
+                    deadline_start,
                     deadline,
-                } => (
-                    action_index,
-                    action_id,
-                    semantic_position,
-                    ready,
-                    prepared,
-                    admission,
-                    deadline,
-                ),
-                _ => unreachable!("only Prepared members enter the launch transition"),
-            };
+                ) {
+                    Some(remaining) => remaining,
+                    None => {
+                        member_states[idx] = GroupMemberState::Terminal {
+                            action_index,
+                            action_id: action_id.clone(),
+                            semantic_position: position,
+                            step: crate::plan_execution::ActionStep::Stopped(
+                                ExecutionServiceResult::Unattempted {
+                                    evaluation_id: evaluation_id.to_owned(),
+                                    action_id,
+                                    reason: "deadline expired before provider invocation"
+                                        .to_owned(),
+                                    execution_id: Some(ready.execution_id().0.clone()),
+                                },
+                            ),
+                        };
+                        continue;
+                    }
+                };
 
-        let deadline_start = clock.now();
-        let remaining =
-            match crate::outcome::remaining_until_deadline(&clock, deadline_start, deadline) {
-                Some(remaining) => remaining,
-                None => {
-                    *state = GroupMemberState::Terminal {
+                if admission.publish_armed().is_err() {
+                    launches_halted = true;
+                    member_states[idx] = GroupMemberState::Terminal {
                         action_index,
                         action_id: action_id.clone(),
                         semantic_position: position,
                         step: crate::plan_execution::ActionStep::Stopped(
-                            ExecutionServiceResult::Unattempted {
+                            ExecutionServiceResult::ReplayPersistenceUnavailable {
                                 evaluation_id: evaluation_id.to_owned(),
                                 action_id,
-                                reason: "deadline expired before provider invocation".to_owned(),
                                 execution_id: Some(ready.execution_id().0.clone()),
                             },
                         ),
                     };
                     continue;
                 }
-            };
 
-        if admission.publish_armed().is_err() {
-            *state = GroupMemberState::Terminal {
-                action_index,
-                action_id: action_id.clone(),
-                semantic_position: position,
-                step: crate::plan_execution::ActionStep::Stopped(
-                    ExecutionServiceResult::ReplayPersistenceUnavailable {
-                        evaluation_id: evaluation_id.to_owned(),
-                        action_id,
-                        execution_id: Some(ready.execution_id().0.clone()),
-                    },
-                ),
-            };
-            continue;
-        }
-
-        let provider_identity = ready.provider_identity().to_owned();
-        let prepared_provider = match service
-            .runtime
-            .providers()
-            .iter()
-            .find(|p| p.identity == provider_identity)
-        {
-            Some(provider) => provider.clone(),
-            None => {
-                *state = GroupMemberState::Terminal {
-                    action_index,
-                    action_id,
-                    semantic_position: position,
-                    step: crate::plan_execution::ActionStep::Stopped(
-                        ExecutionServiceResult::Unavailable {
-                            evaluation_id: evaluation_id.to_owned(),
-                            reason: format!("provider '{provider_identity}' has no prepared catalogue authority"),
-                        },
-                    ),
+                let provider_identity = ready.provider_identity().to_owned();
+                let prepared_provider = match service
+                    .runtime
+                    .providers()
+                    .iter()
+                    .find(|p| p.identity == provider_identity)
+                {
+                    Some(provider) => provider.clone(),
+                    None => {
+                        member_states[idx] = GroupMemberState::Terminal {
+                            action_index,
+                            action_id,
+                            semantic_position: position,
+                            step: crate::plan_execution::ActionStep::Stopped(
+                                ExecutionServiceResult::Unavailable {
+                                    evaluation_id: evaluation_id.to_owned(),
+                                    reason: format!(
+                                        "provider '{provider_identity}' has no prepared catalogue authority"
+                                    ),
+                                },
+                            ),
+                        };
+                        continue;
+                    }
                 };
-                continue;
+
+                let tool_name = ready
+                    .verified_manifest()
+                    .manifest()
+                    .binding
+                    .tool_name
+                    .clone();
+                let arguments = ready.arguments().clone();
+
+                member_states[idx] = GroupMemberState::Launched {
+                    action_index,
+                    action_id: action_id.clone(),
+                    semantic_position: position.clone(),
+                    ready: Some(ready),
+                    prepared: Some(prepared),
+                    admission: Some(admission),
+                };
+
+                let worker_input = WorkerInput {
+                    action_index,
+                    arguments,
+                    provider: prepared_provider,
+                    tool_name,
+                    remaining,
+                };
+
+                let tx_clone = tx.clone();
+                s.spawn(move || worker_invoke_provider(worker_input, tx_clone));
             }
-        };
 
-        let tool_name = ready
-            .verified_manifest()
-            .manifest()
-            .binding
-            .tool_name
-            .clone();
-        let arguments = ready.arguments().clone();
-        *state = GroupMemberState::Launched {
-            action_index,
-            action_id: action_id.clone(),
-            semantic_position: position.clone(),
-            ready: Some(ready),
-            prepared: Some(prepared),
-            admission: Some(admission),
-        };
-        pending_launches.push(PendingLaunch {
-            worker_input: WorkerInput {
-                action_index,
-                arguments,
-                provider: prepared_provider,
-                tool_name,
-                remaining,
-            },
-        });
-    }
+            let active_count = count_active_members(&member_states);
+            if active_count == 0 && (launches_halted || !has_prepared_members(&member_states)) {
+                break;
+            }
 
-    std::thread::scope(|s| {
-        // Spawn all workers.
-        for pending in pending_launches {
-            let tx_clone = tx.clone();
-            s.spawn(move || worker_invoke_provider(pending.worker_input, tx_clone));
-            launched_count += 1;
-        }
+            if active_count == 0 {
+                break;
+            }
 
-        drop(tx);
-
-        // Receive results as workers complete and process Stage C immediately.
-        let mut received = 0usize;
-        while received < launched_count {
             match rx.recv() {
                 Ok(worker_result) => {
-                    received += 1;
-
-                    // Find the Launched member for this action_index.
-                    // Extract ready and prepared for Stage C processing.
                     let mut found: Option<(
                         usize,
                         String,
@@ -2184,7 +2248,6 @@ pub(crate) fn execute_group_concurrent(
                         } = state
                         {
                             if *action_index == worker_result.action_index {
-                                // Move real objects out for Stage C.
                                 let taken_ready =
                                     ready.take().expect("Launched state must have ready");
                                 let taken_prepared =
@@ -2211,7 +2274,11 @@ pub(crate) fn execute_group_concurrent(
                             None => continue,
                         };
 
-                    // Stage C: classify outcome, Trail outcome, G2, result anchor.
+                    let response_trail_len_before = response
+                        .get("trail")
+                        .and_then(Value::as_array)
+                        .map_or(0, Vec::len);
+
                     let step = match crate::application::execute_boundary_invoke_only(
                         response,
                         &ready,
@@ -2222,18 +2289,43 @@ pub(crate) fn execute_group_concurrent(
                         worker_result.provider_result,
                         false,
                     ) {
-                        Ok(result) => crate::plan_execution::ActionStep::Boundary(result),
-                        Err(error) => crate::plan_execution::ActionStep::Stopped(
-                            ExecutionServiceResult::AuditFailed {
-                                evaluation_id: evaluation_id.to_owned(),
-                                action_id: action_id.clone(),
-                                reason: format!("shared execution boundary failed: {error}"),
-                                execution_id: Some(ready.execution_id().0.clone()),
-                            },
-                        ),
+                        Ok(mut result) => {
+                            let current_boundary_audit_failed = response
+                                .get("trail")
+                                .and_then(Value::as_array)
+                                .is_some_and(|entries| {
+                                    entries
+                                        .iter()
+                                        .skip(response_trail_len_before)
+                                        .any(|entry| entry["kind"] == "audit_failure")
+                                });
+                            if current_boundary_audit_failed {
+                                result.outcome = crate::SharedExecutionOutcome::AuditFailed;
+                            }
+                            if matches!(
+                                result.outcome,
+                                crate::SharedExecutionOutcome::AuditFailed
+                                    | crate::SharedExecutionOutcome::Replay(
+                                        crate::replay_runtime::ReplayDispatchResult::PersistenceUnavailable
+                                    )
+                            ) {
+                                launches_halted = true;
+                            }
+                            crate::plan_execution::ActionStep::Boundary(result)
+                        }
+                        Err(error) => {
+                            launches_halted = true;
+                            crate::plan_execution::ActionStep::Stopped(
+                                ExecutionServiceResult::AuditFailed {
+                                    evaluation_id: evaluation_id.to_owned(),
+                                    action_id: action_id.clone(),
+                                    reason: format!("shared execution boundary failed: {error}"),
+                                    execution_id: Some(ready.execution_id().0.clone()),
+                                },
+                            )
+                        }
                     };
 
-                    // Transition to Terminal.
                     for s in member_states.iter_mut() {
                         if let GroupMemberState::Launched {
                             action_index: idx, ..
@@ -2252,17 +2344,50 @@ pub(crate) fn execute_group_concurrent(
                     }
                 }
                 Err(_) => {
-                    // Channel closed — all workers finished but we haven't
-                    // received all results.  This shouldn't happen since
-                    // launched_count tracks exactly how many workers were
-                    // spawned.
                     break;
                 }
             }
         }
+
+        drop(tx);
     });
 
     // ── STAGE D: Join ──────────────────────────────────────────────────
+    // GroupJoin exists ONLY after every semantic member has reached its
+    // legitimate terminal state. If any member remains nonterminal (e.g.
+    // Prepared due to a fatal launch halt, or Launched due to channel drop),
+    // do NOT publish GroupJoin and fail closed.
+    let any_nonterminal = member_states.iter().any(|s| {
+        !matches!(
+            s,
+            GroupMemberState::Terminal { .. } | GroupMemberState::PreparationTerminal { .. }
+        )
+    });
+
+    if any_nonterminal {
+        let audit_action_id = member_states
+            .iter()
+            .find_map(|s| match s {
+                GroupMemberState::Terminal { action_id, .. }
+                | GroupMemberState::PreparationTerminal { action_id, .. }
+                | GroupMemberState::Prepared { action_id, .. }
+                | GroupMemberState::Launched { action_id, .. }
+                | GroupMemberState::Transitioning { action_id, .. } => Some(action_id.clone()),
+            })
+            .unwrap_or_default();
+
+        if let Some((action_id, step)) = first_non_success_member_step(member_states) {
+            return crate::plan_execution::aggregate_step(step, evaluation_id, &action_id);
+        }
+
+        return ExecutionServiceResult::AuditFailed {
+            evaluation_id: evaluation_id.to_owned(),
+            action_id: audit_action_id,
+            reason: "group execution halted with nonterminal members".to_owned(),
+            execution_id: None,
+        };
+    }
+
     // Determine which members succeeded.  Every member must be Terminal.
     let all_joined = member_states.iter().all(|s| match s {
         GroupMemberState::Terminal { step, .. }
@@ -5774,6 +5899,8 @@ mod tests {
     struct ObservingReplayAuthority {
         blocked: std::collections::HashMap<String, ReplayState>,
         trace: ReplayTrace,
+        fail_armed_actions: std::collections::HashSet<String>,
+        fail_terminal_actions: std::collections::HashSet<String>,
     }
 
     impl ObservingReplayAuthority {
@@ -5788,6 +5915,24 @@ mod tests {
                     .map(|(id, state)| (id.to_string(), *state))
                     .collect(),
                 trace,
+                fail_armed_actions: std::collections::HashSet::new(),
+                fail_terminal_actions: std::collections::HashSet::new(),
+            }
+        }
+
+        fn with_fail_points(
+            trace: ReplayTrace,
+            fail_armed_actions: &[&str],
+            fail_terminal_actions: &[&str],
+        ) -> Self {
+            Self {
+                blocked: std::collections::HashMap::new(),
+                trace,
+                fail_armed_actions: fail_armed_actions.iter().map(|s| s.to_string()).collect(),
+                fail_terminal_actions: fail_terminal_actions
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
             }
         }
     }
@@ -5811,11 +5956,15 @@ mod tests {
                     (true, ReplayState::ClaimedNoState)
                 }
             };
+            let fail_armed = self.fail_armed_actions.contains(&action_id);
+            let fail_terminal = self.fail_terminal_actions.contains(&action_id);
             Ok(Box::new(ObservingAdmission {
                 action_id,
                 fresh,
                 state,
                 trace: self.trace.clone(),
+                fail_armed,
+                fail_terminal,
             }))
         }
     }
@@ -5825,6 +5974,8 @@ mod tests {
         fresh: bool,
         state: ReplayState,
         trace: ReplayTrace,
+        fail_armed: bool,
+        fail_terminal: bool,
     }
 
     impl crate::replay_runtime::ReplayAdmissionGuard for ObservingAdmission {
@@ -5842,6 +5993,10 @@ mod tests {
             Ok(())
         }
         fn publish_armed(&mut self) -> Result<(), crate::replay::ReplayError> {
+            if self.fail_armed {
+                self.trace.record(format!("g1_fail:{}", self.action_id));
+                return Err(crate::replay::ReplayError::PersistenceUnavailable);
+            }
             self.trace.record(format!("g1:{}", self.action_id));
             Ok(())
         }
@@ -5850,6 +6005,10 @@ mod tests {
             _state: ReplayState,
             _durable_outcome_digest: String,
         ) -> Result<(), crate::replay::ReplayError> {
+            if self.fail_terminal {
+                self.trace.record(format!("g2_fail:{}", self.action_id));
+                return Err(crate::replay::ReplayError::PersistenceUnavailable);
+            }
             self.trace.record(format!("g2:{}", self.action_id));
             Ok(())
         }
@@ -7146,6 +7305,3173 @@ mod tests {
                 g1_pos < g2_pos,
                 "G1 (pos {g1_pos}) before G2 (pos {g2_pos}) for {member}"
             );
+        }
+    }
+
+    // ===================================================================
+    // C3-A1 Group Test Harness and Proofs: Minimal Bounded Launch Window
+    // ===================================================================
+
+    struct C3A1GroupHarness {
+        runtime: PreparedRuntime,
+        _runtime_dir: PathBuf,
+        trail_path: PathBuf,
+        replay_dir: PathBuf,
+        barrier_dir: PathBuf,
+        members: Vec<String>,
+    }
+
+    impl C3A1GroupHarness {
+        fn new(test_name: &str, member_tags: &[&str]) -> Self {
+            Self::new_with_timeout_overrides(test_name, member_tags, &HashMap::new())
+        }
+
+        fn new_with_timeout_overrides(
+            test_name: &str,
+            member_tags: &[&str],
+            timeout_overrides: &HashMap<String, u64>,
+        ) -> Self {
+            let barrier_dir = std::env::temp_dir()
+                .join(format!("tethers-c3a1-{test_name}-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&barrier_dir).unwrap();
+
+            let runtime_dir = std::env::temp_dir().join(format!(
+                "tethers-c3a1-{test_name}-rt-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(runtime_dir.join("tethers")).unwrap();
+            std::fs::create_dir_all(runtime_dir.join("manifests")).unwrap();
+
+            let tether_actions = member_tags
+                .iter()
+                .map(|tag| format!("do fixture.ping-{tag}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            std::fs::write(
+                runtime_dir.join("tethers/together-test.tether"),
+                format!("when event.test if true {tether_actions}"),
+            )
+            .unwrap();
+
+            let manifest_json =
+                include_str!("../../protocol/capability-manifests/fixture-ping.json");
+            let make_manifest = |cap_name: &str, provider_id: &str| -> String {
+                let mut m: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+                m["capability_name"] = serde_json::json!(cap_name);
+                m["provider"]["identity"] = serde_json::json!(provider_id);
+                m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+                m["permission_scope"] =
+                    serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+                m["confirmation_policy"] =
+                    serde_json::json!({"standing_permitted": true, "per_call_required": false});
+                let s = serde_json::to_string(&m).unwrap();
+                let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+                m["digest"] = serde_json::json!(digest);
+                serde_json::to_string_pretty(&m).unwrap()
+            };
+
+            let mut digests = HashMap::new();
+            for tag in member_tags {
+                let cap_name = format!("fixture.ping-{tag}");
+                let provider_id = format!("provider-{tag}");
+                let manifest = make_manifest(&cap_name, &provider_id);
+                let manifest_path = runtime_dir.join(format!("manifests/fixture-ping-{tag}.json"));
+                let applied_manifest = if let Some(&timeout_ms) = timeout_overrides.get(*tag) {
+                    let mut m: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+                    m["timeout_ms"] = serde_json::json!(timeout_ms);
+                    let s = serde_json::to_string(&m).unwrap();
+                    let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+                    m["digest"] = serde_json::json!(digest);
+                    serde_json::to_string_pretty(&m).unwrap()
+                } else {
+                    manifest
+                };
+                std::fs::write(&manifest_path, &applied_manifest).unwrap();
+                let (_, digest) =
+                    crate::manifest::canonicalize_and_digest(&applied_manifest).unwrap();
+                digests.insert((*tag).to_owned(), digest);
+            }
+
+            let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("scripts")
+                .join("tethers-stdio-fixture.ps1");
+            let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+
+            let reqs: Vec<serde_json::Value> = member_tags
+                .iter()
+                .map(|tag| {
+                    json!({
+                        "name": format!("fixture.ping-{tag}"),
+                        "version": 1,
+                        "reason": "c3 bounded concurrency"
+                    })
+                })
+                .collect();
+
+            let providers_json: Vec<serde_json::Value> = member_tags
+                .iter()
+                .map(|tag| {
+                    let provider_id = format!("provider-{tag}");
+                    let cap_name = format!("fixture.ping-{tag}");
+                    let digest = digests.get(*tag).unwrap();
+                    json!({
+                        "id": provider_id,
+                        "display_name": format!("Provider {tag}"),
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "pwsh.exe",
+                            "args": [
+                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                barrier_script.to_str().unwrap(),
+                                "-Mode", "c2-overlap-barrier",
+                                "-BarrierDirectory", &barrier_str
+                            ],
+                            "protocol_version": "2025-11-25"
+                        },
+                        "capabilities": [{
+                            "name": cap_name,
+                            "version": 1,
+                            "manifest_path": format!("manifests/fixture-ping-{tag}.json"),
+                            "pinned_digest": digest,
+                            "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                        }]
+                    })
+                })
+                .collect();
+
+            let rules_json: Vec<serde_json::Value> = member_tags
+                .iter()
+                .map(|tag| {
+                    json!({
+                        "name": format!("fixture.ping-{tag}"),
+                        "version": 1,
+                        "decision": "allow"
+                    })
+                })
+                .collect();
+
+            let config = json!({
+                "format_version": "0.1",
+                "tether_set": {
+                    "id": "test.together",
+                    "version": "1",
+                    "tethers": [{
+                        "id": "together-test",
+                        "version": "1",
+                        "source_path": "tethers/together-test.tether"
+                    }],
+                    "capability_requirements": reqs
+                },
+                "providers": providers_json,
+                "policy": {
+                    "default": "deny",
+                    "rules": rules_json
+                }
+            });
+
+            let config_path = runtime_dir.join("tethers-config.json");
+            std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+            let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+            let runtime = prepare_runtime(&loaded).unwrap();
+
+            let trail_path = std::env::temp_dir().join(format!(
+                "tethers-c3a1-{test_name}-trail-{}.jsonl",
+                uuid::Uuid::new_v4()
+            ));
+            let replay_dir = std::env::temp_dir().join(format!(
+                "tethers-c3a1-{test_name}-replay-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&replay_dir).unwrap();
+
+            Self {
+                runtime,
+                _runtime_dir: runtime_dir,
+                trail_path,
+                replay_dir,
+                barrier_dir,
+                members: member_tags.iter().map(|s| (*s).to_owned()).collect(),
+            }
+        }
+
+        fn set_peer_count(&self, count: usize) {
+            std::fs::write(self.barrier_dir.join("peer-count"), count.to_string()).unwrap();
+        }
+
+        fn run_group_with_limit(&self, eval_id: &str, limit: usize) -> ExecutionServiceResult {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("barrier provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            let mut actions = Vec::new();
+            let mut member_action_ids = Vec::new();
+            let mut member_indexes = Vec::new();
+
+            for (idx, tag) in self.members.iter().enumerate() {
+                let action_id = format!("member-{tag}");
+                let provider_id = format!("provider-{tag}");
+                let cap_name = format!("fixture.ping-{tag}");
+                let digest = self
+                    .runtime
+                    .providers()
+                    .iter()
+                    .find(|p| p.identity == provider_id)
+                    .unwrap()
+                    .capabilities[0]
+                    .verified_manifest
+                    .verified_digest()
+                    .to_owned();
+
+                actions.push(json!({
+                    "action_id": action_id,
+                    "idempotency_key": format!("{eval_id}/{action_id}"),
+                    "capability": cap_name,
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": provider_id,
+                    "manifest_digest": digest,
+                    "arguments": {"message": format!("member/{tag}")},
+                }));
+                member_action_ids.push(action_id);
+                member_indexes.push(idx);
+            }
+
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": member_action_ids,
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let avail_identities: Vec<String> = self
+                .members
+                .iter()
+                .map(|tag| format!("provider-{tag}"))
+                .collect();
+            let availability =
+                ProviderAvailability::from_identities(avail_identities.iter().map(|s| s.as_str()));
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let mut replay_authority =
+                crate::replay_runtime::test_support::TestReplayAuthority::default();
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            execute_group_concurrent_with_limit(
+                "together-1",
+                &member_indexes,
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                &mut replay_authority,
+                limit,
+            )
+        }
+
+        fn has_active(&self, member: &str) -> bool {
+            self.barrier_dir
+                .join(format!("active-member-{member}"))
+                .exists()
+        }
+
+        fn currently_active_count(&self) -> usize {
+            self.members
+                .iter()
+                .filter(|tag| self.has_active(tag) && !self.has_member_outcome(tag))
+                .count()
+        }
+
+        fn has_entered(&self, member: &str) -> bool {
+            self.barrier_dir
+                .join(format!("entered-member-{member}"))
+                .exists()
+        }
+
+        fn wait_member_active(&self, member: &str) {
+            let active_file = self.barrier_dir.join(format!("active-member-{member}"));
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !active_file.exists() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "member-{member} did not reach active state in barrier within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        fn wait_barrier_active_count(&self, count: usize) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while self.currently_active_count() < count {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "only {} of {count} providers reached currently active state within 15s",
+                    self.currently_active_count()
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        fn has_member_outcome(&self, member: &str) -> bool {
+            let action_id = format!("member-{member}");
+            trail_has_member_outcome(&self.trail_path, &action_id)
+        }
+
+        fn wait_member_outcome(&self, member: &str) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !self.has_member_outcome(member) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "outcome for member-{member} did not appear in Trail within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        fn release_member(&self, member: &str) {
+            std::fs::write(
+                self.barrier_dir.join(format!("release-member-{member}")),
+                "release",
+            )
+            .unwrap();
+        }
+
+        fn release_all(&self) {
+            std::fs::write(self.barrier_dir.join("release"), "release").unwrap();
+        }
+
+        fn trail_content(&self) -> String {
+            std::fs::read_to_string(&self.trail_path).unwrap_or_default()
+        }
+
+        fn outcome_ids(&self) -> Vec<String> {
+            trail_outcome_action_ids(&self.trail_path)
+        }
+
+        fn entry_kinds(&self) -> Vec<String> {
+            trail_entry_kinds(&self.trail_path)
+        }
+
+        fn run_group_with_trace(
+            &self,
+            eval_id: &str,
+            limit: usize,
+        ) -> (ExecutionServiceResult, Vec<String>) {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("barrier provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            let mut actions = Vec::new();
+            let mut member_action_ids = Vec::new();
+            let mut member_indexes = Vec::new();
+
+            for (idx, tag) in self.members.iter().enumerate() {
+                let action_id = format!("member-{tag}");
+                let provider_id = format!("provider-{tag}");
+                let cap_name = format!("fixture.ping-{tag}");
+                let digest = self
+                    .runtime
+                    .providers()
+                    .iter()
+                    .find(|p| p.identity == provider_id)
+                    .unwrap()
+                    .capabilities[0]
+                    .verified_manifest
+                    .verified_digest()
+                    .to_owned();
+
+                actions.push(json!({
+                    "action_id": action_id,
+                    "idempotency_key": format!("{eval_id}/{action_id}"),
+                    "capability": cap_name,
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": provider_id,
+                    "manifest_digest": digest,
+                    "arguments": {"message": format!("member/{tag}")},
+                }));
+                member_action_ids.push(action_id);
+                member_indexes.push(idx);
+            }
+
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": member_action_ids,
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let avail_identities: Vec<String> = self
+                .members
+                .iter()
+                .map(|tag| format!("provider-{tag}"))
+                .collect();
+            let availability =
+                ProviderAvailability::from_identities(avail_identities.iter().map(|s| s.as_str()));
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let trace = ReplayTrace::new();
+            let mut replay_authority = ObservingReplayAuthority::with_trace(&[], trace.clone());
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            let result = execute_group_concurrent_with_limit(
+                "together-1",
+                &member_indexes,
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                &mut replay_authority,
+                limit,
+            );
+
+            (result, trace.snapshot())
+        }
+
+        fn run_group_with_live_trace(
+            &self,
+            eval_id: &str,
+            limit: usize,
+            shared_trace: &ReplayTrace,
+        ) -> (ExecutionServiceResult, Vec<String>) {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("barrier provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            let mut actions = Vec::new();
+            let mut member_action_ids = Vec::new();
+            let mut member_indexes = Vec::new();
+
+            for (idx, tag) in self.members.iter().enumerate() {
+                let action_id = format!("member-{tag}");
+                let provider_id = format!("provider-{tag}");
+                let cap_name = format!("fixture.ping-{tag}");
+                let digest = self
+                    .runtime
+                    .providers()
+                    .iter()
+                    .find(|p| p.identity == provider_id)
+                    .unwrap()
+                    .capabilities[0]
+                    .verified_manifest
+                    .verified_digest()
+                    .to_owned();
+
+                actions.push(json!({
+                    "action_id": action_id,
+                    "idempotency_key": format!("{eval_id}/{action_id}"),
+                    "capability": cap_name,
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": provider_id,
+                    "manifest_digest": digest,
+                    "arguments": {"message": format!("member/{tag}")},
+                }));
+                member_action_ids.push(action_id);
+                member_indexes.push(idx);
+            }
+
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": member_action_ids,
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let avail_identities: Vec<String> = self
+                .members
+                .iter()
+                .map(|tag| format!("provider-{tag}"))
+                .collect();
+            let availability =
+                ProviderAvailability::from_identities(avail_identities.iter().map(|s| s.as_str()));
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let mut replay_authority =
+                ObservingReplayAuthority::with_trace(&[], shared_trace.clone());
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            let result = execute_group_concurrent_with_limit(
+                "together-1",
+                &member_indexes,
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                &mut replay_authority,
+                limit,
+            );
+
+            let final_snapshot = shared_trace.snapshot();
+            (result, final_snapshot)
+        }
+        fn set_member_outcome(&self, member: &str, outcome: &str) {
+            std::fs::write(
+                self.barrier_dir.join(format!("outcome-member-{member}")),
+                outcome,
+            )
+            .unwrap();
+        }
+
+        fn run_group_with_trail_and_authority(
+            &self,
+            eval_id: &str,
+            limit: usize,
+            trail: &mut dyn dispatch::Trail,
+            replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
+        ) -> ExecutionServiceResult {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("barrier provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            let mut actions = Vec::new();
+            let mut member_action_ids = Vec::new();
+            let mut member_indexes = Vec::new();
+
+            for (idx, tag) in self.members.iter().enumerate() {
+                let action_id = format!("member-{tag}");
+                let provider_id = format!("provider-{tag}");
+                let cap_name = format!("fixture.ping-{tag}");
+                let digest = self
+                    .runtime
+                    .providers()
+                    .iter()
+                    .find(|p| p.identity == provider_id)
+                    .unwrap()
+                    .capabilities[0]
+                    .verified_manifest
+                    .verified_digest()
+                    .to_owned();
+
+                actions.push(json!({
+                    "action_id": action_id,
+                    "idempotency_key": format!("{eval_id}/{action_id}"),
+                    "capability": cap_name,
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": provider_id,
+                    "manifest_digest": digest,
+                    "arguments": {"message": format!("member/{tag}")},
+                }));
+                member_action_ids.push(action_id);
+                member_indexes.push(idx);
+            }
+
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": member_action_ids,
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let avail_identities: Vec<String> = self
+                .members
+                .iter()
+                .map(|tag| format!("provider-{tag}"))
+                .collect();
+            let availability =
+                ProviderAvailability::from_identities(avail_identities.iter().map(|s| s.as_str()));
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            execute_group_concurrent_with_limit(
+                "together-1",
+                &member_indexes,
+                &member_actions,
+                &mut response,
+                eval_id,
+                trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                replay_authority,
+                limit,
+            )
+        }
+
+        fn run_group_with_authority(
+            &self,
+            eval_id: &str,
+            limit: usize,
+            replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
+        ) -> ExecutionServiceResult {
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            self.run_group_with_trail_and_authority(eval_id, limit, &mut trail, replay_authority)
+        }
+    }
+
+    impl Drop for C3A1GroupHarness {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.barrier_dir);
+            let _ = std::fs::remove_dir_all(&self._runtime_dir);
+            let _ = std::fs::remove_dir_all(&self.replay_dir);
+            let _ = std::fs::remove_file(&self.trail_path);
+        }
+    }
+
+    // ===================================================================
+    // C3-A1 Tests: Minimal Bounded Launch Window
+    // ===================================================================
+
+    #[test]
+    fn c3_a1_n1_limits_active_invocations_to_at_most_one() {
+        // Group of 3 members (a, b, c).
+        // With N=1, only ONE provider is active at any time.
+        let h = C3A1GroupHarness::new("n1-bound", &["a", "b", "c"]);
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-c3-n1", 1));
+
+            // 1. Member A launches and enters active state.
+            h.wait_member_active("a");
+
+            // While A is active at the provider boundary:
+            // A has not yet completed Stage C (outcome not in Trail).
+            // Active count is exactly 1.
+            // B and C have NOT been launched (entered files do not exist).
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(
+                !h.has_member_outcome("a"),
+                "member-a outcome must not exist while in-flight"
+            );
+            assert!(!h.has_entered("b"), "member-b must wait for capacity");
+            assert!(!h.has_entered("c"), "member-c must wait for capacity");
+
+            // Release A and wait for its completion in Trail.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // 2. Member B launches after A completes.
+            h.wait_member_active("b");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(
+                !h.has_member_outcome("b"),
+                "member-b outcome must not exist while in-flight"
+            );
+            assert!(!h.has_entered("c"), "member-c must wait for capacity");
+
+            // Release B and wait for its completion in Trail.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // 3. Member C launches after B completes.
+            h.wait_member_active("c");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(
+                !h.has_member_outcome("c"),
+                "member-c outcome must not exist while in-flight"
+            );
+
+            // Release C and wait for its completion in Trail.
+            h.release_member("c");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // Verify all 3 members produced outcomes in Trail in semantic order and GroupJoin occurred.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids, vec!["member-a", "member-b", "member-c"]);
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    #[test]
+    fn c3_a1_n2_limits_active_invocations_to_at_most_two_and_reaches_two() {
+        // Group of 3 members (a, b, c).
+        // With N=2, at most 2 providers are active simultaneously, and 2 is reached.
+        let h = C3A1GroupHarness::new("n2-bound", &["a", "b", "c"]);
+        h.set_peer_count(2);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-c3-n2", 2));
+
+            // Wait until both A and B become active simultaneously.
+            h.wait_barrier_active_count(2);
+
+            // Verify both A and B are currently active simultaneously (count is 2).
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must reach exactly 2 active members simultaneously"
+            );
+            assert!(!h.has_member_outcome("a"), "member-a must be in-flight");
+            assert!(!h.has_member_outcome("b"), "member-b must be in-flight");
+            assert!(!h.has_entered("c"), "member-c must wait for capacity");
+
+            // Release B only and wait for B's outcome in Trail.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // With B complete, a slot opened, so C launches and enters active state.
+            h.wait_member_active("c");
+
+            // A is still in-flight, C is in-flight: exactly 2 currently active.
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must have exactly 2 active members simultaneously (A and C)"
+            );
+            assert!(
+                !h.has_member_outcome("a"),
+                "member-a must still be in-flight"
+            );
+            assert!(!h.has_member_outcome("c"), "member-c must be in-flight");
+
+            // Release A and C.
+            h.release_member("a");
+            h.release_member("c");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3);
+        assert!(ids.contains(&"member-a".to_owned()));
+        assert!(ids.contains(&"member-b".to_owned()));
+        assert!(ids.contains(&"member-c".to_owned()));
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    #[test]
+    fn c3_a1_full_width_preserves_full_overlap() {
+        // Group of 3 members (a, b, c) with N=3.
+        // All 3 members must overlap simultaneously.
+        let h = C3A1GroupHarness::new("full-width", &["a", "b", "c"]);
+        h.set_peer_count(3);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-c3-full", 3));
+
+            // Wait until all 3 members reach active simultaneously.
+            h.wait_barrier_active_count(3);
+            assert_eq!(
+                h.currently_active_count(),
+                3,
+                "full width must reach 3 active members simultaneously"
+            );
+            assert!(!h.has_member_outcome("a"));
+            assert!(!h.has_member_outcome("b"));
+            assert!(!h.has_member_outcome("c"));
+
+            // Release all at once.
+            h.release_all();
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    // ===================================================================
+    // C3-V1 Proof Gap: Group-of-Five Matrix
+    // ===================================================================
+
+    #[test]
+    fn c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation() {
+        // Frozen design §14.1: N=1, group=5.
+        // - max active exactly 1 at all times
+        // - every eligible member eventually invokes
+        // - all five terminal
+        // - join evaluates all five
+        let h = C3A1GroupHarness::new("v1-n1-g5", &["a", "b", "c", "d", "e"]);
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-v1-n1-g5", 1));
+
+            // 1. Member A launches first.
+            h.wait_member_active("a");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when A is active"
+            );
+            assert!(!h.has_member_outcome("a"), "A must be in-flight");
+            assert!(!h.has_entered("b"), "B must wait for capacity");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // GroupJoin must NOT exist while A is active and siblings waiting.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoin must not exist while A is active"
+            );
+
+            // Release A and wait for its durable outcome.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // 2. Member B launches after A completes.
+            h.wait_member_active("b");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when B is active"
+            );
+            assert!(!h.has_member_outcome("b"), "B must be in-flight");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // GroupJoin must NOT exist while B is active.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoin must not exist while B is active"
+            );
+
+            // Release B and wait for its durable outcome.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // 3. Member C launches after B completes.
+            h.wait_member_active("c");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when C is active"
+            );
+            assert!(!h.has_member_outcome("c"), "C must be in-flight");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // Release C and wait for its durable outcome.
+            h.release_member("c");
+            h.wait_member_outcome("c");
+
+            // 4. Member D launches after C completes.
+            h.wait_member_active("d");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when D is active"
+            );
+            assert!(!h.has_member_outcome("d"), "D must be in-flight");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // Release D and wait for its durable outcome.
+            h.release_member("d");
+            h.wait_member_outcome("d");
+
+            // 5. Member E launches after D completes.
+            h.wait_member_active("e");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when E is active"
+            );
+            assert!(!h.has_member_outcome("e"), "E must be in-flight");
+
+            // Release E and allow completion.
+            h.release_member("e");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // All five members must have durable outcomes.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 5, "exactly 5 durable member outcomes required");
+        assert_eq!(
+            ids,
+            vec!["member-a", "member-b", "member-c", "member-d", "member-e"],
+            "outcomes must be in semantic order"
+        );
+
+        // Successful GroupJoin must exist.
+        let kinds = h.entry_kinds();
+        assert_eq!(
+            kinds.last(),
+            Some(&"group_join".to_owned()),
+            "GroupJoin must be the final entry"
+        );
+    }
+
+    #[test]
+    fn c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation() {
+        // Frozen design §14.2: N=2, group=5.
+        // - max active never exceeds 2
+        // - observed max reaches 2
+        // - every eligible member invokes
+        // - all five terminal
+        let h = C3A1GroupHarness::new("v1-n2-g5", &["a", "b", "c", "d", "e"]);
+        h.set_peer_count(2);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-v1-n2-g5", 2));
+
+            // 1. A and B become simultaneously active.
+            h.wait_barrier_active_count(2);
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must reach exactly 2 active members (A and B)"
+            );
+            assert!(!h.has_member_outcome("a"), "A must be in-flight");
+            assert!(!h.has_member_outcome("b"), "B must be in-flight");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // GroupJoin must NOT exist while A+B active and siblings waiting.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoin must not exist while A+B active"
+            );
+
+            // Release B, wait for B's durable outcome.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // 2. C launches while A remains active.
+            h.wait_member_active("c");
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must have exactly 2 active (A and C)"
+            );
+            assert!(!h.has_member_outcome("a"), "A must still be in-flight");
+            assert!(!h.has_member_outcome("c"), "C must be in-flight");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // GroupJoin must still NOT exist.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoin must not exist while A+C active"
+            );
+
+            // Release C, wait for C's durable outcome.
+            h.release_member("c");
+            h.wait_member_outcome("c");
+
+            // 3. D launches while A remains active.
+            h.wait_member_active("d");
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must have exactly 2 active (A and D)"
+            );
+            assert!(!h.has_member_outcome("a"), "A must still be in-flight");
+            assert!(!h.has_member_outcome("d"), "D must be in-flight");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // Release D, wait for D's durable outcome.
+            h.release_member("d");
+            h.wait_member_outcome("d");
+
+            // 4. E launches while A remains active.
+            h.wait_member_active("e");
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must have exactly 2 active (A and E)"
+            );
+            assert!(!h.has_member_outcome("a"), "A must still be in-flight");
+            assert!(!h.has_member_outcome("e"), "E must be in-flight");
+
+            // Release A and E.
+            h.release_member("a");
+            h.release_member("e");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // All five members must have durable outcomes.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 5, "exactly 5 durable member outcomes required");
+        assert!(ids.contains(&"member-a".to_owned()), "A must have outcome");
+        assert!(ids.contains(&"member-b".to_owned()), "B must have outcome");
+        assert!(ids.contains(&"member-c".to_owned()), "C must have outcome");
+        assert!(ids.contains(&"member-d".to_owned()), "D must have outcome");
+        assert!(ids.contains(&"member-e".to_owned()), "E must have outcome");
+
+        // Successful GroupJoin must exist.
+        let kinds = h.entry_kinds();
+        assert_eq!(
+            kinds.last(),
+            Some(&"group_join".to_owned()),
+            "GroupJoin must be the final entry"
+        );
+    }
+
+    // ===================================================================
+    // C3-A2 Proof Tests: Resource / Deadline / G1 Crucible
+    // ===================================================================
+
+    #[test]
+    fn c3_a2_waiting_member_has_g0_without_g1_or_provider_effect() {
+        // N=1 with members A, B.
+        // A occupies the only capacity slot.
+        // B is prepared (G0) but waiting for capacity.
+        // While A is active: B has G0, no G1, no provider effect.
+        let h = C3A1GroupHarness::new("c3a2-g0-no-g1", &["a", "b"]);
+        h.set_peer_count(1);
+
+        let shared_trace = ReplayTrace::new();
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_live_trace("eval-c3a2-g0", 1, &shared_trace));
+
+            // Wait for A to physically enter the provider barrier.
+            h.wait_member_active("a");
+
+            // While A is active, snapshot the live replay trace.
+            // B's G0 must already be recorded (published during Stage A).
+            // B's G1 must NOT be recorded (B has not been launched).
+            let live = shared_trace.snapshot();
+            assert!(
+                live.contains(&"g0:member-b".to_owned()),
+                "B must have G0 while A is active (live snapshot: {live:?})"
+            );
+            assert!(
+                !live.contains(&"g1:member-b".to_owned()),
+                "B must NOT have G1 while A is active (live snapshot: {live:?})"
+            );
+
+            // While A is active:
+            // - A has entered the provider (entered-member-a exists)
+            assert!(
+                h.has_entered("a"),
+                "member-a must have entered provider invocation"
+            );
+            // - B has NOT entered the provider
+            assert!(
+                !h.has_entered("b"),
+                "member-b must NOT have entered provider while waiting"
+            );
+            // - B has no outcome in Trail
+            assert!(
+                !h.has_member_outcome("b"),
+                "member-b must have no outcome while waiting"
+            );
+            // - Active count is exactly 1
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+
+            // B's durable Trail intent must already be present while A is active.
+            let trail_while_active = h.trail_content();
+            assert!(
+                trail_while_active.contains("member-b"),
+                "B's durable Trail intent must exist while A is active"
+            );
+
+            // Release A and wait for its durable outcome.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // Now B should launch and enter the provider.
+            h.wait_member_active("b");
+            h.release_member("b");
+
+            let (result, trace) = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+
+            // Final replay trace assertions:
+            // G0 for both members must exist.
+            assert!(trace.contains(&"g0:member-a".to_owned()), "A must have G0");
+            assert!(trace.contains(&"g0:member-b".to_owned()), "B must have G0");
+            // G1 for A must exist (A was launched).
+            assert!(trace.contains(&"g1:member-a".to_owned()), "A must have G1");
+            // G1 for B must exist (B was eventually launched after A completed).
+            assert!(trace.contains(&"g1:member-b".to_owned()), "B must have G1");
+            // G2 for both must exist (both completed Stage C).
+            assert!(trace.contains(&"g2:member-a".to_owned()), "A must have G2");
+            assert!(trace.contains(&"g2:member-b".to_owned()), "B must have G2");
+
+            // Prove ordering: G0(B) must precede G1(B) in the trace.
+            let g0_b_pos = trace.iter().position(|e| e == "g0:member-b").unwrap();
+            let g1_b_pos = trace.iter().position(|e| e == "g1:member-b").unwrap();
+            assert!(
+                g0_b_pos < g1_b_pos,
+                "G0(B) must precede G1(B): g0 at {g0_b_pos}, g1 at {g1_b_pos}"
+            );
+
+            // Prove: G1(B) occurs AFTER G2(A) — B only launches after A completes Stage C.
+            let g2_a_pos = trace.iter().position(|e| e == "g2:member-a").unwrap();
+            assert!(
+                g2_a_pos < g1_b_pos,
+                "G2(A) must precede G1(B): g2_a at {g2_a_pos}, g1_b at {g1_b_pos}"
+            );
+        });
+
+        // Trail: both members have outcomes, GroupJoin present.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 2, "expected 2 outcomes in Trail");
+        assert!(ids.contains(&"member-a".to_owned()));
+        assert!(ids.contains(&"member-b".to_owned()));
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    #[test]
+    fn c3_a2_queue_wait_does_not_consume_provider_timeout() {
+        // N=1 with members A, B.
+        // B has a deliberately short timeout (500ms) applied BEFORE prepare_runtime.
+        // A occupies the slot for 1500ms > B's 500ms timeout.
+        // B must NOT be classified Unattempted due to queue wait.
+        let mut timeout_overrides = HashMap::new();
+        timeout_overrides.insert("b".to_owned(), 500u64);
+        let h = C3A1GroupHarness::new_with_timeout_overrides(
+            "c3a2-queue-timeout",
+            &["a", "b"],
+            &timeout_overrides,
+        );
+        h.set_peer_count(1);
+
+        // Verify the prepared runtime actually contains B's overridden timeout.
+        let provider_b = h
+            .runtime
+            .providers()
+            .iter()
+            .find(|p| p.identity == "provider-b")
+            .expect("provider-b must exist in prepared runtime");
+        let effective_timeout_ms = provider_b.capabilities[0]
+            .verified_manifest
+            .manifest()
+            .timeout_ms;
+        assert_eq!(
+            effective_timeout_ms, 500,
+            "prepared runtime must contain B's overridden timeout of 500ms, got {effective_timeout_ms}ms"
+        );
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-timeout", 1));
+
+            // A launches and enters the barrier.
+            h.wait_member_active("a");
+
+            // Hold A active for longer than B's configured timeout (500ms).
+            // Use a safe 1500ms wait to ensure the duration exceeds B's timeout.
+            std::thread::sleep(Duration::from_millis(1500));
+
+            // While A is still active (after waiting > B's timeout):
+            assert!(!h.has_entered("b"), "B must still be waiting for capacity");
+            assert!(
+                !h.has_member_outcome("b"),
+                "B must have no outcome while waiting"
+            );
+
+            // Release A and wait for its durable terminal outcome.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // B must now launch with a fresh deadline.
+            h.wait_member_active("b");
+
+            // B has entered the provider — it was NOT classified Unattempted.
+            assert!(
+                h.has_entered("b"),
+                "B must have entered provider invocation (not Unattempted)"
+            );
+
+            // Release B and allow normal terminalisation.
+            h.release_member("b");
+
+            let (result, trace) = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+
+            // B's G1 must exist — it was launched after queue wait.
+            assert!(trace.contains(&"g1:member-b".to_owned()), "B must have G1");
+            // B's G2 must exist — it completed Stage C.
+            assert!(trace.contains(&"g2:member-b".to_owned()), "B must have G2");
+        });
+
+        // Trail: both members completed. B is NOT Unattempted.
+        // Use structured outcome assertion, not just string search.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 2, "expected 2 outcomes in Trail");
+        assert!(
+            ids.contains(&"member-b".to_owned()),
+            "member-b must have a terminal outcome (not Unattempted)"
+        );
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    #[test]
+    fn c3_a2_next_slot_launches_earliest_semantic_waiter() {
+        // A B C with N=1.
+        // A launches first. B and C wait.
+        // After A completes, B must launch next (earliest semantic waiter).
+        // While B is active, C must still NOT have entered.
+        // After B completes, C launches.
+        let h = C3A1GroupHarness::new("c3a2-semantic-order", &["a", "b", "c"]);
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-order", 1));
+
+            // A launches and enters the barrier.
+            h.wait_member_active("a");
+
+            // While A is active: B and C must NOT have entered.
+            assert!(!h.has_entered("b"), "B must wait while A is active");
+            assert!(!h.has_entered("c"), "C must wait while A is active");
+            assert_eq!(h.currently_active_count(), 1);
+
+            // Release A and wait for its durable OutcomeEntry.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // B must launch next (earliest semantic waiter).
+            h.wait_member_active("b");
+
+            // While B is active: C must still NOT have entered.
+            assert!(!h.has_entered("c"), "C must wait while B is active");
+            assert_eq!(h.currently_active_count(), 1);
+
+            // Release B and wait for its durable outcome.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // C must launch next.
+            h.wait_member_active("c");
+            assert_eq!(h.currently_active_count(), 1);
+
+            // Release C and allow normal terminalisation.
+            h.release_member("c");
+
+            let (result, _trace) = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // All three members produced outcomes in semantic order.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3, "expected 3 outcomes in Trail");
+        assert_eq!(
+            ids,
+            vec!["member-a", "member-b", "member-c"],
+            "outcomes must be in semantic order"
+        );
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    #[test]
+    fn c3_a2_queued_member_replay_order_is_g0_wait_g1_g2() {
+        // N=1 with members A, B.
+        // Prove replay event ordering for the queued B path:
+        // G0(B) → capacity wait → A durable terminal → G1(B) → provider B → G2(B)
+        let h = C3A1GroupHarness::new("c3a2-replay-order", &["a", "b"]);
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-replay", 1));
+
+            // A launches first.
+            h.wait_member_active("a");
+
+            // B is waiting: has G0, no G1.
+            assert!(!h.has_entered("b"), "B must be waiting for capacity");
+
+            // Release A and wait for its durable terminal outcome.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // After A's Stage C completes, B must launch.
+            h.wait_member_active("b");
+            h.release_member("b");
+
+            let (result, trace) = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+
+            // Find positions in the replay trace.
+            let pos = |needle: &str| -> usize {
+                trace
+                    .iter()
+                    .position(|e| e == needle)
+                    .unwrap_or_else(|| panic!("{needle} not found in replay trace"))
+            };
+
+            let g0_b = pos("g0:member-b");
+            let g1_b = pos("g1:member-b");
+            let g2_b = pos("g2:member-b");
+            let g2_a = pos("g2:member-a");
+
+            // Strict ordering: G0(B) < G2(A) < G1(B) < G2(B)
+            // G0(B) is published during Stage A (before capacity wait).
+            // G2(A) is published when A completes Stage C (capacity released).
+            // G1(B) is published when B is launched (after capacity available).
+            // G2(B) is published when B completes Stage C.
+            assert!(
+                g0_b < g2_a,
+                "G0(B) ({g0_b}) must precede G2(A) ({g2_a}): B was prepared before A completed"
+            );
+            assert!(
+                g2_a < g1_b,
+                "G2(A) ({g2_a}) must precede G1(B) ({g1_b}): A completes Stage C before B launches"
+            );
+            assert!(
+                g1_b < g2_b,
+                "G1(B) ({g1_b}) must precede G2(B) ({g2_b}): B is armed before B completes"
+            );
+
+            // Verify G0(B) precedes G1(B) (the core G0 → capacity wait → G1 invariant).
+            assert!(g0_b < g1_b, "G0(B) ({g0_b}) must precede G1(B) ({g1_b})");
+        });
+
+        // Trail: both members completed, GroupJoin present.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    // ===================================================================
+    // C3-A3 Tests: Failure Boundaries and Fatal-Halt Guard
+    // ===================================================================
+
+    #[test]
+    fn c3_a3_normal_provider_failure_releases_slot_and_joins() {
+        // N=1 with members A, B.
+        // A configured for provider outcome = Failed.
+        // B configured for provider outcome = Success.
+        // Prove:
+        // - A launches and enters provider
+        // - A returns provider Failed
+        // - A completes Stage C and terminalises as Failed
+        // - Capacity is released (active_count decreases)
+        // - B launches and succeeds
+        // - Both members terminalise
+        // - GroupJoin is present and joined=false
+        // - Final semantic non-success is A's Failed
+        let h = C3A1GroupHarness::new("c3a3-normal-fail", &["a", "b"]);
+        h.set_peer_count(1);
+        h.set_member_outcome("a", "failed");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a3-normfail", 1));
+
+            // A launches and enters active state at provider.
+            h.wait_member_active("a");
+
+            // While A is in-flight, B has not entered.
+            assert!(!h.has_entered("b"), "B must wait for capacity");
+
+            // Release A and wait for its completion in Trail.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // After A terminalises, slot is released and B launches.
+            h.wait_member_active("b");
+            h.release_member("b");
+
+            let (result, trace) = handle.join().expect("group must complete");
+
+            // A's Failed result is selected as final group non-success.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::Failed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected Failed for member-a, got {result:?}"
+            );
+
+            // Both entered provider.
+            assert!(h.has_entered("a"));
+            assert!(h.has_entered("b"));
+
+            // Both have outcomes in Trail.
+            let outcome_ids = h.outcome_ids();
+            assert_eq!(outcome_ids, vec!["member-a", "member-b"]);
+
+            // Replay trace shows G0, G1, G2 for both members in order.
+            assert!(trace.contains(&"g0:member-a".to_string()));
+            assert!(trace.contains(&"g0:member-b".to_string()));
+            assert!(trace.contains(&"g1:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g1:member-b".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+
+            // GroupJoin entry IS present.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":false"));
+        });
+    }
+
+    #[test]
+    fn c3_a3_worker_panic_terminalises_uncertain_and_releases_slot() {
+        // N=1 with members A, B.
+        // Inject worker panic for A (action_index=0).
+        // Prove:
+        // - A panic is caught via PanicGuard
+        // - A terminalises as Uncertain
+        // - Slot is released
+        // - B launches and succeeds
+        // - GroupJoin is present and joined=false
+        // - Final semantic non-success is A's Uncertain
+        let h = C3A1GroupHarness::new("c3a3-panic-slot", &["a", "b"]);
+        h.set_peer_count(1);
+
+        let _guard = PanicGuard::target(0);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a3-panic", 1));
+
+            // Wait for A's outcome in Trail (A panics in worker thread and terminalises as Uncertain).
+            h.wait_member_outcome("a");
+
+            // After A terminalises as Uncertain, capacity is released and B launches.
+            h.wait_member_active("b");
+            h.release_member("b");
+
+            let (result, trace) = handle
+                .join()
+                .expect("group must complete without coordinator hang");
+
+            // A's Uncertain result is selected as final group non-success.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::Uncertain {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected Uncertain for member-a, got {result:?}"
+            );
+
+            // B entered provider and succeeded.
+            assert!(h.has_entered("b"));
+
+            // Both have outcomes in Trail.
+            let outcome_ids = h.outcome_ids();
+            assert_eq!(outcome_ids, vec!["member-a", "member-b"]);
+
+            // Replay trace shows G2 for both members.
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+
+            // GroupJoin entry IS present with joined=false.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":false"));
+        });
+    }
+
+    #[test]
+    fn c3_a3_outcome_durability_failure_halts_queued_effects_without_join() {
+        // N=1 with members A, B, C.
+        // Inject failure of A's Stage C OutcomeEntry durability via RecordingTrail.
+        // Prove:
+        // - A launches and enters provider
+        // - A returns to coordinator
+        // - Stage C outcome durability fails
+        // - No G2 for A (boundary stops before G2)
+        // - B and C NEVER enter provider
+        // - No new provider effect launches
+        // - No GroupJoinEntry is appended (B and C remain Prepared)
+        // - Result fails closed through AuditFailed
+        let h = C3A1GroupHarness::new("c3a3-durability-fail", &["a", "b", "c"]);
+        h.set_peer_count(1);
+
+        let trace = ReplayTrace::new();
+
+        std::thread::scope(|s| {
+            let trace_clone = trace.clone();
+            let h_ref = &h;
+            let handle = s.spawn(move || {
+                let mut trail = dispatch::RecordingTrail::new();
+                trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
+                    "injected OutcomeEntry durability failure".to_owned(),
+                ));
+                let mut replay_authority = ObservingReplayAuthority::with_trace(&[], trace_clone);
+                let result = h_ref.run_group_with_trail_and_authority(
+                    "eval-c3a3-durability",
+                    1,
+                    &mut trail,
+                    &mut replay_authority,
+                );
+                (result, trail.outcome_entries, trail.group_join_entries)
+            });
+
+            // A launches and reaches provider.
+            h.wait_member_active("a");
+
+            // B and C have not entered.
+            assert!(!h.has_entered("b"), "B must not have entered");
+            assert!(!h.has_entered("c"), "C must not have entered");
+
+            // Release A so provider returns to coordinator.
+            h.release_member("a");
+
+            let (result, outcome_entries, group_join_entries) =
+                handle.join().expect("group must complete");
+
+            // Result fails closed as AuditFailed for member-a.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::AuditFailed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected AuditFailed for member-a, got {result:?}"
+            );
+
+            // A reached provider effect.
+            assert!(h.has_entered("a"), "A must have reached provider");
+
+            // B and C NEVER entered provider.
+            assert!(
+                !h.has_entered("b"),
+                "B must never enter provider after fatal halt"
+            );
+            assert!(
+                !h.has_entered("c"),
+                "C must never enter provider after fatal halt"
+            );
+
+            // Replay trace: G0 for all 3, G1 for A, NO G2 for A, NO G1 for B/C.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-a".to_string()));
+            assert!(
+                !snapshot.contains(&"g2:member-a".to_string()),
+                "G2 must not occur when outcome durability fails"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-b".to_string()),
+                "B must never get G1"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry was appended to trail.
+            assert!(
+                group_join_entries.is_empty(),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+            assert!(
+                outcome_entries.is_empty(),
+                "OutcomeEntry must not be durably recorded when append fails"
+            );
+        });
+    }
+
+    #[test]
+    fn c3_a3_g2_failure_halts_queued_effects_without_join() {
+        // N=1 with members A, B, C.
+        // Inject G2 publish_terminal failure for member A.
+        // Prove:
+        // - G0(A), G0(B), G0(C)
+        // - G1(A)
+        // - A enters provider and returns
+        // - Durable OutcomeEntry occurs before attempted G2
+        // - Attempted G2 fails
+        // - B NEVER gets G1, NEVER enters provider
+        // - C NEVER gets G1, NEVER enters provider
+        // - No GroupJoinEntry is appended
+        // - Result fails closed through ReplayPersistenceUnavailable
+        let h = C3A1GroupHarness::new("c3a3-g2-fail", &["a", "b", "c"]);
+        h.set_peer_count(1);
+
+        let trace = ReplayTrace::new();
+        let mut replay_authority =
+            ObservingReplayAuthority::with_fail_points(trace.clone(), &[], &["member-a"]);
+
+        std::thread::scope(|s| {
+            let handle = s
+                .spawn(|| h.run_group_with_authority("eval-c3a3-g2fail", 1, &mut replay_authority));
+
+            // A launches and enters provider.
+            h.wait_member_active("a");
+
+            // B and C have not entered.
+            assert!(!h.has_entered("b"), "B must not have entered");
+            assert!(!h.has_entered("c"), "C must not have entered");
+
+            // Release A so provider returns.
+            h.release_member("a");
+
+            let result = handle.join().expect("group must complete");
+
+            // Result fails closed as ReplayPersistenceUnavailable for member-a.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::ReplayPersistenceUnavailable {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected ReplayPersistenceUnavailable for member-a, got {result:?}"
+            );
+
+            // A entered provider.
+            assert!(h.has_entered("a"));
+
+            // A's OutcomeEntry WAS written durably to Trail before G2.
+            assert!(
+                h.has_member_outcome("a"),
+                "A OutcomeEntry must precede G2 attempt"
+            );
+
+            // B and C NEVER entered provider.
+            assert!(!h.has_entered("b"), "B must never enter provider");
+            assert!(!h.has_entered("c"), "C must never enter provider");
+
+            // Replay trace: G0 for all, G1 for A, G2 failed for A, NO G1 for B/C.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2_fail:member-a".to_string()),
+                "G2 failure must be observed"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-b".to_string()),
+                "B must never get G1"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry is in Trail.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    #[test]
+    fn c3_a3_g1_failure_halts_before_any_later_effect_without_join() {
+        // N=1 with members A, B.
+        // Inject G1 publish_armed failure for member A.
+        // Prove:
+        // - A has G0, B has G0
+        // - G1 for A fails
+        // - A NEVER enters provider
+        // - B NEVER gets G1, NEVER enters provider
+        // - No GroupJoinEntry is appended
+        // - Result is ReplayPersistenceUnavailable for member A
+        let h = C3A1GroupHarness::new("c3a3-g1-fail", &["a", "b"]);
+        h.set_peer_count(1);
+
+        let trace = ReplayTrace::new();
+        let mut replay_authority =
+            ObservingReplayAuthority::with_fail_points(trace.clone(), &["member-a"], &[]);
+
+        std::thread::scope(|s| {
+            let handle = s
+                .spawn(|| h.run_group_with_authority("eval-c3a3-g1fail", 1, &mut replay_authority));
+
+            let result = handle.join().expect("group must complete");
+
+            // Result fails closed as ReplayPersistenceUnavailable for member-a.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::ReplayPersistenceUnavailable {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected ReplayPersistenceUnavailable for member-a, got {result:?}"
+            );
+
+            // A NEVER entered provider (failed before launch).
+            assert!(
+                !h.has_entered("a"),
+                "A must never enter provider on G1 failure"
+            );
+
+            // B NEVER entered provider.
+            assert!(!h.has_entered("b"), "B must never enter provider");
+
+            // Trace: G0 for both, G1 failed for A, NO G1 for B.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g1_fail:member-a".to_string()));
+            assert!(
+                !snapshot.contains(&"g1:member-b".to_string()),
+                "B must never get G1"
+            );
+
+            // No GroupJoinEntry in Trail.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    #[test]
+    fn c3_a3_all_terminal_preserves_group_join() {
+        // Prove that when every member reaches a legitimate terminal state
+        // (both all-success and mixed), GroupJoinEntry and presentation are preserved.
+        let h = C3A1GroupHarness::new("c3a3-all-term", &["a", "b"]);
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a3-allterm", 1));
+
+            h.wait_member_active("a");
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            h.wait_member_active("b");
+            h.release_member("b");
+
+            let (result, trace) = handle.join().expect("group must complete");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+
+            // GroupJoin IS present in Trail with joined=true.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":true"));
+        });
+    }
+
+    #[test]
+    fn c3_a3_n2_active_sibling_survives_fatal_halt_truthfully() {
+        // N=2 with members B, A, C (semantic order: B=0, A=1, C=2).
+        // B and A both launch (N=2). C waits.
+        // A's OutcomeEntry durability fails (first append_outcome takes injected error).
+        // B's OutcomeEntry durability succeeds (error already consumed).
+        //
+        // Regression proof: with the old code, B's truthful success would be
+        // overwritten to AuditFailed because the entire response Trail still
+        // contains A's audit_failure entry.  With the fix, only entries
+        // appended by the current boundary call are inspected.
+        //
+        // Proves:
+        // - B and A both enter provider (N=2)
+        // - A's outcome durability fails → audit_failure, launches_halted
+        // - C NEVER launches, NEVER gets G1
+        // - B completes normal successful Stage C
+        // - B's outcome is truthfully Completed (NOT AuditFailed)
+        // - Group result identifies member-a (NOT member-b)
+        // - No GroupJoinEntry (C remains nonterminal)
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let h = C3A1GroupHarness::new("c3a3-n2-bac", &["b", "a", "c"]);
+        h.set_peer_count(2);
+
+        let trace = ReplayTrace::new();
+        // Deterministic signal: set to true when A's append_outcome fails.
+        let outcome_error_signal = Arc::new(AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            let trace_clone = trace.clone();
+            let h_ref = &h;
+            let signal_clone = Arc::clone(&outcome_error_signal);
+            let handle = s.spawn(move || {
+                let mut trail = dispatch::RecordingTrail::new();
+                trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
+                    "injected A OutcomeEntry durability failure".to_owned(),
+                ));
+                // Signal the main thread when append_outcome consumes the error.
+                trail.outcome_error_signal = Some(signal_clone);
+                let mut replay_authority = ObservingReplayAuthority::with_trace(&[], trace_clone);
+                let result = h_ref.run_group_with_trail_and_authority(
+                    "eval-c3a3-n2-bac",
+                    2,
+                    &mut trail,
+                    &mut replay_authority,
+                );
+                (result, trail.outcome_entries, trail.group_join_entries)
+            });
+
+            // B and A both launch (N=2 capacity).
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("b"), "B must be active");
+            assert!(h.has_active("a"), "A must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release A first — A's outcome durability will fail (takes injected error).
+            h.release_member("a");
+
+            // Wait deterministically for A's fatal Stage C durability failure
+            // to be observed by the coordinator.  The signal is set inside
+            // append_outcome when injected_outcome_error is consumed.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !outcome_error_signal.load(Ordering::SeqCst) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A's outcome error signal was not set within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Release B — B's outcome durability succeeds (error already consumed).
+            h.release_member("b");
+
+            let (result, outcome_entries, group_join_entries) =
+                handle.join().expect("group must complete");
+
+            // The group result MUST identify member-a (the fatal member),
+            // NOT member-b (the successful active sibling).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::AuditFailed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected AuditFailed for member-a, got {result:?}"
+            );
+
+            // B entered provider and has a truthful successful OutcomeEntry.
+            assert!(h.has_entered("b"), "B must have entered provider");
+            assert_eq!(
+                outcome_entries.len(),
+                1,
+                "only B's outcome should be durably recorded (A's write failed)"
+            );
+            assert_eq!(outcome_entries[0].action_id, "member-b");
+            assert_eq!(outcome_entries[0].status, "succeeded");
+
+            // A's outcome durability failed — no outcome entry for A.
+            assert!(
+                !outcome_entries.iter().any(|e| e.action_id == "member-a"),
+                "A's outcome must NOT be durably recorded"
+            );
+
+            // C NEVER launched.
+            assert!(!h.has_entered("c"), "C must never have entered provider");
+
+            // Replay trace: G0 for all 3, G1 for B and A, G2 for B only.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-b".to_string()));
+            assert!(snapshot.contains(&"g1:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2:member-b".to_string()),
+                "B's G2 must succeed"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry because C remains nonterminal.
+            assert!(
+                group_join_entries.is_empty(),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    // ==================================================================
+    // C3-A4 Tests: External Bounded-Concurrency Configuration
+    //
+    // These tests prove that the configuration value reaches the actual
+    // production `execute_group_concurrent` wrapper, not merely the
+    // `PreparedRuntime` accessor.
+    // ==================================================================
+
+    /// Build a C3A1-style harness with an explicit `max_active_together_invocations`
+    /// in the config, then run `execute_group_concurrent` (the wrapper) to prove
+    /// the configured value controls real production launch behavior.
+    fn c3a4_harness_with_config(
+        test_name: &str,
+        member_tags: &[&str],
+        max_active: Option<usize>,
+    ) -> C3A1GroupHarness {
+        use std::path::Path;
+
+        let barrier_dir =
+            std::env::temp_dir().join(format!("tethers-c3a4-{test_name}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&barrier_dir).unwrap();
+
+        let runtime_dir = std::env::temp_dir().join(format!(
+            "tethers-c3a4-{test_name}-rt-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(runtime_dir.join("tethers")).unwrap();
+        std::fs::create_dir_all(runtime_dir.join("manifests")).unwrap();
+
+        std::fs::write(
+            runtime_dir.join("tethers/together-test.tether"),
+            "when event.test if true do fixture.ping-a do fixture.ping-b",
+        )
+        .unwrap();
+
+        let manifest_template =
+            include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let make_manifest = |cap_name: &str, provider_id: &str| -> (String, String) {
+            let mut m: serde_json::Value = serde_json::from_str(manifest_template).unwrap();
+            m["capability_name"] = serde_json::json!(cap_name);
+            m["provider"]["identity"] = serde_json::json!(provider_id);
+            m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+            m["permission_scope"] =
+                serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+            m["confirmation_policy"] =
+                serde_json::json!({"standing_permitted": true, "per_call_required": false});
+            let s = serde_json::to_string(&m).unwrap();
+            let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+            m["digest"] = serde_json::json!(digest);
+            (serde_json::to_string_pretty(&m).unwrap(), digest)
+        };
+
+        let mut digests = std::collections::HashMap::new();
+        for tag in member_tags {
+            let (manifest_json, digest) =
+                make_manifest(&format!("fixture.ping-{tag}"), &format!("provider-{tag}"));
+            std::fs::write(
+                runtime_dir.join(format!("manifests/fixture-ping-{tag}.json")),
+                &manifest_json,
+            )
+            .unwrap();
+            digests.insert(*tag, digest);
+        }
+
+        let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts")
+            .join("tethers-stdio-fixture.ps1");
+        let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+
+        let reqs: Vec<serde_json::Value> = member_tags
+            .iter()
+            .map(|tag| {
+                json!({
+                    "name": format!("fixture.ping-{tag}"),
+                    "version": 1,
+                    "reason": "c3-a4 config proof"
+                })
+            })
+            .collect();
+
+        let providers_json: Vec<serde_json::Value> = member_tags
+            .iter()
+            .map(|tag| {
+                let provider_id = format!("provider-{tag}");
+                let cap_name = format!("fixture.ping-{tag}");
+                let digest = digests.get(*tag).unwrap();
+                json!({
+                    "id": provider_id,
+                    "display_name": format!("Provider {tag}"),
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [
+                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                            barrier_script.to_str().unwrap(),
+                            "-Mode", "c2-overlap-barrier",
+                            "-BarrierDirectory", &barrier_str
+                        ],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [{
+                        "name": cap_name,
+                        "version": 1,
+                        "manifest_path": format!("manifests/fixture-ping-{tag}.json"),
+                        "pinned_digest": digest,
+                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                    }]
+                })
+            })
+            .collect();
+
+        let rules_json: Vec<serde_json::Value> = member_tags
+            .iter()
+            .map(|tag| {
+                json!({
+                    "name": format!("fixture.ping-{tag}"),
+                    "version": 1,
+                    "decision": "allow"
+                })
+            })
+            .collect();
+
+        let mut config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "test.together",
+                "version": "1",
+                "tethers": [{
+                    "id": "together-test",
+                    "version": "1",
+                    "source_path": "tethers/together-test.tether"
+                }],
+                "capability_requirements": reqs
+            },
+            "providers": providers_json,
+            "policy": {
+                "default": "deny",
+                "rules": rules_json
+            }
+        });
+
+        // Inject the configured max_active_together_invocations if specified.
+        if let Some(n) = max_active {
+            config["max_active_together_invocations"] = json!(n);
+        }
+
+        let config_path = runtime_dir.join("tethers-config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let runtime = prepare_runtime(&loaded).unwrap();
+
+        let trail_path = std::env::temp_dir().join(format!(
+            "tethers-c3a4-{test_name}-trail-{}.jsonl",
+            uuid::Uuid::new_v4()
+        ));
+        let replay_dir = std::env::temp_dir().join(format!(
+            "tethers-c3a4-{test_name}-replay-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&replay_dir).unwrap();
+
+        C3A1GroupHarness {
+            runtime,
+            _runtime_dir: runtime_dir,
+            trail_path,
+            replay_dir,
+            barrier_dir,
+            members: member_tags.iter().map(|s| (*s).to_owned()).collect(),
+        }
+    }
+
+    /// Run `execute_group_concurrent` (the wrapper) instead of
+    /// `execute_group_concurrent_with_limit` to prove the configuration
+    /// value reaches the production wrapper.
+    fn c3a4_run_group_via_wrapper(
+        harness: &C3A1GroupHarness,
+        eval_id: &str,
+    ) -> ExecutionServiceResult {
+        let providers = harness.runtime.providers().to_vec();
+        let mut sessions = HashMap::new();
+        for provider in &providers {
+            let manifest = provider.capabilities[0].verified_manifest.manifest();
+            let session = RetainedProviderSession::establish(SocketEstablishment {
+                command: &provider.stdio_config.command,
+                args: &provider.stdio_config.args,
+                working_directory: &provider.working_directory,
+                protocol_version: &provider.stdio_config.protocol_version,
+                server_name: &manifest.binding.server_name,
+                identity: &provider.identity,
+            })
+            .expect("barrier provider session establishment");
+            sessions.insert(provider.identity.clone(), session);
+        }
+
+        let mut actions = Vec::new();
+        let mut member_action_ids = Vec::new();
+        let mut member_indexes = Vec::new();
+
+        for (idx, tag) in harness.members.iter().enumerate() {
+            let action_id = format!("member-{tag}");
+            let provider_id = format!("provider-{tag}");
+            let cap_name = format!("fixture.ping-{tag}");
+            let digest = harness
+                .runtime
+                .providers()
+                .iter()
+                .find(|p| p.identity == provider_id)
+                .unwrap()
+                .capabilities[0]
+                .verified_manifest
+                .verified_digest()
+                .to_owned();
+
+            actions.push(json!({
+                "action_id": action_id,
+                "idempotency_key": format!("{eval_id}/{action_id}"),
+                "capability": cap_name,
+                "capability_version": "1.0.0",
+                "bridge_capability_version": 1,
+                "bridge_provider_identity": provider_id,
+                "manifest_digest": digest,
+                "arguments": {"message": format!("member/{tag}")},
+            }));
+            member_action_ids.push(action_id);
+            member_indexes.push(idx);
+        }
+
+        let groups = vec![json!({
+            "group_id": "together-1",
+            "member_action_ids": member_action_ids,
+        })];
+        let mut response = json!({
+            "status": "matched",
+            "evaluation_id": eval_id,
+            "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+            "trail": [],
+        });
+        let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+        let avail_identities: Vec<String> = harness
+            .members
+            .iter()
+            .map(|tag| format!("provider-{tag}"))
+            .collect();
+        let availability =
+            ProviderAvailability::from_identities(avail_identities.iter().map(|s| s.as_str()));
+        let mut trail = dispatch::FileTrail::open(&harness.trail_path).unwrap();
+        let mut approvals = crate::approval::ApprovalStore::default();
+        let mut replay_authority =
+            crate::replay_runtime::test_support::TestReplayAuthority::default();
+        let engine_path = PathBuf::from("unused-engine");
+        let service =
+            HostExecutionService::new(&harness.runtime, &engine_path, &harness.trail_path, None);
+
+        // Call execute_group_concurrent (the wrapper), NOT
+        // execute_group_concurrent_with_limit.  This proves the
+        // configuration value reaches the production wrapper.
+        execute_group_concurrent(
+            "together-1",
+            &member_indexes,
+            &member_actions,
+            &mut response,
+            eval_id,
+            &mut trail,
+            &service,
+            &PreparedEvaluationInput {
+                tether_id: "together-test".to_owned(),
+                tether_version: "1".to_owned(),
+                evaluation_id: eval_id.to_owned(),
+                anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                facts: json!({}),
+            },
+            &mut sessions,
+            &availability,
+            &mut approvals,
+            &mut replay_authority,
+        )
+    }
+
+    // A4.9: Physical default-N=2 proof using execute_group_concurrent wrapper.
+    //
+    // Group: A B C
+    // Default N=2: A+B reach active simultaneously, C waits.
+    // Release B → C launches.  Release A+C → all terminal → GroupJoin.
+    #[test]
+    fn c3_a4_default_two_controls_real_group_execution() {
+        let h = c3a4_harness_with_config("default-two", &["a", "b", "c"], None);
+
+        // Verify the runtime accessor matches the default.
+        assert_eq!(h.runtime.max_active_together_invocations(), 2);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| c3a4_run_group_via_wrapper(&h, "eval-c3a4-d2"));
+
+            // Wait until both A and B become active simultaneously.
+            h.wait_barrier_active_count(2);
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "default N=2 must have exactly 2 active members"
+            );
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release B → slot opens → C launches.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+            h.wait_member_active("c");
+
+            // A is still in-flight, C is in-flight: exactly 2 active.
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "after B completes, A+C must be exactly 2 active"
+            );
+
+            // Release A and C.
+            h.release_member("a");
+            h.release_member("c");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // Verify all 3 outcomes present and GroupJoin succeeded.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3, "all 3 members must have outcomes");
+        assert!(ids.contains(&"member-a".to_owned()));
+        assert!(ids.contains(&"member-b".to_owned()));
+        assert!(ids.contains(&"member-c".to_owned()));
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    // A4.10: Physical explicit-N=1 proof using execute_group_concurrent wrapper.
+    //
+    // Group: A B C
+    // Explicit N=1: A launches, B/C wait.  After A completes, B launches.
+    // After B completes, C launches.  Physical max active == 1.
+    #[test]
+    fn c3_a4_explicit_one_controls_real_group_execution() {
+        let h = c3a4_harness_with_config("explicit-one", &["a", "b", "c"], Some(1));
+
+        // Verify the runtime accessor matches the explicit value.
+        assert_eq!(h.runtime.max_active_together_invocations(), 1);
+
+        // Tell the barrier script to expect only 1 peer at a time.
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| c3a4_run_group_via_wrapper(&h, "eval-c3a4-e1"));
+
+            // 1. Member A launches and enters active state.
+            h.wait_member_active("a");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(!h.has_entered("b"), "B must wait for capacity");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release A and wait for its completion.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // 2. Member B launches after A completes.
+            h.wait_member_active("b");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release B and wait for its completion.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // 3. Member C launches after B completes.
+            h.wait_member_active("c");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+
+            // Release C.
+            h.release_member("c");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // Verify all 3 outcomes present in semantic order and GroupJoin succeeded.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3, "all 3 members must have outcomes");
+        assert_eq!(ids, vec!["member-a", "member-b", "member-c"]);
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    // ===================================================================
+    // C4 Adversarial Concurrency Crucible Tests
+    // ===================================================================
+
+    #[test]
+    fn c4_inverse_completion_preserves_semantic_first_failure() {
+        // Crucible 1: Hostile completion order test where physical completion
+        // is B (Failed), C (Success), A (Failed) under N=2.
+        // Semantic order: A, B, C.
+        //
+        // Prove:
+        // - max active <= 2 at all times
+        // - C launches into B's released slot while A remains active
+        // - physical outcome append order in Trail is B, C, A
+        // - final group non-success is MEMBER A (not B merely because B failed first physically)
+        // - GroupJoin occurs only after A, B, C all reach terminal state
+        // - GroupJoin.joined == false
+        // - Replay trace contains G2 for all 3 members
+        let h = C3A1GroupHarness::new("c4-inverse-comp", &["a", "b", "c"]);
+        h.set_peer_count(2);
+        h.set_member_outcome("a", "failed");
+        h.set_member_outcome("b", "failed");
+        h.set_member_outcome("c", "success");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c4-inv", 2));
+
+            // A and B both reach active state in barrier.
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("a"), "A must be active");
+            assert!(h.has_active("b"), "B must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release B first (B fails quickly).
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // C launches into B's freed slot while A is still active.
+            h.wait_member_active("c");
+            assert!(h.has_active("a"), "A must remain active while C launches");
+            assert!(h.has_active("c"), "C must be active in released slot");
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "active count must not exceed 2"
+            );
+
+            // Release C second (C succeeds).
+            h.release_member("c");
+            h.wait_member_outcome("c");
+
+            // Release A last (A fails).
+            h.release_member("a");
+
+            let (result, trace) = handle.join().expect("group execution must complete");
+
+            // Semantic first non-success is member-a (index 0), NOT member-b (index 1).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::Failed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected Failed for member-a, got {result:?}"
+            );
+
+            // Trail outcome append order reflects actual physical completion order (B, C, A).
+            let outcome_ids = h.outcome_ids();
+            assert_eq!(outcome_ids, vec!["member-b", "member-c", "member-a"]);
+
+            // Replay trace proves all 3 reached G2.
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+            assert!(trace.contains(&"g2:member-c".to_string()));
+
+            // GroupJoin entry present with joined: false.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":false"));
+        });
+    }
+
+    #[test]
+    fn c4_fast_failure_releases_slot_while_slow_sibling_runs() {
+        // Crucible 2: Hostile slow success + fast failure test proving provider
+        // failure does not halt launches and join evaluates all members.
+        // N=2: A = slow Success, B = fast Failed, C = queued Success.
+        //
+        // Prove:
+        // - A and B active
+        // - B fails quickly, completing Stage C
+        // - C launches while A is still active
+        // - ordinary provider failure does NOT trigger launches_halted
+        // - A eventually succeeds
+        // - C succeeds
+        // - final result is B Failed
+        // - GroupJoin exists after all terminal (joined=false)
+        let h = C3A1GroupHarness::new("c4-fast-fail-slow-succ", &["a", "b", "c"]);
+        h.set_peer_count(2);
+        h.set_member_outcome("a", "success");
+        h.set_member_outcome("b", "failed");
+        h.set_member_outcome("c", "success");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c4-fastfail", 2));
+
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("a"), "A must be active");
+            assert!(h.has_active("b"), "B must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release B first (B fails quickly).
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // C launches while A is still active.
+            h.wait_member_active("c");
+            assert!(h.has_active("a"), "A must remain active");
+            assert!(h.has_active("c"), "C must be active");
+
+            // Release C.
+            h.release_member("c");
+            h.wait_member_outcome("c");
+
+            // Release A last.
+            h.release_member("a");
+
+            let (result, trace) = handle.join().expect("group execution must complete");
+
+            // Final result is member-b Failed (since A and C succeeded).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::Failed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-b"
+                ),
+                "expected Failed for member-b, got {result:?}"
+            );
+
+            // Physical outcome order is B, C, A.
+            let outcome_ids = h.outcome_ids();
+            assert_eq!(outcome_ids, vec!["member-b", "member-c", "member-a"]);
+
+            // Replay trace contains G2 for all 3 members.
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+            assert!(trace.contains(&"g2:member-c".to_string()));
+
+            // GroupJoin entry present with joined: false.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":false"));
+        });
+    }
+
+    #[test]
+    fn c4_g2_failure_halts_queue_but_active_sibling_finishes_truthfully() {
+        // Crucible 3: G2 failure with active sibling proving fatal halt stops
+        // queued member C while already-active B completes truthfully and no
+        // GroupJoin occurs.
+        // Semantic order: B, A, C (B=0, A=1, C=2). N=2.
+        let h = C3A1GroupHarness::new("c4-g2-fail-overlap", &["b", "a", "c"]);
+        h.set_peer_count(2);
+
+        let trace = ReplayTrace::new();
+        let mut replay_authority =
+            ObservingReplayAuthority::with_fail_points(trace.clone(), &[], &["member-a"]);
+
+        std::thread::scope(|s| {
+            let handle =
+                s.spawn(|| h.run_group_with_authority("eval-c4-g2fail", 2, &mut replay_authority));
+
+            // B and A both active.
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("b"), "B must be active");
+            assert!(h.has_active("a"), "A must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release A so A returns to coordinator and fails G2.
+            h.release_member("a");
+
+            // Wait deterministically for A's G2 failure to be recorded in trace.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !trace.has("g2_fail:member-a") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A's G2 failure was not recorded in trace within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Assert C has not entered provider.
+            assert!(
+                !h.has_entered("c"),
+                "C must never enter provider after fatal halt"
+            );
+
+            // Release B — B finishes truthfully.
+            h.release_member("b");
+
+            let result = handle.join().expect("group execution must complete");
+
+            // Result fails closed as ReplayPersistenceUnavailable for member-a (NOT member-b).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::ReplayPersistenceUnavailable {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected ReplayPersistenceUnavailable for member-a, got {result:?}"
+            );
+
+            // A entered provider and has outcome in Trail.
+            assert!(h.has_entered("a"), "A must have reached provider");
+            assert!(
+                h.has_member_outcome("a"),
+                "A OutcomeEntry must precede G2 failure"
+            );
+
+            // B entered provider and has outcome in Trail.
+            assert!(h.has_entered("b"), "B must have reached provider");
+            assert!(h.has_member_outcome("b"), "B OutcomeEntry must succeed");
+
+            // C never entered provider.
+            assert!(!h.has_entered("c"), "C must never enter provider");
+
+            // Replay trace: G0 for all 3, G1 for B and A, G2(B) succeeded, G2(A) failed, NO G1 for C.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-b".to_string()));
+            assert!(snapshot.contains(&"g1:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2:member-b".to_string()),
+                "B's G2 must succeed"
+            );
+            assert!(
+                snapshot.contains(&"g2_fail:member-a".to_string()),
+                "A's G2 must fail"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry because C is nonterminal.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    #[test]
+    fn c4_g1_failure_halts_queue_but_active_sibling_finishes_truthfully() {
+        // Crucible 4: G1 failure with active sibling proving pre-effect failure
+        // on A halts queued C while already-active B completes truthfully and
+        // no GroupJoin occurs.
+        // Semantic order: B, A, C (B=0, A=1, C=2). N=2.
+        let h = C3A1GroupHarness::new("c4-g1-fail-overlap", &["b", "a", "c"]);
+        h.set_peer_count(1);
+
+        let trace = ReplayTrace::new();
+        let mut replay_authority =
+            ObservingReplayAuthority::with_fail_points(trace.clone(), &["member-a"], &[]);
+
+        std::thread::scope(|s| {
+            let handle =
+                s.spawn(|| h.run_group_with_authority("eval-c4-g1fail", 2, &mut replay_authority));
+
+            // B launches and enters provider barrier.
+            h.wait_member_active("b");
+
+            // Wait deterministically for A's G1 failure to be recorded in trace.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !trace.has("g1_fail:member-a") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A's G1 failure was not recorded in trace within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // A and C never entered provider.
+            assert!(
+                !h.has_entered("a"),
+                "A must never enter provider on G1 failure"
+            );
+            assert!(
+                !h.has_entered("c"),
+                "C must never enter provider after fatal halt"
+            );
+
+            // Release B so B finishes truthfully.
+            h.release_member("b");
+
+            let result = handle.join().expect("group execution must complete");
+
+            // Result fails closed as ReplayPersistenceUnavailable for member-a.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::ReplayPersistenceUnavailable {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected ReplayPersistenceUnavailable for member-a, got {result:?}"
+            );
+
+            // B entered and succeeded.
+            assert!(h.has_entered("b"), "B must have entered provider");
+            assert!(h.has_member_outcome("b"), "B OutcomeEntry must succeed");
+
+            // A and C never entered provider.
+            assert!(!h.has_entered("a"), "A must never have entered provider");
+            assert!(!h.has_entered("c"), "C must never have entered provider");
+
+            // Replay trace: G0 for all 3, G1 for B, G1_fail for A, G2 for B, NO G1 for C.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-b".to_string()));
+            assert!(snapshot.contains(&"g1_fail:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2:member-b".to_string()),
+                "B's G2 must succeed"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry in Trail.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    #[test]
+    fn c4_outcome_durability_failure_does_not_contaminate_active_sibling() {
+        // Crucible 5: Outcome durability failure with active sibling proving
+        // Trail failure on A halts queued C while already-active B completes
+        // truthfully without audit contamination.
+        // Semantic order: B, A, C (B=0, A=1, C=2). N=2.
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let h = C3A1GroupHarness::new("c4-durability-fail-overlap", &["b", "a", "c"]);
+        h.set_peer_count(2);
+
+        let trace = ReplayTrace::new();
+        let outcome_error_signal = Arc::new(AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            let trace_clone = trace.clone();
+            let h_ref = &h;
+            let signal_clone = Arc::clone(&outcome_error_signal);
+            let handle = s.spawn(move || {
+                let mut trail = dispatch::RecordingTrail::new();
+                trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
+                    "injected A OutcomeEntry durability failure".to_owned(),
+                ));
+                trail.outcome_error_signal = Some(signal_clone);
+                let mut replay_authority = ObservingReplayAuthority::with_trace(&[], trace_clone);
+                let result = h_ref.run_group_with_trail_and_authority(
+                    "eval-c4-durability-overlap",
+                    2,
+                    &mut trail,
+                    &mut replay_authority,
+                );
+                (result, trail.outcome_entries, trail.group_join_entries)
+            });
+
+            // B and A both active in barrier.
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("b"), "B must be active");
+            assert!(h.has_active("a"), "A must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release A first (A's OutcomeEntry fails).
+            h.release_member("a");
+
+            // Wait deterministically for A's outcome error to be consumed.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !outcome_error_signal.load(Ordering::SeqCst) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A's outcome error signal was not set within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Release B (B's OutcomeEntry succeeds).
+            h.release_member("b");
+
+            let (result, outcome_entries, group_join_entries) =
+                handle.join().expect("group execution must complete");
+
+            // Group result identifies member-a (NOT member-b).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::AuditFailed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected AuditFailed for member-a, got {result:?}"
+            );
+
+            // B entered provider and has a truthful successful OutcomeEntry.
+            assert!(h.has_entered("b"), "B must have entered provider");
+            assert_eq!(
+                outcome_entries.len(),
+                1,
+                "only B's outcome should be durably recorded"
+            );
+            assert_eq!(outcome_entries[0].action_id, "member-b");
+            assert_eq!(outcome_entries[0].status, "succeeded");
+
+            // A's outcome durability failed.
+            assert!(
+                !outcome_entries.iter().any(|e| e.action_id == "member-a"),
+                "A's outcome must not be in recorded trail"
+            );
+
+            // C never entered provider.
+            assert!(!h.has_entered("c"), "C must never enter provider");
+
+            // Replay trace: G0 for all 3, G1 for B and A, G2 for B only, NO G1 for C.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-b".to_string()));
+            assert!(snapshot.contains(&"g1:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2:member-b".to_string()),
+                "B's G2 must succeed"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry.
+            assert!(
+                group_join_entries.is_empty(),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    #[test]
+    fn c4_worker_panic_under_n2_pressure_releases_slot() {
+        // Crucible 6: Worker panic under real N=2 pressure proving panic on A
+        // maps to Uncertain, releases slot, queued C launches, sibling B
+        // continues, and GroupJoin evaluates all members.
+        // N=2 with members A, B, C.
+        let h = C3A1GroupHarness::new("c4-panic-n2-pressure", &["a", "b", "c"]);
+        h.set_peer_count(2);
+
+        let _guard = PanicGuard::target(0);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c4-panic-n2", 2));
+
+            // A panics immediately on spawn. A completes Stage C as Uncertain.
+            // A's slot is freed, so queued C launches.
+            // B and C are now active in the barrier (peer_count=2).
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("b"), "B must be active");
+            assert!(h.has_active("c"), "C must be active");
+
+            // Release B and C.
+            h.release_member("b");
+            h.release_member("c");
+
+            let (result, trace) = handle.join().expect("group must complete without panic");
+
+            // A's Uncertain result is selected as final group non-success.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::Uncertain {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected Uncertain for member-a, got {result:?}"
+            );
+
+            // B and C entered provider and succeeded.
+            assert!(h.has_entered("b"), "B must have entered provider");
+            assert!(h.has_entered("c"), "C must have entered provider");
+
+            // All 3 members have outcomes in Trail.
+            let outcome_ids = h.outcome_ids();
+            assert_eq!(outcome_ids.len(), 3);
+            assert!(outcome_ids.contains(&"member-a".to_string()));
+            assert!(outcome_ids.contains(&"member-b".to_string()));
+            assert!(outcome_ids.contains(&"member-c".to_string()));
+
+            // Replay trace contains G2 for all 3 members.
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+            assert!(trace.contains(&"g2:member-c".to_string()));
+
+            // GroupJoin entry IS present with joined=false.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":false"));
+        });
+    }
+
+    #[test]
+    fn c4_same_provider_overlap_and_inverse_completion_preserves_semantic_order() {
+        // Crucible 8: Same-provider hostility proof confirming overlapping
+        // ephemeral sessions preserve semantic order under inverse completion.
+        let barrier_dir = std::env::temp_dir().join(format!(
+            "tethers-c4-same-provider-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&barrier_dir).unwrap();
+        let left = barrier_test_provider(&barrier_dir, "tethers-stdio-fixture");
+        let right = barrier_test_provider(&barrier_dir, "tethers-stdio-fixture");
+
+        let (tx, rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            for (action_index, provider) in [(0, left), (1, right)] {
+                let sender = tx.clone();
+                scope.spawn(move || {
+                    worker_invoke_provider(
+                        WorkerInput {
+                            action_index,
+                            arguments: json!({"message": format!("member-{action_index}")}),
+                            provider,
+                            tool_name: "fixture_ping".to_owned(),
+                            remaining: Duration::from_secs(15),
+                        },
+                        sender,
+                    )
+                });
+            }
+            drop(tx);
+
+            // Wait until both provider child processes reach active state in the barrier.
+            // This proves true concurrency / overlap with same provider identity.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            loop {
+                let active = std::fs::read_dir(&barrier_dir)
+                    .unwrap()
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.file_name().to_string_lossy().starts_with("active-"))
+                    .count();
+                if active >= 2 {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "both same-provider child processes did not reach tools/call"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Set outcome for member-1 to failed and member-0 to failed.
+            std::fs::write(barrier_dir.join("outcome-member-1"), "failed").unwrap();
+            std::fs::write(barrier_dir.join("outcome-member-0"), "failed").unwrap();
+
+            // Release member 1 first (inverse physical completion order).
+            std::fs::write(barrier_dir.join("release-member-1"), "release").unwrap();
+            let first_res = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert_eq!(
+                first_res.action_index, 1,
+                "member 1 must complete first physically"
+            );
+            assert!(
+                first_res.provider_result.is_err(),
+                "member 1 must be failed"
+            );
+
+            // Release member 0 second.
+            std::fs::write(barrier_dir.join("release-member-0"), "release").unwrap();
+            let second_res = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert_eq!(
+                second_res.action_index, 0,
+                "member 0 must complete second physically"
+            );
+            assert!(
+                second_res.provider_result.is_err(),
+                "member 0 must be failed"
+            );
+
+            // Evaluate semantic first non-success in member order.
+            let member_states = vec![
+                GroupMemberState::Terminal {
+                    action_index: 0,
+                    action_id: "member-0".to_owned(),
+                    semantic_position: dispatch::SemanticPosition {
+                        action_ordinal: 0,
+                        group_id: Some("together-1".to_owned()),
+                        member_ordinal: Some(0),
+                        phase: dispatch::SemanticPhase::Member,
+                    },
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Failed {
+                            evaluation_id: "eval-c4".to_owned(),
+                            action_id: "member-0".to_owned(),
+                            reason: "controlled failure 0".to_owned(),
+                            execution_id: None,
+                        },
+                    ),
+                },
+                GroupMemberState::Terminal {
+                    action_index: 1,
+                    action_id: "member-1".to_owned(),
+                    semantic_position: dispatch::SemanticPosition {
+                        action_ordinal: 1,
+                        group_id: Some("together-1".to_owned()),
+                        member_ordinal: Some(1),
+                        phase: dispatch::SemanticPhase::Member,
+                    },
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Failed {
+                            evaluation_id: "eval-c4".to_owned(),
+                            action_id: "member-1".to_owned(),
+                            reason: "controlled failure 1".to_owned(),
+                            execution_id: None,
+                        },
+                    ),
+                },
+            ];
+
+            let (selected_id, _) = first_non_success_member_step(member_states)
+                .expect("must select non-success member");
+            assert_eq!(
+                selected_id, "member-0",
+                "semantic member 0 must be selected as first non-success despite member 1 completing first physically"
+            );
+        });
+
+        std::fs::remove_dir_all(&barrier_dir).unwrap();
+    }
+
+    #[test]
+    fn c4_repeated_inverse_completion_has_no_state_leak() {
+        // Crucible 9: Deterministic repeated stress loop (20 iterations)
+        // verifying no state or capacity leaks under inverse completion.
+        for iteration in 0..20 {
+            let eval_id = format!("eval-c4-stress-{iteration}");
+            let h = C3A1GroupHarness::new(&format!("c4-stress-{iteration}"), &["a", "b", "c"]);
+            h.set_peer_count(2);
+            h.set_member_outcome("a", "failed");
+            h.set_member_outcome("b", "failed");
+            h.set_member_outcome("c", "success");
+
+            std::thread::scope(|s| {
+                let handle = s.spawn(|| h.run_group_with_trace(&eval_id, 2));
+
+                h.wait_barrier_active_count(2);
+                assert!(h.has_active("a"));
+                assert!(h.has_active("b"));
+                assert!(!h.has_entered("c"));
+
+                // Physical completion order: B first, C second, A last.
+                h.release_member("b");
+                h.wait_member_outcome("b");
+
+                h.wait_member_active("c");
+                assert!(h.has_active("a"));
+                assert!(h.has_active("c"));
+
+                h.release_member("c");
+                h.wait_member_outcome("c");
+
+                h.release_member("a");
+
+                let (result, trace) = handle.join().expect("iteration must complete");
+
+                assert!(
+                    matches!(
+                        result,
+                        ExecutionServiceResult::Failed {
+                            ref action_id,
+                            ..
+                        } if action_id == "member-a"
+                    ),
+                    "iteration {iteration}: expected Failed for member-a, got {result:?}"
+                );
+
+                let outcome_ids = h.outcome_ids();
+                assert_eq!(
+                    outcome_ids,
+                    vec!["member-b", "member-c", "member-a"],
+                    "iteration {iteration}: outcome order mismatch"
+                );
+
+                assert!(trace.contains(&"g2:member-a".to_string()));
+                assert!(trace.contains(&"g2:member-b".to_string()));
+                assert!(trace.contains(&"g2:member-c".to_string()));
+
+                assert_eq!(
+                    h.entry_kinds().last(),
+                    Some(&"group_join".to_owned()),
+                    "iteration {iteration}: GroupJoin must be last"
+                );
+                assert!(
+                    h.trail_content().contains("\"joined\":false"),
+                    "iteration {iteration}: joined must be false"
+                );
+            });
         }
     }
 }
