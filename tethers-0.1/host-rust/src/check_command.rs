@@ -326,6 +326,15 @@ fn check_providers(prepared: &PreparedRuntime) -> (Vec<Value>, Option<CheckFailu
         let identity = provider.identity.clone();
         let stdio = &provider.stdio_config;
 
+        // The expected MCP server name comes from the trusted capability
+        // manifest binding, matching the normal host run path. It is never the
+        // provider's configured identity.
+        let expected_server_name = provider
+            .capabilities
+            .first()
+            .map(|c| c.verified_manifest.manifest().binding.server_name.as_str())
+            .unwrap_or("");
+
         let mut mcp = match ManagedProvider::launch(
             &stdio.command,
             &stdio.args,
@@ -355,7 +364,7 @@ fn check_providers(prepared: &PreparedRuntime) -> (Vec<Value>, Option<CheckFailu
             }
         };
 
-        if let Err(e) = mcp.initialize(&stdio.protocol_version, &stdio.provider_config.identity) {
+        if let Err(e) = mcp.initialize(&stdio.protocol_version, expected_server_name) {
             if is_interrupted() {
                 mcp.close();
                 return (results, Some(CheckFailure::interrupted()));
@@ -757,5 +766,116 @@ mod tests {
             assert_eq!(value["exit_code"], status.exit_code(), "{code}");
             assert_eq!(value["error"]["code"], code);
         }
+    }
+
+    /// Build a PreparedRuntime whose provider identity deliberately differs
+    /// from its trusted manifest `binding.server_name`, matching the normal
+    /// host run path's separation of provider identity from MCP server name.
+    fn check_server_name_runtime(mode: &str) -> (PreparedRuntime, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "tethers-check-server-name-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("tethers")).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+
+        std::fs::write(
+            dir.join("tethers/ping.tether"),
+            "when event.test if true do fixture.ping\n",
+        )
+        .unwrap();
+
+        let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let mut manifest: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+        manifest["provider"]["identity"] = serde_json::json!("provider-a");
+        manifest["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+        let (_, digest) = crate::manifest::canonicalize_and_digest(&manifest.to_string()).unwrap();
+        manifest["digest"] = serde_json::json!(digest);
+        let manifest_final = serde_json::to_string_pretty(&manifest).unwrap();
+        std::fs::write(dir.join("manifests/fixture-ping.json"), &manifest_final).unwrap();
+
+        let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts")
+            .join("tethers-stdio-fixture.ps1");
+
+        let config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "test.check-server-name",
+                "version": "1",
+                "tethers": [{
+                    "id": "ping",
+                    "version": "1",
+                    "source_path": "tethers/ping.tether"
+                }],
+                "capability_requirements": [
+                    {"name": "fixture.ping", "version": 1, "reason": "server-name regression"}
+                ]
+            },
+            "providers": [{
+                "id": "provider-a",
+                "display_name": "Provider A",
+                "transport": {
+                    "kind": "stdio",
+                    "command": "pwsh.exe",
+                    "args": [
+                        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                        script.to_str().unwrap(),
+                        "-Mode", mode
+                    ],
+                    "protocol_version": "2025-11-25"
+                },
+                "capabilities": [{
+                    "name": "fixture.ping",
+                    "version": 1,
+                    "manifest_path": "manifests/fixture-ping.json",
+                    "pinned_digest": digest
+                }]
+            }],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    {"name": "fixture.ping", "version": 1, "decision": "allow"}
+                ]
+            }
+        });
+
+        let config_path = dir.join("tethers-config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+
+        let loaded = load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        (prepared, dir)
+    }
+
+    #[test]
+    fn j13a_check_provider_uses_manifest_server_name_not_identity() {
+        let (prepared, dir) = check_server_name_runtime("valid");
+        let (results, failure) = check_providers(&prepared);
+        assert!(
+            failure.is_none(),
+            "check must succeed when configured identity ({}) differs from manifest \
+             server_name (tethers-stdio-fixture): {:?} {:?}",
+            prepared.providers()[0].identity,
+            failure,
+            results
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["identity"], "provider-a");
+        assert_eq!(results[0]["status"], "available");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn j13a_check_provider_rejects_wrong_reported_server_name() {
+        let (prepared, dir) = check_server_name_runtime("server-name-mismatch");
+        let (_results, failure) = check_providers(&prepared);
+        let failure = failure.expect("a provider reporting a non-manifest server name must fail");
+        assert_eq!(failure.code, "PROVIDER_INITIALIZE_FAILED");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
