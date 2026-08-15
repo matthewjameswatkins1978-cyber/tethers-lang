@@ -8985,19 +8985,27 @@ mod tests {
         // - B's outcome is truthfully Completed (NOT AuditFailed)
         // - Group result identifies member-a (NOT member-b)
         // - No GroupJoinEntry (C remains nonterminal)
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
         let h = C3A1GroupHarness::new("c3a3-n2-bac", &["b", "a", "c"]);
         h.set_peer_count(2);
 
         let trace = ReplayTrace::new();
+        // Deterministic signal: set to true when A's append_outcome fails.
+        let outcome_error_signal = Arc::new(AtomicBool::new(false));
 
         std::thread::scope(|s| {
             let trace_clone = trace.clone();
             let h_ref = &h;
+            let signal_clone = Arc::clone(&outcome_error_signal);
             let handle = s.spawn(move || {
                 let mut trail = dispatch::RecordingTrail::new();
                 trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
                     "injected A OutcomeEntry durability failure".to_owned(),
                 ));
+                // Signal the main thread when append_outcome consumes the error.
+                trail.outcome_error_signal = Some(signal_clone);
                 let mut replay_authority = ObservingReplayAuthority::with_trace(&[], trace_clone);
                 let result = h_ref.run_group_with_trail_and_authority(
                     "eval-c3a3-n2-bac",
@@ -9017,10 +9025,17 @@ mod tests {
             // Release A first — A's outcome durability will fail (takes injected error).
             h.release_member("a");
 
-            // Wait for A's provider to return and coordinator to process A's
-            // result before releasing B.  The barrier script does not remove
-            // the active file, so we use a timed sleep instead of polling.
-            std::thread::sleep(Duration::from_millis(500));
+            // Wait deterministically for A's fatal Stage C durability failure
+            // to be observed by the coordinator.  The signal is set inside
+            // append_outcome when injected_outcome_error is consumed.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !outcome_error_signal.load(Ordering::SeqCst) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A's outcome error signal was not set within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
 
             // Release B — B's outcome durability succeeds (error already consumed).
             h.release_member("b");
