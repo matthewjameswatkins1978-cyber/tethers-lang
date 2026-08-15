@@ -1,4 +1,4 @@
-# C3-A4 — External Bounded-Concurrency Configuration
+# C3-V1 — Independent Final Architectural Review
 
 Control contract: `1`
 
@@ -6,78 +6,71 @@ Status: `COMPLETE`
 
 Task colour: `Red`
 
-Owner: `C3-A4 Configuration Integration Agent`
+Owner: `Independent C3 Verification Agent`
 
-Route: `C3-A4 configuration/default/validation — awaiting Lucy review`
+Route: `Independent verification — awaiting Lucy acceptance`
 
-Base commit: `ecb9a9bb4f68731f378f055984de91f5399ea5a2`
+Base commit: `e3df16e44cbbe295a950faa918b10f19772b9892`
 
-Implementation checkpoint: `7764ca9921e23bafbb37487f5bc72157b2d575d9`
+Implementation checkpoint: `e3df16e44cbbe295a950faa918b10f19772b9892`
 
-Worker note: `docs/worker-notes/2026-08-15-c3-a4-concurrency-config.md`
+Worker note: `docs/worker-notes/2026-08-15-c3-v1-independent-review.md`
 
 Updated: 2026-08-15
 
-- C3-A1, A2, A3 accepted by Lucy.
-- This packet owns ONLY external configuration/default/validation wiring.
-- Scheduler semantics are frozen.
-- C3-V1 is NOT authorised.
-
 ## Objective
 
-Expose `max_active_together_invocations` as host configuration with sensible defaults and validation.
+Independent reviewer verifies the entire C3 implementation against the accepted bounded-concurrency design, the frozen A3a inputs, and the required proof matrix.
 
 ## Relevant background and existing behaviour
 
-- C3-A1 introduced the bounded launch window `max_active_together_invocations` and C3-A2 proved the deadline isolation and G1 boundaries.
+- C3-A1 introduced the bounded launch window `max_active_together_invocations`.
+- C3-A2 proved the deadline isolation and G1 boundaries.
 - C3-A3 proved the failure boundaries and corrected the audit_failure contamination defect.
-- `RuntimeConfig` is strict `#[serde(deny_unknown_fields)]`.
-- `PreparedRuntime` is immutable runtime state.
-- `execute_group_concurrent` currently defaults to `member_indexes.len().max(1)`.
-- `execute_group_concurrent_with_limit` is the accepted bounded engine.
+- C3-A4 exposed `max_active_together_invocations` as host configuration with defaults and validation.
+- C3 implementation is frozen for review. No production change is authorised. C4 is NOT authorised.
 
 ## Required behaviour
 
-1. Add ONE optional top-level runtime configuration field: `max_active_together_invocations`.
-2. Freeze default: `DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS = 2`.
-3. Validate: N >= 1, reject 0, use existing `RuntimeConfig InvalidValue` error model.
-4. Backward compatibility: existing configs that omit the field must continue to parse.
-5. `PreparedRuntime` must carry the validated value explicitly with read-only accessor.
-6. `execute_group_concurrent` wrapper must use `service.runtime.max_active_together_invocations()` instead of `member_indexes.len().max(1)`.
+1. Verify all 20 review matrix items against the accepted design.
+2. Verify all 12 future-proof matrix items have genuine test proof.
+3. Run focused C3 test suites (c3_a1, c3_a2, c3_a3, c3_a4).
+4. Run full verification suite.
+5. Inspect cumulative production diff for unexplained drift.
+6. Inspect test quality for each C3 family.
+7. Write worker note with complete evidence.
 
 ## Relevant components
 
+- `tethers-0.1/host-rust/src/host_execution.rs`
 - `tethers-0.1/host-rust/src/runtime_config.rs`
 - `tethers-0.1/host-rust/src/configured_runtime.rs`
-- `tethers-0.1/host-rust/src/host_execution.rs`
+- `tethers-0.1/host-rust/src/dispatch.rs`
+- `tethers-0.1/host-rust/src/replay_runtime.rs`
 
 ## Frozen decisions and invariants
 
-- Scheduler semantics are frozen.
-- C3-V1 is NOT authorised.
-- No new terminal taxonomy.
-- No environment variable fallback, no CLI override, no config hot reload.
-- No Trail schema changes for a configuration knob.
+- C3 implementation is frozen for review.
+- No production change is authorised.
+- C4 is NOT authorised.
+- Any discovered defect is a BLOCKER to be reported, not silently corrected.
 
 ## Acceptance criteria
 
-1. Omitted field defaults to 2.
-2. Explicit 1 accepted.
-3. Explicit 2 accepted.
-4. Larger value (e.g. 8) accepted.
-5. Zero rejected with `RuntimeConfigErrorCode::InvalidValue` and field `/max_active_together_invocations`.
-6. Wrong type rejected (e.g. "2", 2.5, null).
-7. Default materialises in `PreparedRuntime` as 2.
-8. Explicit value materialises in `PreparedRuntime`.
-9. Physical default-N=2 proof using `execute_group_concurrent` wrapper.
-10. Physical explicit-N=1 proof using `execute_group_concurrent` wrapper.
+1. All 20 review matrix items verified PASS.
+2. All 12 future-proof matrix items have genuine test proof.
+3. Focused C3 tests all pass.
+4. Full suite passes.
+5. No unexplained production drift in cumulative diff.
+6. No semantic contract violations, trust boundary breaches, or regressions.
+7. Worker note written with complete evidence.
 
 ## Required verification
 
-1. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a4 --test-threads=1`
-2. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a3 --test-threads=1`
-3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a2 --test-threads=1`
-4. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a1 --test-threads=1`
+1. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a1 --test-threads=1`
+2. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a2 --test-threads=1`
+3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a3 --test-threads=1`
+4. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a4 --test-threads=1`
 5. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`
 6. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml`
 7. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1`
@@ -86,21 +79,13 @@ Expose `max_active_together_invocations` as host configuration with sensible def
 
 ## Forbidden changes
 
-- Scheduler semantics
-- C3-A1/A2/A3 test semantics
-- C3-V1
-- New terminal taxonomy
-- Worker pools, semaphore, queue settings
-- Environment variable, CLI override, config hot reload
-- Trail schema changes
-- New source-language syntax
-- Host-global or provider-aware scheduling
+- No Rust modification
+- No production code changes
+- Only docs/CURRENT_CLINE_TASK.md and docs/worker-notes/2026-08-15-c3-v1-independent-review.md may be created/modified
 
 ## Stop conditions
 
-- A required production change outside the authorised files is needed.
-- A frozen design invariant cannot be satisfied without redesign.
-- Repeated failure rule: 2 materially similar failed attempts on the same underlying problem.
+- Any discovered semantic defect, replay defect, race, capacity leak, premature GroupJoin, test that does not prove claimed invariant, unbounded effect path, config bypass, stale audit contamination, or nondeterministic correctness proof.
 
 ## Expected pre-existing changes
 
@@ -120,8 +105,31 @@ Expose `max_active_together_invocations` as host configuration with sensible def
 
 ## Requested outcome
 
-1. Add ONE optional top-level runtime configuration field `max_active_together_invocations` with serde default 2, validated N >= 1.
-2. Wire the validated value through `PreparedRuntime` with read-only accessor.
-3. Update `execute_group_concurrent` wrapper to use the configured value.
-4. Prove physically that the default N=2 and explicit N=1 control real group execution through the production wrapper.
-5. All existing C3-A1/A2/A3 tests remain green.
+1. Verify C3 satisfies the accepted bounded-concurrency design without changing Tethers source semantics, replay truthfulness, deterministic result selection, or coordinator ownership boundaries.
+2. Run all required verification.
+3. Write complete worker note with evidence.
+4. Push review branch.
+
+## Primary question
+
+Does C3 actually satisfy the accepted bounded-concurrency design WITHOUT changing Tethers source semantics, replay truthfulness, deterministic result selection or coordinator ownership boundaries?
+
+**Answer: YES.** All 20 review matrix items verified. All 12 future-proof matrix items pass. No defects found.
+
+## Verdict
+
+**C3-V1 PASS — REVIEW BRANCH PUBLISHED**
+
+## Evidence
+
+- 20-point review matrix: all PASS (see worker note)
+- Future-proof test matrix: 12/12 PASS
+- c3_a1: 3 tests PASS
+- c3_a2: 4 tests PASS
+- c3_a3: 7 tests PASS
+- c3_a4: 12 tests PASS
+- Full suite: 1540 tests PASS
+- cargo fmt: PASS
+- cargo check: PASS
+- git diff --check: PASS
+- Cumulative production diff: 4 files, all REQUIRED BY DESIGN or TEST SUPPORT ONLY
