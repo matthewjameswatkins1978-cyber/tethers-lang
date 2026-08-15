@@ -12,7 +12,7 @@ use crate::dispatch::{self, DispatchReadyAction};
 use crate::executor::CapabilityExecutor;
 
 use crate::manifest::BindingKind;
-use crate::outcome::{self, ProductionMonotonicClock};
+use crate::outcome::{self, MonotonicClock, ProductionMonotonicClock};
 use crate::policy::{self, PermissionDecision, ProposedAction};
 use crate::replay_runtime::FileReplayAuthority;
 use crate::resolver::{self, ProviderAvailability, ResolvedCapability};
@@ -23,6 +23,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use std::time::Duration;
 use tethers_reference_host::child_process;
 use tethers_reference_host::engine_stdio::{EngineError, EngineSession, PlannerResponseWire};
@@ -1027,37 +1028,94 @@ impl<'a> HostExecutionService<'a> {
                 };
             }
         };
-        crate::plan_execution::execute_plan(
-            response,
-            &items,
-            &actions,
-            &evaluation_id,
-            &mut trail,
-            |response: &mut Value,
-             action_index: usize,
-             trail: &mut dyn dispatch::Trail,
-             _position: &dispatch::SemanticPosition| {
-                let proposed = match crate::extract_proposed_action_at(response, action_index) {
-                    Ok(proposed) => proposed,
-                    Err(error) => {
-                        return Err(ExecutionServiceResult::InvalidData {
-                            message: format!("invalid planned Action: {error}"),
-                        });
+
+        // Execute the plan: Sequential items use the existing serial path,
+        // Group items use the concurrent C2-A3a path.
+        let mut response = response;
+        let mut last_succeeded: Option<(String, Option<String>)> = None;
+
+        for item in &items {
+            match item {
+                crate::plan_execution::PlanItem::Sequential { action_index } => {
+                    let action_id = crate::plan_execution::action_id_of(&actions, *action_index);
+                    let _position = dispatch::SemanticPosition {
+                        action_ordinal: *action_index as u64,
+                        group_id: None,
+                        member_ordinal: None,
+                        phase: dispatch::SemanticPhase::Action,
+                    };
+                    let proposed =
+                        match crate::extract_proposed_action_at(&mut response, *action_index) {
+                            Ok(proposed) => proposed,
+                            Err(error) => {
+                                return ExecutionServiceResult::InvalidData {
+                                    message: format!("invalid planned Action: {error}"),
+                                };
+                            }
+                        };
+                    let step = match self.execute_one_action(
+                        &mut response,
+                        &actions[*action_index],
+                        proposed,
+                        input,
+                        provider_sessions,
+                        provider_availability,
+                        approvals,
+                        &mut trail,
+                        replay_authority,
+                    ) {
+                        Ok(result) => crate::plan_execution::ActionStep::Boundary(result),
+                        Err(result) => crate::plan_execution::ActionStep::Stopped(result),
+                    };
+                    if crate::plan_execution::step_succeeded(&step) {
+                        last_succeeded = Some((
+                            action_id,
+                            crate::plan_execution::succeeded_execution_id(&step),
+                        ));
+                        continue;
                     }
+                    return crate::plan_execution::aggregate_step(step, &evaluation_id, &action_id);
+                }
+                crate::plan_execution::PlanItem::Group {
+                    group_id,
+                    member_indexes,
+                } => {
+                    return execute_group_concurrent(
+                        group_id,
+                        member_indexes,
+                        &actions,
+                        &mut response,
+                        &evaluation_id,
+                        &mut trail,
+                        self,
+                        input,
+                        provider_sessions,
+                        provider_availability,
+                        approvals,
+                        replay_authority,
+                    );
+                }
+            }
+        }
+
+        // All items succeeded — return Completed.
+        let (action_id, execution_id) = match last_succeeded {
+            Some(identity) => identity,
+            None => {
+                return ExecutionServiceResult::AuditFailed {
+                    evaluation_id,
+                    action_id: String::new(),
+                    reason: "plan completed without any succeeded Action".to_owned(),
+                    execution_id: None,
                 };
-                self.execute_one_action(
-                    response,
-                    &actions[action_index],
-                    proposed,
-                    input,
-                    provider_sessions,
-                    provider_availability,
-                    approvals,
-                    trail,
-                    replay_authority,
-                )
-            },
-        )
+            }
+        };
+        ExecutionServiceResult::Completed {
+            evaluation_id,
+            action_id,
+            response,
+            execution_id,
+        }
     }
 
     /// Run one planned Action through the full production boundary: scope
@@ -1477,6 +1535,856 @@ fn refresh_prepared_catalogue(
 }
 
 // ===========================================================================
+// Concurrent group execution — C2-A3a
+// ===========================================================================
+
+/// Tracks each Together group member through its lifecycle.
+///
+/// Every member from `member_indexes` gets exactly one state slot from the
+/// start.  The state progresses: PreparationTerminal | Prepared → Launched →
+/// Terminal.  No member may disappear or be silently skipped.
+pub(crate) enum GroupMemberState {
+    /// Preparation failed before the provider invocation boundary.
+    /// This member has a final terminal classification and will not be
+    /// launched.  Trail and response have been updated.
+    PreparationTerminal {
+        action_index: usize,
+        action_id: String,
+        semantic_position: dispatch::SemanticPosition,
+        step: crate::plan_execution::ActionStep,
+    },
+
+    /// Serial preparation succeeded.  Ready for Stage B launch.
+    Prepared {
+        action_index: usize,
+        action_id: String,
+        semantic_position: dispatch::SemanticPosition,
+        ready: dispatch::DispatchReadyAction,
+        prepared: crate::application::PreparedInvoke,
+        admission: Option<Box<dyn crate::replay_runtime::ReplayAdmissionGuard>>,
+        deadline: Duration,
+    },
+
+    /// Worker thread has been launched.  Coordinator retains the
+    /// DispatchReadyAction for Stage C processing.  `ready` and `prepared`
+    /// are taken out via `Option::take` for Stage C processing.
+    Launched {
+        action_index: usize,
+        action_id: String,
+        semantic_position: dispatch::SemanticPosition,
+        ready: Option<dispatch::DispatchReadyAction>,
+        prepared: Option<crate::application::PreparedInvoke>,
+        admission: Option<Box<dyn crate::replay_runtime::ReplayAdmissionGuard>>,
+    },
+
+    /// Owns no domain object while a Prepared member is being moved into the
+    /// next state.  This is a Rust ownership transition, not a semantic state.
+    Transitioning {
+        action_index: usize,
+        action_id: String,
+        semantic_position: dispatch::SemanticPosition,
+    },
+
+    /// Member has reached its final terminal classification.
+    Terminal {
+        action_index: usize,
+        action_id: String,
+        semantic_position: dispatch::SemanticPosition,
+        step: crate::plan_execution::ActionStep,
+    },
+}
+
+/// Material sent to a worker thread for provider invocation.
+///
+/// Contains only what the worker needs: arguments, provider, tool name,
+/// deadline.  The `DispatchReadyAction` stays coordinator-owned for Stage C.
+pub(crate) struct WorkerInput {
+    pub action_index: usize,
+    pub arguments: Value,
+    pub provider: crate::configured_runtime::PreparedProvider,
+    pub tool_name: String,
+    pub remaining: Duration,
+}
+
+/// Result returned from a worker thread through an mpsc channel.
+pub(crate) struct WorkerResult {
+    pub action_index: usize,
+    pub provider_result: Result<Value, outcome::ProviderDiagnostic>,
+}
+
+// Test-only cross-thread panic injection seam.
+//
+// Stores the `action_index` of the worker that should panic.  `usize::MAX`
+// means disabled.  Set before calling `execute_group_concurrent`; the value
+// is visible to the spawned worker threads.
+#[cfg(test)]
+static INJECT_WORKER_PANIC_ACTION_INDEX: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(usize::MAX);
+
+/// Perform the full Socket establishment / discovery / invocation path in a
+/// worker thread.  Uses the same trusted contract as the serial path:
+/// `RetainedProviderSession::establish` → `refresh_prepared_catalogue` →
+/// `session.tools_call` → `session.close`.
+///
+/// This function does NOT touch Trail, replay, response, or any
+/// coordinator-owned state.  It is a pure provider invocation carrier.
+///
+/// Worker panics are caught via `catch_unwind` to prevent the coordinator
+/// from hanging when a worker thread terminates without sending its result.
+pub(crate) fn worker_invoke_provider(input: WorkerInput, tx: mpsc::Sender<WorkerResult>) {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        #[cfg(test)]
+        {
+            let target = INJECT_WORKER_PANIC_ACTION_INDEX.load(std::sync::atomic::Ordering::SeqCst);
+            if target == input.action_index {
+                panic!("injected C2-A3a worker panic");
+            }
+        }
+        worker_invoke_inner(&input)
+    }));
+    let provider_result = match result {
+        Ok(r) => r,
+        Err(_) => Err(outcome::ProviderDiagnostic::NoFinalResponse),
+    };
+    let _ = tx.send(WorkerResult {
+        action_index: input.action_index,
+        provider_result,
+    });
+}
+
+fn worker_invoke_inner(input: &WorkerInput) -> Result<Value, outcome::ProviderDiagnostic> {
+    let config = &input.provider.stdio_config;
+    let expected_server_name = input
+        .provider
+        .capabilities
+        .first()
+        .map(|c| c.verified_manifest.manifest().binding.server_name.as_str())
+        .unwrap_or("");
+
+    // 1. Establish ephemeral session (launch + initialize).
+    let mut session = match RetainedProviderSession::establish(SocketEstablishment {
+        command: &config.command,
+        args: &config.args,
+        working_directory: &input.provider.working_directory,
+        protocol_version: &config.protocol_version,
+        server_name: expected_server_name,
+        identity: &input.provider.identity,
+    }) {
+        Ok(session) => session,
+        Err(error) => {
+            return Err(classify_worker_session_error(&error));
+        }
+    };
+
+    // 2. Discover / refresh catalogue.
+    match refresh_prepared_catalogue(&input.provider, &mut session) {
+        Ok(true) => {}
+        Ok(false) => {
+            session.close();
+            return Err(outcome::ProviderDiagnostic::NoFinalResponse);
+        }
+        Err(error) => {
+            session.close();
+            return Err(classify_worker_session_error(&error));
+        }
+    }
+
+    // 3. Invoke via the normal Socket contract.
+    let result = session.tools_call(&input.tool_name, &input.arguments, input.remaining);
+
+    // 4. Close the ephemeral session.
+    session.close();
+
+    result.map_err(|error| classify_provider_error(&error))
+}
+
+fn classify_worker_session_error(error: &StdioProviderError) -> outcome::ProviderDiagnostic {
+    match error {
+        StdioProviderError::ExplicitProviderError(_) => {
+            outcome::ProviderDiagnostic::ExplicitProviderError
+        }
+        StdioProviderError::Interrupted => outcome::ProviderDiagnostic::ProtocolInterrupted,
+        StdioProviderError::LaunchFailed { .. } => outcome::ProviderDiagnostic::NoFinalResponse,
+        _ => outcome::ProviderDiagnostic::NoFinalResponse,
+    }
+}
+
+/// Execute one `together` group with real provider invocation overlap.
+///
+/// This is the C2-A3a concurrent execution path.  It replaces the serial
+/// `execute_plan` call for Group items only.  Sequential items continue
+/// using the existing serial path.
+///
+/// ## Execution phases
+///
+/// **STAGE A — Serial deterministic preparation** (coordinator-owned):
+/// For every member, in Runtime Plan order: scope, policy, resolution,
+/// replay admission, G0 intent, Trail intent.  No deadline, no G1, no
+/// provider effect.  Prep failures are recorded immediately as terminal
+/// states with exact classification.
+///
+/// **STAGE B — Physical provider invocation** (concurrent workers):
+/// For each eligible member, immediately before launch: deadline start,
+/// G1 armed, scoped thread spawn.  Workers return raw provider results
+/// through an mpsc channel.
+///
+/// **STAGE C — Durable result collection** (coordinator-owned):
+/// As results arrive on the channel: classify outcome, Trail outcome, G2,
+/// result anchor.  Stage C runs per-result immediately, not in member
+/// order.
+///
+/// **STAGE D — Join** (coordinator-owned):
+/// After all members terminal: GroupJoinEntry, all-success test.
+pub(crate) fn execute_group_concurrent(
+    group_id: &str,
+    member_indexes: &[usize],
+    actions: &[Value],
+    response: &mut Value,
+    evaluation_id: &str,
+    trail: &mut dyn dispatch::Trail,
+    service: &HostExecutionService<'_>,
+    input: &PreparedEvaluationInput,
+    provider_sessions: &mut HashMap<String, RetainedProviderSession>,
+    provider_availability: &ProviderAvailability,
+    approvals: &mut crate::approval::ApprovalStore,
+    replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
+) -> ExecutionServiceResult {
+    // ── STAGE A: Serial deterministic preparation ──────────────────────
+    //
+    // Every member gets a state slot immediately.  Prep failures are
+    // recorded as PreparationTerminal with exact classification.
+    let mut member_states: Vec<GroupMemberState> = Vec::with_capacity(member_indexes.len());
+
+    for (member_ordinal, action_index) in member_indexes.iter().enumerate() {
+        let action_id = crate::plan_execution::action_id_of(actions, *action_index);
+        let position = dispatch::SemanticPosition {
+            action_ordinal: *action_index as u64,
+            group_id: Some(group_id.to_owned()),
+            member_ordinal: Some(member_ordinal as u64),
+            phase: dispatch::SemanticPhase::Member,
+        };
+
+        let proposed = match crate::extract_proposed_action_at(response, *action_index) {
+            Ok(proposed) => proposed,
+            Err(error) => {
+                member_states.push(GroupMemberState::PreparationTerminal {
+                    action_index: *action_index,
+                    action_id: action_id.clone(),
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::InvalidData {
+                            message: format!("invalid planned Action: {error}"),
+                        },
+                    ),
+                });
+                continue;
+            }
+        };
+
+        // Scope + policy + resolution (mirrors execute_one_action steps 1-5).
+        let (scope_assessment, policy_evaluation) =
+            crate::bench_timing::timed("scope_policy", || {
+                let scope_assessment = service.runtime.assess_action_scope(&proposed);
+                let policy_evaluation = policy::evaluate_effective_policy(
+                    &proposed,
+                    service.runtime.requirements(),
+                    service.runtime.trusted_store(),
+                    provider_availability,
+                    service.runtime.policy(),
+                    scope_assessment,
+                );
+                (scope_assessment, policy_evaluation)
+            });
+
+        // Policy must allow.  Deny / Ask / Unavailable are terminal failures.
+        match &policy_evaluation.decision {
+            PermissionDecision::Deny => {
+                member_states.push(GroupMemberState::PreparationTerminal {
+                    action_index: *action_index,
+                    action_id: action_id.clone(),
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Denied {
+                            evaluation_id: proposed.evaluation_id.clone(),
+                            action_id,
+                            reason: format!("{:?}", policy_evaluation.reason),
+                            execution_id: None,
+                        },
+                    ),
+                });
+                continue;
+            }
+            PermissionDecision::Ask => {
+                let result = match crate::request_exact_approval(
+                    &proposed,
+                    service.runtime.requirements(),
+                    service.runtime.trusted_store(),
+                    provider_availability,
+                    service.runtime.policy(),
+                    scope_assessment,
+                    approvals,
+                    trail,
+                ) {
+                    Ok(Some(_)) => approval_required_result(
+                        proposed.evaluation_id.clone(),
+                        action_id.clone(),
+                        &policy_evaluation.reason,
+                    ),
+                    Ok(None) => ExecutionServiceResult::AuditFailed {
+                        evaluation_id: proposed.evaluation_id.clone(),
+                        action_id: action_id.clone(),
+                        reason: "approval request could not be established".to_owned(),
+                        execution_id: None,
+                    },
+                    Err(_) => ExecutionServiceResult::AuditFailed {
+                        evaluation_id: proposed.evaluation_id.clone(),
+                        action_id: action_id.clone(),
+                        reason: "approval request Trail recording failed".to_owned(),
+                        execution_id: None,
+                    },
+                };
+                member_states.push(GroupMemberState::PreparationTerminal {
+                    action_index: *action_index,
+                    action_id,
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Stopped(result),
+                });
+                continue;
+            }
+            PermissionDecision::Unavailable => {
+                member_states.push(GroupMemberState::PreparationTerminal {
+                    action_index: *action_index,
+                    action_id,
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Unavailable {
+                            evaluation_id: proposed.evaluation_id.clone(),
+                            reason: format!("{:?}", policy_evaluation.reason),
+                        },
+                    ),
+                });
+                continue;
+            }
+            PermissionDecision::Allow(_) => {}
+        }
+
+        let resolved = match crate::bench_timing::timed("capability_resolve", || {
+            service.resolve_exact_capability(&proposed, provider_availability)
+        }) {
+            Ok(resolved) => resolved,
+            Err(result) => {
+                member_states.push(GroupMemberState::PreparationTerminal {
+                    action_index: *action_index,
+                    action_id,
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Stopped(result),
+                });
+                continue;
+            }
+        };
+
+        let binding = &resolved.manifest().manifest().binding;
+        if binding.kind != BindingKind::Mcp {
+            member_states.push(GroupMemberState::PreparationTerminal {
+                action_index: *action_index,
+                action_id: action_id.clone(),
+                semantic_position: position,
+                step: crate::plan_execution::ActionStep::Stopped(ExecutionServiceResult::Denied {
+                    evaluation_id: proposed.evaluation_id.clone(),
+                    action_id,
+                    reason: "capability binding is not MCP".to_owned(),
+                    execution_id: None,
+                }),
+            });
+            continue;
+        }
+
+        // Ensure provider session exists.
+        if provider_sessions
+            .get(resolved.provider_identity())
+            .is_none()
+        {
+            member_states.push(GroupMemberState::PreparationTerminal {
+                action_index: *action_index,
+                action_id,
+                semantic_position: position,
+                step: crate::plan_execution::ActionStep::Stopped(
+                    ExecutionServiceResult::Unavailable {
+                        evaluation_id: proposed.evaluation_id.clone(),
+                        reason: format!(
+                            "provider '{}' has no retained session",
+                            resolved.provider_identity()
+                        ),
+                    },
+                ),
+            });
+            continue;
+        }
+
+        // Ensure prepared provider exists.
+        let Some(_prepared_provider) = service
+            .runtime
+            .providers()
+            .iter()
+            .find(|provider| provider.identity == resolved.provider_identity())
+        else {
+            member_states.push(GroupMemberState::PreparationTerminal {
+                action_index: *action_index,
+                action_id,
+                semantic_position: position,
+                step: crate::plan_execution::ActionStep::Stopped(
+                    ExecutionServiceResult::Unavailable {
+                        evaluation_id: proposed.evaluation_id.clone(),
+                        reason: format!(
+                            "provider '{}' has no prepared catalogue authority",
+                            resolved.provider_identity()
+                        ),
+                    },
+                ),
+            });
+            continue;
+        };
+
+        let event_id = match input
+            .anchor_event
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            Some(event_id) => event_id,
+            None => {
+                member_states.push(GroupMemberState::PreparationTerminal {
+                    action_index: *action_index,
+                    action_id,
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::InvalidData {
+                            message: "Anchor event requires a non-empty string id".to_owned(),
+                        },
+                    ),
+                });
+                continue;
+            }
+        };
+        let input_context = crate::InputEventContext::for_initial(event_id);
+
+        // Execute the prepare phase (replay admission, G0, Trail intent).
+        // This produces a real DispatchReadyAction — no fabricated objects.
+        match crate::application::execute_boundary_prepare(
+            response,
+            &actions[*action_index],
+            policy_evaluation.decision.clone(),
+            &resolved,
+            trail,
+            &input_context,
+            true,
+            replay_authority,
+            Some(&position),
+        ) {
+            Ok((ready, prepared, admission)) => {
+                member_states.push(GroupMemberState::Prepared {
+                    action_index: *action_index,
+                    action_id,
+                    semantic_position: position,
+                    ready,
+                    prepared,
+                    admission: Some(admission),
+                    deadline: Duration::from_millis(resolved.manifest().manifest().timeout_ms),
+                });
+            }
+            Err(result) => {
+                // Prepare phase failed (replay, Trail intent, etc.).
+                // The prepare function already updated response and Trail.
+                // Record the terminal classification.
+                member_states.push(GroupMemberState::PreparationTerminal {
+                    action_index: *action_index,
+                    action_id,
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Boundary(result),
+                });
+            }
+        }
+    }
+
+    // ── STAGE B: Launch workers through mpsc channel ───────────────────
+    let clock = ProductionMonotonicClock::new();
+    let mut anchor_writer = crate::ResponseResultAnchorWriter;
+    let (tx, rx) = mpsc::channel::<WorkerResult>();
+    let mut launched_count: usize = 0;
+
+    struct PendingLaunch {
+        worker_input: WorkerInput,
+    }
+    let mut pending_launches: Vec<PendingLaunch> = Vec::new();
+
+    // Whole-enum movement prevents fabricated domain values when the real
+    // coordinator-owned state moves from Prepared to Launched.
+    for state in member_states.iter_mut() {
+        let transition = match state {
+            GroupMemberState::Prepared {
+                action_index,
+                action_id,
+                semantic_position,
+                ..
+            } => GroupMemberState::Transitioning {
+                action_index: *action_index,
+                action_id: action_id.clone(),
+                semantic_position: semantic_position.clone(),
+            },
+            _ => continue,
+        };
+        let prior = std::mem::replace(state, transition);
+        let (action_index, action_id, position, ready, prepared, mut admission, deadline) =
+            match prior {
+                GroupMemberState::Prepared {
+                    action_index,
+                    action_id,
+                    semantic_position,
+                    ready,
+                    prepared,
+                    admission: Some(admission),
+                    deadline,
+                } => (
+                    action_index,
+                    action_id,
+                    semantic_position,
+                    ready,
+                    prepared,
+                    admission,
+                    deadline,
+                ),
+                _ => unreachable!("only Prepared members enter the launch transition"),
+            };
+
+        let deadline_start = clock.now();
+        let remaining =
+            match crate::outcome::remaining_until_deadline(&clock, deadline_start, deadline) {
+                Some(remaining) => remaining,
+                None => {
+                    *state = GroupMemberState::Terminal {
+                        action_index,
+                        action_id: action_id.clone(),
+                        semantic_position: position,
+                        step: crate::plan_execution::ActionStep::Stopped(
+                            ExecutionServiceResult::Unattempted {
+                                evaluation_id: evaluation_id.to_owned(),
+                                action_id,
+                                reason: "deadline expired before provider invocation".to_owned(),
+                                execution_id: Some(ready.execution_id().0.clone()),
+                            },
+                        ),
+                    };
+                    continue;
+                }
+            };
+
+        if admission.publish_armed().is_err() {
+            *state = GroupMemberState::Terminal {
+                action_index,
+                action_id: action_id.clone(),
+                semantic_position: position,
+                step: crate::plan_execution::ActionStep::Stopped(
+                    ExecutionServiceResult::ReplayPersistenceUnavailable {
+                        evaluation_id: evaluation_id.to_owned(),
+                        action_id,
+                        execution_id: Some(ready.execution_id().0.clone()),
+                    },
+                ),
+            };
+            continue;
+        }
+
+        let provider_identity = ready.provider_identity().to_owned();
+        let prepared_provider = match service
+            .runtime
+            .providers()
+            .iter()
+            .find(|p| p.identity == provider_identity)
+        {
+            Some(provider) => provider.clone(),
+            None => {
+                *state = GroupMemberState::Terminal {
+                    action_index,
+                    action_id,
+                    semantic_position: position,
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Unavailable {
+                            evaluation_id: evaluation_id.to_owned(),
+                            reason: format!("provider '{provider_identity}' has no prepared catalogue authority"),
+                        },
+                    ),
+                };
+                continue;
+            }
+        };
+
+        let tool_name = ready
+            .verified_manifest()
+            .manifest()
+            .binding
+            .tool_name
+            .clone();
+        let arguments = ready.arguments().clone();
+        *state = GroupMemberState::Launched {
+            action_index,
+            action_id: action_id.clone(),
+            semantic_position: position.clone(),
+            ready: Some(ready),
+            prepared: Some(prepared),
+            admission: Some(admission),
+        };
+        pending_launches.push(PendingLaunch {
+            worker_input: WorkerInput {
+                action_index,
+                arguments,
+                provider: prepared_provider,
+                tool_name,
+                remaining,
+            },
+        });
+    }
+
+    std::thread::scope(|s| {
+        // Spawn all workers.
+        for pending in pending_launches {
+            let tx_clone = tx.clone();
+            s.spawn(move || worker_invoke_provider(pending.worker_input, tx_clone));
+            launched_count += 1;
+        }
+
+        drop(tx);
+
+        // Receive results as workers complete and process Stage C immediately.
+        let mut received = 0usize;
+        while received < launched_count {
+            match rx.recv() {
+                Ok(worker_result) => {
+                    received += 1;
+
+                    // Find the Launched member for this action_index.
+                    // Extract ready and prepared for Stage C processing.
+                    let mut found: Option<(
+                        usize,
+                        String,
+                        dispatch::SemanticPosition,
+                        dispatch::DispatchReadyAction,
+                        crate::application::PreparedInvoke,
+                        Box<dyn crate::replay_runtime::ReplayAdmissionGuard>,
+                    )> = None;
+
+                    for state in member_states.iter_mut() {
+                        if let GroupMemberState::Launched {
+                            action_index,
+                            action_id,
+                            semantic_position,
+                            ready,
+                            prepared,
+                            admission,
+                            ..
+                        } = state
+                        {
+                            if *action_index == worker_result.action_index {
+                                // Move real objects out for Stage C.
+                                let taken_ready =
+                                    ready.take().expect("Launched state must have ready");
+                                let taken_prepared =
+                                    prepared.take().expect("Launched state must have prepared");
+                                let taken_admission = admission
+                                    .take()
+                                    .expect("Launched state must have replay admission");
+                                found = Some((
+                                    *action_index,
+                                    action_id.clone(),
+                                    semantic_position.clone(),
+                                    taken_ready,
+                                    taken_prepared,
+                                    taken_admission,
+                                ));
+                                break;
+                            }
+                        }
+                    }
+
+                    let (action_index, action_id, position, ready, prepared, mut admission) =
+                        match found {
+                            Some(v) => v,
+                            None => continue,
+                        };
+
+                    // Stage C: classify outcome, Trail outcome, G2, result anchor.
+                    let step = match crate::application::execute_boundary_invoke_only(
+                        response,
+                        &ready,
+                        &prepared,
+                        trail,
+                        admission.as_mut(),
+                        &mut anchor_writer,
+                        worker_result.provider_result,
+                        false,
+                    ) {
+                        Ok(result) => crate::plan_execution::ActionStep::Boundary(result),
+                        Err(error) => crate::plan_execution::ActionStep::Stopped(
+                            ExecutionServiceResult::AuditFailed {
+                                evaluation_id: evaluation_id.to_owned(),
+                                action_id: action_id.clone(),
+                                reason: format!("shared execution boundary failed: {error}"),
+                                execution_id: Some(ready.execution_id().0.clone()),
+                            },
+                        ),
+                    };
+
+                    // Transition to Terminal.
+                    for s in member_states.iter_mut() {
+                        if let GroupMemberState::Launched {
+                            action_index: idx, ..
+                        } = s
+                        {
+                            if *idx == action_index {
+                                *s = GroupMemberState::Terminal {
+                                    action_index,
+                                    action_id,
+                                    semantic_position: position,
+                                    step,
+                                };
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Channel closed — all workers finished but we haven't
+                    // received all results.  This shouldn't happen since
+                    // launched_count tracks exactly how many workers were
+                    // spawned.
+                    break;
+                }
+            }
+        }
+    });
+
+    // ── STAGE D: Join ──────────────────────────────────────────────────
+    // Determine which members succeeded.  Every member must be Terminal.
+    let all_joined = member_states.iter().all(|s| match s {
+        GroupMemberState::Terminal { step, .. }
+        | GroupMemberState::PreparationTerminal { step, .. } => {
+            crate::plan_execution::step_succeeded(step)
+        }
+        _ => false,
+    });
+
+    let member_action_ids: Vec<String> = member_states
+        .iter()
+        .map(|s| match s {
+            GroupMemberState::Terminal { action_id, .. }
+            | GroupMemberState::PreparationTerminal { action_id, .. }
+            | GroupMemberState::Prepared { action_id, .. }
+            | GroupMemberState::Launched { action_id, .. }
+            | GroupMemberState::Transitioning { action_id, .. } => action_id.clone(),
+        })
+        .collect();
+
+    let last_member_index = *member_indexes.last().unwrap();
+    let join_position = dispatch::SemanticPosition {
+        action_ordinal: last_member_index as u64,
+        group_id: None,
+        member_ordinal: None,
+        phase: dispatch::SemanticPhase::Join,
+    };
+
+    let join_entry = dispatch::GroupJoinEntry {
+        evaluation_id: evaluation_id.to_owned(),
+        group_id: group_id.to_owned(),
+        member_action_ids: member_action_ids.clone(),
+        joined: all_joined,
+        timestamp_unix_ms: crate::now_unix_ms(),
+        semantic_position: Some(join_position),
+    };
+
+    // Append join to Trail.
+    let sequence = response
+        .get("trail")
+        .and_then(Value::as_array)
+        .map(|trail| trail.len() as u64 + 1)
+        .unwrap_or(1);
+    let presentation_entry = serde_json::json!({
+        "sequence": sequence,
+        "phase": "execution",
+        "kind": "group_joined",
+        "outcome": if all_joined { "success" } else { "non_success" },
+        "message": format!(
+            "{} group {} ({} members: {})",
+            if all_joined { "Joined" } else { "Group did not join" },
+            group_id,
+            member_indexes.len(),
+            member_action_ids.join(", ")
+        ),
+        "host_timestamp_unix_ms": join_entry.timestamp_unix_ms,
+    });
+
+    let audit_action_id = member_action_ids.first().cloned().unwrap_or_default();
+    match response.get_mut("trail").and_then(Value::as_array_mut) {
+        Some(trail_array) => trail_array.push(presentation_entry),
+        None => {
+            return ExecutionServiceResult::AuditFailed {
+                evaluation_id: evaluation_id.to_owned(),
+                action_id: audit_action_id,
+                reason: "response had no Trail".to_owned(),
+                execution_id: None,
+            };
+        }
+    }
+
+    if trail.append_group_join(&join_entry).is_err() {
+        return ExecutionServiceResult::AuditFailed {
+            evaluation_id: evaluation_id.to_owned(),
+            action_id: audit_action_id,
+            reason: "group join Trail recording failed".to_owned(),
+            execution_id: None,
+        };
+    }
+
+    if all_joined {
+        return ExecutionServiceResult::Completed {
+            evaluation_id: evaluation_id.to_owned(),
+            action_id: member_action_ids.first().cloned().unwrap_or_default(),
+            response: response.clone(),
+            execution_id: None,
+        };
+    }
+
+    // Select the first semantic non-success, not the first completion.
+    if let Some((action_id, step)) = first_non_success_member_step(member_states) {
+        return crate::plan_execution::aggregate_step(step, evaluation_id, &action_id);
+    }
+
+    ExecutionServiceResult::AuditFailed {
+        evaluation_id: evaluation_id.to_owned(),
+        action_id: audit_action_id,
+        reason: "non-success join produced no non-success member".to_owned(),
+        execution_id: None,
+    }
+}
+
+/// Return the first terminal non-success in the original Runtime Plan member
+/// order, retaining its complete C1 ActionStep for exact aggregation.
+fn first_non_success_member_step(
+    member_states: Vec<GroupMemberState>,
+) -> Option<(String, crate::plan_execution::ActionStep)> {
+    member_states.into_iter().find_map(|state| {
+        let (action_id, step) = match state {
+            GroupMemberState::Terminal {
+                action_id, step, ..
+            }
+            | GroupMemberState::PreparationTerminal {
+                action_id, step, ..
+            } => (action_id, step),
+            _ => return None,
+        };
+        (!crate::plan_execution::step_succeeded(&step)).then_some((action_id, step))
+    })
+}
+
+// ===========================================================================
 // Tests
 // ===========================================================================
 
@@ -1486,11 +2394,53 @@ mod tests {
     use crate::configured_runtime::{prepare_runtime, PreparedCapability, PreparedProvider};
     use crate::dispatch::{self, ActionId, ExecutionId, RecordingTrail};
     use crate::policy::{CapabilityRequirement, HostLocalPolicy, ScopeAssessment};
-    use crate::replay::LogicalExecutionKey;
+    use crate::replay::{LogicalExecutionKey, ReplayState};
     use crate::run_command;
     use crate::stdio_provider::ManagedProvider;
     use crate::trusted_store::TrustedManifestStore;
     use serde_json::json;
+
+    #[test]
+    fn c2_a3a_semantic_first_non_success_preserves_exact_step() {
+        let position = |ordinal| dispatch::SemanticPosition {
+            action_ordinal: ordinal,
+            group_id: Some("group".to_owned()),
+            member_ordinal: Some(ordinal),
+            phase: dispatch::SemanticPhase::Member,
+        };
+        let states = vec![
+            GroupMemberState::Terminal {
+                action_index: 0,
+                action_id: "first".to_owned(),
+                semantic_position: position(0),
+                step: crate::plan_execution::ActionStep::Boundary(crate::SharedExecutionResult {
+                    outcome: crate::SharedExecutionOutcome::Uncertain,
+                    execution_id: Some("exec-first".to_owned()),
+                }),
+            },
+            GroupMemberState::Terminal {
+                action_index: 1,
+                action_id: "second".to_owned(),
+                semantic_position: position(1),
+                step: crate::plan_execution::ActionStep::Boundary(crate::SharedExecutionResult {
+                    outcome: crate::SharedExecutionOutcome::Failed,
+                    execution_id: Some("exec-second".to_owned()),
+                }),
+            },
+        ];
+
+        let (action_id, step) = first_non_success_member_step(states).expect("non-success");
+        let result = crate::plan_execution::aggregate_step(step, "eval", &action_id);
+        assert!(matches!(
+            result,
+            ExecutionServiceResult::Uncertain {
+                evaluation_id,
+                action_id,
+                execution_id: Some(execution_id),
+                ..
+            } if evaluation_id == "eval" && action_id == "first" && execution_id == "exec-first"
+        ));
+    }
     use std::process::Command;
     use tethers_reference_host::cli::OutcomeStatus;
 
@@ -1614,6 +2564,91 @@ mod tests {
             identity: &prepared.identity,
         })
         .unwrap()
+    }
+
+    fn barrier_test_provider(barrier_dir: &Path, identity: &str) -> PreparedProvider {
+        let mut provider = catalogue_test_provider("c2-overlap-barrier");
+        provider.identity = identity.to_owned();
+        provider.stdio_config.provider_config.identity = identity.to_owned();
+        provider.stdio_config.args.extend([
+            "-BarrierDirectory".to_owned(),
+            barrier_dir.to_string_lossy().into_owned(),
+        ]);
+        provider
+    }
+
+    fn prove_actual_worker_overlap(same_provider: bool) {
+        let barrier_dir = std::env::temp_dir().join(format!(
+            "tethers-c2-a3a-overlap-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&barrier_dir).unwrap();
+        let left = barrier_test_provider(&barrier_dir, "tethers-stdio-fixture");
+        let right = barrier_test_provider(
+            &barrier_dir,
+            if same_provider {
+                "tethers-stdio-fixture"
+            } else {
+                "tethers-stdio-fixture-2"
+            },
+        );
+        let (tx, rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            for (action_index, provider) in [(0, left), (1, right)] {
+                let sender = tx.clone();
+                scope.spawn(move || {
+                    worker_invoke_provider(
+                        WorkerInput {
+                            action_index,
+                            arguments: json!({"message": format!("member-{action_index}")}),
+                            provider,
+                            tool_name: "fixture_ping".to_owned(),
+                            remaining: Duration::from_secs(15),
+                        },
+                        sender,
+                    )
+                });
+            }
+            drop(tx);
+            let deadline = std::time::Instant::now() + Duration::from_secs(12);
+            loop {
+                let active = std::fs::read_dir(&barrier_dir)
+                    .unwrap()
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.file_name().to_string_lossy().starts_with("active-"))
+                    .count();
+                if active >= 2 {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "both provider child processes did not reach tools/call"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            std::fs::write(barrier_dir.join("release"), "release").unwrap();
+            for _ in 0..2 {
+                assert!(rx
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap()
+                    .provider_result
+                    .is_ok());
+            }
+        });
+        std::fs::remove_dir_all(&barrier_dir).unwrap();
+    }
+
+    #[test]
+    fn c2_a3a_same_provider_tools_call_overlap_is_real() {
+        prove_actual_worker_overlap(true);
+    }
+
+    #[test]
+    fn c2_a3a_different_provider_tools_call_overlap_is_real() {
+        prove_actual_worker_overlap(false);
     }
 
     #[test]
@@ -2709,7 +3744,7 @@ mod tests {
         std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
 
         let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
-        let prepared = crate::configured_runtime::prepare_runtime(&loaded).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
         (prepared, dir)
     }
 
@@ -3764,5 +4799,2353 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(dir);
         let _ = std::fs::remove_file(marker_path);
+    }
+
+    // -----------------------------------------------------------------------
+    // C2-A3a Concurrency Observability Tests
+    //
+    // Proves Stage C durability, physical Trail ordering, GroupJoin ordering,
+    // and worker panic handling for the concurrent Together path.
+    // -----------------------------------------------------------------------
+
+    /// Build a PreparedRuntime with two barrier-fixture providers, each with
+    /// a unique capability name.  Each provider points at `barrier_dir` for
+    /// deterministic file-system synchronization.
+    fn c2a3a_barrier_runtime(barrier_dir: &Path) -> (PreparedRuntime, PathBuf, String, String) {
+        let dir = std::env::temp_dir().join(format!(
+            "tethers-c2a3a-obs-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("tethers")).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+
+        std::fs::write(
+            dir.join("tethers/together-test.tether"),
+            "when event.test if true do fixture.ping-a do fixture.ping-b",
+        )
+        .unwrap();
+
+        let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        // Create two manifests with distinct capability names, provider identities, and valid digests.
+        let mut manifest_a: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+        manifest_a["capability_name"] = serde_json::json!("fixture.ping-a");
+        manifest_a["provider"]["identity"] = serde_json::json!("provider-a");
+        manifest_a["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+        manifest_a["permission_scope"] =
+            serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+        manifest_a["confirmation_policy"] =
+            serde_json::json!({"standing_permitted": true, "per_call_required": false});
+        let manifest_a_str = serde_json::to_string(&manifest_a).unwrap();
+        let (_, digest_a) = crate::manifest::canonicalize_and_digest(&manifest_a_str).unwrap();
+        manifest_a["digest"] = serde_json::json!(digest_a);
+        let manifest_a_final = serde_json::to_string_pretty(&manifest_a).unwrap();
+
+        let mut manifest_b: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+        manifest_b["capability_name"] = serde_json::json!("fixture.ping-b");
+        manifest_b["provider"]["identity"] = serde_json::json!("provider-b");
+        manifest_b["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+        manifest_b["permission_scope"] =
+            serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+        manifest_b["confirmation_policy"] =
+            serde_json::json!({"standing_permitted": true, "per_call_required": false});
+        let manifest_b_str = serde_json::to_string(&manifest_b).unwrap();
+        let (_, digest_b) = crate::manifest::canonicalize_and_digest(&manifest_b_str).unwrap();
+        manifest_b["digest"] = serde_json::json!(digest_b);
+        let manifest_b_final = serde_json::to_string_pretty(&manifest_b).unwrap();
+
+        std::fs::write(dir.join("manifests/fixture-ping-a.json"), &manifest_a_final).unwrap();
+        std::fs::write(dir.join("manifests/fixture-ping-b.json"), &manifest_b_final).unwrap();
+
+        let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts")
+            .join("tethers-stdio-fixture.ps1");
+        let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+
+        let config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "test.together",
+                "version": "1",
+                "tethers": [{
+                    "id": "together-test",
+                    "version": "1",
+                    "source_path": "tethers/together-test.tether"
+                }],
+                "capability_requirements": [
+                    {"name": "fixture.ping-a", "version": 1, "reason": "concurrency observability"},
+                    {"name": "fixture.ping-b", "version": 1, "reason": "concurrency observability"}
+                ]
+            },
+            "providers": [
+                {
+                    "id": "provider-a",
+                    "display_name": "Provider A",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [
+                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                            barrier_script.to_str().unwrap(),
+                            "-Mode", "c2-overlap-barrier",
+                            "-BarrierDirectory", &barrier_str
+                        ],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [{
+                        "name": "fixture.ping-a",
+                        "version": 1,
+                        "manifest_path": "manifests/fixture-ping-a.json",
+                        "pinned_digest": &digest_a,
+                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                    }]
+                },
+                {
+                    "id": "provider-b",
+                    "display_name": "Provider B",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [
+                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                            barrier_script.to_str().unwrap(),
+                            "-Mode", "c2-overlap-barrier",
+                            "-BarrierDirectory", &barrier_str
+                        ],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [{
+                        "name": "fixture.ping-b",
+                        "version": 1,
+                        "manifest_path": "manifests/fixture-ping-b.json",
+                        "pinned_digest": &digest_b,
+                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                    }]
+                }
+            ],
+            "policy": {
+                "default": "deny",
+                "rules": [
+                    {"name": "fixture.ping-a", "version": 1, "decision": "allow"},
+                    {"name": "fixture.ping-b", "version": 1, "decision": "allow"}
+                ]
+            }
+        });
+
+        let config_path = dir.join("tethers-config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        (prepared, dir, digest_a, digest_b)
+    }
+
+    /// Establish retained sessions with the given providers.  The barrier
+    /// fixture accepts `initialize` and `tools/list` without blocking; only
+    /// `tools/call` is gated.
+    fn c2a3a_establish_sessions(
+        providers: &[PreparedProvider],
+    ) -> HashMap<String, RetainedProviderSession> {
+        let mut sessions = HashMap::new();
+        for provider in providers {
+            let manifest = provider.capabilities[0].verified_manifest.manifest();
+            let session = RetainedProviderSession::establish(SocketEstablishment {
+                command: &provider.stdio_config.command,
+                args: &provider.stdio_config.args,
+                working_directory: &provider.working_directory,
+                protocol_version: &provider.stdio_config.protocol_version,
+                server_name: &manifest.binding.server_name,
+                identity: &provider.identity,
+            })
+            .expect("barrier provider session establishment");
+            sessions.insert(provider.identity.clone(), session);
+        }
+        sessions
+    }
+
+    /// Build a two-member Together group actions and groups array.
+    fn c2a3a_actions(digest_a: &str, digest_b: &str) -> (Vec<Value>, Vec<Value>) {
+        let actions = vec![
+            json!({
+                "action_id": "member-a",
+                "idempotency_key": "eval-obs/member-a",
+                "capability": "fixture.ping-a",
+                "capability_version": "1.0.0",
+                "bridge_capability_version": 1,
+                "bridge_provider_identity": "provider-a",
+                "manifest_digest": digest_a,
+                "arguments": {"message": "member/a"},
+            }),
+            json!({
+                "action_id": "member-b",
+                "idempotency_key": "eval-obs/member-b",
+                "capability": "fixture.ping-b",
+                "capability_version": "1.0.0",
+                "bridge_capability_version": 1,
+                "bridge_provider_identity": "provider-b",
+                "manifest_digest": digest_b,
+                "arguments": {"message": "member/b"},
+            }),
+        ];
+        let groups = vec![json!({
+            "group_id": "together-1",
+            "member_action_ids": ["member-a", "member-b"],
+        })];
+        (actions, groups)
+    }
+
+    /// Build a matched planner response with groups.
+    fn c2a3a_matched_response(
+        evaluation_id: &str,
+        actions: Vec<Value>,
+        groups: Vec<Value>,
+    ) -> Value {
+        json!({
+            "status": "matched",
+            "evaluation_id": evaluation_id,
+            "plan": {
+                "id": "plan-c2a3a",
+                "actions": actions,
+                "groups": groups,
+            },
+            "trail": [],
+        })
+    }
+
+    /// Parse a JSONL Trail file and return action_ids of OutcomeEntry
+    /// records in physical append order.
+    fn trail_outcome_action_ids(trail_path: &Path) -> Vec<String> {
+        let content = match std::fs::read_to_string(trail_path) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        content
+            .lines()
+            .filter_map(|line| {
+                let v: Value = serde_json::from_str(line).ok()?;
+                if v.get("execution_id").is_some() && v.get("status").is_some() {
+                    Some(v["action_id"].as_str()?.to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Parse a JSONL Trail file and return entry kinds in physical append
+    /// order: "outcome", "group_join", or "other".
+    fn trail_entry_kinds(trail_path: &Path) -> Vec<String> {
+        let content = match std::fs::read_to_string(trail_path) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        content
+            .lines()
+            .filter_map(|line| {
+                let v: Value = serde_json::from_str(line).ok()?;
+                if v.get("execution_id").is_some() && v.get("status").is_some() {
+                    Some("outcome".to_owned())
+                } else if v.get("group_id").is_some() && v.get("joined").is_some() {
+                    Some("group_join".to_owned())
+                } else {
+                    Some("other".to_owned())
+                }
+            })
+            .collect()
+    }
+
+    /// Count barrier entered files: how many providers have reached tools/call.
+    fn barrier_entered_count(barrier_dir: &Path) -> usize {
+        std::fs::read_dir(barrier_dir)
+            .unwrap_or_else(|_| std::fs::read_dir(".").unwrap())
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("entered-"))
+            .count()
+    }
+
+    /// Check whether a specific member's OutcomeEntry is present in the durable Trail.
+    fn trail_has_member_outcome(trail_path: &Path, member: &str) -> bool {
+        trail_outcome_action_ids(trail_path)
+            .iter()
+            .any(|id| id == member)
+    }
+
+    /// Poll until a condition becomes true or deadline expires.
+    fn poll_until(deadline: std::time::Instant, desc: &str, mut check: impl FnMut() -> bool) {
+        while !check() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "poll timed out: {desc}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    // ===================================================================
+    // C2-A3a Group Test Harness
+    //
+    // One reusable execute_group_concurrent harness for all group-level
+    // observability tests: durability, ordering, GroupJoin, panic.
+    // ===================================================================
+
+    struct C2A3aGroupHarness {
+        runtime: PreparedRuntime,
+        _runtime_dir: PathBuf,
+        trail_path: PathBuf,
+        replay_dir: PathBuf,
+        barrier_dir: PathBuf,
+    }
+
+    impl C2A3aGroupHarness {
+        fn new(test_name: &str) -> Self {
+            let barrier_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-{test_name}-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&barrier_dir).unwrap();
+
+            let runtime_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-{test_name}-rt-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(runtime_dir.join("tethers")).unwrap();
+            std::fs::create_dir_all(runtime_dir.join("manifests")).unwrap();
+
+            std::fs::write(
+                runtime_dir.join("tethers/together-test.tether"),
+                "when event.test if true do fixture.ping-a do fixture.ping-b",
+            )
+            .unwrap();
+
+            let manifest_json =
+                include_str!("../../protocol/capability-manifests/fixture-ping.json");
+            let make_manifest = |cap_name: &str, provider_id: &str| -> String {
+                let mut m: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+                m["capability_name"] = serde_json::json!(cap_name);
+                m["provider"]["identity"] = serde_json::json!(provider_id);
+                m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+                m["permission_scope"] =
+                    serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+                m["confirmation_policy"] =
+                    serde_json::json!({"standing_permitted": true, "per_call_required": false});
+                let s = serde_json::to_string(&m).unwrap();
+                let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+                m["digest"] = serde_json::json!(digest);
+                serde_json::to_string_pretty(&m).unwrap()
+            };
+            let manifest_a = make_manifest("fixture.ping-a", "provider-a");
+            let manifest_b = make_manifest("fixture.ping-b", "provider-b");
+            std::fs::write(
+                runtime_dir.join("manifests/fixture-ping-a.json"),
+                &manifest_a,
+            )
+            .unwrap();
+            std::fs::write(
+                runtime_dir.join("manifests/fixture-ping-b.json"),
+                &manifest_b,
+            )
+            .unwrap();
+
+            let (_, digest_a) = crate::manifest::canonicalize_and_digest(&manifest_a).unwrap();
+            let (_, digest_b) = crate::manifest::canonicalize_and_digest(&manifest_b).unwrap();
+
+            let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("scripts")
+                .join("tethers-stdio-fixture.ps1");
+            let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+
+            let config = json!({
+                "format_version": "0.1",
+                "tether_set": {
+                    "id": "test.together",
+                    "version": "1",
+                    "tethers": [{
+                        "id": "together-test",
+                        "version": "1",
+                        "source_path": "tethers/together-test.tether"
+                    }],
+                    "capability_requirements": [
+                        {"name": "fixture.ping-a", "version": 1, "reason": "concurrency observability"},
+                        {"name": "fixture.ping-b", "version": 1, "reason": "concurrency observability"}
+                    ]
+                },
+                "providers": [
+                    {
+                        "id": "provider-a",
+                        "display_name": "Provider A",
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "pwsh.exe",
+                            "args": [
+                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                barrier_script.to_str().unwrap(),
+                                "-Mode", "c2-overlap-barrier",
+                                "-BarrierDirectory", &barrier_str
+                            ],
+                            "protocol_version": "2025-11-25"
+                        },
+                        "capabilities": [{
+                            "name": "fixture.ping-a",
+                            "version": 1,
+                            "manifest_path": "manifests/fixture-ping-a.json",
+                            "pinned_digest": &digest_a,
+                            "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                        }]
+                    },
+                    {
+                        "id": "provider-b",
+                        "display_name": "Provider B",
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "pwsh.exe",
+                            "args": [
+                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                barrier_script.to_str().unwrap(),
+                                "-Mode", "c2-overlap-barrier",
+                                "-BarrierDirectory", &barrier_str
+                            ],
+                            "protocol_version": "2025-11-25"
+                        },
+                        "capabilities": [{
+                            "name": "fixture.ping-b",
+                            "version": 1,
+                            "manifest_path": "manifests/fixture-ping-b.json",
+                            "pinned_digest": &digest_b,
+                            "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                        }]
+                    }
+                ],
+                "policy": {
+                    "default": "deny",
+                    "rules": [
+                        {"name": "fixture.ping-a", "version": 1, "decision": "allow"},
+                        {"name": "fixture.ping-b", "version": 1, "decision": "allow"}
+                    ]
+                }
+            });
+
+            let config_path = runtime_dir.join("tethers-config.json");
+            std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+            let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+            let runtime = prepare_runtime(&loaded).unwrap();
+
+            let trail_path = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-{test_name}-trail-{}.jsonl",
+                uuid::Uuid::new_v4()
+            ));
+            let replay_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-{test_name}-replay-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&replay_dir).unwrap();
+
+            Self {
+                runtime,
+                _runtime_dir: runtime_dir,
+                trail_path,
+                replay_dir,
+                barrier_dir,
+            }
+        }
+
+        /// Run execute_group_concurrent in a spawned thread.
+        /// Returns the ExecutionServiceResult.
+        fn run_group(&self, eval_id: &str) -> ExecutionServiceResult {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("barrier provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            // Extract manifest digests from the prepared runtime providers.
+            let providers = self.runtime.providers();
+            let digest_a = providers
+                .iter()
+                .find(|p| p.identity == "provider-a")
+                .unwrap()
+                .capabilities[0]
+                .verified_manifest
+                .verified_digest()
+                .to_owned();
+            let digest_b = providers
+                .iter()
+                .find(|p| p.identity == "provider-b")
+                .unwrap()
+                .capabilities[0]
+                .verified_manifest
+                .verified_digest()
+                .to_owned();
+
+            let actions = vec![
+                json!({
+                    "action_id": "member-a",
+                    "idempotency_key": format!("{eval_id}/member-a"),
+                    "capability": "fixture.ping-a",
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": "provider-a",
+                    "manifest_digest": digest_a,
+                    "arguments": {"message": "member/a"},
+                }),
+                json!({
+                    "action_id": "member-b",
+                    "idempotency_key": format!("{eval_id}/member-b"),
+                    "capability": "fixture.ping-b",
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": "provider-b",
+                    "manifest_digest": digest_b,
+                    "arguments": {"message": "member/b"},
+                }),
+            ];
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": ["member-a", "member-b"],
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let availability = ProviderAvailability::from_identities(["provider-a", "provider-b"]);
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let mut replay_authority =
+                crate::replay_runtime::test_support::TestReplayAuthority::default();
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            let result = execute_group_concurrent(
+                "together-1",
+                &[0, 1],
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                &mut replay_authority,
+            );
+            eprintln!("execute_group_concurrent returned: {result:?}");
+            result
+        }
+
+        /// Wait until the barrier directory has at least `count` entered-* files.
+        fn wait_barrier_entries(&self, count: usize) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while barrier_entered_count(&self.barrier_dir) < count {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "only {} of {count} providers entered tools/call",
+                    barrier_entered_count(&self.barrier_dir)
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        /// Release a specific member via per-member release file.
+        fn release_member(&self, member: &str) {
+            std::fs::write(
+                self.barrier_dir.join(format!("release-member-{member}")),
+                "release",
+            )
+            .unwrap();
+        }
+
+        /// Read physical OutcomeEntry action_ids from the durable Trail.
+        fn outcome_ids(&self) -> Vec<String> {
+            trail_outcome_action_ids(&self.trail_path)
+        }
+
+        /// Read entry kinds from the durable Trail.
+        fn entry_kinds(&self) -> Vec<String> {
+            trail_entry_kinds(&self.trail_path)
+        }
+
+        /// Check if a member's OutcomeEntry exists in the Trail.
+        fn has_member_outcome(&self, member: &str) -> bool {
+            trail_has_member_outcome(&self.trail_path, member)
+        }
+
+        /// Read the raw Trail content.
+        fn trail_content(&self) -> String {
+            std::fs::read_to_string(&self.trail_path).unwrap_or_default()
+        }
+    }
+
+    impl Drop for C2A3aGroupHarness {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.barrier_dir);
+            let _ = std::fs::remove_dir_all(&self._runtime_dir);
+            let _ = std::fs::remove_dir_all(&self.replay_dir);
+            let _ = std::fs::remove_file(&self.trail_path);
+        }
+    }
+
+    // ===================================================================
+    // TEST 1 — Prompt Stage C durability while sibling blocked
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_stage_c_durability_while_sibling_blocked() {
+        let h = C2A3aGroupHarness::new("durability");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group("eval-durability-1"));
+
+            // Both must enter real tools/call.
+            h.wait_barrier_entries(2);
+
+            // Release B only.  A remains blocked.
+            h.release_member("b");
+
+            // Poll until B's OutcomeEntry is durable in the Trail.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !h.has_member_outcome("member-b") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "B outcome never appeared in Trail"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // INTERMEDIATE ASSERTIONS: B present, A absent, GroupJoin absent.
+            assert!(
+                h.has_member_outcome("member-b"),
+                "B OutcomeEntry must be present before A release"
+            );
+            assert!(
+                !h.has_member_outcome("member-a"),
+                "A OutcomeEntry must NOT be present while A is still blocked"
+            );
+            assert!(
+                !h.entry_kinds().iter().any(|k| k == "group_join"),
+                "GroupJoinEntry must NOT be present while A is still blocked"
+            );
+
+            // Now release A.
+            h.release_member("a");
+
+            let result = handle.join().expect("concurrent group must not panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got: {result:?}"
+            );
+        });
+
+        // FINAL: both outcomes present, GroupJoin last.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 2, "need exactly 2 outcomes: {ids:?}");
+        assert!(ids.contains(&"member-a".to_owned()));
+        assert!(ids.contains(&"member-b".to_owned()));
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    // ===================================================================
+    // TEST 2 — Physical Trail order: B before A
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_trail_physical_order_b_before_a() {
+        let h = C2A3aGroupHarness::new("order-ba");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group("eval-order-ba"));
+
+            h.wait_barrier_entries(2);
+
+            // Release B first, keep A blocked.
+            h.release_member("b");
+
+            // Wait until B is durable.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !h.has_member_outcome("member-b") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "B outcome never appeared"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Release A.
+            h.release_member("a");
+
+            let result = handle.join().expect("group must not panic");
+            assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
+        });
+
+        // Physical append order must be exactly [B, A].
+        assert_eq!(
+            h.outcome_ids(),
+            vec!["member-b".to_owned(), "member-a".to_owned()],
+            "physical append order must be B then A"
+        );
+
+        // Semantic positions: A=0, B=1.
+        let entries: Vec<Value> = h
+            .trail_content()
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect();
+        for entry in &entries {
+            if let Some(pos) = entry.get("semantic_position") {
+                if pos.get("phase").and_then(Value::as_str) == Some("member") {
+                    let ord = pos.get("member_ordinal").and_then(Value::as_u64);
+                    let aord = pos.get("action_ordinal").and_then(Value::as_u64);
+                    match entry.get("action_id").and_then(Value::as_str) {
+                        Some("member-a") => {
+                            assert_eq!(ord, Some(0));
+                            assert_eq!(aord, Some(0));
+                        }
+                        Some("member-b") => {
+                            assert_eq!(ord, Some(1));
+                            assert_eq!(aord, Some(1));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================================================================
+    // TEST 3 — Physical Trail order: A before B
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_trail_physical_order_a_before_b() {
+        let h = C2A3aGroupHarness::new("order-ab");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group("eval-order-ab"));
+
+            h.wait_barrier_entries(2);
+
+            // Release A first, keep B blocked.
+            h.release_member("a");
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !h.has_member_outcome("member-a") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A outcome never appeared"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Release B.
+            h.release_member("b");
+
+            let result = handle.join().expect("group must not panic");
+            assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
+        });
+
+        // Physical append order must be exactly [A, B].
+        assert_eq!(
+            h.outcome_ids(),
+            vec!["member-a".to_owned(), "member-b".to_owned()],
+            "physical append order must be A then B"
+        );
+
+        // Semantic positions: A=0, B=1.
+        let entries: Vec<Value> = h
+            .trail_content()
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect();
+        for entry in &entries {
+            if let Some(pos) = entry.get("semantic_position") {
+                if pos.get("phase").and_then(Value::as_str) == Some("member") {
+                    let ord = pos.get("member_ordinal").and_then(Value::as_u64);
+                    let aord = pos.get("action_ordinal").and_then(Value::as_u64);
+                    match entry.get("action_id").and_then(Value::as_str) {
+                        Some("member-a") => {
+                            assert_eq!(ord, Some(0));
+                            assert_eq!(aord, Some(0));
+                        }
+                        Some("member-b") => {
+                            assert_eq!(ord, Some(1));
+                            assert_eq!(aord, Some(1));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================================================================
+    // TEST 4 — GroupJoin after all terminals
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_group_join_after_all_terminals() {
+        let h = C2A3aGroupHarness::new("join");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group("eval-join-1"));
+
+            h.wait_barrier_entries(2);
+
+            // Release B only.
+            h.release_member("b");
+
+            // Wait for B outcome.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !h.has_member_outcome("member-b") {
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // INTERMEDIATE: no GroupJoin while A is blocked.
+            assert!(
+                !h.entry_kinds().iter().any(|k| k == "group_join"),
+                "GroupJoin must NOT exist while A is still blocked"
+            );
+
+            // Release A.
+            h.release_member("a");
+
+            let result = handle.join().expect("group must not panic");
+            assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
+        });
+
+        // FINAL: GroupJoin is last.
+        let kinds = h.entry_kinds();
+        assert_eq!(kinds.iter().filter(|k| k.as_str() == "outcome").count(), 2);
+        assert_eq!(
+            kinds.iter().filter(|k| k.as_str() == "group_join").count(),
+            1
+        );
+        assert_eq!(kinds.last(), Some(&"group_join".to_owned()));
+        let join_pos = kinds.iter().position(|k| k == "group_join").unwrap();
+        assert!(
+            join_pos >= 2,
+            "GroupJoin at position {join_pos} must be after both outcomes"
+        );
+    }
+
+    // ===================================================================
+    // TEST 5 — Worker panic yields uncertain non-success join
+    // ===================================================================
+
+    struct PanicGuard;
+    impl PanicGuard {
+        fn target(action_index: usize) -> Self {
+            INJECT_WORKER_PANIC_ACTION_INDEX
+                .store(action_index, std::sync::atomic::Ordering::SeqCst);
+            Self
+        }
+    }
+    impl Drop for PanicGuard {
+        fn drop(&mut self) {
+            INJECT_WORKER_PANIC_ACTION_INDEX.store(usize::MAX, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn c2a3a_worker_panic_yields_uncertain_non_success_join() {
+        let h = C2A3aGroupHarness::new("panic");
+
+        // Target worker action_index=1 (member-b) for panic injection.
+        // PanicGuard resets to usize::MAX on drop (even if test panics).
+        let _guard = PanicGuard::target(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group("eval-panic-1"));
+
+            // Wait for A to enter the barrier (B panics before entering).
+            h.wait_barrier_entries(1);
+
+            // Release A.
+            h.release_member("a");
+
+            let result = handle.join().expect("coordinator must not hang");
+            assert!(
+                !matches!(result, ExecutionServiceResult::Completed { .. }),
+                "panic must prevent Completed, got: {result:?}"
+            );
+        });
+
+        // Verify Trail: at least one outcome, GroupJoin joined=false.
+        let kinds = h.entry_kinds();
+        let outcome_count = kinds.iter().filter(|k| k.as_str() == "outcome").count();
+        let join_count = kinds.iter().filter(|k| k.as_str() == "group_join").count();
+        assert!(
+            outcome_count >= 1,
+            "at least one outcome expected, got {outcome_count}"
+        );
+        assert_eq!(join_count, 1, "exactly one GroupJoin expected");
+
+        for line in h.trail_content().lines() {
+            if let Ok(v) = serde_json::from_str::<Value>(line) {
+                if v.get("group_id").is_some() && v.get("joined").is_some() {
+                    assert_eq!(
+                        v["joined"].as_bool(),
+                        Some(false),
+                        "GroupJoin must be non-success when a worker panics"
+                    );
+                }
+            }
+        }
+    }
+
+    // ===================================================================
+    // Low-level direct-worker overlap controls
+    // (These test provider invocation, not coordinator behaviour.)
+    // ===================================================================
+
+    fn c2a3a_member_provider(barrier_dir: &Path, identity: &str) -> PreparedProvider {
+        let mut provider = catalogue_test_provider("c2-overlap-barrier");
+        provider.identity = identity.to_owned();
+        provider.stdio_config.provider_config.identity = identity.to_owned();
+        provider.stdio_config.args.extend([
+            "-BarrierDirectory".to_owned(),
+            barrier_dir.to_string_lossy().into_owned(),
+        ]);
+        provider
+    }
+
+    // ===================================================================
+    // Observing Replay Authority (test-only)
+    //
+    // A coordinator-owned replay authority that:
+    // - selectively recovers specific members as terminal (blocked), and
+    // - records a Send+Sync trace of G0 (intent) / G1 (armed) / G2 (terminal)
+    //   events observable from the test coordinator thread.
+    //
+    // Production ReplayAdmission ownership and !Send boundaries are unchanged;
+    // this is a test seam only.
+    // ===================================================================
+
+    #[derive(Clone)]
+    struct ReplayTrace {
+        events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl ReplayTrace {
+        fn new() -> Self {
+            Self {
+                events: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            }
+        }
+
+        fn record(&self, event: String) {
+            self.events.lock().unwrap().push(event);
+        }
+
+        fn snapshot(&self) -> Vec<String> {
+            self.events.lock().unwrap().clone()
+        }
+
+        fn has(&self, needle: &str) -> bool {
+            self.events.lock().unwrap().iter().any(|e| e == needle)
+        }
+    }
+
+    struct ObservingReplayAuthority {
+        blocked: std::collections::HashMap<String, ReplayState>,
+        trace: ReplayTrace,
+    }
+
+    impl ObservingReplayAuthority {
+        fn new(blocked: &[(&str, ReplayState)]) -> Self {
+            Self::with_trace(blocked, ReplayTrace::new())
+        }
+
+        fn with_trace(blocked: &[(&str, ReplayState)], trace: ReplayTrace) -> Self {
+            Self {
+                blocked: blocked
+                    .iter()
+                    .map(|(id, state)| (id.to_string(), *state))
+                    .collect(),
+                trace,
+            }
+        }
+    }
+
+    impl crate::replay_runtime::ReplayAuthority for ObservingReplayAuthority {
+        fn admit(
+            &self,
+            _logical_key: &crate::replay::LogicalExecutionKey,
+            binding: &crate::replay::ExecutionBinding,
+        ) -> Result<Box<dyn crate::replay_runtime::ReplayAdmissionGuard>, crate::replay::ReplayError>
+        {
+            let action_id = binding.action_id.clone();
+            let (fresh, state) = match self.blocked.get(&action_id) {
+                Some(state) => {
+                    self.trace
+                        .record(format!("admit:{action_id}:blocked:{state:?}"));
+                    (false, *state)
+                }
+                None => {
+                    self.trace.record(format!("admit:{action_id}:fresh"));
+                    (true, ReplayState::ClaimedNoState)
+                }
+            };
+            Ok(Box::new(ObservingAdmission {
+                action_id,
+                fresh,
+                state,
+                trace: self.trace.clone(),
+            }))
+        }
+    }
+
+    struct ObservingAdmission {
+        action_id: String,
+        fresh: bool,
+        state: ReplayState,
+        trace: ReplayTrace,
+    }
+
+    impl crate::replay_runtime::ReplayAdmissionGuard for ObservingAdmission {
+        fn execution_id(&self) -> &str {
+            crate::replay_runtime::test_support::TEST_EXECUTION_ID
+        }
+        fn state(&self) -> ReplayState {
+            self.state
+        }
+        fn is_fresh(&self) -> bool {
+            self.fresh
+        }
+        fn publish_intent(&mut self) -> Result<(), crate::replay::ReplayError> {
+            self.trace.record(format!("g0:{}", self.action_id));
+            Ok(())
+        }
+        fn publish_armed(&mut self) -> Result<(), crate::replay::ReplayError> {
+            self.trace.record(format!("g1:{}", self.action_id));
+            Ok(())
+        }
+        fn publish_terminal(
+            &mut self,
+            _state: ReplayState,
+            _durable_outcome_digest: String,
+        ) -> Result<(), crate::replay::ReplayError> {
+            self.trace.record(format!("g2:{}", self.action_id));
+            Ok(())
+        }
+    }
+
+    // ===================================================================
+    // C2-A3a Terminal Semantic Matrix Harness
+    //
+    // Flexible builder for tests that need custom policy, replay state,
+    // or timeout configuration.  Supports:
+    // - per-capability policy rules (Deny / Ask / Allow)
+    // - custom replay authority state (fresh / recovered)
+    // - per-capability timeout override
+    // - provider removal (for Unavailable tests)
+    // ===================================================================
+
+    struct C2A3aTerminalHarness {
+        runtime: PreparedRuntime,
+        _runtime_dir: PathBuf,
+        trail_path: PathBuf,
+        replay_dir: PathBuf,
+        barrier_dir: PathBuf,
+        provider_a_unavailable: bool,
+    }
+
+    struct TerminalHarnessBuilder {
+        test_name: String,
+        policy_a: PolicyDecision,
+        policy_b: PolicyDecision,
+        timeout_a_ms: Option<u64>,
+        timeout_b_ms: Option<u64>,
+        provider_a_unavailable: bool,
+        peer_count: usize,
+        outcome_a: OutcomeMode,
+        outcome_b: OutcomeMode,
+    }
+
+    #[derive(Clone, Copy)]
+    enum PolicyDecision {
+        Allow,
+        Deny,
+        Ask,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum OutcomeMode {
+        Success,
+        Failed,
+        Uncertain,
+    }
+
+    impl TerminalHarnessBuilder {
+        fn new(test_name: &str) -> Self {
+            Self {
+                test_name: test_name.to_owned(),
+                policy_a: PolicyDecision::Allow,
+                policy_b: PolicyDecision::Allow,
+                timeout_a_ms: None,
+                timeout_b_ms: None,
+                provider_a_unavailable: false,
+                peer_count: 2,
+                outcome_a: OutcomeMode::Success,
+                outcome_b: OutcomeMode::Success,
+            }
+        }
+
+        fn policy_a(mut self, p: PolicyDecision) -> Self {
+            self.policy_a = p;
+            self
+        }
+
+        fn policy_b(mut self, p: PolicyDecision) -> Self {
+            self.policy_b = p;
+            self
+        }
+
+        fn timeout_a_ms(mut self, ms: u64) -> Self {
+            self.timeout_a_ms = Some(ms);
+            self
+        }
+
+        fn timeout_b_ms(mut self, ms: u64) -> Self {
+            self.timeout_b_ms = Some(ms);
+            self
+        }
+
+        /// Keep provider-a fully configured but exclude it from the host's
+        /// availability snapshot so the semantic member becomes exactly
+        /// `Unavailable` without being removed from the Runtime Plan.
+        fn provider_a_unavailable(mut self) -> Self {
+            self.provider_a_unavailable = true;
+            self
+        }
+
+        /// Number of providers that must reach tools/call before any proceeds.
+        fn peer_count(mut self, count: usize) -> Self {
+            self.peer_count = count;
+            self
+        }
+
+        fn outcome_a(mut self, mode: OutcomeMode) -> Self {
+            self.outcome_a = mode;
+            self
+        }
+
+        fn outcome_b(mut self, mode: OutcomeMode) -> Self {
+            self.outcome_b = mode;
+            self
+        }
+
+        fn build(self) -> C2A3aTerminalHarness {
+            let barrier_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-terminal-{}-{}",
+                self.test_name,
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&barrier_dir).unwrap();
+
+            let runtime_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-terminal-{}-rt-{}",
+                self.test_name,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(runtime_dir.join("tethers")).unwrap();
+            std::fs::create_dir_all(runtime_dir.join("manifests")).unwrap();
+
+            std::fs::write(
+                runtime_dir.join("tethers/together-test.tether"),
+                "when event.test if true do fixture.ping-a do fixture.ping-b",
+            )
+            .unwrap();
+
+            let manifest_json =
+                include_str!("../../protocol/capability-manifests/fixture-ping.json");
+            let make_manifest =
+                |cap_name: &str, provider_id: &str, timeout_ms: Option<u64>| -> String {
+                    let mut m: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+                    m["capability_name"] = serde_json::json!(cap_name);
+                    m["provider"]["identity"] = serde_json::json!(provider_id);
+                    m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+                    m["permission_scope"] =
+                        serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+                    m["confirmation_policy"] =
+                        serde_json::json!({"standing_permitted": true, "per_call_required": false});
+                    if let Some(ms) = timeout_ms {
+                        m["timeout_ms"] = serde_json::json!(ms);
+                    }
+                    let s = serde_json::to_string(&m).unwrap();
+                    let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+                    m["digest"] = serde_json::json!(digest);
+                    serde_json::to_string_pretty(&m).unwrap()
+                };
+            let manifest_a = make_manifest("fixture.ping-a", "provider-a", self.timeout_a_ms);
+            let manifest_b = make_manifest("fixture.ping-b", "provider-b", self.timeout_b_ms);
+            std::fs::write(
+                runtime_dir.join("manifests/fixture-ping-a.json"),
+                &manifest_a,
+            )
+            .unwrap();
+            std::fs::write(
+                runtime_dir.join("manifests/fixture-ping-b.json"),
+                &manifest_b,
+            )
+            .unwrap();
+
+            let (_, digest_a) = crate::manifest::canonicalize_and_digest(&manifest_a).unwrap();
+            let (_, digest_b) = crate::manifest::canonicalize_and_digest(&manifest_b).unwrap();
+
+            let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("scripts")
+                .join("tethers-stdio-fixture.ps1");
+            let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+
+            let policy_rules = |cap: &str, decision: PolicyDecision| -> serde_json::Value {
+                let d = match decision {
+                    PolicyDecision::Allow => "allow",
+                    PolicyDecision::Deny => "deny",
+                    PolicyDecision::Ask => "ask",
+                };
+                json!({"name": cap, "version": 1, "decision": d})
+            };
+
+            let mut providers = vec![
+                json!({
+                    "id": "provider-a",
+                    "display_name": "Provider A",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [
+                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                            barrier_script.to_str().unwrap(),
+                            "-Mode", "c2-overlap-barrier",
+                            "-BarrierDirectory", &barrier_str
+                        ],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [{
+                        "name": "fixture.ping-a",
+                        "version": 1,
+                        "manifest_path": "manifests/fixture-ping-a.json",
+                        "pinned_digest": &digest_a,
+                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                    }]
+                }),
+                json!({
+                    "id": "provider-b",
+                    "display_name": "Provider B",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [
+                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                            barrier_script.to_str().unwrap(),
+                            "-Mode", "c2-overlap-barrier",
+                            "-BarrierDirectory", &barrier_str
+                        ],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [{
+                        "name": "fixture.ping-b",
+                        "version": 1,
+                        "manifest_path": "manifests/fixture-ping-b.json",
+                        "pinned_digest": &digest_b,
+                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                    }]
+                }),
+            ];
+
+            // Both providers remain configured.  `provider_a_unavailable`
+            // only affects the runtime availability snapshot, so member-a's
+            // semantic Action always remains in the plan.
+            let capability_requirements = vec![
+                json!({"name": "fixture.ping-a", "version": 1, "reason": "concurrency observability"}),
+                json!({"name": "fixture.ping-b", "version": 1, "reason": "concurrency observability"}),
+            ];
+            let policy_rules_list = vec![
+                policy_rules("fixture.ping-a", self.policy_a),
+                policy_rules("fixture.ping-b", self.policy_b),
+            ];
+
+            let config = json!({
+                "format_version": "0.1",
+                "tether_set": {
+                    "id": "test.together",
+                    "version": "1",
+                    "tethers": [{
+                        "id": "together-test",
+                        "version": "1",
+                        "source_path": "tethers/together-test.tether"
+                    }],
+                    "capability_requirements": capability_requirements
+                },
+                "providers": providers,
+                "policy": {
+                    "default": "deny",
+                    "rules": policy_rules_list
+                }
+            });
+
+            let config_path = runtime_dir.join("tethers-config.json");
+            std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+            let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+            let runtime = prepare_runtime(&loaded).unwrap();
+
+            // Write barrier control files: peer count and per-member outcome.
+            std::fs::write(barrier_dir.join("peer-count"), self.peer_count.to_string()).unwrap();
+            let outcome_file = |tag: &str, mode: OutcomeMode| {
+                let text = match mode {
+                    OutcomeMode::Success => "success",
+                    OutcomeMode::Failed => "failed",
+                    OutcomeMode::Uncertain => "uncertain",
+                };
+                std::fs::write(barrier_dir.join(format!("outcome-member-{tag}")), text).unwrap();
+            };
+            outcome_file("a", self.outcome_a);
+            outcome_file("b", self.outcome_b);
+
+            let trail_path = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-terminal-{}-trail-{}.jsonl",
+                self.test_name,
+                uuid::Uuid::new_v4()
+            ));
+            let replay_dir = std::env::temp_dir().join(format!(
+                "tethers-c2a3a-terminal-{}-replay-{}",
+                self.test_name,
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&replay_dir).unwrap();
+
+            C2A3aTerminalHarness {
+                runtime,
+                _runtime_dir: runtime_dir,
+                trail_path,
+                replay_dir,
+                barrier_dir,
+                provider_a_unavailable: self.provider_a_unavailable,
+            }
+        }
+    }
+
+    impl C2A3aTerminalHarness {
+        fn run_group_with_boxed_replay(
+            &self,
+            eval_id: &str,
+            replay_authority: Box<dyn crate::replay_runtime::ReplayAuthority>,
+        ) -> ExecutionServiceResult {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("terminal provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            let providers = self.runtime.providers();
+            let digest_a = providers
+                .iter()
+                .find(|p| p.identity == "provider-a")
+                .map(|p| {
+                    p.capabilities[0]
+                        .verified_manifest
+                        .verified_digest()
+                        .to_owned()
+                });
+            let digest_b = providers
+                .iter()
+                .find(|p| p.identity == "provider-b")
+                .map(|p| {
+                    p.capabilities[0]
+                        .verified_manifest
+                        .verified_digest()
+                        .to_owned()
+                });
+
+            let mut actions = Vec::new();
+            if let Some(ref da) = digest_a {
+                actions.push(json!({
+                    "action_id": "member-a",
+                    "idempotency_key": format!("{eval_id}/member-a"),
+                    "capability": "fixture.ping-a",
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": "provider-a",
+                    "manifest_digest": da,
+                    "arguments": {"message": "member/a"},
+                }));
+            }
+            if let Some(ref db) = digest_b {
+                actions.push(json!({
+                    "action_id": "member-b",
+                    "idempotency_key": format!("{eval_id}/member-b"),
+                    "capability": "fixture.ping-b",
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": "provider-b",
+                    "manifest_digest": db,
+                    "arguments": {"message": "member/b"},
+                }));
+            }
+
+            let member_action_ids: Vec<String> = actions
+                .iter()
+                .filter_map(|a| a.get("action_id").and_then(Value::as_str).map(String::from))
+                .collect();
+            let member_indexes: Vec<usize> = (0..actions.len()).collect();
+
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": member_action_ids,
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let availability = self.availability();
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let mut replay_authority = replay_authority;
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            execute_group_concurrent(
+                "together-1",
+                &member_indexes,
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                replay_authority.as_mut(),
+            )
+        }
+
+        /// Build the host availability snapshot for the group, excluding
+        /// provider-a when the harness was built with
+        /// `provider_a_unavailable`.
+        fn availability(&self) -> ProviderAvailability {
+            let identities = self
+                .runtime
+                .providers()
+                .iter()
+                .map(|p| p.identity.as_str())
+                .filter(|id| !(self.provider_a_unavailable && *id == "provider-a"));
+            ProviderAvailability::from_identities(identities)
+        }
+
+        fn run_group_with_replay(
+            &self,
+            eval_id: &str,
+            replay_config: impl FnOnce() -> crate::replay_runtime::test_support::TestReplayAuthority,
+        ) -> ExecutionServiceResult {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("terminal provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            let providers = self.runtime.providers();
+            let digest_a = providers
+                .iter()
+                .find(|p| p.identity == "provider-a")
+                .map(|p| {
+                    p.capabilities[0]
+                        .verified_manifest
+                        .verified_digest()
+                        .to_owned()
+                });
+            let digest_b = providers
+                .iter()
+                .find(|p| p.identity == "provider-b")
+                .map(|p| {
+                    p.capabilities[0]
+                        .verified_manifest
+                        .verified_digest()
+                        .to_owned()
+                });
+
+            let mut actions = Vec::new();
+            if let Some(ref da) = digest_a {
+                actions.push(json!({
+                    "action_id": "member-a",
+                    "idempotency_key": format!("{eval_id}/member-a"),
+                    "capability": "fixture.ping-a",
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": "provider-a",
+                    "manifest_digest": da,
+                    "arguments": {"message": "member/a"},
+                }));
+            }
+            if let Some(ref db) = digest_b {
+                actions.push(json!({
+                    "action_id": "member-b",
+                    "idempotency_key": format!("{eval_id}/member-b"),
+                    "capability": "fixture.ping-b",
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": "provider-b",
+                    "manifest_digest": db,
+                    "arguments": {"message": "member/b"},
+                }));
+            }
+
+            let member_action_ids: Vec<String> = actions
+                .iter()
+                .filter_map(|a| a.get("action_id").and_then(Value::as_str).map(String::from))
+                .collect();
+            let member_indexes: Vec<usize> = (0..actions.len()).collect();
+
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": member_action_ids,
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let availability = self.availability();
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let mut replay_authority = replay_config();
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            execute_group_concurrent(
+                "together-1",
+                &member_indexes,
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                &mut replay_authority,
+            )
+        }
+
+        fn wait_barrier_entries(&self, count: usize) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while barrier_entered_count(&self.barrier_dir) < count {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "only {} of {count} providers entered tools/call",
+                    barrier_entered_count(&self.barrier_dir)
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        fn release_member(&self, member: &str) {
+            std::fs::write(
+                self.barrier_dir.join(format!("release-member-{member}")),
+                "release",
+            )
+            .unwrap();
+        }
+
+        fn outcome_ids(&self) -> Vec<String> {
+            trail_outcome_action_ids(&self.trail_path)
+        }
+
+        fn entry_kinds(&self) -> Vec<String> {
+            trail_entry_kinds(&self.trail_path)
+        }
+
+        fn has_member_outcome(&self, member: &str) -> bool {
+            trail_has_member_outcome(&self.trail_path, member)
+        }
+
+        fn trail_content(&self) -> String {
+            std::fs::read_to_string(&self.trail_path).unwrap_or_default()
+        }
+
+        fn trail_entries(&self) -> Vec<Value> {
+            self.trail_content()
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect()
+        }
+
+        fn outcome_entry(&self, action_id: &str) -> Option<Value> {
+            self.trail_entries().into_iter().find(|e| {
+                e.get("execution_id").is_some()
+                    && e.get("status").is_some()
+                    && e.get("action_id").and_then(Value::as_str) == Some(action_id)
+            })
+        }
+
+        fn group_join_entry(&self) -> Option<Value> {
+            self.trail_entries()
+                .into_iter()
+                .find(|e| e.get("group_id").is_some() && e.get("joined").is_some())
+        }
+    }
+
+    impl Drop for C2A3aTerminalHarness {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.barrier_dir);
+            let _ = std::fs::remove_dir_all(&self._runtime_dir);
+            let _ = std::fs::remove_dir_all(&self.replay_dir);
+            let _ = std::fs::remove_file(&self.trail_path);
+        }
+    }
+
+    // ===================================================================
+    // TEST 1 — Denied + successful sibling
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_denied_plus_success() {
+        let h = TerminalHarnessBuilder::new("denied")
+            .policy_a(PolicyDecision::Deny)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        let result = h.run_group_with_replay("eval-denied-1", || {
+            crate::replay_runtime::test_support::TestReplayAuthority::default()
+        });
+
+        // A is denied during preparation (Stage A).  B is eligible and
+        // invokes successfully through the provider barrier.
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                h.wait_barrier_entries(1);
+                h.release_member("b");
+            });
+        });
+
+        // Final result: first non-success is Denied for member-a.
+        assert!(
+            matches!(&result, ExecutionServiceResult::Denied { action_id, .. } if action_id == "member-a"),
+            "expected Denied for member-a, got: {result:?}"
+        );
+
+        // GroupJoin joined=false.
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(false));
+
+        // No fake OutcomeEntry invented for A if serial Denied path wouldn't create one.
+        // Denied is a preparation terminal — no provider invocation, no OutcomeEntry.
+        assert!(
+            !h.has_member_outcome("member-a"),
+            "Denied member must NOT have an OutcomeEntry"
+        );
+        assert!(
+            h.has_member_outcome("member-b"),
+            "successful sibling must have an OutcomeEntry"
+        );
+    }
+
+    // ===================================================================
+    // TEST 2 — ApprovalRequired + successful sibling
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_approval_required_plus_success() {
+        let h = TerminalHarnessBuilder::new("approval")
+            .policy_a(PolicyDecision::Ask)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        let result = h.run_group_with_replay("eval-approval-1", || {
+            crate::replay_runtime::test_support::TestReplayAuthority::default()
+        });
+
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                h.wait_barrier_entries(1);
+                h.release_member("b");
+            });
+        });
+
+        // Final result: first non-success is ApprovalRequired for member-a.
+        assert!(
+            matches!(&result, ExecutionServiceResult::ApprovalRequired { action_id, .. } if action_id == "member-a"),
+            "expected ApprovalRequired for member-a, got: {result:?}"
+        );
+
+        // GroupJoin joined=false.
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(false));
+
+        // Approval creates an ApprovalEntry in Trail, not an OutcomeEntry.
+        assert!(
+            !h.has_member_outcome("member-a"),
+            "ApprovalRequired member must NOT have an OutcomeEntry"
+        );
+        assert!(
+            h.has_member_outcome("member-b"),
+            "successful sibling must have an OutcomeEntry"
+        );
+    }
+
+    // ===================================================================
+    // TEST 3 — Unavailable + successful sibling
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_unavailable_plus_success() {
+        // Keep both semantic Actions in the plan.  Exclude provider-a from the
+        // host availability snapshot so member-a becomes exactly Unavailable
+        // without being removed from the Runtime Plan.  B stays eligible.
+        let h = TerminalHarnessBuilder::new("unavailable")
+            .provider_a_unavailable()
+            .peer_count(1)
+            .policy_a(PolicyDecision::Allow)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        let mut result: Option<ExecutionServiceResult> = None;
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                h.run_group_with_replay("eval-unavailable-1", || {
+                    crate::replay_runtime::test_support::TestReplayAuthority::default()
+                })
+            });
+
+            // B must enter real provider tools/call.
+            h.wait_barrier_entries(1);
+            h.release_member("b");
+
+            result = Some(handle.join().expect("group must not panic"));
+        });
+
+        let result = result.expect("group must have produced a result");
+
+        // Exact terminal classification, not a flattened non-success.
+        assert!(
+            matches!(result, ExecutionServiceResult::Unavailable { .. }),
+            "expected exact Unavailable, got: {result:?}"
+        );
+
+        // GroupJoin joined=false.
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(false));
+
+        // member-a was NOT silently removed: member_action_ids holds BOTH.
+        let member_ids: Vec<String> = join["member_action_ids"]
+            .as_array()
+            .expect("GroupJoin must carry member_action_ids")
+            .iter()
+            .map(|v| v.as_str().expect("member id must be a string").to_owned())
+            .collect();
+        assert!(
+            member_ids.contains(&"member-a".to_owned()),
+            "member-a must remain a semantic member, got: {member_ids:?}"
+        );
+        assert!(
+            member_ids.contains(&"member-b".to_owned()),
+            "member-b must remain a semantic member, got: {member_ids:?}"
+        );
+
+        // A is a preparation terminal: no OutcomeEntry.  B completes.
+        assert!(
+            !h.has_member_outcome("member-a"),
+            "Unavailable member must NOT have an OutcomeEntry"
+        );
+        let b_outcome = h
+            .outcome_entry("member-b")
+            .expect("B must have an OutcomeEntry");
+        assert_eq!(
+            b_outcome["status"].as_str(),
+            Some("succeeded"),
+            "B must complete successfully, got: {b_outcome:?}"
+        );
+    }
+
+    // ===================================================================
+    // TEST 4 — ReplayBlockedCompletedFailure
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_replay_blocked_completed_failure() {
+        let h = TerminalHarnessBuilder::new("replay-fail")
+            .peer_count(1)
+            .policy_a(PolicyDecision::Allow)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        let mut result: Option<ExecutionServiceResult> = None;
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                h.run_group_with_boxed_replay(
+                    "eval-replay-fail-1",
+                    Box::new(ObservingReplayAuthority::new(&[(
+                        "member-a",
+                        ReplayState::Failed,
+                    )])),
+                )
+            });
+
+            // Only B enters the barrier (A is replay-blocked during preparation).
+            h.wait_barrier_entries(1);
+            h.release_member("b");
+
+            result = Some(handle.join().expect("group must not panic"));
+        });
+
+        let result = result.expect("group must have produced a result");
+
+        // Final result: first non-success is ReplayBlockedCompletedFailure.
+        assert!(
+            matches!(&result, ExecutionServiceResult::ReplayBlockedCompletedFailure { action_id, .. } if action_id == "member-a"),
+            "expected ReplayBlockedCompletedFailure for member-a, got: {result:?}"
+        );
+
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(false));
+
+        // ReplayBlocked is a preparation terminal — no OutcomeEntry.
+        assert!(
+            !h.has_member_outcome("member-a"),
+            "replay-blocked member must NOT have an OutcomeEntry"
+        );
+        let b_outcome = h
+            .outcome_entry("member-b")
+            .expect("B must have an OutcomeEntry");
+        assert_eq!(
+            b_outcome["status"].as_str(),
+            Some("succeeded"),
+            "successful sibling must succeed, got: {b_outcome:?}"
+        );
+    }
+
+    // ===================================================================
+    // TEST 5 — ReplayBlockedCompletedSuccess
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_replay_blocked_completed_success() {
+        // A = ReplayBlockedCompletedSuccess (recovered Succeeded state),
+        // B = normal provider success.  No infrastructure failure permitted.
+        let h = TerminalHarnessBuilder::new("replay-success")
+            .peer_count(1)
+            .policy_a(PolicyDecision::Allow)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        let trace = ReplayTrace::new();
+        let trace_for_thread = trace.clone();
+
+        let mut result: Option<ExecutionServiceResult> = None;
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                h.run_group_with_boxed_replay(
+                    "eval-replay-success-1",
+                    Box::new(ObservingReplayAuthority::with_trace(
+                        &[("member-a", ReplayState::Succeeded)],
+                        trace_for_thread,
+                    )),
+                )
+            });
+
+            // Only B enters the barrier (A is replay-blocked during preparation).
+            h.wait_barrier_entries(1);
+            h.release_member("b");
+
+            result = Some(handle.join().expect("group must not panic"));
+        });
+
+        let result = result.expect("group must have produced a result");
+
+        // ReplayBlockedCompletedSuccess counts as success: the group must join.
+        assert!(
+            matches!(&result, ExecutionServiceResult::Completed { .. }),
+            "expected Completed (replay-blocked-success counts as success), got: {result:?}"
+        );
+
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(true));
+
+        // B completed successfully.
+        let b_outcome = h
+            .outcome_entry("member-b")
+            .expect("B must have an OutcomeEntry");
+        assert_eq!(
+            b_outcome["status"].as_str(),
+            Some("succeeded"),
+            "B must complete successfully, got: {b_outcome:?}"
+        );
+
+        // A was admitted as a recovered Succeeded state, which maps to
+        // ReplayBlockedCompletedSuccess (the only success replay classification).
+        assert!(
+            trace.has("admit:member-a:blocked:Succeeded"),
+            "A must be admitted as replay-blocked success, trace: {:?}",
+            trace.snapshot()
+        );
+    }
+
+    // ===================================================================
+    // TEST 6 — Unattempted (deadline expiry before provider invocation)
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_unattempted() {
+        // Set A's timeout to 0ms so the deadline expires during Stage B
+        // before the provider can be invoked.  The monotonic clock check
+        // uses >= so 0ms means the deadline is always expired.
+        let h = TerminalHarnessBuilder::new("unattempted")
+            .timeout_a_ms(0)
+            .policy_a(PolicyDecision::Allow)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        let mut result: Option<ExecutionServiceResult> = None;
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                h.run_group_with_replay("eval-unattempted-1", || {
+                    crate::replay_runtime::test_support::TestReplayAuthority::default()
+                })
+            });
+
+            // B may or may not enter depending on timing; release it eagerly.
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while barrier_entered_count(&h.barrier_dir) < 1 {
+                if std::time::Instant::now() >= deadline {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            h.release_member("b");
+
+            result = Some(handle.join().expect("group must not panic"));
+        });
+
+        let result = result.expect("group must have produced a result");
+
+        // Final result: first non-success is Unattempted for member-a.
+        assert!(
+            matches!(&result, ExecutionServiceResult::Unattempted { action_id, .. } if action_id == "member-a"),
+            "expected Unattempted for member-a, got: {result:?}"
+        );
+
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(false));
+    }
+
+    // ===================================================================
+    // TEST 7 — Uncertain (provider error diagnostic)
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_uncertain() {
+        // We cannot easily make the real provider return an error, but we
+        // can inject a panic into worker action_index=0 (member-a).
+        // The catch_unwind inside the real worker thread converts the panic
+        // into Uncertain via NoFinalResponse diagnostic.
+        let h = TerminalHarnessBuilder::new("uncertain")
+            .policy_a(PolicyDecision::Allow)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        let _guard = PanicGuard::target(0);
+
+        let mut result: Option<ExecutionServiceResult> = None;
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                h.run_group_with_replay("eval-uncertain-1", || {
+                    crate::replay_runtime::test_support::TestReplayAuthority::default()
+                })
+            });
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while barrier_entered_count(&h.barrier_dir) < 1 {
+                if std::time::Instant::now() >= deadline {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            h.release_member("b");
+
+            result = Some(handle.join().expect("group must not panic"));
+        });
+
+        let result = result.expect("group must have produced a result");
+
+        // Final result: first non-success is Uncertain for member-a.
+        assert!(
+            matches!(&result, ExecutionServiceResult::Uncertain { action_id, .. } if action_id == "member-a"),
+            "expected Uncertain for member-a, got: {result:?}"
+        );
+
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(false));
+    }
+
+    // ===================================================================
+    // TEST 8 — Deterministic final result independent of physical order
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_deterministic_result_independent_of_order() {
+        // Semantic order: A (Uncertain), B (Failed).  Both reach the real
+        // provider boundary and produce distinct terminal results whose
+        // physical delivery order can be inverted via independent release.
+        //
+        // The final aggregate must always be semantic member A's Uncertain,
+        // regardless of which member physically completes first.
+        for (run_label, first, second) in [("B-first", "b", "a"), ("A-first", "a", "b")] {
+            let h = TerminalHarnessBuilder::new(&format!("order-{run_label}"))
+                .policy_a(PolicyDecision::Allow)
+                .policy_b(PolicyDecision::Allow)
+                .outcome_a(OutcomeMode::Uncertain)
+                .outcome_b(OutcomeMode::Failed)
+                .build();
+
+            let mut result: Option<ExecutionServiceResult> = None;
+            std::thread::scope(|s| {
+                let handle = s.spawn(|| {
+                    h.run_group_with_replay(&format!("eval-order-{run_label}"), || {
+                        crate::replay_runtime::test_support::TestReplayAuthority::default()
+                    })
+                });
+
+                // Both members must reach real tools/call.
+                h.wait_barrier_entries(2);
+
+                // Release one member and require its durable Stage C outcome
+                // before allowing the second member to complete.
+                h.release_member(first);
+
+                let first_action_id = format!("member-{first}");
+                let deadline = std::time::Instant::now() + Duration::from_secs(15);
+                while !h.has_member_outcome(&first_action_id) {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "[{run_label}] {first_action_id} outcome never became durable"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+
+                // The second provider is still physically blocked here.
+                assert!(
+                    !h.has_member_outcome(&format!("member-{second}")),
+                    "[{run_label}] second member completed before release"
+                );
+
+                h.release_member(second);
+
+                result = Some(handle.join().expect("group coordinator must not panic"));
+            });
+
+            let result = result.expect("group must produce a result");
+
+            // Semantic order is always A then B.  A = Uncertain, B = Failed.
+            // Therefore A must win aggregate selection regardless of physical order.
+            assert!(
+                matches!(
+                    &result,
+                    ExecutionServiceResult::Uncertain { action_id, .. } if action_id == "member-a"
+                ),
+                "[{run_label}] expected semantic member-a Uncertain, got {result:?}"
+            );
+
+            let expected_order = if first == "b" {
+                vec!["member-b".to_owned(), "member-a".to_owned()]
+            } else {
+                vec!["member-a".to_owned(), "member-b".to_owned()]
+            };
+            assert_eq!(
+                h.outcome_ids(),
+                expected_order,
+                "[{run_label}] durable physical OutcomeEntry order"
+            );
+
+            let join = h.group_join_entry().expect("GroupJoin must exist");
+            assert_eq!(
+                join["joined"].as_bool(),
+                Some(false),
+                "[{run_label}] two non-success members must not join successfully"
+            );
+        }
+    }
+
+    // ===================================================================
+    // TEST 9 — Panic exact Uncertain classification (strengthened)
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_panic_exact_uncertain() {
+        // member-b (semantic ordinal 1) panics inside the real spawned worker.
+        // member-a reaches the provider and succeeds.  The final aggregate
+        // must be EXACTLY Uncertain for member-b.
+        let h = TerminalHarnessBuilder::new("panic-exact")
+            .peer_count(1)
+            .policy_a(PolicyDecision::Allow)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        // Target action_index=1 (member-b) for panic injection.
+        let _guard = PanicGuard::target(1);
+
+        let mut result: Option<ExecutionServiceResult> = None;
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                h.run_group_with_replay("eval-panic-exact-1", || {
+                    crate::replay_runtime::test_support::TestReplayAuthority::default()
+                })
+            });
+
+            // member-a reaches the barrier (member-b panics before entering).
+            h.wait_barrier_entries(1);
+            h.release_member("a");
+
+            result = Some(handle.join().expect("group must not panic"));
+        });
+
+        let result = result.expect("group must have produced a result");
+
+        // Exact returned final result: Uncertain for semantic member-b.
+        assert!(
+            matches!(&result, ExecutionServiceResult::Uncertain { action_id, .. } if action_id == "member-b"),
+            "expected exact Uncertain for member-b, got: {result:?}"
+        );
+
+        // member-a succeeded, member-b has no OutcomeEntry (panic is a
+        // pre-provider classification carried through Stage C).
+        let a_outcome = h
+            .outcome_entry("member-a")
+            .expect("A must have an OutcomeEntry");
+        assert_eq!(
+            a_outcome["status"].as_str(),
+            Some("succeeded"),
+            "member-a must succeed, got: {a_outcome:?}"
+        );
+
+        let join = h.group_join_entry().expect("GroupJoin must exist");
+        assert_eq!(join["joined"].as_bool(), Some(false));
+    }
+
+    // ===================================================================
+    // TEST 10 — Intent before provider effect
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_intent_before_effect() {
+        // Both members use the barrier fixture.  Before either provider can
+        // perform an effect, each member's durable Trail intent must exist.
+        let h = TerminalHarnessBuilder::new("intent")
+            .policy_a(PolicyDecision::Allow)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        // Run in a thread so we can poll the Trail while both providers are
+        // blocked at the effect gate.
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                h.run_group_with_replay("eval-intent-1", || {
+                    crate::replay_runtime::test_support::TestReplayAuthority::default()
+                })
+            });
+
+            // Wait for both to enter the barrier (both reached tools/call).
+            h.wait_barrier_entries(2);
+
+            // Before releasing provider effect, BOTH members must already have
+            // durable Trail intent.
+            let entries = h.trail_entries();
+            let has_intent = |member: &str| {
+                entries.iter().any(|e| {
+                    e.get("execution_id").is_some()
+                        && e.get("action_id").and_then(Value::as_str) == Some(member)
+                        && e.get("status").is_none()
+                        && e.get("capability_name").is_some()
+                })
+            };
+            assert!(
+                has_intent("member-a"),
+                "member-a must have durable Trail intent before provider effect"
+            );
+            assert!(
+                has_intent("member-b"),
+                "member-b must have durable Trail intent before provider effect"
+            );
+
+            // Release both.
+            h.release_member("a");
+            h.release_member("b");
+
+            let result = handle.join().expect("group must not panic");
+            assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
+        });
+
+        // After completion, each member's intent must precede its outcome.
+        let entries = h.trail_entries();
+        for member in ["member-a", "member-b"] {
+            let intent_pos = entries
+                .iter()
+                .position(|e| {
+                    e.get("execution_id").is_some()
+                        && e.get("action_id").and_then(Value::as_str) == Some(member)
+                        && e.get("status").is_none()
+                        && e.get("capability_name").is_some()
+                })
+                .expect("intent entry must exist for {member}");
+            let outcome_pos = entries
+                .iter()
+                .position(|e| {
+                    e.get("execution_id").is_some()
+                        && e.get("status").is_some()
+                        && e.get("action_id").and_then(Value::as_str) == Some(member)
+                })
+                .expect("outcome entry must exist for {member}");
+            assert!(
+                intent_pos < outcome_pos,
+                "intent (pos {intent_pos}) must precede outcome (pos {outcome_pos}) for {member}"
+            );
+        }
+    }
+
+    // ===================================================================
+    // TEST 11 — G1 (armed) before provider effect
+    // ===================================================================
+
+    #[test]
+    fn c2a3a_terminal_g1_before_effect() {
+        // Directly observe replay G0 (intent) / G1 (armed) / G2 (terminal)
+        // through an instrumented test-only replay authority.  G1 must be
+        // observed before any provider effect is released, and G2 after
+        // completion, with G0 -> G1 -> G2 ordering per member.
+        let h = TerminalHarnessBuilder::new("g1-before")
+            .policy_a(PolicyDecision::Allow)
+            .policy_b(PolicyDecision::Allow)
+            .build();
+
+        let trace = ReplayTrace::new();
+        let trace_for_thread = trace.clone();
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                h.run_group_with_boxed_replay(
+                    "eval-g1-1",
+                    Box::new(ObservingReplayAuthority::with_trace(&[], trace_for_thread)),
+                )
+            });
+
+            // Wait for both to enter the barrier (both reached tools/call).
+            h.wait_barrier_entries(2);
+
+            // BEFORE releasing provider effect, G0 and G1 must be observed
+            // for BOTH invoked members.
+            for member in ["member-a", "member-b"] {
+                assert!(
+                    trace.has(&format!("g0:{member}")),
+                    "G0 for {member} must be observed before provider effect"
+                );
+                assert!(
+                    trace.has(&format!("g1:{member}")),
+                    "G1 for {member} must be observed before provider effect, trace: {:?}",
+                    trace.snapshot()
+                );
+            }
+
+            // Release both.
+            h.release_member("a");
+            h.release_member("b");
+
+            let result = handle.join().expect("group must not panic");
+            assert!(matches!(result, ExecutionServiceResult::Completed { .. }));
+        });
+
+        // After completion, G2 must be observed, and ordering per member is
+        // G0 -> G1 -> G2.
+        let snapshot = trace.snapshot();
+        for member in ["member-a", "member-b"] {
+            let g0 = format!("g0:{member}");
+            let g1 = format!("g1:{member}");
+            let g2 = format!("g2:{member}");
+            let pos = |e: &String| {
+                snapshot
+                    .iter()
+                    .position(|x| x == e)
+                    .unwrap_or_else(|| panic!("{e} must be observed"))
+            };
+            let g0_pos = pos(&g0);
+            let g1_pos = pos(&g1);
+            let g2_pos = pos(&g2);
+            assert!(
+                g0_pos < g1_pos,
+                "G0 (pos {g0_pos}) before G1 (pos {g1_pos}) for {member}"
+            );
+            assert!(
+                g1_pos < g2_pos,
+                "G1 (pos {g1_pos}) before G2 (pos {g2_pos}) for {member}"
+            );
+        }
     }
 }

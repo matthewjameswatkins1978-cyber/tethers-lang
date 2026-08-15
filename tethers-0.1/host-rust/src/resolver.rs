@@ -110,6 +110,24 @@ pub struct ResolvedCapability {
 }
 
 impl ResolvedCapability {
+    /// Construct a resolved capability from its parts.
+    ///
+    /// Used by the concurrent group execution path to create mock resolved
+    /// capabilities for preparation-failed members.
+    pub(crate) fn new(
+        identity: CapabilityIdentity,
+        provider_identity: String,
+        manifest_digest: String,
+        manifest: VerifiedManifest,
+    ) -> Self {
+        Self {
+            identity,
+            provider_identity,
+            manifest_digest,
+            manifest,
+        }
+    }
+
     pub fn identity(&self) -> &CapabilityIdentity {
         &self.identity
     }

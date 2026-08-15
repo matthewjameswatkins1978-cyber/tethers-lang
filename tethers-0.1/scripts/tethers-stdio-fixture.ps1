@@ -10,11 +10,13 @@ param(
         "catalogue-change-unchanged", "catalogue-change-drift",
         "catalogue-change-on-probe",
         "record-methods", "record-cwd", "run-success", "run-hang-initialize",
-        "run-explicit-error", "run-invalid-output", "run-hang-call"
+        "run-explicit-error", "run-invalid-output", "run-hang-call",
+        "c2-overlap-barrier"
     )]
     [string]$Mode = "valid",
     [string]$MarkerFile = "",
-    [string]$CwdMarkerFile = ""
+    [string]$CwdMarkerFile = "",
+    [string]$BarrierDirectory = ""
 )
 
 Set-StrictMode -Version Latest
@@ -215,6 +217,81 @@ try {
                 }
             }
             "tools/call" {
+                if ($Mode -eq "c2-overlap-barrier") {
+                    if ([string]::IsNullOrWhiteSpace($BarrierDirectory)) {
+                        Write-ErrorResponse $request.id -32602 "BarrierDirectory is required"
+                        continue
+                    }
+                    [System.IO.Directory]::CreateDirectory($BarrierDirectory) | Out-Null
+                    $message = $request.params.arguments.message
+                    # Extract member identity from message for per-member release control.
+                    # Messages like "hello-from-a" or "member-a" yield member tag "a".
+                    # Falls back to PID-based token for legacy/shared-release tests.
+                    $memberTag = $null
+                    if ($message -match '(?:hello-from-|member[-/])([a-z0-9]+)$') {
+                        $memberTag = $Matches[1]
+                    }
+                    $token = if ($memberTag) { "member-$memberTag" } else { "$PID-$([guid]::NewGuid().ToString('N'))" }
+                    $entered = Join-Path $BarrierDirectory "entered-$token"
+                    $active = Join-Path $BarrierDirectory "active-$token"
+                    [System.IO.File]::WriteAllText($entered, "entered")
+
+                    # Optional per-test peer count: how many providers must reach
+                    # tools/call before either proceeds.  Default 2 (real overlap).
+                    # Single-member tests (e.g. replay-blocked sibling) set 1.
+                    $peerCount = 2
+                    $peerCountFile = Join-Path $BarrierDirectory "peer-count"
+                    if (Test-Path -LiteralPath $peerCountFile) {
+                        $peerCount = [int](Get-Content -LiteralPath $peerCountFile -Raw).Trim()
+                    }
+
+                    $limit = [DateTime]::UtcNow.AddSeconds(10)
+                    while (@(Get-ChildItem -LiteralPath $BarrierDirectory -Filter 'entered-*').Count -lt $peerCount) {
+                        if ([DateTime]::UtcNow -gt $limit) {
+                            Write-ErrorResponse $request.id -32000 "overlap peer did not enter"
+                            continue 2
+                        }
+                        Start-Sleep -Milliseconds 10
+                    }
+                    [System.IO.File]::WriteAllText($active, "active")
+                    # Wait for per-member release file (release-member-{tag}) or shared release.
+                    $releaseMember = Join-Path $BarrierDirectory "release-$token"
+                    $releaseShared = Join-Path $BarrierDirectory 'release'
+                    while (-not ((Test-Path -LiteralPath $releaseMember) -or (Test-Path -LiteralPath $releaseShared))) {
+                        if ([DateTime]::UtcNow -gt $limit) {
+                            Write-ErrorResponse $request.id -32000 "overlap release timed out"
+                            continue 2
+                        }
+                        Start-Sleep -Milliseconds 10
+                    }
+
+                    # Optional per-member outcome control file.  After release the
+                    # provider returns either a real success result, an explicit
+                    # JSON-RPC error (Failed), or a response lacking both result and
+                    # error (NoFinalResponse -> Uncertain).
+                    $outcomeFile = Join-Path $BarrierDirectory "outcome-$token"
+                    $outcome = if (Test-Path -LiteralPath $outcomeFile) {
+                        (Get-Content -LiteralPath $outcomeFile -Raw).Trim()
+                    } else {
+                        "success"
+                    }
+                    switch ($outcome) {
+                        "uncertain" {
+                            # No result and no error: the host classifies this as
+                            # NoFinalResponse -> Uncertain.
+                            Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id }
+                            continue
+                        }
+                        "failed" {
+                            Write-ErrorResponse $request.id -32000 "controlled provider failure"
+                            continue
+                        }
+                        default {
+                            Write-JsonLine @{ jsonrpc = "2.0"; id = $request.id; result = @{ echo = $message } }
+                            continue
+                        }
+                    }
+                }
                 if ($Mode -eq "run-success") {
                     if ($MarkerFile) { Add-Content -Path $MarkerFile -Value "tools/call" }
                     $message = $request.params.arguments.message

@@ -2,6 +2,7 @@ use crate::*;
 
 use crate::executor::CapabilityExecutor;
 use clap::Parser;
+use dispatch::ActionId;
 use dispatch::DispatchReadyAction;
 use event_admission::{EventAdmissionGate, EventAdmissionRejection};
 use policy::PermissionDecision;
@@ -2565,6 +2566,516 @@ fn execute_boundary_impl(
         outcome: session_outcome,
         execution_id: trusted_id.clone(),
     })
+}
+
+// ===========================================================================
+// Concurrent group execution — prepare / invoke split
+// ===========================================================================
+
+/// State retained after the prepare phase for one Together group member.
+///
+/// Contains everything required to complete the invocation phase on the
+/// coordinator after a worker returns the raw provider result.  The
+/// `DispatchReadyAction` remains coordinator-owned; worker inputs are
+/// projected from it for provider invocation only.
+pub(crate) struct PreparedInvoke {
+    pub resolved: ResolvedCapability,
+    pub decision: PermissionDecision,
+    pub input_context: InputEventContext,
+    pub bridge_pins_required: bool,
+    pub execution_id_str: String,
+    pub action_id: ActionId,
+    pub action: Value,
+    pub semantic_position: Option<dispatch::SemanticPosition>,
+}
+
+/// Prepare one Together group member for concurrent invocation.
+///
+/// Performs everything up to and including the durable Trail intent:
+///
+/// 1. Verify action capability matches resolved.
+/// 2. Verify bridge pins.
+/// 3. Verify executor identity (using resolved provider).
+/// 4. Derive logical execution key.
+/// 5. Replay admission.
+/// 6. Replay G0 intent.
+/// 7. Durable Trail intent.
+///
+/// Returns the coordinator-owned `DispatchReadyAction` and `PreparedInvoke`
+/// state for the invoke phase.
+///
+/// The replay admission is returned separately so the coordinator can
+/// publish G1 and G2 at the correct points.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_boundary_prepare(
+    response: &mut Value,
+    action: &Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    input_context: &InputEventContext,
+    bridge_pins_required: bool,
+    replay_authority: &dyn replay_runtime::ReplayAuthority,
+    semantic_position: Option<&dispatch::SemanticPosition>,
+) -> Result<
+    (
+        dispatch::DispatchReadyAction,
+        PreparedInvoke,
+        Box<dyn replay_runtime::ReplayAdmissionGuard>,
+    ),
+    SharedExecutionResult,
+> {
+    let original_event_id = input_context.event_id.as_str();
+
+    let action_id_str = required_str(action, "action_id").map_err(|_e| SharedExecutionResult {
+        outcome: SharedExecutionOutcome::AuditFailed,
+        execution_id: None,
+    })?;
+    let action_capability =
+        required_str(action, "capability").map_err(|_| SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id: None,
+        })?;
+
+    // Verify the Action's capability matches the resolved capability.
+    if action_capability != resolved.capability_name() {
+        return Err(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id: None,
+        });
+    }
+
+    // Bridge-backed actions may pin digest/version/provider from planning.
+    if verify_action_pins(action, resolved, bridge_pins_required).is_err() {
+        return Err(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id: None,
+        });
+    }
+
+    let evaluation_id = response
+        .get("evaluation_id")
+        .and_then(Value::as_str)
+        .ok_or(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id: None,
+        })?
+        .to_owned();
+
+    let action_id = dispatch::ActionId(action_id_str.to_owned());
+    let arguments = action.get("arguments").cloned().unwrap_or(Value::Null);
+
+    // Non-dispatchable policy branches never open replay storage.
+    if !matches!(&decision, PermissionDecision::Allow(_)) {
+        present_non_dispatchable_response(response, &decision, &action_id.0).map_err(|_| {
+            SharedExecutionResult {
+                outcome: SharedExecutionOutcome::AuditFailed,
+                execution_id: None,
+            }
+        })?;
+        return Err(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::Denied,
+            execution_id: None,
+        });
+    }
+
+    let logical_key =
+        match replay::LogicalExecutionKey::derive(original_event_id, &evaluation_id, action_id_str)
+        {
+            Ok(key) => key,
+            Err(_) => {
+                set_replay_result(
+                    response,
+                    replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+                );
+                return Err(SharedExecutionResult {
+                    outcome: SharedExecutionOutcome::Replay(
+                        replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+                    ),
+                    execution_id: None,
+                });
+            }
+        };
+    let binding = replay::ExecutionBinding {
+        evaluation_id: evaluation_id.clone(),
+        action_id: action_id_str.to_owned(),
+        capability_name: resolved.capability_name().to_owned(),
+        capability_version: resolved.capability_version(),
+        manifest_digest: resolved.manifest_digest().to_owned(),
+        provider_identity: resolved.provider_identity().to_owned(),
+        argument_digest: approval::digest(&arguments),
+    };
+
+    // Replay persistence is opened lazily here.
+    let mut replay_admission = match crate::bench_timing::timed("replay_admit", || {
+        replay_authority.admit(&logical_key, &binding)
+    }) {
+        Ok(admission) => admission,
+        Err(_) => {
+            set_replay_result(
+                response,
+                replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+            );
+            return Err(SharedExecutionResult {
+                outcome: SharedExecutionOutcome::Replay(
+                    replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+                ),
+                execution_id: None,
+            });
+        }
+    };
+    if !replay_admission.is_fresh() {
+        let execution_id = replay_admission.execution_id().to_owned();
+        let replay_result =
+            replay_runtime::ReplayDispatchResult::from_recovered_state(replay_admission.state());
+        set_replay_result(response, replay_result);
+        return Err(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::Replay(replay_result),
+            execution_id: Some(execution_id),
+        });
+    }
+    let execution_id_str = replay_admission.execution_id().to_owned();
+    let execution_id = dispatch::ExecutionId::from_replay(&execution_id_str);
+
+    // The immutable replay intent boundary precedes the existing Trail intent.
+    if crate::bench_timing::timed("replay_publish_intent", || {
+        replay_admission.publish_intent()
+    })
+    .is_err()
+    {
+        set_replay_result(
+            response,
+            replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+        );
+        return Err(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::Replay(
+                replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+            ),
+            execution_id: Some(execution_id_str),
+        });
+    }
+
+    // Attempt durable Trail intent recording.
+    let ready = match crate::bench_timing::timed("trail_intent", || {
+        dispatch::prepare_and_record(
+            decision.clone(),
+            resolved,
+            execution_id,
+            action_id.clone(),
+            arguments,
+            trail,
+            semantic_position.cloned(),
+        )
+    }) {
+        Ok(ready) => ready,
+        Err(err) => {
+            let json_trail = response.get_mut("trail").and_then(Value::as_array_mut);
+            if let Some(trail_array) = json_trail {
+                let sequence = trail_array.len() as u64 + 1;
+                trail_array.push(trail_entry(
+                    sequence,
+                    "authorisation",
+                    "intent_failed",
+                    "failed",
+                    format!("{err:?}"),
+                    Some(&action_id.0),
+                ));
+            }
+            response["execution_status"] = Value::String("denied".into());
+            return Err(SharedExecutionResult {
+                outcome: SharedExecutionOutcome::Denied,
+                execution_id: Some(execution_id_str),
+            });
+        }
+    };
+
+    let prepared = PreparedInvoke {
+        resolved: resolved.clone(),
+        decision,
+        input_context: input_context.clone(),
+        bridge_pins_required,
+        execution_id_str: execution_id_str.clone(),
+        action_id: action_id.clone(),
+        action: action.clone(),
+        semantic_position: semantic_position.cloned(),
+    };
+
+    Ok((ready, prepared, replay_admission))
+}
+
+/// Complete the invocation phase for one Together group member.
+///
+/// Picks up after `execute_boundary_prepare` and the coordinator has
+/// published G1.  Performs:
+///
+/// 1. Deadline check.
+/// 2. Provider invocation.
+/// 3. Outcome classification.
+/// 4. Trail outcome append.
+/// 5. Replay G2 terminal.
+/// 6. Result Anchor write.
+/// 7. Response update.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_boundary_invoke_only(
+    response: &mut Value,
+    ready: &dispatch::DispatchReadyAction,
+    prepared: &PreparedInvoke,
+    trail: &mut dyn dispatch::Trail,
+    replay_admission: &mut dyn replay_runtime::ReplayAdmissionGuard,
+    anchor_writer: &mut dyn ResultAnchorWriter,
+    provider_result: Result<Value, outcome::ProviderDiagnostic>,
+    observed_after_deadline: bool,
+) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
+    let trusted_id = Some(prepared.execution_id_str.clone());
+    let evaluation_id = response
+        .get("evaluation_id")
+        .and_then(Value::as_str)
+        .ok_or("response had no evaluation_id")?
+        .to_owned();
+
+    let json_trail = response
+        .get_mut("trail")
+        .and_then(Value::as_array_mut)
+        .ok_or("response had no Trail")?;
+    let mut sequence = json_trail.len() as u64 + 1;
+
+    // This volatile state transition is the invocation boundary.
+    json_trail.push(trail_entry(
+        sequence,
+        "execution",
+        "action_started",
+        "started",
+        format!("Started {}", ready.capability_name()),
+        Some(&ready.action_id().0),
+    ));
+    sequence += 1;
+
+    let execution_outcome = if observed_after_deadline {
+        outcome::ExecutionOutcome::Uncertain {
+            reason: outcome::deadline_reason(),
+        }
+    } else {
+        match provider_result {
+            Ok(result) => {
+                let output_schema = &ready.verified_manifest().manifest().output_schema;
+                if validation::validate_output(output_schema, &result).is_ok() {
+                    outcome::ExecutionOutcome::Succeeded(result)
+                } else {
+                    outcome::ExecutionOutcome::Failed {
+                        reason: outcome::validation_reason(),
+                    }
+                }
+            }
+            Err(outcome::ProviderDiagnostic::ExplicitProviderError) => {
+                outcome::ExecutionOutcome::Failed {
+                    reason: outcome::redact(outcome::ProviderDiagnostic::ExplicitProviderError),
+                }
+            }
+            Err(diagnostic) => outcome::ExecutionOutcome::Uncertain {
+                reason: outcome::redact(diagnostic),
+            },
+        }
+    };
+
+    let (status, result, reason, anchor_kind, presentation_kind) = match &execution_outcome {
+        outcome::ExecutionOutcome::Succeeded(result) => (
+            "succeeded",
+            Some(result.clone()),
+            None,
+            Some(ResultAnchorKind::Succeeded(result.clone())),
+            "action_completed",
+        ),
+        outcome::ExecutionOutcome::Failed { reason } => (
+            "failed",
+            None,
+            Some(reason.clone()),
+            Some(ResultAnchorKind::Failed {
+                code: reason.code.to_string(),
+                message: reason.message.to_string(),
+            }),
+            "action_failed",
+        ),
+        outcome::ExecutionOutcome::Uncertain { reason } => (
+            "uncertain",
+            None,
+            Some(reason.clone()),
+            Some(ResultAnchorKind::Uncertain {
+                code: reason.code.to_string(),
+                message: reason.message.to_string(),
+            }),
+            "action_uncertain",
+        ),
+    };
+    let session_outcome = match &execution_outcome {
+        outcome::ExecutionOutcome::Succeeded(_) => SharedExecutionOutcome::Completed,
+        outcome::ExecutionOutcome::Failed { .. } => SharedExecutionOutcome::Failed,
+        outcome::ExecutionOutcome::Uncertain { .. } => SharedExecutionOutcome::Uncertain,
+    };
+
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default();
+
+    let outcome_entry = dispatch::OutcomeEntry {
+        execution_id: ready.execution_id().0.clone(),
+        action_id: ready.action_id().0.clone(),
+        status: status.into(),
+        result,
+        error_message: reason.as_ref().map(|reason| reason.message.to_string()),
+        reason_code: reason.as_ref().map(|reason| reason.code.to_string()),
+        timestamp_unix_ms: timestamp_ms,
+        semantic_position: prepared.semantic_position.clone(),
+    };
+
+    if crate::bench_timing::timed("trail_outcome", || trail.append_outcome(&outcome_entry)).is_err()
+    {
+        json_trail.push(trail_entry(
+            sequence,
+            "execution",
+            "audit_failure",
+            "failed",
+            outcome::audit_failure_reason().message.into(),
+            Some(&ready.action_id().0),
+        ));
+        sequence += 1;
+        json_trail.push(trail_entry(
+            sequence,
+            "execution",
+            presentation_kind,
+            status,
+            reason
+                .as_ref()
+                .map(|reason| reason.message.to_string())
+                .unwrap_or_else(|| format!("Completed {}", ready.capability_name())),
+            Some(&ready.action_id().0),
+        ));
+        response["execution_status"] = Value::String(
+            if status == "succeeded" {
+                "completed"
+            } else {
+                status
+            }
+            .to_owned(),
+        );
+        return Ok(SharedExecutionResult {
+            outcome: session_outcome,
+            execution_id: trusted_id.clone(),
+        });
+    }
+
+    let terminal_state = match &execution_outcome {
+        outcome::ExecutionOutcome::Succeeded(_) => replay::ReplayState::Succeeded,
+        outcome::ExecutionOutcome::Failed { .. } => replay::ReplayState::Failed,
+        outcome::ExecutionOutcome::Uncertain { .. } => replay::ReplayState::Uncertain,
+    };
+    let outcome_digest = match replay::durable_outcome_digest(&outcome_entry) {
+        Ok(digest) => digest,
+        Err(_) => {
+            set_replay_result(
+                response,
+                replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+            );
+            return Ok(SharedExecutionResult {
+                outcome: SharedExecutionOutcome::Replay(
+                    replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+                ),
+                execution_id: trusted_id.clone(),
+            });
+        }
+    };
+    if crate::bench_timing::timed("replay_publish_terminal", || {
+        replay_admission.publish_terminal(terminal_state, outcome_digest)
+    })
+    .is_err()
+    {
+        set_replay_result(
+            response,
+            replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+        );
+        return Ok(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::Replay(
+                replay_runtime::ReplayDispatchResult::PersistenceUnavailable,
+            ),
+            execution_id: trusted_id.clone(),
+        });
+    }
+
+    let presentation_status = if status == "succeeded" {
+        "succeeded"
+    } else {
+        status
+    };
+    json_trail.push(trail_entry(
+        sequence,
+        "execution",
+        presentation_kind,
+        presentation_status,
+        reason
+            .as_ref()
+            .map(|reason| reason.message.to_string())
+            .unwrap_or_else(|| format!("Completed {}", ready.capability_name())),
+        Some(&ready.action_id().0),
+    ));
+    response["execution_status"] = Value::String(
+        if status == "succeeded" {
+            "completed"
+        } else {
+            status
+        }
+        .into(),
+    );
+    if let Some(anchor_kind) = anchor_kind {
+        let input_context = &prepared.input_context;
+        let next_generation = match input_context.next_generation() {
+            Some(generation) => generation,
+            None => {
+                if let Some(object) = response.as_object_mut() {
+                    object.remove("result_anchor");
+                }
+                return Ok(SharedExecutionResult {
+                    outcome: session_outcome,
+                    execution_id: trusted_id.clone(),
+                });
+            }
+        };
+        let anchor = ResultAnchor::new(
+            anchor_kind,
+            &evaluation_id,
+            &prepared.action_id.0,
+            ready.capability_name(),
+            ready.capability_version(),
+            ready.manifest_digest(),
+            ready.provider_identity(),
+            timestamp_ms,
+            &input_context.correlation_id,
+            &input_context.event_id,
+            next_generation,
+        );
+        if crate::bench_timing::timed("result_anchor", || anchor_writer.write(response, &anchor))
+            .is_err()
+        {
+            if let Some(object) = response.as_object_mut() {
+                object.remove("result_anchor");
+            }
+        }
+    }
+
+    // Keep cross-process exclusion through the Result Anchor boundary.
+    // The admission is dropped by the coordinator after this returns.
+    Ok(SharedExecutionResult {
+        outcome: session_outcome,
+        execution_id: trusted_id.clone(),
+    })
+}
+
+/// Verify action bridge pins without the full boundary overhead.
+fn verify_action_pins(
+    action: &Value,
+    resolved: &ResolvedCapability,
+    bridge_pins_required: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    verify_action_bridge_pins(action, resolved, bridge_pins_required)
 }
 
 fn set_replay_result(response: &mut Value, result: replay_runtime::ReplayDispatchResult) {
