@@ -1,0 +1,15 @@
+tether "C5 multi-capability concurrent notification"
+
+anchor
+    project.build_completed
+
+when
+    build.status is "success"
+
+do
+    together
+        fixture.ping-a
+            message: anchor.member_a
+
+        fixture.ping-b
+            message: anchor.member_b

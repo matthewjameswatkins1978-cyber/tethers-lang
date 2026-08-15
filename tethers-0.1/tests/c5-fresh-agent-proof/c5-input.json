@@ -1,0 +1,19 @@
+{
+  "format_version": "1",
+  "evaluation_id": "eval_c5_multicapability_001",
+  "tether": {
+    "id": "c5-multi-capability",
+    "version": "1"
+  },
+  "event": {
+    "id": "evt_c5_build_complete_001",
+    "name": "project.build_completed",
+    "data": {
+      "member_a": "member/hello-from-a",
+      "member_b": "member/hello-from-b"
+    }
+  },
+  "facts": {
+    "build.status": "success"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "manifest_format_version": "1.0",
+  "capability_name": "fixture.ping-a",
+  "capability_version": 1,
+  "title": "Fixture Ping A",
+  "description": "A deterministic test capability for stdio provider binding (variant A).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "echo": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "echo"
+    ],
+    "additionalProperties": false
+  },
+  "effects": [
+    "fixture.test"
+  ],
+  "permission_scope": {
+    "kind": "path_prefix",
+    "allowed_prefixes": [
+      "member/"
+    ]
+  },
+  "reversibility": "reversible",
+  "determinism": "deterministic",
+  "idempotency": {
+    "mechanism": "argument_key",
+    "argument_name": "idempotency_key",
+    "key_source": "evaluation_id/action_id"
+  },
+  "confirmation_policy": {
+    "standing_permitted": true,
+    "per_call_required": false
+  },
+  "timeout_ms": 5000,
+  "retry_policy": {
+    "max_retries": 0,
+    "backoff_ms": 500,
+    "allowed_on": [
+      "outcome_unknown"
+    ],
+    "requires_idempotency_proof": false
+  },
+  "provider": {
+    "identity": "provider-a",
+    "display_name": "Provider A",
+    "identity_source": "host_configuration",
+    "description": "Test-only deterministic stdio provider (variant A)."
+  },
+  "binding": {
+    "kind": "mcp",
+    "server_name": "tethers-stdio-fixture",
+    "tool_name": "fixture_ping",
+    "adapter": null
+  },
+  "digest": "sha256:368042670855d316c42bc7dff3740ce19b219d3eec3b970597c3f7e7ff44bcef"
+}
