@@ -2274,6 +2274,11 @@ pub(crate) fn execute_group_concurrent_with_limit(
                             None => continue,
                         };
 
+                    let response_trail_len_before = response
+                        .get("trail")
+                        .and_then(Value::as_array)
+                        .map_or(0, Vec::len);
+
                     let step = match crate::application::execute_boundary_invoke_only(
                         response,
                         &ready,
@@ -2285,11 +2290,16 @@ pub(crate) fn execute_group_concurrent_with_limit(
                         false,
                     ) {
                         Ok(mut result) => {
-                            if response.get("trail").and_then(Value::as_array).is_some_and(
-                                |entries| {
-                                    entries.iter().any(|entry| entry["kind"] == "audit_failure")
-                                },
-                            ) {
+                            let current_boundary_audit_failed = response
+                                .get("trail")
+                                .and_then(Value::as_array)
+                                .is_some_and(|entries| {
+                                    entries
+                                        .iter()
+                                        .skip(response_trail_len_before)
+                                        .any(|entry| entry["kind"] == "audit_failure")
+                                });
+                            if current_boundary_audit_failed {
                                 result.outcome = crate::SharedExecutionOutcome::AuditFailed;
                             }
                             if matches!(
@@ -8952,6 +8962,125 @@ mod tests {
             assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
             let trail_content = h.trail_content();
             assert!(trail_content.contains("\"joined\":true"));
+        });
+    }
+
+    #[test]
+    fn c3_a3_n2_active_sibling_survives_fatal_halt_truthfully() {
+        // N=2 with members B, A, C (semantic order: B=0, A=1, C=2).
+        // B and A both launch (N=2). C waits.
+        // A's OutcomeEntry durability fails (first append_outcome takes injected error).
+        // B's OutcomeEntry durability succeeds (error already consumed).
+        //
+        // Regression proof: with the old code, B's truthful success would be
+        // overwritten to AuditFailed because the entire response Trail still
+        // contains A's audit_failure entry.  With the fix, only entries
+        // appended by the current boundary call are inspected.
+        //
+        // Proves:
+        // - B and A both enter provider (N=2)
+        // - A's outcome durability fails → audit_failure, launches_halted
+        // - C NEVER launches, NEVER gets G1
+        // - B completes normal successful Stage C
+        // - B's outcome is truthfully Completed (NOT AuditFailed)
+        // - Group result identifies member-a (NOT member-b)
+        // - No GroupJoinEntry (C remains nonterminal)
+        let h = C3A1GroupHarness::new("c3a3-n2-bac", &["b", "a", "c"]);
+        h.set_peer_count(2);
+
+        let trace = ReplayTrace::new();
+
+        std::thread::scope(|s| {
+            let trace_clone = trace.clone();
+            let h_ref = &h;
+            let handle = s.spawn(move || {
+                let mut trail = dispatch::RecordingTrail::new();
+                trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
+                    "injected A OutcomeEntry durability failure".to_owned(),
+                ));
+                let mut replay_authority = ObservingReplayAuthority::with_trace(&[], trace_clone);
+                let result = h_ref.run_group_with_trail_and_authority(
+                    "eval-c3a3-n2-bac",
+                    2,
+                    &mut trail,
+                    &mut replay_authority,
+                );
+                (result, trail.outcome_entries, trail.group_join_entries)
+            });
+
+            // B and A both launch (N=2 capacity).
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("b"), "B must be active");
+            assert!(h.has_active("a"), "A must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release A first — A's outcome durability will fail (takes injected error).
+            h.release_member("a");
+
+            // Wait for A's provider to return and coordinator to process A's
+            // result before releasing B.  The barrier script does not remove
+            // the active file, so we use a timed sleep instead of polling.
+            std::thread::sleep(Duration::from_millis(500));
+
+            // Release B — B's outcome durability succeeds (error already consumed).
+            h.release_member("b");
+
+            let (result, outcome_entries, group_join_entries) =
+                handle.join().expect("group must complete");
+
+            // The group result MUST identify member-a (the fatal member),
+            // NOT member-b (the successful active sibling).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::AuditFailed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected AuditFailed for member-a, got {result:?}"
+            );
+
+            // B entered provider and has a truthful successful OutcomeEntry.
+            assert!(h.has_entered("b"), "B must have entered provider");
+            assert_eq!(
+                outcome_entries.len(),
+                1,
+                "only B's outcome should be durably recorded (A's write failed)"
+            );
+            assert_eq!(outcome_entries[0].action_id, "member-b");
+            assert_eq!(outcome_entries[0].status, "succeeded");
+
+            // A's outcome durability failed — no outcome entry for A.
+            assert!(
+                !outcome_entries.iter().any(|e| e.action_id == "member-a"),
+                "A's outcome must NOT be durably recorded"
+            );
+
+            // C NEVER launched.
+            assert!(!h.has_entered("c"), "C must never have entered provider");
+
+            // Replay trace: G0 for all 3, G1 for B and A, G2 for B only.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-b".to_string()));
+            assert!(snapshot.contains(&"g1:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2:member-b".to_string()),
+                "B's G2 must succeed"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry because C remains nonterminal.
+            assert!(
+                group_join_entries.is_empty(),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
         });
     }
 }
