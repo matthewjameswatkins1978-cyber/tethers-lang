@@ -12,7 +12,7 @@ Route: `C3-A2 deterministic launch-boundary proof — awaiting Lucy review`
 
 Base commit: `c775d2bd335ea295c6567e85def1b8672568fd73`
 
-Implementation checkpoint: `9388f86459145551d843442ff72018427238ca96`
+Implementation checkpoint: `c832ad894f75b3111712534a8223f4dc645829e6`
 
 Worker note: `docs/worker-notes/2026-08-15-c3-a2-resource-deadline-g1-proof.md`
 
