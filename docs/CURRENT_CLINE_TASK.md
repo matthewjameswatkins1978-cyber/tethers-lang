@@ -12,7 +12,7 @@ Route: `C3-A3 fatal-halt correction and failure proof — awaiting Lucy review`
 
 Base commit: `d8b094c5d89f78cb5b610f5367f098f6cc0ef277`
 
-Implementation checkpoint: `071470f6c64bf609d2b55e6dd8839a7131697543`
+Implementation checkpoint: `b4e7c4756dedab34bbbb8e73d21abd9a0e90ea37`
 
 Worker note: `docs/worker-notes/2026-08-15-c3-a3-failure-boundary-crucible.md`
 
