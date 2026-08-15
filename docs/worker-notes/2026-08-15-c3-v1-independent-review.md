@@ -4,13 +4,13 @@ Task: `C3-V1 — Independent Final Architectural Review`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
-Owner: `Independent C3 Verification Agent`
+Owner: `C3-V1 Proof Gap Correction Agent`
 
 Status: `COMPLETE`
 
-Base commit: `e3df16e44cbbe295a950faa918b10f19772b9892`
+Base commit: `8a09203715cc44f42c011c0c8902ff4f72a246c7`
 
-Implementation checkpoint: `e3df16e44cbbe295a950faa918b10f19772b9892`
+Implementation checkpoint: `8a09203715cc44f42c011c0c8902ff4f72a246c7`
 
 ## Requested outcome
 
@@ -38,7 +38,7 @@ This is an independent review of frozen C3 implementation code. No design decisi
 | 6 | Admission order | PASS | `member_states.iter().position(Prepared)` at `host_execution.rs:2076` selects earliest semantic-order Prepared member. |
 | 7 | Launch boundary | PASS | `host_execution.rs:2121-2162` — deadline start → remaining calculation → final deadline check → G1 → worker launch. Queue wait does not consume timeout. |
 | 8 | Worker ownership | PASS | `WorkerInput` at `host_execution.rs:1601` carries only arguments, provider, tool_name, remaining. Workers do not touch Trail, response, replay, approvals, or anchors. |
-| 9 | Same-provider concurrency | PASS | `c3_a1_full_width_preserves_full_overlap` proves same-provider overlap through independent ephemeral sessions. |
+| 9 | Same-provider concurrency | PASS | `c2_a3a_same_provider_tools_call_overlap_is_real` proves same-provider overlap through independent ephemeral sessions. |
 | 10 | Slot release | PASS | `host_execution.rs:2282-2344` — capacity released only after `execute_boundary_invoke_only` completes and state transitions to `Terminal`. |
 | 11 | Normal failure | PASS | `c3_a3_normal_provider_failure_releases_slot_and_joins` — failed member terminalises, sibling launches, join evaluates both. |
 | 12 | Worker panic | PASS | `c3_a3_worker_panic_terminalises_uncertain_and_releases_slot` — catch_unwind maps to Uncertain, releases slot, no hang. |
@@ -55,8 +55,8 @@ This is an independent review of frozen C3 implementation code. No design decisi
 
 | Design requirement | Test(s) | Verdict | Comment |
 |--------------------|---------|---------|---------|
-| N=1, group=5 | `c3_a1_n1_limits_active_invocations_to_at_most_one` | PASS | Max active exactly 1, all 5 members terminal |
-| N=2, group=5 | `c3_a1_n2_limits_active_invocations_to_at_most_two_and_reaches_two` | PASS | Max active never exceeds 2, observed max reaches 2 |
+| N=1, group=5 | `c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation` | PASS | Max active exactly 1, all 5 members terminal, join evaluates all five |
+| N=2, group=5 | `c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation` | PASS | Max active never exceeds 2, observed max reaches 2, all 5 terminal |
 | N>=group size | `c3_a1_full_width_preserves_full_overlap` | PASS | Preserves A3a full overlap |
 | Waiting member state | `c3_a2_waiting_member_has_g0_without_g1_or_provider_effect` | PASS | G0 yes, G1 no, provider untouched |
 | Queue wait > timeout | `c3_a2_queue_wait_does_not_consume_provider_timeout` | PASS | Timeout starts fresh at launch |
@@ -64,7 +64,7 @@ This is an independent review of frozen C3 implementation code. No design decisi
 | Normal provider failure | `c3_a3_normal_provider_failure_releases_slot_and_joins` | PASS | Slot freed, sibling launches |
 | Worker panic | `c3_a3_worker_panic_terminalises_uncertain_and_releases_slot` | PASS | Uncertain, no hang |
 | Physical completion inversion | `c2_a3a_semantic_first_non_success_preserves_exact_step` | PASS | Semantic order preserved |
-| GroupJoin timing | `c3_a3_all_terminal_preserves_group_join` | PASS | Join after all terminal |
+| GroupJoin timing | `c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation`, `c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation`, `c3_a3_all_terminal_preserves_group_join` | PASS | Live no-join-while-active/waiting assertions at multiple refill points; join appears only after all terminal |
 | Stage C durability failure | `c3_a3_outcome_durability_failure_halts_queued_effects_without_join` | PASS | launches_halted, no join |
 | Replay G2 failure | `c3_a3_g2_failure_halts_queued_effects_without_join` | PASS | launches_halted, no join |
 
@@ -85,6 +85,7 @@ No unexplained production drift. No SUSPECT/UNRELATED changes.
 
 | Suite | Tests | Result | Time |
 |-------|-------|--------|------|
+| c3_v1 | 2 | PASS | 9.78s |
 | c3_a1 | 3 | PASS | 8.10s |
 | c3_a2 | 4 | PASS | 11.75s |
 | c3_a3 | 7 | PASS | 14.62s |
@@ -102,7 +103,7 @@ No unexplained production drift. No SUSPECT/UNRELATED changes.
 
 ## Discoveries
 
-None. All invariants verified as specified in the frozen design.
+Documentation numbering inconsistency: the accepted design text says "All 14 future-proof matrix items" in one sentence, but Section 14 currently enumerates 12 numbered requirements. This is a documentation inconsistency only — all 12 enumerated required matrix items have genuine evidence.
 
 ## Remaining risks
 

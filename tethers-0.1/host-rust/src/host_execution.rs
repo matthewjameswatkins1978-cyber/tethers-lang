@@ -8206,6 +8206,246 @@ mod tests {
     }
 
     // ===================================================================
+    // C3-V1 Proof Gap: Group-of-Five Matrix
+    // ===================================================================
+
+    #[test]
+    fn c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation() {
+        // Frozen design §14.1: N=1, group=5.
+        // - max active exactly 1 at all times
+        // - every eligible member eventually invokes
+        // - all five terminal
+        // - join evaluates all five
+        let h = C3A1GroupHarness::new("v1-n1-g5", &["a", "b", "c", "d", "e"]);
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-v1-n1-g5", 1));
+
+            // 1. Member A launches first.
+            h.wait_member_active("a");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when A is active"
+            );
+            assert!(!h.has_member_outcome("a"), "A must be in-flight");
+            assert!(!h.has_entered("b"), "B must wait for capacity");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // GroupJoin must NOT exist while A is active and siblings waiting.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoin must not exist while A is active"
+            );
+
+            // Release A and wait for its durable outcome.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // 2. Member B launches after A completes.
+            h.wait_member_active("b");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when B is active"
+            );
+            assert!(!h.has_member_outcome("b"), "B must be in-flight");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // GroupJoin must NOT exist while B is active.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoin must not exist while B is active"
+            );
+
+            // Release B and wait for its durable outcome.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // 3. Member C launches after B completes.
+            h.wait_member_active("c");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when C is active"
+            );
+            assert!(!h.has_member_outcome("c"), "C must be in-flight");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // Release C and wait for its durable outcome.
+            h.release_member("c");
+            h.wait_member_outcome("c");
+
+            // 4. Member D launches after C completes.
+            h.wait_member_active("d");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when D is active"
+            );
+            assert!(!h.has_member_outcome("d"), "D must be in-flight");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // Release D and wait for its durable outcome.
+            h.release_member("d");
+            h.wait_member_outcome("d");
+
+            // 5. Member E launches after D completes.
+            h.wait_member_active("e");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member when E is active"
+            );
+            assert!(!h.has_member_outcome("e"), "E must be in-flight");
+
+            // Release E and allow completion.
+            h.release_member("e");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // All five members must have durable outcomes.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 5, "exactly 5 durable member outcomes required");
+        assert_eq!(
+            ids,
+            vec!["member-a", "member-b", "member-c", "member-d", "member-e"],
+            "outcomes must be in semantic order"
+        );
+
+        // Successful GroupJoin must exist.
+        let kinds = h.entry_kinds();
+        assert_eq!(
+            kinds.last(),
+            Some(&"group_join".to_owned()),
+            "GroupJoin must be the final entry"
+        );
+    }
+
+    #[test]
+    fn c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation() {
+        // Frozen design §14.2: N=2, group=5.
+        // - max active never exceeds 2
+        // - observed max reaches 2
+        // - every eligible member invokes
+        // - all five terminal
+        let h = C3A1GroupHarness::new("v1-n2-g5", &["a", "b", "c", "d", "e"]);
+        h.set_peer_count(2);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-v1-n2-g5", 2));
+
+            // 1. A and B become simultaneously active.
+            h.wait_barrier_active_count(2);
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must reach exactly 2 active members (A and B)"
+            );
+            assert!(!h.has_member_outcome("a"), "A must be in-flight");
+            assert!(!h.has_member_outcome("b"), "B must be in-flight");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // GroupJoin must NOT exist while A+B active and siblings waiting.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoin must not exist while A+B active"
+            );
+
+            // Release B, wait for B's durable outcome.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // 2. C launches while A remains active.
+            h.wait_member_active("c");
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must have exactly 2 active (A and C)"
+            );
+            assert!(!h.has_member_outcome("a"), "A must still be in-flight");
+            assert!(!h.has_member_outcome("c"), "C must be in-flight");
+            assert!(!h.has_entered("d"), "D must wait for capacity");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // GroupJoin must still NOT exist.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoin must not exist while A+C active"
+            );
+
+            // Release C, wait for C's durable outcome.
+            h.release_member("c");
+            h.wait_member_outcome("c");
+
+            // 3. D launches while A remains active.
+            h.wait_member_active("d");
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must have exactly 2 active (A and D)"
+            );
+            assert!(!h.has_member_outcome("a"), "A must still be in-flight");
+            assert!(!h.has_member_outcome("d"), "D must be in-flight");
+            assert!(!h.has_entered("e"), "E must wait for capacity");
+
+            // Release D, wait for D's durable outcome.
+            h.release_member("d");
+            h.wait_member_outcome("d");
+
+            // 4. E launches while A remains active.
+            h.wait_member_active("e");
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must have exactly 2 active (A and E)"
+            );
+            assert!(!h.has_member_outcome("a"), "A must still be in-flight");
+            assert!(!h.has_member_outcome("e"), "E must be in-flight");
+
+            // Release A and E.
+            h.release_member("a");
+            h.release_member("e");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // All five members must have durable outcomes.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 5, "exactly 5 durable member outcomes required");
+        assert!(ids.contains(&"member-a".to_owned()), "A must have outcome");
+        assert!(ids.contains(&"member-b".to_owned()), "B must have outcome");
+        assert!(ids.contains(&"member-c".to_owned()), "C must have outcome");
+        assert!(ids.contains(&"member-d".to_owned()), "D must have outcome");
+        assert!(ids.contains(&"member-e".to_owned()), "E must have outcome");
+
+        // Successful GroupJoin must exist.
+        let kinds = h.entry_kinds();
+        assert_eq!(
+            kinds.last(),
+            Some(&"group_join".to_owned()),
+            "GroupJoin must be the final entry"
+        );
+    }
+
+    // ===================================================================
     // C3-A2 Proof Tests: Resource / Deadline / G1 Crucible
     // ===================================================================
 

@@ -1,4 +1,4 @@
-# C3-V1 — Independent Final Architectural Review
+# C3-V1 — Proof Gap Correction
 
 Control contract: `1`
 
@@ -6,13 +6,13 @@ Status: `COMPLETE`
 
 Task colour: `Red`
 
-Owner: `Independent C3 Verification Agent`
+Owner: `C3-V1 Proof Gap Correction Agent`
 
-Route: `Independent verification — awaiting Lucy acceptance`
+Route: `Proof correction — awaiting Lucy acceptance`
 
-Base commit: `e3df16e44cbbe295a950faa918b10f19772b9892`
+Base commit: `8a09203715cc44f42c011c0c8902ff4f72a246c7`
 
-Implementation checkpoint: `e3df16e44cbbe295a950faa918b10f19772b9892`
+Implementation checkpoint: `8a09203715cc44f42c011c0c8902ff4f72a246c7`
 
 Worker note: `docs/worker-notes/2026-08-15-c3-v1-independent-review.md`
 
@@ -20,72 +20,70 @@ Updated: 2026-08-15
 
 ## Objective
 
-Independent reviewer verifies the entire C3 implementation against the accepted bounded-concurrency design, the frozen A3a inputs, and the required proof matrix.
+Fix proof gaps in the C3-V1 independent review. The review incorrectly marked two frozen future-proof requirements PASS when the exact group-of-five requirements were not actually tested. Also correct same-provider evidence mapping.
 
 ## Relevant background and existing behaviour
 
-- C3-A1 introduced the bounded launch window `max_active_together_invocations`.
-- C3-A2 proved the deadline isolation and G1 boundaries.
-- C3-A3 proved the failure boundaries and corrected the audit_failure contamination defect.
-- C3-A4 exposed `max_active_together_invocations` as host configuration with defaults and validation.
-- C3 implementation is frozen for review. No production change is authorised. C4 is NOT authorised.
+- Independent review found no implementation defect in C3.
+- Lucy found inaccurate proof attribution in V1 review.
+- Exact group-of-five frozen requirements were not actually tested.
+- Same-provider concurrency was incorrectly attributed to `c3_a1_full_width_preserves_full_overlap`.
+- This packet fills proof gap only. C4 is NOT authorised.
 
 ## Required behaviour
 
-1. Verify all 20 review matrix items against the accepted design.
-2. Verify all 12 future-proof matrix items have genuine test proof.
-3. Run focused C3 test suites (c3_a1, c3_a2, c3_a3, c3_a4).
-4. Run full verification suite.
-5. Inspect cumulative production diff for unexplained drift.
-6. Inspect test quality for each C3 family.
-7. Write worker note with complete evidence.
+1. Add deterministic test `c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation` with exactly 5 members (a, b, c, d, e) and N=1.
+2. Add deterministic test `c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation` with exactly 5 members (a, b, c, d, e) and N=2.
+3. Both tests must include live GroupJoin absence assertions while members are active/waiting.
+4. Correct same-provider evidence to reference `c2_a3a_same_provider_tools_call_overlap_is_real`.
+5. Update review worker note with corrected evidence matrix.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/host_execution.rs`
-- `tethers-0.1/host-rust/src/runtime_config.rs`
-- `tethers-0.1/host-rust/src/configured_runtime.rs`
-- `tethers-0.1/host-rust/src/dispatch.rs`
-- `tethers-0.1/host-rust/src/replay_runtime.rs`
+- `tethers-0.1/host-rust/src/host_execution.rs` (TEST additions only)
 
 ## Frozen decisions and invariants
 
-- C3 implementation is frozen for review.
-- No production change is authorised.
+- No production semantic changes.
+- No scheduler redesign.
 - C4 is NOT authorised.
-- Any discovered defect is a BLOCKER to be reported, not silently corrected.
+- Any required production behavior change is a BLOCKER.
 
 ## Acceptance criteria
 
-1. All 20 review matrix items verified PASS.
-2. All 12 future-proof matrix items have genuine test proof.
-3. Focused C3 tests all pass.
-4. Full suite passes.
-5. No unexplained production drift in cumulative diff.
-6. No semantic contract violations, trust boundary breaches, or regressions.
-7. Worker note written with complete evidence.
+1. `c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation` passes with exactly 5 members.
+2. `c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation` passes with exactly 5 members.
+3. Both tests assert GroupJoin absence during execution at multiple refill points.
+4. Both tests assert GroupJoin presence after all terminal.
+5. Same-provider evidence correctly references `c2_a3a_same_provider_tools_call_overlap_is_real`.
+6. All existing C3 tests remain green.
+7. Full suite passes.
+8. No production semantic changes in diff.
 
 ## Required verification
 
-1. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a1 --test-threads=1`
-2. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a2 --test-threads=1`
-3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a3 --test-threads=1`
-4. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a4 --test-threads=1`
-5. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`
-6. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml`
-7. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1`
-8. `git diff --check`
-9. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
+1. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_v1 --test-threads=1`
+2. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a1 --test-threads=1`
+3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a2 --test-threads=1`
+4. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a3 --test-threads=1`
+5. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a4 --test-threads=1`
+6. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`
+7. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml`
+8. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1`
+9. `git diff --check`
+10. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
 
 ## Forbidden changes
 
-- No Rust modification
-- No production code changes
-- Only docs/CURRENT_CLINE_TASK.md and docs/worker-notes/2026-08-15-c3-v1-independent-review.md may be created/modified
+- No production Rust modification (test/#[cfg(test)] additions only)
+- No scheduler redesign
+- No new production counters
+- C4
 
 ## Stop conditions
 
-- Any discovered semantic defect, replay defect, race, capacity leak, premature GroupJoin, test that does not prove claimed invariant, unbounded effect path, config bypass, stale audit contamination, or nondeterministic correctness proof.
+- If satisfying these proofs requires production behavior changes.
+- Any discovered semantic defect.
 
 ## Expected pre-existing changes
 
@@ -105,31 +103,31 @@ Independent reviewer verifies the entire C3 implementation against the accepted 
 
 ## Requested outcome
 
-1. Verify C3 satisfies the accepted bounded-concurrency design without changing Tethers source semantics, replay truthfulness, deterministic result selection, or coordinator ownership boundaries.
-2. Run all required verification.
-3. Write complete worker note with evidence.
-4. Push review branch.
+1. Add two group-of-five tests proving frozen design requirements §14.1 and §14.2.
+2. Include live GroupJoin absence assertions.
+3. Correct same-provider evidence mapping.
+4. Update review worker note.
+5. Push correction branch.
 
 ## Primary question
 
-Does C3 actually satisfy the accepted bounded-concurrency design WITHOUT changing Tethers source semantics, replay truthfulness, deterministic result selection or coordinator ownership boundaries?
+Can the frozen group-of-five requirements be proven without production changes?
 
-**Answer: YES.** All 20 review matrix items verified. All 12 future-proof matrix items pass. No defects found.
+**Answer: YES.** Two new tests with exactly 5 members each prove N=1 and N=2 bounds with live GroupJoin absence assertions.
 
 ## Verdict
 
-**C3-V1 PASS — REVIEW BRANCH PUBLISHED**
+**C3-V1 PROOF MATRIX COMPLETE — REVIEW BRANCH PUBLISHED**
 
 ## Evidence
 
-- 20-point review matrix: all PASS (see worker note)
-- Future-proof test matrix: 12/12 PASS
+- c3_v1: 2 tests PASS (N=1 group-of-five, N=2 group-of-five)
 - c3_a1: 3 tests PASS
 - c3_a2: 4 tests PASS
 - c3_a3: 7 tests PASS
 - c3_a4: 12 tests PASS
-- Full suite: 1540 tests PASS
+- Full suite: 1542 tests PASS
 - cargo fmt: PASS
 - cargo check: PASS
 - git diff --check: PASS
-- Cumulative production diff: 4 files, all REQUIRED BY DESIGN or TEST SUPPORT ONLY
+- Production diff: ZERO semantic changes (test additions only)
