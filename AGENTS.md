@@ -184,7 +184,11 @@ Avoid casual synonyms when a canonical term applies.
   adapter contract.
 - AI judgement is an explicit Capability Action whose structured result becomes
   visible data for a later Anchor. It never runs invisibly in Conditions.
-- Actions are ordered and initially dispatched serially.
+- Action execution must preserve the deterministic semantic ordering, grouping,
+  join behaviour, identity and failure-selection rules defined by the current
+  Tethers specification and accepted architecture. Physical scheduling,
+  concurrency and execution strategy are runtime concerns and must not change
+  source-level meaning unless an explicit semantic change authorises it.
 - No automatic retry until idempotency is proved end to end.
 - Tethers must not claim that an Action happened when it only proposed it.
 - Do not change 0.1 syntax or semantics without an explicit design gate.
@@ -194,9 +198,11 @@ Avoid casual synonyms when a canonical term applies.
 A Tether contains one Anchor, zero or more Conditions, and one or more Actions.
 The current precise syntax is defined only by `tethers-0.1/SPEC.md`.
 
-Do not use this guidance file as a substitute for the specification. In
-particular, do not invent loops, arithmetic, functions, hidden coercion,
-parallel Actions, branching inside `do`, or direct Action-result chaining.
+Do not use this guidance file as a substitute for the specification. Do not
+invent language constructs, execution relationships or control-flow semantics
+that are not defined by the current Tethers specification. In particular, do
+not infer new looping, branching, chaining or concurrency forms from runtime
+implementation details.
 
 ## Working Rules
 
