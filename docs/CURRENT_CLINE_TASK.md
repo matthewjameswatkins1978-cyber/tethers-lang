@@ -1,4 +1,4 @@
-# C3-A2 — Resource / Deadline / G1 Crucible
+# C3-A3 — Failure-Boundary Crucible
 
 Control contract: `1`
 
@@ -6,88 +6,97 @@ Status: `COMPLETE`
 
 Task colour: `Red`
 
-Owner: `C3-A2 Proof Agent`
+Owner: `C3-A3 Failure-Boundary Agent`
 
-Route: `C3-A2 deterministic launch-boundary proof — awaiting Lucy review`
+Route: `C3-A3 fatal-halt correction and failure proof — awaiting Lucy review`
 
-Base commit: `c775d2bd335ea295c6567e85def1b8672568fd73`
+Base commit: `d8b094c5d89f78cb5b610f5367f098f6cc0ef277`
 
-Implementation checkpoint: `c832ad894f75b3111712534a8223f4dc645829e6`
+Implementation checkpoint: `6df1c55416ee7cb24ee236db1ec427250f9e8eab`
 
-Worker note: `docs/worker-notes/2026-08-15-c3-a2-resource-deadline-g1-proof.md`
+Worker note: `docs/worker-notes/2026-08-15-c3-a3-failure-boundary-crucible.md`
 
 Updated: 2026-08-15
 
-**C3-A1 is accepted by Lucy. This task may add proof/test support only.
-Production scheduler behaviour is frozen. C3-A3/A4 are NOT authorised.**
+- C3-A1 and corrected C3-A2 are accepted by Lucy.
+- One narrow fatal-halt GroupJoin defect is authorised for correction.
+- No other scheduler redesign is authorised.
+- C3-A4 is NOT authorised.
 
 ## Objective
 
-Prove the C3 bounded launch window resource, deadline isolation, G1 boundary,
-and semantic-order launch properties through deterministic barrier/replay tests.
+Correct the single identified production defect in the fatal-halt path (where GroupJoin was erroneously appended even when queued members remained nonterminal), and prove the C3 bounded launch window failure boundaries through deterministic barrier and replay tests.
 
 ## Relevant background and existing behaviour
 
-- C3-A1 is complete and accepted by Lucy at `c775d2bd335ea295c6567e85def1b8672568fd73`.
-- `execute_group_concurrent_with_limit` gates worker launch on `active_count < N` in semantic order.
-- Stage A prepares all members serially (G0, Trail intent). Stage B launches when capacity available (G1, provider). Stage C collects results (G2, terminal).
-- Existing test harness `C3A1GroupHarness` provides barrier-based provider synchronization.
-- Existing `ObservingReplayAuthority` and `ReplayTrace` record G0/G1/G2 events for test observation.
-- The barrier fixture creates `active-member-{name}` and `entered-member-{name}` files for physical synchronization.
+- C3-A1 introduced the bounded launch window `max_active_together_invocations` and C3-A2 proved the deadline isolation and G1 boundaries.
+- Under current implementation, when a fatal trusted-state failure occurs during Stage B/C (e.g. Stage C OutcomeEntry durability failure or G2 failure), `launches_halted` is set to `true`, queued siblings remain `GroupMemberState::Prepared`, active workers drain, and Stage D still appends a `GroupJoinEntry` (with `joined=false`).
+- This violates the accepted C3 design: `GroupJoin` exists ONLY after every semantic member has reached its legitimate terminal state. A queued Prepared member after fatal trusted-state halt is NOT terminal.
 
 ## Required behaviour
 
-1. Add a test-only `run_group_with_trace` method on `C3A1GroupHarness` that uses `ObservingReplayAuthority` to observe replay events while preserving barrier-based physical synchronization.
-2. Prove that a capacity-blocked member has G0 observed but G1 NOT observed and provider effect absent.
-3. Prove that queue wait duration exceeding a member's configured timeout does not cause timeout classification; the member succeeds after launch with a fresh deadline.
-4. Prove that when capacity becomes available, the earliest semantic-order waiting member launches next.
-5. Prove that queued member replay events follow strict G0 → capacity wait → G1 → provider → G2 ordering.
+1. Add a narrow fail-closed guard before Stage D GroupJoin publication in `execute_group_concurrent_with_limit` so that if any semantic member remains nonterminal, no `GroupJoinEntry` and no `group_joined` response presentation are appended, and execution fails closed returning a deterministic existing non-success/infrastructure result.
+2. Prove that normal provider failure releases launch capacity and queued siblings continue to launch and join (Proof 1).
+3. Prove that worker panic caught via `PanicGuard` terminalises as `Uncertain`, releases launch capacity, and queued siblings continue to launch and join (Proof 2).
+4. Prove that Stage C OutcomeEntry durability failure halts queued launches without appending a `GroupJoinEntry` (Proof 3).
+5. Prove that replay G2 publication failure halts queued launches without appending a `GroupJoinEntry` (Proof 4).
+6. Prove that replay G1 publication failure halts before any provider effect and without appending a `GroupJoinEntry` (Proof 5).
+7. Prove that all-terminal groups continue to produce standard GroupJoin entries and responses (Proof 6 regression).
 
 ## Relevant components
 
 - `tethers-0.1/host-rust/src/host_execution.rs`
+- `tethers-0.1/host-rust/src/dispatch.rs`
+- `tethers-0.1/host-rust/src/replay_runtime.rs`
 - `docs/concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md`
 
 ## Frozen decisions and invariants
 
-- Stage A remains serial and unchanged in Runtime Plan order
-- G0 published in Stage A; G1 published in Stage B immediately before launch
-- ReplayAdmission remains coordinator-owned (!Send)
-- Trail remains coordinator-owned (single writer)
-- Provider timeout does NOT run while waiting for capacity
-- No queue timeout, no new terminal taxonomy
-- Join occurs only after all members reach terminal state
-- First non-success selected in semantic Runtime Plan order
+- GroupJoin exists ONLY after every semantic member has reached its legitimate terminal state.
+- Queued Prepared members after a fatal halt are NOT terminal and must not have terminal states fabricated for them.
+- No new terminal taxonomy (no Cancelled, Aborted, QueueFailed, InfrastructureStopped).
+- First non-success selected in semantic Runtime Plan order.
+- ReplayAdmission remains coordinator-owned (!Send).
+- Trail remains coordinator-owned (single writer).
+- Normal provider failures and panics do NOT trigger fatal launch halt and MUST produce normal GroupJoin after all members are terminal.
 
 ## Acceptance criteria
 
-1. Waiting member has G0 but no G1 and no provider effect while capacity-blocked.
-2. Queue wait longer than provider timeout does not consume provider timeout; member succeeds after launch.
-3. Next capacity slot launches earliest semantic-order waiting member.
-4. Queued member replay events follow strict G0 → (capacity wait) → G1 → provider → G2 ordering.
-5. All four proofs use `ObservingReplayAuthority` + `ReplayTrace` for replay event observation and barrier files for physical synchronization.
+1. Pre-Stage-D guard prevents `GroupJoinEntry` and `group_joined` presentation when any member remains nonterminal, returning deterministic existing non-success/infrastructure error.
+2. Normal provider failure on member A releases slot, member B launches and succeeds, both terminalise, GroupJoin exists with joined=false, and final result is A's Failed.
+3. Worker panic on member A is caught, terminalises as Uncertain, releases slot, member B launches and succeeds, GroupJoin exists with joined=false, and final result is A's Uncertain.
+4. Stage C OutcomeEntry durability failure on member A halts queued launches (B and C never enter provider), no G2 for A if stopped before G2, no GroupJoin is appended, and fails closed through AuditFailed.
+5. Replay G2 failure on member A halts queued launches (B and C never get G1, never enter provider), no GroupJoin is appended, and fails closed.
+6. Replay G1 failure on member A halts before provider effect (A never enters provider, B never gets G1, never enters provider), no GroupJoin is appended, and fails closed.
+7. All-terminal groups (including C3-A1 and C3-A2 test suites) continue to produce standard GroupJoin entries and responses without regression.
 
 ## Required verification
 
-1. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a2 --test-threads=1`
-2. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`
-3. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml`
-4. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1`
-5. `git diff --check`
-6. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
+1. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a3 --test-threads=1`
+2. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a2 --test-threads=1`
+3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a1 --test-threads=1`
+4. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`
+5. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml`
+6. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1`
+7. `git diff --check`
+8. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
 
 ## Forbidden changes
 
-- Production execution code in host_execution.rs
-- External configuration schemas or public CLI/API changes
-- Replay ledger / ReplayAdmission ownership or Sendness changes
-- Worker pools, thread pools, or async/Tokio runtimes
-- New terminal outcome taxonomy or queue deadlines
+- Any production changes outside `tethers-0.1/host-rust/src/host_execution.rs`
+- Changing source semantics, Runtime Plan, or SemanticPosition
+- Changing normal GroupJoin semantics when all members are terminal
+- Adding new terminal states or result taxonomy
+- Adding queue timeout or scheduler watchdog
+- Adding worker pool or async/Tokio
+- Adding host-global or provider-aware scheduling
+- Moving G0 or G1 publication boundaries
+- Changing ReplayAdmission ownership or Sendness
 - Modifying OCaml code, SPEC, CONSTITUTION, or DECISIONS
 
 ## Stop conditions
 
-- A required production change outside test code is needed (STOP and report blocker).
+- A required production change outside `host_execution.rs` is needed (STOP and report blocker).
 - A frozen design invariant cannot be satisfied without redesign (STOP).
 - Repeated failure rule: 2 materially similar failed attempts on the same underlying problem.
 
