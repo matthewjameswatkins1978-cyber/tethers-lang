@@ -89,15 +89,24 @@ while waiting for capacity. This is valid crash/recovery evidence because:
   intended.
 - G1 (`publish_armed`) records that the member crossed the provider invocation
   boundary. Its absence means the provider was never touched.
-- The combination `G0=yes, G1=no` is unambiguous: the member was admitted and
-  intended but never armed. Recovery can safely re-attempt or classify as
-  Unattempted without uncertainty about whether an external effect occurred.
+- The combination `G0=yes, G1=no` is unambiguous regarding **effect certainty**:
+  the member was admitted and intended, but the provider invocation boundary
+  was never armed. It is definitely not an "effect may already have occurred"
+  state.
+- However, regarding **replay authority**, this physical fact does NOT itself
+  authorize automatic re-attempt or automatic classification as `Unattempted`.
+  Under the existing replay recovery contract
+  (`ReplayDispatchResult::from_recovered_state`), recovered
+  `ReplayState::IntentRecorded` maps strictly to
+  `ReplayDispatchResult::RequiresManualResolution`. Existing replay recovery
+  policy remains authoritative and unchanged.
 - This matches the existing A3a serial path where G0 is published in Stage A
   and G1 is published in Stage B immediately before worker launch. The only
   change is that the gap between G0 and G1 may now include a capacity wait.
 
-G0 without G1 is **not** an ambiguous external-effect state. It is a clear
-pre-invocation record.
+G0 without G1 provides truthful pre-invocation evidence that no provider effect
+occurred, while preserving the existing host replay recovery classification
+(`RequiresManualResolution`).
 
 ## 3. Internal PREPARED_WAITING Condition
 
@@ -170,9 +179,11 @@ that member:
 | ResultReceived (worker result in coordinator, Stage C pending) | YES |
 | Terminalised (Stage C complete, G2 published) | NO |
 
-The exact terminal boundary is: **after the coordinator has durably written the
-OutcomeEntry, published G2, processed required anchor/response, and transitioned
-the member to its terminal state**. Only then does `active_count` decrease.
+The exact terminal boundary is: **after the coordinator has completed the
+existing Stage C boundary (`execute_boundary_invoke_only` including durable
+`OutcomeEntry`, G2 `publish_terminal`, presentation/response updates, and
+required Result Anchor writing) and transitioned the member to its terminal
+state (`GroupMemberState::Terminal`)**. Only then does `active_count` decrease.
 
 ### Why state-derived, not counter-based
 
@@ -279,22 +290,26 @@ worker result received
 → classify outcome (Succeeded / Failed / Uncertain)
 → durable OutcomeEntry written
 → replay G2 terminal publication
-→ required anchor/response processing (per existing A3 contract)
-→ member terminal transition (GroupMemberState → terminal variant)
+→ presentation / JSON Trail response update
+→ required Result Anchor writing
+→ member terminal transition (GroupMemberState → Terminal)
 → active_count decreases
 → next waiting member may launch
 ```
 
 ### Exact terminal point
 
-The member is considered terminal (and capacity released) at the point where:
+A slot remains active until the coordinator has completed the entire existing
+Stage C boundary (`execute_boundary_invoke_only`, which includes durable
+`OutcomeEntry` write, G2 `publish_terminal`, presentation/response updates, and
+required Result Anchor writing) and transitioned `GroupMemberState` to its
+legitimate terminal state (`GroupMemberState::Terminal`).
 
-1. The OutcomeEntry is durably written to Trail.
-2. G2 is published.
-3. The member's `GroupMemberState` has transitioned to its terminal variant.
-
-All three must be complete. An in-memory `WorkerResult` without durable evidence
-is not sufficient.
+Result-anchor writing and presentation/response updates lie inside the required
+Stage C completion boundary. There is no separate earlier capacity-release point.
+All Stage C steps and the member terminal state transition must be complete
+before capacity is released. An in-memory `WorkerResult` without completed Stage C
+processing is not sufficient.
 
 ### Safety invariant
 
@@ -333,21 +348,22 @@ The coordinator does not distinguish between "provider returned Uncertain" and
 ### C. Worker channel failure
 
 The A3a architecture uses `std::sync::mpsc` channels scoped to the group
-execution lifetime. Under normal worker construction (scoped threads), a
-channel failure means either:
+execution lifetime. Under normal worker construction (`std::thread::scope`),
+each worker catches panics inside `worker_invoke_inner` via `catch_unwind` and
+transmits `WorkerResult` through the channel sender.
 
-1. The worker panicked (handled by B above).
-2. The scope was dropped before the worker sent its result (an interruption).
+The design states: **channel failure is fail-closed**. If channel disconnection
+occurs (such as `rx.recv()` returning `Err`), the coordinator halts result
+collection and does not assume success or fabricate evidence. Any launched
+members that did not complete Stage C remain non-terminal in `member_states`,
+causing Stage D join evaluation to fail closed and return
+`ExecutionServiceResult::AuditFailed`.
 
-The design states: **channel failure is fail-closed**. If the coordinator
-cannot receive a worker result through the channel, it must not assume success
-or fabricate evidence. The member should be classified as `Uncertain` (or the
-existing appropriate audit failure) and terminalised honestly.
-
-Current A3a structure makes a channel-result hole impossible under normal
-scoped-thread construction because the scoped join guarantees all workers
-complete before the scope exits. A channel failure implies a scope violation
-or panic, both of which are handled.
+Under normal scoped-thread construction, all spawned worker threads run to
+completion before `std::thread::scope` exits. Internal worker panics are caught
+and converted to `ProviderDiagnostic::NoFinalResponse` (which Stage C maps to
+`Uncertain`). If unexpected channel disconnection occurs, the coordinator fails
+closed through `AuditFailed`.
 
 ### D. Stage C trail / durability failure
 
@@ -578,6 +594,7 @@ The following deterministic proofs are required for C3 acceptance:
 - durable intent exists in Trail
 - G1 absent from replay
 - provider untouched (no worker spawned)
+- recovered `IntentRecorded` maps to `RequiresManualResolution` per existing replay policy
 
 ### 5. Queue wait longer than member timeout
 
