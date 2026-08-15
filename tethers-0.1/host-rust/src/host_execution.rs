@@ -7226,6 +7226,14 @@ mod tests {
 
     impl C3A1GroupHarness {
         fn new(test_name: &str, member_tags: &[&str]) -> Self {
+            Self::new_with_timeout_overrides(test_name, member_tags, &HashMap::new())
+        }
+
+        fn new_with_timeout_overrides(
+            test_name: &str,
+            member_tags: &[&str],
+            timeout_overrides: &HashMap<String, u64>,
+        ) -> Self {
             let barrier_dir = std::env::temp_dir()
                 .join(format!("tethers-c3a1-{test_name}-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&barrier_dir).unwrap();
@@ -7274,8 +7282,19 @@ mod tests {
                 let provider_id = format!("provider-{tag}");
                 let manifest = make_manifest(&cap_name, &provider_id);
                 let manifest_path = runtime_dir.join(format!("manifests/fixture-ping-{tag}.json"));
-                std::fs::write(&manifest_path, &manifest).unwrap();
-                let (_, digest) = crate::manifest::canonicalize_and_digest(&manifest).unwrap();
+                let applied_manifest = if let Some(&timeout_ms) = timeout_overrides.get(*tag) {
+                    let mut m: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+                    m["timeout_ms"] = serde_json::json!(timeout_ms);
+                    let s = serde_json::to_string(&m).unwrap();
+                    let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+                    m["digest"] = serde_json::json!(digest);
+                    serde_json::to_string_pretty(&m).unwrap()
+                } else {
+                    manifest
+                };
+                std::fs::write(&manifest_path, &applied_manifest).unwrap();
+                let (_, digest) =
+                    crate::manifest::canonicalize_and_digest(&applied_manifest).unwrap();
                 digests.insert((*tag).to_owned(), digest);
             }
 
@@ -7572,23 +7591,7 @@ mod tests {
             &self,
             eval_id: &str,
             limit: usize,
-            timeout_overrides: Option<&HashMap<String, u64>>,
         ) -> (ExecutionServiceResult, Vec<String>) {
-            if let Some(overrides) = timeout_overrides {
-                for (tag, timeout_ms) in overrides {
-                    let manifest_path = self
-                        ._runtime_dir
-                        .join(format!("manifests/fixture-ping-{tag}.json"));
-                    if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                        if let Ok(mut m) = serde_json::from_str::<serde_json::Value>(&content) {
-                            m["timeout_ms"] = serde_json::json!(timeout_ms);
-                            let new_content = serde_json::to_string_pretty(&m).unwrap();
-                            std::fs::write(&manifest_path, &new_content).unwrap();
-                        }
-                    }
-                }
-            }
-
             let providers = self.runtime.providers().to_vec();
             let mut sessions = HashMap::new();
             for provider in &providers {
@@ -7687,6 +7690,113 @@ mod tests {
             );
 
             (result, trace.snapshot())
+        }
+
+        fn run_group_with_live_trace(
+            &self,
+            eval_id: &str,
+            limit: usize,
+            shared_trace: &ReplayTrace,
+        ) -> (ExecutionServiceResult, Vec<String>) {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("barrier provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            let mut actions = Vec::new();
+            let mut member_action_ids = Vec::new();
+            let mut member_indexes = Vec::new();
+
+            for (idx, tag) in self.members.iter().enumerate() {
+                let action_id = format!("member-{tag}");
+                let provider_id = format!("provider-{tag}");
+                let cap_name = format!("fixture.ping-{tag}");
+                let digest = self
+                    .runtime
+                    .providers()
+                    .iter()
+                    .find(|p| p.identity == provider_id)
+                    .unwrap()
+                    .capabilities[0]
+                    .verified_manifest
+                    .verified_digest()
+                    .to_owned();
+
+                actions.push(json!({
+                    "action_id": action_id,
+                    "idempotency_key": format!("{eval_id}/{action_id}"),
+                    "capability": cap_name,
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": provider_id,
+                    "manifest_digest": digest,
+                    "arguments": {"message": format!("member/{tag}")},
+                }));
+                member_action_ids.push(action_id);
+                member_indexes.push(idx);
+            }
+
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": member_action_ids,
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let avail_identities: Vec<String> = self
+                .members
+                .iter()
+                .map(|tag| format!("provider-{tag}"))
+                .collect();
+            let availability =
+                ProviderAvailability::from_identities(avail_identities.iter().map(|s| s.as_str()));
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let mut replay_authority =
+                ObservingReplayAuthority::with_trace(&[], shared_trace.clone());
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            let result = execute_group_concurrent_with_limit(
+                "together-1",
+                &member_indexes,
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                &mut replay_authority,
+                limit,
+            );
+
+            let final_snapshot = shared_trace.snapshot();
+            (result, final_snapshot)
         }
     }
 
@@ -7892,11 +8002,26 @@ mod tests {
         let h = C3A1GroupHarness::new("c3a2-g0-no-g1", &["a", "b"]);
         h.set_peer_count(1);
 
+        let shared_trace = ReplayTrace::new();
+
         std::thread::scope(|s| {
-            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-g0", 1, None));
+            let handle = s.spawn(|| h.run_group_with_live_trace("eval-c3a2-g0", 1, &shared_trace));
 
             // Wait for A to physically enter the provider barrier.
             h.wait_member_active("a");
+
+            // While A is active, snapshot the live replay trace.
+            // B's G0 must already be recorded (published during Stage A).
+            // B's G1 must NOT be recorded (B has not been launched).
+            let live = shared_trace.snapshot();
+            assert!(
+                live.contains(&"g0:member-b".to_owned()),
+                "B must have G0 while A is active (live snapshot: {live:?})"
+            );
+            assert!(
+                !live.contains(&"g1:member-b".to_owned()),
+                "B must NOT have G1 while A is active (live snapshot: {live:?})"
+            );
 
             // While A is active:
             // - A has entered the provider (entered-member-a exists)
@@ -7921,6 +8046,13 @@ mod tests {
                 "N=1 must have exactly 1 active member"
             );
 
+            // B's durable Trail intent must already be present while A is active.
+            let trail_while_active = h.trail_content();
+            assert!(
+                trail_while_active.contains("member-b"),
+                "B's durable Trail intent must exist while A is active"
+            );
+
             // Release A and wait for its durable outcome.
             h.release_member("a");
             h.wait_member_outcome("a");
@@ -7935,7 +8067,7 @@ mod tests {
                 "expected Completed, got {result:?}"
             );
 
-            // Replay trace assertions:
+            // Final replay trace assertions:
             // G0 for both members must exist.
             assert!(trace.contains(&"g0:member-a".to_owned()), "A must have G0");
             assert!(trace.contains(&"g0:member-b".to_owned()), "B must have G0");
@@ -7974,18 +8106,36 @@ mod tests {
     #[test]
     fn c3_a2_queue_wait_does_not_consume_provider_timeout() {
         // N=1 with members A, B.
-        // B has a deliberately short timeout (500ms).
+        // B has a deliberately short timeout (500ms) applied BEFORE prepare_runtime.
         // A occupies the slot for 1500ms > B's 500ms timeout.
         // B must NOT be classified Unattempted due to queue wait.
-        let h = C3A1GroupHarness::new("c3a2-queue-timeout", &["a", "b"]);
-        h.set_peer_count(1);
-
         let mut timeout_overrides = HashMap::new();
         timeout_overrides.insert("b".to_owned(), 500u64);
+        let h = C3A1GroupHarness::new_with_timeout_overrides(
+            "c3a2-queue-timeout",
+            &["a", "b"],
+            &timeout_overrides,
+        );
+        h.set_peer_count(1);
+
+        // Verify the prepared runtime actually contains B's overridden timeout.
+        let provider_b = h
+            .runtime
+            .providers()
+            .iter()
+            .find(|p| p.identity == "provider-b")
+            .expect("provider-b must exist in prepared runtime");
+        let effective_timeout_ms = provider_b.capabilities[0]
+            .verified_manifest
+            .manifest()
+            .timeout_ms;
+        assert_eq!(
+            effective_timeout_ms, 500,
+            "prepared runtime must contain B's overridden timeout of 500ms, got {effective_timeout_ms}ms"
+        );
 
         std::thread::scope(|s| {
-            let handle = s
-                .spawn(|| h.run_group_with_trace("eval-c3a2-timeout", 1, Some(&timeout_overrides)));
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-timeout", 1));
 
             // A launches and enters the barrier.
             h.wait_member_active("a");
@@ -8030,13 +8180,13 @@ mod tests {
         });
 
         // Trail: both members completed. B is NOT Unattempted.
-        let trail_content = h.trail_content();
-        assert!(
-            !trail_content.contains("Unattempted"),
-            "Trail must NOT contain Unattempted for B after queue wait"
-        );
+        // Use structured outcome assertion, not just string search.
         let ids = h.outcome_ids();
         assert_eq!(ids.len(), 2, "expected 2 outcomes in Trail");
+        assert!(
+            ids.contains(&"member-b".to_owned()),
+            "member-b must have a terminal outcome (not Unattempted)"
+        );
         assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
     }
 
@@ -8051,7 +8201,7 @@ mod tests {
         h.set_peer_count(1);
 
         std::thread::scope(|s| {
-            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-order", 1, None));
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-order", 1));
 
             // A launches and enters the barrier.
             h.wait_member_active("a");
@@ -8110,7 +8260,7 @@ mod tests {
         h.set_peer_count(1);
 
         std::thread::scope(|s| {
-            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-replay", 1, None));
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c3a2-replay", 1));
 
             // A launches first.
             h.wait_member_active("a");
