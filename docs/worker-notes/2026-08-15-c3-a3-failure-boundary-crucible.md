@@ -5,8 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `C3-A3 Failure-Boundary Agent`
 Status: `COMPLETE`
 Base commit: `d8b094c5d89f78cb5b610f5367f098f6cc0ef277`
-Implementation checkpoint: `071470f6c64bf609d2b55e6dd8839a7131697543`
-Synchronisation fix checkpoint: `b4e7c4756dedab34bbbb8e73d21abd9a0e90ea37`
+Implementation checkpoint: `b4e7c4756dedab34bbbb8e73d21abd9a0e90ea37`
 
 ## Remote-review finding
 
