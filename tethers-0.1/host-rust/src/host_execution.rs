@@ -9746,4 +9746,732 @@ mod tests {
         assert_eq!(ids, vec!["member-a", "member-b", "member-c"]);
         assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
     }
+
+    // ===================================================================
+    // C4 Adversarial Concurrency Crucible Tests
+    // ===================================================================
+
+    #[test]
+    fn c4_inverse_completion_preserves_semantic_first_failure() {
+        // Crucible 1: Hostile completion order test where physical completion
+        // is B (Failed), C (Success), A (Failed) under N=2.
+        // Semantic order: A, B, C.
+        //
+        // Prove:
+        // - max active <= 2 at all times
+        // - C launches into B's released slot while A remains active
+        // - physical outcome append order in Trail is B, C, A
+        // - final group non-success is MEMBER A (not B merely because B failed first physically)
+        // - GroupJoin occurs only after A, B, C all reach terminal state
+        // - GroupJoin.joined == false
+        // - Replay trace contains G2 for all 3 members
+        let h = C3A1GroupHarness::new("c4-inverse-comp", &["a", "b", "c"]);
+        h.set_peer_count(2);
+        h.set_member_outcome("a", "failed");
+        h.set_member_outcome("b", "failed");
+        h.set_member_outcome("c", "success");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c4-inv", 2));
+
+            // A and B both reach active state in barrier.
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("a"), "A must be active");
+            assert!(h.has_active("b"), "B must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release B first (B fails quickly).
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // C launches into B's freed slot while A is still active.
+            h.wait_member_active("c");
+            assert!(h.has_active("a"), "A must remain active while C launches");
+            assert!(h.has_active("c"), "C must be active in released slot");
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "active count must not exceed 2"
+            );
+
+            // Release C second (C succeeds).
+            h.release_member("c");
+            h.wait_member_outcome("c");
+
+            // Release A last (A fails).
+            h.release_member("a");
+
+            let (result, trace) = handle.join().expect("group execution must complete");
+
+            // Semantic first non-success is member-a (index 0), NOT member-b (index 1).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::Failed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected Failed for member-a, got {result:?}"
+            );
+
+            // Trail outcome append order reflects actual physical completion order (B, C, A).
+            let outcome_ids = h.outcome_ids();
+            assert_eq!(outcome_ids, vec!["member-b", "member-c", "member-a"]);
+
+            // Replay trace proves all 3 reached G2.
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+            assert!(trace.contains(&"g2:member-c".to_string()));
+
+            // GroupJoin entry present with joined: false.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":false"));
+        });
+    }
+
+    #[test]
+    fn c4_fast_failure_releases_slot_while_slow_sibling_runs() {
+        // Crucible 2: Hostile slow success + fast failure test proving provider
+        // failure does not halt launches and join evaluates all members.
+        // N=2: A = slow Success, B = fast Failed, C = queued Success.
+        //
+        // Prove:
+        // - A and B active
+        // - B fails quickly, completing Stage C
+        // - C launches while A is still active
+        // - ordinary provider failure does NOT trigger launches_halted
+        // - A eventually succeeds
+        // - C succeeds
+        // - final result is B Failed
+        // - GroupJoin exists after all terminal (joined=false)
+        let h = C3A1GroupHarness::new("c4-fast-fail-slow-succ", &["a", "b", "c"]);
+        h.set_peer_count(2);
+        h.set_member_outcome("a", "success");
+        h.set_member_outcome("b", "failed");
+        h.set_member_outcome("c", "success");
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c4-fastfail", 2));
+
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("a"), "A must be active");
+            assert!(h.has_active("b"), "B must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release B first (B fails quickly).
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // C launches while A is still active.
+            h.wait_member_active("c");
+            assert!(h.has_active("a"), "A must remain active");
+            assert!(h.has_active("c"), "C must be active");
+
+            // Release C.
+            h.release_member("c");
+            h.wait_member_outcome("c");
+
+            // Release A last.
+            h.release_member("a");
+
+            let (result, trace) = handle.join().expect("group execution must complete");
+
+            // Final result is member-b Failed (since A and C succeeded).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::Failed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-b"
+                ),
+                "expected Failed for member-b, got {result:?}"
+            );
+
+            // Physical outcome order is B, C, A.
+            let outcome_ids = h.outcome_ids();
+            assert_eq!(outcome_ids, vec!["member-b", "member-c", "member-a"]);
+
+            // Replay trace contains G2 for all 3 members.
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+            assert!(trace.contains(&"g2:member-c".to_string()));
+
+            // GroupJoin entry present with joined: false.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":false"));
+        });
+    }
+
+    #[test]
+    fn c4_g2_failure_halts_queue_but_active_sibling_finishes_truthfully() {
+        // Crucible 3: G2 failure with active sibling proving fatal halt stops
+        // queued member C while already-active B completes truthfully and no
+        // GroupJoin occurs.
+        // Semantic order: B, A, C (B=0, A=1, C=2). N=2.
+        let h = C3A1GroupHarness::new("c4-g2-fail-overlap", &["b", "a", "c"]);
+        h.set_peer_count(2);
+
+        let trace = ReplayTrace::new();
+        let mut replay_authority =
+            ObservingReplayAuthority::with_fail_points(trace.clone(), &[], &["member-a"]);
+
+        std::thread::scope(|s| {
+            let handle =
+                s.spawn(|| h.run_group_with_authority("eval-c4-g2fail", 2, &mut replay_authority));
+
+            // B and A both active.
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("b"), "B must be active");
+            assert!(h.has_active("a"), "A must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release A so A returns to coordinator and fails G2.
+            h.release_member("a");
+
+            // Wait deterministically for A's G2 failure to be recorded in trace.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !trace.has("g2_fail:member-a") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A's G2 failure was not recorded in trace within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Assert C has not entered provider.
+            assert!(
+                !h.has_entered("c"),
+                "C must never enter provider after fatal halt"
+            );
+
+            // Release B — B finishes truthfully.
+            h.release_member("b");
+
+            let result = handle.join().expect("group execution must complete");
+
+            // Result fails closed as ReplayPersistenceUnavailable for member-a (NOT member-b).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::ReplayPersistenceUnavailable {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected ReplayPersistenceUnavailable for member-a, got {result:?}"
+            );
+
+            // A entered provider and has outcome in Trail.
+            assert!(h.has_entered("a"), "A must have reached provider");
+            assert!(
+                h.has_member_outcome("a"),
+                "A OutcomeEntry must precede G2 failure"
+            );
+
+            // B entered provider and has outcome in Trail.
+            assert!(h.has_entered("b"), "B must have reached provider");
+            assert!(h.has_member_outcome("b"), "B OutcomeEntry must succeed");
+
+            // C never entered provider.
+            assert!(!h.has_entered("c"), "C must never enter provider");
+
+            // Replay trace: G0 for all 3, G1 for B and A, G2(B) succeeded, G2(A) failed, NO G1 for C.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-b".to_string()));
+            assert!(snapshot.contains(&"g1:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2:member-b".to_string()),
+                "B's G2 must succeed"
+            );
+            assert!(
+                snapshot.contains(&"g2_fail:member-a".to_string()),
+                "A's G2 must fail"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry because C is nonterminal.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    #[test]
+    fn c4_g1_failure_halts_queue_but_active_sibling_finishes_truthfully() {
+        // Crucible 4: G1 failure with active sibling proving pre-effect failure
+        // on A halts queued C while already-active B completes truthfully and
+        // no GroupJoin occurs.
+        // Semantic order: B, A, C (B=0, A=1, C=2). N=2.
+        let h = C3A1GroupHarness::new("c4-g1-fail-overlap", &["b", "a", "c"]);
+        h.set_peer_count(1);
+
+        let trace = ReplayTrace::new();
+        let mut replay_authority =
+            ObservingReplayAuthority::with_fail_points(trace.clone(), &["member-a"], &[]);
+
+        std::thread::scope(|s| {
+            let handle =
+                s.spawn(|| h.run_group_with_authority("eval-c4-g1fail", 2, &mut replay_authority));
+
+            // B launches and enters provider barrier.
+            h.wait_member_active("b");
+
+            // Wait deterministically for A's G1 failure to be recorded in trace.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !trace.has("g1_fail:member-a") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A's G1 failure was not recorded in trace within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // A and C never entered provider.
+            assert!(
+                !h.has_entered("a"),
+                "A must never enter provider on G1 failure"
+            );
+            assert!(
+                !h.has_entered("c"),
+                "C must never enter provider after fatal halt"
+            );
+
+            // Release B so B finishes truthfully.
+            h.release_member("b");
+
+            let result = handle.join().expect("group execution must complete");
+
+            // Result fails closed as ReplayPersistenceUnavailable for member-a.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::ReplayPersistenceUnavailable {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected ReplayPersistenceUnavailable for member-a, got {result:?}"
+            );
+
+            // B entered and succeeded.
+            assert!(h.has_entered("b"), "B must have entered provider");
+            assert!(h.has_member_outcome("b"), "B OutcomeEntry must succeed");
+
+            // A and C never entered provider.
+            assert!(!h.has_entered("a"), "A must never have entered provider");
+            assert!(!h.has_entered("c"), "C must never have entered provider");
+
+            // Replay trace: G0 for all 3, G1 for B, G1_fail for A, G2 for B, NO G1 for C.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-b".to_string()));
+            assert!(snapshot.contains(&"g1_fail:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2:member-b".to_string()),
+                "B's G2 must succeed"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry in Trail.
+            assert!(
+                !h.entry_kinds().contains(&"group_join".to_owned()),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    #[test]
+    fn c4_outcome_durability_failure_does_not_contaminate_active_sibling() {
+        // Crucible 5: Outcome durability failure with active sibling proving
+        // Trail failure on A halts queued C while already-active B completes
+        // truthfully without audit contamination.
+        // Semantic order: B, A, C (B=0, A=1, C=2). N=2.
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let h = C3A1GroupHarness::new("c4-durability-fail-overlap", &["b", "a", "c"]);
+        h.set_peer_count(2);
+
+        let trace = ReplayTrace::new();
+        let outcome_error_signal = Arc::new(AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            let trace_clone = trace.clone();
+            let h_ref = &h;
+            let signal_clone = Arc::clone(&outcome_error_signal);
+            let handle = s.spawn(move || {
+                let mut trail = dispatch::RecordingTrail::new();
+                trail.injected_outcome_error = Some(dispatch::TrailError::WriteFailed(
+                    "injected A OutcomeEntry durability failure".to_owned(),
+                ));
+                trail.outcome_error_signal = Some(signal_clone);
+                let mut replay_authority = ObservingReplayAuthority::with_trace(&[], trace_clone);
+                let result = h_ref.run_group_with_trail_and_authority(
+                    "eval-c4-durability-overlap",
+                    2,
+                    &mut trail,
+                    &mut replay_authority,
+                );
+                (result, trail.outcome_entries, trail.group_join_entries)
+            });
+
+            // B and A both active in barrier.
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("b"), "B must be active");
+            assert!(h.has_active("a"), "A must be active");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release A first (A's OutcomeEntry fails).
+            h.release_member("a");
+
+            // Wait deterministically for A's outcome error to be consumed.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !outcome_error_signal.load(Ordering::SeqCst) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "A's outcome error signal was not set within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Release B (B's OutcomeEntry succeeds).
+            h.release_member("b");
+
+            let (result, outcome_entries, group_join_entries) =
+                handle.join().expect("group execution must complete");
+
+            // Group result identifies member-a (NOT member-b).
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::AuditFailed {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected AuditFailed for member-a, got {result:?}"
+            );
+
+            // B entered provider and has a truthful successful OutcomeEntry.
+            assert!(h.has_entered("b"), "B must have entered provider");
+            assert_eq!(
+                outcome_entries.len(),
+                1,
+                "only B's outcome should be durably recorded"
+            );
+            assert_eq!(outcome_entries[0].action_id, "member-b");
+            assert_eq!(outcome_entries[0].status, "succeeded");
+
+            // A's outcome durability failed.
+            assert!(
+                !outcome_entries.iter().any(|e| e.action_id == "member-a"),
+                "A's outcome must not be in recorded trail"
+            );
+
+            // C never entered provider.
+            assert!(!h.has_entered("c"), "C must never enter provider");
+
+            // Replay trace: G0 for all 3, G1 for B and A, G2 for B only, NO G1 for C.
+            let snapshot = trace.snapshot();
+            assert!(snapshot.contains(&"g0:member-b".to_string()));
+            assert!(snapshot.contains(&"g0:member-a".to_string()));
+            assert!(snapshot.contains(&"g0:member-c".to_string()));
+            assert!(snapshot.contains(&"g1:member-b".to_string()));
+            assert!(snapshot.contains(&"g1:member-a".to_string()));
+            assert!(
+                snapshot.contains(&"g2:member-b".to_string()),
+                "B's G2 must succeed"
+            );
+            assert!(
+                !snapshot.contains(&"g1:member-c".to_string()),
+                "C must never get G1"
+            );
+
+            // No GroupJoinEntry.
+            assert!(
+                group_join_entries.is_empty(),
+                "GroupJoinEntry must not be appended when members remain nonterminal"
+            );
+        });
+    }
+
+    #[test]
+    fn c4_worker_panic_under_n2_pressure_releases_slot() {
+        // Crucible 6: Worker panic under real N=2 pressure proving panic on A
+        // maps to Uncertain, releases slot, queued C launches, sibling B
+        // continues, and GroupJoin evaluates all members.
+        // N=2 with members A, B, C.
+        let h = C3A1GroupHarness::new("c4-panic-n2-pressure", &["a", "b", "c"]);
+        h.set_peer_count(2);
+
+        let _guard = PanicGuard::target(0);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_trace("eval-c4-panic-n2", 2));
+
+            // A panics immediately on spawn. A completes Stage C as Uncertain.
+            // A's slot is freed, so queued C launches.
+            // B and C are now active in the barrier (peer_count=2).
+            h.wait_barrier_active_count(2);
+            assert!(h.has_active("b"), "B must be active");
+            assert!(h.has_active("c"), "C must be active");
+
+            // Release B and C.
+            h.release_member("b");
+            h.release_member("c");
+
+            let (result, trace) = handle.join().expect("group must complete without panic");
+
+            // A's Uncertain result is selected as final group non-success.
+            assert!(
+                matches!(
+                    result,
+                    ExecutionServiceResult::Uncertain {
+                        ref action_id,
+                        ..
+                    } if action_id == "member-a"
+                ),
+                "expected Uncertain for member-a, got {result:?}"
+            );
+
+            // B and C entered provider and succeeded.
+            assert!(h.has_entered("b"), "B must have entered provider");
+            assert!(h.has_entered("c"), "C must have entered provider");
+
+            // All 3 members have outcomes in Trail.
+            let outcome_ids = h.outcome_ids();
+            assert_eq!(outcome_ids.len(), 3);
+            assert!(outcome_ids.contains(&"member-a".to_string()));
+            assert!(outcome_ids.contains(&"member-b".to_string()));
+            assert!(outcome_ids.contains(&"member-c".to_string()));
+
+            // Replay trace contains G2 for all 3 members.
+            assert!(trace.contains(&"g2:member-a".to_string()));
+            assert!(trace.contains(&"g2:member-b".to_string()));
+            assert!(trace.contains(&"g2:member-c".to_string()));
+
+            // GroupJoin entry IS present with joined=false.
+            assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+            let trail_content = h.trail_content();
+            assert!(trail_content.contains("\"joined\":false"));
+        });
+    }
+
+    #[test]
+    fn c4_same_provider_overlap_and_inverse_completion_preserves_semantic_order() {
+        // Crucible 8: Same-provider hostility proof confirming overlapping
+        // ephemeral sessions preserve semantic order under inverse completion.
+        let barrier_dir = std::env::temp_dir().join(format!(
+            "tethers-c4-same-provider-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&barrier_dir).unwrap();
+        let left = barrier_test_provider(&barrier_dir, "tethers-stdio-fixture");
+        let right = barrier_test_provider(&barrier_dir, "tethers-stdio-fixture");
+
+        let (tx, rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            for (action_index, provider) in [(0, left), (1, right)] {
+                let sender = tx.clone();
+                scope.spawn(move || {
+                    worker_invoke_provider(
+                        WorkerInput {
+                            action_index,
+                            arguments: json!({"message": format!("member-{action_index}")}),
+                            provider,
+                            tool_name: "fixture_ping".to_owned(),
+                            remaining: Duration::from_secs(15),
+                        },
+                        sender,
+                    )
+                });
+            }
+            drop(tx);
+
+            // Wait until both provider child processes reach active state in the barrier.
+            // This proves true concurrency / overlap with same provider identity.
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            loop {
+                let active = std::fs::read_dir(&barrier_dir)
+                    .unwrap()
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.file_name().to_string_lossy().starts_with("active-"))
+                    .count();
+                if active >= 2 {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "both same-provider child processes did not reach tools/call"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            // Set outcome for member-1 to failed and member-0 to failed.
+            std::fs::write(barrier_dir.join("outcome-member-1"), "failed").unwrap();
+            std::fs::write(barrier_dir.join("outcome-member-0"), "failed").unwrap();
+
+            // Release member 1 first (inverse physical completion order).
+            std::fs::write(barrier_dir.join("release-member-1"), "release").unwrap();
+            let first_res = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert_eq!(
+                first_res.action_index, 1,
+                "member 1 must complete first physically"
+            );
+            assert!(
+                first_res.provider_result.is_err(),
+                "member 1 must be failed"
+            );
+
+            // Release member 0 second.
+            std::fs::write(barrier_dir.join("release-member-0"), "release").unwrap();
+            let second_res = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert_eq!(
+                second_res.action_index, 0,
+                "member 0 must complete second physically"
+            );
+            assert!(
+                second_res.provider_result.is_err(),
+                "member 0 must be failed"
+            );
+
+            // Evaluate semantic first non-success in member order.
+            let member_states = vec![
+                GroupMemberState::Terminal {
+                    action_index: 0,
+                    action_id: "member-0".to_owned(),
+                    semantic_position: dispatch::SemanticPosition {
+                        action_ordinal: 0,
+                        group_id: Some("together-1".to_owned()),
+                        member_ordinal: Some(0),
+                        phase: dispatch::SemanticPhase::Member,
+                    },
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Failed {
+                            evaluation_id: "eval-c4".to_owned(),
+                            action_id: "member-0".to_owned(),
+                            reason: "controlled failure 0".to_owned(),
+                            execution_id: None,
+                        },
+                    ),
+                },
+                GroupMemberState::Terminal {
+                    action_index: 1,
+                    action_id: "member-1".to_owned(),
+                    semantic_position: dispatch::SemanticPosition {
+                        action_ordinal: 1,
+                        group_id: Some("together-1".to_owned()),
+                        member_ordinal: Some(1),
+                        phase: dispatch::SemanticPhase::Member,
+                    },
+                    step: crate::plan_execution::ActionStep::Stopped(
+                        ExecutionServiceResult::Failed {
+                            evaluation_id: "eval-c4".to_owned(),
+                            action_id: "member-1".to_owned(),
+                            reason: "controlled failure 1".to_owned(),
+                            execution_id: None,
+                        },
+                    ),
+                },
+            ];
+
+            let (selected_id, _) = first_non_success_member_step(member_states)
+                .expect("must select non-success member");
+            assert_eq!(
+                selected_id, "member-0",
+                "semantic member 0 must be selected as first non-success despite member 1 completing first physically"
+            );
+        });
+
+        std::fs::remove_dir_all(&barrier_dir).unwrap();
+    }
+
+    #[test]
+    fn c4_repeated_inverse_completion_has_no_state_leak() {
+        // Crucible 9: Deterministic repeated stress loop (20 iterations)
+        // verifying no state or capacity leaks under inverse completion.
+        for iteration in 0..20 {
+            let eval_id = format!("eval-c4-stress-{iteration}");
+            let h = C3A1GroupHarness::new(&format!("c4-stress-{iteration}"), &["a", "b", "c"]);
+            h.set_peer_count(2);
+            h.set_member_outcome("a", "failed");
+            h.set_member_outcome("b", "failed");
+            h.set_member_outcome("c", "success");
+
+            std::thread::scope(|s| {
+                let handle = s.spawn(|| h.run_group_with_trace(&eval_id, 2));
+
+                h.wait_barrier_active_count(2);
+                assert!(h.has_active("a"));
+                assert!(h.has_active("b"));
+                assert!(!h.has_entered("c"));
+
+                // Physical completion order: B first, C second, A last.
+                h.release_member("b");
+                h.wait_member_outcome("b");
+
+                h.wait_member_active("c");
+                assert!(h.has_active("a"));
+                assert!(h.has_active("c"));
+
+                h.release_member("c");
+                h.wait_member_outcome("c");
+
+                h.release_member("a");
+
+                let (result, trace) = handle.join().expect("iteration must complete");
+
+                assert!(
+                    matches!(
+                        result,
+                        ExecutionServiceResult::Failed {
+                            ref action_id,
+                            ..
+                        } if action_id == "member-a"
+                    ),
+                    "iteration {iteration}: expected Failed for member-a, got {result:?}"
+                );
+
+                let outcome_ids = h.outcome_ids();
+                assert_eq!(
+                    outcome_ids,
+                    vec!["member-b", "member-c", "member-a"],
+                    "iteration {iteration}: outcome order mismatch"
+                );
+
+                assert!(trace.contains(&"g2:member-a".to_string()));
+                assert!(trace.contains(&"g2:member-b".to_string()));
+                assert!(trace.contains(&"g2:member-c".to_string()));
+
+                assert_eq!(
+                    h.entry_kinds().last(),
+                    Some(&"group_join".to_owned()),
+                    "iteration {iteration}: GroupJoin must be last"
+                );
+                assert!(
+                    h.trail_content().contains("\"joined\":false"),
+                    "iteration {iteration}: joined must be false"
+                );
+            });
+        }
+    }
 }
