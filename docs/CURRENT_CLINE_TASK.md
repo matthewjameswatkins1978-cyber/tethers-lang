@@ -2,24 +2,25 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
-Owner: `DeepSeek Flash`
+Owner: `Mini 2.5 Pro — independent final verification`
 
-Route: `DeepSeek Flash — C2-A3a terminal semantic matrix`
+Route: `C2-A3a complete — awaiting Lucy merge review`
 
 Base commit: `58aecd0c789802cdfea57d4560b51fd21d5340ae`
 
 Worker note: `docs/worker-notes/2026-08-14-c2-a3a-provider-overlap-correction.md`
 
-Updated: 2026-08-14
+Updated: 2026-08-15
 
-The current C2-A3a implementation exists at base
-`58aecd0c789802cdfea57d4560b51fd21d5340ae` but is **REJECTED** pending this
-correction. This packet authorises that correction. No prior packet text
-constitutes implementation authority for this task.
+The C2-A3a correction and independent final verification are complete at formal
+base `58aecd0c789802cdfea57d4560b51fd21d5340ae`. The implementation is
+published on `feature/c2-a3a-provider-overlap` and is awaiting Lucy merge
+review; it is NOT yet merged to `main`. No prior packet text constitutes
+implementation authority for this task.
 
 ## Objective
 

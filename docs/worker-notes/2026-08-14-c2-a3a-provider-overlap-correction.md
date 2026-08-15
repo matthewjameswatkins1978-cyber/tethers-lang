@@ -4,13 +4,13 @@ Task: `C2-A3a — Final Provider Overlap Correction`
 
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 
-Owner: `DeepSeek Flash`
+Owner: `Mini 2.5 Pro — independent final verification`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `58aecd0c789802cdfea57d4560b51fd21d5340ae`
 
-Implementation checkpoint: `f6eeb572b2afe42472d2deab6336a1af971f649f`
+Implementation checkpoint: `65acab1c9dfc7ceab16cf36164a22f94cfc69b17`
 
 ## Requested outcome
 
@@ -124,21 +124,41 @@ resolves that exact defect without changing any implementation.
 
 ## Remaining risks
 
-The narrow core leaves intentionally unproved: durable Stage C persistence
-under concurrency with real `FileReplayAuthority`; Trail B/A ordering with real
-replay persistence; preparation, replay, unattempted/uncertain, intent/G1,
-and join-after-terminal matrices; and the full closeout suite. The formal task
-must remain `IN_PROGRESS` until those separately assigned proofs complete.
+The deferred matrices named in the earlier correction pass are now complete and
+covered by the terminal semantic matrix tests; this note's earlier
+`IN_PROGRESS` risk paragraph is superseded.
 
-The `TestReplayAuthority` exercises the `ReplayAdmission` contract interface
-but does not prove durable filesystem persistence. A later task may require
-`FileReplayAuthority` with provisioned replay directories.
+Two non-blocking residual items remain:
+
+1. **Test replay authority vs. durable filesystem persistence.** The
+   group-level and terminal-matrix tests exercise the `ReplayAdmission`
+   contract through `TestReplayAuthority` and the test-only
+   `ObservingReplayAuthority`. Durable Stage C persistence is proven against a
+   real file-backed `FileTrail`, but replay persistence with
+   `FileReplayAuthority` (with a provisioned replay root) is not exercised by
+   these focused tests. A later task may add a `FileReplayAuthority` variant.
+
+2. **Dead-code warnings in this branch.** `cargo check --all-targets
+   --all-features` reports 49 warnings (5 duplicates) in the lib test target
+   plus 5 in the production lib: unused fields (`PreparedInvoke.resolved`,
+   `.decision`, `.bridge_pins_required`, `.action`; `GroupMemberState`'s
+   `action_index`/`semantic_position` in its terminal/transition variants), an
+   orphaned `ResolvedCapability::new` constructor (left over from removing
+   `test_resolved_capability`), and several unused test helper functions
+   (`c2a3a_barrier_runtime`, `c2a3a_establish_sessions`, `c2a3a_actions`,
+   `c2a3a_matched_response`, `c2a3a_member_provider`, `poll_until`,
+   `entry_kinds`, `timeout_b_ms`). These are non-semantic, non-architectural
+   clean-up items that do not affect determinism, trust boundaries, or
+   provider behaviour; the production build (`cargo check` without
+   `--all-targets`) still finishes with zero errors and the required checks all
+   exit 0.
 
 ## Smallest next action
 
-Lucy review of the five coordinator-observability proofs. If accepted, the
-remaining deferred matrices (semantic, replay, unattempted, intent/G1) may be
-assigned as separate tasks.
+Lucy merge review of the published `feature/c2-a3a-provider-overlap` branch.
+No further implementation is required before that review; the dead-code
+clean-up items above are candidates for a separate bounded follow-up task at
+Lucy's discretion.
 
 ## Correction pass — terminal semantic matrix hardening
 
@@ -182,6 +202,75 @@ when exactly one file matches (scalar `FileInfo` has no `.Count`). This made
 member-b fail with `NoFinalResponse` in every single-member test. Fixed to
 `@(Get-ChildItem ...).Count`. Added `peer-count` and per-member
 `outcome-{tag}` control files.
+
+## Independent final verification
+
+Owner `Mini 2.5 Pro` performed the independent final review and verification
+gate. Result: **C2-A3a verified complete**. The architecture matches the
+accepted C2-A3 design; no semantic drift was found.
+
+Reviewed directly (not from prior reports):
+
+- **Core ownership.** `execute_group_concurrent` keeps `DispatchReadyAction`,
+  `PreparedInvoke`, and `ReplayAdmission` coordinator-owned; workers receive
+  only `WorkerInput` (arguments, provider, tool name, remaining). Structural
+  movement uses whole-enum `std::mem::replace` and `Option::take`. No
+  `DispatchReadyAction::new`, `test_manifest`, `test_resolved_capability`,
+  `NoopCapabilityExecutor`, or `NoopReplayAdmissionGuard` remains.
+- **Worker path.** `worker_invoke_inner` is
+  `RetainedProviderSession::establish` → `refresh_prepared_catalogue` →
+  `session.tools_call` → `session.close`; no direct `ManagedProvider` shortcut.
+  `catch_unwind` surrounds real worker work and always emits one
+  `WorkerResult`, so there is no channel-result hole.
+- **Replay.** `ReplayAdmissionGuard`/`ReplayAuthority` have no `Send` bound;
+  `FileReplayAuthority` stays `Rc`/`RefCell`. G0 in Stage A, deadline start →
+  final deadline check → G1 (`publish_armed`) → launch in Stage B, G2 after
+  durable outcome in Stage C. `ObservingReplayAuthority`/`ReplayTrace` are
+  test-contained and record actual calls.
+- **Trail.** Only the coordinator writes the Trail; physical `OutcomeEntry`
+  order follows Stage C arrival; final non-success selection is by Runtime
+  Plan member order via `first_non_success_member_step`.
+- **Terminal taxonomy.** `map_shared_result` preserves `Denied`,
+  `ApprovalRequired`, `Unavailable`, `Unattempted`, `Uncertain`, `Failed`,
+  `Completed`, `ReplayBlockedCompletedSuccess`, `ReplayBlockedCompletedFailure`,
+  `ReplayRequiresManualResolution`, `ReplayPersistenceUnavailable`, and
+  `AuditFailed`. `ReplayBlockedCompletedSuccess` maps to `Boundary(Replay(...))`
+  and counts as success in `step_succeeded`.
+
+The 19 focused C2-A3a proofs were read assertion-by-assertion and found to
+prove their titles (overlap, durability, physical ordering, GroupJoin, panic,
+Denied/ApprovalRequired/Unavailable/ReplayBlocked/Unattempted/Uncertain,
+inverse physical completion, intent-before-effect, G1/G2-before/after-effect).
+
+### Verification results (independent run)
+
+| Check | Result |
+| --- | --- |
+| focused C2-A3a tests (19) | PASS (19/19) |
+| `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check` | PASS |
+| `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml` | PASS |
+| `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --locked` | PASS |
+| `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1` | PASS (1512 lib + integration, 0 failed) |
+| `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features` | PASS (exit 0; 49 lib-test + 5 lib warnings, dead-code only) |
+| `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features -- --test-threads=1` | PASS (0 failed) |
+| `git diff --check` | PASS |
+| `.github/scripts/check-tethers-task-packet.ps1` | PASS (control-v1/COMPLETE) |
+
+Final feature SHA before closeout: `65acab1c9dfc7ceab16cf36164a22f94cfc69b17`.
+
+`origin/main` remained unchanged at
+`1703fb4aadc06980daea8fe5afbeaf3a6218b256`. No force push; the closeout is a
+normal descendant commit of the implementation checkpoint.
+
+### PowerShell `@(...).Count` root cause
+
+`tethers-stdio-fixture.ps1` used
+`(Get-ChildItem -Filter 'entered-*').Count`, which throws
+`ParentContainsErrorRecordException` under `Set-StrictMode -Version Latest`
+when exactly one file matches because the scalar `FileInfo` has no `.Count`
+member. This made single-member tests fail with `NoFinalResponse`. The fix is
+`@(Get-ChildItem ...).Count`, which wraps the result in an array so `.Count`
+is always defined for 0, 1, or many matches.
 
 ## References
 

@@ -1,6 +1,6 @@
 # Tethers Project Dashboard
 
-Updated: 2026-08-14
+Updated: 2026-08-15
 
 ## Current Milestone
 
@@ -16,12 +16,13 @@ C2-A3 physical concurrency design is complete and accepted
 (`docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`).
 
 C2-A3a implementation exists at base `58aecd0c789802cdfea57d4560b51fd21d5340ae`
-but is **REJECTED pending correction**. Physical concurrency is **NOT YET
-ACCEPTED/MERGED**.
+and is **COMPLETE, awaiting Lucy merge review**. Physical concurrency is **NOT
+YET MERGED**.
 
-Active task: **C2-A3a final provider overlap correction** — Owner: `Codex`,
-Status: `READY`, Base: `58aecd0c789802cdfea57d4560b51fd21d5340ae`.
-Packet: `docs/CURRENT_CLINE_TASK.md`.
+Active task: **C2-A3a final provider overlap correction** — Owner: `Mini 2.5
+Pro — independent final verification`, Status: `COMPLETE`, Base:
+`58aecd0c789802cdfea57d4560b51fd21d5340ae`. Packet:
+`docs/CURRENT_CLINE_TASK.md`.
 
 ## Last Completed Development State
 
@@ -44,17 +45,16 @@ None.
 
 ## Next Route
 
-C2-A3a (provider invocation overlap under coordinator ownership) is the active
-correction task — a READY Red packet assigned to Codex at base
-`58aecd0c789802cdfea57d4560b51fd21d5340ae`. It corrects the REJECTED A3a
-implementation rather than starting fresh.
+C2-A3a (provider invocation overlap under coordinator ownership) is COMPLETE at
+base `58aecd0c789802cdfea57d4560b51fd21d5340ae` and published on
+`feature/c2-a3a-provider-overlap`, awaiting Lucy merge review.
 
 The intended 0.4 sequence remains:
 
 1. C1 — semantic fan-out / join foundation ✓
 2. C2-A1 — Core-native Together semantic bridge ✓
 3. C2-A2 — replay and Trail foundation ✓ (A2a + A2b complete)
-4. C2-A3 — physical concurrency design ✓, implementation under correction (C2-A3a)
+4. C2-A3 — physical concurrency design ✓, implementation COMPLETE (C2-A3a, awaiting merge)
 5. C3–C5 — resource bounds, adversarial proof, and fresh-agent proof
 
 ## Operating Mode
