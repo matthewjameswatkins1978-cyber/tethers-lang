@@ -83,6 +83,10 @@ pub struct PreparedRuntime {
     providers: Vec<PreparedProvider>,
     policy: HostLocalPolicy,
     trusted_store: TrustedManifestStore,
+    /// Maximum active Together provider invocations within one group execution.
+    /// Validated N >= 1 from configuration, defaults to
+    /// `DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS` (2).
+    max_active_together_invocations: usize,
 }
 
 /// One Tether source file loaded into memory.
@@ -246,6 +250,12 @@ impl PreparedRuntime {
     /// The trusted manifest store populated with verified manifests.
     pub fn trusted_store(&self) -> &TrustedManifestStore {
         &self.trusted_store
+    }
+
+    /// The maximum number of active Together provider invocations within one
+    /// group execution.  Validated N >= 1 from configuration.
+    pub fn max_active_together_invocations(&self) -> usize {
+        self.max_active_together_invocations
     }
 
     /// All prepared capabilities across all providers.
@@ -1036,6 +1046,7 @@ pub fn prepare_runtime(
         providers,
         policy,
         trusted_store,
+        max_active_together_invocations: loaded.config.max_active_together_invocations,
     })
 }
 
@@ -3810,6 +3821,53 @@ mod tests {
             "K_COMPLETELY_DIFFERENT"
         );
         assert!(json.get("manifest_digest").is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ==================================================================
+    // C3-A4 — PreparedRuntime materialisation tests
+    // ==================================================================
+
+    // A4.7: Default materialises in PreparedRuntime as 2
+    #[test]
+    fn c3_a4_prepared_runtime_default_materialises_as_two() {
+        with_prepared_runtime(|prepared| {
+            assert_eq!(
+                prepared.max_active_together_invocations(),
+                crate::runtime_config::DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS
+            );
+            assert_eq!(prepared.max_active_together_invocations(), 2);
+        });
+    }
+
+    // A4.8: Explicit value materialises in PreparedRuntime
+    #[test]
+    fn c3_a4_prepared_runtime_explicit_value_materialises() {
+        let dir =
+            std::env::temp_dir().join(format!("c3-a4-prep-explicit-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        write_default_tether(&dir);
+
+        let (manifest_json, digest) =
+            make_manifest("lantern.task.record", 1, "lantern-local", json!(null));
+        std::fs::write(
+            dir.join("manifests/lantern-task-record.json"),
+            &manifest_json,
+        )
+        .unwrap();
+
+        let mut cfg = minimal_config_json();
+        cfg["max_active_together_invocations"] = json!(3);
+        cfg["providers"][0]["capabilities"][0]["pinned_digest"] = json!(digest);
+
+        let config_path = dir.join("config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let prepared = prepare_runtime(&loaded).unwrap();
+        assert_eq!(prepared.max_active_together_invocations(), 3);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

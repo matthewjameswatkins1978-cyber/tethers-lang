@@ -1744,7 +1744,7 @@ pub(crate) fn execute_group_concurrent(
     approvals: &mut crate::approval::ApprovalStore,
     replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
 ) -> ExecutionServiceResult {
-    let limit = member_indexes.len().max(1);
+    let limit = service.runtime.max_active_together_invocations();
     execute_group_concurrent_with_limit(
         group_id,
         member_indexes,
@@ -9097,5 +9097,413 @@ mod tests {
                 "GroupJoinEntry must not be appended when members remain nonterminal"
             );
         });
+    }
+
+    // ==================================================================
+    // C3-A4 Tests: External Bounded-Concurrency Configuration
+    //
+    // These tests prove that the configuration value reaches the actual
+    // production `execute_group_concurrent` wrapper, not merely the
+    // `PreparedRuntime` accessor.
+    // ==================================================================
+
+    /// Build a C3A1-style harness with an explicit `max_active_together_invocations`
+    /// in the config, then run `execute_group_concurrent` (the wrapper) to prove
+    /// the configured value controls real production launch behavior.
+    fn c3a4_harness_with_config(
+        test_name: &str,
+        member_tags: &[&str],
+        max_active: Option<usize>,
+    ) -> C3A1GroupHarness {
+        use std::path::Path;
+
+        let barrier_dir =
+            std::env::temp_dir().join(format!("tethers-c3a4-{test_name}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&barrier_dir).unwrap();
+
+        let runtime_dir = std::env::temp_dir().join(format!(
+            "tethers-c3a4-{test_name}-rt-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(runtime_dir.join("tethers")).unwrap();
+        std::fs::create_dir_all(runtime_dir.join("manifests")).unwrap();
+
+        std::fs::write(
+            runtime_dir.join("tethers/together-test.tether"),
+            "when event.test if true do fixture.ping-a do fixture.ping-b",
+        )
+        .unwrap();
+
+        let manifest_template =
+            include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let make_manifest = |cap_name: &str, provider_id: &str| -> (String, String) {
+            let mut m: serde_json::Value = serde_json::from_str(manifest_template).unwrap();
+            m["capability_name"] = serde_json::json!(cap_name);
+            m["provider"]["identity"] = serde_json::json!(provider_id);
+            m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+            m["permission_scope"] =
+                serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+            m["confirmation_policy"] =
+                serde_json::json!({"standing_permitted": true, "per_call_required": false});
+            let s = serde_json::to_string(&m).unwrap();
+            let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+            m["digest"] = serde_json::json!(digest);
+            (serde_json::to_string_pretty(&m).unwrap(), digest)
+        };
+
+        let mut digests = std::collections::HashMap::new();
+        for tag in member_tags {
+            let (manifest_json, digest) =
+                make_manifest(&format!("fixture.ping-{tag}"), &format!("provider-{tag}"));
+            std::fs::write(
+                runtime_dir.join(format!("manifests/fixture-ping-{tag}.json")),
+                &manifest_json,
+            )
+            .unwrap();
+            digests.insert(*tag, digest);
+        }
+
+        let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts")
+            .join("tethers-stdio-fixture.ps1");
+        let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+
+        let reqs: Vec<serde_json::Value> = member_tags
+            .iter()
+            .map(|tag| {
+                json!({
+                    "name": format!("fixture.ping-{tag}"),
+                    "version": 1,
+                    "reason": "c3-a4 config proof"
+                })
+            })
+            .collect();
+
+        let providers_json: Vec<serde_json::Value> = member_tags
+            .iter()
+            .map(|tag| {
+                let provider_id = format!("provider-{tag}");
+                let cap_name = format!("fixture.ping-{tag}");
+                let digest = digests.get(*tag).unwrap();
+                json!({
+                    "id": provider_id,
+                    "display_name": format!("Provider {tag}"),
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "pwsh.exe",
+                        "args": [
+                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                            barrier_script.to_str().unwrap(),
+                            "-Mode", "c2-overlap-barrier",
+                            "-BarrierDirectory", &barrier_str
+                        ],
+                        "protocol_version": "2025-11-25"
+                    },
+                    "capabilities": [{
+                        "name": cap_name,
+                        "version": 1,
+                        "manifest_path": format!("manifests/fixture-ping-{tag}.json"),
+                        "pinned_digest": digest,
+                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                    }]
+                })
+            })
+            .collect();
+
+        let rules_json: Vec<serde_json::Value> = member_tags
+            .iter()
+            .map(|tag| {
+                json!({
+                    "name": format!("fixture.ping-{tag}"),
+                    "version": 1,
+                    "decision": "allow"
+                })
+            })
+            .collect();
+
+        let mut config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "test.together",
+                "version": "1",
+                "tethers": [{
+                    "id": "together-test",
+                    "version": "1",
+                    "source_path": "tethers/together-test.tether"
+                }],
+                "capability_requirements": reqs
+            },
+            "providers": providers_json,
+            "policy": {
+                "default": "deny",
+                "rules": rules_json
+            }
+        });
+
+        // Inject the configured max_active_together_invocations if specified.
+        if let Some(n) = max_active {
+            config["max_active_together_invocations"] = json!(n);
+        }
+
+        let config_path = runtime_dir.join("tethers-config.json");
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let runtime = prepare_runtime(&loaded).unwrap();
+
+        let trail_path = std::env::temp_dir().join(format!(
+            "tethers-c3a4-{test_name}-trail-{}.jsonl",
+            uuid::Uuid::new_v4()
+        ));
+        let replay_dir = std::env::temp_dir().join(format!(
+            "tethers-c3a4-{test_name}-replay-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&replay_dir).unwrap();
+
+        C3A1GroupHarness {
+            runtime,
+            _runtime_dir: runtime_dir,
+            trail_path,
+            replay_dir,
+            barrier_dir,
+            members: member_tags.iter().map(|s| (*s).to_owned()).collect(),
+        }
+    }
+
+    /// Run `execute_group_concurrent` (the wrapper) instead of
+    /// `execute_group_concurrent_with_limit` to prove the configuration
+    /// value reaches the production wrapper.
+    fn c3a4_run_group_via_wrapper(
+        harness: &C3A1GroupHarness,
+        eval_id: &str,
+    ) -> ExecutionServiceResult {
+        let providers = harness.runtime.providers().to_vec();
+        let mut sessions = HashMap::new();
+        for provider in &providers {
+            let manifest = provider.capabilities[0].verified_manifest.manifest();
+            let session = RetainedProviderSession::establish(SocketEstablishment {
+                command: &provider.stdio_config.command,
+                args: &provider.stdio_config.args,
+                working_directory: &provider.working_directory,
+                protocol_version: &provider.stdio_config.protocol_version,
+                server_name: &manifest.binding.server_name,
+                identity: &provider.identity,
+            })
+            .expect("barrier provider session establishment");
+            sessions.insert(provider.identity.clone(), session);
+        }
+
+        let mut actions = Vec::new();
+        let mut member_action_ids = Vec::new();
+        let mut member_indexes = Vec::new();
+
+        for (idx, tag) in harness.members.iter().enumerate() {
+            let action_id = format!("member-{tag}");
+            let provider_id = format!("provider-{tag}");
+            let cap_name = format!("fixture.ping-{tag}");
+            let digest = harness
+                .runtime
+                .providers()
+                .iter()
+                .find(|p| p.identity == provider_id)
+                .unwrap()
+                .capabilities[0]
+                .verified_manifest
+                .verified_digest()
+                .to_owned();
+
+            actions.push(json!({
+                "action_id": action_id,
+                "idempotency_key": format!("{eval_id}/{action_id}"),
+                "capability": cap_name,
+                "capability_version": "1.0.0",
+                "bridge_capability_version": 1,
+                "bridge_provider_identity": provider_id,
+                "manifest_digest": digest,
+                "arguments": {"message": format!("member/{tag}")},
+            }));
+            member_action_ids.push(action_id);
+            member_indexes.push(idx);
+        }
+
+        let groups = vec![json!({
+            "group_id": "together-1",
+            "member_action_ids": member_action_ids,
+        })];
+        let mut response = json!({
+            "status": "matched",
+            "evaluation_id": eval_id,
+            "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+            "trail": [],
+        });
+        let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+        let avail_identities: Vec<String> = harness
+            .members
+            .iter()
+            .map(|tag| format!("provider-{tag}"))
+            .collect();
+        let availability =
+            ProviderAvailability::from_identities(avail_identities.iter().map(|s| s.as_str()));
+        let mut trail = dispatch::FileTrail::open(&harness.trail_path).unwrap();
+        let mut approvals = crate::approval::ApprovalStore::default();
+        let mut replay_authority =
+            crate::replay_runtime::test_support::TestReplayAuthority::default();
+        let engine_path = PathBuf::from("unused-engine");
+        let service =
+            HostExecutionService::new(&harness.runtime, &engine_path, &harness.trail_path, None);
+
+        // Call execute_group_concurrent (the wrapper), NOT
+        // execute_group_concurrent_with_limit.  This proves the
+        // configuration value reaches the production wrapper.
+        execute_group_concurrent(
+            "together-1",
+            &member_indexes,
+            &member_actions,
+            &mut response,
+            eval_id,
+            &mut trail,
+            &service,
+            &PreparedEvaluationInput {
+                tether_id: "together-test".to_owned(),
+                tether_version: "1".to_owned(),
+                evaluation_id: eval_id.to_owned(),
+                anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                facts: json!({}),
+            },
+            &mut sessions,
+            &availability,
+            &mut approvals,
+            &mut replay_authority,
+        )
+    }
+
+    // A4.9: Physical default-N=2 proof using execute_group_concurrent wrapper.
+    //
+    // Group: A B C
+    // Default N=2: A+B reach active simultaneously, C waits.
+    // Release B → C launches.  Release A+C → all terminal → GroupJoin.
+    #[test]
+    fn c3_a4_default_two_controls_real_group_execution() {
+        let h = c3a4_harness_with_config("default-two", &["a", "b", "c"], None);
+
+        // Verify the runtime accessor matches the default.
+        assert_eq!(h.runtime.max_active_together_invocations(), 2);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| c3a4_run_group_via_wrapper(&h, "eval-c3a4-d2"));
+
+            // Wait until both A and B become active simultaneously.
+            h.wait_barrier_active_count(2);
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "default N=2 must have exactly 2 active members"
+            );
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release B → slot opens → C launches.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+            h.wait_member_active("c");
+
+            // A is still in-flight, C is in-flight: exactly 2 active.
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "after B completes, A+C must be exactly 2 active"
+            );
+
+            // Release A and C.
+            h.release_member("a");
+            h.release_member("c");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // Verify all 3 outcomes present and GroupJoin succeeded.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3, "all 3 members must have outcomes");
+        assert!(ids.contains(&"member-a".to_owned()));
+        assert!(ids.contains(&"member-b".to_owned()));
+        assert!(ids.contains(&"member-c".to_owned()));
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    // A4.10: Physical explicit-N=1 proof using execute_group_concurrent wrapper.
+    //
+    // Group: A B C
+    // Explicit N=1: A launches, B/C wait.  After A completes, B launches.
+    // After B completes, C launches.  Physical max active == 1.
+    #[test]
+    fn c3_a4_explicit_one_controls_real_group_execution() {
+        let h = c3a4_harness_with_config("explicit-one", &["a", "b", "c"], Some(1));
+
+        // Verify the runtime accessor matches the explicit value.
+        assert_eq!(h.runtime.max_active_together_invocations(), 1);
+
+        // Tell the barrier script to expect only 1 peer at a time.
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| c3a4_run_group_via_wrapper(&h, "eval-c3a4-e1"));
+
+            // 1. Member A launches and enters active state.
+            h.wait_member_active("a");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(!h.has_entered("b"), "B must wait for capacity");
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release A and wait for its completion.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // 2. Member B launches after A completes.
+            h.wait_member_active("b");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(!h.has_entered("c"), "C must wait for capacity");
+
+            // Release B and wait for its completion.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // 3. Member C launches after B completes.
+            h.wait_member_active("c");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+
+            // Release C.
+            h.release_member("c");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // Verify all 3 outcomes present in semantic order and GroupJoin succeeded.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3, "all 3 members must have outcomes");
+        assert_eq!(ids, vec!["member-a", "member-b", "member-c"]);
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
     }
 }

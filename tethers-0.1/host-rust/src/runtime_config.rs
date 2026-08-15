@@ -26,11 +26,27 @@ pub(crate) use crate::manifest::parse_value_no_dupes;
 // Data types – exact frozen J12 shape
 // ===========================================================================
 
+/// Default maximum number of active Together provider invocations within one
+/// group execution.  Chosen as the smallest useful concurrent bounded default:
+/// 1 would disable physical Together overlap, while 2 allows one overlap slot.
+pub const DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS: usize = 2;
+
+/// Serde default function for `max_active_together_invocations`: returns
+/// `DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS` when the field is absent.
+fn default_max_active_together_invocations() -> usize {
+    DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS
+}
+
 /// The complete parsed and semantically validated runtime configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
     pub format_version: String,
+    /// Maximum number of active Together provider invocations within one group
+    /// execution.  N >= 1.  Defaults to `DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS`
+    /// (2) when omitted, preserving backward compatibility.
+    #[serde(default = "default_max_active_together_invocations")]
+    pub max_active_together_invocations: usize,
     pub tether_set: TetherSetConfig,
     pub providers: Vec<ProviderBindingConfig>,
     pub policy: PolicyConfig,
@@ -331,10 +347,24 @@ fn json_pointer_child(parent: &str, segment: &str) -> String {
 /// Validate the configuration after structural deserialization.
 fn validate(config: &RuntimeConfig) -> Result<(), RuntimeConfigError> {
     validate_format_version(config)?;
+    validate_max_active_together_invocations(config)?;
     validate_tether_set(&config.tether_set)?;
     validate_providers(&config.providers)?;
     validate_policy(&config.policy)?;
     validate_cross_references(config)?;
+    Ok(())
+}
+
+fn validate_max_active_together_invocations(
+    config: &RuntimeConfig,
+) -> Result<(), RuntimeConfigError> {
+    if config.max_active_together_invocations == 0 {
+        return Err(RuntimeConfigError::with_field(
+            RuntimeConfigErrorCode::InvalidValue,
+            "max_active_together_invocations must be >= 1",
+            "/max_active_together_invocations",
+        ));
+    }
     Ok(())
 }
 
@@ -2407,5 +2437,87 @@ mod tests {
         let err = parse_err(&json);
         assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
         assert!(err.message.contains("core_version"));
+    }
+
+    // ==================================================================
+    // C3-A4 — External bounded-concurrency configuration tests
+    // ==================================================================
+
+    // A4.1: Omitted field defaults to 2
+    #[test]
+    fn c3_a4_config_omission_defaults_to_two() {
+        let cfg = parse_ok(&minimal_config_json());
+        assert_eq!(
+            cfg.max_active_together_invocations,
+            DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS
+        );
+        assert_eq!(cfg.max_active_together_invocations, 2);
+    }
+
+    // A4.2: Explicit 1 accepted
+    #[test]
+    fn c3_a4_config_explicit_one_accepted() {
+        let mut json = minimal_config_json();
+        json["max_active_together_invocations"] = serde_json::json!(1);
+        let cfg = parse_ok(&json);
+        assert_eq!(cfg.max_active_together_invocations, 1);
+    }
+
+    // A4.3: Explicit 2 accepted
+    #[test]
+    fn c3_a4_config_explicit_two_accepted() {
+        let mut json = minimal_config_json();
+        json["max_active_together_invocations"] = serde_json::json!(2);
+        let cfg = parse_ok(&json);
+        assert_eq!(cfg.max_active_together_invocations, 2);
+    }
+
+    // A4.4: Larger value accepted
+    #[test]
+    fn c3_a4_config_larger_value_accepted() {
+        let mut json = minimal_config_json();
+        json["max_active_together_invocations"] = serde_json::json!(8);
+        let cfg = parse_ok(&json);
+        assert_eq!(cfg.max_active_together_invocations, 8);
+    }
+
+    // A4.5: Zero rejected
+    #[test]
+    fn c3_a4_config_zero_is_rejected() {
+        let mut json = minimal_config_json();
+        json["max_active_together_invocations"] = serde_json::json!(0);
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
+        assert_eq!(
+            err.field,
+            Some("/max_active_together_invocations".to_string())
+        );
+    }
+
+    // A4.6: Wrong type rejected (string)
+    #[test]
+    fn c3_a4_config_wrong_type_string_rejected() {
+        let mut json = minimal_config_json();
+        json["max_active_together_invocations"] = serde_json::json!("2");
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidType);
+    }
+
+    // A4.6b: Wrong type rejected (float)
+    #[test]
+    fn c3_a4_config_wrong_type_float_rejected() {
+        let mut json = minimal_config_json();
+        json["max_active_together_invocations"] = serde_json::json!(2.5);
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidType);
+    }
+
+    // A4.6c: Wrong type rejected (null)
+    #[test]
+    fn c3_a4_config_wrong_type_null_rejected() {
+        let mut json = minimal_config_json();
+        json["max_active_together_invocations"] = serde_json::json!(null);
+        let err = parse_err(&json);
+        assert_eq!(err.code, RuntimeConfigErrorCode::InvalidType);
     }
 }
