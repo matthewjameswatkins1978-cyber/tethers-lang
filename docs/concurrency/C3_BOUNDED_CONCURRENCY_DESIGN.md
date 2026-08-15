@@ -1,8 +1,8 @@
 # C3 Bounded Concurrency Design
 
-DESIGN CANDIDATE — NOT IMPLEMENTATION AUTHORITY
+DESIGN ACCEPTED BY LUCY — implementation only through an authorised task packet
 
-Status: design artifact — awaiting Lucy acceptance
+Status: accepted design — implementation authorised via task packets
 
 Updated: 2026-08-15
 

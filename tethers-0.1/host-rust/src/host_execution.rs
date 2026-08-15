@@ -1709,32 +1709,27 @@ fn classify_worker_session_error(error: &StdioProviderError) -> outcome::Provide
     }
 }
 
+fn count_active_members(member_states: &[GroupMemberState]) -> usize {
+    member_states
+        .iter()
+        .filter(|s| {
+            matches!(
+                s,
+                GroupMemberState::Launched { .. } | GroupMemberState::Transitioning { .. }
+            )
+        })
+        .count()
+}
+
+fn has_prepared_members(member_states: &[GroupMemberState]) -> bool {
+    member_states
+        .iter()
+        .any(|s| matches!(s, GroupMemberState::Prepared { .. }))
+}
+
 /// Execute one `together` group with real provider invocation overlap.
 ///
-/// This is the C2-A3a concurrent execution path.  It replaces the serial
-/// `execute_plan` call for Group items only.  Sequential items continue
-/// using the existing serial path.
-///
-/// ## Execution phases
-///
-/// **STAGE A — Serial deterministic preparation** (coordinator-owned):
-/// For every member, in Runtime Plan order: scope, policy, resolution,
-/// replay admission, G0 intent, Trail intent.  No deadline, no G1, no
-/// provider effect.  Prep failures are recorded immediately as terminal
-/// states with exact classification.
-///
-/// **STAGE B — Physical provider invocation** (concurrent workers):
-/// For each eligible member, immediately before launch: deadline start,
-/// G1 armed, scoped thread spawn.  Workers return raw provider results
-/// through an mpsc channel.
-///
-/// **STAGE C — Durable result collection** (coordinator-owned):
-/// As results arrive on the channel: classify outcome, Trail outcome, G2,
-/// result anchor.  Stage C runs per-result immediately, not in member
-/// order.
-///
-/// **STAGE D — Join** (coordinator-owned):
-/// After all members terminal: GroupJoinEntry, all-success test.
+/// Preserves existing callers by defaulting to group width (A3a-compatible full overlap).
 pub(crate) fn execute_group_concurrent(
     group_id: &str,
     member_indexes: &[usize],
@@ -1749,6 +1744,67 @@ pub(crate) fn execute_group_concurrent(
     approvals: &mut crate::approval::ApprovalStore,
     replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
 ) -> ExecutionServiceResult {
+    let limit = member_indexes.len().max(1);
+    execute_group_concurrent_with_limit(
+        group_id,
+        member_indexes,
+        actions,
+        response,
+        evaluation_id,
+        trail,
+        service,
+        input,
+        provider_sessions,
+        provider_availability,
+        approvals,
+        replay_authority,
+        limit,
+    )
+}
+
+/// Execute one `together` group with bounded provider invocation overlap.
+///
+/// This is the C3-A1 parameterised execution path.  It bounds active
+/// provider invocations to `max_active_together_invocations` (N >= 1)
+/// while maintaining strict semantic ordering and Stage C release boundaries.
+///
+/// ## Execution phases
+///
+/// **STAGE A — Serial deterministic preparation** (coordinator-owned):
+/// For every member, in Runtime Plan order: scope, policy, resolution,
+/// replay admission, G0 intent, Trail intent.  No deadline, no G1, no
+/// provider effect.  Prep failures are recorded immediately as terminal
+/// states with exact classification.
+///
+/// **STAGE B — Physical provider invocation** (bounded launch window):
+/// While active_count < N, the earliest semantic-order Prepared member is
+/// launched: deadline start (clock.now()), remaining calculation, G1 armed,
+/// and scoped worker thread spawn.
+///
+/// **STAGE C — Durable result collection** (coordinator-owned):
+/// When results arrive, coordinator executes complete Stage C processing
+/// (`execute_boundary_invoke_only`) and transitions state to `Terminal`.
+/// Only after full terminalisation does active_count decrease to free capacity.
+///
+/// **STAGE D — Join** (coordinator-owned):
+/// After all members terminal: GroupJoinEntry, all-success test.
+pub(crate) fn execute_group_concurrent_with_limit(
+    group_id: &str,
+    member_indexes: &[usize],
+    actions: &[Value],
+    response: &mut Value,
+    evaluation_id: &str,
+    trail: &mut dyn dispatch::Trail,
+    service: &HostExecutionService<'_>,
+    input: &PreparedEvaluationInput,
+    provider_sessions: &mut HashMap<String, RetainedProviderSession>,
+    provider_availability: &ProviderAvailability,
+    approvals: &mut crate::approval::ApprovalStore,
+    replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
+    max_active_together_invocations: usize,
+) -> ExecutionServiceResult {
+    let max_active = max_active_together_invocations.max(1);
+
     // ── STAGE A: Serial deterministic preparation ──────────────────────
     //
     // Every member gets a state slot immediately.  Prep failures are
@@ -2006,163 +2062,171 @@ pub(crate) fn execute_group_concurrent(
         }
     }
 
-    // ── STAGE B: Launch workers through mpsc channel ───────────────────
+    // ── STAGE B & C: Bounded launch window and durable collection ───────
     let clock = ProductionMonotonicClock::new();
     let mut anchor_writer = crate::ResponseResultAnchorWriter;
     let (tx, rx) = mpsc::channel::<WorkerResult>();
-    let mut launched_count: usize = 0;
 
-    struct PendingLaunch {
-        worker_input: WorkerInput,
-    }
-    let mut pending_launches: Vec<PendingLaunch> = Vec::new();
+    std::thread::scope(|s| {
+        let mut launches_halted = false;
 
-    // Whole-enum movement prevents fabricated domain values when the real
-    // coordinator-owned state moves from Prepared to Launched.
-    for state in member_states.iter_mut() {
-        let transition = match state {
-            GroupMemberState::Prepared {
-                action_index,
-                action_id,
-                semantic_position,
-                ..
-            } => GroupMemberState::Transitioning {
-                action_index: *action_index,
-                action_id: action_id.clone(),
-                semantic_position: semantic_position.clone(),
-            },
-            _ => continue,
-        };
-        let prior = std::mem::replace(state, transition);
-        let (action_index, action_id, position, ready, prepared, mut admission, deadline) =
-            match prior {
-                GroupMemberState::Prepared {
-                    action_index,
-                    action_id,
-                    semantic_position,
-                    ready,
-                    prepared,
-                    admission: Some(admission),
+        loop {
+            // Stage B: Launch eligible Prepared members in semantic order while capacity allows.
+            while !launches_halted && count_active_members(&member_states) < max_active {
+                let next_prepared_idx = member_states
+                    .iter()
+                    .position(|st| matches!(st, GroupMemberState::Prepared { .. }));
+                let idx = match next_prepared_idx {
+                    Some(i) => i,
+                    None => break,
+                };
+
+                let transition = match &member_states[idx] {
+                    GroupMemberState::Prepared {
+                        action_index,
+                        action_id,
+                        semantic_position,
+                        ..
+                    } => GroupMemberState::Transitioning {
+                        action_index: *action_index,
+                        action_id: action_id.clone(),
+                        semantic_position: semantic_position.clone(),
+                    },
+                    _ => unreachable!("guaranteed by position check"),
+                };
+                let prior = std::mem::replace(&mut member_states[idx], transition);
+
+                let (action_index, action_id, position, ready, prepared, mut admission, deadline) =
+                    match prior {
+                        GroupMemberState::Prepared {
+                            action_index,
+                            action_id,
+                            semantic_position,
+                            ready,
+                            prepared,
+                            admission: Some(admission),
+                            deadline,
+                        } => (
+                            action_index,
+                            action_id,
+                            semantic_position,
+                            ready,
+                            prepared,
+                            admission,
+                            deadline,
+                        ),
+                        _ => unreachable!("only Prepared members enter the launch transition"),
+                    };
+
+                let deadline_start = clock.now();
+                let remaining = match crate::outcome::remaining_until_deadline(
+                    &clock,
+                    deadline_start,
                     deadline,
-                } => (
-                    action_index,
-                    action_id,
-                    semantic_position,
-                    ready,
-                    prepared,
-                    admission,
-                    deadline,
-                ),
-                _ => unreachable!("only Prepared members enter the launch transition"),
-            };
+                ) {
+                    Some(remaining) => remaining,
+                    None => {
+                        member_states[idx] = GroupMemberState::Terminal {
+                            action_index,
+                            action_id: action_id.clone(),
+                            semantic_position: position,
+                            step: crate::plan_execution::ActionStep::Stopped(
+                                ExecutionServiceResult::Unattempted {
+                                    evaluation_id: evaluation_id.to_owned(),
+                                    action_id,
+                                    reason: "deadline expired before provider invocation"
+                                        .to_owned(),
+                                    execution_id: Some(ready.execution_id().0.clone()),
+                                },
+                            ),
+                        };
+                        continue;
+                    }
+                };
 
-        let deadline_start = clock.now();
-        let remaining =
-            match crate::outcome::remaining_until_deadline(&clock, deadline_start, deadline) {
-                Some(remaining) => remaining,
-                None => {
-                    *state = GroupMemberState::Terminal {
+                if admission.publish_armed().is_err() {
+                    launches_halted = true;
+                    member_states[idx] = GroupMemberState::Terminal {
                         action_index,
                         action_id: action_id.clone(),
                         semantic_position: position,
                         step: crate::plan_execution::ActionStep::Stopped(
-                            ExecutionServiceResult::Unattempted {
+                            ExecutionServiceResult::ReplayPersistenceUnavailable {
                                 evaluation_id: evaluation_id.to_owned(),
                                 action_id,
-                                reason: "deadline expired before provider invocation".to_owned(),
                                 execution_id: Some(ready.execution_id().0.clone()),
                             },
                         ),
                     };
                     continue;
                 }
-            };
 
-        if admission.publish_armed().is_err() {
-            *state = GroupMemberState::Terminal {
-                action_index,
-                action_id: action_id.clone(),
-                semantic_position: position,
-                step: crate::plan_execution::ActionStep::Stopped(
-                    ExecutionServiceResult::ReplayPersistenceUnavailable {
-                        evaluation_id: evaluation_id.to_owned(),
-                        action_id,
-                        execution_id: Some(ready.execution_id().0.clone()),
-                    },
-                ),
-            };
-            continue;
-        }
-
-        let provider_identity = ready.provider_identity().to_owned();
-        let prepared_provider = match service
-            .runtime
-            .providers()
-            .iter()
-            .find(|p| p.identity == provider_identity)
-        {
-            Some(provider) => provider.clone(),
-            None => {
-                *state = GroupMemberState::Terminal {
-                    action_index,
-                    action_id,
-                    semantic_position: position,
-                    step: crate::plan_execution::ActionStep::Stopped(
-                        ExecutionServiceResult::Unavailable {
-                            evaluation_id: evaluation_id.to_owned(),
-                            reason: format!("provider '{provider_identity}' has no prepared catalogue authority"),
-                        },
-                    ),
+                let provider_identity = ready.provider_identity().to_owned();
+                let prepared_provider = match service
+                    .runtime
+                    .providers()
+                    .iter()
+                    .find(|p| p.identity == provider_identity)
+                {
+                    Some(provider) => provider.clone(),
+                    None => {
+                        member_states[idx] = GroupMemberState::Terminal {
+                            action_index,
+                            action_id,
+                            semantic_position: position,
+                            step: crate::plan_execution::ActionStep::Stopped(
+                                ExecutionServiceResult::Unavailable {
+                                    evaluation_id: evaluation_id.to_owned(),
+                                    reason: format!(
+                                        "provider '{provider_identity}' has no prepared catalogue authority"
+                                    ),
+                                },
+                            ),
+                        };
+                        continue;
+                    }
                 };
-                continue;
+
+                let tool_name = ready
+                    .verified_manifest()
+                    .manifest()
+                    .binding
+                    .tool_name
+                    .clone();
+                let arguments = ready.arguments().clone();
+
+                member_states[idx] = GroupMemberState::Launched {
+                    action_index,
+                    action_id: action_id.clone(),
+                    semantic_position: position.clone(),
+                    ready: Some(ready),
+                    prepared: Some(prepared),
+                    admission: Some(admission),
+                };
+
+                let worker_input = WorkerInput {
+                    action_index,
+                    arguments,
+                    provider: prepared_provider,
+                    tool_name,
+                    remaining,
+                };
+
+                let tx_clone = tx.clone();
+                s.spawn(move || worker_invoke_provider(worker_input, tx_clone));
             }
-        };
 
-        let tool_name = ready
-            .verified_manifest()
-            .manifest()
-            .binding
-            .tool_name
-            .clone();
-        let arguments = ready.arguments().clone();
-        *state = GroupMemberState::Launched {
-            action_index,
-            action_id: action_id.clone(),
-            semantic_position: position.clone(),
-            ready: Some(ready),
-            prepared: Some(prepared),
-            admission: Some(admission),
-        };
-        pending_launches.push(PendingLaunch {
-            worker_input: WorkerInput {
-                action_index,
-                arguments,
-                provider: prepared_provider,
-                tool_name,
-                remaining,
-            },
-        });
-    }
+            let active_count = count_active_members(&member_states);
+            if active_count == 0 && (launches_halted || !has_prepared_members(&member_states)) {
+                break;
+            }
 
-    std::thread::scope(|s| {
-        // Spawn all workers.
-        for pending in pending_launches {
-            let tx_clone = tx.clone();
-            s.spawn(move || worker_invoke_provider(pending.worker_input, tx_clone));
-            launched_count += 1;
-        }
+            if active_count == 0 {
+                break;
+            }
 
-        drop(tx);
-
-        // Receive results as workers complete and process Stage C immediately.
-        let mut received = 0usize;
-        while received < launched_count {
             match rx.recv() {
                 Ok(worker_result) => {
-                    received += 1;
-
-                    // Find the Launched member for this action_index.
-                    // Extract ready and prepared for Stage C processing.
                     let mut found: Option<(
                         usize,
                         String,
@@ -2184,7 +2248,6 @@ pub(crate) fn execute_group_concurrent(
                         } = state
                         {
                             if *action_index == worker_result.action_index {
-                                // Move real objects out for Stage C.
                                 let taken_ready =
                                     ready.take().expect("Launched state must have ready");
                                 let taken_prepared =
@@ -2211,7 +2274,6 @@ pub(crate) fn execute_group_concurrent(
                             None => continue,
                         };
 
-                    // Stage C: classify outcome, Trail outcome, G2, result anchor.
                     let step = match crate::application::execute_boundary_invoke_only(
                         response,
                         &ready,
@@ -2223,17 +2285,19 @@ pub(crate) fn execute_group_concurrent(
                         false,
                     ) {
                         Ok(result) => crate::plan_execution::ActionStep::Boundary(result),
-                        Err(error) => crate::plan_execution::ActionStep::Stopped(
-                            ExecutionServiceResult::AuditFailed {
-                                evaluation_id: evaluation_id.to_owned(),
-                                action_id: action_id.clone(),
-                                reason: format!("shared execution boundary failed: {error}"),
-                                execution_id: Some(ready.execution_id().0.clone()),
-                            },
-                        ),
+                        Err(error) => {
+                            launches_halted = true;
+                            crate::plan_execution::ActionStep::Stopped(
+                                ExecutionServiceResult::AuditFailed {
+                                    evaluation_id: evaluation_id.to_owned(),
+                                    action_id: action_id.clone(),
+                                    reason: format!("shared execution boundary failed: {error}"),
+                                    execution_id: Some(ready.execution_id().0.clone()),
+                                },
+                            )
+                        }
                     };
 
-                    // Transition to Terminal.
                     for s in member_states.iter_mut() {
                         if let GroupMemberState::Launched {
                             action_index: idx, ..
@@ -2252,14 +2316,12 @@ pub(crate) fn execute_group_concurrent(
                     }
                 }
                 Err(_) => {
-                    // Channel closed — all workers finished but we haven't
-                    // received all results.  This shouldn't happen since
-                    // launched_count tracks exactly how many workers were
-                    // spawned.
                     break;
                 }
             }
         }
+
+        drop(tx);
     });
 
     // ── STAGE D: Join ──────────────────────────────────────────────────
@@ -7147,5 +7209,548 @@ mod tests {
                 "G1 (pos {g1_pos}) before G2 (pos {g2_pos}) for {member}"
             );
         }
+    }
+
+    // ===================================================================
+    // C3-A1 Group Test Harness and Proofs: Minimal Bounded Launch Window
+    // ===================================================================
+
+    struct C3A1GroupHarness {
+        runtime: PreparedRuntime,
+        _runtime_dir: PathBuf,
+        trail_path: PathBuf,
+        replay_dir: PathBuf,
+        barrier_dir: PathBuf,
+        members: Vec<String>,
+    }
+
+    impl C3A1GroupHarness {
+        fn new(test_name: &str, member_tags: &[&str]) -> Self {
+            let barrier_dir = std::env::temp_dir()
+                .join(format!("tethers-c3a1-{test_name}-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&barrier_dir).unwrap();
+
+            let runtime_dir = std::env::temp_dir().join(format!(
+                "tethers-c3a1-{test_name}-rt-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(runtime_dir.join("tethers")).unwrap();
+            std::fs::create_dir_all(runtime_dir.join("manifests")).unwrap();
+
+            let tether_actions = member_tags
+                .iter()
+                .map(|tag| format!("do fixture.ping-{tag}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            std::fs::write(
+                runtime_dir.join("tethers/together-test.tether"),
+                format!("when event.test if true {tether_actions}"),
+            )
+            .unwrap();
+
+            let manifest_json =
+                include_str!("../../protocol/capability-manifests/fixture-ping.json");
+            let make_manifest = |cap_name: &str, provider_id: &str| -> String {
+                let mut m: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
+                m["capability_name"] = serde_json::json!(cap_name);
+                m["provider"]["identity"] = serde_json::json!(provider_id);
+                m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+                m["permission_scope"] =
+                    serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
+                m["confirmation_policy"] =
+                    serde_json::json!({"standing_permitted": true, "per_call_required": false});
+                let s = serde_json::to_string(&m).unwrap();
+                let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
+                m["digest"] = serde_json::json!(digest);
+                serde_json::to_string_pretty(&m).unwrap()
+            };
+
+            let mut digests = HashMap::new();
+            for tag in member_tags {
+                let cap_name = format!("fixture.ping-{tag}");
+                let provider_id = format!("provider-{tag}");
+                let manifest = make_manifest(&cap_name, &provider_id);
+                let manifest_path = runtime_dir.join(format!("manifests/fixture-ping-{tag}.json"));
+                std::fs::write(&manifest_path, &manifest).unwrap();
+                let (_, digest) = crate::manifest::canonicalize_and_digest(&manifest).unwrap();
+                digests.insert((*tag).to_owned(), digest);
+            }
+
+            let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("scripts")
+                .join("tethers-stdio-fixture.ps1");
+            let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+
+            let reqs: Vec<serde_json::Value> = member_tags
+                .iter()
+                .map(|tag| {
+                    json!({
+                        "name": format!("fixture.ping-{tag}"),
+                        "version": 1,
+                        "reason": "c3 bounded concurrency"
+                    })
+                })
+                .collect();
+
+            let providers_json: Vec<serde_json::Value> = member_tags
+                .iter()
+                .map(|tag| {
+                    let provider_id = format!("provider-{tag}");
+                    let cap_name = format!("fixture.ping-{tag}");
+                    let digest = digests.get(*tag).unwrap();
+                    json!({
+                        "id": provider_id,
+                        "display_name": format!("Provider {tag}"),
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "pwsh.exe",
+                            "args": [
+                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                barrier_script.to_str().unwrap(),
+                                "-Mode", "c2-overlap-barrier",
+                                "-BarrierDirectory", &barrier_str
+                            ],
+                            "protocol_version": "2025-11-25"
+                        },
+                        "capabilities": [{
+                            "name": cap_name,
+                            "version": 1,
+                            "manifest_path": format!("manifests/fixture-ping-{tag}.json"),
+                            "pinned_digest": digest,
+                            "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
+                        }]
+                    })
+                })
+                .collect();
+
+            let rules_json: Vec<serde_json::Value> = member_tags
+                .iter()
+                .map(|tag| {
+                    json!({
+                        "name": format!("fixture.ping-{tag}"),
+                        "version": 1,
+                        "decision": "allow"
+                    })
+                })
+                .collect();
+
+            let config = json!({
+                "format_version": "0.1",
+                "tether_set": {
+                    "id": "test.together",
+                    "version": "1",
+                    "tethers": [{
+                        "id": "together-test",
+                        "version": "1",
+                        "source_path": "tethers/together-test.tether"
+                    }],
+                    "capability_requirements": reqs
+                },
+                "providers": providers_json,
+                "policy": {
+                    "default": "deny",
+                    "rules": rules_json
+                }
+            });
+
+            let config_path = runtime_dir.join("tethers-config.json");
+            std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+            let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+            let runtime = prepare_runtime(&loaded).unwrap();
+
+            let trail_path = std::env::temp_dir().join(format!(
+                "tethers-c3a1-{test_name}-trail-{}.jsonl",
+                uuid::Uuid::new_v4()
+            ));
+            let replay_dir = std::env::temp_dir().join(format!(
+                "tethers-c3a1-{test_name}-replay-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&replay_dir).unwrap();
+
+            Self {
+                runtime,
+                _runtime_dir: runtime_dir,
+                trail_path,
+                replay_dir,
+                barrier_dir,
+                members: member_tags.iter().map(|s| (*s).to_owned()).collect(),
+            }
+        }
+
+        fn set_peer_count(&self, count: usize) {
+            std::fs::write(self.barrier_dir.join("peer-count"), count.to_string()).unwrap();
+        }
+
+        fn run_group_with_limit(&self, eval_id: &str, limit: usize) -> ExecutionServiceResult {
+            let providers = self.runtime.providers().to_vec();
+            let mut sessions = HashMap::new();
+            for provider in &providers {
+                let manifest = provider.capabilities[0].verified_manifest.manifest();
+                let session = RetainedProviderSession::establish(SocketEstablishment {
+                    command: &provider.stdio_config.command,
+                    args: &provider.stdio_config.args,
+                    working_directory: &provider.working_directory,
+                    protocol_version: &provider.stdio_config.protocol_version,
+                    server_name: &manifest.binding.server_name,
+                    identity: &provider.identity,
+                })
+                .expect("barrier provider session establishment");
+                sessions.insert(provider.identity.clone(), session);
+            }
+
+            let mut actions = Vec::new();
+            let mut member_action_ids = Vec::new();
+            let mut member_indexes = Vec::new();
+
+            for (idx, tag) in self.members.iter().enumerate() {
+                let action_id = format!("member-{tag}");
+                let provider_id = format!("provider-{tag}");
+                let cap_name = format!("fixture.ping-{tag}");
+                let digest = self
+                    .runtime
+                    .providers()
+                    .iter()
+                    .find(|p| p.identity == provider_id)
+                    .unwrap()
+                    .capabilities[0]
+                    .verified_manifest
+                    .verified_digest()
+                    .to_owned();
+
+                actions.push(json!({
+                    "action_id": action_id,
+                    "idempotency_key": format!("{eval_id}/{action_id}"),
+                    "capability": cap_name,
+                    "capability_version": "1.0.0",
+                    "bridge_capability_version": 1,
+                    "bridge_provider_identity": provider_id,
+                    "manifest_digest": digest,
+                    "arguments": {"message": format!("member/{tag}")},
+                }));
+                member_action_ids.push(action_id);
+                member_indexes.push(idx);
+            }
+
+            let groups = vec![json!({
+                "group_id": "together-1",
+                "member_action_ids": member_action_ids,
+            })];
+            let mut response = json!({
+                "status": "matched",
+                "evaluation_id": eval_id,
+                "plan": { "id": format!("plan-{eval_id}"), "actions": actions, "groups": groups },
+                "trail": [],
+            });
+            let member_actions = response["plan"]["actions"].as_array().unwrap().clone();
+            let avail_identities: Vec<String> = self
+                .members
+                .iter()
+                .map(|tag| format!("provider-{tag}"))
+                .collect();
+            let availability =
+                ProviderAvailability::from_identities(avail_identities.iter().map(|s| s.as_str()));
+            let mut trail = dispatch::FileTrail::open(&self.trail_path).unwrap();
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let mut replay_authority =
+                crate::replay_runtime::test_support::TestReplayAuthority::default();
+            let engine_path = PathBuf::from("unused-engine");
+            let service =
+                HostExecutionService::new(&self.runtime, &engine_path, &self.trail_path, None);
+
+            execute_group_concurrent_with_limit(
+                "together-1",
+                &member_indexes,
+                &member_actions,
+                &mut response,
+                eval_id,
+                &mut trail,
+                &service,
+                &PreparedEvaluationInput {
+                    tether_id: "together-test".to_owned(),
+                    tether_version: "1".to_owned(),
+                    evaluation_id: eval_id.to_owned(),
+                    anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                    facts: json!({}),
+                },
+                &mut sessions,
+                &availability,
+                &mut approvals,
+                &mut replay_authority,
+                limit,
+            )
+        }
+
+        fn has_active(&self, member: &str) -> bool {
+            self.barrier_dir
+                .join(format!("active-member-{member}"))
+                .exists()
+        }
+
+        fn currently_active_count(&self) -> usize {
+            self.members
+                .iter()
+                .filter(|tag| self.has_active(tag) && !self.has_member_outcome(tag))
+                .count()
+        }
+
+        fn has_entered(&self, member: &str) -> bool {
+            self.barrier_dir
+                .join(format!("entered-member-{member}"))
+                .exists()
+        }
+
+        fn wait_member_active(&self, member: &str) {
+            let active_file = self.barrier_dir.join(format!("active-member-{member}"));
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !active_file.exists() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "member-{member} did not reach active state in barrier within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        fn wait_barrier_active_count(&self, count: usize) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while self.currently_active_count() < count {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "only {} of {count} providers reached currently active state within 15s",
+                    self.currently_active_count()
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        fn has_member_outcome(&self, member: &str) -> bool {
+            let action_id = format!("member-{member}");
+            trail_has_member_outcome(&self.trail_path, &action_id)
+        }
+
+        fn wait_member_outcome(&self, member: &str) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !self.has_member_outcome(member) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "outcome for member-{member} did not appear in Trail within 15s"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        fn release_member(&self, member: &str) {
+            std::fs::write(
+                self.barrier_dir.join(format!("release-member-{member}")),
+                "release",
+            )
+            .unwrap();
+        }
+
+        fn release_all(&self) {
+            std::fs::write(self.barrier_dir.join("release"), "release").unwrap();
+        }
+
+        fn outcome_ids(&self) -> Vec<String> {
+            trail_outcome_action_ids(&self.trail_path)
+        }
+
+        fn entry_kinds(&self) -> Vec<String> {
+            trail_entry_kinds(&self.trail_path)
+        }
+    }
+
+    impl Drop for C3A1GroupHarness {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.barrier_dir);
+            let _ = std::fs::remove_dir_all(&self._runtime_dir);
+            let _ = std::fs::remove_dir_all(&self.replay_dir);
+            let _ = std::fs::remove_file(&self.trail_path);
+        }
+    }
+
+    // ===================================================================
+    // C3-A1 Tests: Minimal Bounded Launch Window
+    // ===================================================================
+
+    #[test]
+    fn c3_a1_n1_limits_active_invocations_to_at_most_one() {
+        // Group of 3 members (a, b, c).
+        // With N=1, only ONE provider is active at any time.
+        let h = C3A1GroupHarness::new("n1-bound", &["a", "b", "c"]);
+        h.set_peer_count(1);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-c3-n1", 1));
+
+            // 1. Member A launches and enters active state.
+            h.wait_member_active("a");
+
+            // While A is active at the provider boundary:
+            // A has not yet completed Stage C (outcome not in Trail).
+            // Active count is exactly 1.
+            // B and C have NOT been launched (entered files do not exist).
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(
+                !h.has_member_outcome("a"),
+                "member-a outcome must not exist while in-flight"
+            );
+            assert!(!h.has_entered("b"), "member-b must wait for capacity");
+            assert!(!h.has_entered("c"), "member-c must wait for capacity");
+
+            // Release A and wait for its completion in Trail.
+            h.release_member("a");
+            h.wait_member_outcome("a");
+
+            // 2. Member B launches after A completes.
+            h.wait_member_active("b");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(
+                !h.has_member_outcome("b"),
+                "member-b outcome must not exist while in-flight"
+            );
+            assert!(!h.has_entered("c"), "member-c must wait for capacity");
+
+            // Release B and wait for its completion in Trail.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // 3. Member C launches after B completes.
+            h.wait_member_active("c");
+            assert_eq!(
+                h.currently_active_count(),
+                1,
+                "N=1 must have exactly 1 active member"
+            );
+            assert!(
+                !h.has_member_outcome("c"),
+                "member-c outcome must not exist while in-flight"
+            );
+
+            // Release C and wait for its completion in Trail.
+            h.release_member("c");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        // Verify all 3 members produced outcomes in Trail in semantic order and GroupJoin occurred.
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids, vec!["member-a", "member-b", "member-c"]);
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    #[test]
+    fn c3_a1_n2_limits_active_invocations_to_at_most_two_and_reaches_two() {
+        // Group of 3 members (a, b, c).
+        // With N=2, at most 2 providers are active simultaneously, and 2 is reached.
+        let h = C3A1GroupHarness::new("n2-bound", &["a", "b", "c"]);
+        h.set_peer_count(2);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-c3-n2", 2));
+
+            // Wait until both A and B become active simultaneously.
+            h.wait_barrier_active_count(2);
+
+            // Verify both A and B are currently active simultaneously (count is 2).
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must reach exactly 2 active members simultaneously"
+            );
+            assert!(!h.has_member_outcome("a"), "member-a must be in-flight");
+            assert!(!h.has_member_outcome("b"), "member-b must be in-flight");
+            assert!(!h.has_entered("c"), "member-c must wait for capacity");
+
+            // Release B only and wait for B's outcome in Trail.
+            h.release_member("b");
+            h.wait_member_outcome("b");
+
+            // With B complete, a slot opened, so C launches and enters active state.
+            h.wait_member_active("c");
+
+            // A is still in-flight, C is in-flight: exactly 2 currently active.
+            assert_eq!(
+                h.currently_active_count(),
+                2,
+                "N=2 must have exactly 2 active members simultaneously (A and C)"
+            );
+            assert!(
+                !h.has_member_outcome("a"),
+                "member-a must still be in-flight"
+            );
+            assert!(!h.has_member_outcome("c"), "member-c must be in-flight");
+
+            // Release A and C.
+            h.release_member("a");
+            h.release_member("c");
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3);
+        assert!(ids.contains(&"member-a".to_owned()));
+        assert!(ids.contains(&"member-b".to_owned()));
+        assert!(ids.contains(&"member-c".to_owned()));
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
+    }
+
+    #[test]
+    fn c3_a1_full_width_preserves_full_overlap() {
+        // Group of 3 members (a, b, c) with N=3.
+        // All 3 members must overlap simultaneously.
+        let h = C3A1GroupHarness::new("full-width", &["a", "b", "c"]);
+        h.set_peer_count(3);
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(|| h.run_group_with_limit("eval-c3-full", 3));
+
+            // Wait until all 3 members reach active simultaneously.
+            h.wait_barrier_active_count(3);
+            assert_eq!(
+                h.currently_active_count(),
+                3,
+                "full width must reach 3 active members simultaneously"
+            );
+            assert!(!h.has_member_outcome("a"));
+            assert!(!h.has_member_outcome("b"));
+            assert!(!h.has_member_outcome("c"));
+
+            // Release all at once.
+            h.release_all();
+
+            let result = handle.join().expect("group must complete without panic");
+            assert!(
+                matches!(result, ExecutionServiceResult::Completed { .. }),
+                "expected Completed, got {result:?}"
+            );
+        });
+
+        let ids = h.outcome_ids();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(h.entry_kinds().last(), Some(&"group_join".to_owned()));
     }
 }
