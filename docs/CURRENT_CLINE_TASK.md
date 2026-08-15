@@ -12,7 +12,7 @@ Route: `C3-A3 fatal-halt correction and failure proof — awaiting Lucy review`
 
 Base commit: `d8b094c5d89f78cb5b610f5367f098f6cc0ef277`
 
-Implementation checkpoint: `6df1c55416ee7cb24ee236db1ec427250f9e8eab`
+Implementation checkpoint: `071470f6c64bf609d2b55e6dd8839a7131697543`
 
 Worker note: `docs/worker-notes/2026-08-15-c3-a3-failure-boundary-crucible.md`
 
@@ -20,6 +20,9 @@ Updated: 2026-08-15
 
 - C3-A1 and corrected C3-A2 are accepted by Lucy.
 - One narrow fatal-halt GroupJoin defect is authorised for correction.
+- Lucy remote review identified audit_failure trail contamination when N>1.
+- Correction: isolate audit_failure detection to current boundary call only.
+- N=2 B/A/C regression proof added.
 - No other scheduler redesign is authorised.
 - C3-A4 is NOT authorised.
 
