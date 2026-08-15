@@ -1,67 +1,76 @@
 # Current Goal
 
-Updated: 2026-08-14
+Updated: 2026-08-15
 
 ## Goal
 
-Tethers is in the 0.4 concurrency programme.
+Tethers 0.4 concurrency is complete and accepted on the current integration chain.
 
-The deterministic `together` fan-out / join semantic foundation (C1) is complete and accepted. C2-A1, the Core-native Together semantic bridge, is complete, independently accepted, and merged to current `main` at `ec56220220fd6d668d74007d6a2f44e76320349f`. It preserves Canonical V2 / Rocket meaning while allowing Core to emit flat Runtime Plan actions with additive non-empty `together` groups; Rust execution remains the serial C1 reference mechanism.
+Accepted integration tip before this documentation refresh:
 
-C2-A2a (replay admission ownership) and C2-A2b (Trail semantic/physical ordering) are complete and merged at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`.
+`14b2c65d1a830b4fc0a7a893ee3e72b684b09740`
 
-C2-A3 physical concurrency design is complete (`docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`). Physical concurrency is **NOT YET IMPLEMENTED**.
+`origin/main` remains at:
+
+`f189361e80bdb43c13989200e48513cdb68bd004`
+
+The immediate Tethers goal is therefore **not more concurrency engineering**. It is to preserve the accepted 0.4 state, integrate it into `main` when Matthew explicitly authorises that merge, and then use the finished foundation in the active hackathon work.
 
 ## Last completed development state
 
 - Tethers 0.3 public Plug authoring P1–P6: FINAL ACCEPTED.
-- P6 — The Evil Bunny Test: FINAL ACCEPTED at `5ed7634d8abc4056e0faa1ff09924377dec6e645`.
-- Tethers 0.4 C1 — deterministic `together` fan-out / join semantics and serial reference-host join behaviour: complete / accepted.
-- Tethers 0.4 C2-A1 — Core-native Together semantic bridge: COMPLETE / ACCEPTED / MERGED at `ec56220220fd6d668d74007d6a2f44e76320349f`.
-- Tethers 0.4 C2-A2a — Replay admission ownership foundation: COMPLETE / ACCEPTED / MERGED at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`.
-- Tethers 0.4 C2-A2b — Trail semantic/physical ordering foundation: COMPLETE / ACCEPTED / MERGED at `a07e258eeab4fc099e3d020f40689b2ab9561ee8`.
-- Tethers 0.4 C2-A3 — Physical concurrency design: COMPLETE (design artifact only; implementation NOT STARTED).
+- P6 — The Evil Bunny Test: FINAL ACCEPTED.
+- Tethers 0.4 C1 — deterministic `together` fan-out / join semantics: COMPLETE / ACCEPTED.
+- Tethers 0.4 C2 — Core bridge, replay/Trail foundation, and physical provider overlap: COMPLETE / ACCEPTED.
+- Tethers 0.4 C3 — bounded Together concurrency: COMPLETE / ACCEPTED.
+- Tethers 0.4 C4 — adversarial concurrency crucible / Bunny Baptism: COMPLETE / ACCEPTED.
+- C5 fresh-agent proof: RETIRED as a redundant concurrency gate after a short salvage run exposed authoring/runtime usability issues instead of a concurrency defect.
+- Check provider server-name bug discovered during C5 salvage: FIXED / ACCEPTED at `14b2c65d1a830b4fc0a7a893ee3e72b684b09740`.
 - Core phases 1–9: accepted and cut over to the production evaluation path.
-- Performance R1 / Phase A / C-B1: accepted.
-- Canonical V2 and Rocket V2: frozen, implemented, differentially proved, integrated, and reconciled into the current `main` history. The final reconciliation records the cutover as cleared.
+- Canonical V2 and Rocket V2: frozen, implemented, differentially proved, integrated and reconciled.
 
 ## Active increment
 
-**None.** C2-A3 design is complete. Next implementation is C2-A3a if the design is not BLOCKED. Requires a separately approved task packet.
+**None.**
 
-## C2 boundary
+There is no authorised concurrency implementation task.
 
-C2-A3a introduces real provider overlap for Together group members while preserving all C1 observable semantics. The design is at `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`.
+The last task, the `check` provider server-name bugfix, has been reviewed and accepted by Lucy. The accepted chain still requires explicit integration to `main`.
 
-It must not casually redefine:
+## Near-term route
 
-- `together` language semantics,
-- deterministic join behaviour,
-- Runtime Plan meaning,
-- permission / approval boundaries,
-- replay identity,
-- Trail truthfulness,
-- failure semantics,
-- Canonical V2 identity or ordering rules.
+1. Do not invent another 0.4 concurrency gate.
+2. Integrate the accepted chain to `main` only with Matthew's explicit authorisation.
+3. Pivot engineering effort to the active hackathons, where opportunity cost now outweighs marginal concurrency polishing.
+4. Return later to 0.5 HQ / authoring-surface work.
 
-No C2-A3a packet is implementation authority until separately approved.
+Useful later authoring-surface findings from the abandoned C5 attempt:
+
+- `core_environment` is mandatory on the current run path but poorly surfaced to authors;
+- scope binding / permission prefix configuration is easy to get wrong;
+- authoring/run configuration deserves simplification and documentation work.
+
+These are not 0.4 concurrency blockers.
 
 ## Enduring project boundaries
 
-- Preserve external JSON, exit codes, Trail shape, replay digests, and recovery behaviour unless an explicit migration authorises change.
+- Preserve external JSON, exit codes, Trail shape, replay digests and recovery behaviour unless an explicit migration authorises change.
 - Compatibility fixtures are committed evidence and are not generated by the implementation being tested.
-- Every implementation packet reports each required command as PASS, FAIL, or NOT RUN; a mandatory NOT RUN blocks COMPLETE.
-- Final packet verification is serial after the last permitted code/test edit.
+- Final packet verification is serial after the last permitted code/test edit when the packet requires it.
 - Core remains capability-agnostic: no provider-, product-, Lantern Keeper-, or business-specific meanings in Core.
 - Concurrency belongs in Tethers semantics; physical parallelism belongs primarily in the runtime.
+- Semantic order must remain independent of physical completion order.
+- Evidence beats agent confidence: pushed code, tests, Trails and Git state are authoritative.
+- Stop when the evidence is sufficient; do not manufacture extra process without a concrete uncertainty to remove.
 
 ## Authoritative references
 
 - Current short status: `docs/PROJECT_DASHBOARD.md`
-- Current / next implementation packet: `docs/CURRENT_CLINE_TASK.md`
+- Current / last implementation packet: `docs/CURRENT_CLINE_TASK.md`
 - Road to 0.4: `docs/ROAD_TO_0_4.md`
-- Road to 0.3 historical programme: `docs/ROAD_TO_0_3.md`
-- Final Rocket reconciliation: `docs/perf/FINAL_ROCKET_CUTOVER_BASE_RECONCILIATION.md`
+- Operating procedure: `docs/PROJECT_CONTROL.md`
+- Gorilla Bunny doctrine: `docs/GORILLA_BUNNY_MANIFESTO.md`
 - C2-A3 design: `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`
+- C3 design: `docs/concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md`
 - Enduring principles: `docs/CONSTITUTION.md`
 - Language semantics: `tethers-0.1/SPEC.md`
