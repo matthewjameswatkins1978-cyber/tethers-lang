@@ -1,4 +1,4 @@
-# C3-V1 — Proof Gap Correction
+# C4 — Adversarial Concurrency Crucible
 
 Control contract: `1`
 
@@ -6,84 +6,109 @@ Status: `COMPLETE`
 
 Task colour: `Red`
 
-Owner: `C3-V1 Proof Gap Correction Agent`
+Owner: `C4 Adversarial Concurrency Agent`
 
-Route: `Proof correction — awaiting Lucy acceptance`
+Route: `C4 adversarial crucible complete — awaiting Lucy acceptance`
 
-Base commit: `8a09203715cc44f42c011c0c8902ff4f72a246c7`
+Base commit: `840b3903f3261244484d7423722bc6ad1f462d74`
 
-Implementation checkpoint: `8a09203715cc44f42c011c0c8902ff4f72a246c7`
+Implementation checkpoint: `37cb0dc910fdedc00d54ff29ea78e463bedf00f7`
 
-Worker note: `docs/worker-notes/2026-08-15-c3-v1-independent-review.md`
+Worker note: `docs/worker-notes/2026-08-15-c4-adversarial-concurrency-crucible.md`
 
 Updated: 2026-08-15
 
 ## Objective
 
-Fix proof gaps in the C3-V1 independent review. The review incorrectly marked two frozen future-proof requirements PASS when the exact group-of-five requirements were not actually tested. Also correct same-provider evidence mapping.
+Attack the frozen C1–C3 concurrency implementation with hostile timing, hostile provider outcomes, replay/persistence failures, worker panic under N=2 pressure, same-provider hostility, repeated stress, and channel failure injection. Prove the invariants hold without changing production semantics.
 
 ## Relevant background and existing behaviour
 
-- Independent review found no implementation defect in C3.
-- Lucy found inaccurate proof attribution in V1 review.
-- Exact group-of-five frozen requirements were not actually tested.
-- Same-provider concurrency was incorrectly attributed to `c3_a1_full_width_preserves_full_overlap`.
-- This packet fills proof gap only. C4 is NOT authorised.
+- C1–C3 concurrency implementation and proof matrix are accepted.
+- Bounded concurrency coordinator is in `tethers-0.1/host-rust/src/host_execution.rs`.
+- Replay authority is in `tethers-0.1/host-rust/src/replay_runtime.rs`.
+- Trail and dispatch types are in `tethers-0.1/host-rust/src/dispatch.rs`.
+- C4 adds TEST / #[cfg(test)] fault-injection support only.
+- No production semantic change is authorised.
+- Any production defect is a BLOCKER and must be reported, not repaired.
+- C5 is NOT authorised.
 
 ## Required behaviour
 
-1. Add deterministic test `c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation` with exactly 5 members (a, b, c, d, e) and N=1.
-2. Add deterministic test `c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation` with exactly 5 members (a, b, c, d, e) and N=2.
-3. Both tests must include live GroupJoin absence assertions while members are active/waiting.
-4. Correct same-provider evidence to reference `c2_a3a_same_provider_tools_call_overlap_is_real`.
-5. Update review worker note with corrected evidence matrix.
+1. Add Crucible 1: Hostile completion order test where physical completion is B, C, A under N=2, proving max active <= 2, slot reuse, and first non-success remains A in semantic order.
+2. Add Crucible 2: Hostile slow success + fast failure test proving provider failure does not halt launches and join evaluates all members.
+3. Add Crucible 3: G2 failure with active sibling proving fatal halt stops queued member C while already-active B completes truthfully and no GroupJoin occurs.
+4. Add Crucible 4: G1 failure with active sibling proving pre-effect failure on A halts queued C while already-active B completes truthfully and no GroupJoin occurs.
+5. Add Crucible 5: Outcome durability failure with active sibling proving Trail failure on A halts queued C while already-active B completes truthfully without audit contamination.
+6. Add Crucible 6: Worker panic under real N=2 pressure proving panic on A maps to Uncertain, releases slot, queued C launches, sibling B continues, and GroupJoin evaluates all members.
+7. Add Crucible 7: Channel disconnect analysis and safe test-only drop seam to verify fail-closed AuditFailed behaviour without fake terminal or coordinator hang.
+8. Add Crucible 8: Same-provider hostility proof confirming overlapping ephemeral sessions preserve semantic order under inverse completion.
+9. Add Crucible 9: Deterministic repeated stress loop (20 iterations) verifying no state or capacity leaks under inverse completion.
+10. Add Crucible 10: Randomness audit of the C1–C3 execution path confirming zero nondeterministic selection sources.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/host_execution.rs` (TEST additions only)
+- `tethers-0.1/host-rust/src/host_execution.rs` (TEST / #[cfg(test)] additions only)
+- `tethers-0.1/host-rust/src/dispatch.rs` (TEST / #[cfg(test)] additions if needed)
+- `tethers-0.1/host-rust/src/replay_runtime.rs` (TEST / #[cfg(test)] additions if needed)
 
 ## Frozen decisions and invariants
 
-- No production semantic changes.
+- No production semantic changes authorised.
 - No scheduler redesign.
-- C4 is NOT authorised.
+- No worker pool, async/Tokio, global scheduler, rate limiting, or cancellation.
+- Host-wide concurrency across evaluations remains out of scope.
+- First non-success selected strictly by semantic Runtime Plan order.
+- Replay and Trail ownership remain strictly coordinator-side.
 - Any required production behavior change is a BLOCKER.
+- C5 is NOT authorised.
 
 ## Acceptance criteria
 
-1. `c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation` passes with exactly 5 members.
-2. `c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation` passes with exactly 5 members.
-3. Both tests assert GroupJoin absence during execution at multiple refill points.
-4. Both tests assert GroupJoin presence after all terminal.
-5. Same-provider evidence correctly references `c2_a3a_same_provider_tools_call_overlap_is_real`.
-6. All existing C3 tests remain green.
-7. Full suite passes.
-8. No production semantic changes in diff.
+1. Crucible 1 test passes and proves semantic first failure selection under inverse completion.
+2. Crucible 2 test passes and proves normal failure releases slot without halting queue.
+3. Crucible 3 test passes and proves G2 failure halts queue while active sibling finishes truthfully.
+4. Crucible 4 test passes and proves G1 failure halts queue while active sibling finishes truthfully.
+5. Crucible 5 test passes and proves outcome durability failure halts queue while active sibling finishes truthfully.
+6. Crucible 6 test passes and proves worker panic under N=2 releases slot and evaluates all members.
+7. Crucible 7 proves channel disconnect fails closed or records exact reason deferred if not constructible with test-only seams.
+8. Crucible 8 proves same-provider overlap preserves semantic non-success selection.
+9. Crucible 9 passes 20 deterministic stress iterations with no capacity or state leaks.
+10. Crucible 10 randomness audit confirms zero nondeterministic selection sources.
+11. All retained C1–C3 tests remain green.
+12. Full test suite passes.
+13. Zero production semantic changes in diff.
 
 ## Required verification
 
-1. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_v1 --test-threads=1`
-2. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a1 --test-threads=1`
-3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a2 --test-threads=1`
+1. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c4_ --test-threads=1`
+2. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_v1 --test-threads=1`
+3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a4 --test-threads=1`
 4. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a3 --test-threads=1`
-5. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a4 --test-threads=1`
-6. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`
-7. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml`
-8. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1`
-9. `git diff --check`
-10. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
+5. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a2 --test-threads=1`
+6. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c3_a1 --test-threads=1`
+7. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c2_a3a --test-threads=1`
+8. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- c2a3a --test-threads=1`
+9. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`
+10. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml`
+11. `cargo check --locked --manifest-path tethers-0.1/host-rust/Cargo.toml`
+12. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml -- --test-threads=1`
+13. `git diff --check`
+14. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
 
 ## Forbidden changes
 
-- No production Rust modification (test/#[cfg(test)] additions only)
+- No production semantic Rust changes
 - No scheduler redesign
-- No new production counters
-- C4
+- No new production counters or global state
+- No async/Tokio or worker pool
+- C5
 
 ## Stop conditions
 
-- If satisfying these proofs requires production behavior changes.
-- Any discovered semantic defect.
+- If any frozen invariant is violated by production code.
+- If satisfying any test requires a production semantic repair.
+- Discovered production defect.
 
 ## Expected pre-existing changes
 
@@ -100,34 +125,3 @@ Fix proof gaps in the C3-V1 independent review. The review incorrectly marked tw
 - `tethers-0.1/engine-ocaml/bin/tethers_rank_avalanche.ml`
 - `tethers-0.1/engine-ocaml/bin/tethers_v2_canon_label.ml`
 - `tethers-0.1/engine-ocaml/bin/tethers_v2_canon_label_test.ml`
-
-## Requested outcome
-
-1. Add two group-of-five tests proving frozen design requirements §14.1 and §14.2.
-2. Include live GroupJoin absence assertions.
-3. Correct same-provider evidence mapping.
-4. Update review worker note.
-5. Push correction branch.
-
-## Primary question
-
-Can the frozen group-of-five requirements be proven without production changes?
-
-**Answer: YES.** Two new tests with exactly 5 members each prove N=1 and N=2 bounds with live GroupJoin absence assertions.
-
-## Verdict
-
-**C3-V1 PROOF MATRIX COMPLETE — REVIEW BRANCH PUBLISHED**
-
-## Evidence
-
-- c3_v1: 2 tests PASS (N=1 group-of-five, N=2 group-of-five)
-- c3_a1: 3 tests PASS
-- c3_a2: 4 tests PASS
-- c3_a3: 7 tests PASS
-- c3_a4: 12 tests PASS
-- Full suite: 1542 tests PASS
-- cargo fmt: PASS
-- cargo check: PASS
-- git diff --check: PASS
-- Production diff: ZERO semantic changes (test additions only)
