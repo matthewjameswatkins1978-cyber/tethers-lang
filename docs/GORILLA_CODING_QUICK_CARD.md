@@ -1,6 +1,12 @@
-# Gorilla Coding Quick Card 🦄
+# Gorilla Bunny Coding Shop Quick Card 🦍🐇
 
-Keep this beside the computer. The normal team is **Lucy + OpenCode**, with **Codex** used for Red work, machine problems, Git recovery, or when OpenCode cannot proceed cleanly.
+Historical filename retained for existing links; this card describes the current
+operating model.
+
+Keep this beside the computer. Lucy controls architecture, task compilation and
+acceptance; Gem is used when peer technical debate adds value; implementation
+agents are replaceable specialists chosen for the task's risk, fit, economics
+and local-machine needs.
 
 ## 1. Before Starting Anything
 
@@ -17,7 +23,8 @@ If it is dirty, diverged, or not on main, do not stash, reset, switch branches,
 or pull. Return the exact Git state and stop.
 ```
 
-You may give that to OpenCode for ordinary work or Codex when Git is already confused.
+Give that to the agent Lucy has selected for the task, especially one with the
+necessary local-machine access when Git is already confused.
 
 ## 2. Start The Next Job
 
@@ -27,29 +34,32 @@ Tell Lucy:
 Inspect Tethers and prepare the next job.
 ```
 
-Lucy will inspect GitHub, decide the risk, compile one bounded task, and tell you whether it goes to OpenCode or Codex.
+Lucy will inspect GitHub, decide the risk, compile one bounded task, and select
+the suitable implementation route.
 
-For an OpenCode task:
+For a coding-agent task:
 
 1. Pull the latest GitHub state safely.
 2. Open the Tethers workspace in VS Code.
-3. Open OpenCode and give it the task.
+3. Open the selected coding agent and give it the task.
 
-Do not give OpenCode several jobs at once. One task, one owner, one finish.
+Do not give a coding agent several jobs at once. One task, one owner, one finish.
 
 ## 3. While The Job Is Running
 
-Let OpenCode solve ordinary compiler, type, ownership, formatting, and test problems inside the agreed task.
+Let the named implementation agent solve ordinary compiler, type, ownership,
+formatting and test problems inside the agreed task.
 
 Stop and return to Lucy when:
 
-- OpenCode says a design, permission, trust, or compatibility decision is missing;
+- the named agent says a design, permission, trust, or compatibility decision is missing;
 - the same kind of failure happens twice;
-- OpenCode starts widening the task or redesigning neighbouring systems;
+- the named agent starts widening the task or redesigning neighbouring systems;
 - Git, the environment, or the local machine becomes the actual problem;
-- the task is Red or Lucy has asked for Codex.
+- the task is Red or Lucy has asked for stronger reasoning, peer debate or a
+  computer-enabled review route.
 
-Do not let OpenCode and Codex edit the same checkout or task at the same time.
+Do not let two implementation agents edit the same checkout or task at the same time.
 
 ## 4. Stop Properly
 
@@ -85,15 +95,15 @@ When something goes wrong, include the exact error text and what the worker alre
 Lucy will inspect GitHub and reply with exactly one route:
 
 1. accepted;
-2. one bounded correction for OpenCode;
-3. escalate to Codex.
+2. one bounded correction for the named agent;
+3. select a stronger or more suitable route.
 
 ## The Rule To Remember
 
 ```text
 Lucy chooses and reviews.
-OpenCode normally builds.
-Codex enters for Red work or real trouble.
+The right named agent builds.
+Gem or stronger machine-enabled help enters when it materially reduces risk.
 Matthew routes the message, not the architecture.
 ```
 

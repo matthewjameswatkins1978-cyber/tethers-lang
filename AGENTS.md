@@ -69,19 +69,21 @@ mutation. It supports the task packet; it does not replace its authority.
 
 ## Current Operating Mode
 
-**Gorilla Coding 🦄**
+**Gorilla Bunny Coding Shop 🦍🐇**
 
-- Lucy in ordinary chat controls architecture, task compilation, GitHub-visible
-  review, acceptance, and continuation.
-- OpenCode is the default implementation owner for ordinary Green and Amber
-  work when the current packet names it.
-- Codex handles Red implementation or sign-off, difficult local failure,
-  Git/environment/recovery, and machine-required diagnosis.
-- Matthew may paste OpenCode's concise report to Lucy as the normal return
-  handoff.
-- Cline and Goose are not part of the active route. Historical filenames,
-  branches, packets, and worker notes may retain their names.
-- Copilot is not part of the active route.
+- Matthew supplies product direction, taste, priorities and final human
+  judgement. He may be the short copy/paste relay when that keeps him visibly
+  in the loop.
+- Lucy controls architecture, task compilation, evidence review, acceptance,
+  routing and improvement of the shop itself.
+- Gem is Lucy's peer technical sparring partner when a difficult or
+  consequential decision benefits from a second senior technical view.
+- Agents and tools are replaceable specialists selected for task fit, risk,
+  local-machine needs and economics; no particular coding agent has a permanent
+  role.
+
+Historical filenames, branches, packets and worker notes may retain earlier
+agent names. They do not define the active route.
 
 No implementation agent invents or begins the next task. Lucy controls
 continuation.
