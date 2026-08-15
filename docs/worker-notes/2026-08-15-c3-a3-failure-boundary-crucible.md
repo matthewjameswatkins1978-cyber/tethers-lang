@@ -6,6 +6,7 @@ Owner: `C3-A3 Failure-Boundary Agent`
 Status: `COMPLETE`
 Base commit: `d8b094c5d89f78cb5b610f5367f098f6cc0ef277`
 Implementation checkpoint: `071470f6c64bf609d2b55e6dd8839a7131697543`
+Synchronisation fix checkpoint: `b4e7c4756dedab34bbbb8e73d21abd9a0e90ea37`
 
 ## Remote-review finding
 
@@ -59,7 +60,9 @@ Added `c3_a3_n2_active_sibling_survives_fatal_halt_truthfully`: N=2, members B (
 - C never launches
 - No GroupJoinEntry
 
-Uses a 500ms sleep between releasing A and B to ensure deterministic processing order (A's `append_outcome` is called before B's).
+## Deterministic synchronisation fix
+
+Replaced the timing-dependent 500ms sleep with deterministic cross-thread synchronisation using `Arc<AtomicBool>`. Added `outcome_error_signal: Option<Arc<AtomicBool>>` to `RecordingTrail`. When `append_outcome` consumes `injected_outcome_error`, the signal is set to `true`. The main thread waits for this signal with a bounded 15-second timeout before releasing member B, ensuring A's fatal Stage C durability failure has been observed by the coordinator without relying on arbitrary timing.
 
 ## Requested outcome
 
@@ -74,6 +77,9 @@ Uses a 500ms sleep between releasing A and B to ensure deterministic processing 
 
 ## Changes made
 
+- In `tethers-0.1/host-rust/src/dispatch.rs`:
+  - Added `outcome_error_signal: Option<Arc<AtomicBool>>` field to `RecordingTrail` for deterministic cross-thread synchronisation of outcome error events.
+  - Updated `append_outcome` to set the signal when `injected_outcome_error` is consumed.
 - In `tethers-0.1/host-rust/src/host_execution.rs`:
   - Added Stage C audit failure detection on `execute_boundary_invoke_only` response trail, setting `result.outcome = SharedExecutionOutcome::AuditFailed` and `launches_halted = true` on audit failure or `ReplayPersistenceUnavailable`.
   - **CORRECTED**: Isolated audit_failure detection to current boundary call only by recording `response_trail_len_before` and skipping prior entries.
@@ -111,10 +117,11 @@ Uses a 500ms sleep between releasing A and B to ensure deterministic processing 
 - The test-only `RecordingTrail` is `!Send` because it retains an internal `Rc<RefCell<Vec<&'static str>>>` events log. Constructing it within the scoped thread closure avoids crossing thread boundaries while allowing full inspection of `outcome_entries` and `group_join_entries`.
 - The `sealed` module in `dispatch.rs` is private, preventing custom `Trail` implementations from outside `dispatch`. This limits test-only trail wrappers.
 - The barrier script does not remove `active-member-{tag}` files after provider return. `currently_active_count` compensates by filtering out members with outcomes in trail, but when `append_outcome` fails (injected error), the outcome is never written, making `has_active` unreliable for polling completion.
+- Adding `outcome_error_signal` to `RecordingTrail` does not affect existing tests because the field defaults to `None` and is only set explicitly in the N=2 test.
 
 ## Remaining risks
 
-- The N=2 test uses a 500ms sleep for deterministic ordering, which is fragile under extreme system load. A `SelectiveRecordingTrail` (failing only for specific action IDs) would be more robust but requires `sealed` module visibility.
+- None identified. The deterministic synchronisation eliminates the timing dependency.
 
 ## Smallest next action
 
