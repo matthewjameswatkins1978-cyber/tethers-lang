@@ -1,0 +1,18 @@
+{
+  "name": "calle-gate0",
+  "version": "1.0.0",
+  "description": "CALLE Gate 0 Spike & Integration Test Harness",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node dist/test.js"
+  },
+  "dependencies": {
+    "@call-e/calle": "^0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
