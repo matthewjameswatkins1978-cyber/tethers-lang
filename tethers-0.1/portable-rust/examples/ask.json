@@ -1,0 +1,15 @@
+{
+  "action": { "name": "git.push", "version": 1 },
+  "context": { "branch": "main", "remote": "origin" },
+  "policy": {
+    "default": "deny",
+    "rules": [
+      {
+        "name": "git.push",
+        "version": 1,
+        "decision": "ask",
+        "reason": "remote mutation requires operator approval"
+      }
+    ]
+  }
+}

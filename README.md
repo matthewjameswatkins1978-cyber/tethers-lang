@@ -26,6 +26,17 @@ Tethers 0.2.2 is the Foundation-hardened, independently verified 0.2 runtime. It
 
 The previous published release was Tethers 0.2.0. Plug functionality is not part of the 0.2.2 release.
 
+### Tethers Portable 0.1.0
+
+The Windows x64 Portable release is the small host-policy decision façade. It
+proposes `ALLOW`, `ASK`, or `DENY`; it is not a packaged rewrite of the OCaml
+Core evaluator and never executes Actions. Release evidence and the immutable
+artifact checksum are recorded in
+[`tethers-0.1/portable-rust/RELEASE.md`](tethers-0.1/portable-rust/RELEASE.md).
+
+The canonical application icon is
+[`assets/tethers-icon.png`](assets/tethers-icon.png).
+
 ## Current Development
 
 Development is ahead of the latest public release.

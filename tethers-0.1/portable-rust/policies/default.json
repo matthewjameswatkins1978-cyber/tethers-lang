@@ -1,0 +1,23 @@
+{
+  "default": "deny",
+  "rules": [
+    {
+      "name": "call.read",
+      "version": 1,
+      "decision": "allow",
+      "reason": "read-only CALL-E inspection is pre-authorised"
+    },
+    {
+      "name": "git.push",
+      "version": 1,
+      "decision": "ask",
+      "reason": "remote mutation requires operator approval"
+    },
+    {
+      "name": "system.delete",
+      "version": 1,
+      "decision": "deny",
+      "reason": "destructive system actions are prohibited"
+    }
+  ]
+}

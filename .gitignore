@@ -2,6 +2,7 @@
 tethers-0.1/engine-ocaml/_opam/
 tethers-0.1/engine-ocaml/_build/
 tethers-0.1/host-rust/target/
+tethers-0.1/dist/
 target/
 !tethers-0.1/engine-ocaml/bin/
 !tethers-0.1/engine-ocaml/bin/dune

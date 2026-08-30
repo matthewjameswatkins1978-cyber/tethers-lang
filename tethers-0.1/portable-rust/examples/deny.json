@@ -1,0 +1,15 @@
+{
+  "action": { "name": "system.delete", "version": 1 },
+  "context": { "target": "workspace" },
+  "policy": {
+    "default": "deny",
+    "rules": [
+      {
+        "name": "system.delete",
+        "version": 1,
+        "decision": "deny",
+        "reason": "destructive system actions are prohibited"
+      }
+    ]
+  }
+}

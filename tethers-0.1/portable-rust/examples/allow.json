@@ -1,0 +1,15 @@
+{
+  "action": { "name": "call.read", "version": 1 },
+  "context": { "resource": "task/123", "mode": "read-only" },
+  "policy": {
+    "default": "deny",
+    "rules": [
+      {
+        "name": "call.read",
+        "version": 1,
+        "decision": "allow",
+        "reason": "read-only CALL-E inspection is pre-authorised"
+      }
+    ]
+  }
+}
