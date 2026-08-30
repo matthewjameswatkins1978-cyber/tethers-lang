@@ -1,6 +1,7 @@
 name: Tethers Portable 0.1
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - "tethers-0.1/portable-rust/**"
@@ -44,6 +45,37 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rid == 'windows-x64' && '-C target-feature=+crt-static' || '' }}
         run: cargo build --release --locked --target "${{ matrix.target }}"
+      - name: Linux executable smoke tests
+        if: matrix.rid == 'linux-x64-musl'
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          test -x "$binary"
+          file "$binary" | grep -Eq 'ELF 64-bit.*x86-64'
+          if readelf -l "$binary" | grep -q 'INTERP'; then
+            echo 'expected the musl release binary to have no dynamic loader' >&2
+            exit 1
+          fi
+
+          check_decision() {
+            local expected="$1"
+            local input="$2"
+            local output
+            local error_file
+            error_file="$(mktemp)"
+            output="$(printf '%s' "$input" | "$binary" evaluate --policy policies/default.json 2>"$error_file")"
+            test ! -s "$error_file"
+            rm -f "$error_file"
+            printf '%s' "$output" | jq -e --arg expected "$expected" '.decision == $expected and (.error == null)' >/dev/null
+          }
+
+          check_decision ALLOW '{"action":{"name":"call.read","version":1},"context":{}}'
+          check_decision ASK '{"action":{"name":"git.push","version":1},"context":{}}'
+          check_decision DENY '{"action":{"name":"system.delete","version":1},"context":{}}'
+
+          malformed="$(printf '{' | "$binary" evaluate 2>/dev/null)"
+          printf '%s' "$malformed" | jq -e '.decision == "DENY" and (.error | type == "string")' >/dev/null
       - name: Stage bundle
         shell: pwsh
         working-directory: tethers-0.1
