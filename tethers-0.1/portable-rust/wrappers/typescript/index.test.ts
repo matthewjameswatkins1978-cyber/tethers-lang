@@ -1,2 +1,4 @@
 import { strict as assert } from "node:assert";
-assert.equal(["ALLOW", "ASK", "DENY"].includes("DENY"), true);
+import { parseResponse } from "./index.ts";
+assert.equal(parseResponse('{"schema_version":"2","decision":"ALLOW"}').decision, "DENY");
+assert.equal(parseResponse('{"schema_version":"1","decision":"ASK"}').decision, "ASK");

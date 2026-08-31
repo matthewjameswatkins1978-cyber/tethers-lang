@@ -1,7 +1,18 @@
 import { spawn } from "node:child_process";
 
 export type Decision = "ALLOW" | "ASK" | "DENY";
-export type Result = { decision: Decision; matched_rule?: string; rule?: string; reason?: string; error?: string };
+export type Result = { schema_version?: string; decision: Decision; matched_rule?: string; rule?: string; reason?: string; error?: string };
+
+export function parseResponse(stdout: string): Result {
+  try {
+    const result = JSON.parse(stdout);
+    if (result.schema_version !== "1") throw new Error("Tethers response schema mismatch");
+    if (!["ALLOW", "ASK", "DENY"].includes(result.decision)) throw new Error("unknown Tethers decision");
+    return result;
+  } catch (error) {
+    return { decision: "DENY", error: `invalid Tethers response: ${error}` };
+  }
+}
 
 export function evaluate(binary: string, request: unknown, timeoutMs = 5000): Promise<Result> {
   return new Promise((resolve) => {
@@ -14,8 +25,7 @@ export function evaluate(binary: string, request: unknown, timeoutMs = 5000): Pr
     child.on("error", (error) => finish({ decision: "DENY", error: `cannot start Tethers: ${error.message}` }));
     child.on("close", (code) => {
       if (code !== 0) return finish({ decision: "DENY", error: `Tethers exited with ${code}` });
-      try { const result = JSON.parse(stdout); if (!["ALLOW", "ASK", "DENY"].includes(result.decision)) throw new Error("unknown Tethers decision"); finish(result); }
-      catch (error) { finish({ decision: "DENY", error: `invalid Tethers response: ${error}` }); }
+      finish(parseResponse(stdout));
     });
     child.stdin.end(JSON.stringify(request));
   });

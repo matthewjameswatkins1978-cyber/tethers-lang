@@ -11,7 +11,7 @@ import (
 
 type Decision string
 const ( Allow Decision = "ALLOW"; Ask Decision = "ASK"; Deny Decision = "DENY" )
-type Result struct { Decision Decision `json:"decision"`; Rule string `json:"matched_rule"`; Reason string `json:"reason"`; Error string `json:"error"` }
+type Result struct { SchemaVersion string `json:"schema_version"`; Decision Decision `json:"decision"`; Rule string `json:"matched_rule"`; Reason string `json:"reason"`; Error string `json:"error"` }
 
 func Evaluate(binary string, request []byte, timeout time.Duration) Result {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout); defer cancel()
@@ -25,6 +25,7 @@ func Evaluate(binary string, request []byte, timeout time.Duration) Result {
 func decode(out []byte) Result {
 	var result Result
 	if err := json.Unmarshal(out, &result); err != nil { return Result{Decision: Deny, Error: "invalid Tethers response"} }
+	if result.SchemaVersion != "1" { return Result{Decision: Deny, Error: "Tethers response schema mismatch"} }
 	if result.Decision != Allow && result.Decision != Ask && result.Decision != Deny { return Result{Decision: Deny, Error: "unknown Tethers decision"} }
 	return result
 }
