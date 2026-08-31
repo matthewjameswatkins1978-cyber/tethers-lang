@@ -118,3 +118,56 @@ fn unknown_fields_fail_closed_without_non_json_output() {
         .unwrap()
         .contains("unknown field"));
 }
+
+#[test]
+fn workbench_test_runner_and_manifest_validation_work() {
+    let (code, stdout, stderr) = run(
+        &[
+            "test",
+            "policies/default.json",
+            "examples/workbench-policy-tests.json",
+            "--json",
+        ],
+        "",
+    );
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stderr.is_empty());
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["passed"], true);
+
+    let (code, stdout, stderr) = run(
+        &["validate-manifest", "examples/gary-worker-manifest.json"],
+        "",
+    );
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&stdout).unwrap()["valid"],
+        true
+    );
+}
+
+#[test]
+fn explain_and_manifest_enforcement_are_machine_readable() {
+    let request = r#"{"schema_version":"1","actor":"worker","action":"git.push","resource":"origin","context":{}}"#;
+    let (code, stdout, stderr) = run(&["explain", "--policy", "policies/default.json"], request);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let response: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(response["schema_version"], "1");
+    assert_eq!(response["decision"], "ASK");
+    assert_eq!(response["matched_rule"], "git.push");
+
+    let (code, stdout, stderr) = run(
+        &[
+            "evaluate",
+            "--policy",
+            "policies/default.json",
+            "--manifest",
+            "examples/gary-worker-manifest.json",
+        ],
+        r#"{"schema_version":"1","actor":"worker","action":"deploy.preview","resource":"preview","context":{}}"#,
+    );
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let response: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(response["decision"], "DENY");
+    assert!(response["error"].as_str().unwrap().contains("manifest"));
+}
