@@ -29,6 +29,7 @@ Copy-Item -Path (Join-Path $root 'docs/*') -Destination (Join-Path $stage 'docs'
 Copy-Item -Path (Join-Path $root 'tests/*') -Destination (Join-Path $stage 'tests')
 Copy-Item -LiteralPath (Join-Path $root 'scripts/run_parity.py') -Destination (Join-Path $stage 'scripts')
 Copy-Item -LiteralPath (Join-Path $root 'scripts/benchmark.py') -Destination (Join-Path $stage 'scripts')
+Copy-Item -LiteralPath (Join-Path $root 'scripts/package-portable.py') -Destination (Join-Path $stage 'scripts')
 Copy-Item -Path (Join-Path $root 'schemas/*') -Destination (Join-Path $stage 'schemas')
 Copy-Item -Path (Join-Path $root 'examples/*') -Destination (Join-Path $stage 'examples')
 Copy-Item -LiteralPath (Join-Path $root 'wrappers/rust/Cargo.toml') -Destination (Join-Path $stage 'wrappers/rust')
