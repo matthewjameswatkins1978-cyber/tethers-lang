@@ -1,31 +1,13 @@
-name: Tethers Portable 0.1
+name: Tethers Portable
 
 on:
   push:
-    paths:
-      - "tethers-0.1/portable-rust/**"
-      - "tethers-0.1/scripts/package-portable.ps1"
-      - ".github/workflows/tethers-portable.yml"
-  pull_request:
-    paths:
-      - "tethers-0.1/portable-rust/**"
-      - "tethers-0.1/scripts/package-portable.ps1"
-      - ".github/workflows/tethers-portable.yml"
+    tags: ['tethers-portable-v*']
+  workflow_dispatch:
 
 jobs:
-  test-and-package:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            rid: windows-x64
-            target: x86_64-pc-windows-msvc
-            binary: tethers.exe
-          - os: ubuntu-latest
-            rid: linux-x64-musl
-            target: x86_64-unknown-linux-musl
-            binary: tethers
-    runs-on: ${{ matrix.os }}
+  linux-x64-musl:
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: tethers-0.1/portable-rust
@@ -33,38 +15,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
-      - name: Install Linux musl tools
-        if: matrix.rid == 'linux-x64-musl'
-        shell: bash
-        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+          targets: x86_64-unknown-linux-musl
+      - run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - run: cargo test --locked
-      - name: Build release
-        shell: bash
-        env:
-          RUSTFLAGS: ${{ matrix.rid == 'windows-x64' && '-C target-feature=+crt-static' || '' }}
-        run: cargo build --release --locked --target "${{ matrix.target }}"
-      - name: Stage bundle
-        shell: pwsh
-        working-directory: tethers-0.1
-        env:
-          RID: ${{ matrix.rid }}
-          BINARY: ${{ matrix.binary }}
-        run: |
-          $version = (Get-Content -Raw -LiteralPath portable-rust/VERSION).Trim()
-          $stage = Join-Path "dist" "tethers-portable-${version}-${env:RID}"
-          $zip = "${stage}.zip"
-          if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-          if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-          New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          Copy-Item -LiteralPath "portable-rust/target/${{ matrix.target }}/release/${env:BINARY}" -Destination (Join-Path $stage $env:BINARY)
-          Copy-Item -LiteralPath portable-rust/policies -Destination (Join-Path $stage policies) -Recurse
-          Copy-Item -LiteralPath portable-rust/examples -Destination (Join-Path $stage examples) -Recurse
-          Copy-Item -LiteralPath portable-rust/README.md,portable-rust/VERSION -Destination $stage
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage $env:BINARY)).Hash.ToLowerInvariant()
-          "$hash  $env:BINARY" | Set-Content -LiteralPath (Join-Path $stage SHA256SUMS) -Encoding ascii
-          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+      - run: pwsh -NoProfile -File ./scripts/package-portable.ps1 -Target linux-x64-musl
       - uses: actions/upload-artifact@v4
         with:
-          name: tethers-portable-${{ matrix.rid }}
-          path: tethers-0.1/dist/*.zip
+          name: tethers-portable-linux-x64-musl
+          path: tethers-0.1/portable-rust/dist/*linux-x64-musl*
