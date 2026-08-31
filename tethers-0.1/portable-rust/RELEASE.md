@@ -12,3 +12,5 @@ Release tag: `tethers-portable-v0.2.1`
 The original `tethers-portable-v0.1.0` tag, artifact, and checksum remain
 immutable. New platform checksums belong in `SHA256SUMS` in the generated
 release bundle.
+The checked-in release record is `SHA256SUMS-0.2.1`; the 0.2.0 checksum file
+and artifacts remain unchanged.
