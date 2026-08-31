@@ -1,4 +1,4 @@
-# Tethers Workbench 0.2.1
+# Tethers Workbench 0.2.2
 
 Tethers is a small, portable authority layer for local AI workbenches. Given
 an actor, action, resource, and context it returns `ALLOW`, `ASK`, or `DENY`.
@@ -57,6 +57,27 @@ version for provenance.
 creates a small runnable configuration. `doctor --json` checks the bundled
 profile without contacting a service.
 
+## Agent and Shell Usage
+
+The complete CLI contract, including the frozen exit-code table, is in
+`docs/CLI.md`. The short path is:
+
+```text
+tethers check request.json
+cat request.json | tethers check -
+tethers check --action git.push
+tethers check request.json --json
+tethers check request.json --quiet
+tethers check request.json --explain
+tethers validate policy.json
+tethers doctor
+tethers version --json
+```
+
+`check` is the script-friendly facade over the canonical evaluator. Decision
+exit codes are distinct from invocation/configuration errors; a process error
+never means ALLOW.
+
 ## Capability manifests and scopes
 
 ```powershell
@@ -111,6 +132,6 @@ ZIP. Linux CI builds the `x86_64-unknown-linux-musl` bundle reproducibly. The pa
 
 ## Versioning
 
-This release is `0.2.1`, based exactly on the published Portable 0.2.0
-commit `c0cc1dfbade9c3e7c742f28f40071974223917df`. Do not overwrite or retag
+This release is `0.2.2`, based exactly on the published Portable 0.2.1
+commit `0d1c52c366b9bb42be04b33d008e7b5ce1f2c28a`. Do not overwrite or retag
 `tethers-portable-v0.1.0`.

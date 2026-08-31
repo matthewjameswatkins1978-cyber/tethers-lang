@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fmt;
 
-const PORTABLE_VERSION: &str = "0.2.1";
+const PORTABLE_VERSION: &str = "0.2.2";
 const SCHEMA_VERSION: &str = "1";
 
 pub const KNOWN_ACTIONS: &[&str] = &[

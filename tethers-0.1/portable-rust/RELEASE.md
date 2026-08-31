@@ -1,16 +1,16 @@
-# Tethers Workbench 0.2.1 release record
+# Tethers Workbench 0.2.2 release record
 
-This release extends the frozen Portable 0.2.0 Rust façade with explicit
-coding-agent/read-only/CI/GARY profiles, a capability registry, lint/init/
-doctor commands, redacted trace and JSONL audit provenance, official pure
-intent translators, and a Windows/Linux parity corpus. It remains a local
-executable and never executes an action.
+This release extends the frozen Portable 0.2.1 Rust façade with a small,
+script-friendly `check` command, stdin/file equivalence, structured version and
+validation commands, deterministic doctor checks, human explanation output,
+and frozen decision/error exit codes. It remains a local executable and never
+executes an action.
 
-Base release: `tethers-portable-v0.2.0`
-Release tag: `tethers-portable-v0.2.1`
+Base release: `tethers-portable-v0.2.1`
+Release tag: `tethers-portable-v0.2.2`
 
 The original `tethers-portable-v0.1.0` tag, artifact, and checksum remain
 immutable. New platform checksums belong in `SHA256SUMS` in the generated
 release bundle.
-The checked-in release record is `SHA256SUMS-0.2.1`; the 0.2.0 checksum file
-and artifacts remain unchanged.
+The checked-in release record is `SHA256SUMS-0.2.2`; earlier checksum files and
+artifacts remain unchanged.

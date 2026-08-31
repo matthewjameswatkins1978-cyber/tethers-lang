@@ -1,4 +1,4 @@
-# Tethers Workbench 0.2.1 quickstart
+# Tethers Workbench 0.2.2 quickstart
 
 Tethers is a local, fail-closed decision executable. It returns `ALLOW`,
 `ASK`, or `DENY`; it never performs the requested action.
@@ -8,7 +8,7 @@ cargo test --locked
 cargo build --release --locked
 .\target\release\tethers.exe doctor --json
 .\target\release\tethers.exe init --profile coding-agent-default --output .tethers
-Get-Content .tethers\request.json -Raw | .\target\release\tethers.exe evaluate --policy .tethers\policy.json --trace
+Get-Content .tethers\request.json -Raw | .\target\release\tethers.exe check - --policy .tethers\policy.json --json
 ```
 
 Useful commands are `lint POLICY`, `doctor`, `validate-manifest MANIFEST`, and
