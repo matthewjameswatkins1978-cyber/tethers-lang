@@ -1,99 +1,150 @@
-# Tethers Lang
+<div align="center">
+  <img src="assets/tethers-icon.png" alt="Tethers icon" width="160" />
+  <h1>Tethers</h1>
+  <p><strong>A small, deterministic language for connecting events to actions across tools, services, and AI.</strong></p>
+  <p>
+    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-portable-v0.2.2">Portable 0.2.2</a>
+    ·
+    <a href="QUICKSTART.md">Quick start</a>
+    ·
+    <a href="tethers-0.1/SPEC.md">Language specification</a>
+  </p>
+</div>
 
-**Tethers is a small deterministic automation language for connecting events to actions across tools, services and AI.**
-
-A Tether describes what should happen in a form designed to be readable, predictable and inspectable:
-
-```text
-event → conditions → actions → result
-```
-
-The language stays deliberately small. The runtime handles capabilities, permissions, providers, durable execution, recovery and Trails. Planning is separate from permission and execution, effects are explicit, and uncertain outcomes stay uncertain.
-
-**Make things happen. Keep the receipts.**
-
-## Released Version
-
-### Tethers 0.2.2
-
-- Tethers product version: 0.2.2
-- Status: released
-- Tag: `v0.2.2`
-- Language semantics: 0.1
-- Release notes: [`docs/releases/v0.2.2.md`](docs/releases/v0.2.2.md)
-
-Tethers 0.2.2 is the Foundation-hardened, independently verified 0.2 runtime. It adds no new major product capability; Foundation makes the existing system more trustworthy, maintainable and reproducible.
-
-The previous published release was Tethers 0.2.0. Plug functionality is not part of the 0.2.2 release.
-
-### Tethers Portable 0.1.0
-
-The Windows x64 Portable release is the small host-policy decision façade. It
-proposes `ALLOW`, `ASK`, or `DENY`; it is not a packaged rewrite of the OCaml
-Core evaluator and never executes Actions. Release evidence and the immutable
-artifact checksum are recorded in
-[`tethers-0.1/portable-rust/RELEASE.md`](tethers-0.1/portable-rust/RELEASE.md).
-
-The canonical application icon is
-[`assets/tethers-icon.png`](assets/tethers-icon.png).
-
-## Current Development
-
-Development is ahead of the latest public release.
-
-- Tethers 0.3 public Plug authoring P1–P6: complete / accepted.
-- Tethers 0.4 concurrency C1–C4: complete / accepted on the current integration chain.
-- C5 fresh-agent proof: retired as a redundant concurrency gate.
-- The `check` provider server-name bug found during C5 salvage: fixed / accepted.
-- Core phases 1–9 and production Core cutover: complete / accepted.
-- Canonical V2 and Rocket V2: implemented, proved and integrated into current `main`.
-- Immediate action: integrate the accepted 0.4 chain into `main` only when
-  Matthew explicitly authorises it.
-- Next active focus: hackathon work; later 0.5 HQ/authoring-surface work is not
-  an authorised implementation increment.
-
-For live project state, use [`docs/PROJECT_DASHBOARD.md`](docs/PROJECT_DASHBOARD.md). For the concurrency programme, use [`docs/ROAD_TO_0_4.md`](docs/ROAD_TO_0_4.md).
-
-## Repository Map
-
-Tethers uses a layered set of authoritative, operational and historical documents:
-
-- `docs/CONSTITUTION.md` records the enduring Tethers language principles.
-- `tethers-0.1/SPEC.md` defines the current precise 0.1 language and protocol semantics.
-- [`docs/architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md`](docs/architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md) is the joint architectural contract and build foundation for Tethers and Lantern Keeper.
-- `docs/IMPLEMENTATION_LANGUAGE_STANDARD.md` defines how senior engineers and AI agents use OCaml, Rust, PowerShell, protocol formats, and future implementation languages.
-- `docs/MCP_PLAN.md` records the approved post-0.1 direction for an OCaml Tethers MCP interface.
-- `docs/OCAML_GUIDE_FOR_AGENTS.md` gives version-specific OCaml environment and project guidance.
-- `docs/PROJECT_CONTROL.md` defines task ownership, evidence, worker notes, and review.
-- `docs/AGENT_WORKFLOW.md` defines the current **Gorilla Bunny Coding Shop 🦍🐇** route.
-- `docs/CLINE_HANDOFF.md` is the current worker-neutral handoff guide (historical filename).
-- `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the two durable sides of each implementation handoff.
-- `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
-- `docs/CURRENT_GOAL.md` records the current development goal and boundaries.
-- `docs/CURRENT_CLINE_TASK.md` is the living implementation-packet handoff location; when no packet is active it must say so explicitly.
-- `docs/ROAD_TO_0_3.md` is the completed 0.3 Plug-authoring programme.
-- `docs/ROAD_TO_0_4.md` is the completed concurrency programme and its accepted state.
-- `docs/perf/`, `docs/review/`, and `docs/worker-notes/` contain evidence and historical records. These are not rewritten merely to make old reports sound current.
-
-Current operating route:
+Tethers makes automation inspectable before it becomes consequential. A Tether
+describes a chain of intent:
 
 ```text
-Lucy controls architecture, tasks, review, and continuation
-    -> Gem joins only when peer technical debate adds value
-    -> a suitable named agent implements bounded work
-    -> Matthew may route concise worker reports back to Lucy
+event -> conditions -> actions -> result
 ```
 
-Agents and tools are replaceable and selected for fit, risk, economics and any
-local-machine requirement. Transient model names are not encoded in durable
-repository guidance.
+The runtime keeps planning separate from permission and execution. Effects are
+explicit, uncertainty stays visible, and every decision can carry its reason
+and provenance.
 
-The active prototype and runtime development tree is `tethers-0.1/`.
+> **Make things happen. Keep the receipts.**
 
-## MCP Direction
+## See it in 60 seconds
 
-Tethers owns its MCP interface directly in OCaml. Lantern Keeper is one connected host and capability provider, not the MCP hub. The current MCP surface is planning and authoring support over stdio: evaluate a complete Tethers request or validate Tether source without executing Actions.
+The portable workbench is a local executable. It decides whether a requested
+action is `ALLOW`, `ASK`, or `DENY`; it never performs the action itself.
 
-## Joint Runtime Direction
+```text
+request -> policy match -> decision -> caller acts, asks, or stops
+```
 
-The accepted joint architecture keeps Tethers as the general coordination and behaviour layer. Tethers Core has no built-in knowledge of Lantern Keeper, memory, AI, MCP business meanings, or provider-specific effects. AI judgement is invoked only through explicit Capability Actions; its structured result normally becomes a new Anchor for deterministic follow-up evaluation.
+```powershell
+# After downloading and unpacking the Windows bundle:
+.\tethers.exe doctor --json
+.\tethers.exe check --action git.status --json
+.\tethers.exe check --action git.push --explain
+.\tethers.exe check --action git.force_push --json
+```
+
+The same commands work on Linux with `./tethers`. The expected exit statuses
+are deliberately scriptable: `0` for `ALLOW`, `10` for `ASK`, and `20` for
+`DENY`. Configuration and input failures use separate non-zero statuses and
+never mean `ALLOW`.
+
+## Download the portable workbench
+
+Download both self-contained x64 packages from the
+[Tethers Portable 0.2.2 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-portable-v0.2.2):
+
+| Platform | Package |
+| --- | --- |
+| Windows x64 | `tethers-portable-0.2.2-windows-x64.zip` |
+| Linux x64 (static musl) | `tethers-portable-0.2.2-linux-x64-musl.zip` |
+
+Each bundle includes the executable, policies, schemas, examples, wrappers,
+documentation, version metadata, and SHA-256 checksums. The release record and
+the checked-in checksum file are in
+[`tethers-0.1/portable-rust/RELEASE.md`](tethers-0.1/portable-rust/RELEASE.md)
+and [`tethers-0.1/portable-rust/SHA256SUMS-0.2.2`](tethers-0.1/portable-rust/SHA256SUMS-0.2.2).
+
+## Learn Tethers by doing
+
+Start with the [Quick-use manual](QUICKSTART.md). It teaches one concept at a
+time using a visible, useful scenario: an agent may inspect a repository, must
+ask before pushing, and is denied from force-pushing. You will see the request,
+the matching rule, the decision, the exit code, and the evidence before moving
+to a custom policy.
+
+For the full storybook version of the architecture, follow
+[Bunny & Cookies](docs/BUNNY_AND_COOKIES.md): a button press becomes an event
+proposal, the host admits it, a Tether plans an action, a Plug reaches a
+provider, and a sensor can later report what really happened. It is the clearest
+way to understand why an action result and an observation are not the same
+evidence.
+
+Then continue with:
+
+- [Portable CLI contract](tethers-0.1/portable-rust/docs/CLI.md)
+- [Portable workbench guide](tethers-0.1/portable-rust/README.md)
+- [Language specification](tethers-0.1/SPEC.md)
+- [Example Tether](tethers-0.1/examples/record-completed-task.tether)
+- [Architecture](docs/architecture/TETHERS_LANTERN_KEEPER_CANONICAL_ARCHITECTURE.md)
+
+The teaching path follows the way Tethers is meant to be used in real
+orchestration: make work observable, preserve results, avoid duplicate work,
+and route failures or retries explicitly instead of hiding them in an agent
+loop.
+
+## What is in this repository?
+
+- `tethers-0.1/` — the active language, protocol, OCaml core, host integration,
+  portable Rust façade, examples, and tests.
+- `tethers-0.1/portable-rust/` — the small local authority layer for scripts,
+  agents, and workbench integrations.
+- `docs/` — architecture, operating rules, evidence, project state, and release
+  records.
+- `assets/tethers-icon.png` — the canonical project icon used on this page and
+  in the distribution materials.
+
+The portable façade is intentionally not a replacement for the OCaml Core
+evaluator. It is a compatibility boundary: local, deterministic, fail-closed,
+and free of server, daemon, database, scheduler, telemetry, or LLM runtime
+dependencies.
+
+## Core principles
+
+- **Small language:** the syntax stays readable and deliberately constrained.
+- **Explicit authority:** capabilities and policies decide what may happen.
+- **Fail closed:** malformed input, ambiguity, unavailable dependencies, and
+  unsafe operations cannot silently become permission.
+- **Observable execution:** decisions include stable reasons and provenance;
+  audit output records metadata without echoing request secrets.
+- **Replaceable integrations:** providers and agents translate into Tethers
+  requests; they do not smuggle a second policy engine into the system.
+
+## Build and test from source
+
+For the portable Rust workbench:
+
+```powershell
+cd tethers-0.1/portable-rust
+cargo test --locked
+cargo build --release --locked
+.\target\release\tethers.exe doctor --json
+```
+
+On Windows, use `tethers.exe` in place of `tethers`. The reproducible package
+commands and Linux musl build are documented in the
+[portable workbench guide](tethers-0.1/portable-rust/README.md).
+
+## Project status
+
+The current public release is Tethers 0.2.2. It hardens the portable 0.2
+workbench with the script-friendly `check` command, structured validation and
+version commands, deterministic doctor checks, explanations, frozen decision
+exit codes, and release parity evidence. The language semantics remain 0.1.
+
+For the live development map, see
+[`docs/PROJECT_DASHBOARD.md`](docs/PROJECT_DASHBOARD.md) and
+[`docs/CURRENT_GOAL.md`](docs/CURRENT_GOAL.md).
+
+## License and contribution
+
+This repository is under active development. Read the specification and the
+project control documents before changing language semantics, policy meaning,
+or release artifacts. Small, evidenced changes are easiest to review.
