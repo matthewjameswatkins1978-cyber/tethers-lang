@@ -35,7 +35,7 @@ def main() -> int:
             destination = stage / source.relative_to(root)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
-    for name in ("run_parity.py", "benchmark.py"):
+    for name in ("run_parity.py", "benchmark.py", "package-portable.py"):
         shutil.copy2(root / "scripts" / name, stage / "scripts" / name)
     for name in ("README.md", "RELEASE.md", "QUICKSTART.md", "AI-INTEGRATION.md", "VERSION"):
         shutil.copy2(root / name, stage / name)
