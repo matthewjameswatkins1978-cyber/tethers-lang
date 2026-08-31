@@ -1,0 +1,12 @@
+{
+  "schema_version":"1",
+  "cases":[
+    {"name":"worker may inspect git status","request":{"schema_version":"1","actor":"gary.worker","action":"git.status","resource":"workspace","context":{}},"expect":"ALLOW"},
+    {"name":"worker must ask before pushing","request":{"schema_version":"1","actor":"gary.worker","action":"git.push","resource":"origin","context":{}},"expect":"ASK"},
+    {"name":"force push is denied","request":{"schema_version":"1","actor":"gary.worker","action":"git.force_push","resource":"origin","context":{}},"expect":"DENY"},
+    {"name":"production deploy is denied","request":{"schema_version":"1","actor":"resolve.ai","action":"deploy.production","resource":"production","context":{}},"expect":"DENY"},
+    {"name":"allowed file can be edited","request":{"schema_version":"1","actor":"gary.worker","action":"filesystem.write","resource":"workspace","context":{"path":"src/parser.rs"},"scope":{"allowed_files":["src/parser.rs"],"allowed_actions":["filesystem.write"]}},"expect":"ALLOW"},
+    {"name":"unrelated file is denied","request":{"schema_version":"1","actor":"gary.worker","action":"filesystem.write","resource":"workspace","context":{"path":"README.md"},"scope":{"allowed_files":["src/parser.rs"],"allowed_actions":["filesystem.write"]}},"expect":"DENY"},
+    {"name":"undeclared action is denied","request":{"schema_version":"1","actor":"gary.worker","action":"git.push","resource":"origin","context":{}},"expect":"ASK"}
+  ]
+}

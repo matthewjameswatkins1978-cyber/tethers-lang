@@ -1,0 +1,5 @@
+{
+  "schema_version":"1","actor":"gary.worker","action":"git.push","resource":"origin",
+  "context":{"branch":"main","tests_passed":true,"human_present":false},
+  "scope":{"allowed_files":["src/parser.rs","tests/parser.rs"],"allowed_actions":["filesystem.read","filesystem.write","process.execute","test.run","git.status","git.diff","git.commit","git.push","git.merge"]}
+}

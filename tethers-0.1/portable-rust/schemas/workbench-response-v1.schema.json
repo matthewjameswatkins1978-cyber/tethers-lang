@@ -1,0 +1,4 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["schema_version","decision"],
+  "properties":{"schema_version":{"const":"1"},"decision":{"enum":["ALLOW","ASK","DENY"]},"rule":{"type":"string"},"matched_rule":{"type":"string"},"reason":{"type":"string"},"policy":{"type":"string"},"policy_version":{"type":"string"},"evaluated_conditions":{"type":"array"},"error":{"type":"string"}}
+}

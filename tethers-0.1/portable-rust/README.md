@@ -1,88 +1,96 @@
-# Tethers Portable 0.1
+# Tethers Portable 0.2.0
 
-This is the small machine-facing decision façade for the current Tethers host
-policy model. It is additive: the OCaml Core parser/evaluator, the existing
-reference-host commands, and the Tethers language are unchanged.
+Tethers is a small, portable authority layer for local AI workbenches. Given
+an actor, action, resource, and context it returns `ALLOW`, `ASK`, or `DENY`.
+It decides authority; it does not execute actions. There is no server, daemon,
+database, scheduler, agent loop, MCP service, telemetry, or LLM evaluation.
 
-The façade proposes a policy decision only. It never executes an Action, reads
-live state, starts a server, or writes a Trail.
-
-## Contract
-
-Run one evaluation per process:
-
-```powershell
-Get-Content .\examples\allow.json -Raw | .\tethers.exe evaluate --policy .\policies\default.json
-```
-
-Input may be read from stdin or from `--input PATH`. `--policy PATH` is
-optional and overrides an embedded `policy` object. Without either policy
-source, the result is `DENY` with `error: "missing policy"`.
+## Canonical JSON protocol
 
 ```json
 {
-  "action": { "name": "git.push", "version": 1 },
-  "context": { "branch": "main" },
-  "policy": {
-    "default": "deny",
-    "rules": [
-      {
-        "name": "git.push",
-        "version": 1,
-        "decision": "ask",
-        "reason": "remote mutation requires operator approval"
-      }
-    ]
-  }
+  "schema_version":"1",
+  "actor":"gary.worker",
+  "action":"git.push",
+  "resource":"github:owner/project",
+  "context":{"branch":"main","tests_passed":true,"human_present":false}
 }
 ```
 
-The response is exactly one JSON document on stdout:
-
-```json
-{
-  "decision": "ASK",
-  "rule": "git.push@1",
-  "reason": "remote mutation requires operator approval"
-}
-```
-
-Valid policy outcomes are `ALLOW`, `ASK`, and `DENY`. A malformed request,
-missing or invalid policy, invalid action, unknown field/condition, duplicate
-rule, or evaluator failure returns `DENY` with an `error` field. A valid
-explicit `DENY` is a normal decision and has no `error` field. Context is
-validated as an object and remains host-owned opaque data at this seam.
-
-The policy shape intentionally mirrors current Tethers host-local policy:
-exact action name/version rules override a default posture. There is no fuzzy
-matching, implicit default allow, condition language, execution, networking,
-MCP, database, GUI, plugin discovery, or daemon.
-
-## Build and test
+Evaluate with a policy file:
 
 ```powershell
-cargo test --locked --manifest-path .\Cargo.toml
-cargo build --release --locked --manifest-path .\Cargo.toml
+Get-Content .\examples\gary-worker-request.json -Raw |
+  .\tethers.exe evaluate --policy .\policies\default.json
 ```
 
-The Windows release executable is built with the MSVC C runtime statically
-linked, so the bundle does not require the Visual C++ Redistributable. The
-Linux release target is `x86_64-unknown-linux-musl`, which produces a
-self-contained x64 Linux executable when built on Linux with the standard
-musl tools.
+The response is machine-readable and includes the schema version, decision,
+matched rule, deterministic reason, and policy identity. `ASK` is reserved for
+a deliberate policy requirement for human authority. Malformed requests,
+unknown actions, invalid policies, missing binaries, timeouts, malformed
+responses, and other operational uncertainty must be treated as `DENY` by
+callers.
 
-## Packaging
+Portable 0.1 requests using `{ "action": { "name": "...", "version": 1 },
+"context": {}, "policy": {} }` remain accepted. The frozen 0.1 tag and
+artifact are not modified.
 
-From `tethers-0.1`:
+## Explain mode and policy tests
 
 ```powershell
+.\tethers.exe explain --input .\examples\gary-worker-request.json --policy .\policies\default.json
+.\tethers.exe test .\policies\default.json .\examples\workbench-policy-tests.json
+.\tethers.exe test .\policies\default.json .\examples\workbench-policy-tests.json --json
+```
+
+Explain output adds `evaluated_conditions`. Sensitive values are never echoed.
+The policy runner exits zero only when every case passes and reports expected,
+actual, and matched rule on failures.
+
+## Capability manifests and scopes
+
+```powershell
+.\tethers.exe validate-manifest .\examples\gary-worker-manifest.json
+Get-Content .\examples\gary-worker-request.json -Raw |
+  .\tethers.exe evaluate --policy .\policies\default.json --manifest .\examples\gary-worker-manifest.json
+```
+
+An undeclared or unknown capability is denied. A scope can narrow authority
+with `allowed_actions` and exact workspace-relative `allowed_files`; path
+traversal, absolute paths, and missing paths under a file scope fail closed.
+Project policies can narrow authority further. Built-in hard denies cannot be
+broadened by a project policy.
+
+## Integration examples
+
+GARY workers may inspect and edit explicitly scoped files, test, inspect Git,
+and commit when the packet permits it. Push and merge return `ASK`; force push,
+unrelated files, secrets, destructive operations, and production deployment
+return `DENY`.
+
+Resolve AI can map `workspace.read`, `apply_patch`, `test.run`, `git.status`,
+`git.diff`, and `git.commit` to `ALLOW`; `git.push` and `git.merge` to `ASK`;
+and `deploy.production` to `DENY`.
+
+CALL-E can invoke the executable as a subprocess and map only the three known
+decisions. The wrappers under `wrappers/` are intentionally thin subprocess
+adapters and do not duplicate policy evaluation.
+
+## Build, test, and package
+
+```powershell
+cargo test --locked
+cargo build --release --locked
 pwsh -NoProfile -File .\scripts\package-portable.ps1
 ```
 
-On Windows this creates the native `windows-x64` bundle and statically links
-the MSVC runtime. On a Linux host, use
-`-Target linux-x64-musl` to create the self-contained Linux bundle; that
-requires the usual Rust musl target and `musl-tools` package. The repository
-CI workflow builds and packages both targets reproducibly. Each zip contains
-the executable, `policies/`, `examples/`, this README, `VERSION`, and
-`SHA256SUMS`.
+Windows produces a self-contained `windows-x64` bundle. Linux CI builds the
+`x86_64-unknown-linux-musl` bundle reproducibly. The package layout is
+`bin/`, `policies/`, `schemas/`, `examples/`, wrapper sources, documentation,
+`VERSION`, and `SHA256SUMS`.
+
+## Versioning
+
+This release is `0.2.0`, based exactly on Portable 0.1.0 commit
+`b62f8f3e31b319c13ce281e913f45f40640aad58`. Do not overwrite or retag
+`tethers-portable-v0.1.0`.

@@ -1,0 +1,1 @@
+{"schema_version":"1","tool":"gary-worker","version":"0.1.0","capabilities":["filesystem.read","filesystem.write","process.execute","test.run","git.status","git.diff","git.commit","git.push","git.merge"]}
