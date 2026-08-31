@@ -721,6 +721,19 @@ mod tests {
         );
     }
     #[test]
+    fn modern_request_without_context_fails_closed() {
+        let request = r#"{"schema_version":"1","actor":"worker","action":"git.status","resource":"workspace","policy":{"default":"allow","rules":[]}}"#;
+        assert_eq!(evaluate_text(request, None).decision, "DENY");
+    }
+    #[test]
+    fn unknown_condition_field_invalidates_policy() {
+        let policy = r#"{"default":"allow","rules":[{"name":"git.status","decision":"allow","conditions":[{"field":"invented.fact","exists":true}]}]}"#;
+        assert_eq!(
+            evaluate_text(&modern("git.status", policy), None).decision,
+            "DENY"
+        );
+    }
+    #[test]
     fn explanation_does_not_echo_sensitive_string_values() {
         let policy = r#"{"default":"deny","rules":[{"name":"git.status","decision":"allow","conditions":[{"field":"context.token","equals":"secret-value"}]}]}"#;
         let response = evaluate_text(
