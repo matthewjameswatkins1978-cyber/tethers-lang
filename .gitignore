@@ -5,6 +5,7 @@ tethers-0.1/host-rust/target/
 tethers-0.1/dist/
 tethers-0.1/portable-rust/dist/
 verification/
+__pycache__/
 target/
 !tethers-0.1/engine-ocaml/bin/
 !tethers-0.1/engine-ocaml/bin/dune
