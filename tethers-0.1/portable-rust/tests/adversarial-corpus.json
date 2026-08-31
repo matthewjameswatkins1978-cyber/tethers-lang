@@ -1,0 +1,17 @@
+{
+  "schema_version":"1",
+  "cases":[
+    {"name":"malformed json","raw":"{","expect":"DENY"},
+    {"name":"null request","raw":"null","expect":"DENY"},
+    {"name":"missing context","request":{"schema_version":"1","actor":"agent","action":"git.status","resource":"workspace"},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"unsupported request schema","request":{"schema_version":"99","actor":"agent","action":"git.status","resource":"workspace","context":{}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"invalid policy comparator","request":{"schema_version":"1","actor":"agent","action":"git.status","resource":"workspace","context":{}},"policy":{"default":"allow","rules":[{"name":"git.status","decision":"allow","conditions":[{"field":"context.x","equals":true,"exists":true}]}]},"expect":"DENY"},
+    {"name":"absolute path","request":{"schema_version":"1","actor":"agent","action":"filesystem.read","resource":"workspace","context":{"path":"C:/secrets"},"scope":{"allowed_files":["README.md"]}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"traversal path","request":{"schema_version":"1","actor":"agent","action":"filesystem.read","resource":"workspace","context":{"path":"a/../../secrets"},"scope":{"allowed_files":["README.md"]}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"secret read","request":{"schema_version":"1","actor":"agent","action":"secret.read","resource":"secret:key","context":{}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"database drop","request":{"schema_version":"1","actor":"agent","action":"database.drop","resource":"db:main","context":{}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"privileged container","request":{"schema_version":"1","actor":"agent","action":"container.privileged","resource":"container:x","context":{}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"wildcard ask","request":{"schema_version":"1","actor":"agent","action":"message.send","resource":"external","context":{}},"policy":{"default":"deny","rules":[{"name":"approval","decision":"ask","actions":["message.send"],"actors":["*"],"resources":["*"]}]},"expect":"ASK"},
+    {"name":"secret not echoed","request":{"schema_version":"1","actor":"agent","action":"git.status","resource":"workspace","context":{"token":"not-for-output"}},"policy":{"default":"deny","rules":[{"name":"inspect","decision":"allow","actions":["git.status"],"conditions":[{"field":"context.token","exists":true}]}]},"expect":"ALLOW"}
+  ]
+}

@@ -27,8 +27,11 @@ def main() -> int:
     corpus = json.loads(Path(args.corpus).read_text(encoding="utf-8"))
     failures = []
     for case in corpus["cases"]:
-        request = dict(case["request"])
-        request["policy"] = case["policy"]
+        if "raw" in case:
+            request = case["raw"]
+        else:
+            request = dict(case["request"])
+            request["policy"] = case["policy"]
         windows = run(args.windows, request)
         linux = run(args.linux, request)
         left = {field: windows.get(field) for field in FIELDS}
