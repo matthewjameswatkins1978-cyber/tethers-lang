@@ -30,7 +30,10 @@ def main() -> int:
         for source in (root / directory).iterdir():
             if source.is_file(): shutil.copy2(source, stage / directory / source.name)
     for source in (root / "wrappers").rglob("*"):
-        if source.is_file(): shutil.copy2(source, stage / source.relative_to(root))
+        if source.is_file():
+            destination = stage / source.relative_to(root)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
     for name in ("run_parity.py", "benchmark.py"):
         shutil.copy2(root / "scripts" / name, stage / "scripts" / name)
     for name in ("README.md", "RELEASE.md", "QUICKSTART.md", "AI-INTEGRATION.md", "VERSION"):
