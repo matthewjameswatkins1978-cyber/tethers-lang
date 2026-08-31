@@ -6,10 +6,11 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fmt;
 
-const PORTABLE_VERSION: &str = "0.2.0";
+const PORTABLE_VERSION: &str = "0.2.1";
 const SCHEMA_VERSION: &str = "1";
 
 pub const KNOWN_ACTIONS: &[&str] = &[
@@ -36,11 +37,34 @@ pub const KNOWN_ACTIONS: &[&str] = &[
     "network.http_post",
     "network.download",
     "network.upload",
+    "network.resolve",
+    "network.connect",
+    "network.http_head",
+    "network.http_put",
+    "network.http_patch",
+    "network.http_delete",
+    "network.websocket",
     "network.arbitrary",
+    "secret.exists",
     "secret.read",
     "secret.use",
     "secret.write",
+    "secret.export",
     "secret.expose",
+    "container.build",
+    "container.run",
+    "container.exec",
+    "container.stop",
+    "container.remove",
+    "container.image.pull",
+    "container.image.push",
+    "container.network",
+    "container.mount",
+    "container.mount_host",
+    "container.privileged",
+    "tool.call",
+    "mcp.tool_call",
+    "database.connect",
     "deploy.preview",
     "deploy.staging",
     "deploy.production",
@@ -50,12 +74,57 @@ pub const KNOWN_ACTIONS: &[&str] = &[
     "email.send",
     "database.read",
     "database.write",
+    "database.insert",
+    "database.update",
+    "database.query_read",
+    "database.bulk_write",
+    "database.schema_read",
     "database.delete",
+    "database.drop",
     "database.schema_change",
     "purchase.prepare",
     "purchase.execute",
     "subscription.change",
     "payment.execute",
+    "message.read",
+    "message.delete",
+    "email.read",
+    "email.forward",
+    "email.delete",
+    "deploy.inspect",
+    "deploy.build",
+    "deploy.rollback",
+    "deploy.destroy",
+    "filesystem.list",
+    "filesystem.stat",
+    "filesystem.append",
+    "filesystem.move",
+    "filesystem.copy",
+    "filesystem.mkdir",
+    "filesystem.rmdir",
+    "filesystem.chmod",
+    "filesystem.permission_change",
+    "filesystem.outside_workspace",
+    "process.spawn",
+    "process.background",
+    "shell.execute",
+    "shell.pipeline",
+    "shell.redirect",
+    "shell.destructive",
+    "git.log",
+    "git.show",
+    "git.fetch",
+    "git.branch.read",
+    "git.branch.create",
+    "git.checkout",
+    "git.switch",
+    "git.add",
+    "git.pull",
+    "git.rebase",
+    "git.reset",
+    "git.clean",
+    "git.remote.add",
+    "git.remote.change",
     "workspace.read",
     "apply_patch",
     "test.run",
@@ -64,15 +133,23 @@ pub const KNOWN_ACTIONS: &[&str] = &[
 const HARD_DENY_ACTIONS: &[&str] = &[
     "filesystem.delete",
     "filesystem.write_outside_workspace",
+    "filesystem.outside_workspace",
+    "filesystem.rmdir",
     "process.elevated",
+    "shell.destructive",
     "git.force_push",
     "git.reset_destructive",
     "secret.read",
     "secret.write",
+    "secret.export",
     "secret.expose",
     "deploy.production",
     "database.delete",
     "database.schema_change",
+    "database.drop",
+    "deploy.destroy",
+    "container.privileged",
+    "container.mount_host",
     "payment.execute",
     "purchase.execute",
 ];
@@ -119,7 +196,7 @@ pub struct Scope {
     pub workspace_root: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
     pub default: PolicyDecision,
@@ -132,7 +209,7 @@ pub struct Policy {
     pub policy_version: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PolicyRule {
     pub name: String,
@@ -153,7 +230,7 @@ pub struct PolicyRule {
     pub conditions: Vec<Condition>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Condition {
     pub field: String,
@@ -174,7 +251,7 @@ pub struct Manifest {
     pub capabilities: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PolicyDecision {
     Allow,
@@ -217,6 +294,14 @@ pub struct Response {
     pub evaluated_conditions: Option<Vec<EvaluatedCondition>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tethers_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,7 +324,10 @@ impl Response {
         reason: String,
         policy: &Policy,
         conditions: Vec<EvaluatedCondition>,
+        trace: Vec<String>,
     ) -> Self {
+        let policy_sha256 = policy_fingerprint(policy);
+        let decision_id = decision_id(&policy_sha256, decision.as_str(), &rule);
         Self {
             schema_version: protocol.then(|| SCHEMA_VERSION.to_owned()),
             decision: decision.as_str(),
@@ -250,6 +338,10 @@ impl Response {
             policy_version: policy.policy_version.clone(),
             evaluated_conditions: (!conditions.is_empty()).then_some(conditions),
             error: None,
+            tethers_version: Some(PORTABLE_VERSION.to_owned()),
+            decision_id: Some(decision_id),
+            policy_sha256: Some(policy_sha256),
+            trace: (!trace.is_empty()).then_some(trace),
         }
     }
     pub fn deny_error(error: impl Into<String>) -> Self {
@@ -263,11 +355,27 @@ impl Response {
             policy_version: None,
             evaluated_conditions: None,
             error: Some(error.into()),
+            tethers_version: Some(PORTABLE_VERSION.to_owned()),
+            decision_id: None,
+            policy_sha256: None,
+            trace: None,
         }
     }
     pub fn deny_error_for_cli(error: impl Into<String>) -> Self {
         Self::deny_error(error)
     }
+}
+
+fn policy_fingerprint(policy: &Policy) -> String {
+    let bytes = serde_json::to_vec(policy).unwrap_or_default();
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn decision_id(policy_sha256: &str, decision: &str, rule: &str) -> String {
+    format!(
+        "{:x}",
+        Sha256::digest(format!("{policy_sha256}|{decision}|{rule}").as_bytes())
+    )
 }
 
 /// Backwards-compatible 0.1 entry point.
@@ -281,11 +389,23 @@ pub fn evaluate_text_with_options(
     manifest: Option<&str>,
     explain: bool,
 ) -> Response {
+    evaluate_text_with_config(input, external_policy, manifest, explain, false)
+}
+
+/// Evaluates a request with optional human-readable condition explanation and
+/// a redacted decision trace. Trace entries never contain context values.
+pub fn evaluate_text_with_config(
+    input: &str,
+    external_policy: Option<&str>,
+    manifest: Option<&str>,
+    explain: bool,
+    trace: bool,
+) -> Response {
     let request: Request = match serde_json::from_str(input) {
         Ok(request) => request,
         Err(error) => return Response::deny_error(format!("invalid request JSON: {error}")),
     };
-    evaluate_request_with_options(&request, external_policy, manifest, explain)
+    evaluate_request_with_config(&request, external_policy, manifest, explain, trace)
 }
 
 pub fn evaluate_request(request: &Request, external_policy: Option<&str>) -> Response {
@@ -296,7 +416,17 @@ pub fn evaluate_request_with_options(
     request: &Request,
     external_policy: Option<&str>,
     manifest_text: Option<&str>,
+    explain: bool,
+) -> Response {
+    evaluate_request_with_config(request, external_policy, manifest_text, explain, false)
+}
+
+pub fn evaluate_request_with_config(
+    request: &Request,
+    external_policy: Option<&str>,
+    manifest_text: Option<&str>,
     _explain: bool,
+    trace_enabled: bool,
 ) -> Response {
     let protocol = request.schema_version.is_some();
     if let Some(version) = &request.schema_version {
@@ -374,12 +504,20 @@ pub fn evaluate_request_with_options(
             "this high-risk action is globally prohibited".to_owned(),
             &policy,
             Vec::new(),
+            vec![format!("global_hard_deny: {action}")],
         );
     }
     let mut selected: Option<(&PolicyRule, Vec<EvaluatedCondition>)> = None;
+    let mut trace = Vec::new();
     for rule in &policy.rules {
         if !rule_applies(rule, &action, request) {
+            if trace_enabled {
+                trace.push(format!("rule {}: not applicable", rule.name));
+            }
             continue;
+        }
+        if trace_enabled {
+            trace.push(format!("rule {}: applicable", rule.name));
         }
         let evaluated: Vec<_> = rule
             .conditions
@@ -389,6 +527,20 @@ pub fn evaluate_request_with_options(
                 result: condition_matches(condition, request, &action),
             })
             .collect();
+        if trace_enabled {
+            for condition in &evaluated {
+                trace.push(format!(
+                    "rule {} condition {}: {}",
+                    rule.name,
+                    condition.condition,
+                    if condition.result {
+                        "matched"
+                    } else {
+                        "not matched"
+                    }
+                ));
+            }
+        }
         if evaluated.iter().all(|condition| condition.result) {
             selected = Some((rule, evaluated));
             break;
@@ -404,6 +556,7 @@ pub fn evaluate_request_with_options(
                 .unwrap_or_else(|| format!("matched rule {}", rule.name)),
             &policy,
             conditions,
+            trace,
         ),
         None => Response::decision(
             protocol,
@@ -412,6 +565,7 @@ pub fn evaluate_request_with_options(
             format!("used policy default for {action}"),
             &policy,
             Vec::new(),
+            trace,
         ),
     }
 }

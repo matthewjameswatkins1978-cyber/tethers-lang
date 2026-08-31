@@ -1,0 +1,22 @@
+{
+  "schema_version": "1",
+  "name": "read-only-agent",
+  "policy_version": "1.0.0",
+  "default": "deny",
+  "rules": [
+    {"name":"workspace.read","decision":"allow","reason":"workspace inspection is passive"},
+    {"name":"filesystem.read","decision":"allow","reason":"workspace inspection is passive"},
+    {"name":"filesystem.list","decision":"allow","reason":"workspace inspection is passive"},
+    {"name":"filesystem.stat","decision":"allow","reason":"workspace inspection is passive"},
+    {"name":"git.status","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"git.diff","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"git.log","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"git.show","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"network.http_get","decision":"allow","reason":"read-only HTTP access"},
+    {"name":"network.http_head","decision":"allow","reason":"read-only HTTP access"},
+    {"name":"database.read","decision":"ask","reason":"external data access requires approval"},
+    {"name":"message.draft","decision":"allow","reason":"drafting has no external consequence"},
+    {"name":"email.draft","decision":"allow","reason":"drafting has no external consequence"},
+    {"name":"test.run","decision":"allow","reason":"verification is passive"}
+  ]
+}

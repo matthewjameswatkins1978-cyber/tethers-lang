@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "name": "ci-worker",
+  "policy_version": "1.0.0",
+  "default": "deny",
+  "rules": [
+    {"name":"workspace.read","decision":"allow","reason":"CI inspection is passive"},
+    {"name":"filesystem.read","decision":"allow","reason":"CI inspection is passive"},
+    {"name":"filesystem.write","decision":"allow","reason":"CI-local generated output"},
+    {"name":"filesystem.create","decision":"allow","reason":"CI-local generated output"},
+    {"name":"process.execute","decision":"allow","reason":"declared CI process"},
+    {"name":"git.status","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"git.diff","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"git.log","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"test.run","decision":"allow","reason":"verification is passive"},
+    {"name":"container.build","decision":"ask","reason":"container build requires approval"},
+    {"name":"deploy.preview","decision":"ask","reason":"external deployment requires approval"}
+  ]
+}

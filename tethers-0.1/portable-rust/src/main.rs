@@ -2,14 +2,17 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
-use std::io::{self, Read};
+use std::fs::OpenOptions;
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tethers_portable::{
-    evaluate_text_with_options, validate_manifest, validate_policy_text, Manifest, Response,
+    evaluate_text_with_config, evaluate_text_with_options, validate_manifest, validate_policy_text,
+    Manifest, Policy, Response,
 };
 
 fn usage() -> &'static str {
-    "usage:\n  tethers evaluate [--input PATH] [--policy PATH] [--manifest PATH] [--explain]\n  tethers explain [--input PATH] [--policy PATH] [--manifest PATH]\n  tethers test POLICY CORPUS [--json]\n  tethers validate-manifest MANIFEST\n  tethers --version"
+    "usage:\n  tethers evaluate [--input PATH] [--policy PATH] [--manifest PATH] [--explain] [--trace] [--audit PATH]\n  tethers explain [--input PATH] [--policy PATH] [--manifest PATH] [--trace]\n  tethers lint POLICY [--json]\n  tethers init [--profile PROFILE] [--output DIR]\n  tethers doctor [--json]\n  tethers test POLICY CORPUS [--json]\n  tethers validate-manifest MANIFEST\n  tethers --version"
 }
 
 fn main() {
@@ -34,6 +37,9 @@ fn run(args: Vec<String>) -> i32 {
         }
         Some("test") => test_command(&args[1..]),
         Some("validate-manifest") => manifest_command(&args[1..]),
+        Some("lint") => lint_command(&args[1..]),
+        Some("init") => init_command(&args[1..]),
+        Some("doctor") => doctor_command(&args[1..]),
         _ => {
             emit(Response::deny_error_for_cli("unknown command"));
             2
@@ -46,6 +52,8 @@ fn evaluate_command(args: &[String]) -> i32 {
     let mut policy_path = None;
     let mut manifest_path = None;
     let mut explain = false;
+    let mut trace = false;
+    let mut audit_path = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -53,7 +61,11 @@ fn evaluate_command(args: &[String]) -> i32 {
                 explain = true;
                 index += 1;
             }
-            "--input" | "--policy" | "--manifest" => {
+            "--trace" => {
+                trace = true;
+                index += 1;
+            }
+            "--input" | "--policy" | "--manifest" | "--audit" => {
                 let flag = args[index].clone();
                 let Some(path) = args.get(index + 1) else {
                     emit(Response::deny_error_for_cli(format!(
@@ -64,7 +76,8 @@ fn evaluate_command(args: &[String]) -> i32 {
                 let destination = match flag.as_str() {
                     "--input" => &mut input_path,
                     "--policy" => &mut policy_path,
-                    _ => &mut manifest_path,
+                    "--manifest" => &mut manifest_path,
+                    _ => &mut audit_path,
                 };
                 if destination.is_some() {
                     emit(Response::deny_error_for_cli(format!(
@@ -118,13 +131,43 @@ fn evaluate_command(args: &[String]) -> i32 {
             return 3;
         }
     };
-    emit(evaluate_text_with_options(
+    let mut response = evaluate_text_with_config(
         &input,
         policy.as_deref(),
         manifest.as_deref(),
         explain,
-    ));
+        trace,
+    );
+    if let Some(path) = audit_path {
+        if let Err(error) = append_audit(&path, &input, &response) {
+            response = Response::deny_error(format!("audit write failed closed: {error}"));
+        }
+    }
+    emit(response);
     0
+}
+
+fn append_audit(path: &PathBuf, input: &str, response: &Response) -> io::Result<()> {
+    let request = serde_json::from_str::<Value>(input).unwrap_or(Value::Null);
+    let action = request.get("action").and_then(|value| {
+        value
+            .as_str()
+            .or_else(|| value.get("name").and_then(Value::as_str))
+    });
+    let record = json!({
+        "timestamp_unix": SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+        "decision_id": response.decision_id,
+        "tethers_version": response.tethers_version,
+        "decision": response.decision,
+        "rule": response.matched_rule,
+        "policy_sha256": response.policy_sha256,
+        "actor": request.get("actor").and_then(Value::as_str),
+        "action": action,
+        "resource": request.get("resource").and_then(Value::as_str),
+        "error": response.error,
+    });
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "{}", serde_json::to_string(&record).unwrap())
 }
 
 fn read_optional(path: Option<PathBuf>, label: &str) -> Result<Option<String>, Response> {
@@ -230,6 +273,157 @@ fn test_command(args: &[String]) -> i32 {
         );
     }
     if all_passed {
+        0
+    } else {
+        1
+    }
+}
+
+fn lint_command(args: &[String]) -> i32 {
+    let json_output = args.iter().any(|arg| arg == "--json");
+    let positional: Vec<_> = args.iter().filter(|arg| *arg != "--json").collect();
+    if positional.len() != 1 {
+        emit(Response::deny_error_for_cli(
+            "usage: tethers lint POLICY [--json]",
+        ));
+        return 2;
+    }
+    let text = match fs::read_to_string(positional[0]) {
+        Ok(text) => text,
+        Err(error) => {
+            emit(Response::deny_error_for_cli(format!(
+                "cannot read policy: {error}"
+            )));
+            return 3;
+        }
+    };
+    let policy: Policy = match serde_json::from_str(&text) {
+        Ok(policy) => policy,
+        Err(error) => {
+            emit(Response::deny_error(format!(
+                "invalid policy JSON: {error}"
+            )));
+            return 1;
+        }
+    };
+    if let Err(error) = validate_policy_text(&text) {
+        emit(Response::deny_error(error));
+        return 1;
+    }
+    let mut warnings = Vec::new();
+    if policy.default == tethers_portable::PolicyDecision::Allow {
+        warnings.push("default ALLOW is broad; prefer DENY with explicit rules".to_owned());
+    }
+    for rule in &policy.rules {
+        if rule.actors.iter().any(|actor| actor == "*")
+            || rule.resources.iter().any(|resource| resource == "*")
+        {
+            warnings.push(format!("rule {} uses a wildcard selector", rule.name));
+        }
+    }
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({"valid": true, "warnings": warnings})).unwrap()
+        );
+    } else {
+        println!("valid: true");
+        for warning in warnings {
+            println!("warning: {warning}");
+        }
+    }
+    0
+}
+
+fn init_command(args: &[String]) -> i32 {
+    let mut profile = "coding-agent-default".to_owned();
+    let mut output = PathBuf::from(".tethers");
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        match flag {
+            "--profile" | "--output" => {
+                let Some(value) = args.get(index + 1) else {
+                    emit(Response::deny_error_for_cli(format!(
+                        "missing value for {flag}"
+                    )));
+                    return 2;
+                };
+                if flag == "--profile" {
+                    profile = value.clone();
+                } else {
+                    output = PathBuf::from(value);
+                }
+                index += 2;
+            }
+            _ => {
+                emit(Response::deny_error_for_cli(format!(
+                    "unknown option: {flag}"
+                )));
+                return 2;
+            }
+        }
+    }
+    let policy = match profile.as_str() {
+        "coding-agent-default" => include_str!("../policies/coding-agent-default.json"),
+        "read-only-agent" => include_str!("../policies/read-only-agent.json"),
+        "ci-worker" => include_str!("../policies/ci-worker.json"),
+        "gary-worker" => include_str!("../policies/gary-worker.json"),
+        _ => {
+            emit(Response::deny_error_for_cli("unknown profile"));
+            return 2;
+        }
+    };
+    if let Err(error) = fs::create_dir_all(&output) {
+        emit(Response::deny_error_for_cli(format!(
+            "cannot create output: {error}"
+        )));
+        return 3;
+    }
+    let files = [
+        ("policy.json", policy),
+        (
+            "manifest.json",
+            r#"{"schema_version":"1","tool":"tethers-agent","version":"0.2.1","capabilities":["filesystem.read","filesystem.write","git.status","git.diff","test.run"]}"#,
+        ),
+        (
+            "request.json",
+            r#"{"schema_version":"1","actor":"agent","action":"workspace.read","resource":"workspace","context":{}}"#,
+        ),
+        (
+            "tests.json",
+            r#"{"cases":[{"name":"workspace-read","request":{"schema_version":"1","actor":"agent","action":"workspace.read","resource":"workspace","context":{}},"expect":"ALLOW"}]}"#,
+        ),
+    ];
+    for (name, content) in files {
+        if let Err(error) = fs::write(output.join(name), content) {
+            emit(Response::deny_error_for_cli(format!(
+                "cannot write {name}: {error}"
+            )));
+            return 3;
+        }
+    }
+    println!("initialized profile {profile} in {}", output.display());
+    0
+}
+
+fn doctor_command(args: &[String]) -> i32 {
+    let json_output = args.iter().any(|arg| arg == "--json");
+    if args.iter().any(|arg| arg != "--json") {
+        emit(Response::deny_error_for_cli(
+            "usage: tethers doctor [--json]",
+        ));
+        return 2;
+    }
+    let bundled = include_str!("../policies/coding-agent-default.json");
+    let policy_ok = validate_policy_text(bundled).is_ok();
+    let result = json!({"version": tethers_portable::version(), "policy_valid": policy_ok, "platform": std::env::consts::OS, "architecture": std::env::consts::ARCH});
+    if json_output {
+        println!("{}", result);
+    } else {
+        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+    }
+    if policy_ok {
         0
     } else {
         1

@@ -1,0 +1,11 @@
+{
+  "schema_version":"1",
+  "cases":[
+    {"name":"read allow","request":{"schema_version":"1","actor":"agent","action":"filesystem.read","resource":"workspace","context":{"path":"README.md"}},"policy":{"default":"deny","rules":[{"name":"filesystem.read","decision":"allow","reason":"read"}]},"expect":"ALLOW"},
+    {"name":"push ask","request":{"schema_version":"1","actor":"agent","action":"git.push","resource":"origin","context":{}},"policy":{"default":"deny","rules":[{"name":"git.push","decision":"ask","reason":"approval"}]},"expect":"ASK"},
+    {"name":"hard deny","request":{"schema_version":"1","actor":"agent","action":"secret.export","resource":"secret:X","context":{}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"unknown action","request":{"schema_version":"1","actor":"agent","action":"unknown.action","resource":"x","context":{}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"scope escape","request":{"schema_version":"1","actor":"agent","action":"filesystem.write","resource":"workspace","context":{"path":"../outside"},"scope":{"allowed_files":["src/main.rs"]}},"policy":{"default":"allow","rules":[]},"expect":"DENY"},
+    {"name":"condition default","request":{"schema_version":"1","actor":"agent","action":"git.status","resource":"workspace","context":{"branch":"dev"}},"policy":{"default":"deny","rules":[{"name":"git.status","decision":"allow","conditions":[{"field":"context.branch","equals":"main"}]}]},"expect":"DENY"}
+  ]
+}

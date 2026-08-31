@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "name": "gary-worker",
+  "policy_version": "1.0.0",
+  "default": "deny",
+  "rules": [
+    {"name":"workspace.read","decision":"allow","reason":"GARY inspection is passive"},
+    {"name":"filesystem.read","decision":"allow","reason":"GARY inspection is passive"},
+    {"name":"filesystem.list","decision":"allow","reason":"GARY inspection is passive"},
+    {"name":"git.status","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"git.diff","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"git.log","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"git.show","decision":"allow","reason":"repository inspection is passive"},
+    {"name":"test.run","decision":"allow","reason":"verification is passive"},
+    {"name":"git.commit","decision":"ask","reason":"history mutation requires human approval"},
+    {"name":"git.push","decision":"deny","reason":"remote publication remains explicitly gated"},
+    {"name":"deploy.preview","decision":"deny","reason":"deployment is outside the GARY worker default"}
+  ]
+}
