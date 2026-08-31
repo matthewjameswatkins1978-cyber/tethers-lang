@@ -84,8 +84,8 @@ cargo build --release --locked
 pwsh -NoProfile -File .\scripts\package-portable.ps1
 ```
 
-Windows produces a self-contained `windows-x64` bundle. Linux CI builds the
-`x86_64-unknown-linux-musl` bundle reproducibly. The package layout is
+Windows produces a self-contained `windows-x64` bundle with a deterministic
+ZIP. Linux CI builds the `x86_64-unknown-linux-musl` bundle reproducibly. The package layout is
 `bin/`, `policies/`, `schemas/`, `examples/`, wrapper sources, documentation,
 `VERSION`, and `SHA256SUMS`.
 

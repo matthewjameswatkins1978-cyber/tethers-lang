@@ -36,7 +36,10 @@ Copy-Item -LiteralPath (Join-Path $root 'VERSION') -Destination $stage
 
 $hash = (Get-FileHash (Join-Path $stage "bin\tethers$extension") -Algorithm SHA256).Hash.ToUpperInvariant()
 "$hash  bin/tethers$extension" | Set-Content -NoNewline (Join-Path $stage 'SHA256SUMS')
-Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) { throw 'Python is required to create the deterministic ZIP' }
+& $python.Source (Join-Path $root 'scripts\deterministic_zip.py') $stage $zip
+if ($LASTEXITCODE -ne 0) { throw 'deterministic ZIP creation failed' }
 $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToUpperInvariant()
 "$zipHash  $(Split-Path $zip -Leaf)" | Set-Content -NoNewline "$zip.sha256"
 Write-Output "Bundle: $zip"
