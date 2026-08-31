@@ -29,6 +29,7 @@ def main() -> int:
     for directory in ("policies", "registry", "plugs", "docs", "tests", "schemas", "examples"):
         for source in (root / directory).iterdir():
             if source.is_file(): shutil.copy2(source, stage / directory / source.name)
+    shutil.copy2(root / "policies" / "default.json", stage / "policies" / "workbench-default.json")
     for source in (root / "wrappers").rglob("*"):
         if source.is_file():
             destination = stage / source.relative_to(root)
