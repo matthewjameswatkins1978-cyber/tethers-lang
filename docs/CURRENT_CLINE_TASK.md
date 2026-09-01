@@ -1,139 +1,183 @@
-# Rocket V3 — R3-0 Complete Semantic Relation Inventory
+# Rocket V3 — R3-1 Immutable Typed Relational Model
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `READY`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Codex evidence/design implementation in a fresh dedicated worktree; no production Rocket V3 code in R3-0`
+Route: `Codex implementation in a fresh dedicated worktree; bounded OCaml model construction and tests only`
 
-Base commit: `5a1b461dcb95852681f269cd13a63a1e80695795`
+Base commit: `0fd316083e1b26c3564080dec16d62490116858c`
 
-Implementation checkpoint: `0fdcde0fd9f268513c5975062685af862955c0cd`
-
-Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-0.md`
+Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-1-model.md`
 
 Related issue: `#5 — BUG: Rocket V2 factorial search on simple sequential Action chains`
+
+Design authority: `docs/review/rocket-v3/R3_0_SEMANTIC_RELATION_INVENTORY.md`
 
 Updated: 2026-09-01
 
 ## Objective
 
-Produce the complete, reviewable semantic-relation inventory that Rocket V3 will use as its structural canonicalisation model. R3-0 must account for every identity-bearing Core reference and every anonymous-label lookup that can influence frozen `Enc_V2` bytes, classify its direction/inverse/multiplicity/scope, and identify the exact V3 relation or structural concept needed to expose it to later canonical refinement.
+Implement the first production-quality Rocket V3 component: an immutable typed relational model of validated Tethers Core that exposes every anonymous identity-bearing relation required by frozen `Enc_V2`, in both forward and inverse directions, with exact relation discriminators, multiplicity, scope, scalar descriptors and fixed structural sentinels/terminals.
 
-R3-0 is a design/evidence gate. It MUST NOT implement Rocket V3 refinement, search, prefix pruning, automorphism pruning, component recursion, or change production canonical identity.
+R3-1 builds the semantic graph only. It MUST NOT implement partition refinement, canonical colour assignment, individualisation/refinement search, canonical labels, Enc_V2 candidate emission, ProgramDigest production, pruning, automorphisms, component recursion, V3 search budgets or production cutover.
+
+The model is a faithful structural input for later Rocket V3 phases, not a second canonicaliser.
 
 ## Relevant background and existing behaviour
 
-Rocket V2 is now the accepted live production semantic identity engine on post-cutover `main`. New production ProgramDigest identity uses the frozen `tethers:v2:sha256:<64 lowercase hex>` contract. V1 is not a live fallback.
+R3-0 is accepted on `main` and freezes the complete relation inventory. The six anonymous identity families are:
 
-Rocket V2 is exact against the V2 oracle/baseline, but its refinement relation model is incomplete. In particular, semantic relationships such as success-continuation/control-flow are not fully represented in refinement, allowing structurally simple sequential Action chains to remain artificially symmetric and enter factorial search. GitHub issue #5 records the resulting budget cliff.
+1. `Origin`
+2. `Fact`
+3. `Branch`
+4. `Batch`
+5. `ItemTemplate`
+6. `ScopedRole`
 
-Rocket V3 is intended to change how the frozen Enc_V2 minimum is found, not initially change Enc_V2 or ProgramDigest_V2. The planned architecture is a complete typed relational model followed by canonical partition refinement and later individualisation/refinement search.
+The Batch taxonomy is frozen:
 
-The repository contains many historical Rocket branches. They are evidence only. This task starts from the exact post-cutover `main` base above and must not import implementation by rebasing, merging, cherry-picking, or copying wholesale from historical Rocket worktrees.
+- `Anchor_origin`, `Action_origin`, and `Together_origin` are structurally `origin_site` constructors and carry anonymous Origin-family identity.
+- `Batch_site` is structurally also an `origin_site` constructor, but canonically it is the separate Batch family because it carries `batch_id`, is excluded from `collect_origins`, and is labelled through `BatchMap`.
+- No synthetic Origin identity may be created for a Batch site.
+
+R3-0 also established that Rocket V2 refinement omits material Enc_V2-visible relations, notably root/entry structure, success-continuation control flow, Action binding references, role scope/objective relations, complete ownership, inverse directions, exact branch terminal/outcome distinctions and the separate Batch endpoint. Its Together-member relation is also currently misclassified as `Rel_branch_subject`.
+
+Rocket V3 initially changes how the frozen Enc_V2 minimum is found, not what Enc_V2 or ProgramDigest_V2 means.
 
 ## Required behaviour
 
-1. Inventory every anonymous identity family and every Core field/reference whose value can influence an Enc_V2 anonymous label, directly or transitively.
-2. Inventory every `labels_for_*` / anonymous-label lookup and every relevant labelled-byte emission in the frozen Enc_V2 encoder, and map each lookup back to its originating Core semantic reference.
-3. Define the proposed Rocket V3 typed relation for each semantic reference, including forward direction, inverse direction, relation discriminator, multiplicity semantics, scope semantics, and whether a structural sentinel is required.
-4. Explicitly classify `Action_origin`, `Anchor_origin`, and `Together_origin` as `origin_site` constructors and anonymous Origin-family identities. Classify `Batch_site` as an `origin_site` constructor structurally, but not as an Origin-family identity: it carries the separate anonymous Batch-family `batch_id`, is excluded by `origin_id_of_site`, and is handled by `collect_batches`/`BatchMap`.
-5. Explicitly classify `EntryGuard` as the existing `fact_guard` structure, not a new anonymous identity family; classify `ProgramComplete` as the existing `control_target` terminal; and classify `ProgramRoot` and `ProgramScope` as new V3 structural concepts/sentinels, not new anonymous canonical identity families.
-6. Confirm or correct the proposed anonymous identity-family set: `Origin`, `Fact`, `Branch`, `Batch`, `ItemTemplate`, and `ScopedRole`. Any proposed addition/removal is a Red architectural finding and must be reported, not silently adopted.
-7. Produce an explicit coverage matrix showing that every relevant Core reference and every Enc_V2 label lookup is covered exactly once or intentionally cross-referenced, with no unexplained gaps.
-8. Identify the minimum R3-1 relational-model implementation surface and the tests/proofs that will be required, but do not implement it.
+1. Add an immutable Rocket V3 model module that validates a Core program before construction and returns deterministic validation failure without partial model output.
+2. Represent every anonymous occurrence as exactly one vertex in one of the six frozen anonymous families. Raw IDs may be used only as construction-time lookup keys and MUST NOT affect structural evidence, ordering decisions or later canonical semantics.
+3. Represent `ProgramRoot`, `ProgramScope`, `ProgramComplete`, and branch `Stop` as fixed structural concepts/terminals distinct from anonymous identity families. The compact physical representation may use fixed sentinel vertices or typed fixed endpoints, but the distinctions must be explicit and testable.
+4. Implement every relation R01-R29 in the accepted R3-0 inventory, including exact constructor/outcome discriminators, input-name/path/scalar relation payload where Enc_V2 observes it, scope ownership and the corrected Batch endpoint.
+5. Provide both forward and reverse adjacency for every semantic directed relation. Each reverse occurrence must correspond exactly to one forward occurrence with the same typed relation identity/discriminator/payload and multiplicity occurrence.
+6. Preserve multiplicity exactly where Core permits repeated occurrences. Do not convert relation collections to sets unless Core validation/specification proves set semantics and invalid duplicates are rejected before model construction.
+7. Preserve semantic scope explicitly: program-owned versus item-template-owned Origins/Facts/Branches/Batches/Roles, scope-qualified roles, role references, template objective references and Batch/template relationships must resolve to the correct typed endpoints.
+8. Produce deterministic scalar descriptors for Enc_V2-visible non-anonymous data while excluding neutral/non-identity fields such as raw `program_id`, schema descriptions and `group_id` from anonymous identity or ordering input.
+9. Expose a narrow read-only inspection/evidence API sufficient for tests to compare family counts, vertex kinds, scalar descriptors, edges, reverse edges and a deterministically sorted structural evidence form. Do not expose canonical labels, colours or digest/candidate APIs.
+10. Add comprehensive model tests proving the exact R3-0 acceptance properties, including generated 1/10/50/100/250/500/1000 Action chains. These tests inspect graph structure only; they do not perform refinement/search.
+11. Cross-check the model against frozen Enc_V2 lookup coverage so a future anonymous lookup/reference cannot silently appear without a corresponding model classification.
+12. Integrate the model/test modules minimally into Dune. Do not wire the model into live evaluation, Rocket V2, planner, wire or Rust host.
 
 ## Relevant components
 
 Authorised mutation is limited to:
 
 - `docs/CURRENT_CLINE_TASK.md`
+- `docs/worker-notes/2026-09-01-rocket-v3-r3-1-model.md`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model_test.ml`
+- `tethers-0.1/engine-ocaml/bin/dune`
+
+Required read-only authorities include:
+
 - `docs/review/rocket-v3/R3_0_SEMANTIC_RELATION_INVENTORY.md`
-- `docs/worker-notes/2026-09-01-rocket-v3-r3-0.md`
-
-Required read-only implementation/spec evidence includes at minimum:
-
-- `tethers-0.1/engine-ocaml/bin/tethers_core.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_validator.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_lowerer.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_format.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_format.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_reference.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_ir.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_ir.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_ir_test.ml`
 - `docs/review/lucy-c-b4s-canonical-v2/CANONICAL_FORMAT_V2_SPEC_DRAFT.md`
-- GitHub issue #5 and the accepted Rocket V2 cutover worker note.
+- `tethers_core.ml/.mli`
+- `tethers_core_validator.ml/.mli`
+- `tethers_core_lowerer.ml`
+- `tethers_core_canonical_v2_format.ml/.mli`
+- `tethers_core_canonical_v2_reference.ml`
+- `tethers_core_canonical_v2.ml`
+- `tethers_core_canonical_v2_ir.ml/.mli`
+- existing V2 tests/builders/corpus helpers where reuse does not couple V3 correctness to Rocket V2 heuristics.
 
 ## Frozen decisions and invariants
 
-- R3-0 is evidence/design only. No production OCaml/Rust implementation changes.
-- Rocket V3 initially targets the exact frozen Enc_V2 byte minimum and existing `tethers:v2:sha256:` ProgramDigest contract.
-- Raw Core IDs, source storage order, hash iteration order, search selector, wall-clock timing, and machine architecture are not semantic identity.
-- Every semantic directed reference considered by V3 refinement must account for information flow in both directions. The inventory must record explicit forward and inverse relation meaning even if a later compact implementation stores them in shared adjacency structures.
-- Relation multiplicity is semantic data where repeated references are permitted; it must never be collapsed to set membership without proof.
-- Different refinement colours may prove distinguishability. Equal refinement colours never prove automorphism or canonical identity.
-- No greedy canonical label assignment from a non-singleton refinement cell is authorised in R3-0 or implied for R3-1.
-- Prefix pruning, automorphism pruning, and component recursion are later optimisation phases and are not prerequisites for the first correct V3 relational model/search.
+- Enc_V2 bytes and `tethers:v2:sha256:` ProgramDigest semantics are unchanged.
+- R3-0 is the relation-coverage authority. If implementation evidence contradicts it materially, STOP and report rather than silently changing the model.
+- Anonymous families remain exactly Origin, Fact, Branch, Batch, ItemTemplate and ScopedRole unless a new Red architectural decision explicitly changes them.
+- `Batch_site` is Batch-family identity only. No Batch-as-Origin shortcut.
+- `ProgramRoot`, `ProgramScope`, `ProgramComplete` and branch `Stop` are structural/fixed, never anonymous canonical identities.
+- Every semantic directed relation must be observable in both directions.
+- Edge/relation multiplicity is preserved as occurrences/counts, not silently deduplicated sets.
+- Relation types/discriminators are semantically significant. `Rel_together_member` is distinct from `Rel_branch_subject`.
+- Branch outcome tags Success/Failure/Uncertain/Cancelled are distinct relation discriminators, and branch `Stop` is distinct from normal `ProgramComplete`.
+- Scope is semantic structure. Program and template roles with identical raw role IDs are distinct ScopedRole endpoints.
+- Raw IDs, raw vertex numbers, list/array storage order, hash iteration order and construction insertion order are not canonical meaning.
+- Internal dense integer vertex IDs are implementation handles only.
+- Model construction may use mutable builders internally, but the returned model is immutable. No search-state mutation belongs here.
+- Prefer compact arrays/CSR-style adjacency over per-vertex hash tables where practical:
+  `vertex_kind`, scalar descriptors, forward offsets/edges, reverse offsets/edges.
+  Exact internal representation may vary if it preserves the packet proofs.
+- No new external dependency.
 - No V1 fallback.
-- No new dependency.
-- No Human Tether grammar, Core semantics, policy, Plug, provider, Trail, replay, Together execution, or runtime-authority redesign.
-- Historical Rocket branches are evidence only and are not implementation bases.
+- No production route or replacement of Rocket V2 in this task.
 
 ## Acceptance criteria
 
-1. The inventory names all six current anonymous identity families, with repository evidence for each, and separately lists structural/non-anonymous concepts.
-2. Every anonymous-label lookup in the frozen Enc_V2 encoder is represented in the coverage matrix with source location, identity family, semantic owner/reference, and V3 relation mapping.
-3. Every Core field/reference that can feed those label lookups is represented with forward and inverse relation meaning, discriminator, multiplicity, and scope.
-4. The report explicitly records `Action_origin`, `Anchor_origin`, and `Together_origin` as `origin_site` constructors and Origin-family identities, and records `Batch_site` as a structural `origin_site` constructor belonging to the separate anonymous Batch identity family.
-5. The report explicitly records `EntryGuard = fact_guard`, `ProgramComplete = control_target terminal`, and `ProgramRoot`/`ProgramScope` as V3 structural concepts rather than anonymous identity families.
-6. Any mismatch between the proposed six-family model and actual Core/Enc_V2 evidence is surfaced as a blocking architectural finding instead of being papered over.
-7. The final matrix has no unexplained Core-reference or Enc_V2-label-lookup gaps; any intentionally excluded scalar/non-anonymous field states why it cannot require an anonymous V3 relation.
-8. The report ends with a bounded R3-1 implementation surface and proof/test list sufficient for Lucy to authorise or reject the first V3 relational-model code task.
-9. `git diff --check` passes and the final diff contains only the three authorised documentation paths.
-10. The task-packet checker passes in `control-v1/COMPLETE` state with a worker note that cites the exact implementation/evidence checkpoint and final repository state.
+1. For valid Core, model construction succeeds and every anonymous occurrence maps to exactly one vertex in one frozen family. For invalid Core, construction fails deterministically with validator errors and exposes no partial model.
+2. `Anchor_origin`, `Action_origin`, `Together_origin` map to Origin vertices; `Batch_site` maps only to Batch vertices. No synthetic Batch Origin exists.
+3. `ProgramRoot`, `ProgramScope`, `ProgramComplete`, and branch `Stop` are structurally distinguishable and are not counted as anonymous family vertices.
+4. Every R01-R29 relation from the R3-0 inventory has a typed forward occurrence and exact inverse occurrence, with matching discriminator/payload/multiplicity semantics.
+5. Raw-ID renaming, including role-ID collisions across distinct scopes, leaves the model's deterministically sorted structural evidence unchanged.
+6. Permuting all representational collections, including origin sites, facts, branches, roles, templates, guards, inputs and continuations, leaves structural evidence unchanged wherever frozen semantics declare order irrelevant; ordered Anchor paths remain observably ordered.
+7. Success chains of 1, 10, 50, 100, 250, 500 and 1000 Actions contain one root-to-entry relation, every success-next relation, every inverse success-prev relation and the final ProgramComplete relation, with no refinement/search performed.
+8. Each Action input constructor (`Fact_from_origin`, `Fact_through_role`, `Anchor_value`, `Batch_item_context`) exposes all anonymous endpoints and exact constructor/input payload distinctions required by Enc_V2.
+9. Together membership uses a dedicated Together-member relation and never the Branch-subject relation. Validator-invalid duplicate/self membership fails before model construction.
+10. Every branch outcome Success/Failure/Uncertain/Cancelled is distinguishable, each `Continue_to` endpoint is represented, and branch `Stop` remains distinct from ProgramComplete.
+11. Program-scope and template-scope roles with identical raw IDs/payloads resolve to distinct ScopedRole vertices; Role_proxy, Fact_through_role, role contracts, membership and template objective resolve to the correct scope-qualified endpoint.
+12. Valid repeated relation occurrences preserve multiplicity; validator-invalid duplicate continuations/outcomes/Together members/role-contract facts are rejected.
+13. Scalar descriptors change when Enc_V2-visible scalar payload changes, while neutral `program_id`, schema descriptions and `group_id` do not become anonymous vertices or structural ordering inputs.
+14. Randomised construction/insertion/internal numbering produces the same sorted structural evidence after normalisation. Tests must not assert raw internal vertex numbers as canonical values.
+15. A machine-checkable coverage fixture/assertion represents every anonymous lookup/reference category from R3-0 Section 6 and fails loudly if the maintained coverage table and model relation taxonomy diverge.
+16. For tractable generated programs, the V2 slow oracle may run alongside the model solely to prove all anonymous Enc_V2 references are represented; the V3 model does not emit or choose canonical bytes.
+17. `dune build @all`, the focused R3-1 model tests, `dune runtest --force`, `git diff --check` and task-packet consistency all pass.
+18. Final diff contains only authorised files, the implementation checkpoint is committed before closeout docs, remote HEAD equals local HEAD, and the worktree is clean.
 
 ## Required verification
 
-- Complete the AGENTS.md startup report from a fresh worktree created from `origin/feature/rocket-v3-r3-0`.
+- Create/use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-1-model`.
+- Read `AGENTS.md`, mandatory controls, the complete R3-0 inventory and this packet before mutation.
 - Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1`.
-- Run `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` before mutation and record the `control-v1/READY` result.
-- Use repository search plus direct source reading to enumerate every anonymous-label lookup in `tethers_core_canonical_v2_format.ml` and every corresponding Core reference.
-- Cross-check the inventory independently against the V2 reference/baseline/Rocket modules so the matrix is not derived from one implementation alone.
-- Inspect the complete branch diff.
+- Run `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` and require `control-v1/READY`.
+- Confirm exact base `0fd316083e1b26c3564080dec16d62490116858c`, expected branch and clean worktree.
+- Implement the model and focused tests only within authorised paths.
+- Run focused model tests repeatedly while building the relation inventory.
+- Run `dune build @all`.
+- Run the focused R3-1 model test executable.
+- Run `dune runtest --force`.
 - Run `git diff --check`.
-- Confirm only the authorised documentation files changed.
-- Commit the evidence/report checkpoint, capture its exact full SHA, then create the worker note and mark the packet `COMPLETE`.
+- Inspect complete base-to-HEAD diff and prove only authorised paths changed.
+- Commit the production/test implementation checkpoint and record its exact full 40-character SHA.
+- Write the worker note from actual evidence and mark the task `COMPLETE`; no production/test changes are allowed after the recorded implementation checkpoint.
 - Run the packet checker again and require `control-v1/COMPLETE`.
-- Push normally to `origin/feature/rocket-v3-r3-0`, confirm local `HEAD == remote HEAD`, and report clean status.
-
-No OCaml/Rust build is required for a documentation-only R3-0 task unless the investigation discovers that executable evidence is necessary to resolve a specific ambiguity. Do not modify code merely to create such evidence.
+- Push normally to `origin/feature/rocket-v3-r3-1-model`.
+- Confirm local HEAD equals remote HEAD and worktree is clean.
+- Report exact test counts/evidence and STOP.
 
 ## Forbidden changes
 
-- No edits outside the three authorised documentation paths.
-- No Rocket V3 production modules.
-- No changes to Rocket V2, Enc_V2, ProgramDigest, canonical vectors, Core types, validator, lowerer, planner, wire, Rust host, Dune, Cargo, dependencies, CI, or language syntax.
-- No cherry-pick, merge, rebase, reset, force-push, or code copying from historical Rocket branches.
-- No implementation of 1-WL/partition refinement, I/R search, prefix pruning, automorphism/orbit pruning, component recursion, deterministic search budgets, or external graph-canonicaliser integration in R3-0.
-- No assumption that a proposed relation is complete merely because Rocket V2 currently models it.
-- No treating raw IDs, array/list position, or current V2 heuristic colour rank as semantic authority.
-- Do not begin R3-1 automatically after completion.
+- No partition refinement, 1-WL, colour refinement, cell splitting or worklists.
+- No individualisation/refinement search or canonical label assignment.
+- No Enc_V2 candidate generation from the model.
+- No canonical payload/preimage/ProgramDigest production.
+- No prefix pruning, automorphism/orbit pruning or component recursion.
+- No V3 search budgets/resource policy.
+- No production adapter/planner/wire/Rust-host integration.
+- No modification of Rocket V2 behaviour or frozen V2 format/oracles/vectors.
+- No new dependency or graph-canonicalisation library.
+- No Human Tether grammar/Core semantic redesign.
+- No raw ID/insertion order used as semantic tie-breaker.
+- No historical Rocket branch merge/cherry-pick/rebase/copy as implementation authority.
+- Do not begin R3-2 automatically after completion.
 
 ## Stop conditions
 
-- Actual Core or Enc_V2 evidence contradicts the proposed six anonymous identity families in a way that changes the V3 architecture.
-- A label-bearing semantic reference cannot be classified without changing frozen Enc_V2 semantics.
-- Two materially similar inventory approaches still leave the same unexplained coverage gap.
-- The checkout, branch, HEAD/base, or packet state differs from this READY task after fetching origin.
-- Completing the inventory would require production code mutation, dependency changes, or importing historical branch implementation.
-- A consequential ambiguity remains over scope identity, multiplicity, structural sentinels, or direction/inverse semantics that cannot be resolved from current authoritative repository evidence.
+- R3-0 cannot be implemented faithfully without changing one of the six anonymous families or frozen Enc_V2 semantics.
+- A relation in R01-R29 cannot be represented bidirectionally without inventing semantic information not present in Core/spec.
+- Scope resolution for a valid Core program is ambiguous under current authoritative semantics.
+- Correct multiplicity conflicts with current validator/spec assumptions.
+- A deterministic structural evidence form cannot be made invariant to raw IDs/storage/insertion order without performing canonical search.
+- Two materially similar implementation/test failures recur without a new diagnosis.
+- Work requires touching files outside the authorised set, adding dependencies or wiring V3 into production.
+- Checkout/branch/base/packet state differs from the authorised task after fetching origin.
 
 ## Expected pre-existing changes
 
