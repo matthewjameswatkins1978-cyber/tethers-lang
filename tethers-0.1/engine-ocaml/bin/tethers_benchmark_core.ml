@@ -839,7 +839,7 @@ let measure_stages ~num_batches ~batch request_json =
 
 let run_stage_profile () =
   Printf.printf "PF1: Core stage profile\n%!";
-  let sizes = [ 1; 3; 5; 10; 25; 50; 100; 250; 500 ] in
+  let sizes = [ 1; 3; 5; 10; 25; 50; 100 ] in
   (* (warmup, batches, batch_size) per size *)
   let plan_for size =
     if size <= 10 then (30, 20, 50)
@@ -929,7 +929,7 @@ let run_stage_profile () =
         stats_of "low_symmetry_whole" whole_lo;
       ]
   in
-  let shape_rows = [ shape_probe 100; shape_probe 250 ] in
+  let shape_rows = [ shape_probe 100 ] in
   let json_output =
     `Assoc
       [
