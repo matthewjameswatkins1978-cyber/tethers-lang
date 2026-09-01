@@ -632,7 +632,7 @@ let test_together_valid_plan () =
   assert_true "TG1 two actions" (List.length p.actions = 2);
   assert_true "TG1 one group" (List.length p.groups = 1);
   let g = List.hd p.groups in
-  assert_true "TG1 group_id" (g.group_id = "G1");
+  assert_true "TG1 operational group_id" (g.group_id = "group_1");
   assert_true "TG1 two member_action_ids" (List.length g.member_action_ids = 2);
   assert_true "TG1 member_action_ids are action_1 and action_2"
     (g.member_action_ids = [ "action_1"; "action_2" ])
