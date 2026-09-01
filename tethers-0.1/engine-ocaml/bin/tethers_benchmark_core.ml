@@ -820,6 +820,11 @@ let measure_stages ~num_batches ~batch request_json =
         let _ = Tethers_core_canonical.canonicalize program in
         ())
   in
+  let rocket_v2_us =
+    time_loop ~num_batches ~batch (fun () ->
+        let _ = Tethers_core_canonical_v2_ir.canonicalize_ir program in
+        ())
+  in
   let plan_us =
     time_loop ~num_batches ~batch (fun () ->
         let _ = Tethers_core_plan.evaluate_canonicalized canonicalized eval_ctx in
@@ -830,7 +835,7 @@ let measure_stages ~num_batches ~batch request_json =
         let _ = Tethers_core_wire.evaluate_request_json request_json in
         ())
   in
-  (parse_us, lower_us, validate_us, canonicalize_us, plan_us, whole_us)
+  (parse_us, lower_us, validate_us, canonicalize_us, rocket_v2_us, plan_us, whole_us)
 
 let run_stage_profile () =
   Printf.printf "PF1: Core stage profile\n%!";
@@ -861,7 +866,7 @@ let run_stage_profile () =
         let _ = prepare_size_inputs request_json in
         ()
       done;
-      let parse_us, lower_us, validate_us, canon_us, plan_us, whole_us =
+      let parse_us, lower_us, validate_us, canon_us, rocket_us, plan_us, whole_us =
         measure_stages ~num_batches ~batch request_json
       in
       let json_of name samples =
@@ -879,7 +884,8 @@ let run_stage_profile () =
             json_of "parse" parse_us;
             json_of "lower" lower_us;
             json_of "validate" validate_us;
-            json_of "canonicalize" canon_us;
+            json_of "canonicalize_legacy" canon_us;
+            json_of "canonicalize_rocket_v2" rocket_us;
             json_of "plan" plan_us;
             json_of "whole_pipeline" whole_us;
           ]
@@ -902,10 +908,10 @@ let run_stage_profile () =
       let _ = prepare_size_inputs low_req in
       ()
     done;
-    let _, _, _, canon_hi, _, whole_hi =
+    let _, _, _, canon_hi, rocket_hi, _, whole_hi =
       measure_stages ~num_batches ~batch high_req
     in
-    let _, _, _, canon_lo, _, whole_lo =
+    let _, _, _, canon_lo, rocket_lo, _, whole_lo =
       measure_stages ~num_batches ~batch low_req
     in
     let stats_of name samples =
@@ -915,8 +921,10 @@ let run_stage_profile () =
     `Assoc
       [
         ("size", `Int size);
-        stats_of "high_symmetry_canonicalize" canon_hi;
-        stats_of "low_symmetry_canonicalize" canon_lo;
+        stats_of "high_symmetry_canonicalize_legacy" canon_hi;
+        stats_of "high_symmetry_canonicalize_rocket_v2" rocket_hi;
+        stats_of "low_symmetry_canonicalize_legacy" canon_lo;
+        stats_of "low_symmetry_canonicalize_rocket_v2" rocket_lo;
         stats_of "high_symmetry_whole" whole_hi;
         stats_of "low_symmetry_whole" whole_lo;
       ]
