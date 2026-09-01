@@ -468,6 +468,11 @@ let plan_core program (context : planning_context) =
       | None -> Error Missing_entry_origin
       | Some entry_oid ->
           let sites = program.origin_sites in
+          let together_sites =
+            List.filter_map
+              (function Together_origin t -> Some t | _ -> None)
+              sites
+          in
           let continuation_of oid =
             List.assoc_opt oid
               (List.map
@@ -478,7 +483,7 @@ let plan_core program (context : planning_context) =
           let site_of oid =
             List.find_opt (fun s -> origin_id_of_site s = Some oid) sites
           in
-          let rec walk visited index planned effects action_indices group_index planned_groups oid =
+          let rec walk visited index planned effects action_indices oid =
             if List.mem oid visited then
               Error (Flow_cycle (List.rev (oid :: visited)))
             else
@@ -487,7 +492,7 @@ let plan_core program (context : planning_context) =
               | Some site -> (
                   match site with
                   | Anchor_origin _ ->
-                      advance (oid :: visited) index planned effects action_indices group_index planned_groups oid
+                      advance (oid :: visited) index planned effects action_indices oid
                   | Action_origin action -> (
                       match plan_action context index action with
                       | Error _ as err -> err
@@ -495,28 +500,24 @@ let plan_core program (context : planning_context) =
                           advance (oid :: visited) (index + 1)
                             (planned_action :: planned)
                             (List.rev_append action_effects effects)
-                            ((action.action_origin_id, index) :: action_indices)
-                            group_index planned_groups oid)
-                  | Together_origin together ->
-                      advance (oid :: visited) index planned effects action_indices
-                        (group_index + 1)
-                        ((together, group_index) :: planned_groups) oid
+                            ((action.action_origin_id, index) :: action_indices) oid)
+                  | Together_origin _ ->
+                      advance (oid :: visited) index planned effects action_indices oid
                   | Batch_site _ -> Error Unsupported_batch)
-          and advance visited index planned effects action_indices group_index planned_groups oid =
+          and advance visited index planned effects action_indices oid =
             match continuation_of oid with
             | None -> Error (Incomplete_success_path oid)
             | Some Program_complete ->
                 Ok
                   ( List.rev planned,
                     unique_effects (List.rev effects),
-                    List.rev action_indices,
-                    List.rev planned_groups )
+                    List.rev action_indices )
             | Some (Origin_target next_oid) ->
-                walk visited index planned effects action_indices group_index planned_groups next_oid
+                walk visited index planned effects action_indices next_oid
           in
-          match walk [] 1 [] [] [] 1 [] entry_oid with
+          match walk [] 1 [] [] [] entry_oid with
           | Error _ as err -> err
-          | Ok (actions, required_effects, action_plan_index, together_sites) ->
+          | Ok (actions, required_effects, action_plan_index) ->
               let plan_idx_of_oid oid =
                 match List.assoc_opt oid action_plan_index with
                 | Some i -> i
@@ -526,30 +527,35 @@ let plan_core program (context : planning_context) =
                 let open Tethers_core in
                 let rec resolve_groups acc = function
                   | [] -> Ok (List.rev acc)
-                  | (t, group_index) :: rest ->
+                  | t :: rest ->
                       let rec resolve_members acc_ids = function
                         | [] -> Ok (List.rev acc_ids)
                         | member_oid :: mrest ->
                             (match plan_idx_of_oid member_oid with
                              | -1 -> Error (Unresolved_together_member member_oid)
-                             | idx ->
-                                 resolve_members
-                                   ((idx, "action_" ^ string_of_int idx) :: acc_ids)
-                                   mrest)
+                             | idx -> resolve_members (idx :: acc_ids) mrest)
                       in
-                      match resolve_members [] t.member_origin_ids with
-                      | Error _ as err -> err
-                      | Ok unsorted ->
-                          let member_action_ids =
-                            List.sort (fun (a, _) (b, _) -> compare a b) unsorted
-                            |> List.map snd
-                          in
-                          resolve_groups
-                            ({ group_id = "group_" ^ string_of_int group_index;
-                               member_action_ids } :: acc)
-                            rest
+                      (match resolve_members [] t.member_origin_ids with
+                       | Error _ as err -> err
+                       | Ok member_indices ->
+                           resolve_groups
+                             ((List.sort Int.compare member_indices) :: acc)
+                             rest)
                 in
-                resolve_groups [] together_sites
+                match resolve_groups [] together_sites with
+                | Error _ as err -> err
+                | Ok member_index_groups ->
+                    let ordered = List.sort compare member_index_groups in
+                    Ok
+                      (List.mapi
+                         (fun index member_indices ->
+                           { group_id = "group_" ^ string_of_int (index + 1);
+                             member_action_ids =
+                               List.map
+                                 (fun action_index ->
+                                   "action_" ^ string_of_int action_index)
+                                 member_indices })
+                         ordered)
               in
               match groups with
               | Error _ as err -> err
