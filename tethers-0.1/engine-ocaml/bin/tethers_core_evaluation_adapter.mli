@@ -6,7 +6,7 @@
     adapter performs the full pipeline:
 
     {v
-    Human source → parse → lower → canonicalize → evaluate_canonicalized
+    Human source → parse → lower → Rocket V2 → evaluate_Rocket V2 canonicalized
     v}
 
     The adapter is a pure assembly seam. It does not execute Actions, grant
@@ -56,7 +56,7 @@ type evaluation_input = {
 type adapter_error =
   | Parse_error of string * string
   | Lowering_error of Tethers_core_lowerer.lowering_error
-  | Canonicalization_error of Tethers_core_canonical.canonicalization_error
+  | Canonicalization_error of Tethers_core_canonical_v2_ir.canonicalization_error_ir
   | Planning_error of Tethers_core_plan.planning_error
   | Unknown_runtime_fact_name of string
   | Ambiguous_runtime_fact_name of string
@@ -67,8 +67,8 @@ val evaluate :
   environment ->
   evaluation_input ->
   (Tethers_core_plan.canonical_evaluation, adapter_error) result
-(** One-call adapter: parse → lower → canonicalize → map facts → build
-    context → evaluate_canonicalized.
+(** One-call adapter: parse → lower → Rocket V2 → map facts → build
+    context → evaluate_Rocket V2 canonicalized.
 
     The caller supplies only the environment and evaluation input.  The
     adapter performs all internal steps and returns the canonical evaluation
