@@ -1,25 +1,229 @@
-# Tethers quick-use manual
+# Tethers quick start
 
-This is a short first lesson for Tethers Workbench 0.2.2. It uses one practical
-question:
+This guide teaches the **whole Tethers mental model** first, then shows the smaller portable workbench.
 
-> May this worker inspect the repository, publish a commit, or force-push it?
+If you remember only one sentence, use this one:
 
-Tethers answers that question deterministically. It does not run Git, call a
-service, or decide what to do with an `ASK`; the surrounding tool owns those
-effects.
+> **A Tether deterministically proposes typed work; the host decides whether that work may run, executes approved Capabilities through Plugs, and records what actually happened.**
 
-## 1. Unpack and verify the workbench
+## 1. Start with a Tether
 
-Download the package for your platform from the
-[Portable 0.2.2 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-portable-v0.2.2).
-Unpack it into a directory you control, then run the local self-check.
+A Tether is deliberately small:
 
-Windows PowerShell:
+```tethers
+tether "Sort received invoices"
+
+anchor
+    folder.received_file
+
+when
+    file.type is "pdf"
+    and file.name contains "invoice"
+
+do
+    file.move
+        source_path: anchor.source_path
+        destination_path: anchor.destination_path
+```
+
+Read it as:
+
+```text
+when folder.received_file happens
+and the supplied immutable Facts say this is an invoice PDF
+request file.move with these explicit inputs
+```
+
+The OCaml engine does not read the filesystem to discover those Facts. The host supplies the event, Facts, Tether source, and approved Capability projections as explicit input.
+
+## 2. A Plan is not permission
+
+Tethers Core parses, validates, evaluates, and plans.
+
+It does **not** grant itself permission and does not secretly perform the external effect.
+
+The boundary is:
+
+```text
+Tether
+  -> deterministic Plan
+  -> host policy + scope + trust
+  -> approved execution
+```
+
+Keep this phrase in your head:
+
+```text
+Schemas describe.
+Policies authorise.
+Hosts enforce.
+Trails record.
+```
+
+## 3. Capabilities describe the operations
+
+A Tether Action names a Capability.
+
+A trusted Capability manifest can carry the exact contract an integration needs:
+
+- name and version;
+- input and output schemas;
+- Effects;
+- scope;
+- reversibility and determinism;
+- idempotency;
+- confirmation requirements;
+- timeout/retry contract;
+- provider identity and binding.
+
+Application-specific behaviour belongs behind Capabilities and Plugs, not in Tethers Core.
+
+A file tool, Git tool, PDF tool, AI model, email system, or physical device should therefore become a Capability set rather than a new Tethers language mode.
+
+## 4. Plugs connect real systems
+
+A Plug packages a provider and its Capability manifests.
+
+The public Plug journey is intentionally explicit:
+
+```text
+author source
+    -> plug pack
+    -> .tetherplug
+    -> plug inspect
+    -> plug conform
+    -> stage
+    -> install
+    -> enable with scope
+```
+
+These stages are not aliases for one another.
+
+In particular:
+
+> **Conformance is evidence, not permission.**
+
+A conforming package is not automatically installed, enabled, trusted for every resource, or allowed to execute every call.
+
+See [`docs/PLUG_AUTHORING.md`](docs/PLUG_AUTHORING.md) for the full authoring contract.
+
+## 5. Independent work can be declared with `together`
+
+The current 0.1 surface includes an explicit fan-out/join construct:
+
+```tethers
+tether "Morning brief"
+
+anchor
+    morning.started
+
+when
+    ready is true
+
+do
+    together
+        weather.fetch
+            location: anchor.location
+
+        calendar.fetch
+            day: anchor.day
+
+        email.fetch
+            account: "main"
+
+    brief.compose
+        format: "short"
+```
+
+The three group members are semantically independent.
+
+The accepted reference runtime may overlap their provider invocations physically, with bounded concurrency. The later Action waits for the group join.
+
+What physical scheduling must **not** change:
+
+- source meaning;
+- Action identity;
+- group membership;
+- semantic member order;
+- replay identity;
+- Trail semantic position;
+- join meaning;
+- first-non-success selection.
+
+That is why Tethers can have concurrency without letting race timing become language semantics.
+
+## 6. Results become visible events
+
+A successful provider call is not silently fed into hidden mutable program state.
+
+Known outcomes can produce standard Result Anchors:
+
+```text
+capability.succeeded
+capability.failed
+capability.uncertain
+```
+
+A Result Anchor carries causal identities and may wake another Tether.
+
+The host drains generated Result Anchors through a stable FIFO event queue rather than recursively re-entering evaluation on the current stack.
+
+This gives multi-step behaviour a visible shape:
+
+```text
+external event
+    -> Tether A
+    -> Capability call
+    -> Result Anchor
+    -> Tether B
+```
+
+For a friendly worked example, read [`docs/BUNNY_AND_COOKIES.md`](docs/BUNNY_AND_COOKIES.md).
+
+## 7. The Trail is part of the product
+
+Tethers distinguishes:
+
+- what event arrived;
+- what Facts were supplied;
+- what matched;
+- what Plan was proposed;
+- what authority decision was made;
+- what durable intent was recorded;
+- what provider was called;
+- what result or uncertainty was observed;
+- what Result Anchor was produced.
+
+That causal evidence is the Trail.
+
+A proposal is not recorded as an execution, and an uncertain call is not renamed as a clean failure merely because that would be easier to handle.
+
+## 8. Try the portable workbench
+
+The portable workbench is the easiest binary to try, but remember that it is a **small authority façade**, not the full host/runtime.
+
+It answers:
+
+```text
+may this requested action proceed?
+```
+
+with:
+
+```text
+ALLOW
+ASK
+DENY
+```
+
+Windows:
 
 ```powershell
 .\tethers.exe version --json
 .\tethers.exe doctor --json
+.\tethers.exe check --action git.status --json
+.\tethers.exe check --action git.push --explain
+.\tethers.exe check --action git.force_push --json
 ```
 
 Linux:
@@ -27,171 +231,62 @@ Linux:
 ```bash
 ./tethers version --json
 ./tethers doctor --json
-```
-
-`doctor` checks the bundled version metadata, policy, evaluator decision, and
-parity corpus. It is local and deterministic.
-
-## 2. Make the mental model visible
-
-Every check follows this same route:
-
-```text
-JSON request + JSON policy
-          |
-          v
-      Tethers check
-          |
-          v
- ALLOW / ASK / DENY + evidence
-```
-
-The caller then applies the result:
-
-- `ALLOW` — the caller may continue.
-- `ASK` — pause and obtain explicit human approval.
-- `DENY` — stop.
-
-Tethers is an authority layer, not an action runner. Keeping those responsibilities
-separate is the point.
-
-## 3. Try the three decisions
-
-The bundled coding-agent policy is the easiest first experiment.
-
-```powershell
-# Windows
-.\tethers.exe check --action git.status --json
-.\tethers.exe check --action git.push --explain
-.\tethers.exe check --action git.force_push --json
-```
-
-```bash
-# Linux
 ./tethers check --action git.status --json
 ./tethers check --action git.push --explain
 ./tethers check --action git.force_push --json
 ```
 
-You should see:
+Portable decision exit codes are scriptable:
 
-| Request | Decision | Process status | Meaning |
-| --- | --- | ---: | --- |
-| `git.status` | `ALLOW` | `0` | Inspection is passive. |
-| `git.push` | `ASK` | `10` | Publication needs a human decision. |
-| `git.force_push` | `DENY` | `20` | The operation is prohibited. |
-
-`--explain` is designed for learning and review. It shows the decision, matched
-rule, deterministic reason, evaluated conditions, and available trace evidence.
-It does not echo secret values.
-
-## 4. Read a request as a Tethers learner
-
-The long form of a request is JSON:
-
-```json
-{
-  "schema_version": "1",
-  "actor": "agent",
-  "action": "git.push",
-  "resource": "origin",
-  "context": {
-    "branch": "main"
-  }
-}
-```
-
-Read it as four questions:
-
-1. **Who** is asking? — `actor`
-2. **What** do they want to do? — `action`
-3. **To what**? — `resource`
-4. **Under which facts**? — `context`
-
-The policy matches those facts to a rule. A rule can allow, ask, or deny, and
-the policy has a default decision for anything unmatched. The bundled policy
-defaults to deny.
-
-## 5. Use files and standard input
-
-The repository includes complete examples under
-`tethers-0.1/portable-rust/examples/`.
-
-```powershell
-# Windows
-.\tethers.exe check .\examples\gary-worker-request.json `
-  --policy .\policies\coding-agent-default.json --json
-Get-Content .\examples\gary-worker-request.json -Raw |
-  .\tethers.exe check - --policy .\policies\coding-agent-default.json --json
-```
-
-```bash
-# Linux
-./tethers check ./examples/gary-worker-request.json \
-  --policy ./policies/coding-agent-default.json --json
-cat ./examples/gary-worker-request.json |
-  ./tethers check - --policy ./policies/coding-agent-default.json --json
-```
-
-The file and stdin paths use the same ingestion and evaluator route. `--json`
-is stable machine-readable output; `--quiet` emits no stdout and is useful when
-the exit code is all the caller needs.
-
-## 6. Create a small local configuration
-
-`init` gives you a runnable starting point instead of a blank directory:
-
-```powershell
-.\tethers.exe init --profile coding-agent-default --output .tethers
-.\tethers.exe check .tethers\request.json --policy .tethers\policy.json --json
-```
-
-Available profiles are `coding-agent-default`, `read-only-agent`, `ci-worker`,
-and `gary-worker`. Inspect the generated files before using them in a real
-workflow; a profile is a starting policy, not a universal security guarantee.
-
-Validate a policy without evaluating a request:
-
-```text
-tethers validate policy.json
-tethers lint policy.json
-```
-
-## 7. The first useful exercise
-
-Work through a small orchestration loop:
-
-1. Start with `git.status` and record its `ALLOW` result.
-2. Change the request to `git.push` and inspect why it becomes `ASK`.
-3. Change it to `git.force_push` and confirm the hard deny.
-4. Add a harmless context field such as `branch` and rerun with `--json`.
-5. Compare the outputs and keep the decision records with the experiment.
-
-This is the important habit: make the work observable, preserve results, avoid
-duplicate attempts, and route failure or approval explicitly. Do not bury the
-decision inside an agent loop that can silently retry or reinterpret it.
-
-For the complete event-to-action story, read [Bunny & Cookies](docs/BUNNY_AND_COOKIES.md).
-
-## 8. Exit codes for scripts
-
-| Code | Meaning |
+| Code | Decision |
 | ---: | --- |
 | `0` | `ALLOW` |
 | `10` | `ASK` |
 | `20` | `DENY` |
-| `64` | Invalid CLI usage or conflicting options |
-| `65` | Invalid request, policy, or schema |
-| `66` | Required input or file unavailable |
-| `70` | Internal Tethers failure |
 
-An error status is never permission. A caller should treat missing binaries,
-timeouts, malformed JSON, schema mismatches, and other operational uncertainty
-as fail-closed.
+Invocation/configuration failures use separate codes. An operational error never means `ALLOW`.
 
-## Next steps
+## 9. Know which surface you are using
 
-- Read the [complete CLI contract](tethers-0.1/portable-rust/docs/CLI.md).
-- Explore the [portable workbench guide](tethers-0.1/portable-rust/README.md).
-- Read the [0.1 language specification](tethers-0.1/SPEC.md).
-- Try the [record-completed-task example](tethers-0.1/examples/record-completed-task.tether).
+Tethers currently has several related surfaces:
+
+### Human Tether language
+
+Defined precisely by [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md).
+
+### OCaml Core
+
+Typed semantic representation, validation, canonicalisation, and deterministic planning.
+
+### Rust reference host
+
+Trust, policy, scopes, Plug lifecycle, durable intent, replay, provider execution, Result Anchors, Trails, and bounded Together concurrency.
+
+### Portable workbench
+
+Small self-contained ALLOW / ASK / DENY authority tool for scripts and agents.
+
+Do not infer the limits of the full platform from the portable workbench, and do not infer new user-facing syntax merely because Core has a richer internal vocabulary.
+
+## 10. Where to go next
+
+- [`README.md`](README.md) - the full project story.
+- [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) - architecture and current implementation boundaries.
+- [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md) - exact language semantics.
+- [`docs/PLUG_AUTHORING.md`](docs/PLUG_AUTHORING.md) - how to build a Plug.
+- [`docs/SECURITY.md`](docs/SECURITY.md) - current trust and sandbox limits.
+- [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) - enduring design principles.
+
+The shortest accurate mental model is:
+
+```text
+Events wake Tethers.
+Facts make decisions explicit.
+Tethers propose Plans.
+Capabilities describe operations.
+Policies and scopes constrain authority.
+Plugs connect providers.
+Hosts execute.
+Result Anchors continue the story.
+Trails keep the receipts.
+```

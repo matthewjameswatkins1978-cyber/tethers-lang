@@ -1,4 +1,4 @@
-# Road to Tethers 0.4 — Concurrency
+# Road to Tethers 0.4 - Concurrency
 
 > Concurrency belongs in Tethers semantics. Parallelism mostly belongs in the runtime.
 
@@ -6,21 +6,21 @@ A Tether declares which Actions are independent. The engine does not declare thr
 
 ## Status
 
-**Tethers 0.4 concurrency is COMPLETE and accepted on the current integration chain.**
+**Tethers 0.4 concurrency is COMPLETE, ACCEPTED, and integrated into `main`.**
 
-Accepted integration tip before this documentation refresh:
+The accepted integration chain culminated at:
 
 `14b2c65d1a830b4fc0a7a893ee3e72b684b09740`
 
-`origin/main` is still at:
+That chain was subsequently integrated into `main` before the later Portable Workbench 0.2.2 commits.
 
-`f189361e80bdb43c13989200e48513cdb68bd004`
+The old wording in this roadmap that said `origin/main` was still waiting for the 0.4 merge described the pre-integration checkpoint and is no longer current product status.
 
-The accepted 0.4 work therefore still needs an explicit integration/merge decision before `main` becomes the release truth.
+This document remains the historical roadmap and acceptance summary for the 0.4 concurrency programme.
 
 ## Completed sequence
 
-### C1 — Together semantic foundation ✓
+### C1 - Together semantic foundation ✓
 
 Deterministic fan-out / join semantics are complete and accepted.
 
@@ -31,18 +31,18 @@ Deterministic fan-out / join semantics are complete and accepted.
 - First non-success is selected by semantic Runtime Plan order, never physical completion order.
 - Tethers without `together` retains the established non-group behaviour.
 
-### C2-A1 — Core-native Together semantic bridge ✓
+### C2-A1 - Core-native Together semantic bridge ✓
 
 Complete and accepted. Core carries `Together_origin` into flat source-order Runtime Plan `actions` plus additive non-empty `groups` while preserving Canonical V2 / Rocket meaning.
 
-### C2-A2 — replay ownership + Trail ordering foundation ✓
+### C2-A2 - replay ownership + Trail ordering foundation ✓
 
 Complete and accepted.
 
 - replay admission ownership remains coordinator-side;
 - Trail semantic placement is distinct from truthful physical durable append order.
 
-### C2-A3 — physical provider overlap ✓
+### C2-A3 - physical provider overlap ✓
 
 Design and implementation complete and accepted.
 
@@ -54,7 +54,7 @@ Design artifact:
 
 `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`
 
-### C3 — bounded concurrency / resource limits ✓
+### C3 - bounded concurrency / resource limits ✓
 
 Complete and accepted.
 
@@ -69,19 +69,19 @@ Key properties:
 - fatal replay/Trail failures halt new launches while already-running siblings finish truthfully;
 - no worker pool, async runtime, global scheduler or provider-priority machinery was introduced.
 
-### C4 — adversarial concurrency crucible ✓
+### C4 - adversarial concurrency crucible ✓
 
 Complete and accepted.
 
 Informal name: **The Bunny Baptism.**
 
-C4 attacked the C1–C3 implementation with hostile completion order, fast failure beside slow success, replay G1/G2 failures, outcome durability failure, worker panic under N=2 pressure, same-provider inverse completion and repeated stress.
+C4 attacked the C1-C3 implementation with hostile completion order, fast failure beside slow success, replay G1/G2 failures, outcome durability failure, worker panic under N=2 pressure, same-provider inverse completion and repeated stress.
 
 No production concurrency defect was found and no production semantic repair was required.
 
 Channel disconnection could not be physically constructed with the production sender topology without adding forbidden watchdog/channel-lifetime machinery. The existing unexpected-disconnect path was reviewed as fail-closed; this was recorded as a deferred construction rather than falsely described as a runtime test.
 
-### C5 — fresh-agent concurrency proof — RETIRED
+### C5 - fresh-agent concurrency proof - RETIRED
 
 C5 was originally intended to prove that a fresh agent could author a multi-capability `together` Tether from ordinary documentation.
 
@@ -93,7 +93,7 @@ A short exploratory C5 attempt was salvaged after repeated setup loops. It produ
 - an undocumented `core_environment` authoring/runtime requirement;
 - scope-binding/configuration usability friction.
 
-The server-name bug was subsequently fixed and accepted at the integration tip above. The remaining authoring-surface findings belong to later usability/HQ work, not to 0.4 concurrency correctness.
+The server-name bug was subsequently fixed and accepted at the integration tip above. The remaining findings belong to later usability work rather than concurrency correctness.
 
 ## Frozen 0.4 semantic principles
 
@@ -105,30 +105,22 @@ The server-name bug was subsequently fixed and accepted at the integration tip a
 - Provider scheduling must not leak into source identity or first-non-success selection.
 - Already-running effects are reported truthfully even after a fatal trusted-state failure halts future launches.
 
-## Current route
+## What followed 0.4
 
-0.4 concurrency is finished.
+0.4 is finished and should remain frozen unless real use exposes a defect.
 
-The next useful actions are:
-
-1. integrate the accepted 0.4 chain into `main` when Matthew explicitly authorises it;
-2. freeze the concurrency chapter rather than inventing more ceremonial gates;
-3. pivot effort to the active hackathons;
-4. return later to 0.5 HQ / authoring-surface work, including the useful C5 salvage findings.
-
-## Current control documents
-
-- Current state: `docs/PROJECT_DASHBOARD.md`
-- Current goal / boundaries: `docs/CURRENT_GOAL.md`
-- Current / last task packet: `docs/CURRENT_CLINE_TASK.md`
-- Operating procedure: `docs/PROJECT_CONTROL.md`
-- Gorilla Bunny doctrine: `docs/GORILLA_BUNNY_MANIFESTO.md`
-
-## Future
+The current product direction is an Agent Essentials usefulness pass:
 
 ```text
 0.3 Plug extensibility ✓
-→ 0.4 concurrency ✓
-→ hackathon applications / real use
-→ 0.5 HQ foundations
+-> 0.4 concurrency ✓
+-> Agent Essentials / real agent use
+-> later HQ and human-facing work
 ```
+
+Current status belongs in:
+
+- `docs/CURRENT_GOAL.md`
+- `docs/PROJECT_DASHBOARD.md`
+
+This roadmap is retained as historical acceptance evidence.
