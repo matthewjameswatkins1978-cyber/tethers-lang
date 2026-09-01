@@ -18,6 +18,10 @@ name = "agent_workspace_provider"
 path = "src/bin/agent_workspace_provider.rs"
 
 [[bin]]
+name = "agent_coding_provider"
+path = "src/bin/agent_coding_provider.rs"
+
+[[bin]]
 name = "bench_mcp"
 path = "src/bin/bench_mcp.rs"
 

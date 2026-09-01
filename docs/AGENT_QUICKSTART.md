@@ -90,6 +90,30 @@ install/conformance/trust/enable flow and provide explicit operational roots.
 The current packer emits Windows/x86_64 packages; this is a package-material
 checkpoint, not a claim of Linux package publication.
 
+The Phase C coding provider adds a separate trusted Plug for structured Git,
+bounded argv-only process execution, and named verification checks:
+
+```text
+git_status            git_diff               git_log
+git_show              git_branch_list        git_branch_current
+git_add               git_branch_create      git_checkout
+git_commit            process_execute        verification_run
+```
+
+Build its reference package with:
+
+```powershell
+pwsh -NoProfile -File .\scripts\build-agent-coding-plug.ps1
+```
+
+Its scope requires canonical `repository_root` and `process_cwd_root`
+directories, an explicit executable allow-list, runtime/output limits, and
+allow-listed environment keys. `process_execute` receives an argv array and
+never invokes a shell. `verification_run` receives only a configured check
+name; the executable, arguments, cwd, and environment are not caller input.
+Git operations are rooted to the configured repository and reject Git
+pathspec glob syntax, destructive convenience flags, and ambiguous revisions.
+
 ## 6. Query the Trail
 
 The current compatibility lookup is:

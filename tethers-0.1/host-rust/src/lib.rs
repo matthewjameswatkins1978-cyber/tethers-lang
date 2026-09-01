@@ -1,5 +1,6 @@
 extern crate self as tethers_reference_host;
 
+pub mod agent_coding;
 pub mod agent_workspace;
 pub mod application;
 pub mod approval;
