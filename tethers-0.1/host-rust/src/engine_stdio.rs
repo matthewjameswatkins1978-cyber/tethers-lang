@@ -622,7 +622,7 @@ mod tests {
             .get("program_digest")
             .and_then(Value::as_str)
             .expect("program_digest missing");
-        assert!(pd.starts_with("sha256:"));
+        assert!(pd.starts_with("tethers:v2:sha256:"));
         session.shutdown();
     }
 
@@ -648,10 +648,10 @@ mod tests {
             .and_then(Value::as_str)
             .expect("program_digest missing from top level");
         assert!(
-            pd.starts_with("sha256:"),
-            "program_digest must start with sha256:"
+            pd.starts_with("tethers:v2:sha256:"),
+            "program_digest must start with tethers:v2:sha256:"
         );
-        assert_eq!(pd.len(), 71, "program_digest must be sha256: + 64 hex");
+        assert_eq!(pd.len(), 82, "program_digest must be tethers:v2:sha256: + 64 hex");
         // plan must NOT contain program_digest
         let plan = response.get("plan").expect("plan missing");
         assert!(
@@ -890,13 +890,13 @@ mod tests {
             .and_then(Value::as_str)
             .expect("program_digest missing from top level");
         assert!(
-            pd.starts_with("sha256:"),
-            "program_digest must start with sha256:"
+            pd.starts_with("tethers:v2:sha256:"),
+            "program_digest must start with tethers:v2:sha256:"
         );
         assert_eq!(
             pd.len(),
-            71,
-            "program_digest must be sha256: + 64 hex chars"
+            82,
+            "program_digest must be tethers:v2:sha256: + 64 hex chars"
         );
         assert!(
             plan.get("program_digest").is_none(),
