@@ -13,6 +13,7 @@ pub mod conformance;
 mod current_trust;
 #[cfg(test)]
 mod current_trust_tests;
+pub mod discovery;
 pub mod dispatch;
 pub mod enablement;
 pub mod engine_stdio;

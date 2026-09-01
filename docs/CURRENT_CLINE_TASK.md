@@ -1,62 +1,121 @@
-# Check Command Provider Server-Name Bugfix
+# Tethers Agent Essentials — Phase A Discovery Surface
 
 Control contract: `1`
 
-Status: `ACCEPTED`
+Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
-Owner: `Check Provider Server-Name Bugfix Agent`
+Owner: `Lucy`
 
-Route: `Accepted by Lucy — awaiting integration to main`
+Route: `Codex direct implementation in dedicated review worktree; do not merge to main`
 
-Base commit: `7c9f846cf5c7681a919f321faf42657c386d99ca`
+Base commit: `5cce71f8f93be26a0dfd1a0e50935f9419a5c284`
 
-Implementation checkpoint: `ed786efbd156bbb4850a5c95077cae226eac5dcb`
+Implementation checkpoint: `WORKTREE`
 
-Accepted branch tip: `14b2c65d1a830b4fc0a7a893ee3e72b684b09740`
+Worker note: `docs/worker-notes/2026-09-01-agent-essentials-phase-a.md`
 
-Worker note: `docs/worker-notes/2026-08-15-check-server-name-bugfix.md`
-
-Updated: 2026-08-15
+Updated: 2026-09-01
 
 ## Objective
 
-Fix the Tethers `check` command so MCP provider initialization validates the provider against the trusted capability manifest binding's `server_name`, not against the provider's configured identity. Add a regression test proving provider identity and MCP server name may legitimately differ.
+Expose the existing trusted Plug and capability state through deterministic,
+read-only machine-readable discovery commands. This is Phase A of the Agent
+Essentials milestone and must not redesign the Core, provider trust model,
+policy engine, lifecycle stores, or execution semantics.
 
-## Accepted result
+## Relevant background and existing behaviour
 
-Lucy independently inspected the pushed branch and accepted the fix.
+The reference host already owns installed Plug records, enablement transitions,
+trusted capability manifests, provider bindings, operational scopes, and
+conformance evidence. Existing `plug list` and `plug inspect --package`
+commands are compact or package-source oriented. This phase projects the
+installed state without starting providers or requiring the original package.
 
-`check_providers` now derives the expected MCP server name from trusted prepared capability manifest data, mirroring the normal host run path, while leaving configured provider identity separate and unchanged.
+The existing CLI envelope, status vocabulary, exit codes, manifest verification,
+installed-record registry, enablement store, and Plug lifecycle evidence are
+frozen public behaviour.
 
-The negative trust behaviour remains intact: a provider reporting a server name that does not match the trusted manifest binding still fails initialization.
+## Required behaviour
 
-## Acceptance evidence
+Implement these additive commands:
 
-- Focused positive regression: PASS.
-- Focused wrong-server-name negative regression: PASS.
-- Full Rust suite: 1550 passed, 0 failed, 2 ignored.
-- `cargo fmt`: PASS.
-- `cargo check`: PASS.
-- `cargo check --locked`: PASS.
-- `cargo check --all-targets --all-features`: PASS.
-- `git diff --check`: PASS.
-- No C5 salvage implementation was pulled into the fix branch.
-- No unrelated production semantic change was found.
+1. `tethers describe --json`
+2. `tethers capability list --host-data-root <absolute-path> [--all] [--effect <effect>] [--provider <provider>] [--plug <installed-id>] --json`
+3. `tethers capability inspect <name> --host-data-root <absolute-path> [--version <version>] --json`
+4. `tethers plug show --host-data-root <absolute-path> --installed-id <id> --json`
+
+Discovery must be deterministic, sorted by canonical capability identity,
+return trusted manifest data rather than live provider advertising, distinguish
+disabled from available state, expose no secret values, and fail closed on
+missing, incomplete, corrupted, mismatched, duplicate, or ambiguous state.
+
+`describe` may report configured-state health only; it must not imply that a
+provider was contacted. The `tethers` binary is an additive alias of the
+existing reference-host entry point; existing binary and envelope behaviour
+remain intact.
+
+## Relevant components
+
+* `tethers-0.1/host-rust/src/cli.rs`
+* `tethers-0.1/host-rust/src/application.rs`
+* `tethers-0.1/host-rust/src/discovery.rs`
+* `tethers-0.1/host-rust/src/installed.rs`
+* `tethers-0.1/host-rust/src/enablement.rs`
+* `tethers-0.1/host-rust/src/manifest.rs`
+* `tethers-0.1/host-rust/src/package.rs`
+* `tethers-0.1/host-rust/src/plug_command.rs`
 
 ## Frozen decisions and invariants
 
-- Provider identity and MCP server name remain distinct concepts.
-- MCP server-name validation is derived from trusted manifest binding evidence.
-- Do not weaken or remove server-name validation.
-- Do not accept arbitrary reported server names.
-- Do not invent a second server-name rule; the `check` and normal run paths should remain consistent.
+* Do not redesign existing language, Core, planning, policy, trust, provider,
+  Plug, Trail, replay, scope, or Together semantics.
+* Do not create a second registry, policy engine, scheduler, daemon, or hidden
+  authority path.
+* Do not start providers, execute capabilities, mutate lifecycle state, or
+  claim live health during discovery.
+* Preserve the `tethers.cli/1` envelope, status vocabulary, and exit codes.
+* Verify installed manifest identity and digest against installed evidence.
+* Never silently select a capability version when several versions match.
+* Do not expose secrets or mutable private provider state.
 
-## Current state
+## Acceptance criteria
 
-This task is finished and accepted.
+1. All four commands parse strictly and emit stable JSON.
+2. Capability list is compact, filtered, and deterministic.
+3. Capability inspect exposes the trusted contract, binding, provider, Plug,
+  scope, availability, digest, and conformance evidence.
+4. Plug show works without the source package and remains compact. Corruption,
+   incomplete stores, digest mismatch, duplicate versions, and
+  ambiguous version selection fail closed with precise error codes.
+5. No provider process or external operation is started by any discovery command.
+6. Existing commands and contracts remain compatible.
 
-No additional bugfix work is authorised under this packet.
+## Required verification
 
-The accepted integration chain has not yet been merged to `main`; that remains a separate Matthew-authorised action.
+* `cargo fmt --all -- --check`
+* `cargo check --all-targets --all-features --locked`
+* focused CLI parsing and discovery tests
+* `git diff --check`
+* manual `tethers describe --json` smoke test
+
+## Forbidden changes
+
+* No implementation of workspace, Git, process, network, archive, SQLite,
+  structured-data, or other Agent Essentials providers in this Phase A packet.
+* No automatic Plug trust, enablement, broad scopes, shell escape hatch, or
+  secret access.
+* No merge to `main`.
+
+## Stop conditions
+
+Stop and report `BLOCKED` if the required projection cannot be achieved without
+changing a frozen authority or evidence boundary, if authentication or review
+is required, or if unrelated changes become necessary.
+
+## Expected pre-existing changes
+
+The baseline host suite contains known fresh-worktree engine-fixture and
+concurrency stress failures; do not alter frozen fixtures or claim those
+failures as caused by this Phase A slice without new evidence.

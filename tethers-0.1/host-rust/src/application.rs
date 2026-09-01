@@ -502,6 +502,50 @@ pub fn run() {
 
     match cli {
         Ok(Cli {
+            command: Some(CliCommand::Describe { host_data_root, .. }),
+        }) => {
+            let result = discovery::run_describe(host_data_root.as_deref());
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
+                Some(CliCommand::Capability {
+                    command:
+                        crate::cli::CapabilityCommand::List {
+                            host_data_root,
+                            all,
+                            effect,
+                            provider,
+                            plug,
+                            ..
+                        },
+                }),
+        }) => {
+            let result = discovery::run_capability_list(
+                &host_data_root,
+                all,
+                effect.as_deref(),
+                provider.as_deref(),
+                plug.as_deref(),
+            );
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
+                Some(CliCommand::Capability {
+                    command:
+                        crate::cli::CapabilityCommand::Inspect {
+                            name,
+                            version,
+                            host_data_root,
+                            ..
+                        },
+                }),
+        }) => {
+            let result = discovery::run_capability_inspect(&host_data_root, &name, version);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
             command: Some(CliCommand::Check { config, engine }),
         }) => {
             let result = check_command::run_check(&config, &engine);
@@ -523,6 +567,20 @@ pub fn run() {
                 }),
         }) => {
             let result = plug_command::run_list(&host_data_root);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command:
+                Some(CliCommand::Plug {
+                    command:
+                        crate::cli::PlugCommand::Show {
+                            host_data_root,
+                            installed_id,
+                            ..
+                        },
+                }),
+        }) => {
+            let result = discovery::run_plug_show(&host_data_root, &installed_id);
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {

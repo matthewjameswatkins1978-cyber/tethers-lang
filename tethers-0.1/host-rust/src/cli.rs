@@ -19,6 +19,18 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Describe host capabilities and read-only discovery surfaces.
+    Describe {
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: Option<PathBuf>,
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
+    /// Discover trusted installed capabilities.
+    Capability {
+        #[command(subcommand)]
+        command: CapabilityCommand,
+    },
     /// Inspect a Plug package without extracting, installing, or executing it.
     Plug {
         #[command(subcommand)]
@@ -90,6 +102,36 @@ pub enum Command {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum CapabilityCommand {
+    /// List enabled capabilities, or all installed capabilities with --all.
+    List {
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+        #[arg(long = "all", default_value_t = false)]
+        all: bool,
+        #[arg(long = "effect")]
+        effect: Option<String>,
+        #[arg(long = "provider")]
+        provider: Option<String>,
+        #[arg(long = "plug", value_name = "INSTALLED_ID")]
+        plug: Option<String>,
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
+    /// Inspect one exact trusted capability contract.
+    Inspect {
+        #[arg(value_name = "NAME")]
+        name: String,
+        #[arg(long = "version")]
+        version: Option<u32>,
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum PlugCommand {
     /// Inspect one .tetherplug package as hostile, read-only data.
     Inspect {
@@ -100,6 +142,15 @@ pub enum PlugCommand {
     List {
         #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
         host_data_root: PathBuf,
+    },
+    /// Show one installed Plug without needing its original package archive.
+    Show {
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+        #[arg(long = "installed-id", value_name = "UUID")]
+        installed_id: String,
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
     },
     /// Disable one exact currently-enabled installed Plug.
     Disable {
@@ -526,6 +577,94 @@ mod tests {
             _ => panic!(),
         }
     }
+
+    #[test]
+    fn agent_essentials_discovery_commands_parse_strictly() {
+        assert!(matches!(
+            parse_cli(&["describe", "--json"]).unwrap().command,
+            Some(Command::Describe {
+                json: true,
+                host_data_root: None
+            })
+        ));
+        assert!(matches!(
+            parse_cli(&[
+                "capability",
+                "list",
+                "--host-data-root",
+                "C:\\host",
+                "--all",
+                "--effect",
+                "filesystem.write",
+                "--provider",
+                "workspace",
+                "--plug",
+                "plug-id",
+                "--json"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Capability {
+                command: CapabilityCommand::List {
+                    host_data_root,
+                    all: true,
+                    effect: Some(effect),
+                    provider: Some(provider),
+                    plug: Some(plug),
+                    json: true
+                }
+            }) if host_data_root == PathBuf::from("C:\\host")
+                && effect == "filesystem.write"
+                && provider == "workspace"
+                && plug == "plug-id"
+        ));
+        assert!(matches!(
+            parse_cli(&[
+                "capability",
+                "inspect",
+                "filesystem.read",
+                "--version",
+                "2",
+                "--host-data-root",
+                "C:\\host",
+                "--json"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Capability {
+                command: CapabilityCommand::Inspect {
+                    name,
+                    version: Some(2),
+                    host_data_root,
+                    json: true
+                }
+            }) if name == "filesystem.read" && host_data_root == PathBuf::from("C:\\host")
+        ));
+        assert!(matches!(
+            parse_cli(&[
+                "plug",
+                "show",
+                "--host-data-root",
+                "C:\\host",
+                "--installed-id",
+                "plug-id",
+                "--json"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Plug {
+                command: PlugCommand::Show {
+                    host_data_root,
+                    installed_id,
+                    json: true
+                }
+            }) if host_data_root == PathBuf::from("C:\\host") && installed_id == "plug-id"
+        ));
+        assert!(parse_cli(&["capability", "list"]).is_err());
+        assert!(parse_cli(&["capability", "inspect", "filesystem.read"]).is_err());
+        assert!(parse_cli(&["plug", "show"]).is_err());
+    }
+
     #[test]
     fn j13c_valid_trail_command() {
         let cli = parse_cli(&[

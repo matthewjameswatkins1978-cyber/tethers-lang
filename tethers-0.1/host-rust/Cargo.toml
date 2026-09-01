@@ -10,6 +10,10 @@ name = "tethers-reference-host"
 path = "src/main.rs"
 
 [[bin]]
+name = "tethers"
+path = "src/main.rs"
+
+[[bin]]
 name = "bench_mcp"
 path = "src/bin/bench_mcp.rs"
 
