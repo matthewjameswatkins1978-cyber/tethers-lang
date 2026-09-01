@@ -33,16 +33,6 @@ jobs:
       - name: Build production Core benchmark
         run: opam exec -- dune build bin/tethers_benchmark_core.exe
 
-      - name: Quick benchmark
-        run: |
-          echo "=== QUICK ==="
-          opam exec -- dune exec bin/tethers_benchmark_core.exe -- --quick
-
-      - name: Full Core pipeline benchmark
-        run: |
-          echo "=== FULL B0-A MATRIX ON CURRENT MAIN ==="
-          opam exec -- dune exec bin/tethers_benchmark_core.exe
-
       - name: Prepared-stage profile
         run: |
           echo "=== PREPARED STAGE PROFILE ==="
