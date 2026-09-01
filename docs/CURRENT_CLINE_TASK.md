@@ -1,20 +1,18 @@
-# Rocket-Only Runtime V2 Cutover
+# Rocket V3 — R3-0 Complete Semantic Relation Inventory
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `READY`
 
 Task colour: `Red`
 
-Owner: `Lucy`
+Owner: `Codex`
 
-Route: `Direct GitHub implementation with repository CI verification`
+Route: `Codex evidence/design implementation in a fresh dedicated worktree; no production Rocket V3 code in R3-0`
 
-Base commit: `b32d1940a36ddd92ac7048f87787d7ca7ff7d63a`
+Base commit: `5a1b461dcb95852681f269cd13a63a1e80695795`
 
-Implementation checkpoint: `c7b30ecd40ecad52007eca16ac64cb8a93b59008`
-
-Worker note: `docs/worker-notes/2026-09-01-rocket-only-runtime-v2.md`
+Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-0.md`
 
 Related issue: `#5 — BUG: Rocket V2 factorial search on simple sequential Action chains`
 
@@ -22,96 +20,119 @@ Updated: 2026-09-01
 
 ## Objective
 
-Finish the pre-1.0 Canonical V2 migration so the live Tethers evaluation path uses Rocket V2 as the sole producer of new semantic ProgramDigest identity. V1 may remain only as historical/test evidence and must not stamp new production runtime, Trail, or replay identity.
+Produce the complete, reviewable semantic-relation inventory that Rocket V3 will use as its structural canonicalisation model. R3-0 must account for every identity-bearing Core reference and every anonymous-label lookup that can influence frozen `Enc_V2` bytes, classify its direction/inverse/multiplicity/scope, and identify the exact V3 relation or structural concept needed to expose it to later canonical refinement.
+
+R3-0 is a design/evidence gate. It MUST NOT implement Rocket V3 refinement, search, prefix pruning, automorphism pruning, component recursion, or change production canonical identity.
 
 ## Relevant background and existing behaviour
 
-The frozen Canonical V2 migration policy says V1 is known incorrect, no new V1 identities may be produced after V2 ships, bare `sha256:<hex>` ProgramDigest rendering is legacy, and normal runtime identity must use the full `tethers:v2:sha256:<hex>` value.
+Rocket V2 is now the accepted live production semantic identity engine on post-cutover `main`. New production ProgramDigest identity uses the frozen `tethers:v2:sha256:<64 lowercase hex>` contract. V1 is not a live fallback.
 
-Rocket V2 is integrated and independently proved against the V2 oracle and exhaustive baseline, including the 5,000-case dense differential. However, the live evaluation adapter still calls `Tethers_core_canonical.canonicalize` and the planner/wire surface is typed around the legacy V1 canonicalized value.
+Rocket V2 is exact against the V2 oracle/baseline, but its refinement relation model is incomplete. In particular, semantic relationships such as success-continuation/control-flow are not fully represented in refinement, allowing structurally simple sequential Action chains to remain artificially symmetric and enter factorial search. GitHub issue #5 records the resulting budget cliff.
 
-This task finishes that cutover. It does not change Human Tether syntax or provider execution semantics.
+Rocket V3 is intended to change how the frozen Enc_V2 minimum is found, not initially change Enc_V2 or ProgramDigest_V2. The planned architecture is a complete typed relational model followed by canonical partition refinement and later individualisation/refinement search.
+
+The repository contains many historical Rocket branches. They are evidence only. This task starts from the exact post-cutover `main` base above and must not import implementation by rebasing, merging, cherry-picking, or copying wholesale from historical Rocket worktrees.
 
 ## Required behaviour
 
-1. The production Human-source evaluation path MUST call Rocket V2 and MUST NOT call the V1 canonicalizer.
-2. Every newly produced production ProgramDigest MUST use the exact `tethers:v2:sha256:<64 lowercase hex>` rendering.
-3. Runtime planning MUST remain deterministic without depending on V1 canonicalized Core or incidental `origin_sites` storage order.
-4. Rocket budget/validation failure MUST fail closed as a canonicalization error with no Plan and no digest.
-5. The Rust host MUST accept and test the V2 ProgramDigest contract and MUST reject treating bare V1 `sha256:<hex>` as the current production contract.
-6. V1 canonicalization may remain only in isolated legacy/reference tests or historical benchmarking; no production adapter/wire/runtime code may depend on it.
+1. Inventory every anonymous identity family and every Core field/reference whose value can influence an Enc_V2 anonymous label, directly or transitively.
+2. Inventory every `labels_for_*` / anonymous-label lookup and every relevant labelled-byte emission in the frozen Enc_V2 encoder, and map each lookup back to its originating Core semantic reference.
+3. Define the proposed Rocket V3 typed relation for each semantic reference, including forward direction, inverse direction, relation discriminator, multiplicity semantics, scope semantics, and whether a structural sentinel is required.
+4. Explicitly classify `Action_origin`, `Anchor_origin`, `Together_origin`, and `Batch_origin` as variants of the existing `origin_site` / Origin family rather than new V3 anonymous identity families. Preserve the separate existing anonymous Batch family wherever `batch_id` itself is identity-bearing.
+5. Explicitly classify `EntryGuard` as the existing `fact_guard` structure, not a new anonymous identity family; classify `ProgramComplete` as the existing `control_target` terminal; and classify `ProgramRoot` and `ProgramScope` as new V3 structural concepts/sentinels, not new anonymous canonical identity families.
+6. Confirm or correct the proposed anonymous identity-family set: `Origin`, `Fact`, `Branch`, `Batch`, `ItemTemplate`, and `ScopedRole`. Any proposed addition/removal is a Red architectural finding and must be reported, not silently adopted.
+7. Produce an explicit coverage matrix showing that every relevant Core reference and every Enc_V2 label lookup is covered exactly once or intentionally cross-referenced, with no unexplained gaps.
+8. Identify the minimum R3-1 relational-model implementation surface and the tests/proofs that will be required, but do not implement it.
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_evaluation_adapter.ml/.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml/.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_wire.ml/.mli`
-- focused OCaml tests and `bin/dune`
-- `tethers-0.1/host-rust/src/engine_stdio.rs` and focused ProgramDigest expectations
-- frozen Canonical V2 spec and Rocket V2 implementation as read-only semantic authority
+Authorised mutation is limited to:
+
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/review/rocket-v3/R3_0_SEMANTIC_RELATION_INVENTORY.md`
+- `docs/worker-notes/2026-09-01-rocket-v3-r3-0.md`
+
+Required read-only implementation/spec evidence includes at minimum:
+
+- `tethers-0.1/engine-ocaml/bin/tethers_core.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_validator.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_lowerer.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_format.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_format.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_reference.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_ir.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_ir.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_canonical_v2_ir_test.ml`
+- `docs/review/lucy-c-b4s-canonical-v2/CANONICAL_FORMAT_V2_SPEC_DRAFT.md`
+- GitHub issue #5 and the accepted Rocket V2 cutover worker note.
 
 ## Frozen decisions and invariants
 
-- Rocket V2 is the only current semantic identity engine.
-- Canonical V2 payload/digest equations and frozen vectors do not change.
-- The V2 oracle and exhaustive baseline remain independent correctness witnesses.
-- A Plan remains a request, not permission.
-- Runtime occurrence IDs and idempotency keys remain occurrence-derived, not ProgramDigest-derived.
-- Human Tether syntax and source ordering semantics do not change.
-- Together group semantics and host physical concurrency do not change.
-- No new V1 identity may be written for current production work.
-- No silent fallback from Rocket to V1 is permitted.
-- Canonicalization failure returns no best-effort digest.
+- R3-0 is evidence/design only. No production OCaml/Rust implementation changes.
+- Rocket V3 initially targets the exact frozen Enc_V2 byte minimum and existing `tethers:v2:sha256:` ProgramDigest contract.
+- Raw Core IDs, source storage order, hash iteration order, search selector, wall-clock timing, and machine architecture are not semantic identity.
+- Every semantic directed reference considered by V3 refinement must account for information flow in both directions. The inventory must record explicit forward and inverse relation meaning even if a later compact implementation stores them in shared adjacency structures.
+- Relation multiplicity is semantic data where repeated references are permitted; it must never be collapsed to set membership without proof.
+- Different refinement colours may prove distinguishability. Equal refinement colours never prove automorphism or canonical identity.
+- No greedy canonical label assignment from a non-singleton refinement cell is authorised in R3-0 or implied for R3-1.
+- Prefix pruning, automorphism pruning, and component recursion are later optimisation phases and are not prerequisites for the first correct V3 relational model/search.
+- No V1 fallback.
+- No new dependency.
+- No Human Tether grammar, Core semantics, policy, Plug, provider, Trail, replay, Together execution, or runtime-authority redesign.
+- Historical Rocket branches are evidence only and are not implementation bases.
 
 ## Acceptance criteria
 
-1. A real production `tethers.evaluate` request returns a top-level ProgramDigest beginning `tethers:v2:sha256:`, and repository search proves the production evaluation adapter no longer calls `Tethers_core_canonical.canonicalize`.
-2. Exact V2 prefix/length/hex tests pass in OCaml wire tests and Rust real-engine tests.
-3. Planning/evaluation tests prove semantically equivalent raw-ID/storage permutations retain the same semantic Plan where the supported runtime vocabulary requires invariance.
-4. A forced Rocket budget failure returns an adapter/wire error and produces no Plan or ProgramDigest.
-5. Rust cross-language rehearsal tests expect V2 identity and pass against the real OCaml engine.
-6. Production executable/module graphs include Rocket V2; legacy V1 modules are not required by the live adapter/wire path.
-7. Frozen V2 vectors, Rocket differential tests, OCaml build/tests, Rust formatting/check/tests, and task-packet consistency pass.
+1. The inventory names all six current anonymous identity families, with repository evidence for each, and separately lists structural/non-anonymous concepts.
+2. Every anonymous-label lookup in the frozen Enc_V2 encoder is represented in the coverage matrix with source location, identity family, semantic owner/reference, and V3 relation mapping.
+3. Every Core field/reference that can feed those label lookups is represented with forward and inverse relation meaning, discriminator, multiplicity, and scope.
+4. The report explicitly records `Action_origin`, `Anchor_origin`, `Together_origin`, and `Batch_origin` as `origin_site` variants and explains the distinction between `Batch_origin` and the separate anonymous `Batch` identity family.
+5. The report explicitly records `EntryGuard = fact_guard`, `ProgramComplete = control_target terminal`, and `ProgramRoot`/`ProgramScope` as V3 structural concepts rather than anonymous identity families.
+6. Any mismatch between the proposed six-family model and actual Core/Enc_V2 evidence is surfaced as a blocking architectural finding instead of being papered over.
+7. The final matrix has no unexplained Core-reference or Enc_V2-label-lookup gaps; any intentionally excluded scalar/non-anonymous field states why it cannot require an anonymous V3 relation.
+8. The report ends with a bounded R3-1 implementation surface and proof/test list sufficient for Lucy to authorise or reject the first V3 relational-model code task.
+9. `git diff --check` passes and the final diff contains only the three authorised documentation paths.
+10. The task-packet checker passes in `control-v1/COMPLETE` state with a worker note that cites the exact implementation/evidence checkpoint and final repository state.
 
 ## Required verification
 
-- OCaml 5.5.0 / Dune build of all engine targets.
-- `dune runtest --force`.
-- Rocket V2 frozen-vector and differential suite.
-- Focused Core evaluation, request, wire, and planning tests.
-- Rust verification runs on the native Windows reference-host platform.
-- Rust `cargo fmt --all -- --check`.
-- Rust `cargo check --all-targets --all-features --locked`.
-- Rust focused real-engine tests for CORE-9B ProgramDigest behaviour against the Dune-built engine from the same Windows workspace.
-- Full Rust test suite if CI budget permits; otherwise report exact unrun scope.
-- `git diff --check`.
-- task-packet checker in COMPLETE state after the implementation checkpoint.
+- Complete the AGENTS.md startup report from a fresh worktree created from `origin/feature/rocket-v3-r3-0`.
+- Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1`.
+- Run `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` before mutation and record the `control-v1/READY` result.
+- Use repository search plus direct source reading to enumerate every anonymous-label lookup in `tethers_core_canonical_v2_format.ml` and every corresponding Core reference.
+- Cross-check the inventory independently against the V2 reference/baseline/Rocket modules so the matrix is not derived from one implementation alone.
+- Inspect the complete branch diff.
+- Run `git diff --check`.
+- Confirm only the authorised documentation files changed.
+- Commit the evidence/report checkpoint, capture its exact full SHA, then create the worker note and mark the packet `COMPLETE`.
+- Run the packet checker again and require `control-v1/COMPLETE`.
+- Push normally to `origin/feature/rocket-v3-r3-0`, confirm local `HEAD == remote HEAD`, and report clean status.
+
+No OCaml/Rust build is required for a documentation-only R3-0 task unless the investigation discovers that executable evidence is necessary to resolve a specific ambiguity. Do not modify code merely to create such evidence.
 
 ## Forbidden changes
 
-- No Human Tether grammar or 0.1 operator changes.
-- No policy, approval, Plug trust, provider dispatch, replay-state ordering, Trail ordering, Together semantics, or concurrency redesign.
-- No new dependency.
-- No fallback from Rocket V2 to V1.
-- No edits to Agent Essentials implementation files.
-- Do not rewrite historical worker notes merely to make them sound current.
-
-## Follow-up tracked outside this cutover
-
-GitHub issue #5 permanently tracks the separate sequential `Action_origin` factorial-search weakness exposed by this migration. Do not close or bury that issue merely because the Rocket-only identity cutover lands. The follow-up must prove an exact control-flow reduction, preserve Canonical V2 correctness/fail-closed behaviour, and benchmark coherent 10/100/1,000-Action Tethers.
+- No edits outside the three authorised documentation paths.
+- No Rocket V3 production modules.
+- No changes to Rocket V2, Enc_V2, ProgramDigest, canonical vectors, Core types, validator, lowerer, planner, wire, Rust host, Dune, Cargo, dependencies, CI, or language syntax.
+- No cherry-pick, merge, rebase, reset, force-push, or code copying from historical Rocket branches.
+- No implementation of 1-WL/partition refinement, I/R search, prefix pruning, automorphism/orbit pruning, component recursion, deterministic search budgets, or external graph-canonicaliser integration in R3-0.
+- No assumption that a proposed relation is complete merely because Rocket V2 currently models it.
+- No treating raw IDs, array/list position, or current V2 heuristic colour rank as semantic authority.
+- Do not begin R3-1 automatically after completion.
 
 ## Stop conditions
 
-- Rocket V2 disagrees with the frozen V2 oracle/baseline on any accepted program.
-- Removing V1 from live planning requires changing Human Tether semantics.
-- Runtime Plan determinism cannot be preserved without inventing a new semantic ordering rule.
-- A new dependency, new unsafe Rust, or second execution boundary becomes necessary.
-- Two materially similar implementation/test failures occur without a new diagnosis.
+- Actual Core or Enc_V2 evidence contradicts the proposed six anonymous identity families in a way that changes the V3 architecture.
+- A label-bearing semantic reference cannot be classified without changing frozen Enc_V2 semantics.
+- Two materially similar inventory approaches still leave the same unexplained coverage gap.
+- The checkout, branch, HEAD/base, or packet state differs from this READY task after fetching origin.
+- Completing the inventory would require production code mutation, dependency changes, or importing historical branch implementation.
+- A consequential ambiguity remains over scope identity, multiplicity, structural sentinels, or direction/inverse semantics that cannot be resolved from current authoritative repository evidence.
 
 ## Expected pre-existing changes
 
 None.
-
-## Verification platform note
-
-The full Rust reference host is a Windows-targeted verification surface: its accepted host dependency boundary includes target-specific Windows dependencies and its real-engine tests locate the sibling Dune-built `tethers_mcp_main.exe`. The dedicated cutover workflow therefore verifies OCaml 5.5.0, Rust 1.97.1, and the cross-language boundary together on `windows-latest`. Ubuntu remains valid for the standalone OCaml/Rocket proof work but is not the authority for host-wide Cargo verification.
