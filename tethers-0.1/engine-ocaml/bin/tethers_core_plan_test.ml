@@ -1856,8 +1856,7 @@ let test_program_id_varies_digest_unchanged () =
     (cp1.runtime_plan.actions = cp2.runtime_plan.actions)
 
 (* ================================================================== *)
-(*  CORE-6B T5 — Pre-canonical temporary ID/storage variation           *)
-(*                   canonicalises to equal plans                       *)
+(*  CORE-6B T5 — Raw-ID variation keeps V2 identity and plan stable    *)
 (* ================================================================== *)
 
 let test_temp_id_storage_order_canonical_plan () =
@@ -1889,8 +1888,8 @@ let test_temp_id_storage_order_canonical_plan () =
   let cp2 = assert_ok_canonical_plan "CB-T5 plan 2" (plan_canonicalized c2 ctx) in
   assert_true "CB-T5 digests equal"
     (Tethers_core_canonical_v2_ir.program_digest_ir c1 = Tethers_core_canonical_v2_ir.program_digest_ir c2);
-  assert_true "CB-T5 canonical programs structurally equal"
-    (Tethers_core_canonical_v2_ir.validated_program_ir c1 = Tethers_core_canonical_v2_ir.validated_program_ir c2);
+  assert_true "CB-T5 Rocket token preserves original raw-ID distinction"
+    (Tethers_core_canonical_v2_ir.validated_program_ir c1 <> Tethers_core_canonical_v2_ir.validated_program_ir c2);
   assert_true "CB-T5 runtime plans equal"
     (cp1.runtime_plan = cp2.runtime_plan)
 
