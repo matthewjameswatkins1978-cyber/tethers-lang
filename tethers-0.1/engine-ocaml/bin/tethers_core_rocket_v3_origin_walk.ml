@@ -431,35 +431,38 @@ let walk ?(branch_order = Semantic_first) program =
           in
           let rec force_pending_targets ~record_statistics ~on_assign () =
             (* The continuation list is emitted in numeric source-label order.
-               Once a source slot is occupied, an unresolved Origin target is
-               the next label-dependent byte.  Its owner is therefore forced
-               to the smallest remaining encoded integer; this is a frozen
-               byte-law consequence, not a semantic or source-order rule. *)
-            let changed = ref false in
-            for slot = 1 to count do
-              match state.owners.(slot) with
-              | Some origin ->
-                  begin match context.continuations.(origin) with
-                  | Some (Target_origin target) when label_of state target = None ->
-                      begin match minimum_encoded_remaining_label state with
-                      | None -> ()
-                      | Some label ->
-                          if assign state target label then begin
-                            changed := true;
-                            if record_statistics then
-                              statistics.forced_assignments <-
-                                statistics.forced_assignments + 1;
-                            on_assign (target, label)
-                          end
-                      end
-                  | Some Target_complete
-                  | None
-                  | Some (Target_origin _) -> ()
-                  end
-              | None -> ()
-            done;
-            if !changed then
-              force_pending_targets ~record_statistics ~on_assign ()
+               An unresolved owner at a lower slot can change which complete
+               continuation element is emitted before every later element.
+               Only the first unresolved target after an entirely resolved
+               lower prefix is therefore observable and forceable. *)
+            let rec next_observable_target slot =
+              if slot > count then None
+              else match state.owners.(slot) with
+                | None -> None
+                | Some origin ->
+                    begin match context.continuations.(origin) with
+                    | Some (Target_origin target) when label_of state target = None ->
+                        Some target
+                    | Some Target_complete
+                    | None
+                    | Some (Target_origin _) ->
+                        next_observable_target (slot + 1)
+                    end
+            in
+            match next_observable_target 1 with
+            | None -> ()
+            | Some target ->
+                begin match minimum_encoded_remaining_label state with
+                | None -> ()
+                | Some label ->
+                    if assign state target label then begin
+                      if record_statistics then
+                        statistics.forced_assignments <-
+                          statistics.forced_assignments + 1;
+                      on_assign (target, label);
+                      force_pending_targets ~record_statistics ~on_assign ()
+                    end
+                end
           in
           force_pending_targets ~record_statistics:true ~on_assign:(fun _ -> ()) ();
           let greedy_assigned = ref [] in

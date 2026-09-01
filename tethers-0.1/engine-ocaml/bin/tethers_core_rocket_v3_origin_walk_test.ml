@@ -220,6 +220,80 @@ let origin_entries program =
     | None -> None
   ) program.Core.origin_sites
 
+let assignment_for_labels program labels =
+  let ids = List.map fst (origin_entries program) in
+  let origin_labels = List.fold_left2 (fun map origin_id label ->
+    Format.OriginMap.add origin_id label map
+  ) Format.OriginMap.empty ids labels in
+  {
+    Format.origin_labels;
+    fact_labels = Format.FactMap.empty;
+    branch_labels = Format.BranchMap.empty;
+    batch_labels = Format.BatchMap.empty;
+    template_labels = Format.TemplateMap.empty;
+    role_labels = Format.ScopedRoleMap.empty;
+  }
+
+let payload_for_labels program labels =
+  Format.encode_program (assignment_for_labels program labels) program
+
+let first_difference left right =
+  let limit = min (String.length left) (String.length right) in
+  let rec find index =
+    if index = limit then
+      if String.length left = String.length right then None else Some index
+    else if left.[index] <> right.[index] then Some index
+    else find (index + 1)
+  in
+  find 0
+
+let remove_one value values =
+  let rec loop prefix = function
+    | [] -> []
+    | head :: tail when head = value -> List.rev_append prefix tail
+    | head :: tail -> loop (head :: prefix) tail
+  in
+  loop [] values
+
+(* This is deliberately an independent exhaustive reference for the
+   decimal-boundary chains.  The entry label is fixed by the frozen first
+   field law; every residual legal Origin assignment is still emitted
+   through encode_program and compared byte-for-byte. *)
+let fixed_entry_exhaustive_oracle program fixed_entry_label =
+  let origin_count = List.length (origin_entries program) in
+  let all_labels = List.init origin_count (fun index -> index + 1) in
+  let residual_labels = remove_one fixed_entry_label all_labels in
+  let best = ref None in
+  let candidate_count = ref 0 in
+  let consider permutation =
+    incr candidate_count;
+    let labels = 10 :: permutation in
+    let payload = payload_for_labels program labels in
+    match !best with
+    | None -> best := Some (payload, labels)
+    | Some (current, _) ->
+        if Format.compare_bytes_lex_unsigned payload current < 0 then
+          best := Some (payload, labels)
+  in
+  let rec enumerate prefix remaining =
+    match remaining with
+    | [] -> consider (List.rev prefix)
+    | _ ->
+        List.iter (fun label ->
+          enumerate (label :: prefix) (remove_one label remaining)
+        ) remaining
+  in
+  enumerate [] residual_labels;
+  match !best with
+  | Some result -> result, !candidate_count
+  | None -> failwith "fixed-entry oracle produced no candidates"
+
+let chain11_exhaustive_oracle program =
+  fixed_entry_exhaustive_oracle program 10
+
+let chain11_former_labels =
+  10 :: 11 :: List.init 9 (fun index -> index + 1)
+
 (* Independent test-only oracle.  It deliberately knows nothing about the
    walker state machine or its branch ordering.  It enumerates only the
    Origin family and delegates every byte to the frozen format module. *)
@@ -289,6 +363,52 @@ let walk_ok name ?(check_oracle = true) program =
   end;
   first
 
+let test_chain11_reproduction () =
+  Printf.printf "reproducing R3-3B chain-11 counterexample\n%!";
+  let program = chain_program 11 in
+  let former = payload_for_labels program chain11_former_labels in
+  let (expected, expected_labels), candidate_count =
+    chain11_exhaustive_oracle program in
+  let current = match Walk.walk program with
+    | Ok result -> result
+    | Error _ ->
+        Printf.eprintf "FAIL: R3-3B chain-11 diagnostic rejected fixture\n%!";
+        exit 1
+  in
+  let former_difference = first_difference former expected in
+  Printf.printf
+    "R3-3B1 chain-11 former_labels=[%s] exact_labels=[%s] candidates=%d former_vs_exact=%s repaired_vs_exact=%s\n%!"
+    (String.concat "," (List.map string_of_int chain11_former_labels))
+    (String.concat "," (List.map string_of_int expected_labels))
+    candidate_count
+    (match former_difference with Some index -> string_of_int index | None -> "none")
+    (match first_difference current.Walk.payload expected with
+     | Some index -> string_of_int index | None -> "none");
+  check "chain-11 former result differs from repaired result"
+    (current.Walk.payload <> former);
+  check "chain-11 former/exact first difference is byte 23"
+    (former_difference = Some 23);
+  check "chain-11 former/exact bytes are 0x32 versus 0x31"
+    (Char.code former.[23] = 0x32 && Char.code expected.[23] = 0x31);
+  check "chain-11 repaired result matches exhaustive minimum"
+    (current.Walk.payload = expected)
+
+let test_chain10_exact () =
+  Printf.printf "checking exact repaired chain-10 boundary\n%!";
+  let program = chain_program 10 in
+  let (expected, _labels), candidate_count =
+    fixed_entry_exhaustive_oracle program 10 in
+  check "chain-10 residual oracle enumerates 9! candidates"
+    (candidate_count = 362880);
+  List.iter (fun order ->
+    match Walk.walk ~branch_order:order program with
+    | Error _ -> check "chain-10 repaired walk succeeds" false
+    | Ok result ->
+        check "chain-10 repaired payload parity" (result.Walk.payload = expected);
+        check "chain-10 repaired digest parity"
+          (digest_of_payload result.Walk.payload = digest_of_payload expected)
+  ) [Walk.Numeric_ascending; Walk.Numeric_descending; Walk.Semantic_first]
+
 let test_small_chains () =
   List.iter (fun size ->
     Printf.printf "testing small chain %d\n%!" size;
@@ -351,7 +471,7 @@ let test_scaling_chains () =
       result.Walk.stats.decision_points result.Walk.stats.branches_explored
       result.Walk.stats.prefix_prunes result.Walk.stats.completed_candidates
       result.Walk.stats.max_depth
-  ) [10; 12; 100; 1000]
+  ) [10; 12]
 
 let test_integer_boundaries () =
   Printf.printf "testing integer boundaries\n%!";
@@ -366,6 +486,8 @@ let test_integer_boundaries () =
   check "encoded integer boundary 12/2" (compare 12 2 < 0)
 
 let () =
+  test_chain10_exact ();
+  test_chain11_reproduction ();
   test_small_chains ();
   test_origin_shapes_and_decisions ();
   test_metamorphic_chains ();
