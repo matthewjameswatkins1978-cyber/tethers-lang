@@ -16,6 +16,32 @@ let assert_true msg condition =
     exit 1
   end
 
+let assert_v2_digest msg digest =
+  let prefix = "tethers:v2:sha256:" in
+  assert_true (msg ^ " prefix")
+    (String.length digest = String.length prefix + 64 &&
+     String.sub digest 0 (String.length prefix) = prefix);
+  let hex = String.sub digest (String.length prefix) 64 in
+  assert_true (msg ^ " lowercase hex")
+    (String.for_all
+       (function '0' .. '9' | 'a' .. 'f' -> true | _ -> false)
+       hex)
+
+let assert_rocket_budget_error msg = function
+  | Error
+      (Canonicalization_error
+        Tethers_core_canonical_v2_ir.Canonicalisation_too_complex) ->
+      incr tests_run;
+      incr tests_passed
+  | Error _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: %s (expected Rocket budget error, got other error)\n" msg;
+      exit 1
+  | Ok _ ->
+      incr tests_run;
+      Printf.eprintf "FAIL: %s (expected Rocket budget error, got Ok)\n" msg;
+      exit 1
+
 let assert_matched msg = function
   | Ok (Tethers_core_plan.Matched cp) ->
       incr tests_run; incr tests_passed; cp
@@ -141,7 +167,8 @@ do
   let result = evaluate env input in
   let cp = assert_matched "T1" result in
   assert_true "T1 one action" (List.length cp.runtime_plan.actions = 1);
-  assert_true "T1 plan id" (cp.runtime_plan.id = "eval_1/plan")
+  assert_true "T1 plan id" (cp.runtime_plan.id = "eval_1/plan");
+  assert_v2_digest "T1 ProgramDigest V2" cp.program_digest
 
 (* ================================================================== *)
 (*  T2 — Full guarded Anchor-value Human flow                         *)
@@ -693,6 +720,36 @@ do
 (*  Runner                                                             *)
 (* ================================================================== *)
 
+(* ================================================================== *)
+(*  R2 — Rocket budget exhaustion fails closed                        *)
+(* ================================================================== *)
+
+let test_rocket_budget_fails_closed () =
+  let action =
+    {|    notify
+        literal: "value"
+|}
+  in
+  let source =
+    "tether \"rocket-budget\"\n" ^
+    "anchor\n" ^
+    "    document.received\n" ^
+    "when\n" ^
+    "do\n" ^
+    String.concat "" (List.init 11 (fun _ -> action))
+  in
+  let env =
+    mk_env
+      ~capabilities:[
+        mk_cap_binding "notify" "cap.notify" "sha256:abc" ~name:"notify" ()
+      ]
+      ()
+  in
+  let input =
+    mk_input source ~event_name:"document.received" ~event_data:`Null
+  in
+  assert_rocket_budget_error "R2 Rocket budget fails closed" (evaluate env input)
+
 let () =
   (* T1 *)
   test_minimal_unguarded ();
@@ -732,4 +789,6 @@ let () =
   test_conflict_reverse_order ();
   (* C3 *)
   test_conflict_unrelated_ids ();
+  (* R2 *)
+  test_rocket_budget_fails_closed ();
   Printf.printf "PASS all adapter tests (%d/%d)\n" !tests_passed !tests_run
