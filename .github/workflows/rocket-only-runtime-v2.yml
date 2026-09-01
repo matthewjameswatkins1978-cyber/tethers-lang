@@ -60,3 +60,7 @@ jobs:
 
       - name: Diff whitespace
         run: git diff --check origin/main...HEAD
+
+      - name: Task packet consistency
+        shell: pwsh
+        run: ./.github/scripts/check-tethers-task-packet.ps1 -SkipWorktreeCheck
