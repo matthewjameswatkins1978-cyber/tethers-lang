@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `READY`
+Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
@@ -39,7 +39,7 @@ The repository contains many historical Rocket branches. They are evidence only.
 1. Inventory every anonymous identity family and every Core field/reference whose value can influence an Enc_V2 anonymous label, directly or transitively.
 2. Inventory every `labels_for_*` / anonymous-label lookup and every relevant labelled-byte emission in the frozen Enc_V2 encoder, and map each lookup back to its originating Core semantic reference.
 3. Define the proposed Rocket V3 typed relation for each semantic reference, including forward direction, inverse direction, relation discriminator, multiplicity semantics, scope semantics, and whether a structural sentinel is required.
-4. Explicitly classify `Action_origin`, `Anchor_origin`, `Together_origin`, and `Batch_origin` as variants of the existing `origin_site` / Origin family rather than new V3 anonymous identity families. Preserve the separate existing anonymous Batch family wherever `batch_id` itself is identity-bearing.
+4. Explicitly classify `Action_origin`, `Anchor_origin`, and `Together_origin` as `origin_site` constructors and anonymous Origin-family identities. Classify `Batch_site` as an `origin_site` constructor structurally, but not as an Origin-family identity: it carries the separate anonymous Batch-family `batch_id`, is excluded by `origin_id_of_site`, and is handled by `collect_batches`/`BatchMap`.
 5. Explicitly classify `EntryGuard` as the existing `fact_guard` structure, not a new anonymous identity family; classify `ProgramComplete` as the existing `control_target` terminal; and classify `ProgramRoot` and `ProgramScope` as new V3 structural concepts/sentinels, not new anonymous canonical identity families.
 6. Confirm or correct the proposed anonymous identity-family set: `Origin`, `Fact`, `Branch`, `Batch`, `ItemTemplate`, and `ScopedRole`. Any proposed addition/removal is a Red architectural finding and must be reported, not silently adopted.
 7. Produce an explicit coverage matrix showing that every relevant Core reference and every Enc_V2 label lookup is covered exactly once or intentionally cross-referenced, with no unexplained gaps.
@@ -89,7 +89,7 @@ Required read-only implementation/spec evidence includes at minimum:
 1. The inventory names all six current anonymous identity families, with repository evidence for each, and separately lists structural/non-anonymous concepts.
 2. Every anonymous-label lookup in the frozen Enc_V2 encoder is represented in the coverage matrix with source location, identity family, semantic owner/reference, and V3 relation mapping.
 3. Every Core field/reference that can feed those label lookups is represented with forward and inverse relation meaning, discriminator, multiplicity, and scope.
-4. The report explicitly records `Action_origin`, `Anchor_origin`, `Together_origin`, and `Batch_origin` as `origin_site` variants and explains the distinction between `Batch_origin` and the separate anonymous `Batch` identity family.
+4. The report explicitly records `Action_origin`, `Anchor_origin`, and `Together_origin` as `origin_site` constructors and Origin-family identities, and records `Batch_site` as a structural `origin_site` constructor belonging to the separate anonymous Batch identity family.
 5. The report explicitly records `EntryGuard = fact_guard`, `ProgramComplete = control_target terminal`, and `ProgramRoot`/`ProgramScope` as V3 structural concepts rather than anonymous identity families.
 6. Any mismatch between the proposed six-family model and actual Core/Enc_V2 evidence is surfaced as a blocking architectural finding instead of being papered over.
 7. The final matrix has no unexplained Core-reference or Enc_V2-label-lookup gaps; any intentionally excluded scalar/non-anonymous field states why it cannot require an anonymous V3 relation.
