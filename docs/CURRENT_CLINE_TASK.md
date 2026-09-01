@@ -12,7 +12,7 @@ Route: `Codex implementation in a fresh dedicated worktree; bounded OCaml model 
 
 Base commit: `0fd316083e1b26c3564080dec16d62490116858c`
 
-OCaml switch path: `D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml`
+OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
 OCaml toolchain contract: use this exact external directory switch with explicit `--switch`; run Dune against the current R3-1 worktree source tree. Do not create, copy, move, select globally, or substitute another installed switch. For repository scripts that invoke `opam` without `--switch`, set `OPAMSWITCH` only process-locally to this exact path.
 
