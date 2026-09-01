@@ -834,7 +834,7 @@ let measure_stages ~num_batches ~batch request_json =
 
 let run_stage_profile () =
   Printf.printf "PF1: Core stage profile\n%!";
-  let sizes = [ 5; 10; 25; 50; 100; 250; 500 ] in
+  let sizes = [ 1; 3; 5; 10; 25; 50; 100; 250; 500 ] in
   (* (warmup, batches, batch_size) per size *)
   let plan_for size =
     if size <= 10 then (30, 20, 50)
