@@ -1,0 +1,58 @@
+name: Rocket-only runtime V2 cutover
+
+on:
+  push:
+    branches:
+      - fix/rocket-only-runtime-v2
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5.0"
+
+      - name: Install OCaml dependencies
+        working-directory: tethers-0.1/engine-ocaml
+        run: opam install --yes dune yojson digestif
+
+      - name: Build all OCaml targets
+        working-directory: tethers-0.1/engine-ocaml
+        run: opam exec -- dune build @all
+
+      - name: Run all OCaml tests
+        working-directory: tethers-0.1/engine-ocaml
+        run: opam exec -- dune runtest --force
+
+      - name: Prove live OCaml modules do not depend on V1 canonicalizer
+        run: |
+          set -eu
+          if grep -R "Tethers_core_canonical\.canonicalize"             tethers-0.1/engine-ocaml/bin/tethers_core_evaluation_adapter.ml             tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml             tethers-0.1/engine-ocaml/bin/tethers_core_wire.ml; then
+            echo "legacy V1 canonicalizer referenced by live path"
+            exit 1
+          fi
+
+      - name: Rust formatting
+        working-directory: tethers-0.1/host-rust
+        run: cargo fmt --all -- --check
+
+      - name: Rust check
+        working-directory: tethers-0.1/host-rust
+        run: cargo check --all-targets --all-features --locked
+
+      - name: Focused real-engine V2 ProgramDigest tests
+        working-directory: tethers-0.1/host-rust
+        run: |
+          cargo test --locked engine_stdio::tests::core9b_t5_core_evaluate_is_only_route -- --nocapture
+          cargo test --locked engine_stdio::tests::core9b_t6_new_evaluate_reaches_core -- --nocapture
+          cargo test --locked engine_stdio::tests::core9b_t14_occurrence_identity -- --nocapture
+
+      - name: Diff whitespace
+        run: git diff --check origin/main...HEAD
