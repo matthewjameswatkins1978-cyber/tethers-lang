@@ -1,187 +1,276 @@
-# Rocket V3 — R3-2 Stable Typed Partition Refinement
+# Rocket V3 — R3-3 Exact Unpruned I/R Search
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `READY`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Codex implementation in a fresh dedicated worktree; partition/refinement engine and proofs only`
+Route: `Codex implementation in a fresh dedicated worktree; exact discrete-leaf bridge + unpruned I/R search only`
 
-Base commit: `546c778425386dd61ec91422cf01cddb1e40bfbe`
-
-Implementation checkpoint: `1b32cab71ddc472f0a5c97549f8657872a45a6e0`
+Base commit: `21bb7442fa9f8442db98e193eb4954096f356678`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
-OCaml toolchain contract: use this exact external directory switch with explicit `--switch`; run Dune against the current R3-2 worktree source tree. Do not create, copy, move, select globally, or substitute another installed switch. For repository scripts that invoke opam without `--switch`, set `OPAMSWITCH` only process-locally to this exact path.
+OCaml toolchain contract: use this exact external directory switch with explicit `--switch`; run Dune against the current R3-3 worktree source tree. Do not create, copy, move, select globally, or substitute another installed switch. For repository scripts that invoke opam without `--switch`, set `OPAMSWITCH` only process-locally to this exact path.
 
-Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-2-refinement.md`
+Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-3-exact-search.md`
 
 Related issue: `#5 — BUG: Rocket V2 factorial search on simple sequential Action chains`
 
-Design authorities:
+Accepted inputs:
 
-- `docs/review/rocket-v3/R3_0_SEMANTIC_RELATION_INVENTORY.md`
-- accepted R3-1 model at base `546c778425386dd61ec91422cf01cddb1e40bfbe`
+- R3-0 complete semantic relation inventory
+- R3-1 immutable typed model
+- R3-2 stable typed partition refinement
 
 Updated: 2026-09-01
 
 ## Objective
 
-Implement deterministic typed partition refinement over the accepted immutable Rocket V3 semantic model.
+Implement the first exact Rocket V3 canonical search engine over the accepted R3-1/R3-2 machinery.
 
-R3-2 must compute the unique stable/equitable refinement induced by vertex kind/scalar descriptors and the complete typed directed relation multigraph. It must use an incremental worklist/splitter design with smaller-half scheduling rather than repeated factorial search or raw-ID tie-breaking.
+R3-3 has two strictly ordered stages:
 
-The decisive proof target is the issue-#5 family: a homogeneous sequential Action chain whose Actions have identical scalar payloads must become discrete by semantic refinement alone for sizes 1, 10, 50, 100, 250, 500 and 1000.
+### Stage A — discrete leaf certificate / Enc_V2 bridge
 
-R3-2 does not individualize vertices and does not search. A non-singleton stable cell is a truthful statement of remaining ambiguity, not permission to invent an ordering.
+Prove that a discrete stable V3 partition can be converted into one legal frozen V2 `label_assignment`, then encoded using the existing frozen `Tethers_core_canonical_v2_format.encode_program`.
 
-## Relevant background and existing behaviour
+This stage MUST establish exact byte parity against the slow V2 oracle on tractable root-discrete fixtures before broader search is implemented.
 
-R3-1 is now on `main` and supplies:
+If discrete-partition ordering cannot be mapped to exact V2 minimum bytes, STOP as a Red architectural finding. Do not paper over the mismatch with a greedy encoder special case.
 
-- exactly six anonymous identity families;
-- fixed ProgramRoot, ProgramScope, ProgramComplete and BranchStop structural vertices;
-- deterministic scalar descriptors;
-- complete typed forward and reverse adjacency;
-- exact relation discriminators and payloads;
-- multiplicity and scope;
-- validation-first construction.
+### Stage B — complete unpruned individualisation/refinement search
 
-The model exposes internal integer vertex handles only as implementation handles. They are not semantic identity and MUST NOT be used to split otherwise equivalent vertices.
+Only after Stage A is green, implement complete I/R traversal:
 
-Standard individualisation/refinement canonicalisation starts from an invariant initial colouring, computes an equitable partition, then only searches if non-singleton cells remain. R3-2 implements only that root refinement stage.
+`initial partition -> stable refinement -> select non-singleton cell -> individualize each member -> stable refinement -> recurse -> Enc_V2 at every discrete leaf -> unsigned-byte minimum`.
+
+Search may use refinement to expose structure and reduce ambiguity, but the winning certificate remains frozen `Enc_V2(P, λ)` bytes. Colours/cell keys never become ProgramDigest identity themselves.
+
+No prefix pruning, automorphism/orbit pruning, component recursion, memo pruning, greedy family forcing, search budget or production cutover is authorised in R3-3.
+
+## Relevant background and frozen identity law
+
+Frozen identity remains:
+
+`CanonicalPayload_V2(P) = min { Enc_V2(P, λ) | λ ∈ Λ(P) }`
+
+`ProgramDigest_V2(P) = SHA-256(domain_v2 || CanonicalPayload_V2(P))`
+
+R3-2 proved that a homogeneous 1000-Action sequential chain reaches a discrete stable partition with:
+
+- `relation_visits=6999`
+- `splitter_pops=1004`
+- `cell_splits=998`
+- `max_worklist=6`
+
+No search was required to distinguish those Actions structurally. R3-3 must now prove that this discrete result can be translated into the exact frozen canonical bytes, rather than assuming refinement cell order is canonical label order.
+
+The frozen role rule MUST be preserved exactly:
+
+- one global role label range;
+- Program-scope role block first;
+- template-role blocks follow in ascending assigned canonical template-label order;
+- roles may permute only inside their own scope block;
+- no cross-scope role assignment.
 
 ## Required behaviour
 
-1. Add an abstract partition module over R3-1 model vertices. Initialise the partition solely from explicit semantic base keys: `vertex_kind` plus `vertex_scalar`. Fixed structural vertices must begin distinguishable by kind. Internal vertex numbers and input order must not affect grouping.
-2. Add an incremental refinement module that reaches a stable typed equitable partition using worklist/splitter processing. Do not implement repeated whole-program canonical encoding or any permutation search.
-3. Treat an edge channel as the combination of direction, `relation_kind`, `relation_discriminator` and exact relation payload. Forward and inverse incidence must remain distinguishable. Multiplicity to/from a splitter cell is counted exactly.
-4. Split a candidate cell whenever two vertices have different multiplicity counts for any typed edge channel into the active splitter cell. Zero incidence is a real count and must distinguish zero from one or more.
-5. Use smaller-half worklist scheduling when a non-active cell is split: enqueue all resulting parts except one deterministic largest part. If the old cell is already active, replace/update its active work consistently so no required splitter is lost. Equal-size choices must be resolved by semantic/invariant subgroup order, never raw vertex number.
-6. Make refinement scheduling deterministic: splitter selection, channel processing, affected-cell processing and subgroup ordering must not depend on hash iteration, raw IDs, source collection order, pointer identity or wall clock.
-7. Expose only partition/refinement evidence needed by later phases and tests: cell count, cell membership queries, cell sizes, discreteness, stable-state indication and deterministic work statistics. Cell handles/colour numbers are refinement handles, not canonical labels.
-8. Record deterministic work statistics at minimum: `relation_visits`, `splitter_pops`, `cell_splits`, `max_worklist` and final cell count. No wall-clock value may influence the result.
-9. Prove the stable result against an independent slow test-only reference refinement on a deterministic generated corpus of small valid Core programs. Compare the induced equivalence relation/cell partition, not incidental internal cell numbers.
-10. Add homogeneous sequential Action-chain fixtures where every Action has the same capability, contract digest, inputs, facts and constraints, differing only in raw identity and position in the root/success/complete structure. Sizes 1, 10, 50, 100, 250, 500 and 1000 must refine to singleton Action cells with no individualisation/search.
-11. Prove that genuine unresolved symmetry is not broken artificially. Structurally indistinguishable twins/symmetric valid fixtures must remain in the same stable cell unless semantic relations distinguish them.
-12. Integrate only the new partition/refinement modules and focused tests into Dune. Do not wire Rocket V3 into production canonicalisation, planning, wire, Rust host or ProgramDigest.
+1. Add the narrowest possible model identity bridge needed only for leaf encoding:
+   - raw Origin ID -> model vertex lookup;
+   - Fact ID -> vertex;
+   - Branch ID -> vertex;
+   - Batch ID -> vertex;
+   - ItemTemplate ID -> vertex;
+   - scope-qualified Role ID -> vertex.
+   Lookups return options/fail-closed results. Raw IDs remain construction/encoding handles only and MUST NOT be consumed by refinement, cell selection, individualisation priority or canonical comparison.
+2. Preserve existing R3-1 structural evidence exactly after adding the lookup bridge. The lookup tables are not included in `structural_evidence` and do not alter vertex/scalar/edge construction.
+3. Add a dedicated Rocket V3 leaf-encoder module that accepts the exact Core program, its paired V3 model and a discrete stable partition and constructs a legal frozen V2 `label_assignment`.
+4. For Origin, Fact, Branch, Batch and ItemTemplate, derive one label order from the discrete partition's invariant leaf ordering, never raw IDs/internal vertex numbers/storage order. The implementation must document the exact ordering certificate used.
+5. Preserve the frozen scoped-role block rule exactly. Program roles occupy the first interval. Template-role intervals are determined by the leaf's assigned template labels. Roles are ordered only within their legal scope block.
+6. Leaf encoding MUST call the existing frozen `encode_program`; it must not reimplement Enc_V2.
+7. Stage A must compare the discrete-leaf payload byte-for-byte with the V2 slow oracle on tractable root-discrete fixtures covering at minimum:
+   - homogeneous success chains sizes 1 through 6;
+   - distinct scalar facts;
+   - entry/root + ProgramComplete structure;
+   - Batch/template structure;
+   - program and template scoped roles including more than one template role block;
+   - Branch/Stop and outcome discriminators;
+   - Action binding/scoped-role references.
+8. Stage A must include raw-ID renaming and representation-order permutations and prove identical leaf payload.
+9. Stage A STOP rule: any oracle mismatch on a valid root-discrete fixture blocks Stage B. Record the first exact differing payload/fixture and do not add heuristic special cases.
+10. After Stage A passes, add a complete unpruned I/R search module. At each non-discrete stable node, select one non-singleton cell and create one child for every member of that cell.
+11. Individualisation must be represented as an explicit artificial ordered distinction local to the search branch, then followed by ordinary R3-2 refinement. It must not modify the R3-1 model or frozen Core meaning.
+12. Every selected-cell member must be explored. Branch traversal order may affect operational traversal only; because R3-3 has no pruning or budget, it must not affect the final minimum payload.
+13. Provide at least three deterministic cell selector strategies based only on partition semantic evidence/cell size, for example:
+    - smallest non-singleton cell;
+    - largest non-singleton cell;
+    - semantic-first non-singleton cell.
+    Exact names may vary. No selector may use raw IDs or internal vertex handles as semantic tie-breakers.
+14. All selector strategies must return identical canonical payload/preimage/digest for the same program. Search statistics may differ by selector; identity must not.
+15. A discrete search leaf must be encoded only through the Stage-A leaf encoder. The search module must not assign labels by a second route.
+16. Compare Rocket V3 payload/digest exactly against:
+    - the slow V2 oracle wherever the oracle accepts the case;
+    - V2 production/exhaustive where tractable;
+    - Rocket V2 IR as regression evidence where appropriate.
+    V2 engines are test oracles only and MUST NOT be called by the Rocket V3 implementation.
+17. Add deterministic generated differential coverage including storage permutation and complete raw-ID renaming. Any payload or digest mismatch is a hard failure.
+18. Add unresolved-symmetry fixtures that require real branching. Include at least:
+    - two symmetric twins;
+    - three symmetric anonymous entities;
+    - a tractable high-symmetry case with multiple leaves.
+    Prove the minimum payload matches the slow oracle.
+19. Add the 1000 homogeneous-Action chain as a V3 search test. Required result:
+    - root refinement discrete;
+    - `search_nodes = 1`;
+    - `individualisations = 0`;
+    - `encoded_leaves = 1`;
+    - exact repeated/metamorphic V3 payload/digest stability.
+    No V2 factorial oracle/baseline is required for this 1000-Action case.
+20. Record deterministic search statistics at minimum:
+    - `refinement_relation_visits`;
+    - `search_nodes`;
+    - `individualisations`;
+    - `encoded_leaves`;
+    - `max_depth`.
+21. Invalid Core must fail closed through the existing validation/model path with no payload/digest.
+22. Return an abstract Rocket V3 canonicalized result containing the validated program association, frozen V2 payload, preimage and `tethers:v2:sha256:` digest. This is an experimental V3 engine API only; do not wire it into production.
+23. Integrate only the new/extended V3 modules and focused tests into Dune. Rocket V2 production behaviour remains untouched.
+
+## Search-state implementation boundary
+
+Correctness comes before state optimisation in R3-3.
+
+The accepted R3-2 partition is mutable and has no search undo API. R3-3 MAY rebuild a child partition from the immutable model and replay that child's individualisation path before refinement. This is intentionally allowed for the first correct search.
+
+Do not add a per-node graph/model copy, external graph library, or broad partition redesign.
+
+An in-place compact partition + undo trail is deferred until exact search parity is established.
 
 ## Relevant components
 
 Authorised mutation is limited to:
 
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-09-01-rocket-v3-r3-2-refinement.md`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_partition.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_partition.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_refine.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_refine.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_refine_test.ml`
+- `docs/worker-notes/2026-09-01-rocket-v3-r3-3-exact-search.md`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model_test.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_encode.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_encode.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_search.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_search.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_search_test.ml`
 - `tethers-0.1/engine-ocaml/bin/dune`
 
-Read-only implementation authorities include:
+Read-only authorities:
 
-- `tethers_core_rocket_v3_model.ml/.mli`
-- `tethers_core_rocket_v3_model_test.ml`
-- `tethers_core.ml/.mli`
-- `tethers_core_validator.ml/.mli`
+- `tethers_core_rocket_v3_partition.ml/.mli`
+- `tethers_core_rocket_v3_refine.ml/.mli`
 - `tethers_core_canonical_v2_format.ml/.mli`
-- V2 oracle/production/IR modules and tests for regression evidence only.
+- `tethers_core_canonical_v2_reference.ml/.mli`
+- `tethers_core_canonical_v2.ml/.mli`
+- `tethers_core_canonical_v2_ir.ml/.mli`
+- R3-0 inventory and accepted R3-1/R3-2 worker notes/tests.
 
 ## Frozen decisions and invariants
 
-- The R3-1 model is semantic input authority for R3-2. Do not duplicate/reinterpret Core relations independently in the refinement engine.
-- Frozen Enc_V2 and `tethers:v2:sha256:` ProgramDigest semantics do not change.
-- Refinement may prove vertices distinguishable. Equal stable cells do not prove automorphism or canonical identity.
-- No raw ID, raw model vertex handle, collection position or current V2 heuristic may split a cell.
-- Relation direction, kind, discriminator, payload and multiplicity are all observable refinement information.
-- A stable partition must be equitable for every typed directed edge channel.
-- Initial partition keys are semantic base descriptors only. Do not seed refinement with V2 canonical labels, raw IDs, Enc_V2 labels or search results.
-- Fixed ProgramRoot, ProgramScope, ProgramComplete and BranchStop are structural colours, not anonymous identity families.
-- Batch remains a distinct anonymous family, never an Origin shortcut.
-- The complete refinement result must be independent of valid splitter-processing order as an equivalence relation; the implementation schedule itself must nevertheless be deterministic for reproducible statistics.
-- Smaller-half scheduling is an efficiency mechanism, not identity authority.
-- No external graph dependency.
-- No wall-clock timeout or budget in R3-2.
+- Enc_V2 bytes and ProgramDigest V2 semantics are unchanged.
+- The only winning certificate is exact frozen Enc_V2 bytes under unsigned-byte lexicographic comparison.
+- Refinement colours, cell IDs, cell keys and search selectors are search machinery, not digest identity.
+- Raw IDs are permitted only to bridge a leaf's vertex ordering back to the frozen typed label maps.
+- Search selection/individualisation must not inspect raw IDs.
+- Batch remains a separate Batch family.
+- Role block constraints are part of Λ(P), not an optimisation.
+- Every leaf assignment must be a complete legal V2 assignment.
+- No leaf may be skipped in R3-3 because of similarity, hash, prefix, orbit, automorphism or prior payload.
+- No greedy assignment of a non-singleton cell.
+- No assumption that a discrete refined partition is exact until Stage A byte parity proves the leaf mapping.
+- No external dependency.
+- No wall-clock decision.
 - No V1 fallback.
-- No individualisation, search, canonical label assignment or candidate encoding.
+- No production cutover.
 
 ## Acceptance criteria
 
-1. Initial partition construction groups vertices only by semantic `vertex_kind + vertex_scalar`, with each fixed structural kind distinguishable and no use of raw vertex number.
-2. The refinement algorithm terminates with a stable partition in which vertices sharing a cell have identical typed incoming/outgoing multiplicity counts to every final cell.
-3. Direction, relation kind, discriminator and payload independently affect refinement; removing/changing any one in focused fixtures changes the expected split behaviour.
-4. Multiplicity is preserved: zero/one/two-or-more incidences can split cells where semantically present, and no relation occurrence is silently set-collapsed.
-5. Worklist split updates implement the smaller-half rule for non-active split cells and preserve correctness when an already-active cell splits.
-6. Repeated runs over identical input report identical final partition evidence and identical deterministic work statistics.
-7. Renaming every raw nominal ID and permuting all representation collections leaves the final partition equivalence structure and deterministic statistics unchanged for paired fixtures.
-8. Internal model vertex numbering/insertion perturbation cannot create a refinement distinction. Tests must not use raw vertex IDs as semantic sort keys.
-9. The independent slow reference refinement and incremental R3-2 refinement induce the same stable equivalence relation over every case in the deterministic generated small-program corpus.
-10. Homogeneous Action chains of 1, 10, 50, 100, 250, 500 and 1000 Actions finish with every Action in a singleton cell; the 1000-Action case performs no search because no search exists in R3-2.
-11. The homogeneous-chain test proves scalar equality first: all Action vertices in the fixture share the same initial semantic key before control-flow refinement.
-12. At least one valid symmetric/twin fixture remains non-discrete after stable refinement, proving R3-2 does not manufacture identity from handles/order.
-13. ProgramRoot propagation, ProgramComplete propagation and directed success-next/success-prev structure are each necessary/observable in focused mutation tests.
-14. Batch, role-scope, Together-member, Branch outcome/Stop, Action-binding and multiplicity fixtures all refine using the R3-1 typed relation channels without special-case raw Core logic in the refinement module.
-15. Statistics include relation visits, splitter pops, cell splits, max worklist and final cell count. They are deterministic and are evidence only, never Enc_V2 bytes or identity.
-16. The 1000-Action homogeneous-chain relation-visit count is recorded in the worker note and demonstrates bounded incremental behaviour; any unexpectedly quadratic/explosive result is a Red performance finding and must be reported rather than hidden behind a larger budget.
-17. The public R3-2 API contains no individualise/search/canonical-label/digest/candidate-emission operation.
-18. `dune build @all`, the focused R3-2 test executable, `dune runtest --force`, `git diff --check` and task-packet consistency all pass.
-19. Existing R3-1 model tests and V2 oracle/production/IR regression suites remain green, including the existing 5,000-case corpus.
-20. Final diff contains only authorised paths, the implementation checkpoint is committed before closeout documentation, local HEAD equals remote HEAD and the worktree is clean.
+1. Model identity lookups round-trip every anonymous Core occurrence to exactly its existing model vertex and do not change R3-1 structural evidence or R3-2 refinement results/statistics.
+2. Search/refinement code contains no raw-ID-based selector, ordering or tie-break logic; raw-ID lookup usage is confined to leaf-label construction/tests.
+3. The leaf encoder rejects a non-discrete or non-stable partition deterministically.
+4. The leaf encoder produces a complete legal V2 `label_assignment` covering all six anonymous families.
+5. Scoped-role intervals exactly match the frozen Program-first/template-by-canonical-template-label block rule.
+6. Stage A root-discrete fixtures match the slow V2 oracle byte-for-byte and digest-for-digest.
+7. Stage A renamed/reordered metamorphic variants produce identical payload/digest.
+8. Any Stage A mismatch stops the task before full I/R search implementation.
+9. Search visits every individualisation branch in the selected non-singleton cell and encodes every discrete leaf reached; no pruning exists.
+10. At least three deterministic selector strategies produce identical final payload/preimage/digest across focused and generated tests.
+11. Slow oracle, V2 baseline and V2 IR differential comparisons have zero accepted-case payload/digest mismatches.
+12. Symmetric twin/three-way/high-symmetry fixtures require branching and match the oracle minimum exactly.
+13. Search traversal/internal vertex/storage perturbation does not change final payload or digest.
+14. 1000 homogeneous Actions produce one root search node, zero individualisations, one encoded leaf and stable V2 digest bytes across metamorphic variants.
+15. Search statistics report refinement relation visits, nodes, individualisations, leaves and max depth deterministically for repeated same-selector runs.
+16. Invalid Core returns deterministic validation error and no payload/preimage/digest.
+17. Public V3 search API exposes no prefix pruning, automorphism pruning, component recursion, budget, production-routing or V1 fallback operation.
+18. Existing R3-1 `214/214`, R3-2 `4807/4807`, V2 suites and existing 5,000-case V2 corpus remain green.
+19. Focused R3-3 tests, `dune build @all`, `dune runtest --force`, `git diff --check` and packet checker pass.
+20. Final diff contains only authorised paths, implementation/test checkpoint precedes closeout docs, local HEAD equals remote HEAD and worktree is clean.
 
 ## Required verification
 
-- Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-2-refinement`.
-- Read `AGENTS.md`, the OCaml guide, this packet, R3-0 inventory and R3-1 model interface/tests before mutation.
-- Confirm branch, exact base `546c778425386dd61ec91422cf01cddb1e40bfbe`, READY state and clean initial worktree.
+- Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-3-exact-search`.
+- Read `AGENTS.md`, OCaml guide, complete packet, R3-0 inventory, R3-1/R3-2 public interfaces and frozen V2 format/oracle role enumeration before mutation.
+- Confirm exact base `21bb7442fa9f8442db98e193eb4954096f356678`, branch, READY state and clean initial worktree.
 - Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1`.
-- Run `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` and require `control-v1/READY`.
-- Verify the exact authorised OCaml switch with explicit `--switch`.
-- Implement partition/refinement and focused tests only in authorised paths.
-- Run the focused R3-2 test executable throughout implementation.
-- Run `opam exec --switch="D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml" -- dune build @all` from the current worktree's `tethers-0.1/engine-ocaml`.
-- Run the focused R3-2 executable and record exact checks/statistics, including the 1000 homogeneous-Action-chain relation visits.
+- Run packet checker and require `control-v1/READY`.
+- Verify the exact authorised OCaml switch.
+- Implement model lookup bridge + Stage-A leaf encoder/tests first.
+- Run Stage-A focused tests and oracle differential.
+- If any Stage-A valid-case mismatch occurs, STOP. Do not proceed to search.
+- Only after Stage A passes, implement unpruned I/R search and selector tests.
+- Run focused R3-3 test executable and record exact check count and key search stats.
+- Run `opam exec --switch="D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml" -- dune build @all`.
 - Run `opam exec --switch="D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml" -- dune runtest --force`.
 - Run `git diff --check`.
-- Inspect the complete base-to-HEAD diff and prove only authorised paths changed.
-- Commit the implementation/test checkpoint and capture its exact full SHA.
-- Write the worker note from actual evidence and mark the task `COMPLETE`; no implementation/test mutation after the recorded checkpoint.
-- Run the packet checker again and require `control-v1/COMPLETE`.
-- Push normally to `origin/feature/rocket-v3-r3-2-refinement`.
-- Confirm local HEAD equals remote HEAD and worktree is clean.
-- Report exact evidence and STOP.
+- Inspect full base-to-HEAD diff and prove only authorised paths changed.
+- Commit implementation/tests and capture exact 40-character implementation checkpoint.
+- Write worker note from evidence; mark packet COMPLETE. No implementation/test mutation after checkpoint.
+- Run packet checker and require `control-v1/COMPLETE`.
+- Push normally.
+- Confirm local HEAD == remote HEAD and clean worktree.
+- Report evidence and STOP.
 
 ## Forbidden changes
 
-- No edits to the accepted R3-1 model implementation/interface/tests.
-- No Core, validator, lowerer, Enc_V2, V2 oracle/production/IR semantic changes.
-- No individualisation of a non-singleton cell.
-- No I/R search tree.
-- No canonical-label assignment from partition cell order.
-- No Enc_V2 candidate generation or ProgramDigest production.
-- No prefix pruning, automorphism/orbit pruning or component recursion.
-- No undo trail/search-state checkpointing yet.
-- No V3 search/resource budgets or wall-clock cutoffs.
-- No production adapter/planner/wire/Rust-host integration.
+- No edit to R3-2 partition/refinement modules.
+- No Core/validator/lowerer change.
+- No change to frozen V2 format, V2 oracle, V2 production or Rocket V2 IR.
+- No prefix-byte pruning.
+- No automorphism/orbit pruning.
+- No component decomposition/recursion.
+- No duplicate-payload memo pruning.
+- No branch-and-bound.
+- No search budget/pre-admission factorial gate.
+- No wall-clock timeout.
+- No greedy forced labels from refinement colour/cell key.
 - No new dependency.
-- No raw-ID, vertex-handle or storage-order tie-breaker.
-- No historical Rocket branch merge/cherry-pick/rebase/copy as implementation authority.
-- Do not begin R3-3 automatically after completion.
+- No production planner/wire/Rust-host integration.
+- No V1 fallback.
+- No release/version work.
+- Do not begin R3-4 automatically.
 
 ## Stop conditions
 
-- Correct refinement requires semantic information not exposed by the accepted R3-1 model.
-- A stable partition cannot be made invariant to raw IDs/storage/internal numbering without inventing canonical search.
-- The incremental algorithm disagrees with the independent slow reference on the same valid model after two materially different diagnoses/repairs.
-- The homogeneous Action chain does not become discrete from root/success/complete semantic structure.
-- The 1000-Action chain shows unexpectedly explosive/quadratic work that defeats the intended smaller-half architecture.
-- Smaller-half scheduling cannot be implemented without changing semantic output.
-- Work requires modifying R3-1 model/Core/V2 files, adding dependencies, or beginning search.
-- Checkout/branch/base/packet state differs after fetching origin.
+- Stage-A discrete leaf mapping differs from the slow oracle on any valid accepted fixture.
+- A legal V2 scoped-role block assignment cannot be derived from the V3 leaf without changing frozen semantics.
+- Exact I/R result differs from oracle/baseline on any accepted differential case.
+- Selector strategies produce different final payloads/digests for the same valid program.
+- Search correctness requires skipping branches or inventing an unproved pruning rule.
+- The accepted R3-1 model lacks identity information that cannot be supplied by the narrow lookup bridge without changing semantic construction.
+- Work requires editing R3-2, frozen V2, Core, adding dependencies or production integration.
+- Two materially similar failures recur without a new diagnosis.
+- Checkout/branch/base/packet state differs after fetch.
 
 ## Expected pre-existing changes
 
