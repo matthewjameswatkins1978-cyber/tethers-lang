@@ -691,7 +691,7 @@ let verify_stage_pipeline_equivalent request_json =
   let tether = Tether_parser.parse_tether input.source in
   let program = Result.get_ok (Tethers_core_lowerer.lower lowerer_env tether) in
   let canonicalized =
-    Result.get_ok (Tethers_core_canonical.canonicalize program)
+    Result.get_ok (Tethers_core_canonical_v2_ir.canonicalize_ir program) |> fst
   in
   let eval_ctx : Tethers_core_plan.evaluation_context =
     {
@@ -776,7 +776,7 @@ let prepare_size_inputs request_json =
   let tether = Tether_parser.parse_tether input.source in
   let program = Result.get_ok (Tethers_core_lowerer.lower lowerer_env tether) in
   let canonicalized =
-    Result.get_ok (Tethers_core_canonical.canonicalize program)
+    Result.get_ok (Tethers_core_canonical_v2_ir.canonicalize_ir program) |> fst
   in
   let eval_ctx : Tethers_core_plan.evaluation_context =
     {
@@ -817,7 +817,7 @@ let measure_stages ~num_batches ~batch request_json =
   in
   let canonicalize_us =
     time_loop ~num_batches ~batch (fun () ->
-        let _ = Tethers_core_canonical.canonicalize program in
+        let _ = Tethers_core_canonical_v2_ir.canonicalize_ir program in
         ())
   in
   let plan_us =
@@ -834,7 +834,7 @@ let measure_stages ~num_batches ~batch request_json =
 
 let run_stage_profile () =
   Printf.printf "PF1: Core stage profile\n%!";
-  let sizes = [ 5; 10; 25; 50; 100; 250; 500 ] in
+  let sizes = [ 1; 3; 5; 10 ] in
   (* (warmup, batches, batch_size) per size *)
   let plan_for size =
     if size <= 10 then (30, 20, 50)
@@ -940,7 +940,9 @@ let run_stage_profile () =
 type case_spec = string * Yojson.Safe.t * int * int * int
 (* (label, request_json, warmup_count, batch_size, num_batches) *)
 
-(* Full B0-A matrix. The historical baseline used these counts. *)
+(* Current Rocket V2 pipeline matrix. Historical larger V1 cases remain in
+   archived performance evidence; the live benchmark measures programs that
+   fit the current deterministic Rocket budget. *)
 let full_cases : case_spec list =
   [
     ("P0 (not_matched)", make_not_matched_request ~eval_id:"b0" ~evt_id:"eb0", 500, 1000, 50);
@@ -950,10 +952,6 @@ let full_cases : case_spec list =
      make_ping_request ~eval_id:"b3" ~evt_id:"eb3" ~num_actions:3, 500, 500, 50);
     ("P10 (10 actions)",
      make_ping_request ~eval_id:"b10" ~evt_id:"eb10" ~num_actions:10, 200, 100, 50);
-    ("P25 (25 actions)",
-     make_ping_request ~eval_id:"b25" ~evt_id:"eb25" ~num_actions:25, 100, 20, 50);
-    ("P50 (50 actions)",
-     make_ping_request ~eval_id:"b50" ~evt_id:"eb50" ~num_actions:50, 50, 10, 50);
     ("PC10 (10 actions + conditions)",
      make_pc10_request ~eval_id:"bpc10" ~evt_id:"ebpc10" ~num_actions:10, 200, 100, 50);
     ("PA10 (10 actions + anchor refs)",
