@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `READY`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -11,6 +11,8 @@ Owner: `Codex`
 Route: `Codex implementation in a fresh dedicated worktree; bounded OCaml model construction and tests only`
 
 Base commit: `0fd316083e1b26c3564080dec16d62490116858c`
+
+Implementation checkpoint: `73f3421e03ac78a9357b0cfac86708c4e0a9f975`
 
 OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
 
