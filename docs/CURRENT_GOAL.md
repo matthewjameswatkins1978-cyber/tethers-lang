@@ -1,76 +1,135 @@
 # Current Goal
 
-Updated: 2026-08-15
+Updated: 2026-09-01
 
 ## Goal
 
-Tethers 0.4 concurrency is complete and accepted on the current integration chain.
+**Turn the completed Tethers foundation into something an AI agent would choose to use in ordinary work.**
 
-Accepted integration tip before this documentation refresh:
+The next product phase is an **Agent Essentials usefulness pass**:
 
-`14b2c65d1a830b4fc0a7a893ee3e72b684b09740`
+- make installed capabilities easy for an unfamiliar agent to discover and inspect;
+- expose the existing trusted manifest information through a clean machine-readable CLI;
+- build genuinely useful executable Plug packs rather than only proof/reference providers;
+- make planning, diagnostics, and Trail evidence easy for agents to consume;
+- preserve Tethers as a deterministic execution substrate rather than turning it into another agent framework.
 
-`origin/main` remains at:
+## Baseline already complete
 
-`f189361e80bdb43c13989200e48513cdb68bd004`
+Current `main` already contains the major foundation that this phase should use rather than redesign:
 
-The immediate Tethers goal is therefore **not more concurrency engineering**. It is to preserve the accepted 0.4 state, integrate it into `main` when Matthew explicitly authorises that merge, and then use the finished foundation in the active hackathon work.
+- Core phases 1-9 accepted and cut over to production evaluation;
+- Canonical Format V2 / Rocket V2 integrated;
+- public Plug authoring and conformance programme (0.3) complete;
+- Plug lifecycle support for pack, inspect, conform, stage, install, enable, disable, and list;
+- accepted Together semantics;
+- physical provider overlap;
+- bounded Together concurrency;
+- adversarial concurrency crucible;
+- Result Anchors and host-owned FIFO result-event queue;
+- durable intent, replay, Trail, scope, policy, and provider-binding machinery;
+- Portable Workbench 0.2.2 for Windows x64 and Linux x64 musl.
 
-## Last completed development state
+The earlier documentation that said the accepted 0.4 chain was still waiting to reach `main` is obsolete. It was integrated before the later portable-workbench commits now on `main`.
 
-- Tethers 0.3 public Plug authoring P1–P6: FINAL ACCEPTED.
-- P6 — The Evil Bunny Test: FINAL ACCEPTED.
-- Tethers 0.4 C1 — deterministic `together` fan-out / join semantics: COMPLETE / ACCEPTED.
-- Tethers 0.4 C2 — Core bridge, replay/Trail foundation, and physical provider overlap: COMPLETE / ACCEPTED.
-- Tethers 0.4 C3 — bounded Together concurrency: COMPLETE / ACCEPTED.
-- Tethers 0.4 C4 — adversarial concurrency crucible / Bunny Baptism: COMPLETE / ACCEPTED.
-- C5 fresh-agent proof: RETIRED as a redundant concurrency gate after a short salvage run exposed authoring/runtime usability issues instead of a concurrency defect.
-- Check provider server-name bug discovered during C5 salvage: FIXED / ACCEPTED at `14b2c65d1a830b4fc0a7a893ee3e72b684b09740`.
-- Core phases 1–9: accepted and cut over to the production evaluation path.
-- Canonical V2 and Rocket V2: frozen, implemented, differentially proved, integrated and reconciled.
+## Active product direction
 
-## Active increment
+The Agent Essentials work should prioritise practical agent use:
 
-**None.**
+1. **Self-discovery CLI**
+   - describe Tethers;
+   - list available Capabilities;
+   - inspect the exact trusted Capability contract;
+   - inspect installed Plug state without needing the original package.
 
-There is no authorised concurrency implementation task.
+2. **Real Agent Essentials Plugs**
+   - workspace/filesystem/text/patch;
+   - Git;
+   - process and named verification;
+   - structured data;
+   - hashes/integrity;
+   - archives;
+   - bounded HTTP/network;
+   - SQLite;
+   - read-only system/environment orientation.
 
-The last task, the `check` provider server-name bugfix, has been reviewed and accepted by Lucy. The accepted chain still requires explicit integration to `main`.
+3. **Planning and evidence ergonomics**
+   - side-effect-free plan/preview surface;
+   - precise configuration/scope diagnostics;
+   - easier Trail querying and execution receipts.
 
-## Near-term route
+4. **Cold-agent acceptance**
+   - prove that an unfamiliar external client can discover what Tethers can do, inspect a Capability contract, execute harmless bounded work, and inspect the resulting evidence using only public surfaces.
 
-1. Do not invent another 0.4 concurrency gate.
-2. Integrate the accepted chain to `main` only with Matthew's explicit authorisation.
-3. Pivot engineering effort to the active hackathons, where opportunity cost now outweighs marginal concurrency polishing.
-4. Return later to 0.5 HQ / authoring-surface work.
+5. **Documentation truth**
+   - describe the full platform first;
+   - keep the portable ALLOW / ASK / DENY workbench clearly labelled as one smaller façade;
+   - distinguish Human Tether syntax from richer Core vocabulary;
+   - distinguish authority decisions from execution outcomes.
 
-Useful later authoring-surface findings from the abandoned C5 attempt:
+## Do not reopen the foundation without evidence
 
-- `core_environment` is mandatory on the current run path but poorly surfaced to authors;
-- scope binding / permission prefix configuration is easy to get wrong;
-- authoring/run configuration deserves simplification and documentation work.
+This phase should **not** invent new semantics merely because the architecture can support them.
 
-These are not 0.4 concurrency blockers.
+Do not add without a demonstrated blocker:
 
-## Enduring project boundaries
+- another Core abstraction layer;
+- another canonicalisation scheme;
+- a global scheduler;
+- an async runtime for its own sake;
+- distributed execution;
+- an LLM runtime inside Tethers;
+- a second policy engine;
+- vendor-specific Core semantics;
+- new Human Tether syntax unrelated to a real agent-use problem.
 
-- Preserve external JSON, exit codes, Trail shape, replay digests and recovery behaviour unless an explicit migration authorises change.
-- Compatibility fixtures are committed evidence and are not generated by the implementation being tested.
-- Final packet verification is serial after the last permitted code/test edit when the packet requires it.
-- Core remains capability-agnostic: no provider-, product-, Lantern Keeper-, or business-specific meanings in Core.
-- Concurrency belongs in Tethers semantics; physical parallelism belongs primarily in the runtime.
-- Semantic order must remain independent of physical completion order.
-- Evidence beats agent confidence: pushed code, tests, Trails and Git state are authoritative.
-- Stop when the evidence is sufficient; do not manufacture extra process without a concrete uncertainty to remove.
+The Core can stay rich while the everyday agent experience becomes simple.
 
-## Authoritative references
+## Product positioning
 
-- Current short status: `docs/PROJECT_DASHBOARD.md`
-- Current / last implementation packet: `docs/CURRENT_CLINE_TASK.md`
-- Road to 0.4: `docs/ROAD_TO_0_4.md`
-- Operating procedure: `docs/PROJECT_CONTROL.md`
-- Gorilla Bunny doctrine: `docs/GORILLA_BUNNY_MANIFESTO.md`
-- C2-A3 design: `docs/concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`
-- C3 design: `docs/concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md`
-- Enduring principles: `docs/CONSTITUTION.md`
-- Language semantics: `tethers-0.1/SPEC.md`
+The intended relationship is:
+
+```text
+AI / agent decides what it wants
+          |
+          v
+       Tethers
+          |
+          | explicit contracts
+          | authority + scope
+          | bounded execution
+          | trustworthy evidence
+          v
+    real capabilities
+```
+
+Tethers should not compete with the agent.
+
+It should become the thing an agent reaches for when it wants real work to happen predictably.
+
+## Documentation boundary
+
+The front-door current-truth documents are:
+
+- `README.md`
+- `QUICKSTART.md`
+- `docs/PROJECT_OVERVIEW.md`
+- `docs/SECURITY.md`
+- `docs/PROJECT_DASHBOARD.md`
+- this file
+
+Historical roadmaps, architecture freezes, reviews, performance notes, and worker notes remain evidence of their checkpoints. Do not rewrite historical "not yet implemented" statements merely because later work completed them.
+
+## Enduring boundaries
+
+- Human Tether syntax remains small and canonical.
+- A Plan remains a request, not permission.
+- Core remains capability-agnostic.
+- Capabilities describe; policy authorises; host enforces; Trail records.
+- Physical scheduling must not alter semantic meaning.
+- Provider advertising is not trusted manifest truth.
+- Conformance is not permission.
+- No automatic effectful retry without end-to-end idempotency proof.
+- Supervised provider execution is not a hostile-code sandbox.
+- Evidence beats agent confidence.
+- Complexity must earn its keep.
