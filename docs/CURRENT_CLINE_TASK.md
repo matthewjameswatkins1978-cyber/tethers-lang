@@ -1,20 +1,20 @@
-# Rocket V3 — R3-3B1 Next-Observable-Byte Correctness Repair
+# Rocket V3 — R3-3B2 Exact Success-Path Canonisation
 
 Control contract: `1`
 
-Status: `BLOCKED`
+Status: `READY`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Fresh dedicated worktree; repair and re-prove the Origin-only Enc_V2 canonical-augmentation crucible. No cross-family generalisation or production integration.`
+Route: `Fresh dedicated worktree; derive and prove a direct exact canonicaliser for the Origin-only simple success-path case. No general forest, cross-family or production work.`
 
-Base commit: `c3d136dc4217059d4434f8d39a273fa398c4e64d`
+Base commit: `3034117dffa16366fa73c7befd1cccbf0bb86033`
 
 OCaml switch path: `D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml`
 
-Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-3b1-next-observable-byte.md`
+Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-3b2-success-path-canon.md`
 
 Related issue: `#5 — BUG: Rocket V2 factorial search on simple sequential Action chains`
 
@@ -22,104 +22,117 @@ Updated: 2026-09-01
 
 ## Objective
 
-Repair the R3-3B Origin-only canonical-augmentation walker so that a label is forced only when its encoded value is genuinely the next unresolved label-sensitive bytes in frozen Enc_V2.
+Replace factorial/permutation search for the single simple success-path case with a direct exact canonicalisation algorithm derived from frozen Enc_V2.
 
-The current R3-3B forcing rule is unsound across decimal label-width boundaries because it can force a continuation target while lower numeric source slots remain unresolved.
+The task must answer:
 
-Prove the corrected rule against exact exhaustive references before making any further 100/1000-Action scaling claim.
+> Given a valid Origin-only program whose complete success-continuation structure is one acyclic path from entry_origin through every Origin exactly once to ProgramComplete, can the exact frozen V2-minimum Origin label assignment be constructed without enumerating Origin permutations?
 
-Do not begin R3-3C.
+Prove the theorem first, then implement it as an isolated R3-3B2 path canonicaliser and demonstrate exact equality with exhaustive authorities on tractable cases.
+
+Do not generalise to trees/forests in this task.
 
 ## Relevant background and existing behaviour
 
-R3-3B introduced an Origin-only incremental walker covering:
+R3-3A established exact frozen identity by complete legal label-domain enumeration. It is exact but factorial.
 
-`entry_origin -> success_continuations -> origin_sites`
+R3-3B introduced an incremental Origin walker but had an unsound target-forcing rule across decimal-width boundaries.
 
-It models the frozen dual-order law:
+R3-3B1 repaired that exactness theorem. Exact chain-10 parity covered 362,880 residual candidates; exact chain-11 parity covered 3,628,800 residual candidates and eliminated the historical byte-23 mismatch.
 
-- numeric labels determine collection order;
-- `encode_int(label)` bytes determine lexicographic payload order.
+However R3-3B1 correctly stopped on deterministic performance: chain-100 reached 27,000 branches and 195,471,123 emitted bytes before the authorised stop. Chain-1000 was not attempted.
 
-R3-3B passed small exhaustive chain tests through size 7, but independent review found a decimal-boundary correctness counterexample.
+The validated success-continuation relation has at most one continuation per from_origin and rejects success cycles. This task restricts further to one complete path:
 
-Homogeneous 11-Action chain:
+`entry -> Origin -> ... -> Origin -> ProgramComplete`
 
-current R3-3B forcing sequence:
-`[10, 11, 1, 2, 3, 4, 5, 6, 7, 8, 9]`
+Every program Origin must appear exactly once on that path.
 
-exact exhaustive minimum:
-`[10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 11]`
+Relevant frozen Enc_V2 order is:
 
-The flaw is that an occupied numeric source slot does not imply its target label is the next unresolved label-sensitive bytes. If lower numeric source slots remain unresolved, they may serialize earlier.
+`entry_origin -> success_continuations -> origin_sites -> later fields`
 
-Correct law:
+Therefore entry_origin dominates the continuation block, and the complete continuation block dominates all later Origin-site bytes.
 
-> A label may be forced by first-difference reasoning only when all preceding bytes are invariant across every legal completion beneath the current state.
+Continuation elements are sorted by numeric from_origin label, while labels are emitted by `encode_int n = decimal(n) ^ ";"` and compared by unsigned-byte lexicographic order. Numeric and byte order therefore diverge at decimal-width boundaries.
 
-Equivalent operational rule:
-
-> The occurrence must be the next unresolved label-sensitive point in the actual frozen serialization order.
-
-Call this the next-observable-byte law.
-
-R3-3A remains the exact small-case general certificate. R3-3B remains useful historical evidence but is not accepted as a correct large-chain result until this repair passes.
+For a simple path of N Origins, a complete legal labelling induces a numeric successor table over slots 1..N. Legal semantic path labellings correspond to legal rooted Hamiltonian successor paths over those numeric slots once the entry label is fixed. The task must prove and exploit that reduction instead of permuting semantic Origin objects.
 
 ## Required behaviour
 
-1. Start from exact base `c3d136dc4217059d4434f8d39a273fa398c4e64d` in a fresh dedicated worktree.
+1. Start from exact base `3034117dffa16366fa73c7befd1cccbf0bb86033`.
 
-2. Preserve the Origin-only scope: `entry_origin`, numerically sorted `success_continuations`, and numerically sorted program Origin sites.
+2. Preserve all R3-3A/B/B1 evidence and the B1 BLOCKED result.
 
-3. Reproduce the chain-11 counterexample before changing forcing logic.
+3. Add an explicit supported-shape predicate for valid Origin-only single-path programs.
 
-4. Add a focused regression test that captures the incorrect R3-3B chain-11 assignment and the exact exhaustive minimum.
+4. Supported shape requires entry_origin, every program Origin reachable exactly once from entry, final Origin targeting ProgramComplete, no disconnected Origins and no missing continuation on the path.
 
-5. Replace source-slot-based target forcing with a proof-based next-observable-byte eligibility check.
+5. Unsupported/non-path structures must return a deterministic experimental unsupported result; do not silently invoke the old factorial walker.
 
-6. A continuation target may be forced only when every continuation element capable of serializing before that target occurrence is already resolved enough to determine its exact preceding bytes.
+6. Prove the bijection between semantic path Origin labellings and legal numeric-label successor tables rooted at the assigned entry label.
 
-7. If any lower numeric source slot remains unresolved and could own a continuation that serializes first, do not force the later target.
+7. Preserve the frozen exact entry rule: entry Origin gets the legal label whose exact encode_int bytes are lexicographically minimal.
 
-8. In that blocked state, expose or retain an explicit ownership decision instead of emitting speculative bytes.
+8. Minimise the complete success-continuation block in the exact numeric source-slot order used by frozen Enc_V2.
 
-9. Preserve the exact entry-origin rule: when entry_origin is the first Origin-label-sensitive frozen field and preceding bytes are fixed, assign the remaining label whose exact `encode_int` bytes are minimal.
+9. Do not use raw IDs, source storage order, internal vertex numbers or R3-2 cell numbers to choose canonical labels.
 
-10. Keep numeric collection order and encoded-byte order as separate concepts throughout the implementation.
+10. If using greedy construction, every committed choice must be justified by an exact legal-completion feasibility proof.
 
-11. Do not substitute numeric label order for encoded-byte order or encoded-byte order for numeric collection order.
+11. Implement an exact feasibility predicate for partial successor tables.
 
-12. Prefix pruning is allowed only for a prefix proven identical for every legal completion beneath the branch up to the comparison point.
+12. Feasibility must reject duplicate predecessor assignment.
 
-13. If exact next bytes are not proven, the walker must block and branch rather than serialize a guessed collection order.
+13. Feasibility must reject multiple successors from one source.
 
-14. Preserve at least three deterministic branch-order policies and prove final canonical payload independence from branch order.
+14. Feasibility must reject a predecessor into the fixed entry slot.
 
-15. Extend the independent exhaustive Origin reference so decimal-width continuation structure is tested, not merely primitive `encode_int` comparisons.
+15. Feasibility must reject more than one ProgramComplete terminal.
 
-16. Require exact full-payload differential proof for homogeneous chain size 10.
+16. Feasibility must reject premature directed cycles.
 
-17. Require exact full-payload differential proof for homogeneous chain size 11.
+17. Feasibility must reject partial states that cannot still be completed into one Hamiltonian path.
 
-18. For chain-10/11 exhaustive reference, it is permitted to first prove/fix the entry Origin from frozen byte law and then exhaustively enumerate every remaining legal Origin-label assignment.
+18. Feasibility must accept every partial state that has at least one legal complete success-path completion.
 
-19. Only after chain-10 and chain-11 exact parity passes, rerun chains 12, 100 and 1000 and record corrected solver statistics.
+19. Do not enumerate complete Origin permutations in the new path canonicaliser.
 
-20. Do not preserve the former zero-branch claim by adding heuristic pruning. If the corrected 1000-chain search becomes expensive, report the real counters and STOP.
+20. Do not call R3-3A or R3-3B1 search implementation from the new path implementation; they remain test authorities only.
 
-21. Preserve R3-3A and R3-3B evidence. Document this task as a correctness repair; do not rewrite/delete the failed R3-3B result.
+21. Produce the final Origin label assignment by mapping the winning numeric successor path back onto the semantic Origin path.
 
-22. Do not generalise to Facts, Branches, Batches, Templates, ScopedRoles, generic graph I/R, full Enc_V2 or production wiring.
+22. Feed the final assignment through existing frozen Enc_V2 machinery for final payload/digest; do not create a new identity format.
+
+23. Prove byte-for-byte parity against exhaustive authority for homogeneous chains 1 through 11.
+
+24. Chain-10 must match the previously proven 362,880-residual-candidate minimum.
+
+25. Chain-11 must match the previously proven 3,628,800-residual-candidate minimum and known exact label sequence `[10,9,8,7,6,5,4,3,2,1,11]`.
+
+26. Add structural decimal-width cases crossing 9/10, 10/11, 99/100 and 999/1000.
+
+27. Add path fixtures with non-identical Origin body bytes, including distinct Action capabilities/contracts and Anchor/Action mixtures where supported.
+
+28. Prove that once entry plus the complete continuation block uniquely determine the label assignment, later Origin-site bytes cannot overturn the winner.
+
+29. Add raw-ID renaming and storage-order permutation metamorphic variants.
+
+30. Add at least three deterministic implementation traversal/choice-order perturbations; all must produce identical labels/payload/digest.
+
+31. Instrument path_size, successor_slots_processed, candidate_targets_considered, feasibility_checks, rejected_infeasible_choices, committed_choices, complete_permutations_enumerated and max_partial_components.
+
+32. Require `complete_permutations_enumerated = 0`, then after exact 1–11 parity run chain-12, chain-100, chain-1000, and chain-5000 only if still comfortably bounded. Do not generalise beyond simple paths.
 
 ## Relevant components
 
 Authorised mutation is limited to:
 
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-09-01-rocket-v3-r3-3b1-next-observable-byte.md`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_origin_walk.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_origin_walk.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_origin_walk_test.ml`
+- `docs/worker-notes/2026-09-01-rocket-v3-r3-3b2-success-path-canon.md`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_path.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_path.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_path_test.ml`
 - `tethers-0.1/engine-ocaml/bin/dune`
 
 Read-only authorities:
@@ -127,139 +140,161 @@ Read-only authorities:
 - `tethers_core_canonical_v2_format.ml/.mli`
 - `tethers_core_canonical_v2_reference.ml/.mli`
 - `tethers_core_rocket_v3_encode.ml/.mli`
+- `tethers_core_rocket_v3_origin_walk.ml/.mli`
 - R3-1 model
 - R3-2 partition/refinement
-- accepted R3-3A worker note/tests
-- completed R3-3B worker note/tests
+- validator/Core/planner
+- R3-3A/B/B1 worker notes/tests
 
-If correctness requires editing a read-only authority, STOP.
+If exact implementation requires changing a read-only authority, STOP.
 
 ## Frozen decisions and invariants
 
-- Frozen Enc_V2 bytes do not change.
-- ProgramDigest V2 semantics do not change.
-- `success_continuations` remain sorted by numeric `from_origin` label.
-- Origin sites remain sorted by numeric Origin label.
-- `encode_int` remains decimal text plus `;`.
-- Numeric order and encoded-byte order are distinct.
-- First-difference pruning is valid only after all preceding bytes are completion-invariant.
-- Known semantic identity alone does not force a numeric label.
-- Known source-slot occupancy alone does not force a target label.
-- The relevant occurrence must be next-observable in frozen serialization.
-- Same R3-2 cell is not automorphism proof.
-- Raw IDs/internal vertex handles are non-semantic.
-- No heuristic pruning or wall-clock identity decision.
-- R3-3A remains exact small-case authority.
-- R3-3B remains historical evidence including its flaw.
+- Frozen Enc_V2 remains unchanged.
+- ProgramDigest V2 remains unchanged.
+- Numeric continuation sorting remains unchanged.
+- encode_int byte representation remains unchanged.
+- Entry field outranks the entire continuation block.
+- The complete continuation block outranks all Origin-site/later bytes.
+- A smaller earlier frozen block cannot be rescued by a later block.
+- Semantic path order is structure, not canonical numeric label order.
+- Raw IDs remain non-semantic.
+- No arbitrary Action-count limit.
+- No search budget may alter identity.
+- No V1 fallback.
+- No heuristic pruning.
+- Numeric order must never be confused with encoded-byte order.
+- This task proves only the simple-path case.
 
 ## Acceptance criteria
 
-1. Fresh work starts from exact base `c3d136dc4217059d4434f8d39a273fa398c4e64d`.
+1. Work starts from exact base `3034117dffa16366fa73c7befd1cccbf0bb86033`.
 
-2. Existing chain-11 failure is reproduced before repair.
+2. All prior R3-3 evidence remains preserved.
 
-3. Test evidence records both the former incorrect chain-11 assignment and the exact exhaustive minimum.
+3. Supported-shape detection accepts intended complete single paths.
 
-4. The first complete-payload difference between the incorrect and exact chain-11 results is captured.
+4. Supported-shape detection rejects disconnected/incomplete/non-path structures deterministically.
 
-5. Target forcing explicitly checks next-observable-byte eligibility rather than source-slot occupancy alone.
+5. Unsupported shapes do not silently invoke factorial search.
 
-6. A target behind unresolved lower numeric source slots is not forced.
+6. Semantic path labellings to numeric successor tables are documented/tested as a bijection.
 
-7. At least one focused fixture proves that blocked behaviour.
+7. Entry label is selected solely by frozen exact byte law.
 
-8. Ownership/branch resolution occurs when preceding collection ownership is unresolved.
+8. Continuation minimisation operates in numeric source-slot serialization order.
 
-9. Entry-origin remains exactly forceable by frozen first-difference law.
+9. No raw-ID/storage/internal-vertex/R3-2-cell ordering influences labels.
 
-10. Numeric collection ordering and encoded-byte ordering remain separately represented.
+10. Every committed choice has an exact completion-feasibility justification.
 
-11. Real continuation fixtures cross the 9/10/11 decimal-width boundary.
+11. A standalone exact feasibility predicate exists.
 
-12. Prefix pruning compares only completion-invariant frozen prefixes.
+12. Duplicate-predecessor states are rejected.
 
-13. No speculative unresolved collection order is serialized.
+13. Multiple-successor states are rejected.
 
-14. Three deterministic branch policies return identical canonical payloads.
+14. Predecessor-to-entry states are rejected.
 
-15. The exhaustive reference remains independent from walker search logic.
+15. Invalid/multiple-terminal states are rejected.
 
-16. Chain-10 repaired walker payload matches exhaustive reference byte-for-byte.
+16. Premature cycles are rejected.
 
-17. Chain-11 repaired walker payload matches exhaustive reference byte-for-byte.
+17. Uncompletable disconnected partial states are rejected.
 
-18. Chain-10/11 digest parity is proven using the complete frozen payload where applicable.
+18. Known completable partial states are accepted.
 
-19. Chains 12, 100 and 1000 are rerun only after chain-10/11 exact proof passes.
+19. New canonicaliser enumerates zero complete Origin permutations.
 
-20. Corrected 1000-chain solver statistics are recorded without assuming zero branching.
+20. R3-3A/B1 are test authorities only, not implementation dependencies.
 
-21. Existing R3-3A, R3-1, R3-2 and V2 regression suites remain green.
+21. Winning successor table maps back to one complete legal semantic Origin label assignment.
 
-22. Final diff stays strictly within authorised R3-3B1 paths with no cross-family/full Rocket generalisation.
+22. Final payload/digest use existing frozen Enc_V2 machinery.
+
+23. Chains 1–9 match exhaustive frozen authority exactly.
+
+24. Chain-10 matches the exact 362,880-residual-candidate result.
+
+25. Chain-11 matches the exact 3,628,800-residual-candidate result and known label sequence.
+
+26. Decimal width crossings 9/10, 10/11, 99/100 and 999/1000 are exercised.
+
+27. Distinct-body Origin path fixtures retain exact identity.
+
+28. Later origin_sites bytes are proven unable to overturn a uniquely minimal earlier continuation block.
+
+29. Raw-ID and storage-order metamorphic variants remain byte/digest identical.
+
+30. Three deterministic traversal/choice perturbations return identical results.
+
+31. Required deterministic statistics are present and repeatable.
+
+32. `complete_permutations_enumerated = 0`; chain-12, 100 and 1000 complete without factorial search or the task STOPS with an exact mathematical/performance finding before any generalisation.
 
 ## Required verification
 
-- Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-3b1-next-observable-byte`.
-- Confirm exact base `c3d136dc4217059d4434f8d39a273fa398c4e64d`, branch and clean worktree.
+- Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-3b2-success-path-canon`.
+- Confirm exact base `3034117dffa16366fa73c7befd1cccbf0bb86033`, branch and clean worktree.
 - Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1`.
 - Run packet checker and require `control-v1/READY`.
-- Verify exact authorised OCaml switch.
-- Read current R3-3B walker/worker note/tests and frozen continuation ordering before mutation.
-- Reproduce and record the chain-11 failure first.
-- Implement the smallest exact repair justified by next-observable-byte law.
-- Run existing chains 1–7, exact chain-10, exact chain-11, decimal-boundary structural cases, symmetric/disconnected/multi-chain cases, three branch policies, raw-ID renaming and storage permutation.
-- Only after chain-10/11 parity passes, run chain 12, 100 and 1000.
-- Record `emitted_bytes`, `forced_assignments`, `decision_points`, `branches_explored`, `prefix_prunes`, `completed_candidates`, and `max_depth`.
-- Run Origin-walker focused suite.
+- Verify the exact authorised OCaml switch.
+- Read frozen encode_program, validator success-continuation invariants, R3-3B1 implementation/worker note and chain-10/11 exact tests before mutation.
+- Write down the semantic-path/numeric-successor-table proof and exact partial completion predicate before large-chain claims.
+- Test feasibility independently.
+- Differentially prove chains 1–9, exact chain-10 and exact chain-11.
+- Exercise decimal boundaries, distinct body shapes, raw-ID/storage metamorphics and traversal-order perturbations.
+- Only after exact parity run chain-12, chain-100 and chain-1000; optionally chain-5000 if comfortably bounded.
+- Record all required deterministic statistics.
+- Run the focused path suite.
 - Run R3-3A `39/39`.
 - Run R3-1 `214/214`.
 - Run R3-2 `4807/4807`.
-- Run V2 suites and the 5,000-case differential corpus.
+- Run V2 suites and 5,000-case corpus.
 - Run `opam exec --switch="D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml" -- dune build @all`.
 - Run `opam exec --switch="D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml" -- dune runtest --force`.
 - Run `git diff --check`.
-- Inspect base-to-HEAD diff and prove authorised paths only.
-- Commit implementation/tests and record exact 40-character implementation checkpoint.
-- Write worker note and mark packet `COMPLETE`; no implementation/test mutation after checkpoint.
-- Run packet checker and require `control-v1/COMPLETE`.
+- Inspect full base-to-HEAD diff and prove authorised paths only.
+- Commit implementation/tests and record full implementation checkpoint SHA.
+- Write worker note and transition packet to `COMPLETE`; no implementation mutation after checkpoint.
+- Run packet checker requiring `control-v1/COMPLETE`.
 - Push normally, prove local HEAD == remote HEAD, require clean worktree, report evidence and STOP.
 
 ## Forbidden changes
 
-- No frozen V2 modification.
-- No ProgramDigest modification.
-- No Core/validator/lowerer changes.
+- No frozen V2 changes.
+- No ProgramDigest change.
+- No Core/validator changes.
 - No R3-1/R3-2 changes.
-- No R3-3A changes.
-- No cross-family solver.
-- No generic graph I/R.
-- No automorphism/orbit pruning.
-- No assumption that refinement equivalence means interchangeability.
+- No R3-3A/B/B1 modification.
+- No full permutation search in the new path canonicaliser.
+- No heuristic-only greedy rule.
+- No unproved feasibility shortcut.
 - No raw-ID/internal-vertex ordering.
-- No speculative prefix.
-- No heuristic first-occurrence assignment.
-- No “known source means force target” rule.
-- No memo/component pruning.
-- No randomised search.
-- No wall-clock cutoff.
-- No new dependency.
+- No automorphism/orbit machinery.
+- No generic graph I/R.
+- No success-tree/forest generalisation.
+- No Facts/Branches/Batches/Templates/Roles work.
 - No production integration.
+- No new dependency.
+- No wall-clock identity decision.
 - No V1 fallback.
-- No R3-3C/R3-4/release/version work.
+- No R3-3C/R3-4/release work.
 
 ## Stop conditions
 
-- Repaired walker disagrees with exhaustive chain-10 or chain-11.
-- No exact condition can determine when a continuation target becomes next-observable.
-- Exact prefix construction requires speculative unresolved collection ordering.
-- Different branch policies produce different canonical payloads.
-- Decimal-width behaviour reveals another unmodelled ordering dependency.
-- Correctness requires changing frozen V2, Core, R3-2 or R3-3A.
-- Correctness requires heuristic pruning.
-- Chain-1000 becomes combinatorially explosive after correctness repair.
-- Two materially similar failures recur without a new diagnosis.
-- Checkout/branch/base/packet state differs after fetch.
+- Semantic-path to numeric-successor-table bijection is false.
+- An exact bounded completion-feasibility predicate cannot be established.
+- Any chain 1–11 result disagrees with exhaustive frozen authority.
+- Chain-11 known exact sequence is not reproduced.
+- Correctness depends on later Origin-site bytes before the continuation minimum is determined.
+- Path canonicaliser requires complete factorial permutation enumeration.
+- Traversal-order perturbations change identity.
+- Decimal-width crossings expose an unmodelled frozen-order dependency.
+- Correctness requires frozen V2/Core/R3-2 changes.
+- Two materially similar approaches fail without a new diagnosis.
+
+A Red mathematical finding is a valid result. Do not weaken the theorem for speed.
 
 ## Expected pre-existing changes
 
