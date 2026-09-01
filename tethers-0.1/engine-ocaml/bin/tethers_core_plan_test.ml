@@ -1956,7 +1956,7 @@ do
    | _ -> assert_true "CB-T6 single-action shape" false)
 
 (* ================================================================== *)
-(*  CORE-6B T7 — Stale pre-canonical Anchor OriginId does not work      *)
+(*  CORE-6B T7 — Rocket preserves operational Core OriginIds           *)
 (* ================================================================== *)
 
 let test_stale_pre_canonical_snapshot_fails () =
@@ -1982,19 +1982,17 @@ do
   let lowered = match Tethers_core_lowerer.lower env parsed with
     | Ok p -> p
     | Error _ -> assert_true "CB-T7 lower ok" false; assert false
-  in
+  } in
   let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
   let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
-  let canonical_anchor_oid =
+  let anchor_oid =
     let rec find = function
-      | [] -> assert_true "CB-T7 has canonical anchor" false; oid "O_missing"
+      | [] -> assert_true "CB-T7 has anchor" false; oid "O_missing"
       | Anchor_origin a :: _ -> a.anchor_origin_id
       | _ :: rest -> find rest
     in
     find c_program.origin_sites
   in
-  (* Use a deliberately wrong pre-canonical OriginId as snapshot key *)
-  let stale_oid = oid "O_anchor" in
   let snapshot =
     `Assoc [
       ("document", `Assoc [
@@ -2002,32 +2000,25 @@ do
       ])
     ]
   in
+  (* Rocket V2 canonical identity does not rewrite operational Core IDs.
+     The snapshot key emitted by lowering therefore remains the correct runtime
+     key and must continue to resolve. *)
   let ctx =
     mk_context
       ~evaluation_id:"eval_cb7"
       ~capabilities:[ mk_projection "cap.notify" "sha256:abc" ~name:"cap.notify" () ]
-      ~anchors:[ mk_anchor_snapshot "O_anchor" snapshot ]
+      ~anchors:[
+        mk_anchor_snapshot (Tethers_core.string_of_origin_id anchor_oid) snapshot
+      ]
       ()
   in
-  (* The canonical program uses canonical OriginIds (e.g. O1), so a snapshot
-     keyed by the pre-canonical O_anchor won't match.  The error will name the
-     canonical OriginId that was actually looked up. *)
-  (match plan_canonicalized c ctx with
-   | Error (Missing_anchor_snapshot looked_up_oid) ->
-       assert_true "CB-T7 error names canonical anchor"
-         (looked_up_oid = canonical_anchor_oid);
-       assert_true "CB-T7 canonical differs from pre-canonical"
-         (canonical_anchor_oid <> stale_oid);
-       incr tests_run; incr tests_passed
-   | Error err ->
-       incr tests_run;
-       Printf.eprintf "FAIL: CB-T7 expected Missing_anchor_snapshot, got %s\n"
-         (string_of_planning_error err);
-       exit 1
-   | Ok _ ->
-       incr tests_run;
-       Printf.eprintf "FAIL: CB-T7 expected Error, got Ok\n";
-       exit 1)
+  let cp = assert_ok_canonical_plan "CB-T7 plan" (plan_canonicalized c ctx) in
+  (match cp.runtime_plan.actions with
+   | [ action ] ->
+       assert_true "CB-T7 resolved through preserved operational OriginId"
+         (action_field "arguments" action =
+            `Assoc [ ("title", `String "Tethers") ])
+   | _ -> assert_true "CB-T7 single-action shape" false)
 
 (* ================================================================== *)
 (*  CORE-6B T8 — Existing CORE-6A planner tests remain green            *)
