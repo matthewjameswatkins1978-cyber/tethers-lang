@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -11,6 +11,8 @@ Owner: `Codex`
 Route: `Codex evidence/design implementation in a fresh dedicated worktree; no production Rocket V3 code in R3-0`
 
 Base commit: `5a1b461dcb95852681f269cd13a63a1e80695795`
+
+Implementation checkpoint: `0fdcde0fd9f268513c5975062685af862955c0cd`
 
 Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-0.md`
 
