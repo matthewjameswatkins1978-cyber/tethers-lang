@@ -468,11 +468,6 @@ let plan_core program (context : planning_context) =
       | None -> Error Missing_entry_origin
       | Some entry_oid ->
           let sites = program.origin_sites in
-          let together_sites =
-            List.filter_map
-              (function Together_origin t -> Some t | _ -> None)
-              sites
-          in
           let continuation_of oid =
             List.assoc_opt oid
               (List.map
@@ -483,7 +478,7 @@ let plan_core program (context : planning_context) =
           let site_of oid =
             List.find_opt (fun s -> origin_id_of_site s = Some oid) sites
           in
-          let rec walk visited index planned effects action_indices oid =
+          let rec walk visited index planned effects action_indices group_index planned_groups oid =
             if List.mem oid visited then
               Error (Flow_cycle (List.rev (oid :: visited)))
             else
@@ -492,7 +487,7 @@ let plan_core program (context : planning_context) =
               | Some site -> (
                   match site with
                   | Anchor_origin _ ->
-                      advance (oid :: visited) index planned effects action_indices oid
+                      advance (oid :: visited) index planned effects action_indices group_index planned_groups oid
                   | Action_origin action -> (
                       match plan_action context index action with
                       | Error _ as err -> err
@@ -500,24 +495,26 @@ let plan_core program (context : planning_context) =
                           advance (oid :: visited) (index + 1)
                             (planned_action :: planned)
                             (List.rev_append action_effects effects)
-                            ((action.action_origin_id, index) :: action_indices) oid)
+                            ((action.action_origin_id, index) :: action_indices)
+                            group_index planned_groups oid)
                   | Together_origin _ ->
                       advance (oid :: visited) index planned effects action_indices oid
                   | Batch_site _ -> Error Unsupported_batch)
-          and advance visited index planned effects action_indices oid =
+          and advance visited index planned effects action_indices group_index planned_groups oid =
             match continuation_of oid with
             | None -> Error (Incomplete_success_path oid)
             | Some Program_complete ->
                 Ok
                   ( List.rev planned,
                     unique_effects (List.rev effects),
-                    List.rev action_indices )
+                    List.rev action_indices,
+                    List.rev planned_groups )
             | Some (Origin_target next_oid) ->
-                walk visited index planned effects action_indices next_oid
+                walk visited index planned effects action_indices group_index planned_groups next_oid
           in
-          match walk [] 1 [] [] [] entry_oid with
+          match walk [] 1 [] [] [] 1 [] entry_oid with
           | Error _ as err -> err
-          | Ok (actions, required_effects, action_plan_index) ->
+          | Ok (actions, required_effects, action_plan_index, together_sites) ->
               let plan_idx_of_oid oid =
                 match List.assoc_opt oid action_plan_index with
                 | Some i -> i
@@ -527,7 +524,7 @@ let plan_core program (context : planning_context) =
                 let open Tethers_core in
                 let rec resolve_groups acc = function
                   | [] -> Ok (List.rev acc)
-                  | t :: rest ->
+                  | (t, group_index) :: rest ->
                       let rec resolve_members acc_ids = function
                         | [] -> Ok (List.rev acc_ids)
                         | member_oid :: mrest ->
@@ -546,7 +543,7 @@ let plan_core program (context : planning_context) =
                             |> List.map snd
                           in
                           resolve_groups
-                            ({ group_id = string_of_group_id t.group_id;
+                            ({ group_id = "group_" ^ string_of_int group_index;
                                member_action_ids } :: acc)
                             rest
                 in
