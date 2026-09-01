@@ -14,6 +14,8 @@ Base commit: `b32d1940a36ddd92ac7048f87787d7ca7ff7d63a`
 
 Worker note: `docs/worker-notes/2026-09-01-rocket-only-runtime-v2.md`
 
+Related issue: `#5 — BUG: Rocket V2 factorial search on simple sequential Action chains`
+
 Updated: 2026-09-01
 
 ## Objective
@@ -90,6 +92,10 @@ This task finishes that cutover. It does not change Human Tether syntax or provi
 - No fallback from Rocket V2 to V1.
 - No edits to Agent Essentials implementation files.
 - Do not rewrite historical worker notes merely to make them sound current.
+
+## Follow-up tracked outside this cutover
+
+GitHub issue #5 permanently tracks the separate sequential `Action_origin` factorial-search weakness exposed by this migration. Do not close or bury that issue merely because the Rocket-only identity cutover lands. The follow-up must prove an exact control-flow reduction, preserve Canonical V2 correctness/fail-closed behaviour, and benchmark coherent 10/100/1,000-Action Tethers.
 
 ## Stop conditions
 
