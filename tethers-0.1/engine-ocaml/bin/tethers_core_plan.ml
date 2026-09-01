@@ -59,7 +59,7 @@ type planning_context = {
 }
 
 type canonical_plan = {
-  program_digest : Tethers_core_canonical.program_digest;
+  program_digest : string;
   runtime_plan : Tethers_outcome.plan;
 }
 
@@ -272,7 +272,7 @@ let resolve_anchor_value context origin_id path =
 (* ------------------------------------------------------------------ *)
 (*  Entry guard evaluation                                             *)
 (*                                                                     *)
-(*  For each entry guard the bridge resolves the canonical FactId to    *)
+(*  For each entry guard the bridge resolves the Core FactId to    *)
 (*  its declaration in [input_facts], extracts the [HostSnapshotKey]   *)
 (*  from [Evaluation_input] provenance, looks up the runtime snapshot   *)
 (*  by exactly that key, decodes the JSON value according to the       *)
@@ -483,7 +483,7 @@ let plan_core program (context : planning_context) =
           let site_of oid =
             List.find_opt (fun s -> origin_id_of_site s = Some oid) sites
           in
-          let rec walk visited index planned effects oid =
+          let rec walk visited index planned effects action_indices oid =
             if List.mem oid visited then
               Error (Flow_cycle (List.rev (oid :: visited)))
             else
@@ -492,39 +492,32 @@ let plan_core program (context : planning_context) =
               | Some site -> (
                   match site with
                   | Anchor_origin _ ->
-                      advance (oid :: visited) index planned effects oid
+                      advance (oid :: visited) index planned effects action_indices oid
                   | Action_origin action -> (
                       match plan_action context index action with
                       | Error _ as err -> err
                       | Ok (planned_action, action_effects) ->
                           advance (oid :: visited) (index + 1)
                             (planned_action :: planned)
-                            (List.rev_append action_effects effects) oid)
+                            (List.rev_append action_effects effects)
+                            ((action.action_origin_id, index) :: action_indices) oid)
                   | Together_origin _ ->
-                      advance (oid :: visited) index planned effects oid
+                      advance (oid :: visited) index planned effects action_indices oid
                   | Batch_site _ -> Error Unsupported_batch)
-          and advance visited index planned effects oid =
+          and advance visited index planned effects action_indices oid =
             match continuation_of oid with
             | None -> Error (Incomplete_success_path oid)
             | Some Program_complete ->
-                Ok (List.rev planned, unique_effects (List.rev effects))
+                Ok
+                  ( List.rev planned,
+                    unique_effects (List.rev effects),
+                    List.rev action_indices )
             | Some (Origin_target next_oid) ->
-                walk visited index planned effects next_oid
+                walk visited index planned effects action_indices next_oid
           in
-          match walk [] 1 [] [] entry_oid with
+          match walk [] 1 [] [] [] entry_oid with
           | Error _ as err -> err
-          | Ok (actions, required_effects) ->
-              let action_plan_index =
-                let rec collect acc idx = function
-                  | [] -> List.rev acc
-                  | site :: rest ->
-                      (match site with
-                       | Action_origin a ->
-                           collect ((a.action_origin_id, idx) :: acc) (idx + 1) rest
-                       | _ -> collect acc idx rest)
-                in
-                collect [] 1 sites
-              in
+          | Ok (actions, required_effects, action_plan_index) ->
               let plan_idx_of_oid oid =
                 match List.assoc_opt oid action_plan_index with
                 | Some i -> i
@@ -578,10 +571,15 @@ let plan program (context : planning_context) =
       else plan_core program context)
 
 let plan_canonicalized canonicalized (context : planning_context) =
-  let c_program = Tethers_core_canonical.canonical_program canonicalized in
-  let c_digest = Tethers_core_canonical.program_digest canonicalized in
+  let c_program =
+    Tethers_core_canonical_v2_ir.validated_program_ir canonicalized
+  in
+  let c_digest =
+    Tethers_core_canonical_v2_ir.program_digest_ir canonicalized
+  in
   if c_program.entry_guards <> [] then Error Unresolved_entry_guards
-  else match plan_core c_program context with
+  else
+    match plan_core c_program context with
     | Error err -> Error err
     | Ok runtime_plan -> Ok { program_digest = c_digest; runtime_plan }
 
@@ -591,8 +589,12 @@ let plan_internal program (context : planning_context) =
   | Ok () -> plan_core program context
 
 let evaluate_canonicalized canonicalized context =
-  let c_program = Tethers_core_canonical.canonical_program canonicalized in
-  let c_digest = Tethers_core_canonical.program_digest canonicalized in
+  let c_program =
+    Tethers_core_canonical_v2_ir.validated_program_ir canonicalized
+  in
+  let c_digest =
+    Tethers_core_canonical_v2_ir.program_digest_ir canonicalized
+  in
   let open Result.Syntax in
   (* Anchor reception: exactly one top-level Anchor_origin required *)
   let anchor_origins =
@@ -610,7 +612,7 @@ let evaluate_canonicalized canonicalized context =
   if anchor.event_name <> context.event.name then
     Ok Not_matched
   else
-    (* Event matched: bind event data to canonical Anchor OriginId *)
+    (* Event matched: bind event data to validated Core Anchor OriginId *)
     let derived_anchor =
       { origin_id = anchor.anchor_origin_id; data = context.event.data }
     in
