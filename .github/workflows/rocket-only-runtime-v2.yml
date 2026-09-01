@@ -1,0 +1,74 @@
+name: Rocket-only runtime V2 cutover
+
+on:
+  push:
+    branches:
+      - fix/rocket-only-runtime-v2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rocket-only-runtime-v2
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5.0"
+
+      - name: Install OCaml dependencies
+        working-directory: tethers-0.1/engine-ocaml
+        run: opam install --yes dune yojson digestif
+
+      - name: Build all OCaml targets
+        working-directory: tethers-0.1/engine-ocaml
+        run: opam exec -- dune build @all
+
+      - name: Run all OCaml tests
+        working-directory: tethers-0.1/engine-ocaml
+        run: opam exec -- dune runtest --force
+
+      - name: Prove live OCaml modules do not depend on V1 canonicalizer
+        shell: pwsh
+        run: |
+          $paths = @(
+            "tethers-0.1/engine-ocaml/bin/tethers_core_evaluation_adapter.ml",
+            "tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml",
+            "tethers-0.1/engine-ocaml/bin/tethers_core_wire.ml"
+          )
+          $hits = Select-String -Path $paths -Pattern "Tethers_core_canonical\.canonicalize"
+          if ($hits) {
+            $hits | ForEach-Object { Write-Host $_ }
+            throw "legacy V1 canonicalizer referenced by live path"
+          }
+
+      - name: Rust formatting
+        working-directory: tethers-0.1/host-rust
+        run: cargo fmt --all -- --check
+
+      - name: Rust check
+        working-directory: tethers-0.1/host-rust
+        run: cargo check --all-targets --all-features --locked
+
+      - name: Focused real-engine V2 ProgramDigest tests
+        working-directory: tethers-0.1/host-rust
+        run: |
+          cargo test --locked engine_stdio::tests::core9b_t5_evaluate_is_core -- --nocapture
+          cargo test --locked engine_stdio::tests::core9b_t6_new_evaluate_reaches_core -- --nocapture
+          cargo test --locked engine_stdio::tests::core9b_t14_occurrence_identity -- --nocapture
+
+      - name: Diff whitespace
+        run: git diff --check origin/main...HEAD
+
+      - name: Task packet consistency
+        shell: pwsh
+        run: ./.github/scripts/check-tethers-task-packet.ps1 -SkipWorktreeCheck
