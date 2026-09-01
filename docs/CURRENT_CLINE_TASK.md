@@ -52,7 +52,7 @@ Search may use refinement to expose structure and reduce ambiguity, but the winn
 
 No prefix pruning, automorphism/orbit pruning, component recursion, memo pruning, greedy family forcing, search budget or production cutover is authorised in R3-3.
 
-## Relevant background and frozen identity law
+## Relevant background and existing behaviour
 
 Frozen identity remains:
 
