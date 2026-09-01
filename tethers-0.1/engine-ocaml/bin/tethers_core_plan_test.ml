@@ -1982,7 +1982,7 @@ do
   let lowered = match Tethers_core_lowerer.lower env parsed with
     | Ok p -> p
     | Error _ -> assert_true "CB-T7 lower ok" false; assert false
-  } in
+  in
   let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
   let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let anchor_oid =
