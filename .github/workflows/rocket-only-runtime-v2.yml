@@ -14,8 +14,8 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -36,12 +36,18 @@ jobs:
         run: opam exec -- dune runtest --force
 
       - name: Prove live OCaml modules do not depend on V1 canonicalizer
+        shell: pwsh
         run: |
-          set -eu
-          if grep -R "Tethers_core_canonical\.canonicalize"             tethers-0.1/engine-ocaml/bin/tethers_core_evaluation_adapter.ml             tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml             tethers-0.1/engine-ocaml/bin/tethers_core_wire.ml; then
-            echo "legacy V1 canonicalizer referenced by live path"
-            exit 1
-          fi
+          $paths = @(
+            "tethers-0.1/engine-ocaml/bin/tethers_core_evaluation_adapter.ml",
+            "tethers-0.1/engine-ocaml/bin/tethers_core_plan.ml",
+            "tethers-0.1/engine-ocaml/bin/tethers_core_wire.ml"
+          )
+          $hits = Select-String -Path $paths -Pattern "Tethers_core_canonical\.canonicalize"
+          if ($hits) {
+            $hits | ForEach-Object { Write-Host $_ }
+            throw "legacy V1 canonicalizer referenced by live path"
+          }
 
       - name: Rust formatting
         working-directory: tethers-0.1/host-rust
@@ -54,7 +60,7 @@ jobs:
       - name: Focused real-engine V2 ProgramDigest tests
         working-directory: tethers-0.1/host-rust
         run: |
-          cargo test --locked engine_stdio::tests::core9b_t5_core_evaluate_is_only_route -- --nocapture
+          cargo test --locked engine_stdio::tests::core9b_t5_evaluate_is_core -- --nocapture
           cargo test --locked engine_stdio::tests::core9b_t6_new_evaluate_reaches_core -- --nocapture
           cargo test --locked engine_stdio::tests::core9b_t14_occurrence_identity -- --nocapture
 
