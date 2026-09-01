@@ -185,4 +185,6 @@ Required read-only authorities include:
 
 ## Expected pre-existing changes
 
-None.
+- `tethers-0.1/engine-ocaml/bin/dune`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model.mli`
