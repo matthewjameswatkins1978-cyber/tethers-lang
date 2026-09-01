@@ -1,0 +1,44 @@
+name: Tethers Current Throughput Probe
+
+on:
+  push:
+    branches:
+      - bench/current-throughput-2026-09-01
+
+permissions:
+  contents: read
+
+jobs:
+  core-throughput:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tethers-0.1/engine-ocaml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner information
+        run: |
+          uname -a
+          lscpu
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.2"
+
+      - name: Install benchmark dependencies
+        run: opam install --yes dune yojson digestif
+
+      - name: Build production Core benchmark
+        run: opam exec -- dune build bin/tethers_benchmark_core.exe
+
+      - name: Quick benchmark
+        run: |
+          echo "=== QUICK ==="
+          opam exec -- dune exec bin/tethers_benchmark_core.exe -- --quick
+
+      - name: Full Core pipeline benchmark
+        run: |
+          echo "=== FULL B0-A MATRIX ON CURRENT MAIN ==="
+          opam exec -- dune exec bin/tethers_benchmark_core.exe
