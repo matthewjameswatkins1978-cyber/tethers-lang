@@ -7,6 +7,8 @@
     ·
     <a href="QUICKSTART.md">Quick start</a>
     ·
+    <a href="docs/AGENT_QUICKSTART.md">Agent quickstart</a>
+    ·
     <a href="tethers-0.1/SPEC.md">Language specification</a>
   </p>
 </div>
@@ -45,6 +47,19 @@ The same commands work on Linux with `./tethers`. The expected exit statuses
 are deliberately scriptable: `0` for `ALLOW`, `10` for `ASK`, and `20` for
 `DENY`. Configuration and input failures use separate non-zero statuses and
 never mean `ALLOW`.
+
+For the native host and installed trusted Plugs, begin with the zero-knowledge
+discovery surface:
+
+```text
+tethers describe --json
+tethers capability list --host-data-root <absolute-host-data-root> --json
+tethers capability inspect <name> --host-data-root <absolute-host-data-root> --version <version> --json
+```
+
+These commands are read-only and expose trusted contracts, scopes, provider
+bindings, and availability without starting providers. See the
+[agent quickstart](docs/AGENT_QUICKSTART.md) for the complete discovery path.
 
 ## Download the portable workbench
 
