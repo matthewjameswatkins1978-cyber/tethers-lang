@@ -28,7 +28,7 @@ jobs:
           ocaml-compiler: "5.5.0"
 
       - name: Install benchmark dependencies
-        run: opam install --yes . --deps-only --locked
+        run: opam install --yes dune yojson digestif
 
       - name: Build production Core benchmark
         run: opam exec -- dune build bin/tethers_benchmark_core.exe
