@@ -97,6 +97,8 @@ type edge = {
   payload : string;
 }
 
+module String_map = Map.Make (String)
+
 type vertex = {
   kind : vertex_kind;
   scalar : string;
@@ -106,6 +108,12 @@ type t = {
   vertices : vertex array;
   forward : edge array array;
   reverse : edge array array;
+  origin_lookup : int String_map.t;
+  fact_lookup : int String_map.t;
+  branch_lookup : int String_map.t;
+  batch_lookup : int String_map.t;
+  template_lookup : int String_map.t;
+  role_lookup : int String_map.t;
 }
 
 type owner_scope =
@@ -704,7 +712,21 @@ let build program =
       in
       let forward = Array.map (fun r -> Array.of_list (sort_edges !r)) forward_builders in
       let reverse = Array.map (fun r -> Array.of_list (sort_edges !r)) reverse_builders in
-      Ok { vertices = vertex_array; forward; reverse }
+      let map_of_table table =
+        Hashtbl.fold (fun key value map -> String_map.add key value map)
+          table String_map.empty
+      in
+      Ok {
+        vertices = vertex_array;
+        forward;
+        reverse;
+        origin_lookup = map_of_table origin_index;
+        fact_lookup = map_of_table fact_index;
+        branch_lookup = map_of_table branch_index;
+        batch_lookup = map_of_table batch_index;
+        template_lookup = map_of_table template_index;
+        role_lookup = map_of_table role_index;
+      }
 
 let vertex_count model = Array.length model.vertices
 
@@ -718,6 +740,24 @@ let vertex_family_count model family =
     | Anonymous f when f = family -> count + 1
     | _ -> count
   ) 0 model.vertices
+
+let find_origin_vertex model oid =
+  String_map.find_opt (string_of_origin_id oid) model.origin_lookup
+
+let find_fact_vertex model fid =
+  String_map.find_opt (string_of_fact_id fid) model.fact_lookup
+
+let find_branch_vertex model bid =
+  String_map.find_opt (string_of_branch_id bid) model.branch_lookup
+
+let find_batch_vertex model bid =
+  String_map.find_opt (string_of_batch_id bid) model.batch_lookup
+
+let find_template_vertex model tid =
+  String_map.find_opt (string_of_item_template_id tid) model.template_lookup
+
+let find_scoped_role_vertex model scope rid =
+  String_map.find_opt (role_key scope rid) model.role_lookup
 
 let forward_edges model index = Array.to_list model.forward.(index)
 

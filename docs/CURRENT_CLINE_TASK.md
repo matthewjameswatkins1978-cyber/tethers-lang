@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `READY`
+Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
@@ -277,4 +277,9 @@ Read-only authorities:
 
 ## Expected pre-existing changes
 
-None.
+- `tethers-0.1/engine-ocaml/bin/dune`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_model.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_encode.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_encode.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_search_test.ml`
