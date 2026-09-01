@@ -497,8 +497,10 @@ let plan_core program (context : planning_context) =
                             (List.rev_append action_effects effects)
                             ((action.action_origin_id, index) :: action_indices)
                             group_index planned_groups oid)
-                  | Together_origin _ ->
-                      advance (oid :: visited) index planned effects action_indices oid
+                  | Together_origin together ->
+                      advance (oid :: visited) index planned effects action_indices
+                        (group_index + 1)
+                        ((together, group_index) :: planned_groups) oid
                   | Batch_site _ -> Error Unsupported_batch)
           and advance visited index planned effects action_indices group_index planned_groups oid =
             match continuation_of oid with
