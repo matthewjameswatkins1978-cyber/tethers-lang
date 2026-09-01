@@ -106,10 +106,7 @@ let make_success_envelope (result : evaluated_request) =
            `Assoc
              (fields
              @ [
-                 ( "program_digest",
-                   `String
-                     (Tethers_core_canonical.string_of_program_digest
-                        canonical_plan.program_digest) );
+                 ("program_digest", `String canonical_plan.program_digest);
                ])
        | other -> other)
   | Tethers_core_plan.Not_matched ->
