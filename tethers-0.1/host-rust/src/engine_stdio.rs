@@ -706,7 +706,11 @@ mod tests {
             pd.starts_with("tethers:v2:sha256:"),
             "program_digest must start with tethers:v2:sha256:"
         );
-        assert_eq!(pd.len(), 82, "program_digest must be tethers:v2:sha256: + 64 hex");
+        assert_eq!(
+            pd.len(),
+            82,
+            "program_digest must be tethers:v2:sha256: + 64 hex"
+        );
         // plan must NOT contain program_digest
         let plan = response.get("plan").expect("plan missing");
         assert!(
