@@ -3805,7 +3805,7 @@ let test_missing_reception_anchor () =
   | Error _ ->
       (* Program may be invalid without anchor; test the error type directly *)
       incr tests_run; incr tests_passed
-  | Ok c ->
+  | Ok (c, _) ->
       let ctx =
         mk_eval_context
           ~evaluation_id:"eval_r12"
