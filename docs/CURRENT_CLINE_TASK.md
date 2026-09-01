@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -11,6 +11,8 @@ Owner: `Lucy`
 Route: `Direct GitHub implementation with repository CI verification`
 
 Base commit: `b32d1940a36ddd92ac7048f87787d7ca7ff7d63a`
+
+Implementation checkpoint: `c7b30ecd40ecad52007eca16ac64cb8a93b59008`
 
 Worker note: `docs/worker-notes/2026-09-01-rocket-only-runtime-v2.md`
 
