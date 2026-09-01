@@ -216,6 +216,9 @@ Read-only authorities:
 18. Existing R3-1 `214/214`, R3-2 `4807/4807`, V2 suites and existing 5,000-case V2 corpus remain green.
 19. Focused R3-3 tests, `dune build @all`, `dune runtest --force`, `git diff --check` and packet checker pass.
 20. Final diff contains only authorised paths, implementation/test checkpoint precedes closeout docs, local HEAD equals remote HEAD and worktree is clean.
+21. Leaf encoding delegates to the existing frozen `Tethers_core_canonical_v2_format.encode_program`; no duplicate/reimplemented Enc_V2 encoder or alternate leaf-label emission path exists.
+22. Individualisation is branch-local search state only: it adds the explicit artificial distinction required for that child, then ordinary R3-2 refinement runs without mutating Core meaning or R3-1 model construction/structural evidence.
+23. Dune integration registers only the authorised Rocket V3 modules/focused tests, and regression evidence confirms Rocket V2 production behaviour remains unchanged.
 
 ## Required verification
 
