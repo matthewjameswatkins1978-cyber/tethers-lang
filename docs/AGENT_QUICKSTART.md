@@ -78,6 +78,18 @@ expected match count; patching is exact-context, one-file unified patching with
 an optional base digest. The provider is separate from the frozen M4 provider;
 it is not trusted or enabled merely because its executable exists.
 
+The reviewed author source is under
+`reference-plugs/tethers-agent-workspace`. On Windows it can be packed with:
+
+```powershell
+pwsh -NoProfile -File .\scripts\build-agent-workspace-plug.ps1
+```
+
+Building or packing does not trust or enable the Plug. Use the existing
+install/conformance/trust/enable flow and provide explicit operational roots.
+The current packer emits Windows/x86_64 packages; this is a package-material
+checkpoint, not a claim of Linux package publication.
+
 ## 6. Query the Trail
 
 The current compatibility lookup is:

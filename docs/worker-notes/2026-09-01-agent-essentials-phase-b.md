@@ -10,6 +10,10 @@ Branch: `feature/agent-essentials`
 
 Worktree: `C:\Users\Matmus\Documents\Codex\2026-08-31\tethers-agent-essentials`
 
+Status: `IN_PROGRESS`
+
+Implementation checkpoint: `WORKTREE`
+
 ## Implemented
 
 Added a separate `agent_workspace_provider` so the reviewed M4 File Tools
@@ -33,13 +37,23 @@ must be strict JSON and unknown scope fields are refused.
 
 * `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml -- --check`: PASS.
 * `cargo check --all-targets --all-features --locked`: PASS.
-* Phase B workspace unit tests: 6 passed, 0 failed.
+* Phase B workspace unit tests: 8 passed, 0 failed.
 * Existing M4 provider tests: 4 passed, 0 failed.
-* Native MCP provider smoke: initialize, explicit text search, and exact patch
-  call passed.
+* Native MCP provider smoke: initialize, deterministic directory listing, and
+  empty-string SHA-256 passed.
+* Author source packed through the real `tethers plug pack` CLI with 11
+  capabilities; `plug inspect` succeeded.
+* Supervised `plug conform` passed all 6 generic conformance cases, including
+  exact live tool discovery/schema matching.
+* Two independent final package builds produced the same raw archive SHA-256
+  `7e0fe65d225791ce51d79ab8c9a905761845c854e6f3aa56232af18e38715766` and
+  semantic package digest
+  `sha256:434cc4fcfb1b68c062c491ecfacd35701d2d9fcdd9658207505c1937518537c0`.
 * `git diff --check`: PASS.
 * Task-packet checker: PASS.
 
-The provider is implemented and tested, but official signed/packaged Plug
-artifacts and host-installed discovery manifests remain a later packaging
-step; this note does not claim the full Agent Essentials release is complete.
+The Phase B author package material is now present and reproducibly packable.
+The generated package is a local ignored artifact; trust, installation,
+conformance, explicit scope, and enablement remain separate lifecycle steps.
+The current packer emits Windows/x86_64 packages; Linux packaging and the
+remaining Agent Essentials phases are not complete.

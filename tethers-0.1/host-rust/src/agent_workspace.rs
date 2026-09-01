@@ -613,7 +613,7 @@ pub fn sha256(scope: &FileScope, arguments: &Value) -> Result<Value, WorkspaceEr
             Ok(json!({"sha256": digest(&bytes), "bytes": bytes.len()}))
         }
         (None, Some(text)) => {
-            let text = string(text, "text")?;
+            let text = text_value(text, "text")?;
             if text.len() as u64 > scope.max_content_bytes {
                 return Err(WorkspaceError::new(
                     "resource_limit",
@@ -819,6 +819,63 @@ mod tests {
             true
         );
         assert_eq!(verify(&scope, &json!({"path":"data.txt","sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})).unwrap()["verified"], false);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn hash_accepts_bounded_empty_text() {
+        let (root, scope) = fixture();
+        let result = sha256(&scope, &json!({"text":""})).unwrap();
+        assert_eq!(result["bytes"], 0);
+        assert_eq!(
+            result["sha256"],
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn read_refuses_invalid_utf8_and_oversized_content() {
+        let (root, scope) = fixture();
+        fs::write(root.join("invalid.bin"), [0xff, 0xfe]).unwrap();
+        assert_eq!(
+            read(&scope, &json!({"path":"invalid.bin","max_bytes":4096}))
+                .unwrap_err()
+                .code,
+            "invalid_utf8"
+        );
+        fs::write(root.join("large.txt"), vec![b'x'; 4097]).unwrap();
+        assert_eq!(
+            read(&scope, &json!({"path":"large.txt","max_bytes":4096}))
+                .unwrap_err()
+                .code,
+            "file_too_large"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn patch_refuses_malformed_and_unrelated_files() {
+        let (root, scope) = fixture();
+        fs::write(root.join("notes.txt"), "one\ntwo\n").unwrap();
+        let unrelated = "--- a/other.txt\n+++ b/other.txt\n@@ -1,1 +1,1 @@\n-one\n+two\n";
+        assert_eq!(
+            patch_apply(&scope, &json!({"patch":unrelated}))
+                .unwrap_err()
+                .code,
+            "path_unavailable"
+        );
+        let malformed = "--- a/notes.txt\n+++ b/notes.txt\n@@ -1,2 +1,2 @@\n one\n";
+        assert_eq!(
+            patch_apply(&scope, &json!({"patch":malformed}))
+                .unwrap_err()
+                .code,
+            "patch_invalid"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("notes.txt")).unwrap(),
+            "one\ntwo\n"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

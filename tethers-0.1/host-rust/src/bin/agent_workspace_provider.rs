@@ -76,6 +76,9 @@ fn tool(name: &str, input: Value, output: Value) -> Value {
 fn path_schema() -> Value {
     json!({"type":"string","minLength":1,"pattern":"^(?!/)(?!.*\\\\)(?!.*(^|/)\\.\\.?(/|$))[^:]+$"})
 }
+fn root_path_schema() -> Value {
+    json!({"type":"string","minLength":1,"pattern":"^(?:\\.|(?!/)(?!.*\\\\)(?!.*(^|/)\\.\\.?(/|$))[^:]+$"})
+}
 fn object(properties: Value, required: &[&str]) -> Value {
     json!({"type":"object","properties":properties,"required":required,"additionalProperties":false})
 }
@@ -83,20 +86,62 @@ fn output_object(properties: Value, required: &[&str]) -> Value {
     object(properties, required)
 }
 
+fn sha256_schema() -> Value {
+    json!({"type":"string","pattern":"^sha256:[a-f0-9]{64}$"})
+}
+
+fn entry_schema() -> Value {
+    output_object(
+        json!({
+            "path":{"type":"string"},
+            "kind":{"type":"string","enum":["file","directory","other"]},
+            "size_bytes":{"type":["integer","null"],"minimum":0}
+        }),
+        &["path", "kind", "size_bytes"],
+    )
+}
+
+fn match_schema() -> Value {
+    output_object(
+        json!({
+            "line":{"type":"integer","minimum":1},
+            "column":{"type":"integer","minimum":1},
+            "text":{"type":"string"}
+        }),
+        &["line", "column", "text"],
+    )
+}
+
+fn manifest_entry_schema() -> Value {
+    json!({
+        "oneOf":[
+            output_object(
+                json!({"path":{"type":"string"},"type":{"const":"directory"}}),
+                &["path","type"],
+            ),
+            output_object(
+                json!({"path":{"type":"string"},"type":{"const":"file"},"sha256":sha256_schema()}),
+                &["path","type","sha256"],
+            )
+        ]
+    })
+}
+
 fn tools() -> Value {
     let path = path_schema();
+    let root_path = root_path_schema();
     json!({"tools":[
-        tool("filesystem_read", object(json!({"path":path,"max_bytes":{"type":"integer","minimum":1,"maximum":65536}}), &["path","max_bytes"]), output_object(json!({"path":{"type":"string"},"content":{"type":"string"},"bytes_read":{"type":"integer"}}), &["path","content","bytes_read"])),
-        tool("filesystem_list", object(json!({"path":path}), &[]), output_object(json!({"path":{"type":"string"},"entries":{"type":"array"}}), &["path","entries"])),
-        tool("filesystem_stat", object(json!({"path":path}), &["path"]), output_object(json!({"path":{"type":"string"},"kind":{"type":"string"},"size_bytes":{"type":["integer","null"]}}), &["path","kind","size_bytes"])),
-        tool("text_search", object(json!({"path":path,"query":{"type":"string","minLength":1},"mode":{"type":"string","enum":["literal","regex"]},"max_matches":{"type":"integer","minimum":1,"maximum":10000}}), &["path","query","mode","max_matches"]), json!({"type":"object"})),
-        tool("text_read_range", object(json!({"path":path,"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}}), &["path","start_line","end_line"]), json!({"type":"object"})),
-        tool("text_replace_exact", object(json!({"path":path,"old_text":{"type":"string","minLength":1},"new_text":{"type":"string"},"expected_matches":{"type":"integer","minimum":0,"maximum":10000}}), &["path","old_text","new_text","expected_matches"]), json!({"type":"object"})),
-        tool("text_compare", object(json!({"left_path":path,"right_path":path}), &["left_path","right_path"]), json!({"type":"object"})),
-        tool("patch_apply", object(json!({"patch":{"type":"string","minLength":1},"expected_base_sha256":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"}}), &["patch"]), json!({"type":"object"})),
-        tool("hash_sha256", object(json!({"path":path,"text":{"type":"string"}}), &[]), json!({"type":"object"})),
-        tool("hash_verify", object(json!({"path":path,"sha256":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"}}), &["path","sha256"]), json!({"type":"object"})),
-        tool("hash_directory_manifest", object(json!({"path":path}), &[]), json!({"type":"object"}))
+        tool("filesystem_read", object(json!({"path":path,"max_bytes":{"type":"integer","minimum":1,"maximum":65536}}), &["path","max_bytes"]), output_object(json!({"path":{"type":"string"},"content":{"type":"string"},"bytes_read":{"type":"integer","minimum":0}}), &["path","content","bytes_read"])),
+        tool("filesystem_list", object(json!({"path":root_path}), &[]), output_object(json!({"path":{"type":"string"},"entries":{"type":"array","items":entry_schema()}}), &["path","entries"])),
+        tool("filesystem_stat", object(json!({"path":root_path}), &["path"]), entry_schema()),
+        tool("text_search", object(json!({"path":path,"query":{"type":"string","minLength":1},"mode":{"type":"string","enum":["literal","regex"]},"max_matches":{"type":"integer","minimum":1,"maximum":10000}}), &["path","query","mode","max_matches"]), output_object(json!({"path":{"type":"string"},"mode":{"type":"string","enum":["literal","regex"]},"matches":{"type":"array","items":match_schema()},"truncated":{"type":"boolean"}}), &["path","mode","matches","truncated"])),
+        tool("text_read_range", object(json!({"path":path,"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}}), &["path","start_line","end_line"]), output_object(json!({"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"content":{"type":"string"},"line_count":{"type":"integer","minimum":0}}), &["path","start_line","end_line","content","line_count"])),
+        tool("text_replace_exact", object(json!({"path":path,"old_text":{"type":"string","minLength":1},"new_text":{"type":"string"},"expected_matches":{"type":"integer","minimum":0,"maximum":10000}}), &["path","old_text","new_text","expected_matches"]), output_object(json!({"path":{"type":"string"},"changed":{"type":"boolean"},"changed_count":{"type":"integer","minimum":0},"bytes_written":{"type":"integer","minimum":0}}), &["path","changed","changed_count","bytes_written"])),
+        tool("text_compare", object(json!({"left_path":path,"right_path":path}), &["left_path","right_path"]), output_object(json!({"equal":{"type":"boolean"},"left_path":{"type":"string"},"right_path":{"type":"string"},"left_sha256":sha256_schema(),"right_sha256":sha256_schema()}), &["equal","left_path","right_path","left_sha256","right_sha256"])),
+        tool("patch_apply", object(json!({"patch":{"type":"string","minLength":1},"expected_base_sha256":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"}}), &["patch"]), output_object(json!({"changed_files":{"type":"array","items":{"type":"string"}},"changed_hunks":{"type":"integer","minimum":1},"bytes_written":{"type":"integer","minimum":0}}), &["changed_files","changed_hunks","bytes_written"])),
+        tool("hash_sha256", object(json!({"path":path,"text":{"type":"string"}}), &[]), output_object(json!({"sha256":sha256_schema(),"bytes":{"type":"integer","minimum":0}}), &["sha256","bytes"])),
+        tool("hash_verify", object(json!({"path":path,"sha256":sha256_schema()}), &["path","sha256"]), output_object(json!({"path":{"type":"string"},"expected_sha256":sha256_schema(),"actual_sha256":sha256_schema(),"verified":{"type":"boolean"}}), &["path","expected_sha256","actual_sha256","verified"])),
+        tool("hash_directory_manifest", object(json!({"path":root_path}), &[]), output_object(json!({"path":{"type":"string"},"entries":{"type":"array","items":manifest_entry_schema()},"entry_count":{"type":"integer","minimum":0}}), &["path","entries","entry_count"]))
     ]})
 }
 
