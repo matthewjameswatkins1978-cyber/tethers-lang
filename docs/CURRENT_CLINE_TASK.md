@@ -77,9 +77,10 @@ This task finishes that cutover. It does not change Human Tether syntax or provi
 - `dune runtest --force`.
 - Rocket V2 frozen-vector and differential suite.
 - Focused Core evaluation, request, wire, and planning tests.
+- Rust verification runs on the native Windows reference-host platform.
 - Rust `cargo fmt --all -- --check`.
 - Rust `cargo check --all-targets --all-features --locked`.
-- Rust focused real-engine tests for CORE-9B ProgramDigest behaviour.
+- Rust focused real-engine tests for CORE-9B ProgramDigest behaviour against the Dune-built engine from the same Windows workspace.
 - Full Rust test suite if CI budget permits; otherwise report exact unrun scope.
 - `git diff --check`.
 - task-packet checker in COMPLETE state after the implementation checkpoint.
@@ -108,3 +109,7 @@ GitHub issue #5 permanently tracks the separate sequential `Action_origin` facto
 ## Expected pre-existing changes
 
 None.
+
+## Verification platform note
+
+The full Rust reference host is a Windows-targeted verification surface: its accepted host dependency boundary includes target-specific Windows dependencies and its real-engine tests locate the sibling Dune-built `tethers_mcp_main.exe`. The dedicated cutover workflow therefore verifies OCaml 5.5.0, Rust 1.97.1, and the cross-language boundary together on `windows-latest`. Ubuntu remains valid for the standalone OCaml/Rocket proof work but is not the authority for host-wide Cargo verification.
