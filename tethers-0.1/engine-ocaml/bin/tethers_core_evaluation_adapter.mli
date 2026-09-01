@@ -1,4 +1,4 @@
-(** Human Request → Canonical Evaluation Adapter.
+(** Human Request → Rocket V2 Evaluation Adapter.
 
     CORE-8A makes the assembly of Core plumbing one explicit typed boundary.
     A caller supplies Human-world source text, an evaluation input, and an
@@ -6,7 +6,7 @@
     adapter performs the full pipeline:
 
     {v
-    Human source → parse → lower → Rocket V2 → evaluate_Rocket V2 canonicalized
+    Human source → parse → lower → Rocket V2 → evaluate
     v}
 
     The adapter is a pure assembly seam. It does not execute Actions, grant
@@ -68,11 +68,11 @@ val evaluate :
   evaluation_input ->
   (Tethers_core_plan.canonical_evaluation, adapter_error) result
 (** One-call adapter: parse → lower → Rocket V2 → map facts → build
-    context → evaluate_Rocket V2 canonicalized.
+    context → evaluate the Rocket V2 token.
 
     The caller supplies only the environment and evaluation input.  The
-    adapter performs all internal steps and returns the canonical evaluation
+    adapter performs all internal steps and returns the deterministic evaluation
     result.
 
-    ProgramDigest emerges only from canonicalisation.  evaluation_id passes
+    ProgramDigest is produced only by Rocket V2 canonicalisation.  evaluation_id passes
     through unchanged into the plan (plan.id = evaluation_id ^ "/plan"). *)
