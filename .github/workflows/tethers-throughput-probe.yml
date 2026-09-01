@@ -42,3 +42,8 @@ jobs:
         run: |
           echo "=== FULL B0-A MATRIX ON CURRENT MAIN ==="
           opam exec -- dune exec bin/tethers_benchmark_core.exe
+
+      - name: Prepared-stage profile
+        run: |
+          echo "=== PREPARED STAGE PROFILE ==="
+          opam exec -- dune exec bin/tethers_benchmark_core.exe -- --profile-stages
