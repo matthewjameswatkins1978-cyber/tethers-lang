@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -12,7 +12,7 @@ Route: `Codex direct implementation in dedicated review worktree; do not merge t
 
 Base commit: `8d869c09a8c43b1d674c16b5274026f4b61d07df`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `5b2182848cdb2b6fcbe0eef48116e71f9ff7e714`
 
 Worker note: `docs/worker-notes/2026-09-01-agent-essentials-phase-c.md`
 

@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Lucy`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `8d869c09a8c43b1d674c16b5274026f4b61d07df`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `5b2182848cdb2b6fcbe0eef48116e71f9ff7e714`
 
 ## Requested outcome
 
@@ -46,7 +46,7 @@ Current evidence:
 * `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked` passed.
 * `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --locked agent_coding::tests`: 5 passed.
 * Coding Plug pack passed with 12 capabilities; latest semantic package digest was `sha256:80e1a006c2ef3ca2ddf5c927f5d9b741ab5493118097b4e89249714f4a0b2078`.
-* Coding Plug supervised conformance passed all 6 generic cases on the prior packaged provider; a final post-guard package/conformance run remains before commit.
+* Coding Plug supervised conformance passed all 6 generic cases on the final post-guard package.
 * Disposable-provider smoke passed initialize, structured status/diff, argv `git --version`, named verification, Git add, and local commit; the smoke repository was disposable and no remote operation was performed.
 * `git diff --check` and the `IN_PROGRESS` task-packet checker passed.
 
@@ -68,8 +68,8 @@ coding operation, so the direct smoke and unit evidence remain important.
 
 ## Smallest next action
 
-Run the final package/inspect/conformance and compatibility checks, then commit
-and push the completed Phase C branch checkpoint.
+Phase C is complete at the recorded implementation checkpoint; later work
+should begin a new packet rather than extending this checkpoint.
 
 ## References
 
