@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `BLOCKED`
 
 Task colour: `Red`
 
