@@ -63,6 +63,21 @@ The Agent Essentials side-effect-free `plan` surface is being added as a
 separate implementation phase. It will share the real pre-execution path and
 will never invoke a provider or write a fake receipt.
 
+The Phase B workspace provider's reviewed operation set is:
+
+```text
+filesystem_read       filesystem_list       filesystem_stat
+text_search            text_read_range      text_replace_exact
+text_compare           patch_apply          hash_sha256
+hash_verify            hash_directory_manifest
+```
+
+These operations are scoped by host-delivered roots and bounded output. Text
+search requires an explicit `literal` or `regex` mode; replacement requires an
+expected match count; patching is exact-context, one-file unified patching with
+an optional base digest. The provider is separate from the frozen M4 provider;
+it is not trusted or enabled merely because its executable exists.
+
 ## 6. Query the Trail
 
 The current compatibility lookup is:
