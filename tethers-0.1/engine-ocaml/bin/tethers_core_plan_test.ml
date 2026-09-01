@@ -73,11 +73,11 @@ let assert_plan_error expected msg = function
       exit 1
 
 let assert_ok_canonical = function
-  | Ok c -> c
-  | Error (Tethers_core_canonical.Invalid_core _) ->
-      failwith "canonicalize: expected Ok, got Invalid_core"
-  | Error Tethers_core_canonical.Refinement_exceeded ->
-      failwith "canonicalize: expected Ok, got Refinement_exceeded"
+  | Ok (c, _) -> c
+  | Error (Tethers_core_canonical_v2_ir.Invalid_core _) ->
+      failwith "Rocket V2: expected Ok, got Invalid_core"
+  | Error Tethers_core_canonical_v2_ir.Canonicalisation_too_complex ->
+      failwith "Rocket V2: expected Ok, got Canonicalisation_too_complex"
 
 let assert_ok_canonical_plan msg = function
   | Ok cp -> incr tests_run; incr tests_passed; cp
@@ -1707,7 +1707,7 @@ let test_canonical_plan_basic () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_context
       ~evaluation_id:"eval_cb1"
@@ -1740,7 +1740,7 @@ let test_canonical_plan_digest_matches () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_context
       ~evaluation_id:"eval_cb2"
@@ -1749,7 +1749,7 @@ let test_canonical_plan_digest_matches () =
   in
   let cp = assert_ok_canonical_plan "CB-T2 plan" (plan_canonicalized c ctx) in
   assert_true "CB-T2 digest matches"
-    (Tethers_core_canonical.program_digest c = cp.program_digest)
+    (Tethers_core_canonical_v2_ir.program_digest_ir c = cp.program_digest)
 
 (* ================================================================== *)
 (*  CORE-6B T3 — Human → Canonical Core → Plan Anchor_value proof      *)
@@ -1779,8 +1779,8 @@ do
     | Ok p -> p
     | Error _ -> assert_true "CB-T3 lower ok" false; assert false
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   (* Locate the canonical Anchor_origin and extract its canonical OriginId *)
   let canonical_anchor_oid =
     let rec find = function
@@ -1836,8 +1836,8 @@ let test_program_id_varies_digest_unchanged () =
       ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
       ()
   in
-  let c1 = assert_ok_canonical (Tethers_core_canonical.canonicalize (build "P_alpha")) in
-  let c2 = assert_ok_canonical (Tethers_core_canonical.canonicalize (build "P_beta")) in
+  let c1 = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir (build "P_alpha")) in
+  let c2 = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir (build "P_beta")) in
   let ctx =
     mk_context
       ~evaluation_id:"eval_cb4"
@@ -1847,7 +1847,7 @@ let test_program_id_varies_digest_unchanged () =
   let cp1 = assert_ok_canonical_plan "CB-T4 plan alpha" (plan_canonicalized c1 ctx) in
   let cp2 = assert_ok_canonical_plan "CB-T4 plan beta" (plan_canonicalized c2 ctx) in
   assert_true "CB-T4 digests equal"
-    (Tethers_core_canonical.program_digest c1 = Tethers_core_canonical.program_digest c2);
+    (Tethers_core_canonical_v2_ir.program_digest_ir c1 = Tethers_core_canonical_v2_ir.program_digest_ir c2);
   assert_true "CB-T4 plan ids equal"
     (cp1.runtime_plan.id = cp2.runtime_plan.id);
   assert_true "CB-T4 plan ids derive from evaluation_id"
@@ -1877,8 +1877,8 @@ let test_temp_id_storage_order_canonical_plan () =
       ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
       ()
   in
-  let c1 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "O_x" "O_y")) in
-  let c2 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "O_a" "O_b")) in
+  let c1 = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir (mk_prog "O_x" "O_y")) in
+  let c2 = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir (mk_prog "O_a" "O_b")) in
   let ctx =
     mk_context
       ~evaluation_id:"eval_cb5"
@@ -1888,9 +1888,9 @@ let test_temp_id_storage_order_canonical_plan () =
   let cp1 = assert_ok_canonical_plan "CB-T5 plan 1" (plan_canonicalized c1 ctx) in
   let cp2 = assert_ok_canonical_plan "CB-T5 plan 2" (plan_canonicalized c2 ctx) in
   assert_true "CB-T5 digests equal"
-    (Tethers_core_canonical.program_digest c1 = Tethers_core_canonical.program_digest c2);
+    (Tethers_core_canonical_v2_ir.program_digest_ir c1 = Tethers_core_canonical_v2_ir.program_digest_ir c2);
   assert_true "CB-T5 canonical programs structurally equal"
-    (Tethers_core_canonical.canonical_program c1 = Tethers_core_canonical.canonical_program c2);
+    (Tethers_core_canonical_v2_ir.validated_program_ir c1 = Tethers_core_canonical_v2_ir.validated_program_ir c2);
   assert_true "CB-T5 runtime plans equal"
     (cp1.runtime_plan = cp2.runtime_plan)
 
@@ -1922,8 +1922,8 @@ do
     | Ok p -> p
     | Error _ -> assert_true "CB-T6 lower ok" false; assert false
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let canonical_anchor_oid =
     let rec find = function
       | [] -> assert_true "CB-T6 has canonical anchor" false; oid "O_missing"
@@ -1984,8 +1984,8 @@ do
     | Ok p -> p
     | Error _ -> assert_true "CB-T7 lower ok" false; assert false
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let canonical_anchor_oid =
     let rec find = function
       | [] -> assert_true "CB-T7 has canonical anchor" false; oid "O_missing"
@@ -2075,8 +2075,8 @@ let test_existing_core6a_tests_green () =
             `Assoc [ ("ref", `String "Tethers") ])
    | _ -> assert_true "CB-T8 single-action shape" false);
   (* Canonical path: use the canonical OriginId for the snapshot *)
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let canonical_anchor_oid =
     let rec find = function
       | [] -> assert_true "CB-T8 has canonical anchor" false; oid "O_missing"
@@ -2132,7 +2132,7 @@ let test_guard_equals_string_match () =
       ~facts:[ mk_fact_snapshot "K_type" (`String "pdf") ]
       ()
   in
-  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
   | Ok (Matched cp) ->
       incr tests_run; incr tests_passed;
       assert_true "G1-T1 plan has actions" (List.length cp.runtime_plan.actions = 1)
@@ -2176,7 +2176,7 @@ let test_guard_equals_string_false () =
       ~facts:[ mk_fact_snapshot "K_type" (`String "jpg") ]
       ()
   in
-  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
   | Ok Not_matched -> incr tests_run; incr tests_passed
   | Ok (Matched _) ->
       incr tests_run;
@@ -2218,7 +2218,7 @@ let test_guard_integer_greater_than () =
       ~facts:[ mk_fact_snapshot "K_size" (`Int 42) ]
       ()
   in
-  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
   | Ok (Matched _) -> incr tests_run; incr tests_passed
   | Ok Not_matched ->
       incr tests_run;
@@ -2260,7 +2260,7 @@ let test_guard_integer_greater_than_or_equal () =
       ~facts:[ mk_fact_snapshot "K_size" (`Int 10) ]
       ()
   in
-  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
   | Ok (Matched _) -> incr tests_run; incr tests_passed
   | Ok Not_matched ->
       incr tests_run;
@@ -2302,7 +2302,7 @@ let test_guard_string_contains () =
       ~facts:[ mk_fact_snapshot "K_name" (`String "tethers-core") ]
       ()
   in
-  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
   | Ok (Matched _) -> incr tests_run; incr tests_passed
   | Ok Not_matched ->
       incr tests_run;
@@ -2344,7 +2344,7 @@ let test_guard_boolean_equals () =
       ~facts:[ mk_fact_snapshot "K_active" (`Bool true) ]
       ()
   in
-  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
   | Ok (Matched _) -> incr tests_run; incr tests_passed
   | Ok Not_matched ->
       incr tests_run;
@@ -2399,7 +2399,7 @@ let test_multiple_guards_and () =
       ]
       ()
   in
-  (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx_all with
+  (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx_all with
    | Ok (Matched _) -> incr tests_run; incr tests_passed
    | Ok Not_matched ->
        incr tests_run;
@@ -2423,7 +2423,7 @@ let test_multiple_guards_and () =
       ]
       ()
   in
-  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx_one_false with
+  match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx_one_false with
   | Ok Not_matched -> incr tests_run; incr tests_passed
   | Ok (Matched _) ->
       incr tests_run;
@@ -2467,7 +2467,7 @@ let test_missing_fact_snapshot () =
   in
   assert_plan_error (Missing_fact_snapshot (hsk "K_type"))
     "G1-T8 missing fact snapshot"
-    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
      | Ok _ -> Error Unresolved_entry_guards  (* dummy *)
      | Error e -> Error e)
 
@@ -2503,7 +2503,7 @@ let test_wrong_key_no_substitute () =
   in
   assert_plan_error (Missing_fact_snapshot (hsk "K_type"))
     "G1-T9 wrong key does not substitute"
-    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
      | Ok _ -> Error Unresolved_entry_guards
      | Error e -> Error e)
 
@@ -2542,7 +2542,7 @@ let test_duplicate_fact_snapshot () =
   in
   assert_plan_error (Ambiguous_fact_snapshot (hsk "K_type"))
     "G1-T10 duplicate fact snapshot"
-    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
      | Ok _ -> Error Unresolved_entry_guards
      | Error e -> Error e)
 
@@ -2591,7 +2591,7 @@ let test_reversed_duplicate_fact_order () =
       ()
   in
   let eval ctx =
-    match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+    match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
     | Ok _ -> Error Unresolved_entry_guards
     | Error e -> Error e
   in
@@ -2632,7 +2632,7 @@ let test_fact_snapshot_type_mismatch () =
   in
   assert_plan_error (Fact_snapshot_type_mismatch (hsk "K_size"))
     "G1-T12 runtime type mismatch"
-    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical.canonicalize program)) ctx with
+    (match evaluate_canonicalized (assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)) ctx with
      | Ok _ -> Error Unresolved_entry_guards
      | Error e -> Error e)
 
@@ -2658,8 +2658,8 @@ let test_invalid_guard_comparison () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let canonical_fid =
     match c_program.entry_guards with
     | g :: _ -> g.fact_id
@@ -2734,7 +2734,7 @@ let test_canonical_guard_bypass () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_context
       ~evaluation_id:"eval_g15"
@@ -2767,7 +2767,7 @@ let test_unguarded_existing_behaviour () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_g16"
@@ -2829,8 +2829,8 @@ let test_program_digest_invariant_across_facts () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
-  let expected_digest = Tethers_core_canonical.program_digest c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
+  let expected_digest = Tethers_core_canonical_v2_ir.program_digest_ir c in
   (* Occurrence A: matched *)
   let ctx_a =
     mk_eval_context
@@ -2843,7 +2843,7 @@ let test_program_digest_invariant_across_facts () =
   (match evaluate_canonicalized c ctx_a with
    | Ok (Matched cp) ->
        assert_true "G1-T17a digest matches"
-         (Tethers_core_canonical.program_digest c = cp.program_digest);
+         (Tethers_core_canonical_v2_ir.program_digest_ir c = cp.program_digest);
        assert_true "G1-T17a digest equals expected"
          (cp.program_digest = expected_digest)
    | _ ->
@@ -2908,7 +2908,7 @@ do
     | Error _ -> assert_true "GE2E lower ok" false; assert false
   in
   assert_true "GE2E has entry guards" (List.length lowered.entry_guards = 2);
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
   let event_data =
     `Assoc [
       ("document", `Assoc [
@@ -2933,7 +2933,7 @@ do
        assert_true "GE2E matched plan has actions"
          (List.length cp.runtime_plan.actions = 1);
        assert_true "GE2E ProgramDigest preserved"
-         (Tethers_core_canonical.program_digest c = cp.program_digest);
+         (Tethers_core_canonical_v2_ir.program_digest_ir c = cp.program_digest);
        (match cp.runtime_plan.actions with
         | [ action ] ->
             assert_true "GE2E resolved title"
@@ -2997,11 +2997,11 @@ let test_canonical_identity_adversarial () =
       ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
       ()
   in
-  let c1 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "F_alpha" "K_ft")) in
-  let c2 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "F_beta" "K_ft")) in
+  let c1 = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir (mk_prog "F_alpha" "K_ft")) in
+  let c2 = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir (mk_prog "F_beta" "K_ft")) in
   (* Same ProgramDigest *)
   assert_true "adv digests equal"
-    (Tethers_core_canonical.program_digest c1 = Tethers_core_canonical.program_digest c2);
+    (Tethers_core_canonical_v2_ir.program_digest_ir c1 = Tethers_core_canonical_v2_ir.program_digest_ir c2);
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_gadv"
@@ -3045,8 +3045,8 @@ let test_equals_string_type_integer_value () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let canonical_fid =
     match c_program.entry_guards with
     | g :: _ -> g.fact_id
@@ -3088,8 +3088,8 @@ let test_equals_integer_type_string_value () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let canonical_fid =
     match c_program.entry_guards with
     | g :: _ -> g.fact_id
@@ -3131,8 +3131,8 @@ let test_equals_boolean_type_string_value () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let canonical_fid =
     match c_program.entry_guards with
     | g :: _ -> g.fact_id
@@ -3175,7 +3175,7 @@ let test_valid_string_equals () =
       ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
       ()
     in
-    assert_ok_canonical (Tethers_core_canonical.canonicalize program)
+    assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)
   in
   let ctx =
     mk_eval_context
@@ -3223,7 +3223,7 @@ let test_valid_integer_equals () =
       ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
       ()
     in
-    assert_ok_canonical (Tethers_core_canonical.canonicalize program)
+    assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)
   in
   let ctx =
     mk_eval_context
@@ -3271,7 +3271,7 @@ let test_valid_boolean_equals () =
       ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
       ()
     in
-    assert_ok_canonical (Tethers_core_canonical.canonicalize program)
+    assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program)
   in
   let ctx =
     mk_eval_context
@@ -3316,7 +3316,7 @@ let test_reception_exact_match () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_r1"
@@ -3358,7 +3358,7 @@ let test_reception_event_mismatch () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_r2"
@@ -3398,7 +3398,7 @@ let test_reception_exact_matching () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let test_mismatch event_name =
     let ctx =
       mk_eval_context
@@ -3445,7 +3445,7 @@ let test_reception_before_missing_fact () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   (* Wrong event + empty facts -- must be Not_matched, not Missing_fact_snapshot *)
   let ctx =
     mk_eval_context
@@ -3489,7 +3489,7 @@ let test_reception_before_malformed_fact () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   (* Wrong event + malformed Fact (string for integer) -- must be Not_matched *)
   let ctx =
     mk_eval_context
@@ -3533,7 +3533,7 @@ let test_matched_then_missing_fact () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   (* Right event + missing Fact -- must be Missing_fact_snapshot *)
   let ctx =
     mk_eval_context
@@ -3571,7 +3571,7 @@ let test_matched_then_guard_false () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_r7"
@@ -3614,7 +3614,7 @@ let test_matched_event_and_guard () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_r8"
@@ -3658,7 +3658,7 @@ let test_event_data_resolves_anchor () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let event_data =
     `Assoc [
       ("document", `Assoc [
@@ -3716,7 +3716,7 @@ let test_mismatch_prevents_anchor_error () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   (* Wrong event + empty data -- must be Not_matched, not Anchor_path_missing *)
   let ctx =
     mk_eval_context
@@ -3758,8 +3758,8 @@ let test_match_exposes_anchor_error () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
-  let c_program = Tethers_core_canonical.canonical_program c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
+  let c_program = Tethers_core_canonical_v2_ir.validated_program_ir c in
   let canonical_anchor_oid =
     let rec find = function
       | [] -> assert_true "R-T11 has canonical anchor" false; oid "O_missing"
@@ -3801,7 +3801,7 @@ let test_missing_reception_anchor () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  match Tethers_core_canonical.canonicalize program with
+  match Tethers_core_canonical_v2_ir.canonicalize_ir program with
   | Error _ ->
       (* Program may be invalid without anchor; test the error type directly *)
       incr tests_run; incr tests_passed
@@ -3840,7 +3840,7 @@ let test_ambiguous_reception_anchor () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_r13"
@@ -3875,7 +3875,7 @@ let test_ambiguous_reception_anchor_reversed () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_r13b"
@@ -3909,8 +3909,8 @@ let test_digest_invariant_across_events () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
-  let expected_digest = Tethers_core_canonical.program_digest c in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
+  let expected_digest = Tethers_core_canonical_v2_ir.program_digest_ir c in
   (* Occurrence A: matching event *)
   let ctx_a =
     mk_eval_context
@@ -3966,7 +3966,7 @@ let test_evaluation_id_preserved () =
     ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
     ()
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize program) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir program) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_reception_1"
@@ -4019,7 +4019,7 @@ do
     | Ok p -> p
     | Error _ -> assert_true "RE2E lower ok" false; assert false
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
   let event_data =
     `Assoc [
       ("document", `Assoc [
@@ -4040,7 +4040,7 @@ do
       assert_true "RE2E plan has actions"
         (List.length cp.runtime_plan.actions = 1);
       assert_true "RE2E ProgramDigest preserved"
-        (Tethers_core_canonical.program_digest c = cp.program_digest);
+        (Tethers_core_canonical_v2_ir.program_digest_ir c = cp.program_digest);
       (match cp.runtime_plan.actions with
        | [ action ] ->
            assert_true "RE2E resolved title"
@@ -4097,7 +4097,7 @@ do
     | Ok p -> p
     | Error _ -> assert_true "RE2EB lower ok" false; assert false
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_re2eb"
@@ -4154,7 +4154,7 @@ do
     | Ok p -> p
     | Error _ -> assert_true "RE2EC lower ok" false; assert false
   in
-  let c = assert_ok_canonical (Tethers_core_canonical.canonicalize lowered) in
+  let c = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir lowered) in
   let event_data =
     `Assoc [
       ("document", `Assoc [
@@ -4204,11 +4204,11 @@ let test_reception_canonical_identity_adversarial () =
       ~capability_contracts:[ mk_cap_contract "cap.notify" "sha256:abc" ]
       ()
   in
-  let c1 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "O_x" "O_y")) in
-  let c2 = assert_ok_canonical (Tethers_core_canonical.canonicalize (mk_prog "O_a" "O_b")) in
+  let c1 = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir (mk_prog "O_x" "O_y")) in
+  let c2 = assert_ok_canonical (Tethers_core_canonical_v2_ir.canonicalize_ir (mk_prog "O_a" "O_b")) in
   (* Same ProgramDigest *)
   assert_true "radv digests equal"
-    (Tethers_core_canonical.program_digest c1 = Tethers_core_canonical.program_digest c2);
+    (Tethers_core_canonical_v2_ir.program_digest_ir c1 = Tethers_core_canonical_v2_ir.program_digest_ir c2);
   let ctx =
     mk_eval_context
       ~evaluation_id:"eval_radv"
