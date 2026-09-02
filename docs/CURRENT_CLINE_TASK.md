@@ -376,6 +376,22 @@ Do not modify the B3A tree_completion files. Their exact oracle and counterexamp
 
 30. No forest, cross-family, R3-3C, R3-4 or production B3 work begins.
 
+31. All required deterministic matching/oracle counters are emitted and repeatable.
+
+32. Any N=100/N=1000 scale diagnostics run only after the exact small-case theorem and parity gates pass.
+
+33. Performance evidence never substitutes for exact correctness or differential parity.
+
+34. No generic graph individualisation/refinement engine is introduced.
+
+35. No SAT, SMT or general CSP solver/dependency is introduced.
+
+36. Matching, if required, is implemented research-locally with no external matching dependency.
+
+37. No heuristic sibling ordering or rank is used to make identity decisions.
+
+38. The task stops at the research theorem/result boundary and does not begin production B3, forest, cross-family, R3-3C or R3-4 work.
+
 ## Required verification
 
 - Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-3b3b-listiso-reduction`.
