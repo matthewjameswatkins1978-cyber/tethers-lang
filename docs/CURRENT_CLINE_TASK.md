@@ -1,300 +1,363 @@
-# Rocket V3 — R3-3B2 Exact Success-Path Canonisation
+# Rocket V3 — R3-3B3 Exact Rooted Success-Tree Canonisation
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `READY`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Fresh dedicated worktree; derive and prove a direct exact canonicaliser for the Origin-only simple success-path case. No general forest, cross-family or production work.`
+Route: `Fresh dedicated worktree; derive and prove an exact canonicaliser for one connected acyclic Origin success tree rooted at ProgramComplete. No disconnected forest, cross-family or production integration.`
 
-Base commit: `3034117dffa16366fa73c7befd1cccbf0bb86033`
+Base commit: `64d1557603366f2b8b934f987bfdef87e2b4ec0e`
 
 OCaml switch path: `D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml`
 
-Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-3b2-success-path-canon.md`
+Worker note: `docs/worker-notes/2026-09-02-rocket-v3-r3-3b3-success-tree-canon.md`
 
 Related issue: `#5 — BUG: Rocket V2 factorial search on simple sequential Action chains`
 
-Updated: 2026-09-01
+Updated: 2026-09-02
 
 ## Objective
 
-Replace factorial/permutation search for the single simple success-path case with a direct exact canonicalisation algorithm derived from frozen Enc_V2.
+Generalise the proven R3-3B2 single-path result to one connected rooted success tree without returning to factorial Origin permutation search.
 
-The task must answer:
+Supported success shape:
 
-> Given a valid Origin-only program whose complete success-continuation structure is one acyclic path from entry_origin through every Origin exactly once to ProgramComplete, can the exact frozen V2-minimum Origin label assignment be constructed without enumerating Origin permutations?
+```
+                 ProgramComplete
+                 /      |      \
+                A       B       C
+               / \              |
+              D   E             F
+```
 
-Prove the theorem first, then implement it as an isolated R3-3B2 path canonicaliser and demonstrate exact equality with exhaustive authorities on tractable cases.
+Edges above are the reverse view of Core `source -> target` success continuations.
 
-Do not generalise to trees/forests in this task.
+For every supported Origin:
+
+- exactly one success continuation exists;
+- its target is another Origin or `ProgramComplete`;
+- cycles are forbidden;
+- following targets from every Origin eventually reaches `ProgramComplete`;
+- therefore adding the fixed `ProgramComplete` root makes one connected rooted tree.
+
+The task must compute the exact frozen V2-minimal Origin assignment for this supported tree without enumerating complete Origin permutations.
+
+Do not generalise to disconnected success forests in this task.
 
 ## Relevant background and existing behaviour
 
-R3-3A established exact frozen identity by complete legal label-domain enumeration. It is exact but factorial.
+R3-3A is the exact small-case frozen identity oracle but enumerates legal label assignments.
 
-R3-3B introduced an incremental Origin walker but had an unsound target-forcing rule across decimal-width boundaries.
+R3-3B1 repaired the next-observable-byte theorem and proved exact chain-10/11 results, but general label search remained combinatorial.
 
-R3-3B1 repaired that exactness theorem. Exact chain-10 parity covered 362,880 residual candidates; exact chain-11 parity covered 3,628,800 residual candidates and eliminated the historical byte-23 mismatch.
+R3-3B2 then solved the complete single-path case directly in label space.
 
-However R3-3B1 correctly stopped on deterministic performance: chain-100 reached 27,000 branches and 195,471,123 emitted bytes before the authorised stop. Chain-1000 was not attempted.
+R3-3B2 exact evidence includes:
 
-The validated success-continuation relation has at most one continuation per from_origin and rejects success cycles. This task restricts further to one complete path:
+- chains 1..11 equal the frozen exhaustive oracle byte-for-byte and digest-for-digest;
+- chain-11 exact labels `[10,9,8,7,6,5,4,3,2,1,11]`;
+- decimal boundaries 9/10/11/12/99/100/999/1000;
+- chain-1000 completes with `complete_permutations_enumerated=0`;
+- chain-1000 requires only 1003 candidate target checks and 1003 feasibility checks.
 
-`entry -> Origin -> ... -> Origin -> ProgramComplete`
+The next structural class is not a general graph. Validator guarantees at most one success continuation per `from_origin` and rejects success cycles. Under this packet's additional connected-completion restriction, reverse success edges form an ordinary rooted tree with fixed root `ProgramComplete`.
 
-Every program Origin must appear exactly once on that path.
-
-Relevant frozen Enc_V2 order is:
+Frozen top-level order remains:
 
 `entry_origin -> success_continuations -> origin_sites -> later fields`
 
-Therefore entry_origin dominates the continuation block, and the complete continuation block dominates all later Origin-site bytes.
+Therefore canonicalisation is lexicographically hierarchical:
 
-Continuation elements are sorted by numeric from_origin label, while labels are emitted by `encode_int n = decimal(n) ^ ";"` and compared by unsigned-byte lexicographic order. Numeric and byte order therefore diverge at decimal-width boundaries.
+1. minimise the frozen entry field;
+2. among assignments tied there, minimise the complete frozen success-continuation block;
+3. among assignments tied through both earlier blocks, minimise the supported Origin-site block;
+4. later fixed bytes cannot rescue a loser in any earlier block.
 
-For a simple path of N Origins, a complete legal labelling induces a numeric successor table over slots 1..N. Legal semantic path labellings correspond to legal rooted Hamiltonian successor paths over those numeric slots once the entry label is fixed. The task must prove and exploit that reduction instead of permuting semantic Origin objects.
+For this task, supported Origin bodies are intentionally restricted so secondary Origin-site comparison is local and exact:
+
+- Anchor Origin with no declared Facts;
+- Action Origin with no inputs and no declared Facts;
+- Action capability/contract and execution constraints may differ;
+- Together Origin is excluded from B3 because its member-label references create another cross-Origin dependency;
+- Batch/Facts/Branches/Roles/Templates are excluded.
+
+Thus a supported Origin has a frozen body descriptor independent of raw ID and independent of other Origin labels except its own slot label.
+
+The entry Origin is a distinguished semantic vertex and must remain distinguished during tree canonisation.
 
 ## Required behaviour
 
-1. Start from exact base `3034117dffa16366fa73c7befd1cccbf0bb86033`.
+1. Start from exact base `64d1557603366f2b8b934f987bfdef87e2b4ec0e`.
 
-2. Preserve all R3-3A/B/B1 evidence and the B1 BLOCKED result.
+2. Preserve all R3-3A/B/B1/B2 evidence unchanged.
 
-3. Add an explicit supported-shape predicate for valid Origin-only single-path programs.
+3. Add a new isolated B3 success-tree module and focused test executable. Do not modify the B2 path canonicaliser.
 
-4. Supported shape requires entry_origin, every program Origin reachable exactly once from entry, final Origin targeting ProgramComplete, no disconnected Origins and no missing continuation on the path.
+4. Implement an exact supported-shape predicate for the connected rooted success-tree class described in this packet.
 
-5. Unsupported/non-path structures must return a deterministic experimental unsupported result; do not silently invoke the old factorial walker.
+5. Supported shape must require every program Origin to have exactly one success continuation whose transitive target chain ends at `ProgramComplete`.
 
-6. Prove the bijection between semantic path Origin labellings and legal numeric-label successor tables rooted at the assigned entry label.
+6. Supported shape must reject any cycle, disconnected/no-continuation component, duplicate source continuation, Batch site, Together Origin, Fact-bearing Anchor/Action, Action input, Branch, Role, ItemTemplate or other cross-family structure.
 
-7. Preserve the frozen exact entry rule: entry Origin gets the legal label whose exact encode_int bytes are lexicographically minimal.
+7. Treat `ProgramComplete` as a fixed external tree root, never as an anonymous labelled Origin.
 
-8. Minimise the complete success-continuation block in the exact numeric source-slot order used by frozen Enc_V2.
+8. Treat `entry_origin` as a distinguished tree vertex whose frozen entry-field label is selected by exact `encode_int` byte order before the continuation block is optimised.
 
-9. Do not use raw IDs, source storage order, internal vertex numbers or R3-2 cell numbers to choose canonical labels.
+9. Derive an exact rooted-tree representation from success continuations using only semantic edges and supported frozen body descriptors; raw IDs may be lookup handles only.
 
-10. If using greedy construction, every committed choice must be justified by an exact legal-completion feasibility proof.
+10. Define a canonical subtree signature/code for the supported rooted tree. The signature must be invariant under raw-ID and storage permutation and must include the distinguished-entry marker.
 
-11. Implement an exact feasibility predicate for partial successor tables.
+11. If subtree/body signatures are used to collapse sibling alternatives, equality must be a proven isomorphism certificate for the complete supported subtree state being collapsed, not merely R3-2 refinement equivalence.
 
-12. Feasibility must reject duplicate predecessor assignment.
+12. Preserve the frozen primary/secondary objective exactly: continuation-block bytes dominate all Origin-site body bytes; body bytes may break ties only among assignments with byte-identical entry + continuation blocks.
 
-13. Feasibility must reject multiple successors from one source.
+13. Build a supported Origin body descriptor from frozen encoding primitives with the Origin's own numeric label treated as a slot-local field. Do not invent a different semantic body order.
 
-14. Feasibility must reject a predecessor into the fixed entry slot.
+14. Produce an exact canonical numeric successor table for the rooted tree, respecting frozen numeric source-slot sorting and exact encoded target bytes.
 
-15. Feasibility must reject more than one ProgramComplete terminal.
+15. The algorithm may use canonical subtree ordering, dynamic programming, canonical augmentation, exact feasibility, or another proved tree method, but it must not enumerate all complete Origin permutations.
 
-16. Feasibility must reject premature directed cycles.
+16. Any greedy or locally committed choice must carry an exact proof that no lexicographically smaller legal rooted-tree completion exists.
 
-17. Feasibility must reject partial states that cannot still be completed into one Hamiltonian path.
+17. Preserve a compact representation of exact ties when the continuation block has automorphisms; do not choose arbitrarily among tied sibling subtrees if later Origin-site body bytes can distinguish them.
 
-18. Feasibility must accept every partial state that has at least one legal complete success-path completion.
+18. Resolve exact continuation ties using the frozen Origin-site block only after the entire earlier continuation block is known equal.
 
-19. Do not enumerate complete Origin permutations in the new path canonicaliser.
+19. Map the final numeric tree labelling back onto semantic Origins and delegate final full payload/digest emission to existing frozen `Tethers_core_canonical_v2_format.encode_program`.
 
-20. Do not call R3-3A or R3-3B1 search implementation from the new path implementation; they remain test authorities only.
+20. Prove that every complete result is a legal bijection over Origin labels 1..N and preserves exactly the original semantic success tree.
 
-21. Produce the final Origin label assignment by mapping the winning numeric successor path back onto the semantic Origin path.
+21. Prove B2 path compatibility: every B2-supported path fixture must produce the same exact labels/payload/digest under B3.
 
-22. Feed the final assignment through existing frozen Enc_V2 machinery for final payload/digest; do not create a new identity format.
+22. Differentially compare B3 to an independent exhaustive frozen oracle for all generated supported rooted trees up to a tractable size, at minimum every non-isomorphic/generated fixture through N=7 or an equally strong exhaustive labelled corpus.
 
-23. Prove byte-for-byte parity against exhaustive authority for homogeneous chains 1 through 11.
+23. Include explicit small structures: star, balanced binary tree, unbalanced tree, comb/path, repeated identical sibling subtrees, repeated structurally identical siblings with different body descriptors, and asymmetric trees.
 
-24. Chain-10 must match the previously proven 362,880-residual-candidate minimum.
+24. Include entry-position variants: entry at a leaf, internal node, and direct child of ProgramComplete where semantically valid.
 
-25. Chain-11 must match the previously proven 3,628,800-residual-candidate minimum and known exact label sequence `[10,9,8,7,6,5,4,3,2,1,11]`.
+25. Add raw-ID renaming and storage-order permutation metamorphic variants for every structural fixture family.
 
-26. Add structural decimal-width cases crossing 9/10, 10/11, 99/100 and 999/1000.
+26. Add decimal-width tree fixtures crossing 9/10, 10/11, 99/100 and 999/1000 without factorial oracle requirements at large sizes.
 
-27. Add path fixtures with non-identical Origin body bytes, including distinct Action capabilities/contracts and Anchor/Action mixtures where supported.
+27. Instrument at minimum: tree_size, tree_height, subtree_signatures_built, exact_tie_classes, symmetry_collapses, candidate_assignments_considered, feasibility_or_dp_states, committed_label_choices, complete_permutations_enumerated, and max_frontier_or_depth.
 
-28. Prove that once entry plus the complete continuation block uniquely determine the label assignment, later Origin-site bytes cannot overturn the winner.
+28. Require `complete_permutations_enumerated = 0` for the new B3 canonicaliser.
 
-29. Add raw-ID renaming and storage-order permutation metamorphic variants.
+29. After exact small-case proof, run at least path-1000, star-1000, balanced-tree approximately 1000 Origins, and a repeated-subtree adversarial tree approximately 1000 Origins. Record deterministic work statistics.
 
-30. Add at least three deterministic implementation traversal/choice-order perturbations; all must produce identical labels/payload/digest.
-
-31. Instrument path_size, successor_slots_processed, candidate_targets_considered, feasibility_checks, rejected_infeasible_choices, committed_choices, complete_permutations_enumerated and max_partial_components.
-
-32. Require `complete_permutations_enumerated = 0`, then after exact 1–11 parity run chain-12, chain-100, chain-1000, and chain-5000 only if still comfortably bounded. Do not generalise beyond simple paths.
+30. Stop after B3 evidence. Do not begin disconnected forest canonisation, Facts/Together/cross-family work, generic I/R, production integration, R3-3C or R3-4.
 
 ## Relevant components
 
 Authorised mutation is limited to:
 
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-09-01-rocket-v3-r3-3b2-success-path-canon.md`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_path.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_path.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_path_test.ml`
+- `docs/worker-notes/2026-09-02-rocket-v3-r3-3b3-success-tree-canon.md`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_tree.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_tree.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_success_tree_test.ml`
 - `tethers-0.1/engine-ocaml/bin/dune`
 
-Read-only authorities:
+Read-only authorities include:
 
 - `tethers_core_canonical_v2_format.ml/.mli`
 - `tethers_core_canonical_v2_reference.ml/.mli`
 - `tethers_core_rocket_v3_encode.ml/.mli`
 - `tethers_core_rocket_v3_origin_walk.ml/.mli`
+- `tethers_core_rocket_v3_success_path.ml/.mli`
+- validator/Core/planner
 - R3-1 model
 - R3-2 partition/refinement
-- validator/Core/planner
-- R3-3A/B/B1 worker notes/tests
+- all prior R3-3 worker notes/tests.
 
-If exact implementation requires changing a read-only authority, STOP.
+If exact implementation requires editing a read-only authority, STOP.
 
 ## Frozen decisions and invariants
 
-- Frozen Enc_V2 remains unchanged.
-- ProgramDigest V2 remains unchanged.
-- Numeric continuation sorting remains unchanged.
-- encode_int byte representation remains unchanged.
-- Entry field outranks the entire continuation block.
-- The complete continuation block outranks all Origin-site/later bytes.
-- A smaller earlier frozen block cannot be rescued by a later block.
-- Semantic path order is structure, not canonical numeric label order.
-- Raw IDs remain non-semantic.
-- No arbitrary Action-count limit.
-- No search budget may alter identity.
-- No V1 fallback.
+- Frozen Enc_V2 and ProgramDigest V2 do not change.
+- Numeric success-continuation source order does not change.
+- `encode_int` byte representation does not change.
+- Entry bytes dominate continuation bytes.
+- Complete continuation bytes dominate Origin-site bytes.
+- Origin-site bytes dominate later fixed fields in this supported projection.
+- ProgramComplete is fixed, external and unlabeled.
+- Entry Origin is distinguished.
+- Supported reverse success structure is one rooted tree.
+- Raw IDs/internal vertices/storage order are never label authority.
+- Same R3-2 cell is not an automorphism proof.
+- Proven complete supported-subtree isomorphism may be used as a symmetry certificate.
+- Body descriptors may break only exact continuation ties, never overturn a smaller continuation block.
 - No heuristic pruning.
-- Numeric order must never be confused with encoded-byte order.
-- This task proves only the simple-path case.
+- No complete Origin permutation search.
+- No V1 fallback.
+- No arbitrary size limit used to define identity.
 
 ## Acceptance criteria
 
-1. Work starts from exact base `3034117dffa16366fa73c7befd1cccbf0bb86033`.
+1. Work starts from exact base `64d1557603366f2b8b934f987bfdef87e2b4ec0e`.
 
-2. All prior R3-3 evidence remains preserved.
+2. Prior R3 evidence is unchanged.
 
-3. Supported-shape detection accepts intended complete single paths.
+3. B3 implementation/tests are isolated and B2 implementation is unchanged.
 
-4. Supported-shape detection rejects disconnected/incomplete/non-path structures deterministically.
+4. Supported-shape predicate accepts connected rooted success trees.
 
-5. Unsupported shapes do not silently invoke factorial search.
+5. Every accepted Origin has exactly one continuation and reaches ProgramComplete.
 
-6. Semantic path labellings to numeric successor tables are documented/tested as a bijection.
+6. Unsupported/cross-family/Together/disconnected/cyclic shapes reject deterministically.
 
-7. Entry label is selected solely by frozen exact byte law.
+7. ProgramComplete is never assigned an Origin label.
 
-8. Continuation minimisation operates in numeric source-slot serialization order.
+8. Entry Origin is distinguished and receives the exact frozen minimal entry-field label.
 
-9. No raw-ID/storage/internal-vertex/R3-2-cell ordering influences labels.
+9. Tree representation uses only semantic success edges and supported body semantics.
 
-10. Every committed choice has an exact completion-feasibility justification.
+10. Canonical subtree signatures are raw-ID/storage invariant and entry-aware.
 
-11. A standalone exact feasibility predicate exists.
+11. Any symmetry collapse is backed by proven complete supported-subtree isomorphism, not refinement-cell equality.
 
-12. Duplicate-predecessor states are rejected.
+12. Continuation block remains the primary objective and Origin-site body bytes are secondary only on exact continuation ties.
 
-13. Multiple-successor states are rejected.
+13. Supported body descriptor is frozen-byte-faithful and independent of raw ID.
 
-14. Predecessor-to-entry states are rejected.
+14. Numeric successor table reproduces frozen numeric source sorting and encoded target-byte comparison exactly.
 
-15. Invalid/multiple-terminal states are rejected.
+15. New B3 implementation enumerates no complete Origin permutations.
 
-16. Premature cycles are rejected.
+16. Every local commit/choice has an exact global-minimality justification.
 
-17. Uncompletable disconnected partial states are rejected.
+17. Continuation automorphism ties are represented without arbitrary semantic selection.
 
-18. Known completable partial states are accepted.
+18. Different bodies break only exact earlier-block ties.
 
-19. New canonicaliser enumerates zero complete Origin permutations.
+19. Final payload/digest are emitted by existing frozen format machinery.
 
-20. R3-3A/B1 are test authorities only, not implementation dependencies.
+20. Final labels form one legal Origin bijection preserving the original success tree.
 
-21. Winning successor table maps back to one complete legal semantic Origin label assignment.
+21. All B2 path fixtures produce identical B2/B3 labels, payload and digest.
 
-22. Final payload/digest use existing frozen Enc_V2 machinery.
+22. Exhaustive/generated small supported trees match independent frozen oracle exactly.
 
-23. Chains 1–9 match exhaustive frozen authority exactly.
+23. Star/balanced/unbalanced/comb/repeated-sibling/asymmetric fixtures all pass.
 
-24. Chain-10 matches the exact 362,880-residual-candidate result.
+24. Leaf/internal/root-child entry variants pass.
 
-25. Chain-11 matches the exact 3,628,800-residual-candidate result and known label sequence.
+25. Raw-ID and storage metamorphic variants remain payload/digest identical.
 
-26. Decimal width crossings 9/10, 10/11, 99/100 and 999/1000 are exercised.
+26. Decimal tree boundary fixtures 9/10, 10/11, 99/100 and 999/1000 pass.
 
-27. Distinct-body Origin path fixtures retain exact identity.
+27. Required deterministic B3 statistics are present and repeatable.
 
-28. Later origin_sites bytes are proven unable to overturn a uniquely minimal earlier continuation block.
+28. `complete_permutations_enumerated = 0`.
 
-29. Raw-ID and storage-order metamorphic variants remain byte/digest identical.
+29. Path/star/balanced/repeated-subtree scale fixtures around N=1000 complete without factorial search or else task stops with exact evidence.
 
-30. Three deterministic traversal/choice perturbations return identical results.
-
-31. Required deterministic statistics are present and repeatable.
-
-32. `complete_permutations_enumerated = 0`; chain-12, 100 and 1000 complete without factorial search or the task STOPS with an exact mathematical/performance finding before any generalisation.
+30. Full regressions, authorised-path proof, checkpoint/packet closeout, push, remote/local equality and clean worktree pass; no B4/R3-3C/R3-4 work begins.
 
 ## Required verification
 
-- Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-3b2-success-path-canon`.
-- Confirm exact base `3034117dffa16366fa73c7befd1cccbf0bb86033`, branch and clean worktree.
-- Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1`.
-- Run packet checker and require `control-v1/READY`.
-- Verify the exact authorised OCaml switch.
-- Read frozen encode_program, validator success-continuation invariants, R3-3B1 implementation/worker note and chain-10/11 exact tests before mutation.
-- Write down the semantic-path/numeric-successor-table proof and exact partial completion predicate before large-chain claims.
-- Test feasibility independently.
-- Differentially prove chains 1–9, exact chain-10 and exact chain-11.
-- Exercise decimal boundaries, distinct body shapes, raw-ID/storage metamorphics and traversal-order perturbations.
-- Only after exact parity run chain-12, chain-100 and chain-1000; optionally chain-5000 if comfortably bounded.
-- Record all required deterministic statistics.
-- Run the focused path suite.
-- Run R3-3A `39/39`.
-- Run R3-1 `214/214`.
-- Run R3-2 `4807/4807`.
-- Run V2 suites and 5,000-case corpus.
-- Run `opam exec --switch="D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml" -- dune build @all`.
-- Run `opam exec --switch="D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml" -- dune runtest --force`.
-- Run `git diff --check`.
-- Inspect full base-to-HEAD diff and prove authorised paths only.
-- Commit implementation/tests and record full implementation checkpoint SHA.
-- Write worker note and transition packet to `COMPLETE`; no implementation mutation after checkpoint.
-- Run packet checker requiring `control-v1/COMPLETE`.
-- Push normally, prove local HEAD == remote HEAD, require clean worktree, report evidence and STOP.
+Before mutation:
+
+- use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-3b3-success-tree-canon`;
+- confirm exact base and READY remote HEAD;
+- require clean worktree;
+- run `pwsh -NoProfile -File scripts/check-dev-tools.ps1`;
+- run packet checker and require `control-v1/READY`;
+- verify exact authorised OCaml switch;
+- read frozen top-level encoder, validator success rules, B2 implementation/tests/note, R3-3A oracle and R3-2 interfaces.
+
+Proof-first stage:
+
+- write down why the accepted reverse-success relation is a rooted tree;
+- define the entry-aware canonical subtree state;
+- define the exact primary continuation objective and secondary Origin-body tie objective;
+- state exactly when a subtree symmetry may be collapsed.
+
+Oracle stage:
+
+- keep the independent oracle implementation separate from B3;
+- exhaustively/differentially compare small supported rooted trees;
+- include automorphism-heavy and body-tie cases.
+
+Compatibility stage:
+
+- run the complete B2 focused path corpus through both B2 and B3 and require identical labels/payload/digest.
+
+Scale stage only after exact small proof:
+
+- path ~1000;
+- star ~1000;
+- balanced tree ~1000;
+- repeated-subtree adversarial tree ~1000;
+- decimal boundaries through 1000.
+
+Record all required deterministic statistics.
+
+Regression:
+
+- B3 focused suite;
+- B2 focused suite;
+- R3-3A `39/39`;
+- R3-1 `214/214`;
+- R3-2 `4807/4807`;
+- V2 suites;
+- 5,000-case corpus;
+- `dune build @all`;
+- `dune runtest --force`;
+- `git diff --check`.
+
+Closeout:
+
+- inspect full base-to-HEAD diff and prove authorised paths only;
+- commit implementation/tests and record full implementation checkpoint SHA;
+- write worker note;
+- transition packet to `COMPLETE`;
+- no implementation/test mutation after checkpoint;
+- packet checker must report `control-v1/COMPLETE`;
+- push normally;
+- prove local HEAD == remote HEAD;
+- require clean worktree;
+- STOP.
 
 ## Forbidden changes
 
-- No frozen V2 changes.
-- No ProgramDigest change.
-- No Core/validator changes.
+- No frozen V2/ProgramDigest/Core/validator changes.
 - No R3-1/R3-2 changes.
-- No R3-3A/B/B1 modification.
-- No full permutation search in the new path canonicaliser.
-- No heuristic-only greedy rule.
-- No unproved feasibility shortcut.
-- No raw-ID/internal-vertex ordering.
-- No automorphism/orbit machinery.
-- No generic graph I/R.
-- No success-tree/forest generalisation.
+- No R3-3A/B/B1/B2 implementation changes.
+- No disconnected success-forest implementation.
+- No Together support.
 - No Facts/Branches/Batches/Templates/Roles work.
-- No production integration.
+- No generic graph I/R.
+- No refinement-cell-as-automorphism assumption.
+- No raw-ID/internal-vertex/storage ordering.
+- No complete Origin permutation search.
+- No heuristic-only sibling ordering.
+- No body-byte influence before an exact continuation tie.
 - No new dependency.
 - No wall-clock identity decision.
+- No production integration.
 - No V1 fallback.
 - No R3-3C/R3-4/release work.
 
 ## Stop conditions
 
-- Semantic-path to numeric-successor-table bijection is false.
-- An exact bounded completion-feasibility predicate cannot be established.
-- Any chain 1–11 result disagrees with exhaustive frozen authority.
-- Chain-11 known exact sequence is not reproduced.
-- Correctness depends on later Origin-site bytes before the continuation minimum is determined.
-- Path canonicaliser requires complete factorial permutation enumeration.
-- Traversal-order perturbations change identity.
-- Decimal-width crossings expose an unmodelled frozen-order dependency.
-- Correctness requires frozen V2/Core/R3-2 changes.
-- Two materially similar approaches fail without a new diagnosis.
+- Accepted shape is not provably a rooted tree.
+- B3 disagrees with B2 on any path fixture.
+- B3 disagrees with the exhaustive frozen oracle on any supported small tree.
+- A proposed symmetry collapse lacks a complete supported-subtree isomorphism proof.
+- Body bytes are required to choose between continuation blocks that are not byte-identical.
+- Exact rooted-tree canonisation still requires complete factorial Origin permutations.
+- Raw IDs/internal handles become necessary for identity.
+- Decimal boundaries expose an unmodelled dual-order dependency.
+- Scale fixtures become combinatorially explosive and no new exact structural reduction is established.
+- Correctness requires changing frozen V2/Core/R3-2.
+- Two materially similar failed approaches recur without a new diagnosis.
 
-A Red mathematical finding is a valid result. Do not weaken the theorem for speed.
+A Red theorem/performance finding is valid. Do not weaken exactness to complete the task.
 
 ## Expected pre-existing changes
 
