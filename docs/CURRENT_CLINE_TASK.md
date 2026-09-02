@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -11,6 +11,8 @@ Owner: `Codex`
 Route: `Fresh dedicated worktree; proof-first complexity investigation only. Determine whether exact partial frozen parent-vector completion is equivalent/reducible to rooted spanning-forest completion on a tree, establish the resulting complexity boundary, and identify the correct next algorithmic route. No production B3 implementation.`
 
 Base commit: `ef22f861ebfce6ed6341b5e0043baf53b153aab3`
+
+Implementation checkpoint: `9711f8b718712a18f0e0a8aca8fe7e2b600935f9`
 
 Accepted production frontier: `64d1557603366f2b8b934f987bfdef87e2b4ec0e`
 
