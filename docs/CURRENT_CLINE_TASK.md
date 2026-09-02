@@ -1,22 +1,22 @@
-# Rocket V3 — R3-3B3A Exact Parent-Vector Completion Theorem
+# Rocket V3 — R3-3B3B ListIso / Matching Reduction Crucible
 
 Control contract: `1`
 
-Status: `BLOCKED`
+Status: `READY`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Fresh dedicated worktree; proof-first Origin-only rooted-tree research crucible. Establish an exact partial parent-vector completion theorem before any scalable tree canonicaliser is attempted.`
+Route: `Fresh dedicated worktree; research-only rooted-tree theorem crucible. Determine whether exact partial frozen parent-vector completion reduces to tree ListIso or an exact matching/tree-DP generalisation. No production canonicaliser until the reduction is proved.`
 
-Base commit: `64d1557603366f2b8b934f987bfdef87e2b4ec0e`
+Research evidence base: `eae11c5fd2bb964c0f586c48823f406d2472dccf`
 
-Implementation checkpoint: `2234438f8fa03811bc33788d26744023bef6495e`
+Accepted production frontier: `64d1557603366f2b8b934f987bfdef87e2b4ec0e`
 
 OCaml switch path: `D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml`
 
-Worker note: `docs/worker-notes/2026-09-02-rocket-v3-r3-3b3a-parent-vector-completion.md`
+Worker note: `docs/worker-notes/2026-09-02-rocket-v3-r3-3b3b-listiso-reduction.md`
 
 Related issue: `#5 — BUG: Rocket V2 factorial search on simple sequential Action chains`
 
@@ -24,56 +24,131 @@ Updated: 2026-09-02
 
 ## Objective
 
-Determine whether exact frozen Enc_V2 canonicalisation of a connected rooted success tree can be reduced to lexicographic construction of its numeric parent/target vector using an exact partial-completion feasibility predicate.
+Determine exactly whether the supported connected rooted success-tree completion problem can be solved by:
 
-Do not build the general B3 tree canonicaliser yet.
+1. a direct reduction to List Restricted Tree Isomorphism (ListIso), or
+2. a closely related exact polynomial matching/tree-DP formulation that preserves the same simultaneous-placement constraints.
 
-The central question is:
+The task must not implement a production B3 tree canonicaliser unless and until the completion theorem itself is established. In this packet, even a successful theorem stops at a research-only constructor/oracle and design result.
 
-> Given the original semantic rooted success tree, a fixed exact entry label, and a prefix of numeric source slots whose frozen continuation targets have been chosen, can we decide exactly whether that prefix extends to at least one complete bijective Origin labelling isomorphic to the original tree?
+The central predicate remains:
 
-If the answer admits a compact exact tree-specific algorithm, prove it and implement only the bounded research oracle/feasibility machinery required to establish the theorem.
+`Completable(T, e, k, q)`
 
-If no such exact reduction is established, STOP with a Red/BLOCKED mathematical finding.
+where:
+
+- `T` is the semantic rooted success tree over Origins;
+- ProgramComplete is a fixed external root and is not labelled;
+- `e` is the distinguished semantic entry Origin;
+- `k` is the fixed numeric label assigned to entry;
+- `q` is a supplied prefix of the frozen numeric parent/target vector;
+- a completion exists iff there is a bijection from semantic Origins to labels `1..N` that assigns `e -> k` and induces exactly the supplied prefix `q`.
+
+The research question is not whether trees are easy to canonise in the ordinary sense. It is whether these partial numeric placement constraints admit an exact compact completion test.
 
 ## Relevant background and existing behaviour
 
-R3-3A is the exact frozen small-case oracle by complete legal label enumeration.
+### Accepted B2 frontier
 
-R3-3B1 repaired the next-observable-byte law.
+R3-3B2 exactly solves the simple connected success-path crucible in label space.
 
-R3-3B2 solved the complete simple success path directly in label space. Chain-1000 completes with zero complete Origin permutation enumeration.
+It matches exhaustive frozen authority on tractable cases and scales to chain 1000 with approximately:
 
-A subsequent uncommitted B3 experiment attempted to generalise path canonisation to rooted success trees by assigning canonical subtree ranks. That experiment correctly stopped before commit/push after an independent exact oracle disproved the ordering rule.
+- successor_slots_processed = 1000
+- candidate_targets_considered = 1003
+- feasibility_checks = 1003
+- complete_permutations_enumerated = 0
 
-Mandatory counterexample from that experiment:
+B2 remains the accepted production frontier.
 
-`parents = [6,2,3,6,5,6,-1]`
+### B3 theorem already disproved
 
-For the generated supported tree, canonical subtree-rank ordering selected continuation target `6` where the independent exact frozen oracle selected `5`.
-
-The B3 attempt had 1793/1793 focused checks before this counterexample, plus green build/regressions, demonstrating that the failure is not basic tree construction. The failed theorem was:
-
-> canonical subtree rank order implies frozen Enc_V2-optimal global label order.
+A later uncommitted B3 experiment attempted to order rooted subtrees by canonical subtree rank.
 
 That theorem is false.
 
-This task must not repair the failure by adding more heuristic ranking fields.
+Historical counterexample:
 
-### Important simplification
+`parents = [6,2,3,6,5,6,-1]`
 
-For trees with fewer than 10 Origin labels, numeric label order and `encode_int` byte order coincide.
+The rank candidate and exact oracle differ at numeric source slot 7:
 
-Therefore the first proof domain should deliberately stay below the decimal-width boundary. This isolates the real tree-label placement problem from the separate decimal encoding issue.
+- rank candidate target = 6
+- exact target = 5
 
-Within that domain, the frozen success-continuation objective reduces to the lexicographically smallest legal numeric target/parent vector after the entry label is fixed.
+Frozen payload first differs at byte offset 55:
 
-### Supported research shape
+- rank candidate = `0x36`
+- exact oracle = `0x35`
+
+Therefore:
+
+> ordinary rooted-subtree canonical rank does not imply frozen global label-placement optimality.
+
+### B3A local-capacity recurrence already disproved
+
+R3-3B3A built an independent exact brute-force completion oracle and tested a compact local-capacity candidate state.
+
+The candidate retained local edge validity, acyclicity, root capacity, child-degree capacity and entry terminal/non-terminal kind.
+
+It is not sufficient.
+
+Minimal false positive:
+
+`parents = [1,2,-1]`
+
+entry semantic vertex = `0`
+
+partial numeric parent vector:
+
+`[2, ProgramComplete]`
+
+The local candidate accepts; exact brute force rejects.
+
+Why: the numeric slot forced to be the entry's parent is simultaneously required to represent a semantic vertex whose own parent kind is incompatible with the prefix. The missing information is coupled semantic placement, not just local degree/component capacity.
+
+B3A exact evidence:
+
+- 47,634 focused checks passed;
+- 23,814 partial prefixes checked;
+- 1,465,731 complete assignments examined by the bounded brute-force oracle;
+- B2 69/69 green;
+- R3-3A 39/39 green;
+- R3-1 214/214 green;
+- R3-2 4807/4807 green;
+- full Dune/V2 5000-case corpus green.
+
+### New research lead: ListIso on trees
+
+List Restricted Graph Isomorphism asks whether an isomorphism exists subject to per-vertex allowed-image lists.
+
+Klavík, Knop and Zeman show that ListIso is polynomial-time on trees.
+
+Their tree algorithm processes rooted trees bottom-up. For a candidate mapping `u -> w`, the children of `u` must be simultaneously assignable to the children of `w`; this is tested using bipartite perfect matching over already-feasible child-image pairs.
+
+Relevant references:
+
+- Pavel Klavík, Dušan Knop, Peter Zeman, "Graph Isomorphism Restricted by Lists", Theoretical Computer Science 860 (2021), 51–71.
+- DOI: 10.1016/j.tcs.2021.01.027
+- arXiv: 1607.03918
+
+This simultaneous matching mechanism is directly relevant to the coupling that B3A's local-capacity recurrence lost.
+
+However, ordinary ListIso receives two complete trees plus unary allowed-image lists.
+
+Our numeric target tree is only partially specified by the supplied parent-vector prefix. Therefore direct applicability is not assumed.
+
+## Supported research shape
 
 For this task only:
 
-- program Origin sites only;
-- Anchor or Action Origins;
+- one connected reverse-success rooted tree;
+- ProgramComplete is one fixed external root;
+- every Origin has exactly one success continuation;
+- every Origin reaches ProgramComplete;
+- no cycles;
+- entry Origin distinguished;
+- Origin bodies limited to the same B3A research shape;
 - no Facts;
 - no Action inputs;
 - no Together;
@@ -81,231 +156,300 @@ For this task only:
 - no Branches;
 - no Roles;
 - no ItemTemplates;
-- each Origin has exactly one success continuation;
-- every Origin reaches ProgramComplete;
-- no cycle;
-- one connected reverse-success rooted tree;
-- entry_origin is distinguished.
+- no cross-family labels.
 
-ProgramComplete is a fixed external root and never receives an Origin label.
+Initial exact theorem work should use N <= 9 so ordinary numeric order and `encode_int` byte order do not introduce an unnecessary decimal-width confounder. Targeted 10/11 boundary work comes only after the structural theorem.
 
 ## Required behaviour
 
-1. Start from exact accepted B2 base `64d1557603366f2b8b934f987bfdef87e2b4ec0e`; do not inherit the uncommitted B3 implementation as authority.
+1. Start from exact research evidence base `eae11c5fd2bb964c0f586c48823f406d2472dccf`.
 
-2. Reconstruct the reported B3 failing tree from `parents = [6,2,3,6,5,6,-1]` or an exactly equivalent explicit semantic fixture, and independently reproduce the rank-order target `6` versus exact-oracle target `5` mismatch before proposing a replacement theorem.
+2. Treat accepted production B2 `64d1557603366f2b8b934f987bfdef87e2b4ec0e` as the production frontier. This branch is research evidence only and must not be merged as a production B3 implementation.
 
-3. Record the first frozen continuation position/bytes at which the heuristic candidate loses to the exact candidate.
+3. Preserve the B3A exact brute-force completion oracle as read-only correctness authority. Do not weaken it or replace it with the candidate algorithm under test.
 
-4. Formalise the supported rooted-tree canonicalisation objective as lexicographic minimisation of the complete numeric success target/parent vector after the frozen entry label is fixed.
+4. Re-run and confirm both mandatory negative fixtures before implementing a new theorem:
+   - seven-node rank failure `[6,2,3,6,5,6,-1]`;
+   - three-node local-capacity false positive `[1,2,-1]`, entry `0`, prefix `[2, Complete]`.
 
-5. For the primary proof corpus use N <= 9 so numeric label order equals exact encoded integer order; do not mix decimal-width effects into the initial theorem.
+5. Formalise the completion problem as a constraint problem over a bijection `L : semantic Origins -> numeric slots`.
 
-6. Define a partial parent-vector state over processed numeric source slots, including enough semantic information to state what remains unassigned without using raw IDs as canonical evidence.
+6. Express each processed prefix slot exactly:
+   - if `q[i] = Complete`, then the semantic vertex mapped to numeric slot `i` must have ProgramComplete as parent;
+   - if `q[i] = j`, then the semantic vertex mapped to numeric slot `i` must have as parent the semantic vertex mapped to numeric slot `j`.
 
-7. Define the exact extension predicate:
-   `Completable(original_tree, fixed_entry, partial_parent_vector)`.
+7. Distinguish unary placement restrictions from binary relational restrictions. Do not pretend a binary prefix edge constraint is already a ListIso unary list.
 
-8. The predicate must mean existence of at least one complete bijective Origin labelling whose induced rooted success tree is isomorphic to the original semantic tree, respects the distinguished entry vertex, and has exactly the supplied parent-vector prefix.
+8. Attempt a direct reduction to standard tree ListIso.
 
-9. Build an independent brute-force completion oracle for small N. It must not call the proposed feasibility algorithm.
+9. If proposing a direct reduction, explicitly construct the two complete rooted trees and every allowed-image list.
 
-10. Exhaustively compare the proposed feasibility predicate against brute-force existence for every reachable partial prefix of every generated supported tree through at least N=7, or another demonstrably equivalent exhaustive corpus.
+10. Prove both directions for that reduction:
+    - every legal parent-vector completion induces a list-compatible tree isomorphism;
+    - every list-compatible tree isomorphism induces a legal parent-vector completion.
 
-11. Include the known failing B3 tree and its partial prefixes in the exhaustive feasibility corpus.
+11. If a direct reduction is impossible because the target numeric tree is only partially specified, identify the exact obstruction with a minimal counterexample.
 
-12. Determine what information the failed canonical-subtree-rank rule discarded. Record this explicitly in the worker note/design evidence.
+12. Then investigate an exact matching/tree-DP generalisation rather than abandoning the matching idea.
 
-13. Investigate exact tree-specific formulations such as entry-aware coloured rooted-tree isomorphism, canonical component matching, dynamic programming over child-isomorphism classes, or another exact construction. Do not assume any candidate formulation is sufficient until differential proof passes.
+13. Candidate states may include possible semantic images for numeric slots, possible numeric slots for semantic vertices, fixed parent constraints, subtree compatibility classes and matching feasibility. Derive the necessary state from correctness; do not adopt this list blindly.
 
-14. If subtree isomorphism classes are used, distinguish clearly between:
-    - proof that two complete supported subtrees are isomorphic;
-    - proof that two partial label-allocation states are interchangeable under the frozen parent-vector objective.
-    The former alone must not imply the latter.
+14. Any bottom-up candidate relation `CanMap(u, slot/state)` must preserve simultaneous child-placement constraints. Local degree counts alone are forbidden as sufficiency evidence.
 
-15. Determine whether the completion predicate has a compact polynomial/bounded state representation. State the state variables and recurrence/decision rule explicitly.
+15. Where child assignments are mutually dependent, use an exact bipartite matching condition or prove an equivalent exact criterion.
 
-16. If a valid exact completion predicate is established, implement a research-only lexicographic parent-vector constructor that processes source slots left-to-right and selects the smallest target whose prefix remains completable.
+16. Matching must be genuinely injective: two semantic children may not consume the same numeric child/placement resource.
 
-17. The constructor must use exact feasibility, not heuristic subtree ranking, and must enumerate zero complete Origin permutations.
+17. Entry and ProgramComplete must be represented explicitly in the theorem/state. Do not special-case them only in the final constructor.
 
-18. Differentially prove the constructor against the full frozen exhaustive oracle for all supported generated trees through at least N=7 and targeted fixtures through N=8/9 where tractable.
+18. Build a research-only exact candidate feasibility predicate separate from the brute-force oracle.
 
-19. Require exact equality of parent vector, final Origin assignment, frozen payload and digest for all tractable fixtures.
+19. Exhaustively differential-test candidate feasibility against brute-force `Completable` over every reachable prefix for all generated supported trees through at least N=6, plus all required N=7 counterexamples/targeted fixtures.
 
-20. Include stars, balanced trees, unbalanced trees, combs, repeated identical sibling subtrees, repeated structurally identical siblings with different supported body descriptors, asymmetric trees, and entry at leaf/internal/root-child positions where valid.
+20. If tractable, extend the exhaustive corpus to N=7; if not, document exact combinatorial limit and use exhaustive N=6 plus strong generated N=7 differential samples.
 
-21. Add raw-ID renaming and storage-order permutation metamorphic variants.
+21. Required generated shapes include:
+    - paths;
+    - stars;
+    - balanced trees;
+    - combs;
+    - highly asymmetric trees;
+    - repeated identical sibling subtrees;
+    - repeated isomorphic subtrees under different global placements;
+    - entry at leaf;
+    - entry at internal vertex;
+    - entry adjacent to ProgramComplete.
 
-22. Only after the N<=9 theorem passes, reintroduce exact `encode_int` byte ordering at N=10/11 in targeted bounded cases and prove that the feasibility theorem itself is unchanged while candidate ordering uses frozen bytes.
+22. Include raw-ID renaming and storage/construction-order metamorphic variants.
 
-23. Instrument at minimum: partial_prefixes_checked, brute_force_completions_considered, feasibility_states, isomorphism_checks, exact_tie_states, candidate_targets_considered, committed_targets, complete_permutations_enumerated, and max_state_width.
+23. The new predicate must reject the three-node false positive for the correct coupled-placement reason, not because of a fixture-specific branch.
 
-24. Do not attempt N=100/1000 scaling unless a compact exact completion theorem has first been established and validated. If established, one modest scale probe up to N=100 is permitted only as diagnostic evidence, not as acceptance authority.
+24. The new theorem/state must explain conceptually why target 5 remains feasible/preferred while target 6 loses in the seven-node B3 counterexample.
 
-25. Preserve B2 and all prior accepted regressions. No production path may reference B3A.
+25. If exact feasibility is established, implement a research-only left-to-right parent-vector constructor:
+    - process numeric source slots in frozen order;
+    - try targets in exact frozen candidate order;
+    - commit the first target for which exact candidate feasibility remains true.
 
-26. Stop after the theorem/research result. Do not begin scalable B3B implementation, disconnected forests, cross-family canonicalisation, R3-3C or R3-4.
+26. Such a constructor must enumerate zero complete Origin permutations.
+
+27. Differentially compare final constructed parent vectors against the existing exhaustive frozen oracle for all tractable supported fixtures.
+
+28. Require exact agreement of parent vector, semantic-to-numeric assignment where uniquely determined, frozen payload and digest for tractable fixtures.
+
+29. Only after the N<=9 structural theorem passes, reintroduce exact `encode_int` byte ordering with targeted N=10/11 cases.
+
+30. Prove that decimal-width ordering changes candidate order only, not the structural matching/completion theorem.
+
+31. Instrument at minimum:
+    - partial_prefixes_checked;
+    - candidate_states;
+    - candidate_pairs;
+    - matching_instances;
+    - matching_vertices;
+    - matching_edges;
+    - matching_failures;
+    - candidate_targets_considered;
+    - committed_targets;
+    - exact_oracle_complete_assignments;
+    - complete_permutations_enumerated.
+
+32. If the exact matching theorem is established and small exhaustive parity passes, one diagnostic scale phase is allowed on N=100 and N=1000 path/star/balanced/repeated-subtree trees.
+
+33. Scale evidence is secondary. Do not use performance to excuse an unproved state transition.
+
+34. Do not introduce a generic graph individualisation/refinement engine.
+
+35. Do not introduce general-purpose SAT/SMT/CSP dependencies.
+
+36. Do not add an external matching dependency. A deterministic research-local augmenting-path or Hopcroft-Karp implementation is sufficient if matching is required.
+
+37. No heuristic sibling ordering may make identity decisions.
+
+38. Stop at the theorem/research result. Do not integrate into production Rocket, forests, cross-family canonicalisation, R3-3C or R3-4.
 
 ## Relevant components
 
 Authorised mutation is limited to:
 
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/review/rocket-v3/R3_3B3A_PARENT_VECTOR_COMPLETION.md`
-- `docs/worker-notes/2026-09-02-rocket-v3-r3-3b3a-parent-vector-completion.md`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_tree_completion.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_tree_completion.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_tree_completion_test.ml`
+- `docs/review/rocket-v3/R3_3B3B_LISTISO_REDUCTION.md`
+- `docs/worker-notes/2026-09-02-rocket-v3-r3-3b3b-listiso-reduction.md`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_tree_listiso.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_tree_listiso.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_tree_listiso_test.ml`
 - `tethers-0.1/engine-ocaml/bin/dune`
 
 Read-only authorities include:
 
+- `tethers_core_rocket_v3_tree_completion.ml/.mli/_test.ml` from B3A;
+- B3A review and worker note;
 - frozen V2 format/reference;
-- R3-3A exact certificate;
-- R3-3B1 Origin walker;
-- R3-3B2 success-path canonicaliser;
+- R3-3A exhaustive frozen certificate;
+- R3-3B2 path canonicaliser;
 - Core/validator/planner;
 - R3-1/R3-2;
-- all prior committed worker notes/tests.
+- all inherited production tests.
 
-Do not modify or import uncommitted B3 experimental files into the accepted codebase. They may be inspected locally as historical research only if available.
+Do not modify the B3A tree_completion files. Their exact oracle and counterexample corpus are research authority for this packet.
 
 ## Frozen decisions and invariants
 
 - Frozen Enc_V2 and ProgramDigest V2 do not change.
-- Entry field is minimised before success-continuation bytes.
+- Entry field dominates success-continuation bytes.
 - Success continuations are emitted in numeric source-label order.
-- Target labels are compared by exact frozen encoded bytes.
+- Target labels compare by exact frozen encoded bytes.
 - ProgramComplete is fixed and unlabeled.
 - Entry Origin is distinguished.
 - Raw IDs/internal vertex numbers/storage order are non-semantic.
-- Same R3-2 cell is not automorphism proof.
-- Complete rooted-subtree isomorphism does not automatically prove interchangeability under a partial global label allocation.
-- No heuristic subtree ranking may prune or commit identity decisions.
-- Exact feasibility means existence of a full legal completion, not local plausibility.
-- The initial N<=9 proof intentionally removes decimal-width ordering as a confounder.
-- No complete Origin permutation enumeration in any proposed scalable constructor.
-- No V1 fallback or identity budget.
+- Same refinement cell is not automorphism proof.
+- Complete subtree isomorphism is not partial-global-state interchangeability.
+- Local degree/capacity compatibility is not sufficient completion evidence.
+- Unary image lists and binary parent constraints are different mathematical objects until an exact reduction proves otherwise.
+- Any matching state must preserve injectivity and simultaneous placement.
+- No heuristic rank may prune exact candidates.
+- No complete Origin permutation enumeration in a proposed scalable constructor.
+- B3A brute force remains bounded correctness authority only.
+- Initial N<=9 theorem work intentionally removes decimal-width ordering as a confounder.
 
 ## Acceptance criteria
 
-1. Work starts from exact base `64d1557603366f2b8b934f987bfdef87e2b4ec0e`.
+1. Exact research base and branch preflight pass.
 
-2. The known B3 counterexample is reconstructed independently.
+2. Both historical counterexamples reproduce unchanged.
 
-3. The target-6 versus target-5 oracle mismatch is reproduced and its first frozen differing continuation position is recorded.
+3. Exact `Completable` semantics are restated without raw-ID ordering.
 
-4. The exact parent-vector objective is formally documented.
+4. Prefix constraints are represented as exact relational constraints.
 
-5. Initial proof fixtures remain within N<=9 except explicitly separated decimal-boundary tests.
+5. Unary and binary constraints are distinguished explicitly.
 
-6. Partial state has no raw-ID-derived canonical ordering.
+6. Direct standard-ListIso reducibility is either proved both ways or refuted by a precise obstruction.
 
-7. `Completable` is defined precisely.
+7. If direct reduction fails, the packet proceeds to an exact matching/tree-DP formulation rather than silently treating ListIso as solved.
 
-8. `Completable` includes exact semantic-tree isomorphism, distinguished entry and exact prefix requirements.
+8. Candidate state is documented mathematically before production-like coding.
 
-9. Independent brute-force existence oracle exists.
+9. Simultaneous child placement is enforced by perfect matching or a proved equivalent exact condition.
 
-10. Feasibility agrees with brute-force existence over the exhaustive required partial-prefix corpus.
+10. Matching/resource use is injective.
 
-11. The historical failing tree is included in that corpus.
+11. Entry and ProgramComplete participate in the theorem/state explicitly.
 
-12. The information missing from canonical subtree rank is explicitly identified.
+12. Candidate feasibility is implemented separately from brute-force authority.
 
-13. Any chosen tree-specific formulation is justified by tests/proof, not assumption.
+13. Candidate feasibility agrees with brute-force `Completable` over the required exhaustive N<=6 corpus.
 
-14. Complete subtree isomorphism and partial-state interchangeability are treated as separate claims.
+14. Required N=7 historical fixtures pass exactly.
 
-15. A compact exact state/recurrence is either established explicitly or the task stops BLOCKED with evidence.
+15. Required structural/adversarial generated shapes pass.
 
-16. If established, an exact lexicographic constructor exists.
+16. Raw-ID/storage/construction-order metamorphics are invariant.
 
-17. Constructor decisions use only exact completion feasibility and enumerate zero complete permutations.
+17. The three-node B3A false positive is rejected for a general theorem reason.
 
-18. Constructor matches exhaustive exact parent vectors throughout the supported small-tree corpus.
+18. The seven-node target-5/target-6 distinction is explained and reproduced.
 
-19. Final labels/payload/digest match frozen exhaustive authority.
+19. If a constructor is built, every commitment is justified only by exact candidate feasibility.
 
-20. Required structural/adversarial/entry fixtures pass.
+20. Any constructor enumerates zero complete Origin permutations.
 
-21. Raw-ID/storage metamorphic variants are invariant.
+21. Final constructed parent vectors match exhaustive authority throughout tractable fixtures.
 
-22. Targeted N=10/11 tests correctly reintroduce exact encoded-byte candidate ordering without changing the feasibility theorem.
+22. Frozen payload/digest parity holds throughout tractable fixtures.
 
-23. Required deterministic statistics are present and repeatable.
+23. N=10/11 boundary tests use exact frozen encoded-byte target order.
 
-24. No large-scale claim is made before theorem proof; any permitted N<=100 probe is clearly diagnostic only.
+24. The structural theorem remains unchanged across decimal-width boundaries.
 
-25. B2 and full inherited regressions remain green and no production path references B3A.
+25. Required deterministic matching/oracle statistics are recorded.
 
-26. Task ends COMPLETE only if the theorem is established; otherwise ends BLOCKED with the smallest precise unresolved mathematical obstruction. No B3B/R3-3C/R3-4 work begins.
+26. No generic graph I/R, SAT/SMT/CSP solver or external matching dependency is introduced.
+
+27. B2, R3-3A, R3-1, R3-2, V2 and full inherited regressions remain green.
+
+28. Production call paths remain untouched.
+
+29. Task finishes COMPLETE only if an exact reduction/state theorem is established and differentially proved; otherwise BLOCKED with the smallest precise obstruction.
+
+30. No forest, cross-family, R3-3C, R3-4 or production B3 work begins.
 
 ## Required verification
 
-- Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-3b3a-parent-vector-completion`.
-- Confirm exact branch, remote READY HEAD, base and clean worktree.
+- Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-3b3b-listiso-reduction`.
+- Confirm exact remote READY HEAD, branch, research evidence base and clean worktree.
 - Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1`.
 - Run packet checker and require `control-v1/READY`.
 - Verify exact authorised OCaml switch.
-- Read frozen top-level encoder, B2 implementation/tests/note, R3-3A oracle and validator success rules.
-- Reproduce the B3 counterexample before implementing the replacement feasibility theorem.
-- Write/update `docs/review/rocket-v3/R3_3B3A_PARENT_VECTOR_COMPLETION.md` with the objective, counterexample, state definition, recurrence/decision theorem and proof limits.
-- Build independent brute-force small-tree/prefix oracle first.
-- Differentially validate feasibility over exhaustive partial prefixes.
-- Only if feasibility passes, build the left-to-right lexicographic constructor.
-- Differentially validate final constructor against frozen exhaustive payload/digest authority.
-- Run targeted N=10/11 exact encoded-byte tests only after N<=9 proof passes.
+- Read B3A review, worker note and exact tree_completion oracle/test code.
+- Read B2 implementation/tests and frozen V2 top-level encoding order.
+- Reproduce both mandatory historical counterexamples before writing the new candidate theorem.
+- Write `docs/review/rocket-v3/R3_3B3B_LISTISO_REDUCTION.md` first with:
+  - formal problem;
+  - direct-ListIso reduction attempt;
+  - proof or obstruction;
+  - matching/tree-DP state;
+  - soundness sketch;
+  - completeness sketch;
+  - complexity.
+- Implement independent research module only after the state is explicit.
+- Differentially validate candidate feasibility against B3A brute-force `Completable`.
+- If candidate feasibility fails on any prefix, reduce to smallest counterexample before attempting repair.
+- Two materially similar failed repairs without a genuinely new state/reduction trigger BLOCKED.
+- Only after feasibility parity may a lexicographic constructor be implemented.
+- Only after small exact parity may N=10/11 byte-order tests and optional N=100/1000 diagnostics run.
+- Run B3B focused suite.
 - Run B3A focused suite.
-- Run B2 focused suite.
+- Run B2 `69/69`.
 - Run R3-3A `39/39`.
 - Run R3-1 `214/214`.
 - Run R3-2 `4807/4807`.
-- Run V2 suites and 5,000-case corpus.
+- Run V2 suites and generated 5,000-case corpus.
 - Run `opam exec --switch="D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml" -- dune build @all`.
 - Run `opam exec --switch="D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml" -- dune runtest --force`.
 - Run `git diff --check`.
 - Inspect full base-to-HEAD diff and prove authorised paths only.
 - Commit implementation/research/tests and record full implementation checkpoint.
-- Write worker note and transition packet to `COMPLETE` or `BLOCKED` according to evidence.
+- Write worker note and transition packet to `COMPLETE` or `BLOCKED`.
 - No implementation/test mutation after recorded checkpoint.
 - Run packet checker requiring matching terminal state.
-- Push normally for COMPLETE or BLOCKED evidence, prove local HEAD == remote HEAD, require clean worktree, then STOP.
+- Push normally, prove local HEAD == remote HEAD, require clean worktree, then STOP.
 
 ## Forbidden changes
 
 - No frozen V2/ProgramDigest/Core/validator changes.
-- No R3-1/R3-2/R3-3A/B1/B2 changes.
-- No import of uncommitted B3 heuristic implementation as accepted code.
-- No heuristic subtree-rank ordering.
-- No refinement-cell-as-automorphism assumption.
-- No subtree-isomorphism-implies-global-interchangeability shortcut.
+- No accepted B2 production changes.
+- No B3A exact-oracle mutation.
+- No heuristic subtree-rank resurrection.
+- No local-capacity-as-sufficiency resurrection.
 - No raw-ID/internal/storage ordering.
 - No generic graph I/R.
+- No SAT/SMT/CSP dependency.
+- No external graph/matching dependency.
 - No disconnected forest solver.
 - No Together/Facts/Branches/Batches/Templates/Roles support.
-- No complete-permutation production algorithm.
-- No new dependency.
-- No wall-clock identity decision.
 - No production integration.
+- No complete-permutation scalable algorithm.
 - No V1 fallback.
-- No B3B/R3-3C/R3-4/release work.
+- No B3 production release claim.
+- No R3-3C/R3-4/release work.
 
 ## Stop conditions
 
-- The B3 counterexample cannot be reproduced from the reported semantic fixture.
-- Proposed feasibility disagrees with brute-force existence on any valid exhaustive partial prefix.
-- Required exact state grows into unrestricted complete permutation enumeration.
-- No compact exact completion theorem can be stated after bounded investigation.
-- Any proposed collapse relies only on subtree rank/refinement rather than exact partial-state equivalence.
-- Different traversal/raw-ID/storage order changes an exact result.
-- N=10/11 reveals that the feasibility theorem itself depended incorrectly on numeric rather than structural state.
-- Correctness requires changing frozen V2/Core/R3-2.
-- Two materially similar theorem attempts fail without a genuinely new state/reduction.
+- A claimed direct ListIso reduction fails either proof direction.
+- Candidate feasibility disagrees with brute-force authority on any valid required prefix.
+- Matching state collapses only to local degree/capacity information already disproved.
+- Exact state requires unrestricted complete labelling enumeration.
+- The only way to represent prefix constraints is to enumerate all complete target trees.
+- Different raw IDs/storage/traversal change exact feasibility.
+- Correctness requires changing frozen V2/Core/B2.
+- Two materially similar matching-state attempts fail without a new mathematical abstraction.
+- No compact exact theorem can be stated after bounded investigation.
 
-A BLOCKED mathematical result is valid and should be pushed as evidence.
+A precise BLOCKED mathematical result is valid and must be pushed as evidence.
 
 ## Expected pre-existing changes
 
-None.
+The branch intentionally starts from terminal B3A research evidence `eae11c5fd2bb964c0f586c48823f406d2472dccf`.
+
+Those inherited B3A files are expected and remain read-only except for the packet itself.
