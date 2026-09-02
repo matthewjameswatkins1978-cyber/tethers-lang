@@ -6,3 +6,12 @@ tests/*.cmo
 tests/*.cmx
 tests/*.o
 tests/*.exe
+extracted/*.cmi
+extracted/*.cmo
+extracted/*.cmx
+extracted/*.o
+tests/baseline_driver
+tests/extracted_driver
+tests/native_baseline_driver
+tests/stage0_driver
+tests/extracted_driver_default

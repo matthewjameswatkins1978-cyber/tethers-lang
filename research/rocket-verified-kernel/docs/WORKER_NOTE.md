@@ -130,3 +130,185 @@ need an array-oriented or otherwise asymptotically controlled representation,
 then universal DSU/feasibility lemmas before any production integration is
 considered.  B3A, tree/forest proofs, redesign, and integration were not
 started.
+
+## Experiment 1B continuation  status BLOCKED
+
+Stage 0 was secured before this continuation.  Native Linux Git pushed
+aa4192fc794892137e99cbc604eb9d95693ee4cc to
+origin/research/rocket-verified-kernel.  Local HEAD and the remote branch
+HEAD matched, and the WSL worktree was clean.  The active production checkout
+was not used.
+
+### Exact environment
+
+- Linux path: /home/lucy/tethers-lang-rocket-verified-kernel
+- WSL distribution: Ubuntu 26.04 LTS
+- Linux user: lucy
+- Branch: research/rocket-verified-kernel
+- Git commit at the Stage 0 gate: aa4192fc794892137e99cbc604eb9d95693ee4cc
+- opam switch: rocket-rocq-wsl-54
+- opam: 2.5.0
+- OCaml: 5.4.0 from ocaml-base-compiler.5.4.0
+- Rocq: 9.2, compiled with OCaml 5.4.0
+- Rocq standard library: rocq-stdlib 9.1.0
+- WSL commands explicitly loaded the switch with
+  eval "$(opam env --switch=rocket-rocq-wsl-54)"
+- Pins: rocq-core.9.2.0 version 9.2.0, rocq-runtime.9.2.0 version
+  9.2.0, rocq-stdlib.9.1.0 version 9.1.0
+- No optional Rocq proof library was installed.
+
+### Experiment 1A recap
+
+The Rocq skeleton compiled, extraction worked, the extracted small cases
+agreed, and the known chain-11 assignment was
+[10;9;8;7;6;5;4;3;2;1;11].  The previous list/Peano kernel became
+impractical at chain 1000.  Its proof inventory and three-way harness were
+incomplete; this was a performance and proof-boundary blocker, not a theorem
+failure.
+
+### Performance diagnosis
+
+The extracted source contains unary Peano naturals and association-list
+operations.  The dominant repeated operations are lookup_nat and update_nat
+over the parent association list, member_nat over predecessor lists, and
+candidate_labels filtering the entire ordered label list for every source.
+The final follow_aux also performs association-list successor lookup and
+visited-list membership.  Sorting uses insertion sort and decimal comparison
+recomputes digit lists.
+
+The static cost is superlinear even before Peano costs: candidate filtering
+does a full list pass with a growing membership scan for every source, DSU
+operations scan a growing parent list, and path reconstruction scans growing
+edge/visited lists.  In the worst case this is at least quadratic and the
+combined nested scans can be cubic.  It is not an O(n) executable
+formulation.
+
+Clean baseline measurements from the original extracted list/Peano kernel:
+
+- n=10: 0.000154 seconds
+- n=100: 0.124756 seconds
+- n=250: 5.182103 seconds
+- n=500: exceeded a 30-second timeout
+- n=1000: exceeded the bounded run and was stopped
+
+### 1B representation attempt
+
+The first controlled change was standard-library ExtrOcamlNatInt.  It changed
+the extracted nat representation to OCaml int but did not change the
+algorithm.  Chain 1000 then took 8.325620 seconds, proving that Peano
+arithmetic was a major multiplier but not the sole cause.
+
+The second controlled change removed the redundant candidate_labels filter.
+ordered_candidates now maps the already frozen ordered list directly to
+Origin targets; try_origin remains the exact rejection point for invalid,
+entry, duplicate-predecessor, self-edge, and cyclic targets.  The result is
+unchanged on the checked cases.  Native-int measurements after this change:
+
+- n=10: 0.000217 seconds
+- n=100: 0.013563 seconds
+- n=250: 0.468867 seconds
+- n=500: 1.676407 seconds
+- n=1000: 5.665887 seconds
+
+This is a materially better runtime and an extracted chain-1000 completion,
+but it remains visibly superlinear and still repeatedly scans lists.  It does
+not meet the requested linear-or-near-linear acceptance bar.
+
+The accepted handwritten authority independently reports for chain 1000:
+path_size=1000, successor_slots_processed=1000,
+candidate_targets_considered=1003, feasibility_checks=1003,
+rejected_infeasible_choices=3, committed_choices=1000,
+complete_permutations_enumerated=0, max_partial_components=1000.  The
+Rocq kernel exposes no equivalent counters yet; its output only confirms
+result length and exact chain-11 labels.
+
+### Proof inventory
+
+The following existing theorems remain machine checked with no Admitted:
+entry_label_in_range, entry_label_byte_minimal,
+canonical_assignment_bijective, successor_table_total,
+successor_table_single_predecessor_except_entry,
+successor_table_acyclic, successor_table_reaches_complete,
+successor_table_visits_every_label, semantic_mapping_roundtrip,
+canonical_result_unique, partial_feasibility_sound,
+partial_feasibility_complete, greedy_choice_preserves_completion, and
+greedy_choice_lexicographically_minimal.
+
+These are still bounded executable checks, not the required universal
+soundness, completeness, preservation, acyclicity, Hamiltonian reachability,
+or global lexicographic-minimality lemmas.  A universal refinement theorem
+connecting an efficient state representation to the mathematical
+specification was not completed.
+
+Print Assumptions PathProofs.canonical_result_unique reports:
+Closed under the global context.
+The extraction command also printed the same closed result.  rg found no
+project theorem using Admitted and no project-specific axiom.
+
+### Extraction boundary
+
+The main extraction command was:
+
+rocq compile -Q . RocketVerifiedKernel Extract.v
+
+run from research/rocket-verified-kernel/rocq/theories.  Extract.v now imports
+the standard-library ExtrOcamlNatInt mapping.  Generated files are
+research/rocket-verified-kernel/extracted/rocket_path_kernel.ml and .mli,
+plus the Stage 0 generated pair.  ExtractNative.v and its
+rocket_path_kernel_native.ml/.mli pair record the controlled comparison.
+Generated OCaml was not hand edited.
+
+The native-int mapping is an extraction/runtime trust boundary: the Rocq
+logical proof remains over unbounded nat, while the generated program uses
+bounded OCaml int and must stay below its bounds.  The adapter and OCaml
+runtime are not claimed verified.  Primitive arrays were inspected but not
+introduced, so their ArrayAxioms are not part of this experiment.
+
+### Differential evidence
+
+The extracted native kernel compiled and passed its existing research driver
+for sizes 1 through 12, chain-11 exact labels, and chain-1000 output length.
+The previous accepted production run recorded 69/69 checks, including exact
+small chains, metamorphic cases, decimal boundaries, and chain 1000.  A
+complete three-way handwritten/extracted/frozen harness was not completed in
+this continuation.  The production exhaustive test was started from the
+native clone but stopped during its expensive independent small permutation
+oracle; no production file was modified.
+
+Therefore exact agreement is established for the existing extracted small
+driver and the recorded authority evidence, but the required complete
+three-way differential corpus is still outstanding.
+
+### Isolation and assessment
+
+No production Tethers source, active B3/B3A work, frozen Enc_V2, Core,
+validator, accepted B2 implementation, or docs/CURRENT_CLINE_TASK.md was
+modified.  All new support and generated output remain under the research
+directory.
+
+Assessment: BLOCKED.  The experiment demonstrates that native integer
+extraction plus removal of one redundant pass makes chain 1000 terminate, but
+it has not recovered the accepted near-linear work shape.  The universal
+proof/refinement chain and complete three-way differential harness are also
+unfinished.  The smallest exact obstruction is the lack of an efficient,
+machine-proved state representation: the remaining association-list
+membership, DSU, ordering, and reconstruction scans keep the executable
+kernel superlinear.  This is not evidence against the Rocq theorem; it is
+evidence that the current proof-friendly data structures are not yet a
+practical extracted kernel.
+
+### Normal-switch compatibility check
+
+The extracted OCaml was separately compiled and run under the WSL opam
+default switch, not the Rocq switch:
+
+eval "$(opam env --switch=default)"
+ocamlc -I extracted -o tests/extracted_driver_default unix.cma
+  extracted/rocket_path_kernel.mli extracted/rocket_path_kernel.ml
+  tests/extracted_driver.ml
+
+The default switch reports OCaml 5.5.0 and has no rocq executable.  The
+driver passed, including the chain-1000 length check.  This is a useful
+compatibility check without installing Rocq into that switch.  It is not the
+packet-authorised production OCaml environment; that separate environment was
+not exposed as a native Linux switch in this worktree.

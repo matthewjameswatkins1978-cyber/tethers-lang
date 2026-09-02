@@ -152,12 +152,8 @@ Fixpoint insert_encoded (label : nat) (sorted : list nat) : list nat :=
 Fixpoint sort_encoded (values : list nat) : list nat :=
   match values with [] => [] | head :: rest =>
     insert_encoded head (sort_encoded rest) end.
-Definition candidate_labels (state : solver_state) (ordered : list nat) : list nat :=
-  filter (fun label =>
-    negb (Nat.eqb label state.(st_entry) ||
-          member_nat label state.(st_predecessors))) ordered.
 Definition ordered_candidates (state : solver_state) (ordered : list nat) : list target :=
-  map Origin (candidate_labels state ordered) ++
+  map Origin ordered ++
   match state.(st_terminal) with None => [Complete] | Some _ => [] end.
 Fixpoint choose_candidate (fuel : nat) (state : solver_state) (source : nat)
     (processed : nat) (candidates : list target) : option solver_state :=
