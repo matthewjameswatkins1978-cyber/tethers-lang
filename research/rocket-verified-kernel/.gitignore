@@ -1,0 +1,8 @@
+rocq/theories/*.vo
+rocq/theories/*.glob
+rocq/theories/.*.aux
+tests/*.cmi
+tests/*.cmo
+tests/*.cmx
+tests/*.o
+tests/*.exe

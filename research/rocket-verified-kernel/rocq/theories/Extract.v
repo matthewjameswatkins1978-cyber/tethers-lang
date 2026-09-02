@@ -9,13 +9,6 @@ From RocketVerifiedKernel Require Import PathCanon PathProofs.
 
 Extraction Language OCaml.
 
-(* Codex:
-   once the executable canonical entry point is final, extract only the
-   minimal computational definitions required by the research harness.
-
-   Example shape:
-   Extraction "../../extracted/rocket_path_kernel.ml" PathCanon.<entrypoint>.
-*)
-
-Print Assumptions PathProofs.
+Extraction "../../extracted/rocket_path_kernel.ml" PathCanon.canonical_assignment PathCanon.induced_successors.
+Print Assumptions PathProofs.canonical_result_unique.
 
