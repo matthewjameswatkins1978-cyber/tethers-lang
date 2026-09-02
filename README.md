@@ -5,7 +5,7 @@
   <p>
     <a href="QUICKSTART.md">Quick start</a>
     ·
-    <a href="docs/PROJECT_OVERVIEW.md">System overview</a>
+    <a href="docs/AGENT_QUICKSTART.md">Agent quickstart</a>
     ·
     <a href="tethers-0.1/SPEC.md">Language specification</a>
     ·
@@ -153,6 +153,13 @@ Human Tether source lowers into a typed semantic Core. Core uses distinct identi
 
 Canonical Format V2 gives validated Core programs stable semantic identity that is independent of irrelevant raw identifiers and representation order. The implementation includes independent canonicalisation paths and differential evidence.
 
+The 0.5 release adds Rocket V3 as an exact portfolio seam around that frozen
+identity. Common success paths use the proven path solver; typed refinement and
+the exact V2 search remain available for broader shapes, and the exhaustive
+reference engine remains available for bounded differential checks. Backend
+selection changes runtime and evidence counters only, never the payload or
+digest.
+
 Core's vocabulary is intentionally richer than the current human-facing 0.1 syntax. Do not assume that every Core structure is already exposed as source syntax or supported on every runtime bridge. The current public language surface is defined by [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md).
 
 ## Result Anchors and uncertainty
@@ -192,7 +199,26 @@ It does not execute the requested operation. The caller acts, asks, or stops.
 
 The same commands work on Linux with `./tethers`.
 
-Portable 0.2.2 is useful as a local scriptable authority boundary, but it should not be mistaken for the full reference host/runtime.
+For the native host and installed trusted Plugs, begin with the zero-knowledge
+discovery surface:
+
+```text
+tethers describe --json
+tethers capability list --host-data-root <absolute-host-data-root> --json
+tethers capability inspect <name> --host-data-root <absolute-host-data-root> --version <version> --json
+```
+
+These commands are read-only and expose trusted contracts, scopes, provider
+bindings, and availability without starting providers. See the
+[agent quickstart](docs/AGENT_QUICKSTART.md) for the complete discovery path.
+
+## Download the portable workbench
+
+For the full 0.5 host bundle, download the platform asset from the
+[Tethers 0.5 release](docs/TETHERS_0_5_RELEASE.md). It contains the native
+host, the smaller portable workbench, agent-facing manuals, and SHA-256
+evidence. The portable workbench remains separately versioned at 0.2.2 for
+compatibility.
 
 ## Version map
 
@@ -205,6 +231,7 @@ Several version numbers describe different layers of the project:
 | Portable workbench | `0.2.2` |
 | Public Plug-authoring programme | `0.3` milestone complete and integrated |
 | Together/concurrency programme | `0.4` milestone complete and integrated |
+| Practical release line | `0.5` — Rocket portfolio and Agent Essentials |
 
 The 0.3 and 0.4 labels are completed development milestones in this repository. They should not be confused with the portable workbench's release number or the 0.1 language version.
 

@@ -10,6 +10,18 @@ name = "tethers-reference-host"
 path = "src/main.rs"
 
 [[bin]]
+name = "tethers"
+path = "src/main.rs"
+
+[[bin]]
+name = "agent_workspace_provider"
+path = "src/bin/agent_workspace_provider.rs"
+
+[[bin]]
+name = "agent_coding_provider"
+path = "src/bin/agent_coding_provider.rs"
+
+[[bin]]
 name = "bench_mcp"
 path = "src/bin/bench_mcp.rs"
 
@@ -40,6 +52,7 @@ base64 = "0.22"
 ed25519-dalek = { version = "2.1.1", features = ["pkcs8"] }
 clap = { version = "4", features = ["derive"] }
 zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
+regex = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

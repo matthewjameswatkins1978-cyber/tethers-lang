@@ -277,6 +277,24 @@ Do not infer the limits of the full platform from the portable workbench, and do
 - [`docs/SECURITY.md`](docs/SECURITY.md) - current trust and sandbox limits.
 - [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) - enduring design principles.
 
+## 11. Install the 0.5 bundle
+
+Download the Windows x64 or Linux x64 musl bundle from the [0.5 release
+record](docs/TETHERS_0_5_RELEASE.md), verify the adjacent SHA-256 file, and
+extract it. The native host is under `bin/`; the small ALLOW / ASK / DENY
+workbench is under `portable/`. The bundle includes the agent quickstart and
+security manual.
+
+The Windows bundle is reproducible locally:
+
+```powershell
+pwsh -NoProfile -File .\scripts\package-tethers-release.ps1 -Target windows-x64
+```
+
+Linux x64 musl packaging is performed by the pinned GitHub Actions workflow.
+That is a CI verification claim, not a claim that a Windows machine is a Linux
+build host.
+
 The shortest accurate mental model is:
 
 ```text

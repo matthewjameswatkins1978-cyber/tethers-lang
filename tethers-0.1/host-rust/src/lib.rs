@@ -1,5 +1,7 @@
 extern crate self as tethers_reference_host;
 
+pub mod agent_coding;
+pub mod agent_workspace;
 pub mod application;
 pub mod approval;
 pub mod bench_timing;
@@ -13,6 +15,7 @@ pub mod conformance;
 mod current_trust;
 #[cfg(test)]
 mod current_trust_tests;
+pub mod discovery;
 pub mod dispatch;
 pub mod enablement;
 pub mod engine_stdio;

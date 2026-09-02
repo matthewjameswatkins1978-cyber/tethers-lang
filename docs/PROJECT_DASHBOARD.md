@@ -1,6 +1,6 @@
 # Tethers Project Dashboard
 
-Updated: 2026-09-01
+Updated: 2026-09-02
 
 ## Current product direction
 
@@ -57,6 +57,15 @@ for Windows x64 and Linux x64 musl.
 
 It is **not** the full Tethers runtime.
 
+## 0.5 release state
+
+The practical 0.5 release line now combines the accepted Rocket V3 foundation
+with the Agent Essentials discovery and provider work. Rocket keeps frozen V2
+identity as its authority and selects exact implementations by runtime shape;
+the exhaustive reference remains available for bounded differential evidence.
+The native host is still versioned `0.2.2` for compatibility, while `0.5` is
+the product release line.
+
 ## Current gap
 
 Tethers currently has more capability than its everyday agent-facing surface makes obvious.
@@ -68,6 +77,9 @@ The main gaps are practical:
 - agent configuration/scope diagnostics need less friction;
 - planning and Trail evidence should be easier to query;
 - the front-door documentation previously over-emphasised the portable authority façade.
+
+The side-effect-free plan surface and richer Trail query ergonomics remain
+follow-on work; the 0.5 release does not pretend they are already public.
 
 ## Agent Essentials target
 
@@ -105,6 +117,7 @@ Historical worker notes and roadmap checkpoints remain valid historical evidence
 | Portable workbench | `0.2.2` |
 | Public Plug authoring milestone | `0.3` complete |
 | Together/concurrency milestone | `0.4` complete |
+| Practical release line | `0.5` Rocket portfolio + Agent Essentials |
 
 ## Engineering posture
 

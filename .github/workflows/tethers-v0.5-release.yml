@@ -1,0 +1,59 @@
+name: Tethers 0.5 release
+
+on:
+  push:
+    tags: ['tethers-v0.5.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+          - os: ubuntu-latest
+            target: linux-x64-musl
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: x86_64-unknown-linux-musl
+      - name: Install Linux musl toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+      - name: Test native host
+        shell: pwsh
+        run: cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
+      - name: Package Tethers
+        shell: pwsh
+        run: .\scripts\package-tethers-release.ps1 -Target $env:RELEASE_TARGET
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tethers-${{ matrix.target }}
+          path: |
+            dist/tethers-0.5.0-${{ matrix.target }}.zip
+            dist/tethers-0.5.0-${{ matrix.target }}.zip.sha256
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/tethers-v0.5.')
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "Tethers 0.5" --generate-notes dist/*.zip dist/*.sha256

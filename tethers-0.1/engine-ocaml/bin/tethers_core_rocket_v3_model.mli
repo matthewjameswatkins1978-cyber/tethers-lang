@@ -113,6 +113,17 @@ val vertex_kind : t -> int -> vertex_kind
 val vertex_scalar : t -> int -> string
 val vertex_family_count : t -> family -> int
 
+(** Construction/leaf-encoding identity bridges.  These lookups expose the
+    existing Core IDs only at the model boundary; IDs are not part of
+    structural evidence or refinement decisions. *)
+val find_origin_vertex : t -> Tethers_core.origin_id -> int option
+val find_fact_vertex : t -> Tethers_core.fact_id -> int option
+val find_branch_vertex : t -> Tethers_core.branch_id -> int option
+val find_batch_vertex : t -> Tethers_core.batch_id -> int option
+val find_template_vertex : t -> Tethers_core.item_template_id -> int option
+val find_scoped_role_vertex :
+  t -> Tethers_core.role_scope -> Tethers_core.role_id -> int option
+
 val forward_edges : t -> int -> edge list
 val reverse_edges : t -> int -> edge list
 val all_forward_edges : t -> edge list
