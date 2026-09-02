@@ -90,6 +90,11 @@
   (modules tethers_core_rocket_v3_success_path_test tethers_core_rocket_v3_success_path tethers_core_canonical_v2_format tethers_core_validator tethers_core)
   (libraries yojson digestif))
 
+(test
+  (name tethers_core_rocket_v3_tree_completion_test)
+  (modules tethers_core_rocket_v3_tree_completion_test tethers_core_rocket_v3_tree_completion tethers_core_canonical_v2_format tethers_core_validator tethers_core)
+  (libraries yojson digestif))
+
 (executable
   (name tethers_cb1_benchmark)
   (modules tethers_cb1_benchmark tethers_error tethers_outcome tethers_core tethers_core_lowerer tethers_core_validator tethers_core_canonical tethers_core_canonical_v2_format tethers_core_canonical_v2_ir tethers_core_plan tethers_core_evaluation_adapter tethers_core_request_adapter tethers_core_wire tether_parser tethers_protocol)
