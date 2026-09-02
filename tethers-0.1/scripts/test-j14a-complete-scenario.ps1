@@ -8,7 +8,7 @@ $EnginePath = Join-Path $RepoRoot "engine-ocaml\_build\default\bin\tethers_mcp_m
 $StandingManifest = Join-Path $RepoRoot "protocol\capability-manifests\fixture-ping-standing-allow.json"
 $FixtureProvider = Join-Path $PSScriptRoot "tethers-stdio-fixture.ps1"
 $StandingDigest = "sha256:eb61b62bde489e00a4d15c37c83e6cdb1e9e378b8f13b910d4b68bd6d68c19da"
-$CargoLockHash = "4238151009218547ce20e9686c2a8cf12d321e31998b35e1d087b10d0ce674d7"
+$CargoLockHash = "46dd99a4287976d9fe0d2327619a9b389f46aa6b00b7993d49345843508ca023"
 
 $ScenarioDir = Join-Path $RepoRoot "scenarios\j14-complete-local"
 $CommittedTether = Join-Path $ScenarioDir "tethers\complete.tether"
@@ -213,7 +213,37 @@ try {
         tether_set = [ordered]@{
             id = "scenario.j14.complete-local"
             version = "1"
-            tethers = @([ordered]@{ id = "j14-complete"; version = "1"; source_path = "tethers/complete.tether" })
+            tethers = @([ordered]@{
+                id = "j14-complete"
+                version = "1"
+                source_path = "tethers/complete.tether"
+                core_environment = [ordered]@{
+                    program_id = "program.j14.complete"
+                    core_version = "1"
+                    capabilities = @([ordered]@{
+                        source_name = "fixture.ping"
+                        capability_id = "cap.semantic.fixture-ping"
+                        contract_digest = "CORE-CONTRACT-J14"
+                        runtime_name = "fixture.ping"
+                    })
+                    input_facts = @(
+                        [ordered]@{
+                            source_name = "project.type"
+                            fact_id = "fact.project_type"
+                            host_snapshot_key = "project.type"
+                            scalar_type = "string"
+                            schema_description = "project type"
+                        }
+                        [ordered]@{
+                            source_name = "task.changed_files"
+                            fact_id = "fact.task_changed_files"
+                            host_snapshot_key = "task.changed_files"
+                            scalar_type = "integer"
+                            schema_description = "number of changed files"
+                        }
+                    )
+                }
+            })
             capability_requirements = @([ordered]@{ name = "fixture.ping"; version = 1; reason = "J14A complete local scenario" })
         }
         providers = @([ordered]@{
@@ -287,6 +317,26 @@ try {
     }
 
     # ------------------------------------------------------------------
+    # Phase: Read-only Preview
+    # ------------------------------------------------------------------
+    Invoke-Case "preview proposes a Plan without authority, provider, or Trail access" {
+        $previewResult = Invoke-Host $workspace @(
+            "preview", "--config", $runtimePath, "--engine", $EnginePath,
+            "--input", (Join-Path $workspace "input.json")
+        )
+        $previewEnv = ConvertFrom-SingleEnvelope $previewResult "preview" "ok" 0
+        Assert-Equal $previewEnv.data.phase "preview" "preview phase"
+        Assert-Equal $previewEnv.data.input.parsed $true "preview parsed input"
+        Assert-Equal $previewEnv.data.input.validated $true "preview validated input"
+        Assert-Equal $previewEnv.data.authority.granted $false "preview must not grant authority"
+        Assert-Equal $previewEnv.data.execution.performed $false "preview must not execute"
+        Assert-Equal ([int]$previewEnv.data.execution.provider_invocations) 0 "preview provider calls"
+        Assert-Equal $previewEnv.data.execution.trail_written $false "preview Trail mutation"
+        Assert-True (-not (Test-Path -LiteralPath $trailPath)) "Trail must not exist after preview"
+        Assert-Equal (Get-MethodCount $marker "tools/call") 0 "preview tools/call count"
+    }
+
+    # ------------------------------------------------------------------
     # Phase: First Run
     # ------------------------------------------------------------------
     $script:executionId = $null
@@ -296,6 +346,7 @@ try {
             "run", "--config", $runtimePath, "--engine", $EnginePath,
             "--input", (Join-Path $workspace "input.json"), "--trail", $trailPath, "--host-data-root", $replayRoot
         )
+        if ($run1Result.ExitCode -ne 0) { throw "run failed: $($run1Result.Stdout)" }
         $run1Env = ConvertFrom-SingleEnvelope $run1Result "run" "completed" 0
 
         Assert-Equal $run1Env.data.evaluation_id "eval_j14_complete_001" "evaluation_id"
@@ -379,6 +430,18 @@ try {
         $script:savedEntries = $entries | ConvertTo-Json -Depth 20 -Compress
     }
 
+    Invoke-Case "trail receipt exposes the bounded causal execution story" {
+        $receiptResult = Invoke-Host $workspace @(
+            "trail", "--trail", $trailPath, "--execution-id", $script:executionId, "--receipt"
+        )
+        $receiptEnv = ConvertFrom-SingleEnvelope $receiptResult "trail" "ok" 0
+        Assert-Equal $receiptEnv.data.receipt.execution_id $script:executionId "receipt execution_id"
+        Assert-True ($receiptEnv.data.receipt.entry_count -ge 2) "receipt entry count"
+        Assert-True ($null -ne $receiptEnv.data.receipt.causal_entries) "receipt causal entries"
+        Assert-Equal $receiptEnv.data.receipt.authority_and_execution_are_observations $true "receipt observation marker"
+        Assert-True ($null -eq $receiptEnv.data.PSObject.Properties["entries"]) "receipt must not expose raw entries"
+    }
+
     # ------------------------------------------------------------------
     # Phase: Replay
     # ------------------------------------------------------------------
@@ -387,9 +450,10 @@ try {
             "run", "--config", $runtimePath, "--engine", $EnginePath,
             "--input", (Join-Path $workspace "input.json"), "--trail", $trailPath, "--host-data-root", $replayRoot
         )
+        if ($replayResult.ExitCode -ne 0) { throw "replay run failed: $($replayResult.Stdout)" }
         $replayEnv = ConvertFrom-SingleEnvelope $replayResult "run" "completed" 0
+        Assert-Equal $replayEnv.data.execution_status "completed" "replay envelope status"
 
-        Assert-Equal $replayEnv.data.execution_status "replay_blocked_completed_success" "replay status"
         Assert-Equal $replayEnv.data.execution_id $script:executionId "replay execution_id must match"
 
         # After replay: initialize=2, tools/list=2, tools/call=1 (no second effect)

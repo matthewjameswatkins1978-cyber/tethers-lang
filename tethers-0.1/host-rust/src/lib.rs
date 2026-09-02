@@ -80,6 +80,7 @@ pub mod plug_conform;
 mod plug_install_command;
 pub mod plug_pack;
 pub mod policy;
+pub mod preview_command;
 pub mod provider;
 pub mod replay;
 pub mod replay_runtime;

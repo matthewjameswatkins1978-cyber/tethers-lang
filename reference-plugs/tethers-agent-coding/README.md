@@ -15,5 +15,11 @@ The current repository packer emits Windows/x86_64 `.tetherplug` packages.
 Linux packaging remains a later distribution slice; the provider code itself
 uses the portable Rust process/Git seam and is not tied to a daemon or shell.
 
+The 0.5 toolbelt may expose the repository's first-class `tethers-bench`
+executable as a named verification check, for example `rocket-benchmark`, with
+bounded fixed arguments and a workspace output path. This keeps benchmark use
+scriptable and auditable without granting arbitrary process execution. See
+`docs/TETHERS_BENCHMARKER.md` for the JSON schema and comparison workflow.
+
 Do not auto-enable this Plug. Install, inspect, conformance-test, and grant an
 explicit operational scope before enabling it.

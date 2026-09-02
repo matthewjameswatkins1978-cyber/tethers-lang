@@ -11,7 +11,7 @@ $AskManifest = Join-Path $RepoRoot "protocol\capability-manifests\fixture-ping.j
 $FixtureProvider = Join-Path $PSScriptRoot "tethers-stdio-fixture.ps1"
 $StandingDigest = "sha256:eb61b62bde489e00a4d15c37c83e6cdb1e9e378b8f13b910d4b68bd6d68c19da"
 $AskDigest = "sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b"
-$CargoLockHash = "4238151009218547ce20e9686c2a8cf12d321e31998b35e1d087b10d0ce674d7"
+$CargoLockHash = "46dd99a4287976d9fe0d2327619a9b389f46aa6b00b7993d49345843508ca023"
 
 $script:caseCount = 0
 $script:passedCount = 0

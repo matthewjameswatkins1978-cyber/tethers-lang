@@ -12,6 +12,12 @@ usable agent-facing discovery/toolbelt path and an exact Rocket V3 portfolio.
   reference mode.
 - Native host discovery for descriptions, trusted capability listings and
   contract inspection, plus installed Plug inspection.
+- A first-class deterministic `tethers-bench` Rocket benchmarker with stable
+  JSON, human output, context, backend labels, resource counters, and baseline
+  comparison.
+- A public read-only `preview` command and bounded `trail --receipt` view for
+  agent-friendly inspection without semantic or authority shortcuts.
+- Curated starter Tether Set examples under `examples/tether-sets/`.
 - Reviewed workspace/text/hash/patch, structured Git, argv-only process, and
   named verification reference Plugs.
 - Deterministic Windows x64 and Linux x64 musl packaging through the pinned Rust
@@ -51,6 +57,13 @@ pwsh -NoProfile -File .\scripts\package-tethers-release.ps1 -Target windows-x64
 
 Linux x64 musl packages are built and tested by GitHub Actions because the
 Windows development machine is not treated as a Linux toolchain.
+
+The benchmarker is a repository-first tool in 0.5: its source, Dune target,
+documentation, and deterministic workload ship with the source tree and are
+used by the release crucible. Build it with the pinned OCaml switch described
+in [`docs/TETHERS_BENCHMARKER.md`](TETHERS_BENCHMARKER.md); release binaries
+remain the native host and portable workbench assets produced by the existing
+package workflow.
 
 ## Verification record
 

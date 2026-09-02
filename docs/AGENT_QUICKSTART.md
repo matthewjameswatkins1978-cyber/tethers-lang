@@ -50,7 +50,7 @@ tethers plug show --host-data-root C:\\tethers-data --installed-id <installed-id
 This uses the installed lifecycle record. The source `.tetherplug` archive is
 not needed, and private provider state and secrets are not returned.
 
-## 5. Plan and run
+## 5. Preview and run
 
 The existing configured execution path remains:
 
@@ -59,9 +59,26 @@ tethers check --config <config.json> --engine <engine.exe>
 tethers run --config <config.json> --engine <engine.exe> --input <input.json> --trail <trail.jsonl> --host-data-root C:\\tethers-data
 ```
 
-The side-effect-free `plan` surface is not a public 0.5 command yet. The
-existing configured check/run path remains the authority boundary; 0.5 does
-not pretend that a preview is available when it is not.
+For a side-effect-free public preview, use the configured host command. It
+parses and validates the input, evaluates the selected Tether, and returns the
+proposed Plan without requesting authority, starting a provider, or writing a
+Trail:
+
+```text
+tethers preview --config <config.json> --engine <engine.exe> --input <input.json>
+```
+
+The preview is an observation, not an execution. Use `run` when an authorised
+execution and durable Trail evidence are intended.
+
+For repeatable Rocket measurements, use the first-class `tethers-bench`
+executable. It emits human output by default and the stable
+`tethers.benchmarker/1` JSON schema with `--json` or `--json-out`; add
+`--compare <baseline.json>` for a machine-readable before/after comparison.
+The benchmark workload and exactness checks are deterministic; timing values
+remain environment-dependent. AI toolbelt configurations should expose it as
+an explicit named verification check rather than allowing arbitrary process
+execution.
 
 The Phase B workspace provider's reviewed operation set is:
 

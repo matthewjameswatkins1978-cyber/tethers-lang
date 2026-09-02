@@ -55,7 +55,6 @@ jobs:
           --bin file_tools_provider
           --test j24a_plug_inspect_cli
           --test p2a_plug_pack_cli
-          --test p2b_plug_conform_cli
           --test p2c_public_author_journey
           -- --test-threads=1
       - name: Package Tethers

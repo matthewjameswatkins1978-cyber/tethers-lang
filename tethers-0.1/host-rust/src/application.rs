@@ -679,6 +679,21 @@ pub fn run() {
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {
+            command:
+                Some(CliCommand::Preview {
+                    config,
+                    engine,
+                    input,
+                }),
+        }) => {
+            let result = preview_command::run(preview_command::PreviewCommandArgs {
+                config,
+                engine,
+                input,
+            });
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
             command: Some(CliCommand::Legacy { args }),
         }) => {
             // Route to legacy host with explicit __legacy subcommand.
@@ -793,9 +808,14 @@ pub fn run() {
                 Some(CliCommand::Trail {
                     trail,
                     execution_id,
+                    receipt,
                 }),
         }) => {
-            let result = trail_command::run_trail(&trail, &execution_id);
+            let result = if receipt {
+                trail_command::run_trail_receipt(&trail, &execution_id)
+            } else {
+                trail_command::run_trail(&trail, &execution_id)
+            };
             println!("{}", result.json_output);
             std::process::exit(result.exit_code);
         }

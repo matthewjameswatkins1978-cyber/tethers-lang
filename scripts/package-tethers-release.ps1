@@ -30,7 +30,8 @@ if (Test-Path -LiteralPath $stage) {
 New-Item -ItemType Directory -Force -Path `
     (Join-Path $stage 'bin'),
     (Join-Path $stage 'portable'),
-    (Join-Path $stage 'docs') | Out-Null
+    (Join-Path $stage 'docs'),
+    (Join-Path $stage 'examples\tether-sets') | Out-Null
 
 try {
     & cargo build --release --locked --target $cargoTarget --manifest-path $hostManifest `
@@ -57,10 +58,14 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo 'README.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'QUICKSTART.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs\AGENT_QUICKSTART.md') -Destination (Join-Path $stage 'docs')
+    Copy-Item -LiteralPath (Join-Path $repo 'docs\TETHERS_BENCHMARKER.md') -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $repo 'docs\TETHERS_0_5_RELEASE.md') -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $repo 'docs\SECURITY.md') -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $repo 'tethers-0.1\SPEC.md') -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $portableRoot 'RELEASE.md') -Destination (Join-Path $stage 'docs')
+    Copy-Item -LiteralPath (Join-Path $repo 'examples\tether-sets\README.md') -Destination (Join-Path $stage 'examples\tether-sets')
+    Get-ChildItem -LiteralPath (Join-Path $repo 'examples\tether-sets') -Filter '*.tether' -File |
+        Copy-Item -Destination (Join-Path $stage 'examples\tether-sets')
 
     $hashLines = foreach ($file in Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName) {
         $relative = [System.IO.Path]::GetRelativePath($stage, $file.FullName).Replace('\', '/')

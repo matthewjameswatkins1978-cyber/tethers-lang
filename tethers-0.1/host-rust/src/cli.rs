@@ -58,6 +58,16 @@ pub enum Command {
         host_data_root: PathBuf,
     },
 
+    /// Validate and propose one evaluation without authority, provider, or Trail access.
+    Preview {
+        #[arg(long = "config", value_name = "PATH")]
+        config: PathBuf,
+        #[arg(long = "engine", value_name = "PATH")]
+        engine: PathBuf,
+        #[arg(long = "input", value_name = "PATH")]
+        input: PathBuf,
+    },
+
     /// Hidden legacy positional compatibility route.
     #[command(hide = true)]
     #[clap(name = "__legacy")]
@@ -98,6 +108,8 @@ pub enum Command {
         trail: PathBuf,
         #[arg(long = "execution-id", value_name = "exec_UUID")]
         execution_id: String,
+        #[arg(long = "receipt", default_value_t = false)]
+        receipt: bool,
     },
 }
 
@@ -570,6 +582,33 @@ mod tests {
     }
 
     #[test]
+    fn v05_preview_command_parses_without_execution_options() {
+        let cli = parse_cli(&[
+            "preview",
+            "--config",
+            "config.json",
+            "--engine",
+            "engine.exe",
+            "--input",
+            "input.json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Preview {
+                config,
+                engine,
+                input,
+            }) => {
+                assert_eq!(config, PathBuf::from("config.json"));
+                assert_eq!(engine, PathBuf::from("engine.exe"));
+                assert_eq!(input, PathBuf::from("input.json"));
+            }
+            _ => panic!("expected Preview"),
+        }
+        assert!(parse_cli(&["preview", "--config", "c.json", "--engine", "e.exe"]).is_err());
+    }
+
+    #[test]
     fn j13a_equal_sign_accepted() {
         let cli = parse_cli(&["check", "--config=c.json", "--engine", "e.exe"]).unwrap();
         match cli.command {
@@ -679,12 +718,30 @@ mod tests {
             Some(Command::Trail {
                 trail,
                 execution_id,
+                ..
             }) => {
                 assert_eq!(trail, PathBuf::from("C:\\t.jsonl"));
                 assert_eq!(execution_id, "exec_00000000-0000-4000-8000-000000000000");
             }
             _ => panic!("expected Trail"),
         }
+    }
+
+    #[test]
+    fn v05_trail_receipt_flag_parses() {
+        let cli = parse_cli(&[
+            "trail",
+            "--trail",
+            "C:\\t.jsonl",
+            "--execution-id",
+            "exec_00000000-0000-4000-8000-000000000000",
+            "--receipt",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Trail { receipt: true, .. })
+        ));
     }
 
     #[test]

@@ -160,6 +160,12 @@ reference engine remains available for bounded differential checks. Backend
 selection changes runtime and evidence counters only, never the payload or
 digest.
 
+The repository also includes `tethers-bench`, a deterministic Rocket
+benchmarker with human and machine-readable output, environment context,
+backend/resource counters, and before/after comparison. It is intended to be
+an explicit AI-toolbelt verification check, not an ad hoc release script. See
+[`docs/TETHERS_BENCHMARKER.md`](docs/TETHERS_BENCHMARKER.md).
+
 Core's vocabulary is intentionally richer than the current human-facing 0.1 syntax. Do not assume that every Core structure is already exposed as source syntax or supported on every runtime bridge. The current public language surface is defined by [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md).
 
 ## Result Anchors and uncertainty
@@ -212,6 +218,11 @@ These commands are read-only and expose trusted contracts, scopes, provider
 bindings, and availability without starting providers. See the
 [agent quickstart](docs/AGENT_QUICKSTART.md) for the complete discovery path.
 
+The native host also provides `preview` for a side-effect-free proposed Plan,
+and `trail --receipt` for a bounded causal projection over validated Trail
+entries. Neither surface requests authority, invokes a provider, or creates a
+second persistence store.
+
 ## Download the portable workbench
 
 For the full 0.5 host bundle, download the platform asset from the
@@ -232,6 +243,11 @@ Several version numbers describe different layers of the project:
 | Public Plug-authoring programme | `0.3` milestone complete and integrated |
 | Together/concurrency programme | `0.4` milestone complete and integrated |
 | Practical release line | `0.5` — Rocket portfolio and Agent Essentials |
+
+The 0.5 source tree includes three starter Tether Set examples under
+[`examples/tether-sets`](examples/tether-sets). They use the existing Tether
+language and runtime configuration; they do not introduce a second Set
+semantic or permission model.
 
 The 0.3 and 0.4 labels are completed development milestones in this repository. They should not be confused with the portable workbench's release number or the 0.1 language version.
 

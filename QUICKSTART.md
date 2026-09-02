@@ -196,6 +196,18 @@ Tethers distinguishes:
 
 That causal evidence is the Trail.
 
+For a bounded, read-only causal summary of one execution, use the receipt
+projection. It validates the same JSONL Trail and exposes only the stable
+causal fields needed by an agent:
+
+```text
+tethers trail --trail <absolute-trail.jsonl> --execution-id <id> --receipt
+```
+
+The receipt is a view over the Trail, not a second persistence store. For a
+side-effect-free plan check, use `preview` with the same configured host and
+engine before choosing `run`.
+
 A proposal is not recorded as an execution, and an uncertain call is not renamed as a clean failure merely because that would be easier to handle.
 
 ## 8. Try the portable workbench
