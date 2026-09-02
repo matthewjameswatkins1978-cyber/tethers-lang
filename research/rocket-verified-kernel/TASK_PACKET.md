@@ -1,6 +1,6 @@
-# Rocket Verified Kernel Experiment 1 — Proven Success Path
+# Rocket Verified Kernel Experiment 1 — Proven Success Path (PARKED)
 
-Status: READY
+Status: PARKED
 Owner: Codex
 Type: isolated research side project
 Base: 64d1557603366f2b8b934f987bfdef87e2b4ec0e
@@ -177,3 +177,29 @@ Include:
 - differential results;
 - failures;
 - whether Rocq feels suitable for a future verified Rocket kernel.
+
+
+## Parked state — 2026-09-02
+
+Experiment 1 / 1B is intentionally parked at the research frontier recorded in
+`docs/WORKER_NOTE.md`.
+
+Parked evidence head before this marker:
+`91c6a64ede00f0a768d62aefe10c8abbcdc5fe05`
+
+Outcome:
+
+- Rocq proof/extraction pipeline established.
+- Extracted B2 small cases and chain-11 exact result agree.
+- Native-int extraction plus one redundant-pass removal makes chain 1000 complete in about 5.67 seconds.
+- The executable representation remains superlinear because of repeated list/association-list scans.
+- Required universal proof/refinement inventory remains incomplete.
+- Complete three-way handwritten/extracted/frozen harness remains incomplete.
+- Production Tethers and active Rocket work remain untouched.
+
+Decision:
+
+Do not continue Experiment 1C now. Preserve this branch as a research laboratory.
+Future Rocq work should be theorem-focused and should not resume merely to optimise
+the current extracted implementation. A future task may reopen the lab if a
+specific Rocket theorem is worth formal verification.
