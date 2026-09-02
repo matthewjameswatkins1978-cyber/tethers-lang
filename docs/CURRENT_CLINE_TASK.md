@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -15,6 +15,8 @@ Base commit: `21bb7442fa9f8442db98e193eb4954096f356678`
 Worker note: `docs/worker-notes/2026-09-02-tethers-v0.5-release.md`
 
 Updated: 2026-09-02
+
+Implementation checkpoint: `6cdd7a678be5a23ead56d83da9778c18fc749566`
 
 ## Objective
 
