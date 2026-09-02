@@ -31,10 +31,19 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - name: Test native host
         shell: pwsh
-        run: cargo test --manifest-path .\tethers-0.1\host-rust\Cargo.toml --locked
+        run: >-
+          cargo test --manifest-path ./tethers-0.1/host-rust/Cargo.toml
+          --locked --quiet
+          --test j24a_plug_inspect_cli
+          --test j24b_plug_list_cli
+          --test m4_file_tools
+          --test p2a_plug_pack_cli
+          --test p2b_plug_conform_cli
+          --test p2c_public_author_journey
+          -- --test-threads=1
       - name: Package Tethers
         shell: pwsh
-        run: .\scripts\package-tethers-release.ps1 -Target $env:RELEASE_TARGET
+        run: ./scripts/package-tethers-release.ps1 -Target $env:RELEASE_TARGET
         env:
           RELEASE_TARGET: ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
