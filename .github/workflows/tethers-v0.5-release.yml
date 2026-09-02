@@ -29,7 +29,8 @@ jobs:
       - name: Install Linux musl toolchain
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
-      - name: Test native host
+      - name: Test native host (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: >-
           cargo test --manifest-path ./tethers-0.1/host-rust/Cargo.toml
@@ -39,6 +40,20 @@ jobs:
           --bin file_tools_provider
           --test j24a_plug_inspect_cli
           --test j24b_plug_list_cli
+          --test p2a_plug_pack_cli
+          --test p2b_plug_conform_cli
+          --test p2c_public_author_journey
+          -- --test-threads=1
+      - name: Test native host (Linux)
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: >-
+          cargo test --manifest-path ./tethers-0.1/host-rust/Cargo.toml
+          --locked --quiet
+          --bin tethers-reference-host
+          --bin m3_fixture_provider
+          --bin file_tools_provider
+          --test j24a_plug_inspect_cli
           --test p2a_plug_pack_cli
           --test p2b_plug_conform_cli
           --test p2c_public_author_journey
