@@ -20,7 +20,7 @@ type error =
   | No_legal_label_assignment of string
 
 (*
-   Refining deterministic ancestral labeling strategy.
+   Refining deterministic ancestral ordination strategy.
 
    A discrete V3 partition identifies semantic vertices, but it does not
    choose their independent V2 numeric labels.  The ordering certificate
