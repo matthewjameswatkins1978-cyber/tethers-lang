@@ -10,6 +10,8 @@ Owner: `Codex`
 
 Route: `Fresh dedicated worktree; research-only rooted-tree theorem crucible. Determine whether exact partial frozen parent-vector completion reduces to tree ListIso or an exact matching/tree-DP generalisation. No production canonicaliser until the reduction is proved.`
 
+Base commit: `eae11c5fd2bb964c0f586c48823f406d2472dccf`
+
 Research evidence base: `eae11c5fd2bb964c0f586c48823f406d2472dccf`
 
 Accepted production frontier: `64d1557603366f2b8b934f987bfdef87e2b4ec0e`
