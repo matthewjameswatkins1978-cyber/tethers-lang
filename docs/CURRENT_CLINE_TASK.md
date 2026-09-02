@@ -1,207 +1,465 @@
-# Tethers 0.5 — Practical release finishing packet
+# Tethers 0.5 — Final Forgotten-Things Audit and Release Closure
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Codex direct implementation in the clean release worktree; bounded finishing packet with normal remote publication`
+Route: `Fresh dedicated final-audit worktree from the completed Tethers 0.5 release branch. Audit every named release capability against repository evidence first; implement only genuine gaps; then perform the final release acceptance and publication closure.`
 
-Base commit: `21bb7442fa9f8442db98e193eb4954096f356678`
+Base commit: `31d5e39a1e3505880e9a98cd8c650b3cf112b16d`
 
-Worker note: `docs/worker-notes/2026-09-02-tethers-v0.5-release.md`
+Worker note: `docs/worker-notes/2026-09-02-tethers-v0.5-final-audit.md`
+
+Suggested branch:
+
+`release/tethers-v0.5-final-audit`
+
+Source branch:
+
+`release/tethers-v0.5`
 
 Updated: 2026-09-02
 
-Implementation checkpoint: `f3b2da5693c7eb61526a1cfc692983ba49ba6b8a`
-
 ## Objective
 
-Finish Tethers 0.5 as a practical, installable release from current
-`origin/main`. Preserve frozen Enc_V2, ProgramDigest V2, Core semantics, host
-authority, Plug trust, policy, scope, Trail, replay, approval, Result Anchor,
-Together, and protocol behaviour exactly. Make the accepted Rocket V3 work
-usable as an exact solver portfolio while keeping the exhaustive implementation
-as a permanent reference engine, then close the Agent Essentials/product,
-documentation, evidence, packaging, and release gaps that are already supported
-by repository history.
+Perform the final evidence-based audit of Tethers 0.5 before release.
+
+Do not assume an item is missing merely because this packet names it.
+
+For every item:
+
+```text
+inspect
+  ↓
+classify:
+DONE / PARTIAL / MISSING / DEFERRED-WITH-REASON
+  ↓
+if DONE:
+    preserve it
+if PARTIAL or MISSING:
+    complete the smallest coherent release-quality implementation
+if it genuinely cannot fit 0.5 safely:
+    record the exact blocker and explicit defer decision
+```
+
+The goal is to remove accidental omissions from 0.5 without reopening settled architecture or turning the release into another research programme.
+
+The practical release standard remains:
+
+> Make common use excellent. Keep uncommon use exact. Keep pathological cases diagnosable and reference-checkable.
+
+Frozen V2 identity and the accepted authority/trust model remain immutable.
+
+---
 
 ## Relevant background and existing behaviour
 
-`origin/main` contains the accepted V2 production cutover, R3-1 semantic model,
-R3-2 typed refinement, the portable 0.2.2 workbench, and the host Plug
-lifecycle. Remote branches contain separately verified Rocket exact-search/path
-work and Agent Essentials discovery/workspace/coding providers. The current
-source checkout is dirty and is not this task's worktree; it must remain
-untouched.
+The existing `release/tethers-v0.5` line already contains substantial finished work:
 
-The R3-3A exhaustive search is correctness authority. R3-2 refinement is a
-search aid only. Existing B2 success-path work is exact only where its own
-certificate and differential tests prove it. No research-only ListIso or
-complexity theorem may be promoted as a production theorem without parity
-evidence.
+- exact Rocket V3 portfolio seam;
+- permanent exhaustive/reference Rocket engine;
+- B2 success-path fast solver;
+- R3-2 refinement;
+- exact V2 IR pruning/memoisation;
+- runtime-only fallback behaviour;
+- Rocket differential/metamorphic evidence;
+- Agent Essentials discovery;
+- workspace/text/hash/patch provider;
+- Git/process/named-verification provider;
+- Windows/Linux release packaging workflow;
+- AI-first documentation;
+- cold-agent discovery evidence;
+- benchmark evidence;
+- Tether Set documentation;
+- existing Plug lifecycle, trust, policy, scope, Trail, replay, Together and Result Anchor machinery.
+
+Do not redo these simply because they appear in this packet.
+
+The audit of the current release branch has also identified likely gaps that require explicit verification:
+
+1. benchmark scripts and benchmark evidence exist, but no obvious named first-class `Benchmarker` tool/artifact exists;
+2. the current cold-agent transcript proves discovery and conformance but stops before actual bounded work and resulting Trail/receipt inspection;
+3. current project documentation explicitly says the side-effect-free plan/preview surface and richer Trail-query ergonomics remain follow-on work;
+4. the repository tree contains documentation about Tether Sets but no obvious actual starter Tether Set artifacts;
+5. the current Agent Essentials Plugs cover workspace/text/hash/patch and coding/Git/process/verification, but do not obviously provide structured-data, archive, bounded-HTTP, SQLite or read-only system-orientation capabilities;
+6. current Agent Plug READMEs still describe Windows/x64 package generation, with Linux publication deferred;
+7. physical clean-install evidence, final release URL/assets/signatures and tagged workflow results must be proven rather than inferred.
+
+Treat these as audit leads, not pre-decided implementation conclusions.
+
+---
 
 ## Required behaviour
 
-1. Create one exact Rocket V3 portfolio entrypoint that preserves a named
-   exhaustive/reference engine and routes only among exact backends: R3-2
-   refinement/direct forcing, accepted B2 path solving, connected matching or
-   symmetry collapse only where certified safe, bounded FPT completion where
-   proved, exact memoised lexicographic branch-and-bound for harder cases, and
-   exhaustive reference fallback.
-2. Make routing and complexity escape valves runtime-only. Budgets, thresholds,
-   backend selection, memoisation, and diagnostic counters must never alter the
-   frozen canonical payload, digest, parent vector, or semantic ordering; an
-   exhausted optimisation path must fall back exactly or fail closed.
-3. Add bounded deterministic differential tests against the exhaustive
-   reference over existing V2 cases plus generated, renamed, reordered,
-   repeated-subtree, path/star/balanced/asymmetric, and metamorphic cases. Stop
-   a release claim on any payload or digest mismatch.
-4. Reconcile the already-complete Agent Essentials discovery, workspace, and
-   coding-provider work onto the current release base without weakening the
-   existing Plug, scope, trust, process, Git, or verification boundaries.
-5. Provide a cold-agent path through public CLI discovery, trusted capability
-   inspection, installed Plug inspection, harmless bounded workspace work, and
-   evidence inspection, with stable machine-readable output and truthful
-   unavailable/denied states.
-6. Finish the small useful reference Plug/toolbelt surface already supported by
-   the provider seam, including workspace/text/patch, Git, process/named
-   verification, hashes, and clear authoring/build instructions. Do not create a
-   second registry, policy engine, scheduler, server, daemon, database, or AI
-   framework.
-7. Bring the front-door manuals and product documents to 0.5 truth: ordinary
-   Windows use, Linux installation/CI artifact use, AI-first discovery, useful
-   Tethers/Tether Sets, the full host/Core/Plug relationship, and the distinction
-   between the portable façade and the full platform.
-8. Add reproducible benchmark/release evidence for common versus difficult
-   Rocket shapes, exactness/parity, memory/branch/fallback counters, and cold
-   agent usability. Keep research claims and unverified platform claims clearly
-   labelled.
-9. Add boring reproducible Windows/Linux packaging and release automation around
-   the existing pinned toolchains and portable workflow, preserving existing
-   portable artifact identities and checksums. Do not claim local Linux builds
-   when only CI proves them.
-10. Perform only safe repository cleanup, then create the 0.5 release commit,
-    tag, and release assets using normal non-force Git/GitHub publication after
-    all required checks pass; report exact hashes, URLs, and any external
-    publication boundary.
+1. Start from exact base `31d5e39a1e3505880e9a98cd8c650b3cf112b16d` on a fresh dedicated final-audit branch/worktree.
+
+2. Before implementation, produce a release matrix classifying every item in this packet as `DONE`, `PARTIAL`, `MISSING`, or `DEFERRED-WITH-REASON`, with exact repository evidence.
+
+3. Preserve the permanent exhaustive Rocket reference engine as a named first-class internal/reference facility. Do not delete, hide or replace it with the fast portfolio.
+
+4. Verify that the Rocket portfolio can deliberately force/reference-check bounded cases and that all fast/exact backends continue to emit byte-for-byte identical frozen Enc_V2 results.
+
+5. Audit the Benchmarker requirement. If no first-class Benchmarker exists, expose the existing benchmark machinery through the smallest coherent, scriptable agent-facing surface rather than creating a second benchmark framework.
+
+6. The Benchmarker must support deterministic machine-readable output, human-readable output, before/after comparison, version/environment metadata, selected Rocket/backend route where relevant, timing/resource counters and stable result fields.
+
+7. Benchmark measurements, clocks and environment metadata must never enter semantic identity, ProgramDigest, Plan ordering or any other deterministic Tethers meaning.
+
+8. Complete the cold-agent proof so that a genuinely unfamiliar client performs at least one harmless bounded real operation through public Tethers surfaces, then inspects the resulting execution evidence/Trail/receipt.
+
+9. The cold-agent proof must require no undocumented repository knowledge or privileged development shortcut. Discovery must lead the agent to the necessary capability contract and public execution path.
+
+10. Audit the public side-effect-free plan/preview surface. If absent, implement the smallest public preview command/API that exposes what deterministic work Tethers would propose without executing providers or granting authority.
+
+11. Preview output must clearly distinguish:
+    - parsed/validated input;
+    - proposed Plan;
+    - unavailable capability/configuration problems;
+    - authority not yet granted;
+    - actual execution, which must remain absent.
+
+12. Audit Trail ergonomics. If current Trail commands do not provide practical querying and execution receipts, add bounded stable machine-readable query/receipt surfaces over existing Trail data rather than inventing a second evidence store.
+
+13. A useful receipt should make it easy for an AI to connect:
+    - event/request;
+    - proposed Action;
+    - authority decision;
+    - provider invocation;
+    - result/uncertainty;
+    - Result Anchor where present;
+    - relevant causal identifiers.
+
+14. Audit actual starter Tether Sets. If none exist, add a small set of canonical useful examples using existing Tether/host configuration semantics only. Do not invent a second language or speculative package format merely to obtain the name “Tether Set.”
+
+15. Starter material must demonstrate that Tethers is not merely ALLOW/ASK/DENY. Include examples covering ordinary typed Capability work, at least one `together` workflow, and at least one visible result/follow-on flow where supported by existing public semantics.
+
+16. Audit the Agent Essentials toolbelt against the current product target:
+    - workspace/filesystem/text/patch;
+    - Git;
+    - process and named verification;
+    - structured data;
+    - hashes/integrity;
+    - archives;
+    - bounded HTTP/network;
+    - SQLite;
+    - read-only system/environment orientation.
+
+17. Preserve already-good workspace/coding providers. Implement missing toolbelt slices only where they can use the existing Capability/Plug/trust/scope model cleanly.
+
+18. Structured-data capability work must remain bounded and deterministic. Prefer explicit JSON/structured inspection/manipulation operations over embedding a general scripting language.
+
+19. Archive operations must be scope-bounded and path-safe. Extraction must defend against traversal/absolute-path escape and report exact files affected.
+
+20. HTTP/network capability, if implemented for 0.5, must be explicitly bounded: allow-listed scheme/host policy, finite timeout, finite response size, no ambient credential harvesting, no hidden redirects across disallowed authority boundaries and no automatic effectful retry.
+
+21. SQLite capability, if implemented for 0.5, must have an explicit database scope and safe bounded defaults. Read-only inspection/query is sufficient for the first release unless an existing trust contract already supports mutation cleanly.
+
+22. System/environment orientation must be read-only and deliberately exclude secret environment values. It may expose safe orientation such as OS, architecture, current approved roots and explicitly allow-listed tool availability.
+
+23. A missing toolbelt slice may be `DEFERRED-WITH-REASON` only if completing it would require a new authority model, significant new dependency/platform subsystem, unsafe scope expansion or release-sized architectural work. “Ran out of time” is not by itself a technical reason.
+
+24. Audit Agent Plug portability. If workspace/coding/toolbelt providers are actually portable but only their pack scripts are Windows-specific, add the smallest reproducible Linux packaging path and prove it in CI. If provider/platform constraints genuinely prevent this, document the exact boundary.
+
+25. Audit version coherence. The release must present one understandable version story for:
+    - product release 0.5;
+    - Human Tether language/protocol 0.1 where still frozen;
+    - host/package versions that intentionally remain 0.2.2;
+    - Plug package versions.
+    Do not silently rewrite protocol or semantic version fields solely to make the numbers visually match.
+
+26. `version --json`, release metadata and front-door documentation must not make an agent guess which version describes which layer.
+
+27. Audit install, update and removal experience. A user or AI with the release asset must have a boring documented route to verify checksum, unpack/install, run `version`/`doctor`, locate docs, and remove/replace the installation without relying on hidden developer state.
+
+28. Perform at least one clean Windows release-bundle smoke test outside the development worktree. Use hosted Linux CI for the equivalent Linux artifact if no genuinely native Linux release environment is available.
+
+29. Audit final release publication. Do not claim Tethers 0.5 is published until the tag, hosted release, both intended platform assets and hashes actually exist and the tagged workflow has passed.
+
+30. Finish by updating only living current-truth documentation and release evidence. Historical worker notes/roadmaps remain historical evidence and must not be rewritten to pretend later work existed earlier.
+
+---
 
 ## Relevant components
 
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_partition.ml/.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_refine.ml/.mli`
-- the accepted Rocket exact-search, encoder, origin-walk, and success-path
-  implementations on the fetched remote history
-- `tethers-0.1/engine-ocaml/bin/dune`
-- `tethers-0.1/host-rust/src/{cli,application,discovery,agent_workspace,agent_coding,plug_command}.rs`
-- existing `manifest`, `installed`, `enablement`, `trail_command`, `plug_*`,
-  package, provider, and host test modules
-- `reference-plugs/`, `scripts/`, `.github/workflows/`, `README.md`,
-  `QUICKSTART.md`, and current product/agent documentation
+Likely audit surfaces include, but are not limited to:
+
+- `release/tethers-v0.5`
+- `docs/CURRENT_GOAL.md`
+- `docs/PROJECT_DASHBOARD.md`
+- `docs/TETHERS_0_5_RELEASE.md`
+- `docs/AGENT_QUICKSTART.md`
+- `README.md`
+- `QUICKSTART.md`
+- `docs/PROJECT_OVERVIEW.md`
+- `docs/SECURITY.md`
+- `docs/evidence/tethers-0.5-cold-agent-transcript.md`
+- `docs/evidence/tethers-0.5-rocket-benchmark.md`
+- `scripts/benchmark-tethers.ps1`
+- `scripts/benchmark/`
+- `scripts/package-tethers-release.ps1`
+- `.github/workflows/tethers-v0.5-release.yml`
+- Rocket V3 portfolio/reference modules and tests
+- `tethers-0.1/host-rust/src/discovery.rs`
+- `tethers-0.1/host-rust/src/trail_command.rs`
+- existing Plan/Core public boundaries
+- `tethers-0.1/host-rust/src/agent_workspace.rs`
+- `tethers-0.1/host-rust/src/agent_coding.rs`
+- `reference-plugs/tethers-agent-workspace/`
+- `reference-plugs/tethers-agent-coding/`
+- any new narrowly-scoped Agent Essentials Plug introduced by this audit
+- `tethers-0.1/examples/`
+- release asset/checksum records.
+
+Do not mutate every listed component automatically. They are inspection surfaces.
+
+---
 
 ## Frozen decisions and invariants
 
-- Enc_V2 and ProgramDigest V2 are byte-for-byte immutable.
-- Exact canonical identity is the unsigned-byte minimum under the frozen
-  encoder; no raw ID, storage order, heuristic rank, graph-library label, or
-  partition-cell number is semantic authority.
-- Every production Rocket backend must either prove the same frozen result or
-  return control to an exact backend. Reference fallback remains available in
-  tests/diagnostics and is not deleted or hidden.
-- Core remains deterministic and application-agnostic. Plans request Actions;
-  hosts authorise and execute them; Trails record evidence.
-- Plug manifests are trusted stored data only after the existing validation,
-  installation, binding, scope, and policy checks. Conformance is not trust or
-  permission.
-- No ambient credentials, arbitrary shell interpolation, remote Git mutation,
-  force push, reset-hard, automatic effectful retry, hidden network access, or
-  hostile-code sandbox claim is introduced.
-- Existing portable 0.2.2 artifacts and hashes remain unchanged.
+- Enc_V2 and ProgramDigest V2 are immutable.
+- Frozen V2 byte minimum remains semantic authority.
+- The exhaustive Rocket reference engine remains available.
+- Fast-path routing changes runtime only, never identity.
+- Raw IDs, storage order, benchmark timing and heuristic choices are non-semantic.
+- A Plan is a request, not permission.
+- Capabilities describe.
+- Policies authorise.
+- Hosts enforce.
+- Trails record.
+- Plug conformance is not trust.
+- Plug installation is not enablement.
+- Enablement is not unlimited scope.
+- Supervised provider execution is not a hostile-code sandbox.
+- No automatic effectful retry without an existing idempotency proof.
+- AI is a client/capability user, not an invisible authority inside Core.
+- Core remains application-agnostic.
+- Human Tether syntax remains small and canonical.
+- Together physical scheduling must not change semantic meaning.
+- Existing portable 0.2.2 artifacts/hashes remain immutable historical release artifacts.
+- No HQ work is required for 0.5.
+- No new canonicalisation research is required for 0.5 unless an actual release-blocking identity defect is discovered.
+
+---
 
 ## Acceptance criteria
 
-1. One portfolio API/command and a named reference engine exist, with exact
-   differential parity on every bounded case used by the release tests.
-2. Runtime escape valves and backend routing affect timing/counters only; forced
-   fallback and bounded failure are fail-closed and never emit a different V2
-   identity.
-3. The differential/metamorphic corpus reports zero payload and digest
-   mismatches, with deterministic counters and explicit hard-case coverage.
-4. Agent Essentials discovery/workspace/coding history is integrated on top of
-   current main and its focused, adversarial, pack, inspect, and conformance
-   checks pass.
-5. A fresh-client/cold-agent transcript proves discovery, trusted inspection,
-   harmless bounded work, and evidence inspection without undocumented setup.
-6. Reference Plug packages are reproducible and pass their existing schemas,
-   conformance, and trust-boundary checks; no frozen package identity changes.
-7. README, QUICKSTART, product dashboard/goal, and release/agent manuals
-   describe only verified 0.5 behaviour and clearly mark deferred or CI-only
-   claims.
-8. Benchmark evidence includes exactness, common-case timing, difficult-case
-   fallback, and resource/branch counters, with no wall clock in semantic output.
-9. Windows packaging and Linux CI packaging are reproducible from the pinned
-   toolchains, and the pre-existing portable 0.2.2 ZIP hashes remain identical.
-10. The final release commit/tag/assets are published normally, the complete
-    diff contains no unsafe cleanup or frozen-semantic edits, local/remote
-    release heads and tags are recorded, and the release worktree is clean.
+1. Final-audit work begins from exact base and a clean dedicated worktree.
+
+2. A complete evidence matrix classifies every packet item before implementation and is updated at closeout.
+
+3. Exhaustive Rocket reference mode remains present, callable for bounded verification and unchanged as correctness authority.
+
+4. Portfolio/reference differential tests report zero frozen payload/digest mismatches on the accepted bounded/random/metamorphic corpus.
+
+5. A first-class Benchmarker exists or existing evidence proves an equivalent shipped surface already satisfies the requirement.
+
+6. Benchmarker JSON/human output and before/after comparison are deterministic in structure and include sufficient version/environment/backend context without affecting semantics.
+
+7. Semantic output remains independent of benchmark timing/resource measurements.
+
+8. Cold-agent evidence includes at least one actual harmless bounded capability execution, not merely discovery or conformance.
+
+9. The cold agent can then locate and interpret resulting Trail/receipt evidence using public surfaces only.
+
+10. Side-effect-free public plan/preview capability exists or exact evidence proves an equivalent public surface already exists.
+
+11. Preview cannot execute a provider or accidentally imply authority/execution.
+
+12. Trail querying/receipt ergonomics allow an AI to recover one complete causal execution story without parsing arbitrary internal files.
+
+13. Trail/receipt output remains grounded in the existing Trail store and causal model.
+
+14. At least one real starter Tether Set/example collection exists using only established semantics, including typed work, `together`, and result/follow-on examples where supported.
+
+15. Starter material cannot reasonably leave a fresh agent believing Tethers is fundamentally limited to ALLOW/ASK/DENY.
+
+16. Every Agent Essentials toolbelt category is marked DONE or explicitly DEFERRED-WITH-REASON.
+
+17. Existing workspace/coding provider security, scope and conformance tests remain green.
+
+18. Any new structured/archive/network/SQLite/system capability uses explicit trusted manifests and the normal Plug boundary.
+
+19. Archive/network/SQLite/system-orientation negative safety tests prove their stated bounds.
+
+20. No missing toolbelt feature introduces a general shell escape, hidden credential access or second policy system.
+
+21. Linux/Windows portability claims for Agent Essentials Plugs match actual build/package evidence exactly.
+
+22. Product/language/host/Plug versions are clearly distinguishable in JSON and front-door documentation.
+
+23. Clean-install/update/removal instructions are complete enough to follow from a release asset without repository-local assumptions.
+
+24. Clean Windows bundle smoke evidence is recorded; Linux equivalent is recorded from actual hosted/native evidence only.
+
+25. Final release docs contain exact artifact hashes and tagged workflow evidence rather than placeholders.
+
+26. Final tag and release assets exist remotely before the release is described as published.
+
+27. README, QUICKSTART, release notes, project goal/dashboard and agent quickstart agree on actual shipped behaviour.
+
+28. Historical documentation is not rewritten as though later 0.5 features existed at earlier checkpoints.
+
+29. Full required regression/release gates pass with zero unexplained identity, trust or evidence regressions.
+
+30. Worktree is clean, final local HEAD equals remote HEAD, tag/release identities are recorded, and no unfinished audit item remains silently unclassified.
+
+---
 
 ## Required verification
 
-- Fetch and inspect `origin/main`, relevant Rocket branches, Agent Essentials,
-  and portable release history before implementation.
-- Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1` and the task-packet
-  checker in `READY`, `IN_PROGRESS`, and final `COMPLETE` states.
-- Use the exact authorised OCaml switch
-  `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml` with explicit
-  `opam exec --switch=...`; run `dune build @all`, focused Rocket tests, and
-  `dune runtest --force`.
-- Run the existing fixture, MCP transcript, host, Rust, Plug, provider,
-  discovery, workspace, coding, package, and conformance checks relevant to
-  changed surfaces, plus `cargo fmt --all -- --check`, locked Rust checks,
-  `git diff --check`, and release packaging smoke checks.
-- Run bounded/random/metamorphic Rocket differential checks against the
-  reference engine and record exact totals, hashes, fallbacks, and counters.
-- Verify the existing portable 0.2.2 artifact SHA-256 before and after release
-  packaging; verify Windows locally and Linux only through the repository's CI
-  path if no local musl toolchain exists.
-- Inspect the complete base-to-HEAD diff, exact authorised paths, full commit
-  hashes, tag object, release asset hashes/URLs, remote equality, and clean
-  status before reporting.
+Startup:
+
+- fetch `origin/release/tethers-v0.5`;
+- prove expected base `31d5e39a1e3505880e9a98cd8c650b3cf112b16d`;
+- use a fresh dedicated worktree;
+- require clean Git state;
+- run `scripts/check-dev-tools.ps1`;
+- run the packet checker and require `control-v1/READY`;
+- verify the exact authorised OCaml switch before OCaml work.
+
+Audit first:
+
+- inspect all current 0.5 release evidence;
+- inspect current CLI help and JSON commands;
+- inspect existing benchmark scripts/output;
+- inspect Trail CLI;
+- inspect existing planning public surface;
+- inspect actual Tether/Tether Set examples;
+- enumerate Agent Essentials Plug manifests;
+- inspect Windows/Linux packaging;
+- inspect current tags/releases/workflow state;
+- record DONE/PARTIAL/MISSING/DEFERRED matrix before implementation.
+
+Rocket:
+
+- run portfolio focused tests;
+- force reference mode;
+- force fallback mode;
+- run existing 5,000-case V2 corpus;
+- run accepted metamorphic/raw-ID/storage-order corpus;
+- require zero payload/digest differences.
+
+Rust/host:
+
+- `cargo fmt --all -- --check`;
+- locked check/build/test gates appropriate to changed host/provider surfaces;
+- existing discovery/workspace/coding focused suites;
+- existing Plug pack/inspect/conform tests;
+- new focused tests for every added agent-facing capability;
+- serialise known environment-sensitive tests rather than falsely reporting an unsafe parallel gate as clean.
+
+Cold-agent:
+
+Run the actual public journey from a fresh data root:
+
+```text
+discover
+→ inspect trusted Capability
+→ inspect/install/configure bounded Plug as required
+→ preview intended work
+→ execute one harmless operation
+→ inspect result
+→ inspect Trail/receipt
+```
+
+Record exact commands and machine-readable responses.
+
+Packaging:
+
+- deterministic Windows release package;
+- hosted/native Linux package;
+- checksum verification;
+- clean extraction/install smoke;
+- `version --json`;
+- `doctor --json`;
+- capability discovery smoke;
+- documentation presence.
+
+Closeout:
+
+- `dune build @all`;
+- `dune runtest --force`;
+- relevant full V2/Rocket regression suites;
+- `git diff --check`;
+- inspect complete base-to-HEAD diff;
+- record implementation checkpoint;
+- no implementation/test mutations after checkpoint;
+- write worker note;
+- transition packet to `COMPLETE` or `BLOCKED`;
+- rerun task checker in terminal state;
+- push normally;
+- prove local HEAD == remote HEAD;
+- prove clean worktree;
+- only then tag/publish if all publication gates are satisfied.
+
+---
 
 ## Forbidden changes
 
-- No redesign or semantic change to V2, Core, validator, evaluator, planner,
-  wire, host authority, replay, Trail, approval, Result Anchor, Together,
-  Plug trust/policy/scope, or portable 0.2.2 behaviour.
-- No promotion of the blocked R3-3B3A/B3B/B3C research claims without an
-  independent exact parity proof; no heuristic subtree ranking or raw-ID tie
-  break.
-- No deletion of the exhaustive reference engine, no generic graph library, no
-  new dependency, no server/MCP/database/orchestration detour, no LLM judge,
-  and no hidden semantic timeout.
-- No mutation of the dirty source checkout or unrelated worktrees; no broad
-  historical branch merge that overwrites current main; no force push, reset,
-  destructive cleanup, or unrequested PR/review operation.
-- No publication claim for an artifact, Linux build, release, or physical
-  install that was not actually evidenced.
+- No Enc_V2 change.
+- No ProgramDigest V2 change.
+- No semantic identity redesign.
+- No deletion of exhaustive Rocket reference.
+- No resurrection of disproved B3 subtree-rank/local-capacity theories.
+- No new generic graph canonicalisation project.
+- No Rocq restart for 0.5.
+- No HQ implementation.
+- No new AI agent framework.
+- No hidden LLM judgement in Tethers Core.
+- No generic unrestricted shell Capability.
+- No ambient credential/environment-secret dumping.
+- No unbounded HTTP.
+- No unsafe archive extraction.
+- No SQLite access outside explicit scope.
+- No new policy/authority engine.
+- No daemon/server/database merely to support this audit.
+- No force push/reset/destructive branch cleanup.
+- No mutation of portable 0.2.2 historical assets.
+- No unsupported “Linux works” claim.
+- No unsupported “release published” claim.
+- No broad new feature added solely because it is interesting.
+
+---
 
 ## Stop conditions
 
-- Any frozen V2 payload/digest mismatch, nondeterministic semantic output, or
-  reference/portfolio disagreement after two materially different diagnoses.
-- A supposedly exact backend requires a heuristic tie-break, hidden raw identity,
-  unsupported theorem, or cannot expose an admissible exact fallback.
-- Agent Essentials integration changes an existing trust, scope, policy,
-  process, Git, package, or protocol contract, or requires a second authority.
-- Required Windows/Linux toolchain, credentials, CI, or release publication is
-  unavailable after safe local/remote checks; classify the affected slice
-  precisely instead of claiming completion.
-- Any change would touch the protected dirty checkout, frozen portable hashes,
-  unrelated branches, or files outside the packet without a new packet.
+Stop and finish `BLOCKED` with exact evidence if:
+
+- any fast Rocket route disagrees with the exhaustive reference;
+- completing a missing feature requires changing frozen Core/V2 semantics;
+- a proposed toolbelt Capability cannot be made meaningfully bounded under the existing trust/scope model;
+- a network/archive/SQLite implementation would require unsafe authority expansion;
+- a clean-agent real-work journey cannot be completed through public surfaces after two materially different diagnoses;
+- required Linux/Windows release infrastructure is unavailable and cannot be honestly evidenced;
+- publication credentials/workflow access prevent the actual release;
+- an audit item would require a substantial new subsystem rather than release closure.
+
+Do not mark the entire audit BLOCKED merely because one optional toolbelt slice is correctly classified `DEFERRED-WITH-REASON`, provided the worker proves why it is not an accidental omission and the 0.5 release remains coherent.
+
+---
 
 ## Expected pre-existing changes
 
-None
+None.
+
+---
+
+## Final decision rule
+
+Do not ask:
+
+> “Can we squeeze one more clever feature into 0.5?”
+
+Ask:
+
+> “Would a fresh AI or technically competent human reasonably expect this in the thing we are claiming Tethers 0.5 is?”
+
+If yes and it is safely achievable through the existing architecture, finish it.
+
+If no, defer it explicitly.
+
+When this packet closes, **stop feature accumulation and release Tethers 0.5**.
