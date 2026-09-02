@@ -12,7 +12,7 @@ Route: `Fresh dedicated final-audit worktree from the completed Tethers 0.5 rele
 
 Base commit: `31d5e39a1e3505880e9a98cd8c650b3cf112b16d`
 
-Implementation checkpoint: `b69cca6ed9409c68295d7492253b353696dc4758`
+Implementation checkpoint: `426d5ac0ece15e51d560d4bfccd6f14ad4e72b63`
 
 Worker note: `docs/worker-notes/2026-09-02-tethers-v0.5-final-audit.md`
 
