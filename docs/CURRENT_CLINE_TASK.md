@@ -1,188 +1,205 @@
-# Rocket V3 — R3-2 Stable Typed Partition Refinement
+# Tethers 0.5 — Practical release finishing packet
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `READY`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Codex implementation in a fresh dedicated worktree; partition/refinement engine and proofs only`
+Route: `Codex direct implementation in the clean release worktree; bounded finishing packet with normal remote publication`
 
-Base commit: `546c778425386dd61ec91422cf01cddb1e40bfbe`
+Base commit: `21bb7442fa9f8442db98e193eb4954096f356678`
 
-Implementation checkpoint: `1b32cab71ddc472f0a5c97549f8657872a45a6e0`
+Worker note: `docs/worker-notes/2026-09-02-tethers-v0.5-release.md`
 
-OCaml switch path: `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml`
-
-OCaml toolchain contract: use this exact external directory switch with explicit `--switch`; run Dune against the current R3-2 worktree source tree. Do not create, copy, move, select globally, or substitute another installed switch. For repository scripts that invoke opam without `--switch`, set `OPAMSWITCH` only process-locally to this exact path.
-
-Worker note: `docs/worker-notes/2026-09-01-rocket-v3-r3-2-refinement.md`
-
-Related issue: `#5 — BUG: Rocket V2 factorial search on simple sequential Action chains`
-
-Design authorities:
-
-- `docs/review/rocket-v3/R3_0_SEMANTIC_RELATION_INVENTORY.md`
-- accepted R3-1 model at base `546c778425386dd61ec91422cf01cddb1e40bfbe`
-
-Updated: 2026-09-01
+Updated: 2026-09-02
 
 ## Objective
 
-Implement deterministic typed partition refinement over the accepted immutable Rocket V3 semantic model.
-
-R3-2 must compute the unique stable/equitable refinement induced by vertex kind/scalar descriptors and the complete typed directed relation multigraph. It must use an incremental worklist/splitter design with smaller-half scheduling rather than repeated factorial search or raw-ID tie-breaking.
-
-The decisive proof target is the issue-#5 family: a homogeneous sequential Action chain whose Actions have identical scalar payloads must become discrete by semantic refinement alone for sizes 1, 10, 50, 100, 250, 500 and 1000.
-
-R3-2 does not individualize vertices and does not search. A non-singleton stable cell is a truthful statement of remaining ambiguity, not permission to invent an ordering.
+Finish Tethers 0.5 as a practical, installable release from current
+`origin/main`. Preserve frozen Enc_V2, ProgramDigest V2, Core semantics, host
+authority, Plug trust, policy, scope, Trail, replay, approval, Result Anchor,
+Together, and protocol behaviour exactly. Make the accepted Rocket V3 work
+usable as an exact solver portfolio while keeping the exhaustive implementation
+as a permanent reference engine, then close the Agent Essentials/product,
+documentation, evidence, packaging, and release gaps that are already supported
+by repository history.
 
 ## Relevant background and existing behaviour
 
-R3-1 is now on `main` and supplies:
+`origin/main` contains the accepted V2 production cutover, R3-1 semantic model,
+R3-2 typed refinement, the portable 0.2.2 workbench, and the host Plug
+lifecycle. Remote branches contain separately verified Rocket exact-search/path
+work and Agent Essentials discovery/workspace/coding providers. The current
+source checkout is dirty and is not this task's worktree; it must remain
+untouched.
 
-- exactly six anonymous identity families;
-- fixed ProgramRoot, ProgramScope, ProgramComplete and BranchStop structural vertices;
-- deterministic scalar descriptors;
-- complete typed forward and reverse adjacency;
-- exact relation discriminators and payloads;
-- multiplicity and scope;
-- validation-first construction.
-
-The model exposes internal integer vertex handles only as implementation handles. They are not semantic identity and MUST NOT be used to split otherwise equivalent vertices.
-
-Standard individualisation/refinement canonicalisation starts from an invariant initial colouring, computes an equitable partition, then only searches if non-singleton cells remain. R3-2 implements only that root refinement stage.
+The R3-3A exhaustive search is correctness authority. R3-2 refinement is a
+search aid only. Existing B2 success-path work is exact only where its own
+certificate and differential tests prove it. No research-only ListIso or
+complexity theorem may be promoted as a production theorem without parity
+evidence.
 
 ## Required behaviour
 
-1. Add an abstract partition module over R3-1 model vertices. Initialise the partition solely from explicit semantic base keys: `vertex_kind` plus `vertex_scalar`. Fixed structural vertices must begin distinguishable by kind. Internal vertex numbers and input order must not affect grouping.
-2. Add an incremental refinement module that reaches a stable typed equitable partition using worklist/splitter processing. Do not implement repeated whole-program canonical encoding or any permutation search.
-3. Treat an edge channel as the combination of direction, `relation_kind`, `relation_discriminator` and exact relation payload. Forward and inverse incidence must remain distinguishable. Multiplicity to/from a splitter cell is counted exactly.
-4. Split a candidate cell whenever two vertices have different multiplicity counts for any typed edge channel into the active splitter cell. Zero incidence is a real count and must distinguish zero from one or more.
-5. Use smaller-half worklist scheduling when a non-active cell is split: enqueue all resulting parts except one deterministic largest part. If the old cell is already active, replace/update its active work consistently so no required splitter is lost. Equal-size choices must be resolved by semantic/invariant subgroup order, never raw vertex number.
-6. Make refinement scheduling deterministic: splitter selection, channel processing, affected-cell processing and subgroup ordering must not depend on hash iteration, raw IDs, source collection order, pointer identity or wall clock.
-7. Expose only partition/refinement evidence needed by later phases and tests: cell count, cell membership queries, cell sizes, discreteness, stable-state indication and deterministic work statistics. Cell handles/colour numbers are refinement handles, not canonical labels.
-8. Record deterministic work statistics at minimum: `relation_visits`, `splitter_pops`, `cell_splits`, `max_worklist` and final cell count. No wall-clock value may influence the result.
-9. Prove the stable result against an independent slow test-only reference refinement on a deterministic generated corpus of small valid Core programs. Compare the induced equivalence relation/cell partition, not incidental internal cell numbers.
-10. Add homogeneous sequential Action-chain fixtures where every Action has the same capability, contract digest, inputs, facts and constraints, differing only in raw identity and position in the root/success/complete structure. Sizes 1, 10, 50, 100, 250, 500 and 1000 must refine to singleton Action cells with no individualisation/search.
-11. Prove that genuine unresolved symmetry is not broken artificially. Structurally indistinguishable twins/symmetric valid fixtures must remain in the same stable cell unless semantic relations distinguish them.
-12. Integrate only the new partition/refinement modules and focused tests into Dune. Do not wire Rocket V3 into production canonicalisation, planning, wire, Rust host or ProgramDigest.
+1. Create one exact Rocket V3 portfolio entrypoint that preserves a named
+   exhaustive/reference engine and routes only among exact backends: R3-2
+   refinement/direct forcing, accepted B2 path solving, connected matching or
+   symmetry collapse only where certified safe, bounded FPT completion where
+   proved, exact memoised lexicographic branch-and-bound for harder cases, and
+   exhaustive reference fallback.
+2. Make routing and complexity escape valves runtime-only. Budgets, thresholds,
+   backend selection, memoisation, and diagnostic counters must never alter the
+   frozen canonical payload, digest, parent vector, or semantic ordering; an
+   exhausted optimisation path must fall back exactly or fail closed.
+3. Add bounded deterministic differential tests against the exhaustive
+   reference over existing V2 cases plus generated, renamed, reordered,
+   repeated-subtree, path/star/balanced/asymmetric, and metamorphic cases. Stop
+   a release claim on any payload or digest mismatch.
+4. Reconcile the already-complete Agent Essentials discovery, workspace, and
+   coding-provider work onto the current release base without weakening the
+   existing Plug, scope, trust, process, Git, or verification boundaries.
+5. Provide a cold-agent path through public CLI discovery, trusted capability
+   inspection, installed Plug inspection, harmless bounded workspace work, and
+   evidence inspection, with stable machine-readable output and truthful
+   unavailable/denied states.
+6. Finish the small useful reference Plug/toolbelt surface already supported by
+   the provider seam, including workspace/text/patch, Git, process/named
+   verification, hashes, and clear authoring/build instructions. Do not create a
+   second registry, policy engine, scheduler, server, daemon, database, or AI
+   framework.
+7. Bring the front-door manuals and product documents to 0.5 truth: ordinary
+   Windows use, Linux installation/CI artifact use, AI-first discovery, useful
+   Tethers/Tether Sets, the full host/Core/Plug relationship, and the distinction
+   between the portable façade and the full platform.
+8. Add reproducible benchmark/release evidence for common versus difficult
+   Rocket shapes, exactness/parity, memory/branch/fallback counters, and cold
+   agent usability. Keep research claims and unverified platform claims clearly
+   labelled.
+9. Add boring reproducible Windows/Linux packaging and release automation around
+   the existing pinned toolchains and portable workflow, preserving existing
+   portable artifact identities and checksums. Do not claim local Linux builds
+   when only CI proves them.
+10. Perform only safe repository cleanup, then create the 0.5 release commit,
+    tag, and release assets using normal non-force Git/GitHub publication after
+    all required checks pass; report exact hashes, URLs, and any external
+    publication boundary.
 
 ## Relevant components
 
-Authorised mutation is limited to:
-
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-09-01-rocket-v3-r3-2-refinement.md`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_partition.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_partition.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_refine.ml`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_refine.mli`
-- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_refine_test.ml`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_partition.ml/.mli`
+- `tethers-0.1/engine-ocaml/bin/tethers_core_rocket_v3_refine.ml/.mli`
+- the accepted Rocket exact-search, encoder, origin-walk, and success-path
+  implementations on the fetched remote history
 - `tethers-0.1/engine-ocaml/bin/dune`
-
-Read-only implementation authorities include:
-
-- `tethers_core_rocket_v3_model.ml/.mli`
-- `tethers_core_rocket_v3_model_test.ml`
-- `tethers_core.ml/.mli`
-- `tethers_core_validator.ml/.mli`
-- `tethers_core_canonical_v2_format.ml/.mli`
-- V2 oracle/production/IR modules and tests for regression evidence only.
+- `tethers-0.1/host-rust/src/{cli,application,discovery,agent_workspace,agent_coding,plug_command}.rs`
+- existing `manifest`, `installed`, `enablement`, `trail_command`, `plug_*`,
+  package, provider, and host test modules
+- `reference-plugs/`, `scripts/`, `.github/workflows/`, `README.md`,
+  `QUICKSTART.md`, and current product/agent documentation
 
 ## Frozen decisions and invariants
 
-- The R3-1 model is semantic input authority for R3-2. Do not duplicate/reinterpret Core relations independently in the refinement engine.
-- Frozen Enc_V2 and `tethers:v2:sha256:` ProgramDigest semantics do not change.
-- Refinement may prove vertices distinguishable. Equal stable cells do not prove automorphism or canonical identity.
-- No raw ID, raw model vertex handle, collection position or current V2 heuristic may split a cell.
-- Relation direction, kind, discriminator, payload and multiplicity are all observable refinement information.
-- A stable partition must be equitable for every typed directed edge channel.
-- Initial partition keys are semantic base descriptors only. Do not seed refinement with V2 canonical labels, raw IDs, Enc_V2 labels or search results.
-- Fixed ProgramRoot, ProgramScope, ProgramComplete and BranchStop are structural colours, not anonymous identity families.
-- Batch remains a distinct anonymous family, never an Origin shortcut.
-- The complete refinement result must be independent of valid splitter-processing order as an equivalence relation; the implementation schedule itself must nevertheless be deterministic for reproducible statistics.
-- Smaller-half scheduling is an efficiency mechanism, not identity authority.
-- No external graph dependency.
-- No wall-clock timeout or budget in R3-2.
-- No V1 fallback.
-- No individualisation, search, canonical label assignment or candidate encoding.
+- Enc_V2 and ProgramDigest V2 are byte-for-byte immutable.
+- Exact canonical identity is the unsigned-byte minimum under the frozen
+  encoder; no raw ID, storage order, heuristic rank, graph-library label, or
+  partition-cell number is semantic authority.
+- Every production Rocket backend must either prove the same frozen result or
+  return control to an exact backend. Reference fallback remains available in
+  tests/diagnostics and is not deleted or hidden.
+- Core remains deterministic and application-agnostic. Plans request Actions;
+  hosts authorise and execute them; Trails record evidence.
+- Plug manifests are trusted stored data only after the existing validation,
+  installation, binding, scope, and policy checks. Conformance is not trust or
+  permission.
+- No ambient credentials, arbitrary shell interpolation, remote Git mutation,
+  force push, reset-hard, automatic effectful retry, hidden network access, or
+  hostile-code sandbox claim is introduced.
+- Existing portable 0.2.2 artifacts and hashes remain unchanged.
 
 ## Acceptance criteria
 
-1. Initial partition construction groups vertices only by semantic `vertex_kind + vertex_scalar`, with each fixed structural kind distinguishable and no use of raw vertex number.
-2. The refinement algorithm terminates with a stable partition in which vertices sharing a cell have identical typed incoming/outgoing multiplicity counts to every final cell.
-3. Direction, relation kind, discriminator and payload independently affect refinement; removing/changing any one in focused fixtures changes the expected split behaviour.
-4. Multiplicity is preserved: zero/one/two-or-more incidences can split cells where semantically present, and no relation occurrence is silently set-collapsed.
-5. Worklist split updates implement the smaller-half rule for non-active split cells and preserve correctness when an already-active cell splits.
-6. Repeated runs over identical input report identical final partition evidence and identical deterministic work statistics.
-7. Renaming every raw nominal ID and permuting all representation collections leaves the final partition equivalence structure and deterministic statistics unchanged for paired fixtures.
-8. Internal model vertex numbering/insertion perturbation cannot create a refinement distinction. Tests must not use raw vertex IDs as semantic sort keys.
-9. The independent slow reference refinement and incremental R3-2 refinement induce the same stable equivalence relation over every case in the deterministic generated small-program corpus.
-10. Homogeneous Action chains of 1, 10, 50, 100, 250, 500 and 1000 Actions finish with every Action in a singleton cell; the 1000-Action case performs no search because no search exists in R3-2.
-11. The homogeneous-chain test proves scalar equality first: all Action vertices in the fixture share the same initial semantic key before control-flow refinement.
-12. At least one valid symmetric/twin fixture remains non-discrete after stable refinement, proving R3-2 does not manufacture identity from handles/order.
-13. ProgramRoot propagation, ProgramComplete propagation and directed success-next/success-prev structure are each necessary/observable in focused mutation tests.
-14. Batch, role-scope, Together-member, Branch outcome/Stop, Action-binding and multiplicity fixtures all refine using the R3-1 typed relation channels without special-case raw Core logic in the refinement module.
-15. Statistics include relation visits, splitter pops, cell splits, max worklist and final cell count. They are deterministic and are evidence only, never Enc_V2 bytes or identity.
-16. The 1000-Action homogeneous-chain relation-visit count is recorded in the worker note and demonstrates bounded incremental behaviour; any unexpectedly quadratic/explosive result is a Red performance finding and must be reported rather than hidden behind a larger budget.
-17. The public R3-2 API contains no individualise/search/canonical-label/digest/candidate-emission operation.
-18. `dune build @all`, the focused R3-2 test executable, `dune runtest --force`, `git diff --check` and task-packet consistency all pass.
-19. Existing R3-1 model tests and V2 oracle/production/IR regression suites remain green, including the existing 5,000-case corpus.
-20. Final diff contains only authorised paths, the implementation checkpoint is committed before closeout documentation, local HEAD equals remote HEAD and the worktree is clean.
+1. One portfolio API/command and a named reference engine exist, with exact
+   differential parity on every bounded case used by the release tests.
+2. Runtime escape valves and backend routing affect timing/counters only; forced
+   fallback and bounded failure are fail-closed and never emit a different V2
+   identity.
+3. The differential/metamorphic corpus reports zero payload and digest
+   mismatches, with deterministic counters and explicit hard-case coverage.
+4. Agent Essentials discovery/workspace/coding history is integrated on top of
+   current main and its focused, adversarial, pack, inspect, and conformance
+   checks pass.
+5. A fresh-client/cold-agent transcript proves discovery, trusted inspection,
+   harmless bounded work, and evidence inspection without undocumented setup.
+6. Reference Plug packages are reproducible and pass their existing schemas,
+   conformance, and trust-boundary checks; no frozen package identity changes.
+7. README, QUICKSTART, product dashboard/goal, and release/agent manuals
+   describe only verified 0.5 behaviour and clearly mark deferred or CI-only
+   claims.
+8. Benchmark evidence includes exactness, common-case timing, difficult-case
+   fallback, and resource/branch counters, with no wall clock in semantic output.
+9. Windows packaging and Linux CI packaging are reproducible from the pinned
+   toolchains, and the pre-existing portable 0.2.2 ZIP hashes remain identical.
+10. The final release commit/tag/assets are published normally, the complete
+    diff contains no unsafe cleanup or frozen-semantic edits, local/remote
+    release heads and tags are recorded, and the release worktree is clean.
 
 ## Required verification
 
-- Use a fresh dedicated worktree tracking `origin/feature/rocket-v3-r3-2-refinement`.
-- Read `AGENTS.md`, the OCaml guide, this packet, R3-0 inventory and R3-1 model interface/tests before mutation.
-- Confirm branch, exact base `546c778425386dd61ec91422cf01cddb1e40bfbe`, READY state and clean initial worktree.
-- Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1`.
-- Run `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` and require `control-v1/READY`.
-- Verify the exact authorised OCaml switch with explicit `--switch`.
-- Implement partition/refinement and focused tests only in authorised paths.
-- Run the focused R3-2 test executable throughout implementation.
-- Run `opam exec --switch="D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml" -- dune build @all` from the current worktree's `tethers-0.1/engine-ocaml`.
-- Run the focused R3-2 executable and record exact checks/statistics, including the 1000 homogeneous-Action-chain relation visits.
-- Run `opam exec --switch="D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml" -- dune runtest --force`.
-- Run `git diff --check`.
-- Inspect the complete base-to-HEAD diff and prove only authorised paths changed.
-- Commit the implementation/test checkpoint and capture its exact full SHA.
-- Write the worker note from actual evidence and mark the task `COMPLETE`; no implementation/test mutation after the recorded checkpoint.
-- Run the packet checker again and require `control-v1/COMPLETE`.
-- Push normally to `origin/feature/rocket-v3-r3-2-refinement`.
-- Confirm local HEAD equals remote HEAD and worktree is clean.
-- Report exact evidence and STOP.
+- Fetch and inspect `origin/main`, relevant Rocket branches, Agent Essentials,
+  and portable release history before implementation.
+- Run `pwsh -NoProfile -File scripts/check-dev-tools.ps1` and the task-packet
+  checker in `READY`, `IN_PROGRESS`, and final `COMPLETE` states.
+- Use the exact authorised OCaml switch
+  `D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml` with explicit
+  `opam exec --switch=...`; run `dune build @all`, focused Rocket tests, and
+  `dune runtest --force`.
+- Run the existing fixture, MCP transcript, host, Rust, Plug, provider,
+  discovery, workspace, coding, package, and conformance checks relevant to
+  changed surfaces, plus `cargo fmt --all -- --check`, locked Rust checks,
+  `git diff --check`, and release packaging smoke checks.
+- Run bounded/random/metamorphic Rocket differential checks against the
+  reference engine and record exact totals, hashes, fallbacks, and counters.
+- Verify the existing portable 0.2.2 artifact SHA-256 before and after release
+  packaging; verify Windows locally and Linux only through the repository's CI
+  path if no local musl toolchain exists.
+- Inspect the complete base-to-HEAD diff, exact authorised paths, full commit
+  hashes, tag object, release asset hashes/URLs, remote equality, and clean
+  status before reporting.
 
 ## Forbidden changes
 
-- No edits to the accepted R3-1 model implementation/interface/tests.
-- No Core, validator, lowerer, Enc_V2, V2 oracle/production/IR semantic changes.
-- No individualisation of a non-singleton cell.
-- No I/R search tree.
-- No canonical-label assignment from partition cell order.
-- No Enc_V2 candidate generation or ProgramDigest production.
-- No prefix pruning, automorphism/orbit pruning or component recursion.
-- No undo trail/search-state checkpointing yet.
-- No V3 search/resource budgets or wall-clock cutoffs.
-- No production adapter/planner/wire/Rust-host integration.
-- No new dependency.
-- No raw-ID, vertex-handle or storage-order tie-breaker.
-- No historical Rocket branch merge/cherry-pick/rebase/copy as implementation authority.
-- Do not begin R3-3 automatically after completion.
+- No redesign or semantic change to V2, Core, validator, evaluator, planner,
+  wire, host authority, replay, Trail, approval, Result Anchor, Together,
+  Plug trust/policy/scope, or portable 0.2.2 behaviour.
+- No promotion of the blocked R3-3B3A/B3B/B3C research claims without an
+  independent exact parity proof; no heuristic subtree ranking or raw-ID tie
+  break.
+- No deletion of the exhaustive reference engine, no generic graph library, no
+  new dependency, no server/MCP/database/orchestration detour, no LLM judge,
+  and no hidden semantic timeout.
+- No mutation of the dirty source checkout or unrelated worktrees; no broad
+  historical branch merge that overwrites current main; no force push, reset,
+  destructive cleanup, or unrequested PR/review operation.
+- No publication claim for an artifact, Linux build, release, or physical
+  install that was not actually evidenced.
 
 ## Stop conditions
 
-- Correct refinement requires semantic information not exposed by the accepted R3-1 model.
-- A stable partition cannot be made invariant to raw IDs/storage/internal numbering without inventing canonical search.
-- The incremental algorithm disagrees with the independent slow reference on the same valid model after two materially different diagnoses/repairs.
-- The homogeneous Action chain does not become discrete from root/success/complete semantic structure.
-- The 1000-Action chain shows unexpectedly explosive/quadratic work that defeats the intended smaller-half architecture.
-- Smaller-half scheduling cannot be implemented without changing semantic output.
-- Work requires modifying R3-1 model/Core/V2 files, adding dependencies, or beginning search.
-- Checkout/branch/base/packet state differs after fetching origin.
+- Any frozen V2 payload/digest mismatch, nondeterministic semantic output, or
+  reference/portfolio disagreement after two materially different diagnoses.
+- A supposedly exact backend requires a heuristic tie-break, hidden raw identity,
+  unsupported theorem, or cannot expose an admissible exact fallback.
+- Agent Essentials integration changes an existing trust, scope, policy,
+  process, Git, package, or protocol contract, or requires a second authority.
+- Required Windows/Linux toolchain, credentials, CI, or release publication is
+  unavailable after safe local/remote checks; classify the affected slice
+  precisely instead of claiming completion.
+- Any change would touch the protected dirty checkout, frozen portable hashes,
+  unrelated branches, or files outside the packet without a new packet.
 
 ## Expected pre-existing changes
 
-None.
+None
