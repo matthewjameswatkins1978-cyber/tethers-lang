@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 

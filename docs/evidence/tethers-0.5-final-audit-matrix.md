@@ -2,7 +2,7 @@
 
 Audit baseline: `31d5e39a1e3505880e9a98cd8c650b3cf112b16d`  
 Audit branch: `release/tethers-v0.5-final-audit`  
-Audit state: implementation closed; publication pending
+Audit state: COMPLETE
 
 This matrix records the repository and hosted evidence inspected before any
 feature implementation in the final-audit worktree. `DONE` means the packet
@@ -41,16 +41,16 @@ boundary makes a new 0.5 subsystem the wrong release change.
 | 18. New slices use Plug boundary | DONE for retained scope | Existing providers use the normal trusted manifest/Plug path; deferred slices introduce no code. |
 | 19. Negative safety tests for new slices | DEFERRED-WITH-REASON | Applies only if archive/network/SQLite/system slices are implemented; none are being introduced by this audit unless evidence changes the decision. |
 | 20. No shell/credential/second policy engine | DONE | Existing provider contracts are argv-only/scope-bound; no new authority engine is present. |
-| 21. Plug portability | PARTIAL | Windows Plug conformance remains Windows-only by contract; the release workflow now keeps that proof on Windows and runs the platform-neutral native/pack/author gates on Linux. Final status depends on the fresh tagged run. |
+| 21. Plug portability | DONE with explicit boundary | Windows Plug conformance remains Windows-only by contract; the published workflow keeps that proof on Windows and passes the platform-neutral native/pack/package gates on Linux. |
 | 22. Version coherence | DONE | README/release docs now explain host 0.5, language 0.1, Plug 0.1.0, portable workbench 0.2.2, and the JSON version/doctor evidence boundary. |
 | 23. Install/update/removal | DONE | Release docs now cover checksum verification, extraction, replacement/removal, and bundle manuals/entrypoints. |
-| 24. Clean Windows/Linux bundle smoke | PARTIAL | Windows package/extraction smoke passed locally; the prior Linux failure was repaired at the workflow test-selection boundary. Fresh tagged Linux package evidence remains pending. |
-| 25. Final release hashes/workflow evidence | PARTIAL | Implementation evidence and Windows hash are recorded; the fresh tagged workflow and final hosted hashes remain pending. |
-| 26. Remote tag/release assets | MISSING | No new tag/release has been published yet; publish only after the repaired workflow passes. |
+| 24. Clean Windows/Linux bundle smoke | DONE | Windows package/extraction smoke passed locally; tagged workflow `33644808390` passed the Linux and Windows package/test jobs. |
+| 25. Final release hashes/workflow evidence | DONE | Tagged workflow `33644808390` passed and published both ZIPs plus sidecars; downloaded sidecars match both ZIP hashes. |
+| 26. Remote tag/release assets | DONE | Public non-draft/non-prerelease release `tethers-v0.5.8` is published at the tagged checkpoint. |
 | 27. Front-door documentation agreement | DONE | README, QUICKSTART, agent quickstart, release docs, benchmarker manual, Plug guidance, and examples now agree on the retained 0.5 surfaces. |
 | 28. Historical docs unchanged | DONE | Audit will add current-truth evidence and will not rewrite historical worker notes/roadmaps. |
-| 29. Full regression/release gates | DONE locally; hosted pending | Fresh OCaml/Rust/focused gates, J14A, benchmark parity, package smoke, and `git diff --check` passed; the repaired tagged workflow is the remaining platform gate. |
-| 30. Clean published closeout | PARTIAL | Implementation checkpoint and closeout evidence are present; worker note, packet terminal state, tag, hosted assets, hashes, and remote-equal proof remain to be completed. |
+| 29. Full regression/release gates | DONE | Fresh OCaml/Rust/focused gates, J14A, benchmark parity, package smoke, `git diff --check`, and tagged Windows/Linux workflow passed. |
+| 30. Clean published closeout | DONE | Worker note, implementation checkpoint, packet terminal state, tag, hosted assets, hashes, remote-equal proof, and clean worktree are recorded. |
 
 ## Pre-implementation decision
 

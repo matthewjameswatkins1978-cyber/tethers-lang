@@ -74,11 +74,24 @@ all passed. The Windows package SHA-256 was:
 1A68268874575E62ADD708602C9C0891F9E5918CA6840F13D9C24A617C2FC9D1
 ```
 
-The hosted Linux failure on the preceding release attempt was traced to the
-Windows-only P2B Plug conformance fixture being included in the Linux matrix.
-The release workflow now keeps P2B on Windows and retains Linux host, pack, and
-author-journey gates. Linux release claims remain pending the fresh tagged
-workflow; no local Windows result is presented as Linux evidence.
+The hosted Linux failures on the preceding release attempts were traced to the
+Windows-only P2B/P2C Plug conformance journey being included in the Linux
+matrix. The release workflow now keeps those journeys on Windows and retains
+Linux host, discovery, pack, and package gates. The fresh tagged run
+`33644808390` passed both platform package jobs and publication.
+
+Published assets from [Tethers 0.5 release tag
+`tethers-v0.5.8`](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8):
+
+```text
+tethers-0.5.0-linux-x64-musl.zip
+  sha256:f4dd11f2a8c652aa78ff908a002eae46c843b4950c37a1b2c630027e4691d168
+tethers-0.5.0-windows-x64.zip
+  sha256:13cf2aa4c16770fa1a8f8785774fd4e5cc092bb1ded639a4a496b81453b23d67
+```
+
+Both downloaded ZIPs matched their published `.sha256` sidecars byte-for-byte.
+The tagged commit is `2a2fe3986805905a90aa48ad83e95d79f0357b04`.
 
 ## Closure commands
 
@@ -94,6 +107,7 @@ opam exec --switch='D:\The Next Thing\Tethers Lang\tethers-0.1\engine-ocaml' -- 
 git diff --check
 ```
 
-The final tagged workflow, remote equality, release assets, asset checksums,
-and clean-worktree state are added below only after the corresponding hosted
-publication gates pass.
+The final tagged workflow passed: Linux package/tests in 1m53s, Windows
+package/tests in 4m06s, and publish in 12s. The release is public and
+non-draft/non-prerelease. The branch and tag resolve to the tagged commit;
+the local generated scratch directory was removed after the checks.
