@@ -24,21 +24,26 @@ path = "src/bin/agent_coding_provider.rs"
 [[bin]]
 name = "bench_mcp"
 path = "src/bin/bench_mcp.rs"
+required-features = ["benchmark-binaries"]
 
 [[bin]]
 name = "bench_prod"
 path = "src/bin/bench_prod.rs"
+required-features = ["benchmark-binaries"]
 
 [[bin]]
 name = "bench_cold"
 path = "src/bin/bench_cold.rs"
+required-features = ["benchmark-binaries"]
 
 [[bin]]
 name = "bench_retained"
 path = "src/bin/bench_retained.rs"
+required-features = ["benchmark-binaries"]
 
 [features]
 default = []
+benchmark-binaries = []
 # Observation-only stage timing for the PF1 benchmark binaries. Disabled in
 # every normal build; see src/bench_timing.rs.
 bench-timing = []
