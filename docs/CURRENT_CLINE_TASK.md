@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `BLOCKED`
 
 Task colour: `Red`
 
@@ -15,6 +15,8 @@ Base commit: `eae11c5fd2bb964c0f586c48823f406d2472dccf`
 Research evidence base: `eae11c5fd2bb964c0f586c48823f406d2472dccf`
 
 Accepted production frontier: `64d1557603366f2b8b934f987bfdef87e2b4ec0e`
+
+Implementation checkpoint: `0fdef0ec5bcf66b99dbb15f0c9ecfb034887e472`
 
 OCaml switch path: `D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml`
 
