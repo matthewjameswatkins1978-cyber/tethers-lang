@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `BLOCKED`
 
 Task colour: `Red`
 
@@ -11,6 +11,8 @@ Owner: `Codex`
 Route: `Fresh dedicated worktree; proof-first Origin-only rooted-tree research crucible. Establish an exact partial parent-vector completion theorem before any scalable tree canonicaliser is attempted.`
 
 Base commit: `64d1557603366f2b8b934f987bfdef87e2b4ec0e`
+
+Implementation checkpoint: `2234438f8fa03811bc33788d26744023bef6495e`
 
 OCaml switch path: `D:\\The Next Thing\\Tethers Lang\\tethers-0.1\\engine-ocaml`
 
