@@ -34,9 +34,11 @@ jobs:
         run: >-
           cargo test --manifest-path ./tethers-0.1/host-rust/Cargo.toml
           --locked --quiet
+          --bin tethers-reference-host
+          --bin m3_fixture_provider
+          --bin file_tools_provider
           --test j24a_plug_inspect_cli
           --test j24b_plug_list_cli
-          --test m4_file_tools
           --test p2a_plug_pack_cli
           --test p2b_plug_conform_cli
           --test p2c_public_author_journey
