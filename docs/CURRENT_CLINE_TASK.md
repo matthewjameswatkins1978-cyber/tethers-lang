@@ -16,7 +16,7 @@ Worker note: `docs/worker-notes/2026-09-02-tethers-v0.5-release.md`
 
 Updated: 2026-09-02
 
-Implementation checkpoint: `bf645c94b96dd100ad0f4580583b32f54bf7049f`
+Implementation checkpoint: `74e37d32a113c578b2123bc61af655fdc0262dc0`
 
 ## Objective
 

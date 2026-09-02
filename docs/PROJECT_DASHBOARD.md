@@ -66,7 +66,7 @@ the exhaustive reference remains available for bounded differential evidence.
 The native host is still versioned `0.2.2` for compatibility, while `0.5` is
 the product release line.
 
-The implementation checkpoint is `bf645c94b96dd100ad0f4580583b32f54bf7049f`.
+The implementation checkpoint is `74e37d32a113c578b2123bc61af655fdc0262dc0`.
 Windows packaging and bounded local evidence are complete; Linux packaging,
 the hosted release URL, signatures, and physical installation remain external
 acceptance facts until the tagged workflow proves them.
