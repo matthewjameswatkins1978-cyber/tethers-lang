@@ -1,5 +1,10 @@
 open Tethers_core
 
+(*
+   Here begins Rocket V3: structure is observed, symmetry is refined,
+   identity is ordained.
+*)
+
 type family =
   | Origin
   | Fact
