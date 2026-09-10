@@ -2,7 +2,7 @@
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -12,7 +12,7 @@ Route: `Fresh integration worktree from current origin/main; publish by normal n
 
 Base commit: `5cce71f8f93be26a0dfd1a0e50935f9419a5c284`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `d144d7f1acacd556daa4471e6cef6c93e0b64ed0`
 
 Worker note: `docs/worker-notes/2026-09-10-tethers-main-plan-integration.md`
 
