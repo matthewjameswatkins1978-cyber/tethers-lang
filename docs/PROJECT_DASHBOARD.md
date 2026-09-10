@@ -59,17 +59,17 @@ The 0.5 tagged source includes:
 
 ## Repository state warning
 
-The default `main` branch currently points to commit `21bb7442fa9f8442db98e193eb4954096f356678`, an earlier September 1 checkpoint.
+The documentation merge now sits at the tip of `main`, but it is documentation-only. The implementation ancestry beneath it still comes from the earlier September 1 checkpoint whose implementation tip was `21bb7442fa9f8442db98e193eb4954096f356678`.
 
-The published `tethers-v0.5.8` tag points to later source at commit `2a2fe3986805905a90aa48ad83e95d79f0357b04`.
+The published `tethers-v0.5.8` tag points to later implementation source at commit `2a2fe3986805905a90aa48ad83e95d79f0357b04`.
 
 Therefore:
 
 ```text
-published 0.5 source != current default main
+published 0.5 implementation source != implementation currently reachable from main
 ```
 
-Use the tagged release source when verifying published 0.5 commands and packaging. Do not infer that an absent command on current `main` was absent from the published 0.5 bundle.
+Use the tagged release source when verifying published 0.5 commands and packaging. Do not infer that an absent command in the implementation currently reachable from `main` was absent from the published 0.5 bundle.
 
 Reconciling this branch/release ancestry should be treated as repository hygiene before the next product release.
 
@@ -183,6 +183,6 @@ These are related but not interchangeable. Future releases should make the publi
 6. `docs/SECURITY.md` - what the trust boundary does and does not guarantee.
 7. `docs/CONSTITUTION.md` - the enduring design test.
 
-For the exact 0.5 Agent Essentials command surface, use the source and manuals under the `tethers-v0.5.8` tag until `main` is reconciled with the published release.
+For the exact 0.5 Agent Essentials command surface, use the source and manuals under the `tethers-v0.5.8` tag until the implementation ancestry reachable from `main` is reconciled with the published release.
 
 Historical roadmaps, reviews, performance notes, foundation evidence, and worker notes remain valuable records of their checkpoints. They are not living product-status documents.
