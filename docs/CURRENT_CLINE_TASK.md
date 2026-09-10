@@ -1,24 +1,24 @@
-# Tethers repository reconciliation and deterministic plan integration
+# Tethers 0.6 preparation: cold-agent proof and verification gate
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
-Task colour: `Red`
+Task colour: `Amber`
 
 Owner: `Codex`
 
-Route: `Fresh integration worktree from current origin/main; publish by normal non-force branch push and fast-forward/merge, then verify the remote before retiring the dirty GARY worker worktree.`
+Route: `Fresh branch from current origin/main; prove the cold-agent plan-to-execution workflow, repair the strict verification gate, align the public product release line to 0.6, then publish only after final evidence.`
 
-Base commit: `5cce71f8f93be26a0dfd1a0e50935f9419a5c284`
+Base commit: `a8762952a4f92697ab5349e93698699a5955c477`
 
-Implementation checkpoint: `d144d7f1acacd556daa4471e6cef6c93e0b64ed0`
+Implementation checkpoint: `NOT SET`
 
-Worker note: `docs/worker-notes/2026-09-10-tethers-main-plan-integration.md`
+Worker note: `docs/worker-notes/2026-09-10-tethers-0.6-preparation.md`
 
 Suggested branch:
 
-`integrate/tethers-main-plan-20260910`
+`codex/tethers-0.6-preparation-20260910`
 
 Source branch:
 
@@ -28,114 +28,112 @@ Updated: 2026-09-10
 
 ## Objective
 
-Reconcile the recovered Tethers 0.5 implementation ancestry into the current
-authoritative main line and ship a deterministic, machine-readable
-side-effect-free `tethers plan` command. Preserve the existing Core/host
-boundary, prove the plan path with the real OCaml engine fixture, publish by
-normal Git operations, and remove only the obsolete dirty worker state after
-remote verification.
+Turn the reconciled Tethers main line into an evidence-backed 0.6 preparation
+line: prove that an unfamiliar agent can discover, plan, obtain authority,
+execute a bounded operation, and inspect durable evidence; make the strict Rust
+verification gate honest and green; and update the public product release
+presentation and packaging workflow to 0.6 without changing the frozen Tethers
+0.1 language, native host 0.2.2 compatibility identity, Portable Workbench
+0.2.2 identity, or existing authority/replay/Trail semantics.
 
 ## Relevant background and existing behaviour
 
-The supplied GARY worker contains intentional plan-related Rust changes mixed
-with disposable underscore-prefixed scratch files. The repository tag
-`tethers-v0.5.8` contains the implementation ancestry that must remain
-reachable. Current `origin/main` is newer than the stale SHA in the request,
-so this task starts from the fetched live `origin/main` and records that exact
-base.
-
-The existing `preview` command is read-only. This task adds the stable
-machine-facing `plan` contract while retaining `preview`, `run`, policy,
-provider, replay, and Trail semantics unchanged.
+The reconciled main line already contains the side-effect-free machine-facing
+`tethers plan` command and a real OCaml-engine fixture proving that planning
+does not invoke providers or write execution Trail entries. Existing 0.5 cold-
+agent evidence covers discovery and harmless inspection, while the J14 local
+scenarios and agent-oriented Plugs provide the bounded execution seams needed
+for a real workflow proof. The public product line still says 0.5, the release
+packager defaults to `0.5.0`, and the tag workflow is named and filtered for
+0.5. The native host and Portable Workbench intentionally remain versioned
+0.2.2 for compatibility.
 
 ## Required behaviour
 
-1. Preserve both the current main ancestry and the tagged Tethers 0.5 ancestry
-   without force-pushing or rewriting either line.
-2. Expose `tethers plan --config --engine --input --host-data-root` with stable
-   `tethers.cli/1` wrapping `tethers.plan/1` data and explicit zero-effect
-   execution metadata.
-3. Evaluate the selected Tether through the real Core engine while never
-   requesting authority, entering policy/execution, launching a provider,
-   mutating replay state, or writing a Trail execution entry.
-4. Keep success, no-actions, planner-error, unavailable, interrupted, and
-   invalid-input outcomes machine-readable and distinguishable.
-5. Update living current-truth documentation and this control packet so they
-   describe the reconciled ancestry and shipped plan surface.
-6. Verify the integration, push the integration branch, publish main through a
-   normal non-force fast-forward/merge, verify GitHub, and only then clean the
-   supplied obsolete GARY worktree and branch.
-
-## Relevant components
-
-- `tethers-0.1/host-rust/src/cli.rs`
-- `tethers-0.1/host-rust/src/application.rs`
-- `tethers-0.1/host-rust/src/host_execution.rs`
-- `tethers-0.1/host-rust/src/plan_command.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/engine-ocaml/`
-- `README.md`, `QUICKSTART.md`, and `docs/`
-- `.github/scripts/check-tethers-task-packet.ps1`
+1. A fresh-workspace cold-agent pilot must exercise discovery, side-effect-free
+   `plan`, explicit authority/execution, and post-execution Trail or receipt
+   inspection with structured evidence. Planning must still prove zero provider
+   calls and zero execution Trail entries.
+2. The repository's strict Rust check must pass without suppressing warnings or
+   weakening tests. Existing warnings must be removed or repaired at their
+   actual ownership boundary.
+3. The complete Rust test command must be run in its normal parallel form. Any
+   barrier or scope interference must be repaired if it is a demonstrated
+   repository defect; serial evidence may supplement but may not replace the
+   normal command.
+4. Public product release references, release documentation, packaging default,
+   and tag-triggered workflow must consistently describe Tethers 0.6 and
+   `tethers-v0.6.*` assets. Historical 0.5/tagged evidence remains immutable.
+5. A reproducible 0.6 release package or package-build proof must include exact
+   SHA-256 evidence and preserve the separate compatibility version axes.
 
 ## Frozen decisions and invariants
 
-- `tethers-v0.5.8` remains intact and reachable; do not rewrite or retag it.
-- Core plans remain requests, not permission. Host policy and provider
-  execution remain outside the plan path.
-- The plan command must not claim execution merely because planning succeeded.
-- Provider invocation count must be zero for every plan result.
-- No plan result may create a Trail execution entry or second persistence store.
-- Existing public commands and Rust/OCaml trust boundaries remain compatible.
-- No force push, destructive reset, or unrelated cleanup is permitted.
+- A Plan remains a request, not permission.
+- Core remains in OCaml; Rust remains the host and execution boundary.
+- No provider, policy, replay, or Trail semantic redesign is permitted.
+- Existing host and Portable Workbench package versions remain `0.2.2` unless
+  a separate compatibility decision explicitly changes them.
+- `tethers-v0.5.8` and all historical 0.5 evidence remain reachable and
+  unchanged.
+- No force push, destructive reset, blanket cleanup, or dependency addition.
+- Release publication must use normal Git operations and exact remote proof.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/`
+- `tethers-0.1/portable-rust/`
+- `scripts/package-tethers-release.ps1`
+- `.github/workflows/tethers-v0.5-release.yml`
+- `README.md`, `QUICKSTART.md`, `docs/AGENT_QUICKSTART.md`,
+  `docs/CURRENT_GOAL.md`, `docs/PROJECT_DASHBOARD.md`, and release docs
+- `tethers-0.1/scripts/test-j14a-complete-scenario.ps1`
+- `tethers-0.1/scripts/test-j14c-real-file-move.ps1`
+- `.github/scripts/check-tethers-task-packet.ps1`
 
 ## Acceptance criteria
 
-1. A merge commit preserves both `origin/main` at the recorded base and the
-   peeled `tethers-v0.5.8` commit as ancestors.
-2. Focused plan tests and the complete Rust verification matrix pass, with
-   pre-existing warnings classified rather than hidden.
-3. The real OCaml engine fixture returns a completed `tethers.plan/1` response
-   with the expected action, provider marker absent, and Trail absent.
-4. Invalid input returns the stable schema and nonzero structured error without
-   execution effects.
-5. Living docs, the worker note, and this packet contain no stale claim that
-   the reconciled implementation ancestry is absent from main.
-6. The integration branch and authoritative `origin/main` contain the same
-   verified final history; GitHub content confirms the plan implementation.
-7. The supplied GARY worker worktree and its obsolete branch are removed only
-   after the final remote proof, with its intentional changes accounted for
-   and scratch debris discarded.
+1. The cold-agent pilot has a committed evidence note with exact commands,
+   structured plan result, explicit execution result, receipt/Trail evidence,
+   and negative proof that planning alone caused no provider or Trail effect.
+2. `just check` and the normal complete locked Rust test command pass; focused
+   plan/Core tests remain green.
+3. The explicit OCaml build and test commands remain green after the changes.
+4. Product-facing release metadata and packaging workflow consistently identify
+   0.6, while compatibility axes and historical 0.5 records remain explicit.
+5. A release package/build proof and SHA-256 manifest are recorded. No release
+   claim is made for an asset or platform that was not actually built.
+6. The implementation checkpoint, worker note, task checker, branch, remote
+   branch, final remote SHA, and clean worktree all agree.
 
 ## Required verification
 
-- toolchain gate and task-packet checker;
-- `cargo fmt`, locked check, clippy, complete locked tests, and release/build
-  smoke checks;
-- explicit OCaml switch `dune build @all`, `dune runtest --force`, and the
-  repository fixture/MCP/demo checks supported by the live workstation;
-- focused `tethers plan` unit tests, invalid-input smoke, and the real
-  `j14-complete` OCaml-engine fixture;
-- ancestry, diff, branch, tag, remote, and GitHub-content verification;
-- final clean-worktree and branch-removal proof.
-
-## Forbidden changes
-
-- no provider, policy, replay, Trail, or Core semantic redesign;
-- no force push, reset, checkout-overwrite, or blanket conflict resolution;
-- no unrelated refactor or dependency addition;
-- no committing underscore-prefixed worker scratch files;
-- no deletion of the worker worktree before remote verification.
+- toolchain and task-packet gates;
+- Rust formatter, strict check, Clippy, normal parallel complete tests,
+  focused plan/Core tests, and release builds;
+- explicit OCaml switch build/tests and the selected J14 scenario checks;
+- cold-agent plan/no-effect and execution/Trail evidence;
+- version-reference search, package-build output, SHA-256 manifest, diff check,
+  remote ancestry, tag, and final clean-worktree proof.
 
 ## Stop conditions
 
-Stop and report if the current remote main moves in a way that requires
-reconciliation beyond a normal merge/fast-forward, if the real engine cannot
-be built or exercised after bounded diagnosis, if provider/policy/Trail effects
-appear in a plan run, if a required verification fails repeatedly without new
-evidence, or if the intentional worker changes cannot be accounted for safely.
+Stop and report if the pilot requires a new authority or capability semantic,
+the normal parallel suite exposes an unresolved concurrency defect after two
+bounded repair attempts, the strict warning gate requires broad speculative
+refactoring, the release version axes cannot be separated honestly, or required
+tooling/platform coverage is unavailable.
+
+## Forbidden changes
+
+- no Tethers 0.1 syntax or semantic change;
+- no new provider, permission, replay, Trail, or Core boundary;
+- no host/portable compatibility-version rewrite disguised as product release
+  labelling;
+- no force push, reset, rebase of published history, or destructive cleanup;
+- no invented CI, release, platform, or live-provider evidence.
 
 ## Expected pre-existing changes
 
-None. All implementation and documentation changes for this task are made in
-the fresh integration worktree; the supplied dirty GARY worker is evidence to
-reconcile, not a second source of unrelated changes.
+None. The branch starts at current `origin/main`; all changes belong to this
+0.6 preparation task.
