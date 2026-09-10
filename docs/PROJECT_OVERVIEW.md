@@ -1,17 +1,25 @@
 # Tethers Project Overview
 
-Status: current system overview  
-Updated: 2026-09-01
+Status: current whole-system overview
+Updated: 2026-09-10
 
-This document explains the **current architecture as a whole**. Historical roadmaps and worker notes remain evidence of how individual pieces were designed and proved, but this is the better place to understand what Tethers now is.
+Tethers is a deterministic behaviour language surrounded by a typed capability, trust, execution, replay, and evidence platform.
 
-## 1. What Tethers is
+Its most useful role is underneath AI and automation:
 
-Tethers is a small deterministic behaviour language surrounded by a typed capability, trust, execution, and evidence platform.
+> **Let the caller be flexible about intent. Make consequential execution explicit, bounded, and provable.**
 
-Its job is not to be a general-purpose programming language and not to be an AI agent framework.
+Tethers is not a general-purpose programming language and not an AI agent framework. It is the layer that turns explicit intent into inspectable work without allowing the planner, provider, or transport to quietly redefine the rules at execution time.
 
-Its job is to turn explicit intent into bounded, inspectable work.
+## 1. The problem it solves
+
+An autonomous tool call often mixes several concerns together:
+
+```text
+intent + operation discovery + permission + execution + retry + evidence
+```
+
+Tethers separates them:
 
 ```text
 event + immutable Facts + Tether
@@ -23,19 +31,19 @@ event + immutable Facts + Tether
           Action Plan
               |
               v
- trust + policy + scope + durable intent
+ trusted Capability + policy + scope
               |
               v
       Capability execution
               |
               v
- result / uncertainty / Result Anchor
+ result / failure / uncertainty
               |
               v
-             Trail
+       Result Anchor + Trail
 ```
 
-The key separation is:
+The boundaries are deliberate:
 
 ```text
 Tethers language: what behaviour is requested.
@@ -46,11 +54,13 @@ Plug/provider: application-specific implementation.
 Trail: causal truth about what was proposed and what actually happened.
 ```
 
+A model may be probabilistic. These boundaries do not need to be.
+
 ## 2. The deterministic centre
 
 The OCaml side owns deterministic program meaning.
 
-Current responsibilities include:
+Responsibilities include:
 
 - parsing Human Tether source;
 - validation;
@@ -64,25 +74,17 @@ Current responsibilities include:
 - Core to Runtime Plan bridging;
 - evaluation/protocol responses.
 
-Core does not secretly read:
-
-- wall clock;
-- random source;
-- filesystem;
-- network;
-- environment;
-- live database;
-- provider state.
+Core does not secretly read the wall clock, randomness, filesystem, network, environment, live database, or provider state.
 
 Changing information must arrive as explicit event data, Facts, Capability projections, or other declared runtime input.
 
+This is one of the project's strongest properties: a Tether is not “deterministic except for the bits where it quietly asks the world what is happening.”
+
 ## 3. Human Tether syntax versus Core
 
-The public human-facing language is intentionally small.
+The public human-facing language is intentionally small. The precise source-language contract lives in [`../tethers-0.1/SPEC.md`](../tethers-0.1/SPEC.md).
 
-The precise source-language contract lives in [`../tethers-0.1/SPEC.md`](../tethers-0.1/SPEC.md).
-
-The current surface has:
+The current surface includes:
 
 - one Anchor;
 - zero or more Conditions;
@@ -91,21 +93,11 @@ The current surface has:
 
 It deliberately does not become arbitrary scripting.
 
-Tethers Core is richer than the current source surface. Its typed vocabulary includes distinct semantic identities and structures for:
+Tethers Core is richer than the current source surface. Its typed vocabulary includes distinct semantic identities and structures for programs, origins, Facts, capabilities, groups, branches, roles, batches, and item templates.
 
-- programs;
-- origins;
-- Facts;
-- capabilities;
-- groups;
-- branches;
-- roles;
-- batches;
-- item templates.
+That richness gives internal and future semantics a stable home without forcing every structure into the Human Tether language immediately.
 
-That richness gives future and internal semantics a stable home without forcing every structure into the human language immediately.
-
-**Do not equate "represented in Core" with "currently exposed in source syntax or supported on every runtime bridge".**
+**“Represented in Core” does not mean “already exposed as source syntax or supported on every runtime bridge.”**
 
 ## 4. Semantic identity and canonicalisation
 
@@ -116,24 +108,26 @@ Canonical Format V2 gives validated Core programs stable identity through a froz
 Important properties include:
 
 - raw IDs are not semantic identity;
-- representation/storage order does not define meaning;
+- representation or storage order does not define meaning;
 - multiplicity is preserved;
 - semantic scalar values are preserved;
 - canonicalisation fails closed when validation or deterministic work budgets fail;
-- independent implementations/oracles are used as differential evidence.
+- independent implementations and oracles can be used as differential evidence.
 
-This means a program can survive representation changes without casually changing what Tethers considers the program to be.
+The 0.5 release line extends the exact implementation portfolio around that frozen identity rather than changing the identity format itself. Rocket work changes how exact canonical results are reached and evidenced, not what a valid canonical answer means.
+
+That distinction matters because performance machinery must not quietly become a new semantic specification.
 
 ## 5. Plans are requests, not permission
 
 The deterministic engine produces a Plan.
 
-The Plan may name Actions and Together groups, but it is still only a request.
+A Plan may name Actions and Together groups, but it is still only a request.
 
 The host owns the consequential boundary:
 
-1. resolve the exact capability;
-2. verify trusted manifest/provider evidence;
+1. resolve the exact Capability;
+2. verify trusted manifest and provider evidence;
 3. establish effective policy and scope;
 4. resolve approval requirements;
 5. establish replay state;
@@ -141,7 +135,7 @@ The host owns the consequential boundary:
 7. invoke the provider;
 8. classify the outcome;
 9. validate structured output;
-10. persist trustworthy result/replay evidence;
+10. persist trustworthy result and replay evidence;
 11. append host Trail evidence;
 12. emit a Result Anchor when appropriate.
 
@@ -149,7 +143,7 @@ The planner cannot approve its own work.
 
 ## 6. Capability contracts
 
-A Capability is identified by name and version and is backed by a trusted manifest.
+A Capability is a versioned typed operation backed by trusted manifest evidence.
 
 The manifest can cover:
 
@@ -169,13 +163,15 @@ The manifest can cover:
 
 Discovered provider metadata is not automatically trusted.
 
-The host compares live provider/discovery state with reviewed trusted evidence. Drift or ambiguity fails closed rather than silently changing the operation beneath an existing Plan.
+The host compares live provider or discovery state with reviewed trusted evidence. Drift or ambiguity fails closed rather than silently changing the operation beneath an existing Plan.
+
+This is especially useful for agents because “the tool says it can do X” and “the host has reviewed and authorised capability X version Y under this scope” remain different claims.
 
 ## 7. Plugs
 
 A Plug is the public integration unit that brings one provider and one or more related Capabilities into Tethers.
 
-The generic host must not grow vendor-specific branches such as:
+The generic host should not grow application-specific branches such as:
 
 ```text
 if provider is GitHub
@@ -183,9 +179,9 @@ if provider is PDF
 if provider is email
 ```
 
-That application-specific meaning belongs inside the Plug/provider and its manifests.
+That meaning belongs inside the Plug/provider and its manifests.
 
-The implemented Plug lifecycle includes:
+The implemented lifecycle includes:
 
 ```text
 pack
@@ -202,22 +198,18 @@ The boundaries matter:
 
 - **pack** creates deterministic package evidence;
 - **inspect** treats a package as hostile read-only data;
-- **conform** executes the conformance contract under explicit supervision;
+- **conform** exercises the declared provider contract under explicit supervision;
 - **stage/install** create host-owned lifecycle state;
 - **enable** binds operational scope;
 - **disable** removes operational availability without erasing historical evidence.
 
 Conformance does not equal trust, installation, enablement, or permission.
 
-The 0.3 public Plug authoring programme was proved with:
+> **Deep Plug, narrow subject. Wide workflow, Tether.**
 
-- PDF Tools reference Plug;
-- Text Stats fresh-agent authoring proof;
-- Evil Bunny adversarial provider suite.
+## 8. Provider execution and transport
 
-## 8. Provider execution and Tethers Socket
-
-The host-provider architecture separates:
+The host-provider architecture separates semantic capability identity from the transport used to reach a provider:
 
 ```text
 Tethers semantic Socket
@@ -226,17 +218,13 @@ Tethers semantic Socket
     -> provider
 ```
 
-The implemented reference path uses an MCP stdio binding.
+The reference architecture includes MCP stdio binding material. MCP is therefore a useful provider protocol, not the place where Tethers delegates its language semantics, policy, replay rules, or evidence model.
 
-The Socket is a semantic contract, not a claim that every provider must use the same process layout forever.
-
-The provider remains untrusted at the protocol boundary. Host-side execution verifies the identities and contracts that matter instead of trusting whatever the provider reports.
+The provider remains untrusted at the protocol boundary. Host-side execution verifies the identities and contracts that matter instead of trusting whatever a provider advertises live.
 
 ## 9. Together and bounded physical concurrency
 
 The surface language can explicitly declare independent Actions with `together`.
-
-Example:
 
 ```tethers
 do
@@ -259,28 +247,21 @@ The semantic rules are deterministic:
 - all members must terminalise before the join resolves;
 - first non-success selection follows semantic member order.
 
-The Rust host may overlap Together member provider calls physically.
+The host may overlap Together member provider calls physically.
 
-The accepted 0.4 runtime adds:
+The accepted concurrency work includes physical provider overlap, bounded active concurrency, deterministic admission when capacity frees, truthful terminalisation of already-running work after trusted-state failures, and semantic Trail position separate from physical completion order.
 
-- physical provider overlap;
-- independent provider sessions where required;
-- bounded active concurrency;
-- earliest-semantic-member admission when capacity frees;
-- truthful completion of already-running work after fatal trusted-state failures;
-- semantic Trail position separate from physical append/completion order.
+The useful result is simple:
 
-No worker pool, async runtime, or global scheduler was required to establish these semantics.
-
-Concurrency therefore remains an execution strategy under a deterministic language contract.
+> **Concurrency may change when work happens. It must not silently change what the program means.**
 
 ## 10. Replay, durable intent, and uncertainty
 
 Tethers treats externally significant execution as something that must survive awkward failure boundaries.
 
-The host uses durable intent and replay state so a crash or repeated request does not casually become a duplicate external effect.
+Durable intent and replay state prevent a crash, repeated request, or lost response from casually becoming a duplicate external effect.
 
-The system distinguishes states such as:
+The host distinguishes states such as:
 
 - completed success;
 - completed failure;
@@ -292,9 +273,9 @@ The system distinguishes states such as:
 
 A timeout or lost final response after invocation is not automatically a safe retry.
 
-Tethers currently follows the rule:
-
 > **No automatic retry unless idempotency is proved end to end for the relevant contract.**
+
+This is intentionally more conservative than agent loops that treat every failure-looking response as another opportunity to “try again.”
 
 ## 11. Result Anchors and multi-step behaviour
 
@@ -306,18 +287,13 @@ capability.failed
 capability.uncertain
 ```
 
-These carry evaluation, Action, capability, manifest, provider, correlation, causation, and generation evidence.
+These carry causal evidence and may wake later Tethers.
 
-Generated Result Anchors enter a host-owned FIFO queue.
+Generated Result Anchors enter a host-owned FIFO queue. The queue is intentionally serial at the evaluation level, with no recursive immediate re-entry and stable admission order.
 
-The queue is intentionally serial at the evaluation level:
+This is separate from Together provider concurrency. Tethers can overlap independent provider calls inside a group while processing generated follow-up events through a stable causal queue.
 
-- no recursive immediate re-entry;
-- children append behind already-waiting siblings;
-- stable FIFO order;
-- bounded causal generation/admission rules.
-
-This is separate from Together provider concurrency. Tethers can overlap independent provider calls inside a group while still processing generated follow-up events through a stable event queue.
+A provider result is also not automatically equivalent to an independent observation of the outside world. The architecture can preserve that distinction instead of pretending that “command accepted” and “physical state confirmed” are the same fact.
 
 ## 12. Trail
 
@@ -325,45 +301,33 @@ The Trail is not decorative logging.
 
 It is causal evidence shared across deterministic evaluation and effectful host execution.
 
-It can record:
-
-- reception;
-- evaluation;
-- planning;
-- semantic Action/group position;
-- authority decisions;
-- durable intent;
-- provider attempt;
-- result/failure/uncertainty;
-- group join;
-- replay identity;
-- Result Anchor correlation.
+It can record reception, evaluation, planning, semantic Action/group position, authority decisions, durable intent, provider attempt, result/failure/uncertainty, group join, replay identity, and Result Anchor correlation.
 
 Pure deterministic Core entries remain independent of wall-clock time. Host execution entries may include timestamps because the host is the effectful runtime boundary.
 
-## 13. Security boundary
+The 0.5 release line also includes a bounded receipt projection over validated Trail evidence for agent-friendly inspection without introducing a second persistence store.
 
-The reference host has strong trust machinery, but supervised Plug execution is not a hostile-code sandbox.
+## 13. Agent-facing 0.5 surface
 
-Current security value comes from layers such as:
+The published Tethers 0.5 practical release adds a machine-oriented front door so an unfamiliar agent does not need private knowledge of the host.
 
-- strict package/manifest validation;
-- host-owned provider identity;
-- reviewed capability manifests;
-- live binding revalidation;
-- scope evidence;
-- explicit policy;
-- approval boundaries;
-- durable intent;
-- replay protection;
-- protocol/output validation;
-- bounded provider deadlines;
-- redacted evidence;
-- process supervision.
+The tagged release source includes surfaces for:
 
-Those controls do not prove that arbitrary provider code is isolated from the machine's filesystem, network, credentials, DLL loading, or operating-system APIs.
+```text
+describe the host
+    -> list trusted Capabilities
+    -> inspect exact Capability contracts
+    -> inspect installed Plug state
+    -> preview proposed work without effects
+    -> run admitted work
+    -> inspect bounded Trail receipts
+```
 
-See [`SECURITY.md`](SECURITY.md).
+It also includes agent-oriented workspace/text/hash/patch capabilities, structured Git capabilities, bounded argv-only process execution, named verification checks, and the deterministic `tethers-bench` verification tool.
+
+For exact 0.5 commands and source, use the [`tethers-v0.5.8` release tag](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8). The documentation now sits on `main`, but the implementation ancestry reachable from `main` is still based on an earlier checkpoint and does not contain every command present in the tagged release source.
+
+That source/release mismatch should be treated as repository hygiene, not hidden by documentation.
 
 ## 14. Portable workbench
 
@@ -381,58 +345,59 @@ It exists because a small deterministic authority binary is useful for scripts a
 
 Do not infer the full platform's limits from the portable façade.
 
-## 15. Version map
+## 15. Security boundary
 
-The repository carries several version axes:
+The reference host has strong trust machinery, but supervised Plug execution is not a hostile-code sandbox.
+
+Current security value comes from strict package and manifest validation, host-owned provider identity, reviewed capability manifests, live binding revalidation, scope evidence, explicit policy, approval boundaries, durable intent, replay protection, protocol/output validation, bounded provider deadlines, redacted evidence, and process supervision.
+
+Those controls do not prove that arbitrary native provider code is isolated from the machine's filesystem, network, credentials, dynamic libraries, or operating-system APIs.
+
+See [`SECURITY.md`](SECURITY.md).
+
+## 16. Version map
+
+Tethers currently carries several version axes:
 
 | Axis | Current meaning |
 | --- | --- |
-| Human Tether language/protocol | `0.1` |
-| Reference host Cargo package | `0.2.2` |
+| Human Tether language semantics | `0.1` |
+| Reference-host Cargo package | `0.2.2` compatibility/package axis |
 | Portable workbench | `0.2.2` |
-| 0.3 | completed public Plug-authoring milestone |
-| 0.4 | completed Together/concurrency milestone |
+| Public Plug authoring milestone | `0.3` complete |
+| Together/concurrency milestone | `0.4` complete |
+| Practical product release | `0.5` |
+| Latest public GitHub tag | `tethers-v0.5.8` |
 
-These axes are related but not interchangeable.
+The current 0.5 release asset filenames use the `tethers-0.5.0-*` form. These axes are related but not interchangeable. Future release work should simplify public version presentation rather than pretending the distinction does not exist.
 
-## 16. Current implementation boundaries
+## 17. Where Tethers is strongest
 
-Implemented and integrated:
+Tethers is especially useful where these distinctions matter:
 
-- deterministic 0.1 source language;
-- typed Core and lowering;
-- static Core validation;
-- canonical program identity;
-- production Core evaluation path;
-- trusted manifest/capability bridge;
-- host policy and scope enforcement;
-- provider supervision;
-- durable intent and replay machinery;
-- Result Anchors and FIFO result-event queue;
-- public Plug lifecycle/authoring;
-- bounded physical Together concurrency;
-- portable 0.2.2 workbench.
+- intent versus permission;
+- trusted contract versus provider advertising;
+- scoped capability versus unrestricted tool access;
+- proposed Plan versus actual execution;
+- first attempt versus replay;
+- success versus failure versus uncertainty;
+- semantic order versus physical completion order;
+- provider result versus later external observation.
 
-Important boundaries that remain:
+If none of those distinctions matter for a task, ordinary code may be the better answer. Tethers is not intended to turn every function call into a ceremony.
 
-- Tethers is not a general-purpose scripting language;
-- nested `together` is not part of current 0.1 syntax;
-- direct arbitrary Action-result references are not the normal 0.1 chaining model;
-- not every richer Core structure is exposed by the Human Tether language;
-- supervised providers are not hostile-code sandboxed;
-- the full reference host still contains Windows-specific durability/containment paths even though the portable workbench ships for Windows and Linux.
-
-## 17. Documentation authority
+## 18. Documentation authority
 
 Use documents by purpose rather than treating every old roadmap as current truth:
 
-1. [`CONSTITUTION.md`](CONSTITUTION.md) - enduring design principles.
-2. [`../tethers-0.1/SPEC.md`](../tethers-0.1/SPEC.md) - exact Human Tether 0.1 semantics.
-3. [`DECISIONS.md`](DECISIONS.md) - accepted architecture decisions.
-4. [`CAPABILITY_BRIDGE.md`](CAPABILITY_BRIDGE.md) - trusted capability/manifest bridge.
-5. [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md) - current whole-system explanation.
-6. [`SECURITY.md`](SECURITY.md) - current security claims and limits.
-7. [`PLUG_AUTHORING.md`](PLUG_AUTHORING.md) - public Plug author contract.
-8. [`CURRENT_GOAL.md`](CURRENT_GOAL.md) and [`PROJECT_DASHBOARD.md`](PROJECT_DASHBOARD.md) - living direction/status.
+1. [`../README.md`](../README.md) - product positioning and front door.
+2. [`../QUICKSTART.md`](../QUICKSTART.md) - working mental model.
+3. [`CONSTITUTION.md`](CONSTITUTION.md) - enduring design principles.
+4. [`../tethers-0.1/SPEC.md`](../tethers-0.1/SPEC.md) - exact Human Tether semantics.
+5. [`DECISIONS.md`](DECISIONS.md) - accepted architecture decisions.
+6. [`CAPABILITY_BRIDGE.md`](CAPABILITY_BRIDGE.md) - trusted capability and manifest bridge.
+7. [`SECURITY.md`](SECURITY.md) - current security claims and limits.
+8. [`PLUG_AUTHORING.md`](PLUG_AUTHORING.md) - public Plug author contract.
+9. [`CURRENT_GOAL.md`](CURRENT_GOAL.md) and [`PROJECT_DASHBOARD.md`](PROJECT_DASHBOARD.md) - living direction and status.
 
-`ROAD_TO_*`, `worker-notes/`, `review/`, `perf/`, and foundation-pass documents are important implementation history and evidence. Their old "not yet implemented" statements are true for the checkpoint they describe and should not be read as present-day product status unless a living document points to them.
+`ROAD_TO_*`, `worker-notes/`, `review/`, `perf/`, and foundation-pass documents are implementation history and evidence. Their old checkpoint statements should remain historical rather than being silently rewritten into present tense.

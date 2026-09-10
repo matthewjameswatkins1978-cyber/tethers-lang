@@ -1,7 +1,7 @@
 # Tethers Security Boundary
 
 Status: current security summary  
-Updated: 2026-09-01
+Updated: 2026-09-10
 
 Tethers has a serious trust and execution model, but it is important to describe exactly what that model does and does not guarantee.
 
@@ -12,6 +12,8 @@ Tethers has a serious trust and execution model, but it is important to describe
 The full reference host verifies contracts, authority, scope, replay state, provider identity, and outcomes around an execution.
 
 That is different from operating-system isolation.
+
+For AI use, this distinction is the point rather than a footnote. Tethers is designed to make the boundary between “the agent wants this” and “this operation is trusted, scoped, authorised, attempted, and evidenced” explicit. It is not designed to make malicious native code safe merely by calling it a Plug.
 
 ## Two different execution surfaces
 
@@ -62,7 +64,7 @@ Relevant layers include:
    Provider identity, MCP server/tool binding, and relevant live discovery data are rechecked. Drift does not silently become a new trusted operation.
 
 7. **Policy and approval**  
-   Capability schemas do not grant authority. Effective host policy may allow, deny, require one-shot approval, or make a capability unavailable.
+   Capability schemas do not grant authority. Effective host policy may allow, deny, require one-shot approval, or make a Capability unavailable.
 
 8. **Durable intent**  
    Effectful execution crosses an intent-first boundary. If required intent evidence cannot be durably established, the effectful call does not proceed.
@@ -110,20 +112,20 @@ It has **not** thereby gained:
 
 Current provider execution is supervised, but it is **not a hostile-code sandbox**.
 
-Depending on platform/path, the host includes process ownership/supervision, bounded protocol I/O, deadlines, Windows Job Object lifecycle handling, strict stdio discipline, and shutdown checks.
+Depending on platform and execution path, the host can include process ownership and supervision, bounded protocol I/O, deadlines, strict stdio discipline, shutdown checks, and platform-specific lifecycle controls.
 
 Those controls do not prove isolation from:
 
 - arbitrary filesystem access by malicious provider code;
 - arbitrary network access;
 - environment or credential theft;
-- DLL/library loading attacks;
+- DLL or dynamic-library loading attacks;
 - kernel or OS vulnerabilities;
 - side channels;
 - malicious native code outside the declared protocol;
 - denial of service beyond the host's bounded supervision guarantees.
 
-Do not install or execute untrusted native provider code merely because its package is well-formed.
+Do not install or execute untrusted native provider code merely because its package is well-formed or conforming.
 
 ## Scope
 
@@ -137,6 +139,8 @@ Examples can include:
 - byte limits;
 - repository bounds;
 - named resources;
+- executable allow-lists;
+- bounded environment keys;
 - other structured provider-specific limits.
 
 Scope must not be inferred from a friendly description string.
@@ -149,8 +153,6 @@ Effects describe the kinds of consequences a Capability may have.
 
 They are inputs to policy, not grants of permission.
 
-Keep the separation:
-
 ```text
 Capability manifest -> describes Effects
 Host policy         -> authorises
@@ -158,14 +160,14 @@ Host/runtime        -> enforces
 Trail               -> records
 ```
 
-A reversible operation is not automatically safe. A deterministic operation is not automatically permitted.
+A reversible operation is not automatically safe. A deterministic operation is not automatically permitted. A provider advertising an operation is not evidence that the host trusts it.
 
 ## Secrets and credentials
 
 Secrets must not be placed casually in:
 
 - Tether source;
-- capability descriptions;
+- Capability descriptions;
 - package metadata;
 - public Trails;
 - discovery output;
@@ -173,7 +175,7 @@ Secrets must not be placed casually in:
 
 Provider stdout is protocol data. Diagnostics belong on stderr.
 
-Credential handling belongs to host-owned configuration/brokering boundaries rather than provider self-declaration.
+Credential handling belongs to host-owned configuration and brokering boundaries rather than provider self-declaration.
 
 The repository's architecture contains broader credential and sandbox design work. Do not overstate an architecture document as an implemented isolation guarantee.
 
@@ -189,17 +191,17 @@ If a call may have reached a provider but no trustworthy final response is avail
 
 The host does not automatically retry arbitrary effectful calls.
 
-The governing principle remains:
-
 > **No automatic retry until idempotency is proved end to end.**
 
 Recovered ambiguous replay states may require explicit manual resolution rather than a second provider call.
+
+This conservative treatment is particularly important for autonomous callers, which otherwise tend to interpret “something went wrong” as an invitation to try the same operation again.
 
 ## Concurrency
 
 Together concurrency does not weaken the trust model.
 
-Before a Together member can invoke its provider, it still crosses the relevant preparation gates for capability resolution, policy/scope, replay, intent, and Trail evidence.
+Before a Together member can invoke its provider, it still crosses the relevant preparation gates for Capability resolution, policy/scope, replay, intent, and Trail evidence.
 
 Physical completion order is not allowed to rewrite semantic order.
 
@@ -209,17 +211,33 @@ If a fatal trusted-state failure prevents new members from launching, already-ru
 
 `capability.succeeded` means the trusted execution path accepted a provider success result for that Capability.
 
-It does not necessarily prove an indepently observed physical-world fact.
+It does not necessarily prove an independently observed physical-world fact.
 
 For example, a device provider may successfully report that it issued a command while a separate sensor later reports whether the physical outcome occurred.
 
 Tethers keeps those claims distinct.
 
+## Discovery and preview do not grant authority
+
+The published Tethers 0.5 release line includes read-only discovery, Capability inspection, installed Plug inspection, and side-effect-free preview surfaces.
+
+Those are observation surfaces. They do not:
+
+- start a provider merely to inspect trusted configuration;
+- install or enable a Plug;
+- grant operational scope;
+- approve a planned Action;
+- turn a preview into durable execution evidence.
+
+Agents should be able to learn what Tethers can do without that act of discovery itself becoming consequential.
+
 ## Platform note
 
-The portable workbench is packaged for Windows x64 and Linux x64 musl.
+The published Tethers 0.5 practical release provides Windows x64 and Linux x64 musl bundles. The smaller Portable Workbench is also packaged for both platforms.
 
-The full reference host has platform-neutral components, but some durability and containment implementation remains Windows-specific. Do not infer full-host Linux parity from the portable binary.
+That packaging fact should not be overstated into a claim that every platform-specific containment or durability mechanism is identical. Some host lifecycle and containment paths are platform-specific, and the security guarantee is the documented semantic/trust boundary, not “Windows and Linux implement every low-level mechanism in exactly the same way.”
+
+When evaluating a particular platform, verify the tagged release source and tests for the feature you depend on.
 
 ## What Tethers currently protects well
 
@@ -227,7 +245,7 @@ Tethers is strongest at making these boundaries explicit and testable:
 
 - intent versus permission;
 - trusted manifest versus provider advertising;
-- scoped capability versus unrestricted tool access;
+- scoped Capability versus unrestricted tool access;
 - proposed Plan versus actual execution;
 - first attempt versus replay;
 - success versus failure versus uncertainty;
@@ -236,6 +254,12 @@ Tethers is strongest at making these boundaries explicit and testable:
 - current trust state versus stale package/manifest evidence.
 
 That is a substantial security contribution even though it is not process sandboxing.
+
+## Release/source note
+
+The latest published GitHub product release is Tethers 0.5, tagged `tethers-v0.5.8`. This documentation now sits on `main`, but the implementation ancestry currently reachable from `main` is still based on an earlier September 1 checkpoint.
+
+Security claims about exact 0.5 discovery/provider surfaces should therefore be verified against the tagged release source until that implementation ancestry is reconciled with the published release.
 
 ## Read the deeper contracts
 
@@ -248,4 +272,4 @@ For detailed architecture and evidence:
 - [`concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md`](concurrency/C2_A3_PHYSICAL_CONCURRENCY_DESIGN.md)
 - [`concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md`](concurrency/C3_BOUNDED_CONCURRENCY_DESIGN.md)
 
-Those documents include historical design-stage wording. Use this file and the current code/tests for present-day summary claims.
+Those documents include historical design-stage wording. Use this file, the relevant tagged/current code, and tests for present-day summary claims.

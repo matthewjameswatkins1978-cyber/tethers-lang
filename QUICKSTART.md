@@ -1,14 +1,34 @@
 # Tethers quick start
 
-This guide teaches the **whole Tethers mental model** first, then shows the smaller portable workbench.
+Tethers is easiest to understand if you keep one separation in your head:
 
-If you remember only one sentence, use this one:
+> **AI or an application decides what it wants. Tethers turns consequential work into deterministic Plans, explicit authority, bounded execution, and evidence.**
 
-> **A Tether deterministically proposes typed work; the host decides whether that work may run, executes approved Capabilities through Plugs, and records what actually happened.**
+This guide teaches the whole mental model first, then the smaller portable workbench.
 
-## 1. Start with a Tether
+## 1. Start with the problem Tethers solves
 
-A Tether is deliberately small:
+A normal agent tool call can collapse several different things into one step:
+
+```text
+reason -> call tool -> hope the permission was right -> hope the result means what we think
+```
+
+Tethers separates them:
+
+```text
+intent
+  -> deterministic Plan
+  -> trusted Capability contract
+  -> policy + scope
+  -> execution
+  -> result / uncertainty
+  -> Trail
+```
+
+That is the core value. The agent can stay probabilistic. The boundary where it changes something real becomes explicit and inspectable.
+
+## 2. A Tether is a small behavioural rule
 
 ```tethers
 tether "Sort received invoices"
@@ -26,7 +46,7 @@ do
         destination_path: anchor.destination_path
 ```
 
-Read it as:
+Read it literally:
 
 ```text
 when folder.received_file happens
@@ -34,15 +54,13 @@ and the supplied immutable Facts say this is an invoice PDF
 request file.move with these explicit inputs
 ```
 
-The OCaml engine does not read the filesystem to discover those Facts. The host supplies the event, Facts, Tether source, and approved Capability projections as explicit input.
+The deterministic engine does not secretly read the filesystem to discover those Facts. The host supplies the event, Facts, Tether source, and approved Capability projections as explicit input.
 
-## 2. A Plan is not permission
+## 3. A Plan is not permission
 
 Tethers Core parses, validates, evaluates, and plans.
 
 It does **not** grant itself permission and does not secretly perform the external effect.
-
-The boundary is:
 
 ```text
 Tether
@@ -51,36 +69,38 @@ Tether
   -> approved execution
 ```
 
-Keep this phrase in your head:
+Keep this phrase nearby:
 
 ```text
-Schemas describe.
+Capabilities describe.
 Policies authorise.
 Hosts enforce.
 Trails record.
 ```
 
-## 3. Capabilities describe the operations
+The planner cannot approve its own work.
+
+## 4. Capabilities describe the operations
 
 A Tether Action names a Capability.
 
 A trusted Capability manifest can carry the exact contract an integration needs:
 
 - name and version;
-- input and output schemas;
+- strict input and output schemas;
 - Effects;
 - scope;
 - reversibility and determinism;
 - idempotency;
 - confirmation requirements;
-- timeout/retry contract;
+- timeout and retry contract;
 - provider identity and binding.
 
 Application-specific behaviour belongs behind Capabilities and Plugs, not in Tethers Core.
 
 A file tool, Git tool, PDF tool, AI model, email system, or physical device should therefore become a Capability set rather than a new Tethers language mode.
 
-## 4. Plugs connect real systems
+## 5. Plugs connect real systems
 
 A Plug packages a provider and its Capability manifests.
 
@@ -99,17 +119,13 @@ author source
 
 These stages are not aliases for one another.
 
-In particular:
-
 > **Conformance is evidence, not permission.**
 
 A conforming package is not automatically installed, enabled, trusted for every resource, or allowed to execute every call.
 
-See [`docs/PLUG_AUTHORING.md`](docs/PLUG_AUTHORING.md) for the full authoring contract.
+See [`docs/PLUG_AUTHORING.md`](docs/PLUG_AUTHORING.md) for the authoring contract.
 
-## 5. Independent work can be declared with `together`
-
-The current 0.1 surface includes an explicit fan-out/join construct:
+## 6. Independent work can be declared with `together`
 
 ```tethers
 tether "Morning brief"
@@ -135,28 +151,17 @@ do
         format: "short"
 ```
 
-The three group members are semantically independent.
+The three group members are semantically independent. A supported runtime may overlap their provider invocations physically, with bounded concurrency. The later Action waits for the group join.
 
-The accepted reference runtime may overlap their provider invocations physically, with bounded concurrency. The later Action waits for the group join.
+Physical scheduling must not change source meaning, Action identity, group membership, semantic member order, replay identity, Trail position, join meaning, or first-non-success selection.
 
-What physical scheduling must **not** change:
+That is the interesting bit: Tethers can gain useful concurrency without turning race timing into language semantics.
 
-- source meaning;
-- Action identity;
-- group membership;
-- semantic member order;
-- replay identity;
-- Trail semantic position;
-- join meaning;
-- first-non-success selection.
+## 7. Results become visible events
 
-That is why Tethers can have concurrency without letting race timing become language semantics.
+A provider result is not silently poured back into hidden mutable workflow state.
 
-## 6. Results become visible events
-
-A successful provider call is not silently fed into hidden mutable program state.
-
-Known outcomes can produce standard Result Anchors:
+Known outcomes can produce Result Anchors such as:
 
 ```text
 capability.succeeded
@@ -166,10 +171,6 @@ capability.uncertain
 
 A Result Anchor carries causal identities and may wake another Tether.
 
-The host drains generated Result Anchors through a stable FIFO event queue rather than recursively re-entering evaluation on the current stack.
-
-This gives multi-step behaviour a visible shape:
-
 ```text
 external event
     -> Tether A
@@ -178,9 +179,11 @@ external event
     -> Tether B
 ```
 
+The host drains generated Result Anchors through a stable FIFO event queue rather than recursively re-entering evaluation on the current stack.
+
 For a friendly worked example, read [`docs/BUNNY_AND_COOKIES.md`](docs/BUNNY_AND_COOKIES.md).
 
-## 7. The Trail is part of the product
+## 8. The Trail is part of the product
 
 Tethers distinguishes:
 
@@ -192,7 +195,7 @@ Tethers distinguishes:
 - what durable intent was recorded;
 - what provider was called;
 - what result or uncertainty was observed;
-- what Result Anchor was produced.
+- what follow-up Result Anchor was produced.
 
 That causal evidence is the Trail.
 
@@ -218,9 +221,9 @@ The older `preview` command remains available as a compatible read-only view.
 
 A proposal is not recorded as an execution, and an uncertain call is not renamed as a clean failure merely because that would be easier to handle.
 
-## 8. Try the portable workbench
+## 9. Try the portable workbench
 
-The portable workbench is the easiest binary to try, but remember that it is a **small authority façade**, not the full host/runtime.
+The portable workbench is the easiest binary to try. It is a **small authority façade**, not the full host/runtime.
 
 It answers:
 
@@ -256,6 +259,16 @@ Linux:
 ./tethers check --action git.force_push --json
 ```
 
+A useful default coding policy can therefore say:
+
+```text
+git.status      -> ALLOW
+git.push        -> ASK
+git.force_push  -> DENY
+```
+
+The caller still performs the operation. The workbench only makes the authority decision.
+
 Portable decision exit codes are scriptable:
 
 | Code | Decision |
@@ -264,19 +277,39 @@ Portable decision exit codes are scriptable:
 | `10` | `ASK` |
 | `20` | `DENY` |
 
-Invocation/configuration failures use separate codes. An operational error never means `ALLOW`.
+Invocation and configuration failures use separate codes. An operational error never means `ALLOW`.
 
-## 9. Know which surface you are using
+## 10. The published 0.5 host goes further
 
-Tethers currently has several related surfaces:
+The Tethers 0.5 practical release exposes the wider platform to agents through machine-readable discovery and inspection surfaces. The tagged release source includes:
+
+```text
+tethers describe --json
+tethers capability list --host-data-root <absolute-host-data-root> --json
+tethers capability inspect <name> --host-data-root <absolute-host-data-root> --version <version> --json
+tethers plug show --host-data-root <absolute-host-data-root> --installed-id <id> --json
+tethers preview --config <config.json> --engine <engine> --input <input.json>
+tethers trail --trail <trail.jsonl> --execution-id <id> --receipt
+```
+
+Discovery and preview are deliberately side-effect-free. They do not start a provider, grant authority, or pretend that a preview is an execution.
+
+Use the source and manuals attached to the published release when following those commands:
+
+- [Tethers 0.5 release (`tethers-v0.5.8`)](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8)
+- [0.5 Agent Quickstart](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/blob/tethers-v0.5.8/docs/AGENT_QUICKSTART.md)
+
+The implementation ancestry currently reachable from `main` is still based on an earlier September 1 checkpoint, so not every 0.5 agent-facing command is present there. That is a repository-state issue, not a reason to blur the difference in the documentation.
+
+## 11. Know which surface you are using
 
 ### Human Tether language
 
-Defined precisely by [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md).
+Defined precisely by [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md). The language version is a semantic axis, not the overall product release number.
 
 ### OCaml Core
 
-Typed semantic representation, validation, canonicalisation, and deterministic planning.
+Typed semantic representation, validation, canonicalisation, deterministic planning, and program identity.
 
 ### Rust reference host
 
@@ -284,18 +317,19 @@ Trust, policy, scopes, Plug lifecycle, durable intent, replay, provider executio
 
 ### Portable workbench
 
-Small self-contained ALLOW / ASK / DENY authority tool for scripts and agents.
+Small self-contained ALLOW / ASK / DENY authority tool for scripts and agents. It remains separately versioned at 0.2.2.
 
 Do not infer the limits of the full platform from the portable workbench, and do not infer new user-facing syntax merely because Core has a richer internal vocabulary.
 
-## 10. Where to go next
+## 12. Where to go next
 
-- [`README.md`](README.md) - the full project story.
-- [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) - architecture and current implementation boundaries.
+- [`README.md`](README.md) - why Tethers exists and where it fits.
+- [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) - architecture and implementation boundaries.
 - [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md) - exact language semantics.
 - [`docs/PLUG_AUTHORING.md`](docs/PLUG_AUTHORING.md) - how to build a Plug.
 - [`docs/SECURITY.md`](docs/SECURITY.md) - current trust and sandbox limits.
 - [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) - enduring design principles.
+- [`tethers-0.1/portable-rust/AI-INTEGRATION.md`](tethers-0.1/portable-rust/AI-INTEGRATION.md) - embedding the small authority workbench.
 
 ## 11. Install the 0.5 bundle
 

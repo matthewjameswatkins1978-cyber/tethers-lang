@@ -1,73 +1,123 @@
 <div align="center">
   <img src="assets/tethers-icon.png" alt="Tethers icon" width="160" />
   <h1>Tethers</h1>
-  <p><strong>A small deterministic coordination language and capability platform for software, tools, services, and AI.</strong></p>
+  <p><strong>Deterministic execution control for AI, automation, tools, and services.</strong></p>
+  <p><strong>Let AI improvise about intent. Keep real-world execution typed, scoped, permissioned, and provable.</strong></p>
   <p>
     <a href="QUICKSTART.md">Quick start</a>
     ·
     <a href="docs/AGENT_QUICKSTART.md">Agent quickstart</a>
     ·
+    <a href="docs/PROJECT_OVERVIEW.md">How it works</a>
+    ·
     <a href="tethers-0.1/SPEC.md">Language specification</a>
     ·
-    <a href="docs/PLUG_AUTHORING.md">Plug authoring</a>
+    <a href="docs/PLUG_AUTHORING.md">Build a Plug</a>
+    ·
+    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8">Tethers 0.5 release</a>
   </p>
 </div>
 
-Tethers is built around a simple idea:
+AI is very good at deciding what it wants to do. The dangerous part begins one millisecond later, when that decision becomes a file edit, a Git operation, a network call, a deployment, a message, a database mutation, or some other real effect.
 
-> **Describe useful behaviour clearly, keep authority separate from intent, and leave trustworthy evidence of what actually happened.**
-
-A Tether connects an event and immutable Facts to typed Capability requests. The deterministic OCaml engine decides what the program means and produces a Plan. The Rust host resolves trusted Capabilities, applies policy and scope, records durable intent, executes approved work through Plug providers, validates results, and records the causal Trail.
-
-The portable `tethers` workbench is one deliberately smaller surface of the same project. It answers local authority questions with `ALLOW`, `ASK`, or `DENY`. It is useful, but it is not the whole of Tethers.
-
-## The whole machine
+Tethers is the deliberately exact layer between **wanting** and **doing**.
 
 ```text
-                         deterministic meaning
-Event + Facts + Tether  -------------------------->  Tethers Core
-                                                        |
-                                                        v
-                                                     Action Plan
-                                                        |
-                                      schemas describe | policies authorise
-                                                        v
-                                                 Tethers Host
-                                         / trust / scope / replay /
-                                        / durable intent / execution /
-                                               |              |
-                                               v              v
-                                           Capability      Trail
-                                               |
-                                               v
-                                              Plug
-                                               |
-                                               v
-                                            Provider
-                                               |
-                                               v
-                                         outside system
-                                               |
-                                               v
-                                          Result Anchor
-                                               |
-                                               +----> may wake another Tether
+AI / application intent
+          |
+          v
+   deterministic Plan
+          |
+          v
+Capability contract + policy + scope
+          |
+          v
+    approved execution
+          |
+          v
+ result / uncertainty / causal Trail
 ```
 
-The important boundaries are deliberate:
+A model can change. A prompt can change. A provider can change. The execution contract does not have to become guesswork with them.
+
+> **Make things happen. Keep the receipts.**
+
+## Why Tethers?
+
+Most automation stacks blur several different questions together:
 
 ```text
-Tethers language says what behaviour is requested.
-Capability contracts say what operations exist and what Effects they may have.
-Policies and scopes say what may happen here.
-The host enforces authority and execution.
-Plugs connect application-specific providers without putting vendor logic in Core.
-Trails record what was proposed, authorised, attempted, and observed.
+What do we want to happen?
+What operation actually exists?
+Is this caller allowed to do it here?
+Did we really attempt it?
+Did it definitely succeed?
+What should happen next?
 ```
 
-## A real Tether
+Tethers keeps those questions separate on purpose.
 
-This fixture exists in the repository and demonstrates `together`:
+A **Tether** deterministically turns an event and immutable Facts into a typed Action Plan. **Capabilities** define the operations that exist. **Policies and scopes** decide what is allowed. The **host** executes admitted work through **Plugs**. **Result Anchors** make outcomes visible to later behaviour. The **Trail** records the causal story.
+
+That separation gives Tethers a few useful properties that are unusually hard to bolt on after the fact:
+
+- **Deterministic meaning.** The same complete semantic input produces the same Plan. Core does not secretly consult time, randomness, the filesystem, the network, or a model.
+- **Typed capabilities instead of wishful tool calls.** Inputs, outputs, Effects, versions, provider bindings, confirmation rules, retry contracts, and scope can be part of the trusted operation contract.
+- **Authority is not intent.** A planner can request an operation, but cannot grant itself permission to perform it.
+- **Fail closed.** Missing trust, malformed data, ambiguous versions, scope mismatch, unavailable durable state, and unsafe uncertainty do not quietly become permission.
+- **Human approval is first-class.** Work can stop at an explicit approval boundary instead of hiding a confirmation prompt inside an agent loop.
+- **Uncertainty stays honest.** "No final response" is not rewritten into "definitely failed, retry it." Tethers distinguishes failure from post-invocation uncertainty.
+- **Concurrency without semantic races.** `together` can overlap independent provider calls while preserving deterministic member order, join meaning, replay identity, and Trail position.
+- **Evidence is part of the product.** The Trail is not decorative logging. It distinguishes proposal, authority, intent, attempt, result, uncertainty, replay, and follow-up causality.
+- **Providers stay replaceable.** Application-specific behaviour belongs in Plugs and Capability contracts instead of leaking into the language core.
+
+The result is not another agent with opinions. It is a small, boring-in-the-best-way execution substrate underneath agents and automation.
+
+## Where Tethers fits
+
+### Under AI agents, not instead of them
+
+Tethers does not contain an LLM loop and does not compete with coding agents, assistants, planners, or orchestration frameworks.
+
+```text
+agent decides what it wants
+          |
+          v
+       Tethers
+          |
+          | deterministic meaning
+          | trusted capabilities
+          | policy + scope
+          | replay + evidence
+          v
+      real systems
+```
+
+The AI is free to reason creatively. Tethers becomes strict only where creativity would be a liability: contracts, authority, consequential execution, replay, and evidence.
+
+### Beside MCP, not as a replacement for it
+
+MCP is useful for exposing tools and resources. Tethers addresses a different layer: what a requested operation *means*, whether it is authorised in this exact context, how it is scoped, how execution is replayed safely, and what evidence survives afterwards.
+
+The reference architecture can bind providers through MCP stdio while keeping Tethers semantics, trust, and authority above the transport.
+
+### More structured than a shell escape hatch
+
+A shell command can do almost anything, which is precisely the problem when the caller is autonomous. Tethers prefers named semantic Capabilities with reviewed contracts and bounded scope. Generic process execution can still exist where justified, but it does not have to be the universal escape valve.
+
+### More than a policy engine
+
+The small portable workbench *is* deliberately just a deterministic authority boundary. Full Tethers goes further: language semantics, planning, trusted Capability resolution, Plug lifecycle, execution, durable intent, replay, Result Anchors, bounded concurrency, and causal Trails.
+
+## When should I use it?
+
+Tethers earns its keep when consequences matter more than saving a few lines of glue code.
+
+Good fits include AI coding workers that need bounded repository access, local automation that must explain why it changed something, tool ecosystems where providers can drift, workflows where duplicate effects are dangerous, operations that need explicit human approval, and multi-step behaviour where success, failure, and uncertainty must lead to different visible next events.
+
+It is probably **not** the right tool for ordinary internal algorithms, rendering code, byte manipulation, trivial scripts with no meaningful authority boundary, or anything where the execution contract would be more complicated than the problem itself.
+
+## A Tether is deliberately small
 
 ```tethers
 tether "Morning brief"
@@ -93,63 +143,47 @@ do
         format: "short"
 ```
 
-The three members of `together` are semantically independent. The runtime may overlap their provider calls physically, subject to its bounded concurrency rules. The later `brief.compose` Action does not become executable until the group has joined.
+Read it literally: when `morning.started` arrives and the supplied Facts say `ready is true`, request three independent typed operations, join them, then request `brief.compose`.
 
-Physical completion order does **not** redefine program meaning. Semantic member order, group membership, join behaviour, Trail position, replay identity, and first-non-success selection remain deterministic.
+The engine does not improvise hidden state. The host does not treat the Plan as permission. Physical completion order cannot silently redefine the program.
 
-That distinction is one of the central Tethers design laws:
-
-> **Concurrency may change when work happens. It must not silently change what the program means.**
-
-## Tethers is not an agent framework
-
-Tethers does not contain an LLM loop and does not try to replace coding agents, assistants, planners, or orchestration frameworks.
-
-It is designed to sit underneath them.
-
-```text
-AI / agent / ordinary application
-              |
-              | intent
-              v
-           Tethers
-              |
-              | typed, scoped, permissioned execution
-              v
-         real capabilities
-```
-
-An AI may decide that it wants to inspect a repository, run a test, move a file, call a service, or request another AI judgement. Tethers gives those operations explicit contracts, authority boundaries, deterministic planning, execution evidence, and visible uncertainty.
-
-AI itself is just another explicit Capability when used inside a Tether. It does not receive hidden control over Conditions, policy, or permission.
+> **Concurrency may change when work happens. It must not change what the program means.**
 
 ## Capabilities and Plugs
 
-A **Capability** is a versioned typed operation. Its trusted manifest can describe:
+A **Capability** is a versioned typed operation. A trusted manifest can describe:
 
 - canonical name and version;
 - title and description;
 - strict input and output schemas;
 - Effects;
 - permission scope;
-- reversibility;
-- determinism;
+- reversibility and determinism;
 - idempotency;
 - confirmation policy;
 - timeout and retry contract;
-- provider identity and binding.
+- provider identity and protocol binding.
 
-A **Plug** packages one provider and one or more related Capabilities. Plug-specific meaning stays outside the generic host.
+A **Plug** packages a provider and one or more related Capabilities. The public lifecycle is intentionally explicit:
 
-The implemented public Plug lifecycle includes packaging, inspection, conformance, staging, installation, enablement, disablement, and listing. Conformance proves behaviour against a declared contract; it does not itself grant permission or durable trust.
+```text
+author
+  -> pack
+  -> inspect
+  -> conform
+  -> stage
+  -> install
+  -> enable with scope
+  -> execute
+```
 
-The reference Plug programme has already proved the public boundary with PDF Tools, Text Stats, and the adversarial Evil Bunny provider suite.
+Those steps are different because they prove different things. A Plug can conform to its declared protocol without thereby gaining trust, installation, enablement, credentials, unrestricted scope, or permission to execute.
 
-> **Deep Plug, narrow subject. Wide workflow, Tether.**
+> **Conformance is evidence, not permission.**
 
-## Tethers Core is more serious than the surface syntax
+The reference Plug programme includes benign examples and adversarial providers specifically to keep that boundary honest.
 
-Human Tether source lowers into a typed semantic Core. Core uses distinct identity types for programs, origins, Facts, roles, capabilities, branches, groups, batches, and item templates rather than treating them as interchangeable strings.
+## Results are events, not hidden mutable state
 
 Canonical Format V2 gives validated Core programs stable semantic identity that is independent of irrelevant raw identifiers and representation order. The implementation includes independent canonicalisation paths and differential evidence.
 
@@ -180,21 +214,37 @@ capability.failed
 capability.uncertain
 ```
 
-Those are new events with causal identities. They can wake later Tethers without recursive hidden control flow.
+These are causal events with identities. They can wake later Tethers through a host-owned FIFO event queue instead of recursively smuggling action results back into hidden workflow state.
 
-A provider saying "I completed the call" is also not automatically the same evidence as an indepent outside observation. Tethers deliberately keeps request, result, and later observation distinct.
-
-See [`docs/BUNNY_AND_COOKIES.md`](docs/BUNNY_AND_COOKIES.md) for the friendliest explanation of that boundary.
-
-## One smaller surface: the portable authority workbench
-
-The self-contained portable workbench is intentionally narrow:
+That gives multi-step behaviour a visible shape:
 
 ```text
-request -> policy match -> ALLOW / ASK / DENY
+external event
+    -> Tether A
+    -> Capability call
+    -> Result Anchor
+    -> Tether B
 ```
 
-It does not execute the requested operation. The caller acts, asks, or stops.
+A provider reporting success is also not automatically the same thing as an independent observation of the outside world. Tethers keeps request, provider result, and later observation distinct. [`docs/BUNNY_AND_COOKIES.md`](docs/BUNNY_AND_COOKIES.md) is the friendliest worked explanation of that idea.
+
+## The portable authority workbench
+
+Sometimes you do not need the full host. You just need one small question answered deterministically:
+
+```text
+may this requested action proceed?
+```
+
+The portable `tethers` workbench returns:
+
+```text
+ALLOW
+ASK
+DENY
+```
+
+and never performs the requested action itself.
 
 ```powershell
 .\tethers.exe doctor --json
@@ -203,7 +253,7 @@ It does not execute the requested operation. The caller acts, asks, or stops.
 .\tethers.exe check --action git.force_push --json
 ```
 
-The same commands work on Linux with `./tethers`.
+That makes it useful as a tiny fail-closed authority boundary inside an existing agent, script, CI worker, or local workbench. See [`tethers-0.1/portable-rust/README.md`](tethers-0.1/portable-rust/README.md).
 
 For the native host and installed trusted Plugs, begin with the zero-knowledge
 discovery surface:
@@ -234,9 +284,9 @@ compatibility.
 
 ## Version map
 
-Several version numbers describe different layers of the project:
+Tethers currently has several version axes. They describe different things:
 
-| Layer | Current repository truth |
+| Layer | Current meaning |
 | --- | --- |
 | Human Tether language/protocol semantics | `0.1` specification |
 | Rust reference-host package version | `0.2.2` |
@@ -250,13 +300,13 @@ The 0.5 source tree includes three starter Tether Set examples under
 language and runtime configuration; they do not introduce a second Set
 semantic or permission model.
 
-The 0.3 and 0.4 labels are completed development milestones in this repository. They should not be confused with the portable workbench's release number or the 0.1 language version.
+The 0.5 release assets currently use `tethers-0.5.0-*` filenames while the GitHub tag is `tethers-v0.5.8`. That naming is historical release machinery, not a claim that all of these axes are interchangeable. Consolidating version presentation is a product-hygiene task, not a semantic change.
 
 ## Security posture
 
-The full reference host has serious trust and execution machinery, but supervised provider execution is **not a hostile-code sandbox**.
+Tethers has serious trust and execution machinery, but supervised Plug execution is **not a hostile-code sandbox**.
 
-Tethers verifies trusted manifests, provider bindings, scopes, durable intent, replay state, output schemas, and causal evidence. It does not claim that arbitrary provider code is isolated from the machine's filesystem, network, credentials, or operating system merely because it is packaged as a Plug.
+The host can verify trusted manifests, provider bindings, scopes, durable intent, replay state, output schemas, deadlines, and causal evidence. None of that magically prevents malicious native provider code from accessing the machine through ordinary operating-system facilities.
 
 Read [`docs/SECURITY.md`](docs/SECURITY.md) before treating third-party providers as trusted code.
 
@@ -266,20 +316,19 @@ Read [`docs/SECURITY.md`](docs/SECURITY.md) before treating third-party provider
 - `tethers-0.1/host-rust/` - trusted host, policy, scope, Plug lifecycle, replay, Trail, provider execution, and Together runtime.
 - `tethers-0.1/portable-rust/` - small self-contained ALLOW / ASK / DENY workbench.
 - `tethers-0.1/protocol/` - capability manifests, protocol cases, fixtures, and transcripts.
-- `reference-plugs/` - public Plug examples and adversarial conformance evidence.
+- `reference-plugs/` - reference and adversarial Plug material in checkpoints that contain it.
 - `docs/` - architecture, security, authoring, current state, historical roadmaps, and implementation evidence.
 
 ## Read next
 
-For a first pass:
+If you want to **understand the idea**, read [`QUICKSTART.md`](QUICKSTART.md) and [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md).
 
-1. [`QUICKSTART.md`](QUICKSTART.md) - learn the full mental model, then try the portable workbench.
-2. [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) - current system architecture and boundaries.
-3. [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md) - exact current source-language semantics.
-4. [`docs/PLUG_AUTHORING.md`](docs/PLUG_AUTHORING.md) - how Capabilities enter Tethers.
-5. [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) - the enduring design test.
-6. [`docs/SECURITY.md`](docs/SECURITY.md) - what Tethers does and does not protect.
+If you want to **integrate an AI or script with the small authority layer**, read [`tethers-0.1/portable-rust/AI-INTEGRATION.md`](tethers-0.1/portable-rust/AI-INTEGRATION.md).
 
-Historical roadmaps and worker notes remain valuable evidence of how decisions were proved, but they are not the best front door for understanding the current system.
+If you want to **build capabilities**, read [`docs/PLUG_AUTHORING.md`](docs/PLUG_AUTHORING.md).
 
-> **Make things happen. Keep the receipts.**
+If you care about **exact language semantics**, read [`tethers-0.1/SPEC.md`](tethers-0.1/SPEC.md) and [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md).
+
+If you are evaluating Tethers for consequential execution, read [`docs/SECURITY.md`](docs/SECURITY.md) before trusting provider code.
+
+> **AI can be probabilistic. The boundary where it changes the world does not have to be.**
