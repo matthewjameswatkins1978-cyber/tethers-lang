@@ -45,7 +45,8 @@ agent evidence covers discovery and harmless inspection, while the J14 local
 scenarios and agent-oriented Plugs provide the bounded execution seams needed
 for a real workflow proof. The public product line still says 0.5, the release
 packager defaults to `0.5.0`, and the tag workflow is named and filtered for
-0.5. The native host and Portable Workbench intentionally remain versioned
+0.5; the new 0.6 workflow and package default are part of this task. The
+native host and Portable Workbench intentionally remain versioned
 0.2.2 for compatibility.
 
 ## Required behaviour
@@ -85,9 +86,11 @@ packager defaults to `0.5.0`, and the tag workflow is named and filtered for
 - `tethers-0.1/portable-rust/`
 - `scripts/package-tethers-release.ps1`
 - `.github/workflows/tethers-v0.5-release.yml`
+- `.github/workflows/tethers-v0.6-release.yml`
 - `README.md`, `QUICKSTART.md`, `docs/AGENT_QUICKSTART.md`,
   `docs/CURRENT_GOAL.md`, `docs/PROJECT_DASHBOARD.md`, and release docs
 - `tethers-0.1/scripts/test-j14a-complete-scenario.ps1`
+- `tethers-0.1/scripts/test-tethers-0.6-plan.ps1`
 - `tethers-0.1/scripts/test-j14c-real-file-move.ps1`
 - `.github/scripts/check-tethers-task-packet.ps1`
 

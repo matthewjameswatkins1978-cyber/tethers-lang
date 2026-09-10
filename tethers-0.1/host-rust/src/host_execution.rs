@@ -1743,9 +1743,7 @@ pub(crate) enum GroupMemberState {
     /// This member has a final terminal classification and will not be
     /// launched.  Trail and response have been updated.
     PreparationTerminal {
-        action_index: usize,
         action_id: String,
-        semantic_position: dispatch::SemanticPosition,
         step: crate::plan_execution::ActionStep,
     },
 
@@ -1774,17 +1772,11 @@ pub(crate) enum GroupMemberState {
 
     /// Owns no domain object while a Prepared member is being moved into the
     /// next state.  This is a Rust ownership transition, not a semantic state.
-    Transitioning {
-        action_index: usize,
-        action_id: String,
-        semantic_position: dispatch::SemanticPosition,
-    },
+    Transitioning { action_id: String },
 
     /// Member has reached its final terminal classification.
     Terminal {
-        action_index: usize,
         action_id: String,
-        semantic_position: dispatch::SemanticPosition,
         step: crate::plan_execution::ActionStep,
     },
 }
@@ -2019,9 +2011,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
             Ok(proposed) => proposed,
             Err(error) => {
                 member_states.push(GroupMemberState::PreparationTerminal {
-                    action_index: *action_index,
                     action_id: action_id.clone(),
-                    semantic_position: position,
                     step: crate::plan_execution::ActionStep::Stopped(
                         ExecutionServiceResult::InvalidData {
                             message: format!("invalid planned Action: {error}"),
@@ -2051,9 +2041,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
         match &policy_evaluation.decision {
             PermissionDecision::Deny => {
                 member_states.push(GroupMemberState::PreparationTerminal {
-                    action_index: *action_index,
                     action_id: action_id.clone(),
-                    semantic_position: position,
                     step: crate::plan_execution::ActionStep::Stopped(
                         ExecutionServiceResult::Denied {
                             evaluation_id: proposed.evaluation_id.clone(),
@@ -2095,18 +2083,14 @@ pub(crate) fn execute_group_concurrent_with_limit(
                     },
                 };
                 member_states.push(GroupMemberState::PreparationTerminal {
-                    action_index: *action_index,
                     action_id,
-                    semantic_position: position,
                     step: crate::plan_execution::ActionStep::Stopped(result),
                 });
                 continue;
             }
             PermissionDecision::Unavailable => {
                 member_states.push(GroupMemberState::PreparationTerminal {
-                    action_index: *action_index,
                     action_id,
-                    semantic_position: position,
                     step: crate::plan_execution::ActionStep::Stopped(
                         ExecutionServiceResult::Unavailable {
                             evaluation_id: proposed.evaluation_id.clone(),
@@ -2125,9 +2109,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
             Ok(resolved) => resolved,
             Err(result) => {
                 member_states.push(GroupMemberState::PreparationTerminal {
-                    action_index: *action_index,
                     action_id,
-                    semantic_position: position,
                     step: crate::plan_execution::ActionStep::Stopped(result),
                 });
                 continue;
@@ -2137,9 +2119,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
         let binding = &resolved.manifest().manifest().binding;
         if binding.kind != BindingKind::Mcp {
             member_states.push(GroupMemberState::PreparationTerminal {
-                action_index: *action_index,
                 action_id: action_id.clone(),
-                semantic_position: position,
                 step: crate::plan_execution::ActionStep::Stopped(ExecutionServiceResult::Denied {
                     evaluation_id: proposed.evaluation_id.clone(),
                     action_id,
@@ -2156,9 +2136,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
             .is_none()
         {
             member_states.push(GroupMemberState::PreparationTerminal {
-                action_index: *action_index,
                 action_id,
-                semantic_position: position,
                 step: crate::plan_execution::ActionStep::Stopped(
                     ExecutionServiceResult::Unavailable {
                         evaluation_id: proposed.evaluation_id.clone(),
@@ -2180,9 +2158,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
             .find(|provider| provider.identity == resolved.provider_identity())
         else {
             member_states.push(GroupMemberState::PreparationTerminal {
-                action_index: *action_index,
                 action_id,
-                semantic_position: position,
                 step: crate::plan_execution::ActionStep::Stopped(
                     ExecutionServiceResult::Unavailable {
                         evaluation_id: proposed.evaluation_id.clone(),
@@ -2205,9 +2181,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
             Some(event_id) => event_id,
             None => {
                 member_states.push(GroupMemberState::PreparationTerminal {
-                    action_index: *action_index,
                     action_id,
-                    semantic_position: position,
                     step: crate::plan_execution::ActionStep::Stopped(
                         ExecutionServiceResult::InvalidData {
                             message: "Anchor event requires a non-empty string id".to_owned(),
@@ -2248,9 +2222,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                 // The prepare function already updated response and Trail.
                 // Record the terminal classification.
                 member_states.push(GroupMemberState::PreparationTerminal {
-                    action_index: *action_index,
                     action_id,
-                    semantic_position: position,
                     step: crate::plan_execution::ActionStep::Boundary(result),
                 });
             }
@@ -2277,16 +2249,11 @@ pub(crate) fn execute_group_concurrent_with_limit(
                 };
 
                 let transition = match &member_states[idx] {
-                    GroupMemberState::Prepared {
-                        action_index,
-                        action_id,
-                        semantic_position,
-                        ..
-                    } => GroupMemberState::Transitioning {
-                        action_index: *action_index,
-                        action_id: action_id.clone(),
-                        semantic_position: semantic_position.clone(),
-                    },
+                    GroupMemberState::Prepared { action_id, .. } => {
+                        GroupMemberState::Transitioning {
+                            action_id: action_id.clone(),
+                        }
+                    }
                     _ => unreachable!("guaranteed by position check"),
                 };
                 let prior = std::mem::replace(&mut member_states[idx], transition);
@@ -2322,9 +2289,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                     Some(remaining) => remaining,
                     None => {
                         member_states[idx] = GroupMemberState::Terminal {
-                            action_index,
                             action_id: action_id.clone(),
-                            semantic_position: position,
                             step: crate::plan_execution::ActionStep::Stopped(
                                 ExecutionServiceResult::Unattempted {
                                     evaluation_id: evaluation_id.to_owned(),
@@ -2342,9 +2307,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                 if admission.publish_armed().is_err() {
                     launches_halted = true;
                     member_states[idx] = GroupMemberState::Terminal {
-                        action_index,
                         action_id: action_id.clone(),
-                        semantic_position: position,
                         step: crate::plan_execution::ActionStep::Stopped(
                             ExecutionServiceResult::ReplayPersistenceUnavailable {
                                 evaluation_id: evaluation_id.to_owned(),
@@ -2366,9 +2329,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                     Some(provider) => provider.clone(),
                     None => {
                         member_states[idx] = GroupMemberState::Terminal {
-                            action_index,
                             action_id,
-                            semantic_position: position,
                             step: crate::plan_execution::ActionStep::Stopped(
                                 ExecutionServiceResult::Unavailable {
                                     evaluation_id: evaluation_id.to_owned(),
@@ -2463,7 +2424,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                         }
                     }
 
-                    let (action_index, action_id, position, ready, prepared, mut admission) =
+                    let (action_index, action_id, _position, ready, prepared, mut admission) =
                         match found {
                             Some(v) => v,
                             None => continue,
@@ -2527,12 +2488,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                         } = s
                         {
                             if *idx == action_index {
-                                *s = GroupMemberState::Terminal {
-                                    action_index,
-                                    action_id,
-                                    semantic_position: position,
-                                    step,
-                                };
+                                *s = GroupMemberState::Terminal { action_id, step };
                                 break;
                             }
                         }
@@ -2722,26 +2678,16 @@ mod tests {
 
     #[test]
     fn c2_a3a_semantic_first_non_success_preserves_exact_step() {
-        let position = |ordinal| dispatch::SemanticPosition {
-            action_ordinal: ordinal,
-            group_id: Some("group".to_owned()),
-            member_ordinal: Some(ordinal),
-            phase: dispatch::SemanticPhase::Member,
-        };
         let states = vec![
             GroupMemberState::Terminal {
-                action_index: 0,
                 action_id: "first".to_owned(),
-                semantic_position: position(0),
                 step: crate::plan_execution::ActionStep::Boundary(crate::SharedExecutionResult {
                     outcome: crate::SharedExecutionOutcome::Uncertain,
                     execution_id: Some("exec-first".to_owned()),
                 }),
             },
             GroupMemberState::Terminal {
-                action_index: 1,
                 action_id: "second".to_owned(),
-                semantic_position: position(1),
                 step: crate::plan_execution::ActionStep::Boundary(crate::SharedExecutionResult {
                     outcome: crate::SharedExecutionOutcome::Failed,
                     execution_id: Some("exec-second".to_owned()),
@@ -5128,213 +5074,6 @@ mod tests {
     // and worker panic handling for the concurrent Together path.
     // -----------------------------------------------------------------------
 
-    /// Build a PreparedRuntime with two barrier-fixture providers, each with
-    /// a unique capability name.  Each provider points at `barrier_dir` for
-    /// deterministic file-system synchronization.
-    fn c2a3a_barrier_runtime(barrier_dir: &Path) -> (PreparedRuntime, PathBuf, String, String) {
-        let dir = std::env::temp_dir().join(format!(
-            "tethers-c2a3a-obs-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(dir.join("tethers")).unwrap();
-        std::fs::create_dir_all(dir.join("manifests")).unwrap();
-
-        std::fs::write(
-            dir.join("tethers/together-test.tether"),
-            "when event.test if true do fixture.ping-a do fixture.ping-b",
-        )
-        .unwrap();
-
-        let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
-        // Create two manifests with distinct capability names, provider identities, and valid digests.
-        let mut manifest_a: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
-        manifest_a["capability_name"] = serde_json::json!("fixture.ping-a");
-        manifest_a["provider"]["identity"] = serde_json::json!("provider-a");
-        manifest_a["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
-        manifest_a["permission_scope"] =
-            serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
-        manifest_a["confirmation_policy"] =
-            serde_json::json!({"standing_permitted": true, "per_call_required": false});
-        let manifest_a_str = serde_json::to_string(&manifest_a).unwrap();
-        let (_, digest_a) = crate::manifest::canonicalize_and_digest(&manifest_a_str).unwrap();
-        manifest_a["digest"] = serde_json::json!(digest_a);
-        let manifest_a_final = serde_json::to_string_pretty(&manifest_a).unwrap();
-
-        let mut manifest_b: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
-        manifest_b["capability_name"] = serde_json::json!("fixture.ping-b");
-        manifest_b["provider"]["identity"] = serde_json::json!("provider-b");
-        manifest_b["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
-        manifest_b["permission_scope"] =
-            serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
-        manifest_b["confirmation_policy"] =
-            serde_json::json!({"standing_permitted": true, "per_call_required": false});
-        let manifest_b_str = serde_json::to_string(&manifest_b).unwrap();
-        let (_, digest_b) = crate::manifest::canonicalize_and_digest(&manifest_b_str).unwrap();
-        manifest_b["digest"] = serde_json::json!(digest_b);
-        let manifest_b_final = serde_json::to_string_pretty(&manifest_b).unwrap();
-
-        std::fs::write(dir.join("manifests/fixture-ping-a.json"), &manifest_a_final).unwrap();
-        std::fs::write(dir.join("manifests/fixture-ping-b.json"), &manifest_b_final).unwrap();
-
-        let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("scripts")
-            .join("tethers-stdio-fixture.ps1");
-        let barrier_str = barrier_dir.to_str().unwrap().to_owned();
-
-        let config = json!({
-            "format_version": "0.1",
-            "tether_set": {
-                "id": "test.together",
-                "version": "1",
-                "tethers": [{
-                    "id": "together-test",
-                    "version": "1",
-                    "source_path": "tethers/together-test.tether"
-                }],
-                "capability_requirements": [
-                    {"name": "fixture.ping-a", "version": 1, "reason": "concurrency observability"},
-                    {"name": "fixture.ping-b", "version": 1, "reason": "concurrency observability"}
-                ]
-            },
-            "providers": [
-                {
-                    "id": "provider-a",
-                    "display_name": "Provider A",
-                    "transport": {
-                        "kind": "stdio",
-                        "command": "pwsh.exe",
-                        "args": [
-                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                            barrier_script.to_str().unwrap(),
-                            "-Mode", "c2-overlap-barrier",
-                            "-BarrierDirectory", &barrier_str
-                        ],
-                        "protocol_version": "2025-11-25"
-                    },
-                    "capabilities": [{
-                        "name": "fixture.ping-a",
-                        "version": 1,
-                        "manifest_path": "manifests/fixture-ping-a.json",
-                        "pinned_digest": &digest_a,
-                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
-                    }]
-                },
-                {
-                    "id": "provider-b",
-                    "display_name": "Provider B",
-                    "transport": {
-                        "kind": "stdio",
-                        "command": "pwsh.exe",
-                        "args": [
-                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                            barrier_script.to_str().unwrap(),
-                            "-Mode", "c2-overlap-barrier",
-                            "-BarrierDirectory", &barrier_str
-                        ],
-                        "protocol_version": "2025-11-25"
-                    },
-                    "capabilities": [{
-                        "name": "fixture.ping-b",
-                        "version": 1,
-                        "manifest_path": "manifests/fixture-ping-b.json",
-                        "pinned_digest": &digest_b,
-                        "scope_binding": {"kind": "path_prefix", "argument_json_pointer": "/message"}
-                    }]
-                }
-            ],
-            "policy": {
-                "default": "deny",
-                "rules": [
-                    {"name": "fixture.ping-a", "version": 1, "decision": "allow"},
-                    {"name": "fixture.ping-b", "version": 1, "decision": "allow"}
-                ]
-            }
-        });
-
-        let config_path = dir.join("tethers-config.json");
-        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
-
-        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
-        let prepared = prepare_runtime(&loaded).unwrap();
-        (prepared, dir, digest_a, digest_b)
-    }
-
-    /// Establish retained sessions with the given providers.  The barrier
-    /// fixture accepts `initialize` and `tools/list` without blocking; only
-    /// `tools/call` is gated.
-    fn c2a3a_establish_sessions(
-        providers: &[PreparedProvider],
-    ) -> HashMap<String, RetainedProviderSession> {
-        let mut sessions = HashMap::new();
-        for provider in providers {
-            let manifest = provider.capabilities[0].verified_manifest.manifest();
-            let session = RetainedProviderSession::establish(SocketEstablishment {
-                command: &provider.stdio_config.command,
-                args: &provider.stdio_config.args,
-                working_directory: &provider.working_directory,
-                protocol_version: &provider.stdio_config.protocol_version,
-                server_name: &manifest.binding.server_name,
-                identity: &provider.identity,
-            })
-            .expect("barrier provider session establishment");
-            sessions.insert(provider.identity.clone(), session);
-        }
-        sessions
-    }
-
-    /// Build a two-member Together group actions and groups array.
-    fn c2a3a_actions(digest_a: &str, digest_b: &str) -> (Vec<Value>, Vec<Value>) {
-        let actions = vec![
-            json!({
-                "action_id": "member-a",
-                "idempotency_key": "eval-obs/member-a",
-                "capability": "fixture.ping-a",
-                "capability_version": "1.0.0",
-                "bridge_capability_version": 1,
-                "bridge_provider_identity": "provider-a",
-                "manifest_digest": digest_a,
-                "arguments": {"message": "member/a"},
-            }),
-            json!({
-                "action_id": "member-b",
-                "idempotency_key": "eval-obs/member-b",
-                "capability": "fixture.ping-b",
-                "capability_version": "1.0.0",
-                "bridge_capability_version": 1,
-                "bridge_provider_identity": "provider-b",
-                "manifest_digest": digest_b,
-                "arguments": {"message": "member/b"},
-            }),
-        ];
-        let groups = vec![json!({
-            "group_id": "together-1",
-            "member_action_ids": ["member-a", "member-b"],
-        })];
-        (actions, groups)
-    }
-
-    /// Build a matched planner response with groups.
-    fn c2a3a_matched_response(
-        evaluation_id: &str,
-        actions: Vec<Value>,
-        groups: Vec<Value>,
-    ) -> Value {
-        json!({
-            "status": "matched",
-            "evaluation_id": evaluation_id,
-            "plan": {
-                "id": "plan-c2a3a",
-                "actions": actions,
-                "groups": groups,
-            },
-            "trail": [],
-        })
-    }
-
     /// Parse a JSONL Trail file and return action_ids of OutcomeEntry
     /// records in physical append order.
     fn trail_outcome_action_ids(trail_path: &Path) -> Vec<String> {
@@ -5391,17 +5130,6 @@ mod tests {
         trail_outcome_action_ids(trail_path)
             .iter()
             .any(|id| id == member)
-    }
-
-    /// Poll until a condition becomes true or deadline expires.
-    fn poll_until(deadline: std::time::Instant, desc: &str, mut check: impl FnMut() -> bool) {
-        while !check() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "poll timed out: {desc}"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
     }
     // ===================================================================
     // C2-A3a Group Test Harness
@@ -6039,22 +5767,6 @@ mod tests {
     }
 
     // ===================================================================
-    // Low-level direct-worker overlap controls
-    // (These test provider invocation, not coordinator behaviour.)
-    // ===================================================================
-
-    fn c2a3a_member_provider(barrier_dir: &Path, identity: &str) -> PreparedProvider {
-        let mut provider = catalogue_test_provider("c2-overlap-barrier");
-        provider.identity = identity.to_owned();
-        provider.stdio_config.provider_config.identity = identity.to_owned();
-        provider.stdio_config.args.extend([
-            "-BarrierDirectory".to_owned(),
-            barrier_dir.to_string_lossy().into_owned(),
-        ]);
-        provider
-    }
-
-    // ===================================================================
     // Observing Replay Authority (test-only)
     //
     // A coordinator-owned replay authority that:
@@ -6285,11 +5997,6 @@ mod tests {
             self
         }
 
-        fn timeout_b_ms(mut self, ms: u64) -> Self {
-            self.timeout_b_ms = Some(ms);
-            self
-        }
-
         /// Keep provider-a fully configured but exclude it from the host's
         /// availability snapshot so the semantic member becomes exactly
         /// `Unavailable` without being removed from the Runtime Plan.
@@ -6390,7 +6097,7 @@ mod tests {
                 json!({"name": cap, "version": 1, "decision": d})
             };
 
-            let mut providers = vec![
+            let providers = vec![
                 json!({
                     "id": "provider-a",
                     "display_name": "Provider A",
@@ -6773,10 +6480,6 @@ mod tests {
 
         fn outcome_ids(&self) -> Vec<String> {
             trail_outcome_action_ids(&self.trail_path)
-        }
-
-        fn entry_kinds(&self) -> Vec<String> {
-            trail_entry_kinds(&self.trail_path)
         }
 
         fn has_member_outcome(&self, member: &str) -> bool {
@@ -9550,8 +9253,6 @@ mod tests {
         member_tags: &[&str],
         max_active: Option<usize>,
     ) -> C3A1GroupHarness {
-        use std::path::Path;
-
         let barrier_dir =
             std::env::temp_dir().join(format!("tethers-c3a4-{test_name}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&barrier_dir).unwrap();
@@ -10552,14 +10253,7 @@ mod tests {
             // Evaluate semantic first non-success in member order.
             let member_states = vec![
                 GroupMemberState::Terminal {
-                    action_index: 0,
                     action_id: "member-0".to_owned(),
-                    semantic_position: dispatch::SemanticPosition {
-                        action_ordinal: 0,
-                        group_id: Some("together-1".to_owned()),
-                        member_ordinal: Some(0),
-                        phase: dispatch::SemanticPhase::Member,
-                    },
                     step: crate::plan_execution::ActionStep::Stopped(
                         ExecutionServiceResult::Failed {
                             evaluation_id: "eval-c4".to_owned(),
@@ -10570,14 +10264,7 @@ mod tests {
                     ),
                 },
                 GroupMemberState::Terminal {
-                    action_index: 1,
                     action_id: "member-1".to_owned(),
-                    semantic_position: dispatch::SemanticPosition {
-                        action_ordinal: 1,
-                        group_id: Some("together-1".to_owned()),
-                        member_ordinal: Some(1),
-                        phase: dispatch::SemanticPhase::Member,
-                    },
                     step: crate::plan_execution::ActionStep::Stopped(
                         ExecutionServiceResult::Failed {
                             evaluation_id: "eval-c4".to_owned(),

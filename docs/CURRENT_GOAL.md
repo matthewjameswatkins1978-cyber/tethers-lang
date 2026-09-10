@@ -4,13 +4,13 @@ Updated: 2026-09-10
 
 ## Goal
 
-**Turn the Tethers 0.5 practical release from a strong technical proof into an execution layer that AI agents and developers can adopt, understand, and reach for in ordinary work.**
+**Make the Tethers 0.6 practical release the clear, verifiable execution layer that AI agents and developers can adopt, understand, and reach for in ordinary work.**
 
 The foundation is no longer the problem. The first Agent Essentials pass is no longer the problem either. The next phase is product coherence, real-world use, and hardening through actual workloads.
 
 ## What has already been achieved
 
-The published Tethers 0.5 release line includes the major capabilities that the previous goal document described as future Agent Essentials work:
+The Tethers 0.6 release line carries forward the major capabilities delivered by the previous practical release and makes the cold-agent journey explicit:
 
 - deterministic Human Tether semantics and typed Core;
 - trusted Capability manifests, policy, scope, provider binding, durable intent, replay, and Trail machinery;
@@ -28,11 +28,11 @@ The published Tethers 0.5 release line includes the major capabilities that the 
 - Windows x64 and Linux x64 musl practical release bundles;
 - the separate Portable Workbench 0.2.2 authority façade.
 
-The latest published GitHub release is Tethers 0.5, tagged `tethers-v0.5.8`.
+The current product release line is Tethers 0.6, tagged `tethers-v0.6.0`.
 
 ## Repository coherence
 
-The Tethers 0.5 implementation ancestry and the current `main` line have now
+The Tethers 0.6 implementation ancestry and the current `main` line have now
 been deliberately reconciled. The `tethers-v0.5.8` tag remains intact and
 reachable, and the deterministic `tethers plan` surface is present on `main`.
 The tag remains the source of truth for reproducing the published bundle while
@@ -83,7 +83,9 @@ Tethers currently carries several legitimate version axes:
 - completed Together/concurrency milestone: `0.4`;
 - practical product release: `0.5`, latest tag `tethers-v0.5.8`.
 
-The 0.5 release assets currently use `tethers-0.5.0-*` filenames. This can be explained, but it is not a good long-term product experience. Future release work should make the public version identity boring and obvious.
+The 0.6 release assets use `tethers-0.6.0-*` filenames, matching the public
+product line and tag. The language and compatibility package versions remain
+separate axes by design.
 
 ### 3. Use Tethers in real agent work
 

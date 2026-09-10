@@ -2,7 +2,7 @@
 param(
     [ValidateSet('windows-x64', 'linux-x64-musl')]
     [string]$Target = 'windows-x64',
-    [string]$Version = '0.5.0',
+    [string]$Version = '0.6.0',
     [string]$Output = ''
 )
 
@@ -59,7 +59,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo 'QUICKSTART.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs\AGENT_QUICKSTART.md') -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $repo 'docs\TETHERS_BENCHMARKER.md') -Destination (Join-Path $stage 'docs')
-    Copy-Item -LiteralPath (Join-Path $repo 'docs\TETHERS_0_5_RELEASE.md') -Destination (Join-Path $stage 'docs')
+    Copy-Item -LiteralPath (Join-Path $repo 'docs\TETHERS_0_6_RELEASE.md') -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $repo 'docs\SECURITY.md') -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $repo 'tethers-0.1\SPEC.md') -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $portableRoot 'RELEASE.md') -Destination (Join-Path $stage 'docs')

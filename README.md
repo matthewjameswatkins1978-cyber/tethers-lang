@@ -14,7 +14,7 @@
     ·
     <a href="docs/PLUG_AUTHORING.md">Build a Plug</a>
     ·
-    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8">Tethers 0.5 release</a>
+    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.6.0">Tethers 0.6 release</a>
   </p>
 </div>
 
@@ -187,7 +187,7 @@ The reference Plug programme includes benign examples and adversarial providers 
 
 Canonical Format V2 gives validated Core programs stable semantic identity that is independent of irrelevant raw identifiers and representation order. The implementation includes independent canonicalisation paths and differential evidence.
 
-The 0.5 release adds Rocket V3 as an exact portfolio seam around that frozen
+The 0.6 release carries Rocket V3 as an exact portfolio seam around that frozen
 identity. Common success paths use the proven path solver; typed refinement and
 the exact V2 search remain available for broader shapes, and the exhaustive
 reference engine remains available for bounded differential checks. Backend
@@ -277,7 +277,7 @@ projection over validated Trail entries.
 ## Download the portable workbench
 
 For the full 0.5 host bundle, download the platform asset from the
-[Tethers 0.5 release](docs/TETHERS_0_5_RELEASE.md). It contains the native
+[Tethers 0.6 release](docs/TETHERS_0_6_RELEASE.md). It contains the native
 host, the smaller portable workbench, agent-facing manuals, and SHA-256
 evidence. The portable workbench remains separately versioned at 0.2.2 for
 compatibility.
@@ -293,14 +293,16 @@ Tethers currently has several version axes. They describe different things:
 | Portable workbench | `0.2.2` |
 | Public Plug-authoring programme | `0.3` milestone complete and integrated |
 | Together/concurrency programme | `0.4` milestone complete and integrated |
-| Practical release line | `0.5` — Rocket portfolio and Agent Essentials |
+| Practical release line | `0.6` — Plan, execution, replay, Trail proof, and Agent Essentials |
 
-The 0.5 source tree includes three starter Tether Set examples under
+The 0.6 source tree includes three starter Tether Set examples under
 [`examples/tether-sets`](examples/tether-sets). They use the existing Tether
 language and runtime configuration; they do not introduce a second Set
 semantic or permission model.
 
-The 0.5 release assets currently use `tethers-0.5.0-*` filenames while the GitHub tag is `tethers-v0.5.8`. That naming is historical release machinery, not a claim that all of these axes are interchangeable. Consolidating version presentation is a product-hygiene task, not a semantic change.
+The 0.6 release assets use `tethers-0.6.0-*` filenames and the GitHub tag is
+`tethers-v0.6.0`. The language and compatibility package versions remain
+separate axes by design.
 
 ## Security posture
 

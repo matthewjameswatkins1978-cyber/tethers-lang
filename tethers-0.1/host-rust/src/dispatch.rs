@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 
 // ---------------------------------------------------------------------------

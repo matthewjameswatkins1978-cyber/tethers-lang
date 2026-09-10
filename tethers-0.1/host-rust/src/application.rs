@@ -1948,7 +1948,7 @@ fn resume_and_execute_exact_approval_with_test_replay(
     executor: &mut dyn CapabilityExecutor,
     original_event_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+    let replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
     resume_and_execute_exact_approval_with_authority(
         response,
         approval_id,
@@ -1979,7 +1979,7 @@ fn authorise_and_execute_with_test_replay(
     original_event_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let clock = outcome::ProductionMonotonicClock::new();
-    let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+    let replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
     let mut anchor_writer = ResponseResultAnchorWriter;
     let context = InputEventContext::for_initial(original_event_id);
     let action = extract_single_action(response)?.clone();
@@ -2032,7 +2032,7 @@ fn authorise_and_execute_without_bridge_pins_with_clock(
     original_event_id: &str,
     clock: &dyn outcome::MonotonicClock,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+    let replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
     let mut anchor_writer = ResponseResultAnchorWriter;
     let context = InputEventContext::for_initial(original_event_id);
     let action = extract_single_action(response)?.clone();
@@ -2674,13 +2674,9 @@ fn execute_boundary_impl(
 /// `DispatchReadyAction` remains coordinator-owned; worker inputs are
 /// projected from it for provider invocation only.
 pub(crate) struct PreparedInvoke {
-    pub resolved: ResolvedCapability,
-    pub decision: PermissionDecision,
     pub input_context: InputEventContext,
-    pub bridge_pins_required: bool,
     pub execution_id_str: String,
     pub action_id: ActionId,
-    pub action: Value,
     pub semantic_position: Option<dispatch::SemanticPosition>,
 }
 
@@ -2885,13 +2881,9 @@ pub(crate) fn execute_boundary_prepare(
     };
 
     let prepared = PreparedInvoke {
-        resolved: resolved.clone(),
-        decision,
         input_context: input_context.clone(),
-        bridge_pins_required,
         execution_id_str: execution_id_str.clone(),
         action_id: action_id.clone(),
-        action: action.clone(),
         semantic_position: semantic_position.cloned(),
     };
 
@@ -5566,7 +5558,7 @@ mod tests {
             ))
             .unwrap();
         let mut executor = MockExecutor::new();
-        let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+        let replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
         resume_and_execute_exact_approval_with_authority(
             &mut response,
             &request.approval_id,
@@ -6313,7 +6305,7 @@ mod tests {
             };
             seed_native_runtime_state(&root, state);
             let (_, resolved) = resolved_lantern();
-            let mut authority = replay_runtime::FileReplayAuthority::new(Some(&root));
+            let authority = replay_runtime::FileReplayAuthority::new(Some(&root));
             let mut trail = RecordingTrail::new();
             let events = Rc::new(RefCell::new(Vec::new()));
             let guard = Rc::new(Cell::new(false));
@@ -6408,7 +6400,7 @@ mod tests {
 
         #[test]
         fn j09_j13b_ask_makes_zero_replay_admissions_and_provider_calls() {
-            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let (_, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let response = run_runtime(
                 PermissionDecision::Ask,
                 &authority,
@@ -6426,7 +6418,7 @@ mod tests {
         #[test]
         fn j09_runtime_07_deny_never_opens_replay_authority() {
             let (_, resolved) = resolved_lantern();
-            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let (_, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let response = run_runtime(
                 PermissionDecision::Deny,
                 &authority,
@@ -6444,7 +6436,7 @@ mod tests {
 
         #[test]
         fn j09_runtime_08_unavailable_never_opens_replay_authority() {
-            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let (_, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let response = run_runtime(
                 PermissionDecision::Unavailable,
                 &authority,
@@ -6462,7 +6454,7 @@ mod tests {
         #[test]
         fn j09_runtime_09_allow_without_root_is_persistence_unavailable() {
             let (_, resolved) = resolved_lantern();
-            let mut authority = replay_runtime::FileReplayAuthority::new(None);
+            let authority = replay_runtime::FileReplayAuthority::new(None);
             let mut trail = RecordingTrail::new();
             let events = Rc::new(RefCell::new(Vec::new()));
             let guard = Rc::new(Cell::new(false));
@@ -6574,8 +6566,7 @@ mod tests {
         #[test]
         fn j09_runtime_17_success_has_the_exact_observable_order() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
-                runtime_parts();
+            let (events, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let response = run_runtime(
                 allow_decision_for(&resolved),
                 &authority,
@@ -6608,8 +6599,7 @@ mod tests {
         #[test]
         fn j09_j13b_explicit_provider_failure_is_failed_with_exact_order() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
-                runtime_parts();
+            let (events, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             executor.result = Err(outcome::ProviderDiagnostic::ExplicitProviderError);
             let response = run_runtime(
                 allow_decision_for(&resolved),
@@ -6635,8 +6625,7 @@ mod tests {
         #[test]
         fn j09_runtime_19_uncertain_has_outcome_g2_anchor_order() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
-                runtime_parts();
+            let (events, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             executor.result = Err(outcome::ProviderDiagnostic::ProcessLost);
             let response = run_runtime(
                 allow_decision_for(&resolved),
@@ -6657,8 +6646,7 @@ mod tests {
         #[test]
         fn j09_runtime_20_approved_ask_consumes_between_claim_and_g0() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
-                runtime_parts();
+            let (events, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let mut approval = RuntimeApproval {
                 events: Rc::clone(&events),
                 fail: false,
@@ -6683,8 +6671,7 @@ mod tests {
         #[test]
         fn j09_runtime_21_approval_consumption_failure_leaves_claim_only() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
-                runtime_parts();
+            let (events, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let mut approval = RuntimeApproval {
                 events: Rc::clone(&events),
                 fail: true,
@@ -6736,8 +6723,7 @@ mod tests {
         #[test]
         fn j09_runtime_23_trail_intent_failure_leaves_g0_and_zero_calls() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
-                runtime_parts();
+            let (events, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             trail.injected_intent_error =
                 Some(dispatch::TrailError::WriteFailed("intent".to_owned()));
             let response = run_runtime(
@@ -6760,7 +6746,7 @@ mod tests {
         #[test]
         fn j09_runtime_24_deadline_expiry_leaves_g0_and_zero_calls() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, _, mut anchor) = runtime_parts();
+            let (events, authority, mut trail, mut executor, _, mut anchor) = runtime_parts();
             let clock = RuntimeClock::expired_before_invocation(Rc::clone(&events));
             let response = run_runtime(
                 allow_decision_for(&resolved),
@@ -6802,7 +6788,7 @@ mod tests {
                 #[test]
                 fn $name() {
                     let (_, resolved) = resolved_lantern();
-                    let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
+                    let (events, authority, mut trail, mut executor, clock, mut anchor) =
                         runtime_parts();
                     executor.result = $diagnostic;
                     trail.injected_outcome_error =
@@ -6878,8 +6864,7 @@ mod tests {
         #[test]
         fn j09_runtime_30_anchor_failure_leaves_g2_without_retry() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
-                runtime_parts();
+            let (events, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             anchor.fail = true;
             let response = run_runtime(
                 allow_decision_for(&resolved),
@@ -6901,7 +6886,7 @@ mod tests {
         #[test]
         fn j09_runtime_31_guard_is_held_at_provider_boundary() {
             let (_, resolved) = resolved_lantern();
-            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let (_, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             run_runtime(
                 allow_decision_for(&resolved),
                 &authority,
@@ -6919,8 +6904,7 @@ mod tests {
         fn j09_runtime_32_guard_is_held_during_successful_and_failed_anchor_write() {
             for fail in [false, true] {
                 let (_, resolved) = resolved_lantern();
-                let (_, mut authority, mut trail, mut executor, clock, mut anchor) =
-                    runtime_parts();
+                let (_, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
                 anchor.fail = fail;
                 run_runtime(
                     allow_decision_for(&resolved),
@@ -6939,7 +6923,7 @@ mod tests {
         #[test]
         fn j09_j13b_binding_uses_anchor_event_and_exact_planner_ids() {
             let (_, resolved) = resolved_lantern();
-            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let (_, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             let response = run_runtime(
                 allow_decision_for(&resolved),
                 &authority,
@@ -6983,7 +6967,7 @@ mod tests {
         #[test]
         fn j09_runtime_34_argument_digest_binds_complete_resolved_arguments() {
             let (_, resolved) = resolved_lantern();
-            let (_, mut authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
+            let (_, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             run_runtime(
                 allow_decision_for(&resolved),
                 &authority,
@@ -7002,8 +6986,7 @@ mod tests {
         #[test]
         fn j09_runtime_35_ordinary_allow_consumes_no_approval() {
             let (_, resolved) = resolved_lantern();
-            let (events, mut authority, mut trail, mut executor, clock, mut anchor) =
-                runtime_parts();
+            let (events, authority, mut trail, mut executor, clock, mut anchor) = runtime_parts();
             run_runtime(
                 allow_decision_for(&resolved),
                 &authority,
@@ -7124,7 +7107,7 @@ mod tests {
                 ))
                 .unwrap();
             let mut executor = FixtureExecutor { calls: 0 };
-            let mut replay_authority = replay_runtime::FileReplayAuthority::new(None);
+            let replay_authority = replay_runtime::FileReplayAuthority::new(None);
             resume_and_execute_exact_approval_with_authority(
                 &mut response,
                 &request.approval_id,
@@ -7178,7 +7161,7 @@ mod tests {
         fn j09_runtime_41_storage_path_and_diagnostics_never_reach_public_response() {
             let (_, resolved) = resolved_lantern();
             let raw_root = PathBuf::from(r"C:\secret-replay-root-token-does-not-exist");
-            let mut authority = replay_runtime::FileReplayAuthority::new(Some(&raw_root));
+            let authority = replay_runtime::FileReplayAuthority::new(Some(&raw_root));
             let mut trail = RecordingTrail::new();
             let events = Rc::new(RefCell::new(Vec::new()));
             let guard = Rc::new(Cell::new(false));
@@ -7263,7 +7246,7 @@ mod tests {
             );
 
             let (_, resolved) = resolved_lantern();
-            let mut authority = replay_runtime::FileReplayAuthority::new(Some(&root));
+            let authority = replay_runtime::FileReplayAuthority::new(Some(&root));
             let mut trail = RecordingTrail::new();
             let events = Rc::new(RefCell::new(Vec::new()));
             let guard = Rc::new(Cell::new(false));
@@ -7292,7 +7275,7 @@ mod tests {
             };
             let (_, resolved) = resolved_lantern();
 
-            let mut first_authority = replay_runtime::FileReplayAuthority::new(Some(&root));
+            let first_authority = replay_runtime::FileReplayAuthority::new(Some(&root));
             let mut first_trail = RecordingTrail::new();
             let first_events = Rc::new(RefCell::new(Vec::new()));
             let first_guard = Rc::new(Cell::new(false));
@@ -7314,7 +7297,7 @@ mod tests {
             assert_eq!(first_anchor.writes, 1);
             drop(first_authority);
 
-            let mut second_authority = replay_runtime::FileReplayAuthority::new(Some(&root));
+            let second_authority = replay_runtime::FileReplayAuthority::new(Some(&root));
             let mut second_trail = RecordingTrail::new();
             let second_events = Rc::new(RefCell::new(Vec::new()));
             let second_guard = Rc::new(Cell::new(false));
@@ -7860,7 +7843,7 @@ mod tests {
         let mut initial_response = make_response("eval_initial", "initial_action");
         {
             let mut trail = RecordingTrail::new();
-            let mut authority = TestReplayAuthority::default();
+            let authority = TestReplayAuthority::default();
             let mut executor = CountingExecutor {
                 calls: Rc::clone(&calls),
             };
@@ -7904,7 +7887,7 @@ mod tests {
         let mut a_response = make_response("eval_A", "action_1");
         {
             let mut trail = RecordingTrail::new();
-            let mut authority = TestReplayAuthority::default();
+            let authority = TestReplayAuthority::default();
             let mut executor = CountingExecutor {
                 calls: Rc::clone(&calls),
             };
@@ -8240,7 +8223,7 @@ mod tests {
 
         let clock = outcome::ProductionMonotonicClock::new();
         let mut trail = RecordingTrail::new();
-        let mut authority = TestReplayAuthority::default();
+        let authority = TestReplayAuthority::default();
         let mut executor = Counter(Rc::clone(&calls));
         let mut shared_queue = event_queue::ResultEventQueue::new();
         let mut anchor_writer = QueueingResultAnchorWriter {
@@ -8546,7 +8529,7 @@ mod tests {
         let (_store, resolved) = resolved_lantern();
         let clock = outcome::ProductionMonotonicClock::new();
         let mut trail = RecordingTrail::new();
-        let mut authority = TestReplayAuthority::default();
+        let authority = TestReplayAuthority::default();
         let mut executor = FailingExecutor;
         let context = InputEventContext::for_initial("evt_fail");
         let mut shared_queue = event_queue::ResultEventQueue::new();
@@ -9243,7 +9226,7 @@ mod tests {
 
         let mut executor = AssertNoCallExecutor;
         let clock = outcome::ProductionMonotonicClock::new();
-        let mut replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
+        let replay_authority = replay_runtime::test_support::TestReplayAuthority::default();
         let context = InputEventContext::for_initial("evt_input_001");
         let mut anchor_writer = ResponseResultAnchorWriter;
 

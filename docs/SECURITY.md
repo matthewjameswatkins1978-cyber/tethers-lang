@@ -219,7 +219,7 @@ Tethers keeps those claims distinct.
 
 ## Discovery and preview do not grant authority
 
-The published Tethers 0.5 release line includes read-only discovery, Capability inspection, installed Plug inspection, and side-effect-free preview surfaces.
+The published Tethers 0.6 release line includes read-only discovery, Capability inspection, installed Plug inspection, side-effect-free planning, and bounded Trail receipt surfaces.
 
 Those are observation surfaces. They do not:
 
@@ -233,7 +233,7 @@ Agents should be able to learn what Tethers can do without that act of discovery
 
 ## Platform note
 
-The published Tethers 0.5 practical release provides Windows x64 and Linux x64 musl bundles. The smaller Portable Workbench is also packaged for both platforms.
+The published Tethers 0.6 practical release provides Windows x64 and Linux x64 musl bundles. The smaller Portable Workbench is also packaged for both platforms.
 
 That packaging fact should not be overstated into a claim that every platform-specific containment or durability mechanism is identical. Some host lifecycle and containment paths are platform-specific, and the security guarantee is the documented semantic/trust boundary, not “Windows and Linux implement every low-level mechanism in exactly the same way.”
 
@@ -257,9 +257,9 @@ That is a substantial security contribution even though it is not process sandbo
 
 ## Release/source note
 
-The latest published GitHub product release is Tethers 0.5, tagged `tethers-v0.5.8`. This documentation now sits on `main`, but the implementation ancestry currently reachable from `main` is still based on an earlier September 1 checkpoint.
+The latest published GitHub product release is Tethers 0.6, tagged `tethers-v0.6.0`.
 
-Security claims about exact 0.5 discovery/provider surfaces should therefore be verified against the tagged release source until that implementation ancestry is reconciled with the published release.
+Security claims about exact 0.6 discovery/provider surfaces should be verified against the tagged release source and its SHA-256 package evidence.
 
 ## Read the deeper contracts
 

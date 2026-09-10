@@ -279,9 +279,9 @@ Portable decision exit codes are scriptable:
 
 Invocation and configuration failures use separate codes. An operational error never means `ALLOW`.
 
-## 10. The published 0.5 host goes further
+## 10. The published 0.6 host goes further
 
-The Tethers 0.5 practical release exposes the wider platform to agents through machine-readable discovery and inspection surfaces. The tagged release source includes:
+The Tethers 0.6 practical release exposes the wider platform to agents through machine-readable discovery, planning, execution, and evidence surfaces. The tagged release source includes:
 
 ```text
 tethers describe --json
@@ -296,8 +296,8 @@ Discovery and preview are deliberately side-effect-free. They do not start a pro
 
 Use the source and manuals attached to the published release when following those commands:
 
-- [Tethers 0.5 release (`tethers-v0.5.8`)](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8)
-- [0.5 Agent Quickstart](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/blob/tethers-v0.5.8/docs/AGENT_QUICKSTART.md)
+- [Tethers 0.6 release (`tethers-v0.6.0`)](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.6.0)
+- [0.6 Agent Quickstart](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/blob/tethers-v0.6.0/docs/AGENT_QUICKSTART.md)
 
 The implementation ancestry currently reachable from `main` is still based on an earlier September 1 checkpoint, so not every 0.5 agent-facing command is present there. That is a repository-state issue, not a reason to blur the difference in the documentation.
 
@@ -331,10 +331,10 @@ Do not infer the limits of the full platform from the portable workbench, and do
 - [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) - enduring design principles.
 - [`tethers-0.1/portable-rust/AI-INTEGRATION.md`](tethers-0.1/portable-rust/AI-INTEGRATION.md) - embedding the small authority workbench.
 
-## 11. Install the 0.5 bundle
+## 11. Install the 0.6 bundle
 
-Download the Windows x64 or Linux x64 musl bundle from the [0.5 release
-record](docs/TETHERS_0_5_RELEASE.md), verify the adjacent SHA-256 file, and
+Download the Windows x64 or Linux x64 musl bundle from the [0.6 release
+record](docs/TETHERS_0_6_RELEASE.md), verify the adjacent SHA-256 file, and
 extract it. The native host is under `bin/`; the small ALLOW / ASK / DENY
 workbench is under `portable/`. The bundle includes the agent quickstart and
 security manual.

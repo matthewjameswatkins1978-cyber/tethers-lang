@@ -7,6 +7,7 @@ tethers-0.1/portable-rust/dist/
 verification/
 __pycache__/
 target/
+/dist/
 !tethers-0.1/engine-ocaml/bin/
 !tethers-0.1/engine-ocaml/bin/dune
 !tethers-0.1/engine-ocaml/bin/main.ml
