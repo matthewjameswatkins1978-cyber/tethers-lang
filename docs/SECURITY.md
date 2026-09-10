@@ -257,9 +257,9 @@ That is a substantial security contribution even though it is not process sandbo
 
 ## Release/source note
 
-The latest published GitHub product release is Tethers 0.5, tagged `tethers-v0.5.8`. The default `main` branch currently points to an earlier September 1 checkpoint.
+The latest published GitHub product release is Tethers 0.5, tagged `tethers-v0.5.8`. This documentation now sits on `main`, but the implementation ancestry currently reachable from `main` is still based on an earlier September 1 checkpoint.
 
-Security claims about exact 0.5 discovery/provider surfaces should therefore be verified against the tagged release source until the default branch is reconciled with the published release ancestry.
+Security claims about exact 0.5 discovery/provider surfaces should therefore be verified against the tagged release source until that implementation ancestry is reconciled with the published release.
 
 ## Read the deeper contracts
 
