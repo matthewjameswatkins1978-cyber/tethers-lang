@@ -1,8 +1,10 @@
 # Tethers 0.6 preparation: cold-agent proof and verification gate
 
+Task: `Tethers 0.6 preparation: cold-agent proof and verification gate`
+
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
@@ -12,7 +14,7 @@ Route: `Fresh branch from current origin/main; prove the cold-agent plan-to-exec
 
 Base commit: `a8762952a4f92697ab5349e93698699a5955c477`
 
-Implementation checkpoint: `NOT SET`
+Implementation checkpoint: `ebccf498932ccef883a40d2bd4d7b2a15470b89e`
 
 Worker note: `docs/worker-notes/2026-09-10-tethers-0.6-preparation.md`
 
