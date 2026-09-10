@@ -1,77 +1,133 @@
 # Current Goal
 
-Updated: 2026-09-01
+Updated: 2026-09-10
 
 ## Goal
 
-**Turn the completed Tethers foundation into something an AI agent would choose to use in ordinary work.**
+**Turn the Tethers 0.5 practical release from a strong technical proof into an execution layer that AI agents and developers can adopt, understand, and reach for in ordinary work.**
 
-The next product phase is an **Agent Essentials usefulness pass**:
+The foundation is no longer the problem. The first Agent Essentials pass is no longer the problem either. The next phase is product coherence, real-world use, and hardening through actual workloads.
 
-- make installed capabilities easy for an unfamiliar agent to discover and inspect;
-- expose the existing trusted manifest information through a clean machine-readable CLI;
-- build genuinely useful executable Plug packs rather than only proof/reference providers;
-- make planning, diagnostics, and Trail evidence easy for agents to consume;
-- preserve Tethers as a deterministic execution substrate rather than turning it into another agent framework.
+## What has already been achieved
 
-## Baseline already complete
+The published Tethers 0.5 release line includes the major capabilities that the previous goal document described as future Agent Essentials work:
 
-Current `main` already contains the major foundation that this phase should use rather than redesign:
+- deterministic Human Tether semantics and typed Core;
+- trusted Capability manifests, policy, scope, provider binding, durable intent, replay, and Trail machinery;
+- public Plug packaging, inspection, conformance, staging, installation, enablement, disablement, and listing;
+- `together` semantics with bounded physical provider concurrency;
+- Result Anchors and the host-owned FIFO result-event queue;
+- read-only native host discovery;
+- trusted Capability listing and contract inspection;
+- installed Plug inspection;
+- side-effect-free preview;
+- bounded Trail receipt projection;
+- agent-oriented workspace/text/hash/patch reference capabilities;
+- structured Git, argv-only process, and named verification reference capabilities;
+- deterministic `tethers-bench` verification tooling;
+- Windows x64 and Linux x64 musl practical release bundles;
+- the separate Portable Workbench 0.2.2 authority façade.
 
-- Core phases 1-9 accepted and cut over to production evaluation;
-- Canonical Format V2 / Rocket V2 integrated;
-- public Plug authoring and conformance programme (0.3) complete;
-- Plug lifecycle support for pack, inspect, conform, stage, install, enable, disable, and list;
-- accepted Together semantics;
-- physical provider overlap;
-- bounded Together concurrency;
-- adversarial concurrency crucible;
-- Result Anchors and host-owned FIFO result-event queue;
-- durable intent, replay, Trail, scope, policy, and provider-binding machinery;
-- Portable Workbench 0.2.2 for Windows x64 and Linux x64 musl.
+The latest published GitHub release is Tethers 0.5, tagged `tethers-v0.5.8`.
 
-The earlier documentation that said the accepted 0.4 chain was still waiting to reach `main` is obsolete. It was integrated before the later portable-workbench commits now on `main`.
+## Immediate repository hygiene issue
 
-## Active product direction
+The default `main` branch currently points to an earlier September 1 checkpoint, while the published `tethers-v0.5.8` tag points to later source containing the 0.5 Agent Essentials surface.
 
-The Agent Essentials work should prioritise practical agent use:
+That creates avoidable ambiguity for agents and humans reading the repository:
 
-1. **Self-discovery CLI**
-   - describe Tethers;
-   - list available Capabilities;
-   - inspect the exact trusted Capability contract;
-   - inspect installed Plug state without needing the original package.
+```text
+latest release != current main
+```
 
-2. **Real Agent Essentials Plugs**
-   - workspace/filesystem/text/patch;
-   - Git;
-   - process and named verification;
-   - structured data;
-   - hashes/integrity;
-   - archives;
-   - bounded HTTP/network;
-   - SQLite;
-   - read-only system/environment orientation.
+Until that ancestry is deliberately reconciled, documentation must state which source it is describing. The published release tag is the source of truth for reproducing the 0.5 bundle. The current default branch must not be used to prove that every 0.5 command exists.
 
-3. **Planning and evidence ergonomics**
-   - side-effect-free plan/preview surface;
-   - precise configuration/scope diagnostics;
-   - easier Trail querying and execution receipts.
+This is the highest-priority repository-coherence problem because trustworthy software should not make readers guess which branch represents the shipped product.
 
-4. **Cold-agent acceptance**
-   - prove that an unfamiliar external client can discover what Tethers can do, inspect a Capability contract, execute harmless bounded work, and inspect the resulting evidence using only public surfaces.
+## Current product direction
 
-5. **Documentation truth**
-   - describe the full platform first;
-   - keep the portable ALLOW / ASK / DENY workbench clearly labelled as one smaller façade;
-   - distinguish Human Tether syntax from richer Core vocabulary;
-   - distinguish authority decisions from execution outcomes.
+### 1. Make the product legible in under a minute
 
-## Do not reopen the foundation without evidence
+A new reader should quickly understand:
 
-This phase should **not** invent new semantics merely because the architecture can support them.
+```text
+AI / application decides what it wants
+          |
+          v
+       Tethers
+          |
+          | deterministic Plan
+          | trusted Capability contract
+          | policy + scope
+          | bounded execution
+          | replay + evidence
+          v
+      real systems
+```
 
-Do not add without a demonstrated blocker:
+The front-door story is not “another policy engine” and not “another agent framework.”
+
+Tethers is the deterministic execution substrate between probabilistic intent and consequential effects.
+
+### 2. Reconcile release and version presentation
+
+Tethers currently carries several legitimate version axes:
+
+- Human Tether language semantics: `0.1`;
+- reference-host Cargo package: `0.2.2`;
+- Portable Workbench: `0.2.2`;
+- completed Plug milestone: `0.3`;
+- completed Together/concurrency milestone: `0.4`;
+- practical product release: `0.5`, latest tag `tethers-v0.5.8`.
+
+The 0.5 release assets currently use `tethers-0.5.0-*` filenames. This can be explained, but it is not a good long-term product experience. Future release work should make the public version identity boring and obvious.
+
+### 3. Use Tethers in real agent work
+
+The next useful evidence should come from ordinary consequential jobs, not another abstract architecture layer.
+
+Prioritise scenarios such as:
+
+- bounded repository inspection and editing;
+- structured Git work;
+- named verification/test execution;
+- deterministic file/text/hash operations;
+- explicit approval before remote or destructive actions;
+- Trail inspection after a completed job;
+- replay and uncertainty behaviour under awkward failures.
+
+Actual use should tell us which missing Capabilities or ergonomics matter.
+
+### 4. Grow practical Plugs without growing Core
+
+The useful expansion point is the Capability/Plug layer.
+
+Good candidates are everyday operations agents repeatedly need, provided they can be given a clear semantic contract and meaningful scope. Avoid turning every operating-system facility into a generic shell-shaped capability simply because that is easy to expose.
+
+> **Deep Plug, narrow subject. Wide workflow, Tether.**
+
+### 5. Prove cold-agent usability
+
+An unfamiliar agent should be able to:
+
+```text
+discover Tethers
+    -> discover trusted Capabilities
+    -> inspect exact contracts and scope
+    -> preview intended work
+    -> execute admitted work
+    -> inspect the resulting evidence
+```
+
+without hidden project knowledge and without inventing commands.
+
+This should remain a recurring acceptance test as the product changes.
+
+### 6. Keep consequential semantics boring
+
+Do not reopen solved foundations merely because they are interesting.
+
+Do not add without a demonstrated real-world blocker:
 
 - another Core abstraction layer;
 - another canonicalisation scheme;
@@ -81,35 +137,28 @@ Do not add without a demonstrated blocker:
 - an LLM runtime inside Tethers;
 - a second policy engine;
 - vendor-specific Core semantics;
-- new Human Tether syntax unrelated to a real agent-use problem.
+- new Human Tether syntax that does not solve a proved user problem.
 
-The Core can stay rich while the everyday agent experience becomes simple.
+Complexity still has to earn its keep.
 
 ## Product positioning
 
-The intended relationship is:
+The central claim is now:
+
+> **AI can be probabilistic. The boundary where it changes the world does not have to be.**
+
+Tethers should be the thing an agent reaches for when it wants real work to happen predictably, under explicit authority, with evidence that survives after the model has moved on.
+
+The useful contrast is not “Tethers versus AI.” It is:
 
 ```text
-AI / agent decides what it wants
-          |
-          v
-       Tethers
-          |
-          | explicit contracts
-          | authority + scope
-          | bounded execution
-          | trustworthy evidence
-          v
-    real capabilities
+AI reasoning             -> flexible, probabilistic, replaceable
+Tethers execution layer  -> deterministic, typed, scoped, auditable
 ```
-
-Tethers should not compete with the agent.
-
-It should become the thing an agent reaches for when it wants real work to happen predictably.
 
 ## Documentation boundary
 
-The front-door current-truth documents are:
+The living current-truth documents are:
 
 - `README.md`
 - `QUICKSTART.md`
@@ -118,7 +167,7 @@ The front-door current-truth documents are:
 - `docs/PROJECT_DASHBOARD.md`
 - this file
 
-Historical roadmaps, architecture freezes, reviews, performance notes, and worker notes remain evidence of their checkpoints. Do not rewrite historical "not yet implemented" statements merely because later work completed them.
+Historical roadmaps, architecture freezes, reviews, performance notes, and worker notes remain evidence of their checkpoints. Do not rewrite historical “not yet implemented” statements merely because later work completed them.
 
 ## Enduring boundaries
 
@@ -132,4 +181,4 @@ Historical roadmaps, architecture freezes, reviews, performance notes, and worke
 - No automatic effectful retry without end-to-end idempotency proof.
 - Supervised provider execution is not a hostile-code sandbox.
 - Evidence beats agent confidence.
-- Complexity must earn its keep.
+- Product usefulness matters more than architecture for architecture's sake.

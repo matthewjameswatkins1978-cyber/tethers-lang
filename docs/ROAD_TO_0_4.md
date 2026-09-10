@@ -6,17 +6,17 @@ A Tether declares which Actions are independent. The engine does not declare thr
 
 ## Status
 
-**Tethers 0.4 concurrency is COMPLETE, ACCEPTED, and integrated into `main`.**
+**Tethers 0.4 concurrency is COMPLETE, ACCEPTED, and integrated.**
 
 The accepted integration chain culminated at:
 
 `14b2c65d1a830b4fc0a7a893ee3e72b684b09740`
 
-That chain was subsequently integrated into `main` before the later Portable Workbench 0.2.2 commits.
+That chain was subsequently integrated before the later Portable Workbench and Tethers 0.5 practical-release work.
 
 The old wording in this roadmap that said `origin/main` was still waiting for the 0.4 merge described the pre-integration checkpoint and is no longer current product status.
 
-This document remains the historical roadmap and acceptance summary for the 0.4 concurrency programme.
+This document remains the historical roadmap and acceptance summary for the 0.4 concurrency programme. Current product status belongs in `docs/CURRENT_GOAL.md` and `docs/PROJECT_DASHBOARD.md`.
 
 ## Completed sequence
 
@@ -85,7 +85,7 @@ Channel disconnection could not be physically constructed with the production se
 
 C5 was originally intended to prove that a fresh agent could author a multi-capability `together` Tether from ordinary documentation.
 
-That gate was retired because fresh, bounded agents are already the normal Gorilla Bunny development model and the proposed test was largely redundant as a concurrency acceptance gate.
+That gate was retired because fresh, bounded agents are already the normal development model and the proposed test was largely redundant as a concurrency acceptance gate.
 
 A short exploratory C5 attempt was salvaged after repeated setup loops. It produced useful non-concurrency findings instead:
 
@@ -93,7 +93,7 @@ A short exploratory C5 attempt was salvaged after repeated setup loops. It produ
 - an undocumented `core_environment` authoring/runtime requirement;
 - scope-binding/configuration usability friction.
 
-The server-name bug was subsequently fixed and accepted at the integration tip above. The remaining findings belong to later usability work rather than concurrency correctness.
+The server-name bug was subsequently fixed and accepted at the integration tip above. The remaining findings fed later usability work rather than concurrency correctness.
 
 ## Frozen 0.4 semantic principles
 
@@ -109,14 +109,19 @@ The server-name bug was subsequently fixed and accepted at the integration tip a
 
 0.4 is finished and should remain frozen unless real use exposes a defect.
 
-The current product direction is an Agent Essentials usefulness pass:
+The Agent Essentials work that this roadmap originally described as the next direction was subsequently implemented in the published Tethers 0.5 practical release line, including machine-readable discovery/inspection, preview and Trail-receipt surfaces, and agent-oriented reference capabilities.
+
+The historical sequence is therefore:
 
 ```text
 0.3 Plug extensibility ✓
 -> 0.4 concurrency ✓
--> Agent Essentials / real agent use
--> later HQ and human-facing work
+-> Agent Essentials / practical 0.5 release ✓
+-> product coherence, real agent use, wider practical Plugs
+-> later HQ and broader human-facing work
 ```
+
+The latest published product release is tagged `tethers-v0.5.8`. The default `main` branch currently points to an earlier September 1 checkpoint, so use the release tag when verifying the exact published 0.5 surface.
 
 Current status belongs in:
 

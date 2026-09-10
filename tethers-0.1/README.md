@@ -1,75 +1,127 @@
-# Tethers 0.1
+# Tethers 0.1 semantic baseline
 
-Tethers is a small deterministic behaviour language and capability protocol.
-Applications expose typed events, facts, and actions; Tethers connects them
-through readable rules; hosts authorise and execute the resulting plans; the
-Trail records why every decision and effect occurred.
+The `tethers-0.1/` directory is the semantic root of the current Human Tether language and the first reference implementation family. The `0.1` name describes the **language/protocol semantics**, not the overall modern product release number.
 
-> Apps provide the sockets. Tethers provides the cables.
+For the current product story, start at [`../README.md`](../README.md). For exact Human Tether semantics, this directory's authority is [`SPEC.md`](SPEC.md).
 
-This repository is the semantic baseline and first reference round trip:
+## What lives here
+
+Tethers connects explicit events and immutable Facts to typed Capability requests through small deterministic rules. The wider host/runtime then owns authority, execution, replay, and evidence.
 
 ```text
-Rust reference host
-    event + facts + capability schemas + Tether source
-        | NDJSON over stdin/stdout
-        v
-OCaml Tethers engine
-    parse -> validate -> evaluate -> plan
-        |
-        v
-Rust reference host
-    authorise effects -> execute mock capability -> append Trail
+Human Tether + event + Facts + Capability schemas
+                    |
+                    v
+             OCaml Tethers Core
+        parse -> validate -> evaluate -> plan
+                    |
+                    v
+               Action Plan
+                    |
+                    v
+              Rust host
+       trust + policy + scope + replay
+                    |
+                    v
+          approved Capability work
+                    |
+                    v
+          result / uncertainty / Trail
 ```
 
-## What 0.1 proves
+The enduring separation is:
 
-- A small textual Tether can be parsed without application-specific grammar.
-- Evaluation uses only the supplied immutable snapshot.
-- The same complete input produces the same plan and evaluation Trail.
-- Capability calls are typed and validated before planning.
-- Tethers proposes effects but cannot authorise or execute them.
-- The host can execute a planned action exactly once using its idempotency key.
-- Evaluation and execution records form one causal Trail.
+```text
+Capabilities describe.
+Policies authorise.
+Hosts enforce.
+Trails record.
+```
 
-## What 0.1 deliberately excludes
+A Plan is a request, not permission.
 
-- loops, parallel actions, and branching inside `do`
-- conditions based on action results
-- live fact queries
-- retries and compensation execution
-- adapters, package management, scheduling, HQ, and AI integration
+## What the 0.1 language currently supports
 
-Action results should normally become new events. Another Tether can then make
-a deterministic decision from the visible result.
+The current precise source contract is in [`SPEC.md`](SPEC.md). At a high level it includes:
+
+- one Anchor per Tether;
+- immutable supplied Facts;
+- deterministic Conditions;
+- typed Actions;
+- explicit `together` fan-out/join groups;
+- stable position-derived identities;
+- result-dependent continuation through later events rather than hidden mutable Action-result references.
+
+The language deliberately excludes arbitrary scripting features such as loops, arithmetic, user functions, mutation, implicit I/O, and hidden coercion.
+
+This is intentional. Application-specific power belongs in Capabilities and Plugs rather than in ever-growing language syntax.
+
+## What the wider project has added around 0.1
+
+The language version remained small while the surrounding execution platform grew substantially.
+
+Later product milestones added and proved:
+
+- typed Tethers Core and semantic canonicalisation;
+- trusted Capability manifests and provider binding;
+- policy and operational scope enforcement;
+- durable intent and replay protection;
+- Result Anchors and a host-owned FIFO follow-up event queue;
+- public Plug packaging, inspection, conformance, installation, and enablement;
+- physical bounded concurrency for `together` without changing its deterministic semantics;
+- a portable ALLOW / ASK / DENY authority workbench;
+- agent-oriented discovery, preview, Trail receipts, and practical workspace/coding capabilities in the published 0.5 release line;
+- exact Rocket identity/canonicalisation portfolio work and deterministic benchmarking.
+
+Those are product/runtime evolutions around the 0.1 language. They are not reasons to rename the language every time the host gains a new capability.
 
 ## Repository map
 
-- `../docs/CONSTITUTION.md` — enduring design principles
-- `../docs/MCP_PLAN.md` — approved OCaml MCP direction
-- `../docs/OCAML_GUIDE_FOR_AGENTS.md` — OCaml guidance for AI coding agents
-- `SPEC.md` — current 0.1 language and protocol semantics
-- `protocol/` — request, response, and capability examples
-- `engine-ocaml/` — line-oriented parser, validator, and evaluator
-- `host-rust/` — reference host and mock capability executor
-- `examples/` — the first Tether
-- `scripts/demo.ps1` — builds both programs and runs the round trip on Windows
+- `SPEC.md` - current 0.1 language and protocol semantics.
+- `protocol/` - request, response, capability, and transcript fixtures.
+- `engine-ocaml/` - parser, validator, evaluator, typed Core, canonicalisation, and deterministic planning.
+- `host-rust/` - trusted host/runtime, policy, scope, Plug lifecycle, replay, Trail, and provider execution.
+- `portable-rust/` - small self-contained authority workbench for scripts and agents.
+- `examples/` - Human Tether examples.
+- `scripts/` - project verification and demonstration helpers where present in the relevant checkpoint.
 
-## Intended demo
+## Important distinction: planner versus host
 
-Prerequisites: Rust/Cargo and the project-local opam switch in
-`engine-ocaml/`.
+The semantic engine itself does not execute actions, grant permission, query live state, or store application data.
 
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\demo.ps1
-```
+The full product is larger than the deterministic planner because the host/runtime deliberately owns the consequential boundary.
 
-The native Windows verification scripts are the current project automation
-entry points.
+This is not duplication. It prevents the component deciding what a program means from silently becoming the component that grants itself authority to change the world.
 
-## Post-0.1 MCP Direction
+## Provider integration
 
-The approved MCP path keeps Tethers as the direct MCP endpoint, implemented in
-OCaml beside the existing engine. Lantern Keeper remains a host and capability
-provider. The first MCP milestone is planner-only over stdio and must preserve
-the existing 0.1 request/response protocol, Plan, required Effects, and Trail.
+Application-specific behaviour belongs behind Capability contracts and Plug/provider code.
+
+The reference architecture can bind providers over MCP stdio, but MCP is a transport/protocol binding rather than the source of Tethers semantics or authority.
+
+There are no special GitHub, files, email, music, AI, or Lantern Keeper language modes. Those are Capability sets.
+
+## Version note
+
+Several version axes coexist in the wider repository:
+
+| Axis | Meaning |
+| --- | --- |
+| Human Tether language | `0.1` |
+| Reference-host Cargo package | `0.2.2` compatibility/package axis |
+| Portable Workbench | `0.2.2` |
+| Plug authoring milestone | `0.3` complete |
+| Together/concurrency milestone | `0.4` complete |
+| Practical product release | `0.5` |
+
+The latest published GitHub product release is tagged `tethers-v0.5.8`. The current default `main` branch points to an earlier checkpoint, so use the tagged source when reproducing the exact 0.5 agent-facing release surface.
+
+## Read next
+
+- [`../README.md`](../README.md) - why Tethers exists and where it fits.
+- [`../QUICKSTART.md`](../QUICKSTART.md) - practical mental model.
+- [`SPEC.md`](SPEC.md) - exact 0.1 semantics.
+- [`../docs/PROJECT_OVERVIEW.md`](../docs/PROJECT_OVERVIEW.md) - full architecture.
+- [`../docs/PLUG_AUTHORING.md`](../docs/PLUG_AUTHORING.md) - Capability/Plug authoring.
+- [`../docs/SECURITY.md`](../docs/SECURITY.md) - trust boundary and limits.
+- [`portable-rust/README.md`](portable-rust/README.md) - small authority workbench.
