@@ -32,17 +32,17 @@ The latest published GitHub release is Tethers 0.5, tagged `tethers-v0.5.8`.
 
 ## Immediate repository hygiene issue
 
-The default `main` branch currently points to an earlier September 1 checkpoint, while the published `tethers-v0.5.8` tag points to later source containing the 0.5 Agent Essentials surface.
+This documentation now lives on `main`, but the implementation ancestry beneath it is still based on the earlier September 1 checkpoint. The published `tethers-v0.5.8` tag points to later implementation source containing the 0.5 Agent Essentials surface.
 
 That creates avoidable ambiguity for agents and humans reading the repository:
 
 ```text
-latest release != current main
+published 0.5 implementation source != implementation currently reachable from main
 ```
 
-Until that ancestry is deliberately reconciled, documentation must state which source it is describing. The published release tag is the source of truth for reproducing the 0.5 bundle. The current default branch must not be used to prove that every 0.5 command exists.
+Until that ancestry is deliberately reconciled, documentation must state which source it is describing. The published release tag is the source of truth for reproducing the 0.5 bundle. The implementation currently reachable from `main` must not be used to prove that every 0.5 command exists.
 
-This is the highest-priority repository-coherence problem because trustworthy software should not make readers guess which branch represents the shipped product.
+This is the highest-priority repository-coherence problem because trustworthy software should not make readers guess which source represents the shipped product.
 
 ## Current product direction
 

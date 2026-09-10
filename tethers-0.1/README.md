@@ -114,7 +114,7 @@ Several version axes coexist in the wider repository:
 | Together/concurrency milestone | `0.4` complete |
 | Practical product release | `0.5` |
 
-The latest published GitHub product release is tagged `tethers-v0.5.8`. The current default `main` branch points to an earlier checkpoint, so use the tagged source when reproducing the exact 0.5 agent-facing release surface.
+The latest published GitHub product release is tagged `tethers-v0.5.8`. The documentation now sits on `main`, but the implementation ancestry reachable from `main` is still based on an earlier checkpoint, so use the tagged source when reproducing the exact 0.5 agent-facing release surface.
 
 ## Read next
 

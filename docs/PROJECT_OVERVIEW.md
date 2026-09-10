@@ -325,7 +325,7 @@ describe the host
 
 It also includes agent-oriented workspace/text/hash/patch capabilities, structured Git capabilities, bounded argv-only process execution, named verification checks, and the deterministic `tethers-bench` verification tool.
 
-For exact 0.5 commands and source, use the [`tethers-v0.5.8` release tag](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8). The current default `main` branch points to an earlier checkpoint and does not yet contain every command present in the tagged release source.
+For exact 0.5 commands and source, use the [`tethers-v0.5.8` release tag](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8). The documentation now sits on `main`, but the implementation ancestry reachable from `main` is still based on an earlier checkpoint and does not contain every command present in the tagged release source.
 
 That source/release mismatch should be treated as repository hygiene, not hidden by documentation.
 
