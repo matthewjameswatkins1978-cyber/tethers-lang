@@ -188,7 +188,7 @@ Latest published product release:
 
 [Tethers 0.5 (`tethers-v0.5.8`)](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8)
 
-The default `main` branch currently points to an earlier checkpoint than the published 0.5 tag. Use the tagged source when reproducing the exact 0.5 host bundle; use this directory's 0.2.2 contract when embedding the portable authority workbench itself.
+This documentation now sits on `main`, but the implementation ancestry currently reachable from `main` is still based on an earlier checkpoint than the published 0.5 tag. Use the tagged source when reproducing the exact 0.5 host bundle; use this directory's 0.2.2 contract when embedding the portable authority workbench itself.
 
 ## Versioning
 
