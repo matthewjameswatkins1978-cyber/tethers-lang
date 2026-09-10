@@ -11,6 +11,8 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -663,6 +665,11 @@ fn process_value(result: ProcessResult, program: &str, cwd: &str) -> Value {
 }
 
 fn git(scope: &CodingScope, args: Vec<String>, max_output_bytes: u64) -> Result<ProcessResult> {
+    #[cfg(test)]
+    let _git_test_guard = GIT_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("git test lock poisoned");
     let repository = run_argv_in_dir(
         scope,
         &scope.repository_root,
@@ -702,6 +709,9 @@ fn git(scope: &CodingScope, args: Vec<String>, max_output_bytes: u64) -> Result<
         &BTreeMap::new(),
     )
 }
+
+#[cfg(test)]
+static GIT_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn require_git_success(result: &ProcessResult) -> Result<()> {
     if result.timed_out {
@@ -1100,7 +1110,7 @@ mod tests {
             repository_root: root.clone(),
             process_cwd_root: root,
             allowed_programs: ["git".to_owned(), "cmd".to_owned()].into_iter().collect(),
-            max_runtime_ms: 5000,
+            max_runtime_ms: 30_000,
             max_output_bytes: 4096,
             allowed_environment_keys: ["PATH".to_owned()].into_iter().collect(),
             verification_checks: BTreeMap::new(),

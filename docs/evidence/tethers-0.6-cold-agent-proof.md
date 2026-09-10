@@ -53,12 +53,12 @@ The local Windows x64 package was built with the 0.6 default:
 pwsh -NoProfile -File scripts/package-tethers-release.ps1 -Target windows-x64
 ```
 
-Artifact: `tethers-0.6.0-windows-x64.zip`
+Artifact: `tethers-0.6.0-windows-x64-final.zip`
 
 SHA-256:
 
 ```text
-FDAB579F3DF6E89058BA034E00656B0B1F8456E768037E3513B9D6039FCD6037
+5EB87A45027116E768DEE16BE8B2F8593EB279D5402C7177128EDD1D5D7EBE1C
 ```
 
 The adjacent `.sha256` sidecar matches the independently recomputed archive
@@ -66,7 +66,7 @@ hash. The package contains the native host, Portable Workbench, 0.6 release
 manual, security manual, benchmark manual, specification, examples, and the
 generated `SHA256SUMS` manifest.
 
-## Rust verification
+## Verification
 
 - `just check`: passed with `RUSTFLAGS=-D warnings`.
 - `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`: passed.
@@ -75,13 +75,16 @@ generated `SHA256SUMS` manifest.
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File .\\tethers-0.1\\scripts\\check-fixtures.ps1`: passed (64 JSON and 32 JSONL fixtures valid).
 - `test-engine.ps1`: fails on the existing `top-level` fixture because the fixture expects a pre-`core_environment` request while the current engine correctly requires `core_environment`.
 - `test-mcp-transcripts.ps1`: fails on the existing initialization transcript because the expected tool description is older than the current engine description.
-- Normal parallel full suite: 1,540 passed, 36 failed, 2 ignored. The failures
-  are the existing barrier/concurrency tests when run concurrently with the
-  full suite, plus the parent-repository path test.
+- Normal parallel full suite: 1,576 passed, 0 failed, 2 ignored in the main
+  library target; all integration targets completed without failures. The
+  barrier/concurrency harnesses now serialize their external-provider test
+  lifetimes, and the Git scope fixture uses a 30-second test-only subprocess
+  budget to remain stable under the full process-heavy suite. Production
+  runtime limits are unchanged.
 - Isolated serial C2-A3a: 16 passed, 0 failed.
 - Isolated serial C3: 18 passed, 0 failed.
 - Isolated serial C4: 8 passed, 0 failed.
 
-The serial results establish that the warning cleanup did not regress the
-host-execution behaviour. The parallel failures remain a test-isolation issue
-and are not presented as a clean full-suite result.
+The serial results provide focused confirmation for the repaired host-execution
+groups; the normal parallel command is also green after the test-only
+isolation repairs.

@@ -2675,6 +2675,16 @@ mod tests {
     use crate::stdio_provider::ManagedProvider;
     use crate::trusted_store::TrustedManifestStore;
     use serde_json::json;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    static CONCURRENCY_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn concurrency_test_guard() -> MutexGuard<'static, ()> {
+        CONCURRENCY_TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("concurrency test lock poisoned")
+    }
 
     #[test]
     fn c2_a3a_semantic_first_non_success_preserves_exact_step() {
@@ -5139,6 +5149,7 @@ mod tests {
     // ===================================================================
 
     struct C2A3aGroupHarness {
+        _test_guard: MutexGuard<'static, ()>,
         runtime: PreparedRuntime,
         _runtime_dir: PathBuf,
         trail_path: PathBuf,
@@ -5148,6 +5159,7 @@ mod tests {
 
     impl C2A3aGroupHarness {
         fn new(test_name: &str) -> Self {
+            let test_guard = concurrency_test_guard();
             let barrier_dir = std::env::temp_dir().join(format!(
                 "tethers-c2a3a-{test_name}-{}",
                 uuid::Uuid::new_v4()
@@ -5294,6 +5306,7 @@ mod tests {
             std::fs::create_dir_all(&replay_dir).unwrap();
 
             Self {
+                _test_guard: test_guard,
                 runtime,
                 _runtime_dir: runtime_dir,
                 trail_path,
@@ -5933,6 +5946,7 @@ mod tests {
     // ===================================================================
 
     struct C2A3aTerminalHarness {
+        _test_guard: MutexGuard<'static, ()>,
         runtime: PreparedRuntime,
         _runtime_dir: PathBuf,
         trail_path: PathBuf,
@@ -6022,6 +6036,7 @@ mod tests {
         }
 
         fn build(self) -> C2A3aTerminalHarness {
+            let test_guard = concurrency_test_guard();
             let barrier_dir = std::env::temp_dir().join(format!(
                 "tethers-c2a3a-terminal-{}-{}",
                 self.test_name,
@@ -6206,6 +6221,7 @@ mod tests {
             std::fs::create_dir_all(&replay_dir).unwrap();
 
             C2A3aTerminalHarness {
+                _test_guard: test_guard,
                 runtime,
                 _runtime_dir: runtime_dir,
                 trail_path,
@@ -7211,6 +7227,7 @@ mod tests {
     // ===================================================================
 
     struct C3A1GroupHarness {
+        _test_guard: MutexGuard<'static, ()>,
         runtime: PreparedRuntime,
         _runtime_dir: PathBuf,
         trail_path: PathBuf,
@@ -7229,6 +7246,7 @@ mod tests {
             member_tags: &[&str],
             timeout_overrides: &HashMap<String, u64>,
         ) -> Self {
+            let test_guard = concurrency_test_guard();
             let barrier_dir = std::env::temp_dir()
                 .join(format!("tethers-c3a1-{test_name}-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&barrier_dir).unwrap();
@@ -7387,6 +7405,7 @@ mod tests {
             std::fs::create_dir_all(&replay_dir).unwrap();
 
             Self {
+                _test_guard: test_guard,
                 runtime,
                 _runtime_dir: runtime_dir,
                 trail_path,
@@ -9253,6 +9272,7 @@ mod tests {
         member_tags: &[&str],
         max_active: Option<usize>,
     ) -> C3A1GroupHarness {
+        let test_guard = concurrency_test_guard();
         let barrier_dir =
             std::env::temp_dir().join(format!("tethers-c3a4-{test_name}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&barrier_dir).unwrap();
@@ -9401,6 +9421,7 @@ mod tests {
         std::fs::create_dir_all(&replay_dir).unwrap();
 
         C3A1GroupHarness {
+            _test_guard: test_guard,
             runtime,
             _runtime_dir: runtime_dir,
             trail_path,
