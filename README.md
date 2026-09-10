@@ -244,9 +244,9 @@ For commands and source that match the published release, use:
 
 ### Repository state note
 
-The latest published GitHub release is Tethers 0.5, tagged `tethers-v0.5.8`. The default `main` branch currently points to an earlier September 1 checkpoint and does not contain every 0.5 agent-facing command present in the tagged release source. Until that ancestry is reconciled, use the release tag when reproducing the published 0.5 bundle.
+This documentation pass now sits on `main`, but the implementation ancestry beneath it is still the earlier September 1 checkpoint and does not contain every 0.5 agent-facing command present in the tagged release source. The published `tethers-v0.5.8` tag points to later implementation source.
 
-This documentation pass deliberately does not pretend otherwise.
+Until that ancestry is deliberately reconciled, use the release tag when reproducing the published 0.5 bundle. This documentation deliberately does not pretend otherwise.
 
 ## Version map
 
