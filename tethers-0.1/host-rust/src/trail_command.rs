@@ -160,6 +160,65 @@ pub fn run_trail(trail_path: &Path, execution_id_str: &str) -> TrailResult {
     }
 }
 
+/// Return a bounded causal receipt projection over the same validated Trail
+/// entries as `run_trail`. This is deliberately a view, not another store.
+pub fn run_trail_receipt(trail_path: &Path, execution_id: &str) -> TrailResult {
+    let result = run_trail(trail_path, execution_id);
+    if result.exit_code != 0 {
+        return result;
+    }
+    let mut envelope: Value = match serde_json::from_str(&result.json_output) {
+        Ok(value) => value,
+        Err(_) => return result,
+    };
+    let entries = envelope
+        .pointer("/data/entries")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let causal_entries: Vec<Value> = entries
+        .iter()
+        .filter_map(|entry| {
+            let object = entry.as_object()?;
+            let mut projected = serde_json::Map::new();
+            for key in [
+                "sequence",
+                "phase",
+                "kind",
+                "outcome",
+                "message",
+                "event_id",
+                "execution_id",
+                "action_id",
+                "causation_id",
+                "correlation_id",
+                "provider",
+                "capability",
+                "result_anchor",
+            ] {
+                if let Some(value) = object.get(key) {
+                    projected.insert(key.to_owned(), value.clone());
+                }
+            }
+            Some(Value::Object(projected))
+        })
+        .collect();
+    envelope["data"]["receipt"] = json!({
+        "execution_id": execution_id,
+        "entry_count": causal_entries.len(),
+        "causal_entries": causal_entries,
+        "authority_and_execution_are_observations": true
+    });
+    envelope["data"].as_object_mut().map(|data| {
+        data.remove("entries");
+    });
+    TrailResult {
+        json_output: serde_json::to_string(&envelope)
+            .unwrap_or_else(|_| r#"{"schema":"tethers.cli/1"}"#.into()),
+        exit_code: 0,
+    }
+}
+
 /// Read a JSONL file, parse each line as strict JSON, and collect raw text
 /// of entries whose top-level `execution_id` matches the supplied value.
 ///
@@ -738,6 +797,27 @@ mod tests {
         // Must parse without error.
         let _envelope: Value =
             serde_json::from_str(&result.json_output).expect("output must be valid JSON");
+        let _ = fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn v05_receipt_is_bounded_projection_over_validated_entries() {
+        let tmp = std::env::temp_dir().join(format!("v05-receipt-{}.jsonl", uuid::Uuid::new_v4()));
+        let target = "exec_00000000-0000-4000-8000-000000000000";
+        let content = format!(
+            "{{\"execution_id\":\"{target}\",\"sequence\":1,\"phase\":\"authority\",\"kind\":\"authorisation\",\"secret\":\"omit\"}}\n{{\"execution_id\":\"{target}\",\"sequence\":2,\"phase\":\"execution\",\"kind\":\"outcome\",\"provider\":\"fixture\",\"secret\":\"omit\"}}\n"
+        );
+        fs::write(&tmp, content).unwrap();
+        let result = run_trail_receipt(&tmp, target);
+        assert_eq!(result.exit_code, 0);
+        let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
+        let receipt = &envelope["data"]["receipt"];
+        assert_eq!(receipt["execution_id"], target);
+        assert_eq!(receipt["entry_count"], 2);
+        assert_eq!(receipt["causal_entries"][0]["phase"], "authority");
+        assert_eq!(receipt["causal_entries"][1]["provider"], "fixture");
+        assert!(receipt["causal_entries"][0].get("secret").is_none());
+        assert!(envelope["data"].get("entries").is_none());
         let _ = fs::remove_file(&tmp);
     }
 

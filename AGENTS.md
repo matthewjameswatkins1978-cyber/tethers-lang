@@ -19,6 +19,20 @@ That is additional protection, not permission to assume they were loaded. The
 agent must still verify the effective instruction context and explicitly read any
 missing file.
 
+Before editing, establish repository currency after `git fetch origin --prune`.
+
+**Historical branch names are evidence, not continuation authority.** A new task
+MUST start from the current fetched `origin/main` commit unless its current
+`READY` or `IN_PROGRESS` task packet explicitly names and justifies another
+exact base commit. Old `codex/*`, `opencode/*`, `mimo/*`, `review/*`,
+`bench/*`, `foundation/*`, or other task/experiment branches must never be
+treated as the starting point merely because their name resembles the new work.
+
+If the checkout is stale or belongs to an older completed packet, stop before
+mutation. Do not repair it by rebasing, merging, resetting, or switching an
+occupied worktree. Use or create the clean task worktree/branch authorised by
+the current packet.
+
 Before editing, report:
 
 - the detected repository root;

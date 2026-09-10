@@ -1,0 +1,21 @@
+tether "Prepare a morning brief"
+
+anchor
+    morning.started
+
+when
+    ready is true
+
+do
+    together
+        weather.fetch
+            location: anchor.location
+
+        calendar.fetch
+            day: anchor.day
+
+        email.fetch
+            account: "main"
+
+    brief.compose
+        format: "short"

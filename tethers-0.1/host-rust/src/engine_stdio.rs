@@ -363,12 +363,37 @@ impl EngineSession {
     }
 }
 
+const PROGRAM_DIGEST_V2_PREFIX: &str = "tethers:v2:sha256:";
+
+fn is_current_program_digest(value: &str) -> bool {
+    value.len() == PROGRAM_DIGEST_V2_PREFIX.len() + 64
+        && value.starts_with(PROGRAM_DIGEST_V2_PREFIX)
+        && value[PROGRAM_DIGEST_V2_PREFIX.len()..]
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn classify_wire_response(
     evaluation_id: &str,
     response: Value,
 ) -> Result<PlannerResponseWire, EngineError> {
     match response.get("status").and_then(Value::as_str) {
-        Some("matched") => Ok(PlannerResponseWire::Matched(response)),
+        Some("matched") => {
+            let program_digest = response
+                .get("program_digest")
+                .and_then(Value::as_str)
+                .ok_or_else(|| EngineError::EvaluationFailed {
+                    evaluation_id: evaluation_id.to_owned(),
+                    message: "matched Tethers response missing ProgramDigest V2".to_owned(),
+                })?;
+            if !is_current_program_digest(program_digest) {
+                return Err(EngineError::EvaluationFailed {
+                    evaluation_id: evaluation_id.to_owned(),
+                    message: "matched Tethers response has non-current ProgramDigest; expected tethers:v2:sha256:<64 lowercase hex>".to_owned(),
+                });
+            }
+            Ok(PlannerResponseWire::Matched(response))
+        }
         Some("not_matched") => Ok(PlannerResponseWire::NotMatched(response)),
         Some("error") => Ok(PlannerResponseWire::Error(response)),
         Some(other) => Ok(PlannerResponseWire::Unknown {
@@ -486,6 +511,36 @@ mod tests {
         assert_eq!(second["event_id"], "evt_eval_j13b_real_002");
         assert_eq!(second["status"], "matched");
         session.shutdown();
+    }
+
+    #[test]
+    fn j13b_matched_wire_requires_current_v2_program_digest() {
+        let current = serde_json::json!({
+            "status": "matched",
+            "program_digest": format!("tethers:v2:sha256:{}", "a".repeat(64))
+        });
+        assert!(matches!(
+            classify_wire_response("eval-v2", current),
+            Ok(PlannerResponseWire::Matched(_))
+        ));
+
+        let legacy = serde_json::json!({
+            "status": "matched",
+            "program_digest": format!("sha256:{}", "a".repeat(64))
+        });
+        assert!(matches!(
+            classify_wire_response("eval-v1", legacy),
+            Err(EngineError::EvaluationFailed { .. })
+        ));
+
+        let uppercase = serde_json::json!({
+            "status": "matched",
+            "program_digest": format!("tethers:v2:sha256:{}", "A".repeat(64))
+        });
+        assert!(matches!(
+            classify_wire_response("eval-upper", uppercase),
+            Err(EngineError::EvaluationFailed { .. })
+        ));
     }
 
     #[test]
@@ -622,7 +677,7 @@ mod tests {
             .get("program_digest")
             .and_then(Value::as_str)
             .expect("program_digest missing");
-        assert!(pd.starts_with("sha256:"));
+        assert!(pd.starts_with("tethers:v2:sha256:"));
         session.shutdown();
     }
 
@@ -648,10 +703,14 @@ mod tests {
             .and_then(Value::as_str)
             .expect("program_digest missing from top level");
         assert!(
-            pd.starts_with("sha256:"),
-            "program_digest must start with sha256:"
+            pd.starts_with("tethers:v2:sha256:"),
+            "program_digest must start with tethers:v2:sha256:"
         );
-        assert_eq!(pd.len(), 71, "program_digest must be sha256: + 64 hex");
+        assert_eq!(
+            pd.len(),
+            82,
+            "program_digest must be tethers:v2:sha256: + 64 hex"
+        );
         // plan must NOT contain program_digest
         let plan = response.get("plan").expect("plan missing");
         assert!(
@@ -890,13 +949,13 @@ mod tests {
             .and_then(Value::as_str)
             .expect("program_digest missing from top level");
         assert!(
-            pd.starts_with("sha256:"),
-            "program_digest must start with sha256:"
+            pd.starts_with("tethers:v2:sha256:"),
+            "program_digest must start with tethers:v2:sha256:"
         );
         assert_eq!(
             pd.len(),
-            71,
-            "program_digest must be sha256: + 64 hex chars"
+            82,
+            "program_digest must be tethers:v2:sha256: + 64 hex chars"
         );
         assert!(
             plan.get("program_digest").is_none(),

@@ -252,7 +252,7 @@ do
   assert_true "T2 one action" (List.length cp.runtime_plan.actions = 1);
   assert_true "T2 plan id" (cp.runtime_plan.id = "eval_inv/plan");
   assert_true "T2 has digest"
-    (Tethers_core_canonical.string_of_program_digest cp.program_digest <> "");
+    (cp.program_digest <> "");
   match cp.runtime_plan.actions with
   | [ action ] ->
       let args = Yojson.Safe.Util.member "arguments" action in
@@ -615,8 +615,8 @@ do
   let cp_a = assert_matched "T12a" (evaluate_request req_a) in
   let cp_b = assert_matched "T12b" (evaluate_request req_b) in
   assert_true "T12 same ProgramDigest"
-    (Tethers_core_canonical.string_of_program_digest cp_a.program_digest =
-     Tethers_core_canonical.string_of_program_digest cp_b.program_digest);
+    (cp_a.program_digest =
+     cp_b.program_digest);
   assert_true "T12 different plan ids"
     (cp_a.runtime_plan.id <> cp_b.runtime_plan.id)
 
@@ -648,8 +648,8 @@ do
   let cp_a = assert_matched "T13a" (evaluate_request (mk_request_with_eid "eid_alpha")) in
   let cp_b = assert_matched "T13b" (evaluate_request (mk_request_with_eid "eid_beta")) in
   assert_true "T13 same ProgramDigest"
-    (Tethers_core_canonical.string_of_program_digest cp_a.program_digest =
-     Tethers_core_canonical.string_of_program_digest cp_b.program_digest);
+    (cp_a.program_digest =
+     cp_b.program_digest);
   assert_true "T13 different plan.id"
     (cp_a.runtime_plan.id <> cp_b.runtime_plan.id);
   assert_true "T13 plan_a.id = eid_alpha/plan"
@@ -803,7 +803,7 @@ do
   assert_true "E2E one action" (List.length cp.runtime_plan.actions = 1);
   assert_true "E2E plan id" (cp.runtime_plan.id = "e2e_eval_1/plan");
   assert_true "E2E has non-empty digest"
-    (Tethers_core_canonical.string_of_program_digest cp.program_digest <> "");
+    (cp.program_digest <> "");
   match cp.runtime_plan.actions with
   | [ action ] ->
       let args = Yojson.Safe.Util.member "arguments" action in

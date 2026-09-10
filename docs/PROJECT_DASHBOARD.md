@@ -1,86 +1,146 @@
 # Tethers Project Dashboard
 
-Updated: 2026-08-15
+Updated: 2026-09-02
 
-## Current Milestone
+## Current product direction
 
-**Tethers 0.4 — Concurrency: COMPLETE / ACCEPTED on the current integration chain.**
+**Agent Essentials: make Tethers immediately useful to AI agents.**
 
-Accepted integration tip before this documentation refresh:
+The foundation phase is no longer the bottleneck. The current opportunity is to expose and populate what already exists.
 
-`14b2c65d1a830b4fc0a7a893ee3e72b684b09740`
+## What is already integrated
 
-`origin/main` remains:
+### Language and Core
 
-`f189361e80bdb43c13989200e48513cdb68bd004`
+- Human Tether 0.1 semantics.
+- Explicit `together` fan-out/join syntax.
+- typed Tethers Core.
+- Human AST to Core lowering.
+- Core validation.
+- production Core evaluation path.
+- Canonical Format V2 / program digest machinery.
 
-So the code is accepted but not yet fully integrated into `main`.
+### Host/runtime
 
-## Current State
+- policy and authority boundary;
+- generic operational scope evidence;
+- trusted capability manifests and provider binding;
+- durable intent;
+- replay protection;
+- Trail;
+- Result Anchors;
+- FIFO generated-event queue;
+- provider supervision;
+- Together physical overlap and bounded concurrency.
 
-- C1 — Together semantic fan-out / join foundation: ACCEPTED.
-- C2 — Core bridge, replay/Trail foundation, physical provider overlap: ACCEPTED.
-- C3 — bounded Together concurrency: ACCEPTED.
-- C4 — adversarial concurrency crucible / **Bunny Baptism**: ACCEPTED.
-- C5 — fresh-agent proof: RETIRED as a redundant concurrency gate.
-- `check` provider server-name bug discovered during C5 salvage: FIXED / ACCEPTED.
-- Full Rust suite at the accepted bugfix checkpoint: 1550 passed, 0 failed, 2 ignored.
+### Plug platform
 
-No further concurrency feature work is currently justified.
+- deterministic `.tetherplug` packaging;
+- read-only package inspection;
+- public conformance;
+- stage/install;
+- enable/disable with scope;
+- installed Plug listing;
+- PDF Tools reference Plug;
+- Text Stats fresh-agent authoring proof;
+- Evil Bunny adversarial provider proof.
 
-## Last Useful Discovery
+### Portable workbench
 
-The abandoned C5 exploration was salvaged rather than chased through another loop. It revealed:
+Portable 0.2.2 provides a separate small authority surface:
 
-- a real `check` server-name bug, now fixed;
-- an undocumented `core_environment` requirement on the current run path;
-- scope-binding / permission configuration friction.
+```text
+request -> ALLOW / ASK / DENY
+```
 
-The remaining findings belong to later authoring/HQ usability work, not to 0.4 concurrency correctness.
+for Windows x64 and Linux x64 musl.
 
-## Matthew Decision Required
+It is **not** the full Tethers runtime.
 
-**Integration to `main`.**
+## 0.5 release state
 
-Lucy will not merge the accepted chain into `main` without Matthew's explicit authorisation.
+The practical 0.5 release line now combines the accepted Rocket V3 foundation
+with the Agent Essentials discovery and provider work. Rocket keeps frozen V2
+identity as its authority and selects exact implementations by runtime shape;
+the exhaustive reference remains available for bounded differential evidence.
+The native host is still versioned `0.2.2` for compatibility, while `0.5` is
+the product release line.
 
-## Next Route
+The implementation checkpoint is `f3b2da5693c7eb61526a1cfc692983ba49ba6b8a`.
+Windows packaging and bounded local evidence are complete; Linux packaging,
+the hosted release URL, signatures, and physical installation remain external
+acceptance facts until the tagged workflow proves them.
 
-1. Merge/integrate the accepted chain when Matthew says yes.
-2. Freeze 0.4 concurrency.
-3. Pivot to the active hackathons.
-4. Return later to 0.5 HQ / authoring-surface improvements.
+## Current gap
 
-## Operating Mode
+Tethers currently has more capability than its everyday agent-facing surface makes obvious.
 
-**Gorilla Bunny Coding Shop 🦍🐇**
+The main gaps are practical:
 
-- **Matthew:** product direction, taste, priorities, final human judgement, and useful copy/paste relay that keeps him visibly in the loop.
-- **Lucy:** architecture department and operational controller: decomposes work, freezes important decisions, routes agents, reviews evidence, accepts/rejects work, and continuously improves the shop.
-- **Gem:** peer senior technical sparring partner for genuinely difficult architecture or areas where another strong technical model can challenge Lucy's assumptions.
-- **Agents:** replaceable specialist labour, scouts, implementers, reviewers, proof engineers and adversarial attackers chosen according to the job and economics.
+- capability self-discovery should be easier from the CLI;
+- the public Plug ecosystem needs useful everyday providers;
+- agent configuration/scope diagnostics need less friction;
+- planning and Trail evidence should be easier to query;
+- the front-door documentation previously over-emphasised the portable authority façade.
 
-The shop optimises for accepted correct work with minimum unnecessary compute, retries, elapsed time and Matthew effort. Process must earn its keep.
+The side-effect-free plan surface and richer Trail query ergonomics remain
+follow-on work; the 0.5 release does not pretend they are already public.
 
-## Cost And Drift Rules
+## Agent Essentials target
 
-- Use the cheapest capable route, not automatically the cheapest model.
-- Count retries and human intervention as real cost.
-- One bounded implementation owner at a time unless a task explicitly benefits from another structure.
-- Use independent review when it removes meaningful uncertainty, not as ceremony.
-- Broad architecture discussion belongs with Lucy and, when valuable, Gem; implementation packets should stay bounded.
-- Historical acceptance reports, worker notes, frozen specs and performance evidence remain records of their time and are not rewritten merely to sound current.
-- Living status documents must agree with accepted evidence.
-- Stop when evidence is enough.
+A cold AI agent should be able to:
 
-## Where Details Live
+```text
+discover Tethers
+    -> discover installed Capabilities
+    -> inspect exact trusted schemas/effects/scopes
+    -> form bounded intent
+    -> preview/plan
+    -> execute under explicit authority
+    -> inspect the Trail/result evidence
+```
 
-- Present goal and boundaries: `docs/CURRENT_GOAL.md`
-- Current / last task packet: `docs/CURRENT_CLINE_TASK.md`
-- Concurrency roadmap: `docs/ROAD_TO_0_4.md`
-- Operating procedure: `docs/PROJECT_CONTROL.md`
-- Gorilla Bunny doctrine: `docs/GORILLA_BUNNY_MANIFESTO.md`
-- Completed Plug programme: `docs/ROAD_TO_0_3.md`
-- Foundation architecture: `docs/architecture/TETHERS_FOUNDATION_PASS.md`
-- Concurrency designs: `docs/concurrency/`
-- Evidence and reviews: `docs/worker-notes/`, `docs/review/`, `docs/perf/`
+without bespoke knowledge of the host.
+
+## Documentation audit
+
+The 2026-09-01 documentation audit found several current-truth files had fallen behind implementation:
+
+- README/Quickstart foregrounded ALLOW / ASK / DENY and made Tethers look like only a policy gate.
+- `PROJECT_OVERVIEW.md` still described parallel Actions as future work.
+- `SECURITY.md` still described Universal Plug execution as architecture-only.
+- `CURRENT_GOAL.md`, `PROJECT_DASHBOARD.md`, and `ROAD_TO_0_4.md` still said the accepted 0.4 chain had not reached `main`.
+
+Historical worker notes and roadmap checkpoints remain valid historical evidence. The fix is to repair living current-truth documents rather than rewriting history.
+
+## Version map
+
+| Thing | Version/status |
+| --- | --- |
+| Human Tether language/protocol | `0.1` |
+| Reference host Cargo package | `0.2.2` |
+| Portable workbench | `0.2.2` |
+| Public Plug authoring milestone | `0.3` complete |
+| Together/concurrency milestone | `0.4` complete |
+| Practical release line | `0.5` Rocket portfolio + Agent Essentials |
+
+## Engineering posture
+
+- Do not invent another concurrency gate.
+- Do not redesign canonicalisation without a demonstrated defect.
+- Do not turn Core into a catalogue of applications.
+- Prefer semantic Capabilities over generic shell escape hatches.
+- Build useful Plugs and run Tethers in real agent workflows.
+- Let actual use expose the next missing abstraction.
+
+## Best current reading order
+
+1. `README.md`
+2. `QUICKSTART.md`
+3. `docs/PROJECT_OVERVIEW.md`
+4. `tethers-0.1/SPEC.md`
+5. `docs/PLUG_AUTHORING.md`
+6. `docs/SECURITY.md`
+7. `docs/CONSTITUTION.md`
+
+Deep architecture and historical proof remain under `docs/architecture/`, `docs/concurrency/`, `docs/perf/`, `docs/review/`, `docs/foundation-pass/`, and `docs/worker-notes/`.

@@ -7,7 +7,35 @@
       {
         "id": "j14-complete",
         "version": "1",
-        "source_path": "tethers/complete.tether"
+        "source_path": "tethers/complete.tether",
+        "core_environment": {
+          "program_id": "program.j14.complete",
+          "core_version": "1",
+          "capabilities": [
+            {
+              "source_name": "fixture.ping",
+              "capability_id": "cap.semantic.fixture-ping",
+              "contract_digest": "CORE-CONTRACT-J14",
+              "runtime_name": "fixture.ping"
+            }
+          ],
+          "input_facts": [
+            {
+              "source_name": "project.type",
+              "fact_id": "fact.project_type",
+              "host_snapshot_key": "project.type",
+              "scalar_type": "string",
+              "schema_description": "project type"
+            },
+            {
+              "source_name": "task.changed_files",
+              "fact_id": "fact.task_changed_files",
+              "host_snapshot_key": "task.changed_files",
+              "scalar_type": "integer",
+              "schema_description": "number of changed files"
+            }
+          ]
+        }
       }
     ],
     "capability_requirements": [

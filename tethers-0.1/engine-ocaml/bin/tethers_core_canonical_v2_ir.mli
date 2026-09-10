@@ -69,6 +69,11 @@ val canonicalize_ir :
   Tethers_core.program ->
   (canonicalized_v2_ir * ir_stats, canonicalization_error_ir) result
 
+val validated_program_ir : canonicalized_v2_ir -> Tethers_core.program
+(** The exact validated Core program from which this Rocket V2 identity was
+    computed.  The value is carried inside the abstract token so callers cannot
+    accidentally pair a V2 digest with a different program. *)
+
 val canonical_payload_ir : canonicalized_v2_ir -> string
 val canonical_preimage_ir : canonicalized_v2_ir -> bytes
 val program_digest_ir : canonicalized_v2_ir -> string

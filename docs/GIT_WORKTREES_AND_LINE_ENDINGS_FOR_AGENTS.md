@@ -35,6 +35,23 @@ base, owner, and known pre-existing changes. `HEAD` says what this checkout
 contains. `origin/main` says what the fetched remote main contains. They are
 different facts; never substitute one for the other.
 
+### New-task base rule
+
+For a **new** task, the default base is the exact fetched `origin/main` commit.
+A different base is valid only when the current `READY`/`IN_PROGRESS` packet
+explicitly records that full commit and explains why the task must continue
+from it.
+
+A historical branch is never self-authorising. Names such as
+`codex/experiment-*`, `review/*`, `bench/*`, old `feature/*`, or a
+previous owner's completed task branch are historical coordinates, not an
+invitation to resume there.
+
+If the intended task has no current packet and the checkout is not current
+`origin/main`, stop before mutation and obtain/create the fresh task branch.
+Do not make a stale branch current with a convenience rebase, merge, reset, or
+force move.
+
 `git branch --show-current` is intentionally blank in a detached-HEAD checkout.
 That is not automatically an error: `git status -sb` and `git rev-parse HEAD`
 still identify the state. Continue detached only when the task explicitly names

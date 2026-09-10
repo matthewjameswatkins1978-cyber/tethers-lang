@@ -139,7 +139,7 @@ if (-not (Test-Path -LiteralPath $ProviderScript -PathType Leaf)) { throw "Provi
 
 $cargoLockPath = Join-Path $RepoRoot "host-rust\Cargo.lock"
 $cargoLockHash = Get-CargoLockHash $cargoLockPath
-$ExpectedCargoLockHash = "4238151009218547ce20e9686c2a8cf12d321e31998b35e1d087b10d0ce674d7"
+$ExpectedCargoLockHash = "46dd99a4287976d9fe0d2327619a9b389f46aa6b00b7993d49345843508ca023"
 if ($cargoLockHash -ne $ExpectedCargoLockHash) { throw "Cargo.lock hash mismatch: $cargoLockHash" }
 
 $hashTetherStart = Get-FileHash-SHA256 $CommittedTether

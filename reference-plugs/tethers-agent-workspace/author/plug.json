@@ -1,0 +1,57 @@
+{
+  "package_format_version": "1",
+  "package_id": "tethers.agent-workspace",
+  "package_version": "0.1.0",
+  "display_name": "Tethers Agent Workspace",
+  "description": "Bounded local filesystem, text, patch, and SHA-256 capabilities for agents.",
+  "publisher": "tethers",
+  "licence": "MIT",
+  "socket_major": 1,
+  "protocol_bindings": [{"protocol":"MCP","version":"2025-11-25","transport":"stdio"}],
+  "platforms": [{"os":"windows","architecture":"x86_64"}],
+  "provider": {
+    "provider_id": "tethers-agent-workspace",
+    "provider_version": "0.1.0",
+    "launch": {"path":"provider/agent_workspace_provider.exe","arguments":[]},
+    "working_directory": "provider",
+    "capability_operation_namespace": "tethers.agent.workspace",
+    "operational_scope_schema": {
+      "type":"object",
+      "properties": {
+        "query_root":{"type":"string"},
+        "move_source_root":{"type":"string"},
+        "move_destination_root":{"type":"string"},
+        "max_content_bytes":{"type":"integer","minimum":1,"maximum":16777216}
+      },
+      "required":["query_root","move_source_root","move_destination_root","max_content_bytes"],
+      "additionalProperties":false
+    }
+  },
+  "capabilities": [
+    {"capability_name":"filesystem.read","capability_version":1,"manifest_path":"manifests/filesystem-read-v1.json","provider_operation_name":"filesystem_read"},
+    {"capability_name":"filesystem.list","capability_version":1,"manifest_path":"manifests/filesystem-list-v1.json","provider_operation_name":"filesystem_list"},
+    {"capability_name":"filesystem.stat","capability_version":1,"manifest_path":"manifests/filesystem-stat-v1.json","provider_operation_name":"filesystem_stat"},
+    {"capability_name":"text.search","capability_version":1,"manifest_path":"manifests/text-search-v1.json","provider_operation_name":"text_search"},
+    {"capability_name":"text.read_range","capability_version":1,"manifest_path":"manifests/text-read-range-v1.json","provider_operation_name":"text_read_range"},
+    {"capability_name":"text.replace_exact","capability_version":1,"manifest_path":"manifests/text-replace-exact-v1.json","provider_operation_name":"text_replace_exact"},
+    {"capability_name":"text.compare","capability_version":1,"manifest_path":"manifests/text-compare-v1.json","provider_operation_name":"text_compare"},
+    {"capability_name":"patch.apply","capability_version":1,"manifest_path":"manifests/patch-apply-v1.json","provider_operation_name":"patch_apply"},
+    {"capability_name":"hash.sha256","capability_version":1,"manifest_path":"manifests/hash-sha256-v1.json","provider_operation_name":"hash_sha256"},
+    {"capability_name":"hash.verify","capability_version":1,"manifest_path":"manifests/hash-verify-v1.json","provider_operation_name":"hash_verify"},
+    {"capability_name":"hash.directory_manifest","capability_version":1,"manifest_path":"manifests/hash-directory-manifest-v1.json","provider_operation_name":"hash_directory_manifest"}
+  ],
+  "payloads": [
+    {"path":"provider/agent_workspace_provider.exe","role":"provider_executable"},
+    {"path":"manifests/filesystem-read-v1.json","role":"capability_manifest"},
+    {"path":"manifests/filesystem-list-v1.json","role":"capability_manifest"},
+    {"path":"manifests/filesystem-stat-v1.json","role":"capability_manifest"},
+    {"path":"manifests/text-search-v1.json","role":"capability_manifest"},
+    {"path":"manifests/text-read-range-v1.json","role":"capability_manifest"},
+    {"path":"manifests/text-replace-exact-v1.json","role":"capability_manifest"},
+    {"path":"manifests/text-compare-v1.json","role":"capability_manifest"},
+    {"path":"manifests/patch-apply-v1.json","role":"capability_manifest"},
+    {"path":"manifests/hash-sha256-v1.json","role":"capability_manifest"},
+    {"path":"manifests/hash-verify-v1.json","role":"capability_manifest"},
+    {"path":"manifests/hash-directory-manifest-v1.json","role":"capability_manifest"}
+  ]
+}

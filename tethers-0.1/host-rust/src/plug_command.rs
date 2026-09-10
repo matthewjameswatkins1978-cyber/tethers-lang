@@ -26,7 +26,7 @@ fn candidate_is_newer(current: Option<u64>, candidate: u64) -> bool {
     current.is_none_or(|sequence| candidate > sequence)
 }
 
-fn select_latest_transition(
+pub(crate) fn select_latest_transition(
     enablements: &[EnablementRecord],
 ) -> BTreeMap<String, EnablementRecord> {
     let mut latest: BTreeMap<String, EnablementRecord> = BTreeMap::new();

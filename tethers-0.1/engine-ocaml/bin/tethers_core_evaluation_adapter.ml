@@ -34,7 +34,7 @@ type evaluation_input = {
 type adapter_error =
   | Parse_error of string * string
   | Lowering_error of Tethers_core_lowerer.lowering_error
-  | Canonicalization_error of Tethers_core_canonical.canonicalization_error
+  | Canonicalization_error of Tethers_core_canonical_v2_ir.canonicalization_error_ir
   | Planning_error of Tethers_core_plan.planning_error
   | Unknown_runtime_fact_name of string
   | Ambiguous_runtime_fact_name of string
@@ -164,10 +164,10 @@ let evaluate env input =
   Tethers_core_lowerer.lower lowerer_env tether
   |> Result.map_error (fun e -> Lowering_error e)
   >>= fun core_program ->
-  (* 3. Canonicalize. *)
-  Tethers_core_canonical.canonicalize core_program
+  (* 3. Canonicalize with Rocket V2.  There is no V1 fallback. *)
+  Tethers_core_canonical_v2_ir.canonicalize_ir core_program
   |> Result.map_error (fun e -> Canonicalization_error e)
-  >>= fun canonicalized ->
+  >>= fun (canonicalized, _rocket_stats) ->
   (* 4. Map runtime facts. *)
   map_facts env.input_facts input.facts
   >>= fun fact_snapshots ->
@@ -182,6 +182,6 @@ let evaluate env input =
       capabilities = plan_projections env.capabilities;
       facts = fact_snapshots }
   in
-  (* 6. Evaluate canonicalized. *)
+  (* 6. Evaluate the Rocket-validated program. *)
   Tethers_core_plan.evaluate_canonicalized canonicalized eval_ctx
   |> Result.map_error (fun e -> Planning_error e)

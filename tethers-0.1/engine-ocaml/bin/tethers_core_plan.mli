@@ -41,7 +41,7 @@ type fact_snapshot = {
 }
 (** A runtime-supplied evaluation Fact value, keyed by the host snapshot key
     declared in the Core program's [Evaluation_input] provenance.  Runtime
-    Facts are keyed by [HostSnapshotKey], NOT by canonical FactId. *)
+    Facts are keyed by [HostSnapshotKey], NOT by Core FactId. *)
 
 type planning_context = {
   evaluation_id : string;
@@ -156,15 +156,15 @@ type planning_error =
       non-string expected value, or [Greater_than] with a non-integer
       expected value). *)
   | Missing_reception_anchor
-  (** The canonical program has zero top-level [Anchor_origin] sites.
+  (** The Rocket-validated program has zero top-level [Anchor_origin] sites.
       Reception requires exactly one. *)
   | Ambiguous_reception_anchor
-  (** The canonical program has two or more top-level [Anchor_origin] sites.
+  (** The Rocket-validated program has two or more top-level [Anchor_origin] sites.
       Reception requires exactly one; the evaluator does not silently pick
       one by storage order. *)
 
 type canonical_plan = {
-  program_digest : Tethers_core_canonical.program_digest;
+  program_digest : string;
   runtime_plan : Tethers_outcome.plan;
 }
 (** A Runtime Plan together with the semantic Core identity (ProgramDigest)
@@ -198,17 +198,16 @@ val plan :
     deterministic first-occurrence uniqueness. *)
 
 val plan_canonicalized :
-  Tethers_core_canonical.canonicalized ->
+  Tethers_core_canonical_v2_ir.canonicalized_v2_ir ->
   planning_context ->
   (canonical_plan, planning_error) result
-(** Plan from an already-canonicalised Core value.  The caller cannot
-    accidentally pass non-canonical Core to this entry point: it requires a
-    [canonicalized] value produced by [Tethers_core_canonical.canonicalize].
+(** Plan from a Rocket V2 canonicalisation token.  The token carries both the
+    exact validated Core program and its Canonical V2 ProgramDigest, so callers
+    cannot pair a digest with a different program.
 
-    Internally obtains the Core program through
-    [Tethers_core_canonical.canonical_program] and delegates to [plan].
-    Returns the existing Runtime Plan together with the canonical
-    [ProgramDigest] so that semantic program identity is preserved.
+    Planning follows semantic control flow from the validated Core program.
+    Rocket V2 is the sole current identity authority; no V1 canonicaliser is
+    consulted or used as a fallback.
 
     FAILS CLOSED with [Unresolved_entry_guards] if the program declares
     entry guards.  Use [evaluate_canonicalized] for guarded programs. *)
@@ -216,7 +215,7 @@ val plan_canonicalized :
 type canonical_evaluation =
   | Matched of canonical_plan
   | Not_matched
-(** The outcome of evaluating a canonical Core program with entry guards
+(** The outcome of evaluating a Rocket-validated Core program with entry guards
     against runtime Fact snapshots.
 
     - [Matched plan]: the event matched the canonical Anchor, all entry
@@ -232,11 +231,11 @@ type canonical_evaluation =
 
 type runtime_event = {
   name : string;
-  (** Exact event name to match against the canonical Anchor_origin. *)
+  (** Exact event name to match against the Anchor_origin. *)
   data : Yojson.Safe.t;
   (** Immutable event-data JSON snapshot. *)
 }
-(** A typed runtime event value for canonical evaluation. *)
+(** A typed runtime event value for Rocket V2 evaluation. *)
 
 type evaluation_context = {
   evaluation_id : string;
@@ -250,20 +249,20 @@ type evaluation_context = {
       Each snapshot is keyed by the [HostSnapshotKey] declared in the
       corresponding [Evaluation_input] provenance. *)
 }
-(** High-level canonical evaluation context.  The caller supplies
+(** High-level Rocket V2 evaluation context.  The caller supplies
     Human-world occurrence data (event name + event data) without knowing
-    the canonical Anchor OriginId.  The evaluator maps it to Core
+    the validated Core Anchor OriginId.  The evaluator maps it to Core
     identities internally. *)
 
 val evaluate_canonicalized :
-  Tethers_core_canonical.canonicalized ->
+  Tethers_core_canonical_v2_ir.canonicalized_v2_ir ->
   evaluation_context ->
   (canonical_evaluation, planning_error) result
-(** High-level canonical evaluation: reception → guards → plan.
+(** High-level Rocket V2 evaluation: reception → guards → plan.
 
     Evaluation order (semantic and REQUIRED):
     1. Anchor reception: locate the single top-level [Anchor_origin] in the
-       canonical program.  0 → [Missing_reception_anchor]; 2+ →
+       Rocket-validated program.  0 → [Missing_reception_anchor]; 2+ →
        [Ambiguous_reception_anchor].
     2. Exact event name match: compare [context.event.name] with the
        canonical [Anchor_origin.event_name] using exact string equality.
@@ -276,8 +275,8 @@ val evaluate_canonicalized :
     Wrong event + missing or malformed Fact snapshots → [Ok Not_matched]
     (the Tether was never awakened, so its Conditions are not evaluated).
 
-    The caller must NOT supply the canonical Anchor OriginId; the evaluator
-    derives it internally from the canonical program.  Event name and data
+    The caller must NOT supply the validated Core Anchor OriginId; the evaluator
+    derives it internally from the Rocket-validated program.  Event name and data
     are occurrence inputs and MUST NOT alter [ProgramDigest].
 
     For programs with zero entry guards, equivalent to reception + plan

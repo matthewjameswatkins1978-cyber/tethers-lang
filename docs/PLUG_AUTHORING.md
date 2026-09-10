@@ -4,10 +4,10 @@
 
 > Deep Plug, narrow subject. Wide workflow, Tether.
 
-This is the public manual for authoring a **Tethers Plug**. It documents only the
-interfaces and behaviour that have actually been proven by the current Tethers
-release (0.3, milestones P1–P3). It uses the real **Tethers PDF Tools** reference
-Plug as its concrete example.
+This is the public manual for authoring a **Tethers Plug**. It documents the
+public Plug-authoring surface proven by the completed Tethers 0.3 programme
+(P1–P6). It uses the real **Tethers PDF Tools** reference Plug as its concrete
+example.
 
 You should be able to read this manual top to bottom and then author, build,
 pack, inspect, and conform a Plug of your own. The manual deliberately keeps

@@ -102,6 +102,7 @@ open Tethers_core_canonical_v2_format
 (* ================================================================== *)
 
 type canonicalized_v2_ir = {
+  validated_program : Tethers_core.program;
   canonical_payload : string;
   canonical_preimage : bytes;
   canonical_program_digest : string;
@@ -1430,12 +1431,16 @@ let canonicalize_ir ?(budget = default_budget_ir) (p : program) :
                 | None -> 0);
             } in
             Ok ({
+              validated_program = p;
               canonical_payload = !best_payload;
               canonical_preimage = !best_preimage;
               canonical_program_digest = !best_digest;
             }, stats)
       end
   end
+
+let validated_program_ir (r : canonicalized_v2_ir) : Tethers_core.program =
+  r.validated_program
 
 let canonical_payload_ir (r : canonicalized_v2_ir) : string = r.canonical_payload
 let canonical_preimage_ir (r : canonicalized_v2_ir) : bytes = r.canonical_preimage
