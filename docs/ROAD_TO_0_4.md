@@ -121,7 +121,7 @@ The historical sequence is therefore:
 -> later HQ and broader human-facing work
 ```
 
-The latest published product release is tagged `tethers-v0.5.8`. The default `main` branch currently points to an earlier September 1 checkpoint, so use the release tag when verifying the exact published 0.5 surface.
+The latest published product release is tagged `tethers-v0.5.8`. This documentation now sits on `main`, but the implementation ancestry reachable from `main` is still based on an earlier checkpoint than the tagged 0.5 release source. Use the release tag when verifying the exact published 0.5 surface.
 
 Current status belongs in:
 
