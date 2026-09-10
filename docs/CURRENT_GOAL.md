@@ -1,6 +1,6 @@
 # Current Goal
 
-Updated: 2026-09-01
+Updated: 2026-09-10
 
 ## Goal
 
@@ -54,7 +54,7 @@ The Agent Essentials work should prioritise practical agent use:
    - read-only system/environment orientation.
 
 3. **Planning and evidence ergonomics**
-   - side-effect-free plan/preview surface;
+   - stable side-effect-free `tethers plan` / `tethers preview` surfaces;
    - precise configuration/scope diagnostics;
    - easier Trail querying and execution receipts.
 

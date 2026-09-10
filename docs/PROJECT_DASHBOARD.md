@@ -83,8 +83,10 @@ The main gaps are practical:
 - planning and Trail evidence should be easier to query;
 - the front-door documentation previously over-emphasised the portable authority façade.
 
-The side-effect-free plan surface and richer Trail query ergonomics remain
-follow-on work; the 0.5 release does not pretend they are already public.
+The side-effect-free `tethers plan` surface is now public on the reconciled
+main line. It emits `tethers.plan/1` and proves zero provider invocations and
+zero Trail execution entries; richer Trail query ergonomics remain follow-on
+work.
 
 ## Agent Essentials target
 

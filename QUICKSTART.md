@@ -205,8 +205,16 @@ tethers trail --trail <absolute-trail.jsonl> --execution-id <id> --receipt
 ```
 
 The receipt is a view over the Trail, not a second persistence store. For a
-side-effect-free plan check, use `preview` with the same configured host and
-engine before choosing `run`.
+stable machine-readable, side-effect-free plan check, use `plan` with the same
+configured host and engine before choosing `run`:
+
+```text
+tethers plan --config <config.json> --engine <engine.exe> --input <input.json> --host-data-root C:\\tethers-data
+```
+
+`plan` emits `tethers.plan/1`, reports `provider_invocations: 0`, and does not
+request authority, enter policy/execution, or write a Trail execution entry.
+The older `preview` command remains available as a compatible read-only view.
 
 A proposal is not recorded as an execution, and an uncertain call is not renamed as a clean failure merely because that would be easier to handle.
 

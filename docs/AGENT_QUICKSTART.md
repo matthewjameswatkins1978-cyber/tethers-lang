@@ -59,17 +59,19 @@ tethers check --config <config.json> --engine <engine.exe>
 tethers run --config <config.json> --engine <engine.exe> --input <input.json> --trail <trail.jsonl> --host-data-root C:\\tethers-data
 ```
 
-For a side-effect-free public preview, use the configured host command. It
-parses and validates the input, evaluates the selected Tether, and returns the
-proposed Plan without requesting authority, starting a provider, or writing a
-Trail:
+For the stable machine-facing, side-effect-free Plan contract, use the
+configured host command. It parses and validates the input, evaluates the
+selected Tether, and returns `tethers.plan/1` without requesting authority,
+starting a provider, or writing a Trail execution entry:
 
 ```text
-tethers preview --config <config.json> --engine <engine.exe> --input <input.json>
+tethers plan --config <config.json> --engine <engine.exe> --input <input.json> --host-data-root C:\\tethers-data
 ```
 
-The preview is an observation, not an execution. Use `run` when an authorised
-execution and durable Trail evidence are intended.
+The response explicitly reports `provider_invocations: 0` and
+`execution.performed: false`. `preview` remains available as a compatible
+human-oriented observation; use `run` when an authorised execution and durable
+Trail evidence are intended.
 
 For repeatable Rocket measurements, use the first-class `tethers-bench`
 executable. It emits human output by default and the stable

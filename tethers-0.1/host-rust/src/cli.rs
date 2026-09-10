@@ -68,6 +68,18 @@ pub enum Command {
         input: PathBuf,
     },
 
+    /// Evaluate one explicit event and return the deterministic proposed Plan without dispatch.
+    Plan {
+        #[arg(long = "config", value_name = "PATH")]
+        config: PathBuf,
+        #[arg(long = "engine", value_name = "PATH")]
+        engine: PathBuf,
+        #[arg(long = "input", value_name = "PATH")]
+        input: PathBuf,
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+    },
+
     /// Hidden legacy positional compatibility route.
     #[command(hide = true)]
     #[clap(name = "__legacy")]
@@ -606,6 +618,27 @@ mod tests {
             _ => panic!("expected Preview"),
         }
         assert!(parse_cli(&["preview", "--config", "c.json", "--engine", "e.exe"]).is_err());
+    }
+
+    #[test]
+    fn plan_command_requires_its_four_options() {
+        assert!(matches!(
+            parse_cli(&[
+                "plan",
+                "--config",
+                "c.json",
+                "--engine",
+                "engine.exe",
+                "--input",
+                "input.json",
+                "--host-data-root",
+                "C:\\host-data"
+            ])
+            .unwrap()
+            .command,
+            Some(Command::Plan { .. })
+        ));
+        assert!(parse_cli(&["plan", "--config", "c.json"]).is_err());
     }
 
     #[test]

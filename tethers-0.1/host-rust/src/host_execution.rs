@@ -239,6 +239,91 @@ impl From<EngineError> for ExecutionServiceError {
     }
 }
 
+/// Result of the typed plan-only host seam.
+///
+/// This deliberately has no policy, replay, Trail, or provider outcome arms:
+/// the plan surface stops after Core evaluation and cannot claim execution.
+#[derive(Debug)]
+pub enum PlanResult {
+    PlanAvailable {
+        evaluation_id: String,
+        event_id: String,
+        tether_id: String,
+        tether_version: String,
+        plan: Value,
+    },
+    NoActions {
+        evaluation_id: String,
+        event_id: String,
+        tether_id: String,
+        tether_version: String,
+        response: Value,
+    },
+    PlannerError {
+        evaluation_id: Option<String>,
+        event_id: String,
+        tether_id: String,
+        tether_version: String,
+        code: String,
+        message: String,
+    },
+    Interrupted,
+    InvalidData {
+        evaluation_id: String,
+        event_id: String,
+        tether_id: String,
+        tether_version: String,
+        message: String,
+    },
+    Unavailable {
+        evaluation_id: String,
+        event_id: String,
+        tether_id: String,
+        tether_version: String,
+        reason: String,
+    },
+}
+
+fn input_event_id(input: &PreparedEvaluationInput) -> String {
+    input
+        .anchor_event
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn plan_result_from_execution(
+    input: &PreparedEvaluationInput,
+    result: ExecutionServiceResult,
+) -> PlanResult {
+    let event_id = input_event_id(input);
+    match result {
+        ExecutionServiceResult::Interrupted => PlanResult::Interrupted,
+        ExecutionServiceResult::Unavailable { reason, .. } => PlanResult::Unavailable {
+            evaluation_id: input.evaluation_id.clone(),
+            event_id,
+            tether_id: input.tether_id.clone(),
+            tether_version: input.tether_version.clone(),
+            reason,
+        },
+        ExecutionServiceResult::InvalidData { message } => PlanResult::InvalidData {
+            evaluation_id: input.evaluation_id.clone(),
+            event_id,
+            tether_id: input.tether_id.clone(),
+            tether_version: input.tether_version.clone(),
+            message,
+        },
+        _ => PlanResult::InvalidData {
+            evaluation_id: input.evaluation_id.clone(),
+            event_id,
+            tether_id: input.tether_id.clone(),
+            tether_version: input.tether_version.clone(),
+            message: "plan-only path produced an unexpected execution result".to_owned(),
+        },
+    }
+}
+
 // ===========================================================================
 // Provider session executor
 // ===========================================================================
@@ -520,6 +605,116 @@ impl<'a> HostExecutionService<'a> {
     ) -> Result<Vec<ExecutionServiceResult>, ExecutionServiceError> {
         let tether_indexes = selected_tether_indexes(self.runtime.tethers(), inputs)?;
         self.run_with_tether_indexes(inputs, &tether_indexes)
+    }
+
+    /// Evaluate one input through the real Core request path and stop before
+    /// provider launch, policy, replay, Trail mutation, or dispatch.
+    pub fn plan_only(
+        &self,
+        input: &PreparedEvaluationInput,
+    ) -> Result<PlanResult, ExecutionServiceError> {
+        if child_process::is_interrupted() {
+            return Ok(PlanResult::Interrupted);
+        }
+
+        let Some((tether_index, tether)) =
+            self.runtime
+                .tethers()
+                .iter()
+                .enumerate()
+                .find(|(_, tether)| {
+                    tether.id == input.tether_id && tether.version == input.tether_version
+                })
+        else {
+            return Err(ExecutionServiceError::InvalidInput(format!(
+                "tether not found: {} v{}",
+                input.tether_id, input.tether_version
+            )));
+        };
+
+        let engine_working_dir = self
+            .engine_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let mut engine = EngineSession::launch(self.engine_path, &engine_working_dir)?;
+        let result = (|| {
+            if child_process::is_interrupted() {
+                return Ok(PlanResult::Interrupted);
+            }
+
+            engine.validate_tether(tether_index, &tether.id, &tether.version, &tether.source)?;
+
+            // Empty live availability is intentional. The configured trusted
+            // capability projection remains Core input, but no provider is
+            // launched or treated as available by a read-only plan.
+            let availability = ProviderAvailability::empty();
+            let envelope = match self.build_core_request_envelope(input, tether, &availability) {
+                Ok(envelope) => envelope,
+                Err(result) => return Ok(plan_result_from_execution(input, result)),
+            };
+            let wire = match engine.evaluate_tether(&input.evaluation_id, &envelope) {
+                Ok(wire) => wire,
+                Err(error) => {
+                    return Ok(plan_result_from_execution(
+                        input,
+                        Self::classify_engine_evaluation_failure(input, error),
+                    ));
+                }
+            };
+
+            match Self::classify_planner_response(input, wire) {
+                Ok(PlannerOutcome::Matched(response)) => {
+                    let plan = response.get("plan").cloned().ok_or_else(|| {
+                        ExecutionServiceError::InvalidInput(
+                            "matched planner response had no plan".to_owned(),
+                        )
+                    })?;
+                    Ok(PlanResult::PlanAvailable {
+                        evaluation_id: input.evaluation_id.clone(),
+                        event_id: input_event_id(input),
+                        tether_id: input.tether_id.clone(),
+                        tether_version: input.tether_version.clone(),
+                        plan,
+                    })
+                }
+                Ok(PlannerOutcome::NotMatched {
+                    evaluation_id,
+                    response,
+                }) => Ok(PlanResult::NoActions {
+                    evaluation_id,
+                    event_id: input_event_id(input),
+                    tether_id: input.tether_id.clone(),
+                    tether_version: input.tether_version.clone(),
+                    response,
+                }),
+                Ok(PlannerOutcome::Error(PlannerErrorOutcome::Contextual {
+                    evaluation_id,
+                    code,
+                    message,
+                })) => Ok(PlanResult::PlannerError {
+                    evaluation_id: Some(evaluation_id),
+                    event_id: input_event_id(input),
+                    tether_id: input.tether_id.clone(),
+                    tether_version: input.tether_version.clone(),
+                    code,
+                    message,
+                }),
+                Ok(PlannerOutcome::Error(PlannerErrorOutcome::Request { code, message })) => {
+                    Ok(PlanResult::PlannerError {
+                        evaluation_id: None,
+                        event_id: input_event_id(input),
+                        tether_id: input.tether_id.clone(),
+                        tether_version: input.tether_version.clone(),
+                        code,
+                        message,
+                    })
+                }
+                Err(result) => Ok(plan_result_from_execution(input, result)),
+            }
+        })();
+        engine.shutdown();
+        result
     }
 
     fn run_with_tether_indexes(
@@ -4445,13 +4640,13 @@ mod tests {
             .and_then(Value::as_str)
             .expect("program_digest missing from top level");
         assert!(
-            pd.starts_with("sha256:"),
-            "program_digest must start with sha256:"
+            pd.starts_with("tethers:v2:sha256:"),
+            "program_digest must start with tethers:v2:sha256:"
         );
         assert_eq!(
             pd.len(),
-            71,
-            "program_digest must be sha256: + 64 hex chars"
+            82,
+            "program_digest must be tethers:v2:sha256: + 64 hex chars"
         );
         assert!(
             plan.get("program_digest").is_none(),
@@ -4816,7 +5011,7 @@ mod tests {
             let program_digest = response["program_digest"]
                 .as_str()
                 .expect("T15: program_digest must be top-level");
-            assert!(program_digest.starts_with("sha256:"));
+            assert!(program_digest.starts_with("tethers:v2:sha256:"));
             assert!(response.pointer("/plan/program_digest").is_none());
             assert_eq!(
                 response.pointer("/plan/actions/0/capability"),

@@ -74,6 +74,7 @@ pub mod manifest;
 pub mod operational_scope;
 mod outcome;
 pub mod package;
+pub mod plan_command;
 pub mod plan_execution;
 pub mod plug_command;
 pub mod plug_conform;

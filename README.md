@@ -218,10 +218,11 @@ These commands are read-only and expose trusted contracts, scopes, provider
 bindings, and availability without starting providers. See the
 [agent quickstart](docs/AGENT_QUICKSTART.md) for the complete discovery path.
 
-The native host also provides `preview` for a side-effect-free proposed Plan,
-and `trail --receipt` for a bounded causal projection over validated Trail
-entries. Neither surface requests authority, invokes a provider, or creates a
-second persistence store.
+The native host provides `plan` as the stable machine-facing, side-effect-free
+Plan surface, while `preview` remains the compatible human-oriented preview.
+Both evaluate Core without requesting authority, invoking a provider, or
+creating a Trail execution entry. `trail --receipt` provides a bounded causal
+projection over validated Trail entries.
 
 ## Download the portable workbench
 

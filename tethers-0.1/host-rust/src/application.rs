@@ -694,6 +694,23 @@ pub fn run() {
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {
+            command:
+                Some(CliCommand::Plan {
+                    config,
+                    engine,
+                    input,
+                    host_data_root,
+                }),
+        }) => {
+            let result = plan_command::run_plan(plan_command::PlanCommandArgs {
+                config,
+                engine,
+                input,
+                host_data_root,
+            });
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
             command: Some(CliCommand::Legacy { args }),
         }) => {
             // Route to legacy host with explicit __legacy subcommand.
