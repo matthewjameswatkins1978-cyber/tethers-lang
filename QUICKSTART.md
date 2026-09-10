@@ -279,7 +279,7 @@ Use the source and manuals attached to the published release when following thos
 - [Tethers 0.5 release (`tethers-v0.5.8`)](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.5.8)
 - [0.5 Agent Quickstart](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/blob/tethers-v0.5.8/docs/AGENT_QUICKSTART.md)
 
-The default `main` branch currently points to an earlier September 1 checkpoint, so not every 0.5 agent-facing command is present in `main` yet. That is a repository-state issue, not a reason to blur the difference in the documentation.
+The implementation ancestry currently reachable from `main` is still based on an earlier September 1 checkpoint, so not every 0.5 agent-facing command is present there. That is a repository-state issue, not a reason to blur the difference in the documentation.
 
 ## 11. Know which surface you are using
 
