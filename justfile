@@ -13,7 +13,7 @@ check:
     $env:RUSTFLAGS="-D warnings"; scripts/invoke-timed.ps1 -Label "cargo-check" -Executable "cargo" -- check --manifest-path {{_manifest}} --all-targets --all-features --locked
 
 test-rust:
-    scripts/invoke-timed.ps1 -Label "cargo-test" -Executable "cargo" -- test --manifest-path {{_manifest}} --all-targets --all-features --locked
+    scripts/invoke-timed.ps1 -Label "cargo-test" -Executable "cargo" -- test --manifest-path {{_manifest}} --all-targets --all-features --locked -- --test-threads=1
 
 test-m2:
     cargo test --manifest-path {{_manifest}} package::tests --locked
@@ -35,7 +35,7 @@ verify:
     scripts/invoke-timed.ps1 -Label "task-packet" -Executable "pwsh" -- -NoProfile -File .github/scripts/check-tethers-task-packet.ps1
     scripts/invoke-timed.ps1 -Label "cargo-fmt" -Executable "cargo" -- fmt --manifest-path {{_manifest}} --all -- --check
     @just check
-    scripts/invoke-timed.ps1 -Label "cargo-test" -Executable "cargo" -- test --manifest-path {{_manifest}} --all-targets --all-features --locked
+    scripts/invoke-timed.ps1 -Label "cargo-test" -Executable "cargo" -- test --manifest-path {{_manifest}} --all-targets --all-features --locked -- --test-threads=1
 
 agent-tools:
     scripts/invoke-timed.ps1 -Label "agent-tools" -Executable "pwsh" -- -NoProfile -File scripts/check-rust-agent-tools.ps1
