@@ -1755,11 +1755,11 @@ fn threadmoth_descriptor() -> Value {
 
 pub fn run_capability(command: CapabilityCommand) -> CoreResult {
     match command {
-        CapabilityCommand::List => result(CliEnvelope::ok(
+        CapabilityCommand::List { .. } => result(CliEnvelope::ok(
             "capability list",
             json!({"schema":"tethers.capabilities/1","policy_decisions":["ALLOW","ASK","DENY","UNAVAILABLE"],"families":[capability_descriptor("workspace").unwrap(), capability_descriptor("git").unwrap(), capability_descriptor("exec").unwrap()],"optional":[capability_descriptor("threadmoth").unwrap()]}),
         )),
-        CapabilityCommand::Inspect { name } => match capability_descriptor(&name) {
+        CapabilityCommand::Inspect { name, .. } => match capability_descriptor(&name) {
             Some(data) => result(CliEnvelope::ok("capability inspect", data)),
             None => result(error(
                 "capability inspect",

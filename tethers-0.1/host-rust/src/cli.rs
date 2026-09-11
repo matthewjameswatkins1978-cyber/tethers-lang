@@ -188,7 +188,7 @@ pub enum CapabilityCommand {
     /// List enabled capabilities, or all installed capabilities with --all.
     List {
         #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
-        host_data_root: PathBuf,
+        host_data_root: Option<PathBuf>,
         #[arg(long = "all", default_value_t = false)]
         all: bool,
         #[arg(long = "effect")]
@@ -207,7 +207,7 @@ pub enum CapabilityCommand {
         #[arg(long = "version")]
         version: Option<u32>,
         #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
-        host_data_root: PathBuf,
+        host_data_root: Option<PathBuf>,
         #[arg(long = "json", default_value_t = false)]
         json: bool,
     },
@@ -828,7 +828,7 @@ mod tests {
                     plug: Some(plug),
                     json: true
                 }
-            }) if host_data_root == PathBuf::from("C:\\host")
+            }) if host_data_root == Some(PathBuf::from("C:\\host"))
                 && effect == "filesystem.write"
                 && provider == "workspace"
                 && plug == "plug-id"
@@ -853,7 +853,7 @@ mod tests {
                     host_data_root,
                     json: true
                 }
-            }) if name == "filesystem.read" && host_data_root == PathBuf::from("C:\\host")
+            }) if name == "filesystem.read" && host_data_root == Some(PathBuf::from("C:\\host"))
         ));
         assert!(matches!(
             parse_cli(&[
@@ -875,8 +875,8 @@ mod tests {
                 }
             }) if host_data_root == PathBuf::from("C:\\host") && installed_id == "plug-id"
         ));
-        assert!(parse_cli(&["capability", "list"]).is_err());
-        assert!(parse_cli(&["capability", "inspect", "filesystem.read"]).is_err());
+        assert!(parse_cli(&["capability", "list"]).is_ok());
+        assert!(parse_cli(&["capability", "inspect", "filesystem.read"]).is_ok());
         assert!(parse_cli(&["plug", "show"]).is_err());
     }
 

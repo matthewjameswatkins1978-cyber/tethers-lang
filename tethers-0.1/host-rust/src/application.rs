@@ -539,19 +539,32 @@ pub fn run() {
                             effect,
                             provider,
                             plug,
-                            ..
+                            json,
                         },
                 }),
-        }) => {
-            let result = discovery::run_capability_list(
-                &host_data_root,
-                all,
-                effect.as_deref(),
-                provider.as_deref(),
-                plug.as_deref(),
-            );
-            emit_envelope_and_exit(result.envelope, result.exit_code);
-        }
+        }) => match host_data_root {
+            Some(host_data_root) => {
+                let result = discovery::run_capability_list(
+                    &host_data_root,
+                    all,
+                    effect.as_deref(),
+                    provider.as_deref(),
+                    plug.as_deref(),
+                );
+                emit_envelope_and_exit(result.envelope, result.exit_code);
+            }
+            None => {
+                let result = agent_core::run_capability(crate::cli::CapabilityCommand::List {
+                    host_data_root: None,
+                    all,
+                    effect,
+                    provider,
+                    plug,
+                    json,
+                });
+                emit_envelope_and_exit(result.envelope, result.exit_code);
+            }
+        },
         Ok(Cli {
             command:
                 Some(CliCommand::Capability {
@@ -560,13 +573,24 @@ pub fn run() {
                             name,
                             version,
                             host_data_root,
-                            ..
+                            json,
                         },
                 }),
-        }) => {
-            let result = discovery::run_capability_inspect(&host_data_root, &name, version);
-            emit_envelope_and_exit(result.envelope, result.exit_code);
-        }
+        }) => match host_data_root {
+            Some(host_data_root) => {
+                let result = discovery::run_capability_inspect(&host_data_root, &name, version);
+                emit_envelope_and_exit(result.envelope, result.exit_code);
+            }
+            None => {
+                let result = agent_core::run_capability(crate::cli::CapabilityCommand::Inspect {
+                    name,
+                    version,
+                    host_data_root: None,
+                    json,
+                });
+                emit_envelope_and_exit(result.envelope, result.exit_code);
+            }
+        },
         Ok(Cli {
             command: Some(CliCommand::Workspace { command }),
         }) => {
@@ -580,15 +604,16 @@ pub fn run() {
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {
-            command: Some(CliCommand::Exec {
-                program,
-                argv,
-                cwd,
-                timeout_ms,
-                environment,
-                env,
-                max_output_bytes,
-            }),
+            command:
+                Some(CliCommand::Exec {
+                    program,
+                    argv,
+                    cwd,
+                    timeout_ms,
+                    environment,
+                    env,
+                    max_output_bytes,
+                }),
         }) => {
             let result = agent_core::run_exec_command(
                 program,
