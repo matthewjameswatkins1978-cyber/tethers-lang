@@ -1,6 +1,6 @@
 # Tethers agent quickstart
 
-This is the machine-oriented entry path for Tethers. The CLI and trusted Plug
+This is the machine-oriented entry path for Tethers 0.7.0. The CLI and trusted Plug
 manifests are the discovery mechanism; this document only shows the sequence.
 
 ## 1. Identify the host
@@ -19,9 +19,18 @@ tethers describe --host-data-root C:\\tethers-data --json
 `host_health.status` is `configured_state_only`: discovery does not start a
 provider and does not claim that a provider is healthy.
 
+For a new workspace, initialise the project-owned configuration and inspect
+the complete local health report:
+
+```text
+tethers init
+tethers doctor --json
+```
+
 ## 2. Discover capabilities
 
 ```text
+tethers capability list --json
 tethers capability list --host-data-root C:\\tethers-data --json
 tethers capability list --host-data-root C:\\tethers-data --all --effect metadata.read --json
 ```
