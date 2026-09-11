@@ -4,7 +4,7 @@ Task: `Tethers 0.7.0 release integration and GitHub publication`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Amber`
 
