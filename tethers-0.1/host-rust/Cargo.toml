@@ -1,9 +1,17 @@
 [package]
 name = "tethers-reference-host"
-version = "0.2.2"
+version = "0.7.0"
 edition = "2021"
 rust-version = "1.97"
 publish = false
+
+[[bin]]
+name = "tethers"
+path = "src/bin/tethers.rs"
+
+[[bin]]
+name = "tethers-reference-host"
+path = "src/main.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

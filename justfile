@@ -53,3 +53,6 @@ deps-unused:
     scripts/invoke-timed.ps1 -Label "deps-unused" -Executable "cargo" -- machete --with-metadata tethers-0.1/host-rust
 
 verify-agent: verify agent-tools deps-policy deps-advisories test-agent
+
+package-0-7:
+    pwsh -NoProfile -File scripts/package-0.7.ps1
