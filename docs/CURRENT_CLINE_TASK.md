@@ -14,7 +14,7 @@ Route: `Integrate the approved 0.7 execution boundary onto current origin/main, 
 
 Base commit: `e353cbbbe7599c467e17b6e558f979b6c83a4b39`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `b7ef4305f8a33bbf9718d586fbdf648db93b9958`
 
 Worker note: `docs/worker-notes/2026-09-11-tethers-0.7-release.md`
 
