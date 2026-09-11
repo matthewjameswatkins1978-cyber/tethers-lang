@@ -1,5 +1,6 @@
 param(
-    [string]$OutputRoot = "release"
+    [string]$OutputRoot = "release",
+    [string]$OcamlSwitch = ""
 )
 
 Set-StrictMode -Version Latest
@@ -15,8 +16,17 @@ Push-Location $repositoryRoot
 try {
     & cargo +1.97.1 build --manifest-path $hostManifest --release --bins
     if ($LASTEXITCODE -ne 0) { throw "release Rust build failed" }
-    & opam exec -- dune build --root $engineRoot
-    if ($LASTEXITCODE -ne 0) { throw "OCaml engine build failed" }
+    Push-Location $engineRoot
+    try {
+        if ([string]::IsNullOrWhiteSpace($OcamlSwitch)) {
+            & opam exec -- dune build '@all'
+        }
+        else {
+            & opam exec --switch=$OcamlSwitch -- dune build '@all'
+        }
+        if ($LASTEXITCODE -ne 0) { throw "OCaml engine build failed" }
+    }
+    finally { Pop-Location }
 
     $package = Join-Path $repositoryRoot (Join-Path $OutputRoot "tethers-0.7.0-windows-x64")
     if (Test-Path -LiteralPath $package) { Remove-Item -LiteralPath $package -Recurse -Force }
@@ -38,8 +48,31 @@ try {
     if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
     Compress-Archive -LiteralPath $package -DestinationPath $archive
     $archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+    $manifest = [ordered]@{
+        schema = "tethers.release/1"
+        product_version = $version
+        source_commit = (& git rev-parse HEAD).Trim()
+        platform = "windows-x64"
+        archive = [ordered]@{
+            name = [System.IO.Path]::GetFileName($archive)
+            sha256 = $archiveHash
+        }
+        executables = @(
+            [ordered]@{
+                name = "tethers.exe"
+                sha256 = (Get-FileHash -LiteralPath (Join-Path $package "tethers.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+            },
+            [ordered]@{
+                name = "tethers-engine.exe"
+                sha256 = (Get-FileHash -LiteralPath (Join-Path $package "tethers-engine.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        )
+    }
+    $manifestPath = Join-Path $repositoryRoot (Join-Path $OutputRoot "Tethers-0.7.0-windows-x64-manifest.json")
+    $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
     Write-Output "PACKAGE=$package"
     Write-Output "ARCHIVE=$archive"
     Write-Output "ARCHIVE_SHA256=$archiveHash"
+    Write-Output "MANIFEST=$manifestPath"
 }
 finally { Pop-Location }
