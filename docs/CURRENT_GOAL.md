@@ -1,16 +1,16 @@
 # Current Goal
 
-Updated: 2026-09-10
+Updated: 2026-09-11
 
 ## Goal
 
-**Make the Tethers 0.6 practical release the clear, verifiable execution layer that AI agents and developers can adopt, understand, and reach for in ordinary work.**
+**Make Tethers 0.7.0 the clear, verifiable execution boundary that AI agents and developers can download, understand, and use in ordinary work.**
 
 The foundation is no longer the problem. The first Agent Essentials pass is no longer the problem either. The next phase is product coherence, real-world use, and hardening through actual workloads.
 
 ## What has already been achieved
 
-The Tethers 0.6 release line carries forward the major capabilities delivered by the previous practical release and makes the cold-agent journey explicit:
+The Tethers 0.7 release line carries forward the major capabilities delivered by the previous practical release and makes the cold-agent journey explicit:
 
 - deterministic Human Tether semantics and typed Core;
 - trusted Capability manifests, policy, scope, provider binding, durable intent, replay, and Trail machinery;
@@ -28,11 +28,11 @@ The Tethers 0.6 release line carries forward the major capabilities delivered by
 - Windows x64 and Linux x64 musl practical release bundles;
 - the separate Portable Workbench 0.2.2 authority façade.
 
-The current product release line is Tethers 0.6, tagged `tethers-v0.6.0`.
+The current product release line is Tethers 0.7.0, tagged `tethers-v0.7.0`.
 
 ## Repository coherence
 
-The Tethers 0.6 implementation ancestry and the current `main` line have now
+The Tethers 0.7 implementation ancestry and the current `main` line have now
 been deliberately reconciled. The `tethers-v0.5.8` tag remains intact and
 reachable, and the deterministic `tethers plan` surface is present on `main`.
 The tag remains the source of truth for reproducing the published bundle while

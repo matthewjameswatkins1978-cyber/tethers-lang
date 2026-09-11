@@ -113,7 +113,7 @@ impl EngineSession {
                 "capabilities": {},
                 "clientInfo": {
                     "name": "tethers-reference-host",
-                    "version": "0.2.0"
+                    "version": env!("CARGO_PKG_VERSION")
                 }
             }
         });

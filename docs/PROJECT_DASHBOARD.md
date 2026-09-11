@@ -1,12 +1,12 @@
 # Tethers Project Dashboard
 
-Updated: 2026-09-10
+Updated: 2026-09-11
 
 ## Product state
 
 **Tethers has crossed the line from foundation project to practical AI-facing execution platform.**
 
-The published 0.6 release combines the deterministic language/Core, trusted host/runtime, Plug system, bounded concurrency, replay/evidence machinery, and the Agent Essentials surfaces needed for an unfamiliar agent to plan, execute, and inspect the system.
+The published 0.7.0 release combines the deterministic language/Core, trusted host/runtime, Plug system, bounded concurrency, replay/evidence machinery, and the host-owned Agent Core surfaces needed for an unfamiliar agent to inspect, plan, execute, and inspect the system.
 
 The next bottleneck is not missing architecture. It is product coherence, repository/release alignment, broader practical Capabilities, and evidence from real workloads.
 
@@ -39,13 +39,13 @@ The point is not to make AI deterministic. The point is to make the **consequent
 
 ## Latest published release
 
-Latest GitHub release: **Tethers 0.6**
-Tag: `tethers-v0.6.0`
+Latest GitHub release: **Tethers 0.7.0**
+Tag: `tethers-v0.7.0`
 
-Published release assets include Windows x64 and Linux x64 musl bundles. The
-current asset filenames use the `tethers-0.6.0-*` form.
+Published release assets include the verified Windows x64 full-runtime bundle
+with `tethers.exe`, `tethers-engine.exe`, and its checksum/manifest assets.
 
-The 0.6 tagged source includes:
+The 0.7 tagged source includes:
 
 - native host discovery;
 - trusted Capability listing and inspection;
@@ -60,8 +60,8 @@ The 0.6 tagged source includes:
 
 ## Repository state
 
-The Tethers 0.6 implementation ancestry is now reconciled into `main`, with
-the published `tethers-v0.6.0` tag carrying the current product line. The
+The Tethers 0.7 implementation ancestry is now reconciled into `main`, with
+the published `tethers-v0.7.0` tag carrying the current product line. The
 stable `tethers plan` command is present on the authoritative development
 line.
 
@@ -100,11 +100,11 @@ line.
 - Enable/disable with scope.
 - Installed Plug listing.
 - Reference and adversarial conformance evidence.
-- Agent-oriented workspace and coding reference providers in the 0.6 tagged source.
+- Agent-oriented workspace and coding reference providers in the 0.7 tagged source.
 
 ### Agent-facing product surface
 
-The published 0.6 release adds the practical path a cold agent needs:
+The published 0.7 release adds the practical path a cold agent needs:
 
 ```text
 describe Tethers
@@ -130,14 +130,13 @@ It does not execute the requested action. It is useful when an existing agent or
 
 ## Current gaps
 
-## 0.6 release state
+## 0.7 release state
 
-The practical 0.6 release line now combines the accepted Rocket V3 foundation
+The practical 0.7 release line now combines the accepted Rocket V3 foundation
 with the Agent Essentials discovery and provider work. Rocket keeps frozen V2
 identity as its authority and selects exact implementations by runtime shape;
 the exhaustive reference remains available for bounded differential evidence.
-The native host is still versioned `0.2.2` for compatibility, while `0.6` is
-the product release line.
+The product release line is `0.7.0`; the language semantics remain `0.1`.
 
 The implementation checkpoint is `f3b2da5693c7eb61526a1cfc692983ba49ba6b8a`.
 Windows packaging and bounded local evidence are complete; Linux packaging,
@@ -208,9 +207,9 @@ adoption work rather than a missing 0.5 source line.
 | Portable Workbench | `0.2.2` |
 | Public Plug authoring milestone | `0.3` complete |
 | Together/concurrency milestone | `0.4` complete |
-| Practical release line | `0.6` Plan + execution + replay/Trail proof |
-| Latest public GitHub tag | `tethers-v0.6.0` |
-| Current 0.6 asset filename line | `tethers-0.6.0-*` |
+| Practical release line | `0.7.0` Agent Core + Plan + execution + replay/Trail proof |
+| Latest public GitHub tag | `tethers-v0.7.0` |
+| Current 0.7 asset filename line | `Tethers-0.7.0-windows-x64-*` |
 
 These are related but not interchangeable. Future releases should make the public-facing version identity simpler.
 
@@ -235,6 +234,6 @@ These are related but not interchangeable. Future releases should make the publi
 6. `docs/SECURITY.md` - what the trust boundary does and does not guarantee.
 7. `docs/CONSTITUTION.md` - the enduring design test.
 
-For the exact 0.6 Agent Essentials command surface, use the source and manuals under the `tethers-v0.6.0` tag.
+For the exact 0.7 Agent Core command surface, use the source and manuals under the `tethers-v0.7.0` tag.
 
 Historical roadmaps, reviews, performance notes, foundation evidence, and worker notes remain valuable records of their checkpoints. They are not living product-status documents.

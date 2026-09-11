@@ -1,144 +1,113 @@
-# Tethers 0.6 preparation: cold-agent proof and verification gate
+# Tethers 0.7.0 release integration and GitHub publication
 
-Task: `Tethers 0.6 preparation: cold-agent proof and verification gate`
+Task: `Tethers 0.7.0 release integration and GitHub publication`
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Task colour: `Amber`
 
 Owner: `Codex`
 
-Route: `Fresh branch from current origin/main; prove the cold-agent plan-to-execution workflow, repair the strict verification gate, align the public product release line to 0.6, then publish only after final evidence.`
+Route: `Integrate the approved 0.7 execution boundary onto current origin/main, resolve release blockers, verify the full runtime, then publish main and the GitHub release through normal Git operations.`
 
-Base commit: `a8762952a4f92697ab5349e93698699a5955c477`
+Base commit: `e353cbbbe7599c467e17b6e558f979b6c83a4b39`
 
-Implementation checkpoint: `ebccf498932ccef883a40d2bd4d7b2a15470b89e`
+Implementation checkpoint: `WORKTREE`
 
-Worker note: `docs/worker-notes/2026-09-10-tethers-0.6-preparation.md`
+Worker note: `docs/worker-notes/2026-09-11-tethers-0.7-release.md`
 
 Suggested branch:
 
-`codex/tethers-0.6-preparation-20260910`
+`release/tethers-v0.7.0`
 
 Source branch:
 
 `origin/main`
 
-Updated: 2026-09-10
+Updated: 2026-09-11
 
 ## Objective
 
-Turn the reconciled Tethers main line into an evidence-backed 0.6 preparation
-line: prove that an unfamiliar agent can discover, plan, obtain authority,
-execute a bounded operation, and inspect durable evidence; make the strict Rust
-verification gate honest and green; and update the public product release
-presentation and packaging workflow to 0.6 without changing the frozen Tethers
-0.1 language, native host 0.2.2 compatibility identity, Portable Workbench
-0.2.2 identity, or existing authority/replay/Trail semantics.
+Integrate Tethers 0.7.0 with the current GitHub main line, preserve the
+existing 0.6 host and Plug surfaces, make the 0.7 Agent Core discoverable and
+usable, and publish a verified Windows full-runtime release on GitHub.
 
 ## Relevant background and existing behaviour
 
-The reconciled main line already contains the side-effect-free machine-facing
-`tethers plan` command and a real OCaml-engine fixture proving that planning
-does not invoke providers or write execution Trail entries. Existing 0.5 cold-
-agent evidence covers discovery and harmless inspection, while the J14 local
-scenarios and agent-oriented Plugs provide the bounded execution seams needed
-for a real workflow proof. The public product line still says 0.5, the release
-packager defaults to `0.5.0`, and the tag workflow is named and filtered for
-0.5; the new 0.6 workflow and package default are part of this task. The
-native host and Portable Workbench intentionally remain versioned
-0.2.2 for compatibility.
+The current main line is the tagged 0.6.0 reference and contains the mature
+host, Plug lifecycle, discovery, replay, and cross-language engine surfaces.
+The approved 0.7 work adds a host-owned Agent Core for bounded workspace, Git,
+exec, Threadmoth, health, and receipt operations plus Windows packaging.
 
 ## Required behaviour
 
-1. A fresh-workspace cold-agent pilot must exercise discovery, side-effect-free
-   `plan`, explicit authority/execution, and post-execution Trail or receipt
-   inspection with structured evidence. Planning must still prove zero provider
-   calls and zero execution Trail entries.
-2. The repository's strict Rust check must pass without suppressing warnings or
-   weakening tests. Existing warnings must be removed or repaired at their
-   actual ownership boundary.
-3. The complete Rust test command must be run in its normal parallel form. Any
-   barrier or scope interference must be repaired if it is a demonstrated
-   repository defect; serial evidence may supplement but may not replace the
-   normal command.
-4. Public product release references, release documentation, packaging default,
-   and tag-triggered workflow must consistently describe Tethers 0.6 and
-   `tethers-v0.6.*` assets. Historical 0.5/tagged evidence remains immutable.
-5. A reproducible 0.6 release package or package-build proof must include exact
-   SHA-256 evidence and preserve the separate compatibility version axes.
+1. Integrate the approved 0.7 Agent Core without removing current main-line
+   host, Plug, discovery, replay, or cross-language behaviour.
+2. Resolve the release-control and packaging issues that prevent a clean,
+   reproducible 0.7.0 reference.
+3. Publish current main, tag `tethers-v0.7.0`, and attach a verified Windows
+   full-runtime package, checksum file, and release manifest on GitHub.
 
 ## Frozen decisions and invariants
 
-- A Plan remains a request, not permission.
-- Core remains in OCaml; Rust remains the host and execution boundary.
-- No provider, policy, replay, or Trail semantic redesign is permitted.
-- Existing host and Portable Workbench package versions remain `0.2.2` unless
-  a separate compatibility decision explicitly changes them.
-- `tethers-v0.5.8` and all historical 0.5 evidence remain reachable and
-  unchanged.
-- No force push, destructive reset, blanket cleanup, or dependency addition.
-- Release publication must use normal Git operations and exact remote proof.
+- Tethers 0.1 language and existing authority, replay, Trail, and Plug
+  semantics remain unchanged.
+- The Agent Core is host-owned; plans do not grant authority and exec never
+  inserts a shell.
+- Workspace replacement remains expected-preimage protected; Git remote
+  mutation is not exposed.
+- The Windows package contains both `tethers.exe` and `tethers-engine.exe`.
+- No force push, reset, published-history rewrite, or invented verification.
 
 ## Relevant components
 
 - `tethers-0.1/host-rust/`
-- `tethers-0.1/portable-rust/`
-- `scripts/package-tethers-release.ps1`
-- `.github/workflows/tethers-v0.5-release.yml`
-- `.github/workflows/tethers-v0.6-release.yml`
-- `README.md`, `QUICKSTART.md`, `docs/AGENT_QUICKSTART.md`,
-  `docs/CURRENT_GOAL.md`, `docs/PROJECT_DASHBOARD.md`, and release docs
-- `tethers-0.1/scripts/test-j14a-complete-scenario.ps1`
-- `tethers-0.1/scripts/test-tethers-0.6-plan.ps1`
-- `tethers-0.1/scripts/test-j14c-real-file-move.ps1`
+- `tethers-0.1/engine-ocaml/`
+- `scripts/package-0.7.ps1`
+- `docs/releases/v0.7.0.md`
+- `README.md`, `docs/SECURITY.md`, and `justfile`
+- `.github/workflows/`
 - `.github/scripts/check-tethers-task-packet.ps1`
 
 ## Acceptance criteria
 
-1. The cold-agent pilot has a committed evidence note with exact commands,
-   structured plan result, explicit execution result, receipt/Trail evidence,
-   and negative proof that planning alone caused no provider or Trail effect.
-2. `just check` and the normal complete locked Rust test command pass; focused
-   plan/Core tests remain green.
-3. The explicit OCaml build and test commands remain green after the changes.
-4. Product-facing release metadata and packaging workflow consistently identify
-   0.6, while compatibility axes and historical 0.5 records remain explicit.
-5. A release package/build proof and SHA-256 manifest are recorded. No release
-   claim is made for an asset or platform that was not actually built.
-6. The implementation checkpoint, worker note, task checker, branch, remote
-   branch, final remote SHA, and clean worktree all agree.
+1. The integrated Rust host builds, formats, and its complete locked test
+   suite passes; the current OCaml engine builds and the cross-language tests
+   pass with that engine present.
+2. `just verify` passes with a committed implementation checkpoint and worker
+   note that agree with the branch and final evidence.
+3. The 0.7.0 Windows full-runtime package contains both executables and an
+   exact SHA-256 manifest bound to the published commit.
+4. GitHub main contains the integrated release, the consistent
+   `tethers-v0.7.0` tag exists, and the GitHub release assets download and
+   hash exactly as published.
 
 ## Required verification
 
-- toolchain and task-packet gates;
-- Rust formatter, strict check, Clippy, normal parallel complete tests,
-  focused plan/Core tests, and release builds;
-- explicit OCaml switch build/tests and the selected J14 scenario checks;
-- cold-agent plan/no-effect and execution/Trail evidence;
-- version-reference search, package-build output, SHA-256 manifest, diff check,
-  remote ancestry, tag, and final clean-worktree proof.
+- `git diff --check`, Rust format/check/test, and the relevant full suite;
+- explicit OCaml-switch `dune build @all` and cross-language tests;
+- CLI smoke tests for version, help, describe, doctor, init, capabilities,
+  bounded workspace/Git/exec surfaces, and package identity;
+- task-packet consistency, branch ancestry, tag identity, release assets, and
+  final clean-worktree proof.
 
 ## Stop conditions
 
-Stop and report if the pilot requires a new authority or capability semantic,
-the normal parallel suite exposes an unresolved concurrency defect after two
-bounded repair attempts, the strict warning gate requires broad speculative
-refactoring, the release version axes cannot be separated honestly, or required
-tooling/platform coverage is unavailable.
+Stop and report if the current main line cannot be integrated without
+discarding user work, a required test exposes an unresolved defect after
+bounded repair, GitHub rejects normal publication, or an artifact cannot be
+proven to match the published commit.
 
 ## Forbidden changes
 
-- no Tethers 0.1 syntax or semantic change;
-- no new provider, permission, replay, Trail, or Core boundary;
-- no host/portable compatibility-version rewrite disguised as product release
-  labelling;
-- no force push, reset, rebase of published history, or destructive cleanup;
-- no invented CI, release, platform, or live-provider evidence.
+- no Tethers 0.1 syntax or semantic redesign;
+- no removal or weakening of current host, Plug, replay, Trail, or engine
+  tests;
+- no force push, reset, rebase of published history, or blanket cleanup;
+- no release claim for an unbuilt or unverified platform.
 
 ## Expected pre-existing changes
 
-None. The branch starts at current `origin/main`; all changes belong to this
-0.6 preparation task.
+None.

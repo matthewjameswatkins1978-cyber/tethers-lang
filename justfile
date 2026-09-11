@@ -65,3 +65,5 @@ test-evil-bunny-proof:
     $env:TETHERS_EVIL_BUNNY_PROVIDER_EXE=(Resolve-Path reference-plugs/evil-bunny-proof/provider-rust/target/debug/tethers_evil_bunny_provider.exe); cargo test --manifest-path {{_manifest}} --locked --test p6_evil_bunny -- --ignored
 
 verify-agent: verify agent-tools deps-policy deps-advisories test-agent test-pdf-reference
+package-0-7:
+    pwsh -NoProfile -File scripts/package-0.7.ps1
