@@ -1,6 +1,7 @@
 use crate::*;
 
 use crate::executor::CapabilityExecutor;
+use clap::error::ErrorKind;
 use clap::Parser;
 use dispatch::ActionId;
 use dispatch::DispatchReadyAction;
@@ -496,11 +497,32 @@ pub fn run() {
         .map(String::as_str)
         .unwrap_or("tethers-reference-host");
 
+    if args.get(1).is_some_and(|argument| argument == "trail")
+        && !args[2..]
+            .iter()
+            .any(|argument| argument == "--trail" || argument == "--execution-id")
+    {
+        let result = agent_core::run_simple_trail(&args[2..]);
+        emit_envelope_and_exit(result.envelope, result.exit_code);
+    }
+
     // Try clap parse.  Use try_parse_from so clap never exits.
     let cli_args: Vec<&str> = args.iter().skip(1).map(String::as_str).collect();
     let cli = Cli::try_parse_from(std::iter::once(program_name).chain(cli_args.iter().copied()));
 
     match cli {
+        Ok(Cli {
+            command: Some(CliCommand::Init { engine }),
+        }) => {
+            let result = agent_core::run_init(engine);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command: Some(CliCommand::Doctor { engine, .. }),
+        }) => {
+            let result = agent_core::run_doctor(engine);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
         Ok(Cli {
             command: Some(CliCommand::Describe { host_data_root, .. }),
         }) => {
@@ -543,6 +565,46 @@ pub fn run() {
                 }),
         }) => {
             let result = discovery::run_capability_inspect(&host_data_root, &name, version);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command: Some(CliCommand::Workspace { command }),
+        }) => {
+            let result = agent_core::run_workspace(command);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command: Some(CliCommand::Git { command }),
+        }) => {
+            let result = agent_core::run_git(command);
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command: Some(CliCommand::Exec {
+                program,
+                argv,
+                cwd,
+                timeout_ms,
+                environment,
+                env,
+                max_output_bytes,
+            }),
+        }) => {
+            let result = agent_core::run_exec_command(
+                program,
+                argv,
+                cwd,
+                timeout_ms,
+                environment,
+                env,
+                max_output_bytes,
+            );
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
+            command: Some(CliCommand::Threadmoth { command }),
+        }) => {
+            let result = agent_core::run_threadmoth(command);
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {
@@ -847,6 +909,10 @@ pub fn run() {
             emit_envelope_and_exit(envelope, OutcomeStatus::InvalidCliUsage.exit_code());
         }
         Err(e) => {
+            if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) {
+                print!("{e}");
+                std::process::exit(0);
+            }
             let envelope = CliEnvelope::error(
                 "tethers-reference-host",
                 OutcomeStatus::InvalidCliUsage,

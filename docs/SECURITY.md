@@ -2,10 +2,20 @@
 
 Status: current security summary  
 Updated: 2026-09-10
+Tethers 0.7 provider execution uses process supervision but is not a hostile-code sandbox.
+The current guarantees include explicit launch, bounded protocol I/O, retained
+child ownership, Windows Job Object lifecycle management, replay protection,
+strict manifest checks and redacted outcomes. They do not prove filesystem,
+network, credential, token or DLL isolation.
 
 Tethers has a serious trust and execution model, but it is important to describe exactly what that model does and does not guarantee.
 
 ## The short version
+No automatic retry exists. Job Objects and process-tree termination provide
+lifecycle supervision and cleanup; they do not prevent a provider running as
+the host user from accessing that user's OS-visible filesystem, network,
+account, or other resources. They must not be described as a generic security
+sandbox.
 
 > **Tethers can constrain and evidence provider execution. It does not turn arbitrary provider code into harmless sandboxed code.**
 

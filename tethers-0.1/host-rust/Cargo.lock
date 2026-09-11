@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "tethers-reference-host"
-version = "0.2.2"
+version = "0.7.0"
 dependencies = [
  "base64",
  "clap",

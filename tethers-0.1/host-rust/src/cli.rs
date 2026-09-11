@@ -7,9 +7,9 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "tethers-reference-host",
+    name = "tethers",
     version = env!("CARGO_PKG_VERSION"),
-    about = "Tethers Reference Host",
+    about = "Tethers execution boundary",
     disable_help_subcommand = true
 )]
 pub struct Cli {
@@ -19,6 +19,18 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Initialise the current workspace without replacing existing settings.
+    Init {
+        #[arg(long = "engine", value_name = "PATH")]
+        engine: Option<PathBuf>,
+    },
+    /// Inspect host, workspace, capability, and engine health.
+    Doctor {
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+        #[arg(long = "engine", value_name = "PATH")]
+        engine: Option<PathBuf>,
+    },
     /// Describe host capabilities and read-only discovery surfaces.
     Describe {
         #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
@@ -30,6 +42,38 @@ pub enum Command {
     Capability {
         #[command(subcommand)]
         command: CapabilityCommand,
+    },
+    /// Perform one bounded operation in the current workspace.
+    Workspace {
+        #[command(subcommand)]
+        command: WorkspaceCommand,
+    },
+    /// Perform one controlled local Git operation.
+    Git {
+        #[command(subcommand)]
+        command: GitCommand,
+    },
+    /// Execute one explicit program and argv with bounded output.
+    Exec {
+        #[arg(long = "program", value_name = "PATH_OR_NAME")]
+        program: String,
+        #[arg(long = "arg", value_name = "VALUE", allow_hyphen_values = true)]
+        argv: Vec<String>,
+        #[arg(long = "cwd", value_name = "PATH")]
+        cwd: Option<PathBuf>,
+        #[arg(long = "timeout-ms", default_value_t = 300_000)]
+        timeout_ms: u64,
+        #[arg(long = "environment", default_value = "inherit", value_parser = ["inherit", "clean", "explicit"])]
+        environment: String,
+        #[arg(long = "env", value_name = "KEY=VALUE")]
+        env: Vec<String>,
+        #[arg(long = "max-output-bytes", default_value_t = 1_048_576)]
+        max_output_bytes: usize,
+    },
+    /// Use the optional Threadmoth provider explicitly through its guarded protocol.
+    Threadmoth {
+        #[command(subcommand)]
+        command: ThreadmothCommand,
     },
     /// Inspect a Plug package without extracting, installing, or executing it.
     Plug {
@@ -126,6 +170,20 @@ pub enum Command {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum ThreadmothCommand {
+    /// Validate and preview one workspace-relative Threadmoth request JSON file.
+    Preview {
+        #[arg(long, value_name = "WORKSPACE_RELATIVE_REQUEST")]
+        request: PathBuf,
+    },
+    /// Apply one validated Threadmoth request JSON file using its guarded protocol.
+    Apply {
+        #[arg(long, value_name = "WORKSPACE_RELATIVE_REQUEST")]
+        request: PathBuf,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum CapabilityCommand {
     /// List enabled capabilities, or all installed capabilities with --all.
     List {
@@ -152,6 +210,91 @@ pub enum CapabilityCommand {
         host_data_root: PathBuf,
         #[arg(long = "json", default_value_t = false)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WorkspaceCommand {
+    Stat {
+        #[arg(long)]
+        path: PathBuf,
+    },
+    List {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long, default_value_t = false)]
+        recursive: bool,
+        #[arg(long, default_value_t = 4)]
+        max_depth: u32,
+        #[arg(long, default_value_t = 1000)]
+        max_entries: usize,
+    },
+    Read {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value_t = 1_048_576)]
+        max_bytes: usize,
+    },
+    Create {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long, conflicts_with = "content_file")]
+        content: Option<String>,
+        #[arg(long = "content-file", conflicts_with = "content")]
+        content_file: Option<PathBuf>,
+    },
+    Replace {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long = "expected-preimage-sha256")]
+        expected_preimage_sha256: String,
+        #[arg(long, conflicts_with = "content_file")]
+        content: Option<String>,
+        #[arg(long = "content-file", conflicts_with = "content")]
+        content_file: Option<PathBuf>,
+    },
+    Rename {
+        #[arg(long)]
+        from: PathBuf,
+        #[arg(long)]
+        to: PathBuf,
+    },
+    Delete {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long, default_value_t = false)]
+        recursive: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum GitCommand {
+    Status,
+    Diff {
+        #[arg(long, default_value_t = false)]
+        staged: bool,
+        #[arg(long)]
+        path: Option<PathBuf>,
+        #[arg(long, default_value_t = 1_048_576)]
+        max_bytes: usize,
+    },
+    Log {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    BranchCurrent,
+    Stage {
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+    },
+    Commit {
+        #[arg(long)]
+        message: String,
+    },
+    BranchCreate {
+        name: String,
     },
 }
 
