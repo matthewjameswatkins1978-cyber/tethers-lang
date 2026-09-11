@@ -12,7 +12,7 @@ Owner: `Codex`
 
 Route: `Integrate the approved 0.7 execution boundary onto current origin/main, resolve release blockers, verify the full runtime, then publish main and the GitHub release through normal Git operations.`
 
-Base commit: `e353cbb8f4f6f03c1e10cfc2344a23f7c2731ae5`
+Base commit: `e353cbbbe7599c467e17b6e558f979b6c83a4b39`
 
 Implementation checkpoint: `WORKTREE`
 
