@@ -1,0 +1,51 @@
+{
+  "policy": {
+    "service": "standard service",
+    "allowed_weekdays": [1, 2, 3, 4, 5],
+    "earliest_local_time": "13:00",
+    "maximum_price_minor": 6000,
+    "currency": "GBP",
+    "allowed_extras": [],
+    "forbidden_commitments": ["subscription", "membership", "deposit", "purchase"]
+  },
+  "cases": {
+    "allow_price_45": {
+      "offered_date": "2026-09-15",
+      "offered_time": "15:30",
+      "offered_price_minor": 4500,
+      "currency": "GBP",
+      "service": "standard service",
+      "extra_requested": null,
+      "expected": "ALLOW"
+    },
+    "ask_price_95": {
+      "offered_date": "2026-09-15",
+      "offered_time": "15:30",
+      "offered_price_minor": 9500,
+      "currency": "GBP",
+      "service": "standard service",
+      "extra_requested": null,
+      "expected": "ASK"
+    },
+    "ask_extra": {
+      "offered_date": "2026-09-15",
+      "offered_time": "15:30",
+      "offered_price_minor": 4500,
+      "currency": "GBP",
+      "service": "standard service",
+      "extra_requested": "premium add-on",
+      "expected": "ASK"
+    },
+    "deny_subscription": {
+      "offered_date": "2026-09-15",
+      "offered_time": "15:30",
+      "offered_price_minor": 4500,
+      "currency": "GBP",
+      "service": "standard service",
+      "extra_requested": null,
+      "commitment_kind": "subscription",
+      "subscription": true,
+      "expected": "DENY"
+    }
+  }
+}

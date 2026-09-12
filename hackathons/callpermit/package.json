@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "description": "Self-contained Tethers-backed authority-envelope evaluator for CALL-E",
   "type": "module",
-  "main": "dist/authority.js",
-  "types": "dist/authority.d.ts",
+  "main": "dist/callpermit.js",
+  "types": "dist/callpermit.d.ts",
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test tests/*.test.ts",
-    "acceptance": "npm ci && npm run build && npm test"
+    "dry-run": "node --import tsx src/cli.ts",
+    "acceptance": "npm ci && npm run build && npm test && npm run dry-run"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

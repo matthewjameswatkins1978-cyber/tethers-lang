@@ -174,6 +174,33 @@ export interface AuthorityEnvelope {
   default_decision: AuthorityDecision;
   /** SHA-256 digest of the canonical envelope bytes (excludes digest itself). */
   digest: string;
+  /** Optional bounded appointment policy used by the CallPermit demo product. */
+  appointment_policy?: AppointmentPolicy;
+}
+
+/** The small, product-specific policy surface kept inside the frozen envelope. */
+export interface AppointmentPolicy {
+  capability_name: string;
+  service: string;
+  allowed_weekdays: number[];
+  earliest_local_time: string;
+  maximum_price_minor: number;
+  currency: string;
+  allowed_extras: string[];
+  forbidden_commitments: string[];
+}
+
+/** Terms offered by a recipient, treated as untrusted provider evidence. */
+export interface AppointmentTerms {
+  offered_date: string;
+  offered_time: string;
+  offered_price_minor: number;
+  currency: string;
+  service: string;
+  extra_requested: string | null;
+  commitment_kind?: string;
+  subscription?: boolean;
+  deposit_minor?: number | null;
 }
 
 /**
@@ -240,6 +267,22 @@ export interface CallResult {
   completed_at?: string;
   /** Error information if the call failed. */
   error?: { code: string; message: string };
+  /** Provider-reported structured outcome; never treated as authority. */
+  outcome?: "COMMITTED" | "DEFERRED" | "NO_MATCH" | "FAILED";
+  offered_date?: string | null;
+  offered_time?: string | null;
+  offered_price_minor?: number | null;
+  currency?: string | null;
+  service?: string | null;
+  extra_requested?: string | null;
+  commitment_kind?: string;
+  subscription?: boolean;
+  deposit_minor?: number | null;
+  commitment_made?: boolean;
+  defer_reason?: string | null;
+  recipient_words_supporting_result?: string[];
+  /** CALL-E task completion is evidence only, not authority. */
+  task_completed?: boolean;
 }
 
 /** Persisted record of a single call lifecycle. */
@@ -254,6 +297,8 @@ export interface CallRecord {
   status: CallStatus;
   /** Phone number that initiated the call. */
   from: string;
+  /** Digest of the frozen authority used to compile this atomic call. */
+  authority_digest?: string;
   /** Timestamp when the record was created (ISO 8601). */
   created_at: string;
   /** Timestamp of the last state update (ISO 8601). */

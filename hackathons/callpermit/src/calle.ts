@@ -26,12 +26,14 @@ import type {
  */
 export function computeCallIdentity(
   from: string,
-  params: CallParams
+  params: CallParams,
+  authorityDigest?: string
 ): string {
   const payload = JSON.stringify({
     from: from.toLowerCase().trim(),
     to: params.to.toLowerCase().trim(),
     capability: params.capability.trim(),
+    authority_digest: authorityDigest ?? null,
   });
   const hash = createHash("sha256").update(payload, "utf8").digest("hex");
   return `call:${hash.slice(0, 16)}`;
@@ -145,6 +147,8 @@ export function deserialiseRegistry(records: CallRecord[]): CallRegistry {
 export interface CreateCallOptions {
   /** Timeout override in milliseconds. */
   timeout_ms?: number;
+  /** Digest of the immutable authority used to compile this call. */
+  authority_digest?: string;
 }
 
 /**
@@ -154,7 +158,8 @@ export interface CreateCallOptions {
  * - Computes a deterministic identity from (from, to, capability).
  * - If the registry already has a COMPLETED or IN_PROGRESS record with
  *   this identity, returns the existing result instead of making a new call.
- * - If a FAILED or TIMED_OUT record exists, allows retry.
+ * - If a FAILED record has no provider call ID, allows retry.
+ * - A TIMED_OUT/FAILED record with a provider call ID is never dispatched again.
  * - Otherwise creates a new record, dispatches, and persists the result.
  *
  * Never places a live call: the actual API interaction is delegated to the
@@ -187,8 +192,13 @@ export async function dispatchCall(
     };
   }
 
-  // Compute identity
-  const identity = computeCallIdentity(credentials.phone_number, params);
+  // Compute identity. A new frozen envelope is a new atomic call, even when
+  // the destination and conversational task are otherwise identical.
+  const identity = computeCallIdentity(
+    credentials.phone_number,
+    params,
+    options?.authority_digest
+  );
 
   // Check registry for existing call
   const existing = registry.get(identity);
@@ -207,7 +217,20 @@ export async function dispatchCall(
         error: { code: "CALL_IN_PROGRESS", message: "call already in progress for this identity" },
       };
     }
-    // failed or timed_out: allow retry — fall through to create a new call
+    // If CALL-E assigned an ID, the external effect may have happened even if
+    // local observation failed. Never create a second call; resume observation
+    // through a future provider-specific get/poll operation instead.
+    if (existing.call_id) {
+      return existing.result ?? {
+        call_id: existing.call_id,
+        status: existing.status,
+        error: {
+          code: "OBSERVATION_REQUIRED",
+          message: "existing CALL-E call identity is present; do not dispatch again",
+        },
+      };
+    }
+    // A failed attempt with no provider call ID is safe to retry.
   }
 
   // Create record
@@ -217,6 +240,7 @@ export async function dispatchCall(
     params,
     status: "pending",
     from: credentials.phone_number,
+    authority_digest: options?.authority_digest,
     created_at: now,
     updated_at: now,
   };
@@ -253,68 +277,4 @@ export async function dispatchCall(
   });
 
   return result;
-}
-
-// ---------------------------------------------------------------------------
-// FakeCalleClient for testing (no network)
-// ---------------------------------------------------------------------------
-
-export interface FakeCallConfig {
-  /** If set, every call returns this result. */
-  fixedResult?: CallResult;
-  /** If set, calls fail with this error after the given delay. */
-  failWith?: { code: string; message: string };
-  /** Delay in ms before returning (simulates network latency). */
-  delay_ms?: number;
-  /** If true, the client throws instead of returning an error result. */
-  throwOnDispatch?: boolean;
-}
-
-/**
- * A fake CALL-E client for testing. Never touches the network.
- * Tracks how many times createAndWait was called.
- */
-export function createFakeCalleClient(config: FakeCallConfig = {}): CalleClient & { callCount: number } {
-  let callCount = 0;
-
-  return {
-    get callCount() { return callCount; },
-
-    async createAndWait(
-      _credentials: CalleCredentials,
-      params: CallParams,
-      options?: { timeout_ms?: number }
-    ): Promise<CallResult> {
-      callCount++;
-
-      if (config.delay_ms && config.delay_ms > 0) {
-        await new Promise((resolve) => setTimeout(resolve, config.delay_ms));
-      }
-
-      if (config.throwOnDispatch) {
-        throw new Error("simulated dispatch failure");
-      }
-
-      if (config.failWith) {
-        return {
-          call_id: `fake-${callCount}`,
-          status: "failed",
-          error: config.failWith,
-        };
-      }
-
-      if (config.fixedResult) {
-        return { ...config.fixedResult };
-      }
-
-      // Default success
-      return {
-        call_id: `fake-${callCount}`,
-        status: "completed",
-        transcript: `fake transcript for ${params.capability}`,
-        duration_ms: 1200,
-        completed_at: new Date().toISOString(),
-      };
-    },
-  };
 }

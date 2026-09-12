@@ -9,13 +9,13 @@ import assert from "node:assert/strict";
 import {
   computeCallIdentity,
   createCallRegistry,
-  createFakeCalleClient,
   deserialiseRegistry,
   dispatchCall,
   guardCredentials,
   guardPhoneNumber,
   serialiseRegistry,
 } from "../src/calle.js";
+import { createFakeCalleClient } from "../src/fake-calle.js";
 import type { CalleCredentials, CallParams, CallResult, CallRecord } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -380,11 +380,11 @@ describe("restart safety", () => {
     assert.ok(result.call_id, "should have a call_id");
   });
 
-  it("restarting after timeout allows retry", async () => {
-    // First run: call times out
+  it("restarting after a provider ID exists never dispatches a duplicate", async () => {
+    // A timeout after provider allocation is uncertain, not a safe retry.
     const client1 = createFakeCalleClient({
       fixedResult: {
-        call_id: "",
+        call_id: "api-existing-1",
         status: "timed_out",
         error: { code: "TIMEOUT", message: "call timed out" },
       },
@@ -396,11 +396,12 @@ describe("restart safety", () => {
     const records = serialiseRegistry(reg);
     const restoredReg = deserialiseRegistry(records);
 
-    // Second run: new client succeeds
+    // Second run: a new client must not be called for the same identity.
     const client2 = createFakeCalleClient();
     const result = await dispatchCall(client2, restoredReg, CREDS, PARAMS);
-    assert.equal(result.status, "completed");
-    assert.equal(client2.callCount, 1, "retry should dispatch once");
+    assert.equal(result.status, "timed_out");
+    assert.equal(result.call_id, "api-existing-1");
+    assert.equal(client2.callCount, 0, "existing provider ID must prevent duplicate dispatch");
   });
 
   it("does not duplicate calls for different capabilities", async () => {
