@@ -1,0 +1,21 @@
+{
+  "name": "@callpermit/core",
+  "version": "0.1.0",
+  "description": "Self-contained Tethers-backed authority-envelope evaluator for CALL-E",
+  "type": "module",
+  "main": "dist/authority.js",
+  "types": "dist/authority.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --import tsx --test tests/authority.test.ts",
+    "acceptance": "npm run build && npm test && node --import tsx --test tests/authority.test.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  },
+  "keywords": ["tethers", "authority", "call-e"],
+  "author": "",
+  "license": "MIT"
+}

@@ -1,0 +1,154 @@
+{
+  "envelopes": {
+    "standing_allow": {
+      "envelope_version": "1.0",
+      "policy_id": "test-standing-allow",
+      "capabilities": [
+        {
+          "capability_name": "fixture.ping",
+          "capability_version": 1,
+          "decision": "ALLOW"
+        },
+        {
+          "capability_name": "file.metadata",
+          "capability_version": 1,
+          "decision": "ALLOW"
+        }
+      ],
+      "default_decision": "ASK",
+      "digest": "sha256:PLACEHOLDER"
+    },
+    "standing_deny": {
+      "envelope_version": "1.0",
+      "policy_id": "test-standing-deny",
+      "capabilities": [
+        {
+          "capability_name": "file.move",
+          "capability_version": 1,
+          "decision": "DENY"
+        }
+      ],
+      "default_decision": "ASK",
+      "digest": "sha256:PLACEHOLDER"
+    },
+    "mixed_policy": {
+      "envelope_version": "1.0",
+      "policy_id": "test-mixed-policy",
+      "capabilities": [
+        {
+          "capability_name": "fixture.ping",
+          "capability_version": 1,
+          "decision": "ALLOW"
+        },
+        {
+          "capability_name": "file.move",
+          "capability_version": 1,
+          "decision": "DENY"
+        },
+        {
+          "capability_name": "file.metadata",
+          "capability_version": 1,
+          "decision": "ASK"
+        }
+      ],
+      "default_decision": "DENY",
+      "digest": "sha256:PLACEHOLDER"
+    },
+    "effect_restricted": {
+      "envelope_version": "1.0",
+      "policy_id": "test-effect-restricted",
+      "capabilities": [
+        {
+          "capability_name": "fixture.ping",
+          "capability_version": 1,
+          "decision": "ALLOW",
+          "allowed_effects": ["fixture.test"]
+        }
+      ],
+      "default_decision": "DENY",
+      "digest": "sha256:PLACEHOLDER"
+    }
+  },
+  "responses": {
+    "matched_allow": {
+      "protocol_version": "0.1",
+      "evaluation_id": "eval_test_001",
+      "event_id": "evt_test_001",
+      "tether_id": "test-tether",
+      "tether_version": "test-v1",
+      "status": "matched",
+      "plan": {
+        "id": "eval_test_001/plan",
+        "required_effects": ["fixture.test"],
+        "actions": [
+          {
+            "action_id": "action_1",
+            "idempotency_key": "eval_test_001/action_1",
+            "capability": "fixture.ping",
+            "capability_version": "1.0.0",
+            "arguments": { "message": "hello" },
+            "effects": ["fixture.test"]
+          }
+        ]
+      },
+      "trail": [
+        { "sequence": 1, "phase": "reception", "kind": "event_received", "outcome": "accepted", "message": "Received test.event" },
+        { "sequence": 2, "phase": "evaluation", "kind": "anchor_checked", "outcome": "matched", "message": "Anchor matched" },
+        { "sequence": 3, "phase": "evaluation", "kind": "action_planned", "outcome": "accepted", "message": "Planned fixture.ping" }
+      ]
+    },
+    "matched_deny": {
+      "protocol_version": "0.1",
+      "evaluation_id": "eval_test_002",
+      "event_id": "evt_test_002",
+      "tether_id": "test-tether",
+      "tether_version": "test-v1",
+      "status": "matched",
+      "plan": {
+        "id": "eval_test_002/plan",
+        "required_effects": ["data.move"],
+        "actions": [
+          {
+            "action_id": "action_1",
+            "idempotency_key": "eval_test_002/action_1",
+            "capability": "file.move",
+            "capability_version": "1.0.0",
+            "arguments": { "source_path": "a.txt", "destination_path": "b.txt" },
+            "effects": ["data.read", "data.move"]
+          }
+        ]
+      },
+      "trail": [
+        { "sequence": 1, "phase": "reception", "kind": "event_received", "outcome": "accepted", "message": "Received file.request" },
+        { "sequence": 2, "phase": "evaluation", "kind": "anchor_checked", "outcome": "matched", "message": "Anchor matched" },
+        { "sequence": 3, "phase": "evaluation", "kind": "action_planned", "outcome": "accepted", "message": "Planned file.move" }
+      ]
+    },
+    "not_matched": {
+      "protocol_version": "0.1",
+      "evaluation_id": "eval_test_003",
+      "event_id": "evt_test_003",
+      "tether_id": "test-tether",
+      "tether_version": "test-v1",
+      "status": "not_matched",
+      "plan": null,
+      "trail": [
+        { "sequence": 1, "phase": "reception", "kind": "event_received", "outcome": "accepted", "message": "Received unknown.event" },
+        { "sequence": 2, "phase": "evaluation", "kind": "anchor_checked", "outcome": "not_matched", "message": "Anchor did not match" }
+      ]
+    },
+    "error": {
+      "protocol_version": "0.1",
+      "evaluation_id": "eval_test_004",
+      "event_id": "evt_test_004",
+      "tether_id": "test-tether",
+      "tether_version": "test-v1",
+      "status": "error",
+      "plan": null,
+      "trail": [
+        { "sequence": 1, "phase": "reception", "kind": "event_received", "outcome": "accepted", "message": "Received test.event" }
+      ],
+      "error": { "code": "missing_fact", "message": "Fact 'project.type' is required but not provided" }
+    }
+  }
+}
