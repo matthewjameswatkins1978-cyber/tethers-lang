@@ -7,7 +7,7 @@
   "types": "dist/authority.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "node --import tsx --test tests/authority.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
     "acceptance": "npm ci && npm run build && npm test"
   },
   "devDependencies": {

@@ -194,3 +194,92 @@ export interface AuthorityResult {
   /** The evaluation trail from the Tethers planner (if available). */
   trail?: TrailEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// CALL-E runtime adapter types
+// ---------------------------------------------------------------------------
+
+/** Credential required to authenticate with the CALL-E API. */
+export interface CalleCredentials {
+  /** API key for authentication. */
+  api_key: string;
+  /** Phone number that initiates the call (E.164 format recommended). */
+  phone_number: string;
+}
+
+/** Parameters for initiating a single phone call via CALL-E. */
+export interface CallParams {
+  /** Destination phone number (E.164 format recommended). */
+  to: string;
+  /** Capability name this call fulfills. */
+  capability: string;
+  /** Optional capability version. */
+  capability_version?: string;
+  /** Optional call timeout in milliseconds. */
+  timeout_ms?: number;
+  /** Optional prompt or instruction for the call. */
+  prompt?: string;
+  /** Arbitrary call metadata. */
+  metadata?: Record<string, unknown>;
+}
+
+/** Possible states for a tracked call. */
+export type CallStatus = "pending" | "in_progress" | "completed" | "failed" | "timed_out";
+
+/** Structured result returned by a completed call. */
+export interface CallResult {
+  /** Unique identifier for this call. */
+  call_id: string;
+  /** Final call status. */
+  status: CallStatus;
+  /** Transcript or text result of the call, if available. */
+  transcript?: string;
+  /** Duration in milliseconds. */
+  duration_ms?: number;
+  /** Timestamp when the call completed (ISO 8601). */
+  completed_at?: string;
+  /** Error information if the call failed. */
+  error?: { code: string; message: string };
+}
+
+/** Persisted record of a single call lifecycle. */
+export interface CallRecord {
+  /** Deterministic identity derived from call parameters. */
+  identity: string;
+  /** Unique ID assigned by the CALL-E API (set after creation). */
+  call_id?: string;
+  /** Original call parameters. */
+  params: CallParams;
+  /** Current call status. */
+  status: CallStatus;
+  /** Phone number that initiated the call. */
+  from: string;
+  /** Timestamp when the record was created (ISO 8601). */
+  created_at: string;
+  /** Timestamp of the last state update (ISO 8601). */
+  updated_at: string;
+  /** Final result, if the call completed or failed. */
+  result?: CallResult;
+}
+
+/** Transport-agnostic interface for CALL-E API operations. */
+export interface CalleClient {
+  /** Create a call and wait for it to complete. Returns structured result. */
+  createAndWait(
+    credentials: CalleCredentials,
+    params: CallParams,
+    options?: { timeout_ms?: number }
+  ): Promise<CallResult>;
+}
+
+/** Persistence layer for call records. */
+export interface CallRegistry {
+  /** Look up a call by its deterministic identity. */
+  get(identity: string): CallRecord | undefined;
+  /** Insert a new call record. Throws if identity already exists. */
+  insert(record: CallRecord): void;
+  /** Update an existing call record. Throws if identity not found. */
+  update(identity: string, patch: Partial<CallRecord>): void;
+  /** List all records. */
+  all(): CallRecord[];
+}
