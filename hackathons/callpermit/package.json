@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test tests/authority.test.ts",
-    "acceptance": "npm run build && npm test && node --import tsx --test tests/authority.test.ts"
+    "acceptance": "npm ci && npm run build && npm test"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
