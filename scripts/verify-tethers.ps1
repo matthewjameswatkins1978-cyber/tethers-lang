@@ -44,7 +44,14 @@ function Invoke-VerificationStep {
     [void]$results.Add($result)
     Write-Host ("{0}: {1}" -f $status, $Name)
     if ($exitCode -ne 0) {
-        $detail = (@($lines | Select-Object -First 8) -join "`n").Trim()
+        $detailLines = if ($lines.Count -le 24) {
+            @($lines)
+        } else {
+            @($lines | Select-Object -First 4) +
+                @('... failure detail truncated ...') +
+                @($lines | Select-Object -Last 19)
+        }
+        $detail = ($detailLines -join "`n").Trim()
         if (-not [string]::IsNullOrWhiteSpace($detail)) {
             Write-Host ("First failure detail: {0}" -f $detail)
             $result | Add-Member -NotePropertyName failure_detail -NotePropertyValue $detail
