@@ -419,6 +419,35 @@ let test_boundaries () =
       (result.Path.stats.complete_permutations_enumerated = 0)
   ) [9; 10; 11; 12; 99; 100; 999; 1000]
 
+let test_scale_evidence () =
+  Printf.printf "testing production Rocket scale identity and ordering\n%!";
+  List.iter (fun size ->
+    let base = result_for (chain_program size) in
+    let repeated = result_for (chain_program size) in
+    let renamed = result_for (chain_program ~tag:"renamed" size) in
+    Printf.printf
+      "rocket-scale size=%d path_size=%d candidate_targets=%d feasibility_checks=%d rejected=%d committed=%d complete_permutations=%d max_partial_components=%d\n%!"
+      size base.Path.stats.path_size
+      base.Path.stats.candidate_targets_considered
+      base.Path.stats.feasibility_checks
+      base.Path.stats.rejected_infeasible_choices
+      base.Path.stats.committed_choices
+      base.Path.stats.complete_permutations_enumerated
+      base.Path.stats.max_partial_components;
+    check ("scale " ^ string_of_int size ^ " canonicalises")
+      (base.Path.stats.path_size = size &&
+       base.Path.stats.committed_choices = size);
+    check ("scale " ^ string_of_int size ^ " avoids complete search")
+      (base.Path.stats.complete_permutations_enumerated = 0);
+    check ("scale " ^ string_of_int size ^ " preserves Action order")
+      (base.Path.labels = repeated.Path.labels);
+    check ("scale " ^ string_of_int size ^ " repeats identical digest")
+      (digest_of_payload base.Path.payload =
+       digest_of_payload repeated.Path.payload);
+    check ("scale " ^ string_of_int size ^ " ignores raw identifiers")
+      (base.Path.payload = renamed.Path.payload)
+  ) [10; 50; 100; 1000]
+
 let () =
   test_feasibility ();
   test_feasibility_against_small_table_oracle ();
@@ -427,5 +456,6 @@ let () =
   test_metamorphic_and_choices ();
   test_shape_rejection ();
   test_boundaries ();
+  test_scale_evidence ();
   Printf.printf "rocket-v3-success-path: %d/%d checks passed\n%!"
     !tests_passed !tests_run

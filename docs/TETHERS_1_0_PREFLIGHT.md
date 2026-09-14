@@ -2,7 +2,7 @@
 
 Date: 2026-09-14  
 Scope: repository stabilisation and baseline evidence before Tethers 1.0 feature work  
-Verdict: **NEEDS REVIEW**
+Closeout verdict: **ACCEPTED TECHNICAL BASELINE; OWNER DECISION REMAINS**
 
 This is a preflight record, not a 1.0 feature design or release approval. It
 records what is verified, what was repaired, what remains unverified, and the
@@ -55,8 +55,9 @@ environment-handshake, J20, J21 PDF provider work, and this audit tree. No
 branch or worktree was deleted. This preserves unexplained work, unique commits,
 and the untracked `release/` directory.
 
-There are no open GitHub pull requests at the time of audit. No push, merge,
-history rewrite, tag mutation, or publication was performed.
+There are no open GitHub pull requests at the time of audit. This closeout has
+not yet pushed or merged the new closeout commits. No history rewrite or tag
+mutation was performed.
 
 ## 3. Version and product truth
 
@@ -154,15 +155,31 @@ statistics record `relation_visits=6999`, `splitter_pops=1004`, `cell_splits=998
 `max_worklist=6`, and `final_cells=1004`.
 
 The first-class quick benchmark passed three Rocket portfolio/reference parity
-cases. The requested 50-action point is not directly present in the current
-success-path evidence and is therefore a preflight gap, not an inferred pass.
+cases. The new direct production-helper scale test passed `89/89` checks in
+175.508 seconds, covering repeated canonicalisation of 10, 50, 100, and 1000
+sequential actions. Direct counters were:
+
+| Actions | Candidate targets | Feasibility checks | Rejected | Committed | Complete permutations | Max partial components |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 | 19 | 19 | 9 | 10 | 0 | 10 |
+| 50 | 53 | 53 | 3 | 50 | 0 | 50 |
+| 100 | 101 | 101 | 1 | 100 | 0 | 100 |
+| 1000 | 1003 | 1003 | 3 | 1000 | 0 | 1000 |
+
+The same test checks repeated identical digest, Action ordering, raw-ID
+invariance, and completion through `Tethers_core_rocket_v3_success_path`.
+The production evaluation adapter remains V2-only; no legacy fallback is
+reachable. This resolves the direct Rocket 50-action evidence gap.
 
 The legacy C-B1 alternative benchmark was also run. Its partition checks pass,
 but ordering/canonical-equivalence checks fail at sizes 100, 250, 500, and
-1000, with a detailed size-10 byte/digest mismatch. This benchmark calls the
-old V1 canonical module and is not part of the production adapter or required
-verification path. It is stale research residue and must be quarantined,
-repaired, or retired before anyone uses it as production acceptance evidence.
+1000, with a detailed size-10 byte/digest mismatch. Its own worker note marks
+it benchmark-only and says it should be removed before production work. The
+benchmark executable, benchmark-only interface, and Dune target were retired;
+the shared old canonical module was retained because existing V2 reference
+tests still compile against it. This is classified **RESOLVED** as obsolete
+research residue, not a current production regression. Historical C-B1 design
+and worker notes remain as evidence and are not acceptance claims.
 
 ## 8. MCP and Plug state
 
@@ -191,7 +208,7 @@ This is supervised host execution, not a hostile-code sandbox. The existing
 security wording was kept at that level. No general shell capability was added
 by this preflight.
 
-## 10. Licence and release automation blockers
+## 10. Licence, release automation, and checker classifications
 
 No tracked `LICENSE`, `LICENCE`, `COPYING`, or `NOTICE` file was found. The OCaml
 package currently declares `UNLICENSED`. This requires an owner decision before
@@ -201,8 +218,24 @@ candidate only; it was not selected or added by this audit.
 There is no dedicated 0.7 release workflow. Existing 0.5/0.6 workflows still
 describe older packaging, while the published 0.7 release uses the newer
 `scripts/package-0.7.ps1` Windows full-runtime path. Linux parity for the 0.7
-native host is not proven. These are release/owner decisions, not reasons to
-invent an unverified workflow or asset in a preflight.
+native host is not proven. This is a **1.0 REQUIREMENT** for a supported Linux
+release, separated as follows: Rust host code is substantially portable but
+Windows-specific supervision/path branches need Linux verification (**CODE
+PORTABILITY**); OCaml engine code is platform-neutral in the tested path but no
+Linux toolchain build was run (**BUILD PORTABILITY**); no Linux native 0.7
+archive, checksum, manifest, or clean-machine smoke test exists (**PACKAGE
+PORTABILITY**); and no current 0.7 native Linux matrix/release workflow exists
+(**CI/RELEASE PORTABILITY**). No major port was attempted.
+
+The exact packet-checker command
+`pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1` fails
+before product verification with `Implementation changed after recorded
+evidence checkpoint` and identifies
+`docs/hackathons/CALLPERMIT_GARY_BUILD_2026-09-11.md`. The file is a later
+GARY/task evidence document, not a Tethers implementation defect; the completed
+historical packet was not rewritten. This is classified **EXTERNAL TOOLING
+ISSUE**. The checker needs a future task/checkpoint compatibility repair, but it
+does not block Core correctness or this closeout merge.
 
 ## 11. Changes made in this audit
 
@@ -211,6 +244,8 @@ invent an unverified workflow or asset in a preflight.
 - Repaired two fixed-path Rust tests so parallel/repeated runs do not collide.
 - Updated stale MCP descriptions and evaluate transcript fixtures to the live
   Core-backed `tethers.evaluate` contract.
+- Added direct Rocket 10/50/100/1000 scale and identity evidence.
+- Retired the obsolete C-B1 benchmark executable and benchmark-only interface.
 - Added this preflight record.
 
 No implementation semantics, 0.1 syntax, architecture boundary, historical
@@ -229,12 +264,11 @@ published and hash-verified Windows 0.7 full-runtime release, passing OCaml and
 Rust suites, passing current MCP transcripts, documented version truth, and
 preserved historical Git state.
 
-The start line is **not yet a clean 1.0 approval**. Before feature work, the
-owner should decide the licence, decide whether/when to establish Linux native
-parity and 0.7 release automation, add direct Rocket 50-action evidence, and
-quarantine/repair/retire C-B1. The packet checker also needs an honest new
-implementation checkpoint in the normal task workflow because the current
-completed packet has post-checkpoint repository changes.
+There is no remaining Core correctness blocker from this preflight. The
+remaining **OWNER DECISION** is the licence. Linux native support and release
+automation are **1.0 REQUIREMENTS**, and the packet-checker mismatch is
+**EXTERNAL TOOLING ISSUE**. Rocket scale evidence and C-B1 residue are
+resolved.
 
 Recommended small local commits on this audit branch are: (1) test isolation,
 (2) documentation and MCP fixture alignment, and (3) this preflight artifact.
