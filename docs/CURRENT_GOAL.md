@@ -1,10 +1,16 @@
 # Current Goal
 
-Updated: 2026-09-11
+Updated: 2026-09-14
 
 ## Goal
 
-**Make Tethers 0.7.0 the clear, verifiable execution boundary that AI agents and developers can download, understand, and use in ordinary work.**
+**Make the Road to Tethers 1.0 a clear, verifiable stability programme built on
+the released 0.7.0 execution boundary.**
+
+The active R1 contract freeze is documented in [`ROAD_TO_1_0.md`](ROAD_TO_1_0.md),
+with versioning, compatibility, support, and deprecation policies beside it.
+0.8 begins with contract, verification, portability, MCP, and release
+hardening rather than Core expansion.
 
 The foundation is no longer the problem. The first Agent Essentials pass is no longer the problem either. The next phase is product coherence, real-world use, and hardening through actual workloads.
 

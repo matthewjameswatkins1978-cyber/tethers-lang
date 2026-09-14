@@ -10,6 +10,10 @@
     ·
     <a href="docs/PROJECT_OVERVIEW.md">How it works</a>
     ·
+    <a href="docs/ROAD_TO_1_0.md">Road to 1.0</a>
+    ·
+    <a href="docs/VERSIONING.md">Versioning</a>
+    ·
     <a href="tethers-0.1/SPEC.md">Language specification</a>
     ·
     <a href="docs/PLUG_AUTHORING.md">Build a Plug</a>
@@ -102,6 +106,10 @@ Tethers uses a layered set of authoritative and operational documents:
   project guidance.
 - `docs/PROJECT_CONTROL.md` defines task ownership, evidence, worker notes, and
   review.
+- `docs/ROAD_TO_1_0.md` defines the 1.0 meaning, release train, contract
+  inventory, non-goals, release classifications, and verification policy.
+- `docs/VERSIONING.md`, `docs/COMPATIBILITY.md`, `docs/SUPPORT_MATRIX.md`, and
+  `docs/DEPRECATION_POLICY.md` define the public contract and support boundary.
 - `docs/AGENT_WORKFLOW.md` defines the current **Gorilla Coding 🦄** route.
 - `docs/CLINE_HANDOFF.md` is the current worker-neutral Gorilla handoff guide
   (historical filename).

@@ -185,6 +185,8 @@ Living documents must track accepted truth:
 - `docs/CURRENT_GOAL.md`
 - `docs/CURRENT_CLINE_TASK.md`
 - active roadmap documents such as `docs/ROAD_TO_0_4.md`
+- `docs/ROAD_TO_1_0.md`, `docs/VERSIONING.md`, `docs/COMPATIBILITY.md`,
+  `docs/SUPPORT_MATRIX.md`, and `docs/DEPRECATION_POLICY.md`
 - this control procedure.
 
 Document decisions future work needs. Do not create paperwork about paperwork.

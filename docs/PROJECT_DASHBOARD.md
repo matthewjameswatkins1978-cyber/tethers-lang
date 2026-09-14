@@ -1,6 +1,6 @@
 # Tethers Project Dashboard
 
-Updated: 2026-09-11
+Updated: 2026-09-14
 
 ## Product state
 
@@ -8,7 +8,24 @@ Updated: 2026-09-11
 
 The published 0.7.0 release combines the deterministic language/Core, trusted host/runtime, Plug system, bounded concurrency, replay/evidence machinery, and the host-owned Agent Core surfaces needed for an unfamiliar agent to inspect, plan, execute, and inspect the system.
 
-The next bottleneck is not missing architecture. It is product coherence, repository/release alignment, broader practical Capabilities, and evidence from real workloads.
+The next bottleneck is not missing architecture. The active Road to 1.0 now
+freezes the consequential contract first, followed by verification control,
+Linux parity, current MCP support, release provenance, compatibility, recovery,
+and real workloads.
+
+## Road to 1.0
+
+R1 / 0.8-A is the documentation-only contract freeze. The governing statement
+is: **Tethers 1.0 means the consequential boundary is stable.** The authoritative
+contract set is:
+
+- [`ROAD_TO_1_0.md`](ROAD_TO_1_0.md)
+- [`VERSIONING.md`](VERSIONING.md)
+- [`COMPATIBILITY.md`](COMPATIBILITY.md)
+- [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md)
+- [`DEPRECATION_POLICY.md`](DEPRECATION_POLICY.md)
+
+The next recommended package is R2 / 0.8-B, Verification & Release Control.
 
 ## The product in one picture
 
@@ -129,6 +146,12 @@ request -> ALLOW / ASK / DENY
 It does not execute the requested action. It is useful when an existing agent or script only needs a deterministic fail-closed authority decision.
 
 ## Current gaps
+
+The current 1.0 requirements are explicit rather than hidden in this dashboard:
+Linux native parity, a trustworthy aggregate verification route, release
+automation/provenance, compatibility/migration proof, security/recovery proof,
+real workload evidence, and licence resolution. They are requirements, not
+evidence that the released Windows 0.7 product is broken.
 
 ## 0.7 release state
 
