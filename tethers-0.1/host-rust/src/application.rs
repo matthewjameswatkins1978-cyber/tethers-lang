@@ -6308,6 +6308,14 @@ mod tests {
             assert!(response.get("result_anchor").is_none());
         }
 
+        fn absolute_test_path(windows_path: &'static str, unix_path: &'static str) -> &'static str {
+            if cfg!(windows) {
+                windows_path
+            } else {
+                unix_path
+            }
+        }
+
         #[cfg(windows)]
         fn fresh_native_runtime_root(label: &str) -> Option<PathBuf> {
             let base = std::env::var_os("TETHERS_J09_NATIVE_PROVISION_ROOT")?;
@@ -6408,12 +6416,12 @@ mod tests {
                 "engine.exe".to_owned(),
                 "request.json".to_owned(),
                 "--host-data-root".to_owned(),
-                r"C:\host-data".to_owned(),
+                absolute_test_path(r"C:\host-data", "/host-data").to_owned(),
             ];
             let parsed = parse_normal_args(&args).unwrap();
             assert_eq!(
                 parsed.host_data_root.unwrap(),
-                PathBuf::from(r"C:\host-data")
+                PathBuf::from(absolute_test_path(r"C:\host-data", "/host-data"))
             );
         }
 
@@ -6423,9 +6431,9 @@ mod tests {
                 "engine.exe".to_owned(),
                 "request.json".to_owned(),
                 "--host-data-root".to_owned(),
-                r"C:\one".to_owned(),
+                absolute_test_path(r"C:\one", "/one").to_owned(),
                 "--host-data-root".to_owned(),
-                r"C:\two".to_owned(),
+                absolute_test_path(r"C:\two", "/two").to_owned(),
             ];
             assert_eq!(
                 parse_normal_args(&args).unwrap_err(),
@@ -7120,19 +7128,30 @@ mod tests {
                 "engine.exe".to_owned(),
                 "request.json".to_owned(),
                 "allow".to_owned(),
-                r"D:\independent-audit\trail.jsonl".to_owned(),
+                absolute_test_path(
+                    r"D:\independent-audit\trail.jsonl",
+                    "/independent-audit/trail.jsonl",
+                )
+                .to_owned(),
                 "success".to_owned(),
                 "--host-data-root".to_owned(),
-                r"C:\independent-host-data".to_owned(),
+                absolute_test_path(r"C:\independent-host-data", "/independent-host-data")
+                    .to_owned(),
             ];
             let parsed = parse_normal_args(&args).unwrap();
             assert_eq!(
                 parsed.trail_path.as_deref(),
-                Some(r"D:\independent-audit\trail.jsonl")
+                Some(absolute_test_path(
+                    r"D:\independent-audit\trail.jsonl",
+                    "/independent-audit/trail.jsonl",
+                ))
             );
             assert_eq!(
                 parsed.host_data_root.as_deref(),
-                Some(Path::new(r"C:\independent-host-data"))
+                Some(Path::new(absolute_test_path(
+                    r"C:\independent-host-data",
+                    "/independent-host-data",
+                )))
             );
         }
 
@@ -7235,7 +7254,10 @@ mod tests {
         #[test]
         fn j09_runtime_41_storage_path_and_diagnostics_never_reach_public_response() {
             let (_, resolved) = resolved_lantern();
-            let raw_root = PathBuf::from(r"C:\secret-replay-root-token-does-not-exist");
+            let raw_root = PathBuf::from(absolute_test_path(
+                r"C:\secret-replay-root-token-does-not-exist",
+                "/secret-replay-root-token-does-not-exist",
+            ));
             let authority = replay_runtime::FileReplayAuthority::new(Some(&raw_root));
             let mut trail = RecordingTrail::new();
             let events = Rc::new(RefCell::new(Vec::new()));

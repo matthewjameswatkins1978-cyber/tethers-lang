@@ -646,9 +646,17 @@ mod tests {
         path
     }
 
+    fn test_shell_program() -> &'static str {
+        if cfg!(windows) {
+            "pwsh.exe"
+        } else {
+            "pwsh"
+        }
+    }
+
     fn fixture_config(mode: &str) -> StdioProviderConfig {
         StdioProviderConfig {
-            command: "pwsh.exe".to_owned(),
+            command: test_shell_program().to_owned(),
             args: vec![
                 "-NoProfile".to_owned(),
                 "-File".to_owned(),

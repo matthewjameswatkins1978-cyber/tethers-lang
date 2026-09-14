@@ -2686,6 +2686,14 @@ mod tests {
             .expect("concurrency test lock poisoned")
     }
 
+    fn test_shell_program() -> &'static str {
+        if cfg!(windows) {
+            "pwsh.exe"
+        } else {
+            "pwsh"
+        }
+    }
+
     #[test]
     fn c2_a3a_semantic_first_non_success_preserves_exact_step() {
         let states = vec![
@@ -2717,6 +2725,7 @@ mod tests {
             } if evaluation_id == "eval" && action_id == "first" && execution_id == "exec-first"
         ));
     }
+    #[cfg(windows)]
     use std::process::Command;
     use tethers_reference_host::cli::OutcomeStatus;
 
@@ -2802,7 +2811,7 @@ mod tests {
             display_name: "Tethers Stdio Fixture".to_owned(),
             working_directory: script.parent().unwrap().to_path_buf(),
             stdio_config: crate::stdio_provider::StdioProviderConfig {
-                command: "pwsh.exe".to_owned(),
+                command: test_shell_program().to_owned(),
                 args: vec![
                     "-NoProfile".to_owned(),
                     "-ExecutionPolicy".to_owned(),
@@ -3994,7 +4003,7 @@ mod tests {
                     "display_name": "Lantern Local",
                     "transport": {
                         "kind": "stdio",
-                        "command": "pwsh.exe",
+                        "command": test_shell_program(),
                         "args": ["-NoProfile", "-File", "providers/lantern.ps1"],
                         "protocol_version": "2025-11-25"
                     },
@@ -4256,7 +4265,7 @@ mod tests {
                     "display_name": "Tethers Stdio Fixture",
                     "transport": {
                         "kind": "stdio",
-                        "command": "pwsh.exe",
+                        "command": test_shell_program(),
                         "args": ["-NoProfile", "-File", "providers/fixture.ps1"],
                         "protocol_version": "2025-11-25"
                     },
@@ -4332,7 +4341,7 @@ mod tests {
                     "display_name": "Tethers Stdio Fixture",
                     "transport": {
                         "kind": "stdio",
-                        "command": "pwsh.exe",
+                        "command": test_shell_program(),
                         "args": ["-NoProfile", "-File", "providers/fixture.ps1"],
                         "protocol_version": "2025-11-25"
                     },
@@ -4839,7 +4848,7 @@ mod tests {
                 "display_name": "Tethers Stdio Fixture",
                 "transport": {
                     "kind": "stdio",
-                    "command": "pwsh.exe",
+                    "command": test_shell_program(),
                     "args": [
                         "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                         fixture_script, "-Mode", "run-success", "-MarkerFile", marker_path
@@ -4899,18 +4908,22 @@ mod tests {
 
     fn core9c_provision_replay_root(root: &Path) {
         std::fs::create_dir_all(root).expect("T15: create replay root");
-        let acl_script = format!(
+
+        #[cfg(windows)]
+        {
+            let acl_script = format!(
             "$p='{}'; $identity=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name; $acl=[System.Security.AccessControl.DirectorySecurity]::new(); $acl.SetAccessRuleProtection($true,$false); $inherit=[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit; foreach($t in @($identity,'NT AUTHORITY\\SYSTEM','BUILTIN\\Administrators')) {{ $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($t,'FullControl',$inherit,'None','Allow')) }}; Set-Acl -LiteralPath $p -AclObject $acl",
             root.to_string_lossy()
         );
-        assert!(
-            Command::new("pwsh.exe")
-                .args(["-NoProfile", "-Command", &acl_script])
-                .status()
-                .expect("T15: set replay-root ACL")
-                .success(),
-            "T15: replay root must receive the accepted protected ACL"
-        );
+            assert!(
+                Command::new(test_shell_program())
+                    .args(["-NoProfile", "-Command", &acl_script])
+                    .status()
+                    .expect("T15: set replay-root ACL")
+                    .success(),
+                "T15: replay root must receive the accepted protected ACL"
+            );
+        }
         assert!(matches!(
             crate::replay_store::provision_replay(root),
             Ok(crate::replay_store::ProvisionReplayOutcome::Provisioned)
@@ -5233,7 +5246,7 @@ mod tests {
                         "display_name": "Provider A",
                         "transport": {
                             "kind": "stdio",
-                            "command": "pwsh.exe",
+                            "command": test_shell_program(),
                             "args": [
                                 "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                                 barrier_script.to_str().unwrap(),
@@ -5255,7 +5268,7 @@ mod tests {
                         "display_name": "Provider B",
                         "transport": {
                             "kind": "stdio",
-                            "command": "pwsh.exe",
+                            "command": test_shell_program(),
                             "args": [
                                 "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                                 barrier_script.to_str().unwrap(),
@@ -6110,7 +6123,7 @@ mod tests {
                     "display_name": "Provider A",
                     "transport": {
                         "kind": "stdio",
-                        "command": "pwsh.exe",
+                        "command": test_shell_program(),
                         "args": [
                             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                             barrier_script.to_str().unwrap(),
@@ -6132,7 +6145,7 @@ mod tests {
                     "display_name": "Provider B",
                     "transport": {
                         "kind": "stdio",
-                        "command": "pwsh.exe",
+                        "command": test_shell_program(),
                         "args": [
                             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                             barrier_script.to_str().unwrap(),
@@ -7331,7 +7344,7 @@ mod tests {
                         "display_name": format!("Provider {tag}"),
                         "transport": {
                             "kind": "stdio",
-                            "command": "pwsh.exe",
+                            "command": test_shell_program(),
                             "args": [
                                 "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                                 barrier_script.to_str().unwrap(),
@@ -9342,7 +9355,7 @@ mod tests {
                     "display_name": format!("Provider {tag}"),
                     "transport": {
                         "kind": "stdio",
-                        "command": "pwsh.exe",
+                        "command": test_shell_program(),
                         "args": [
                             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                             barrier_script.to_str().unwrap(),
