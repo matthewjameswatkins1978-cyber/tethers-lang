@@ -20,9 +20,10 @@ The canonical development checkout for the road to Tethers 1.0 is:
 
 `D:\The Next Thing\Tethers Lang - J16 Clean`
 
-It is currently on local `main`, tracking `origin/main`, at accepted main SHA
-`d1959b09c125f7d7caa86e7b51844f9ea5c0322a`. Before each new task, fetch
-`origin`, verify the current `origin/main` SHA and checkout cleanliness, then
+It is currently on local `main`, tracking `origin/main`. It was established
+from accepted main SHA `d1959b09c125f7d7caa86e7b51844f9ea5c0322a`; before each
+new task, fetch `origin`, verify the current `origin/main` SHA and checkout
+cleanliness, then
 create a fresh isolated `codex/` task branch or worktree from that accepted
 main. Complete work is published through the normal branch, verification, PR,
 review, merge, and accepted-main-SHA confirmation cycle. Do not start new work
