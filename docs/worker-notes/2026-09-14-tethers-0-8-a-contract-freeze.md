@@ -4,7 +4,8 @@
 - **Owner:** Codex
 - **Status:** `COMPLETE`
 - **Base Commit:** `cd6cc23f2f0d7248bb31a5b650862f26699b2a65`
-- **Final Commit:** recorded after publication
+- **Final Commit:** see the final handoff; this note was written before the
+  publication commits
 - **Branch / Worktree:** `codex/tethers-0.8-contract-freeze` / `D:\The Next Thing\Tethers Lang - J16 Clean`
 
 ## Files Modified
