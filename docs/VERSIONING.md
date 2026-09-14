@@ -1,6 +1,6 @@
 # Tethers Versioning Policy
 
-Status: living contract  
+Status: living contract
 Updated: 2026-09-14
 
 Tethers has several legitimate version axes. They are not interchangeable and
@@ -81,4 +81,3 @@ This policy does not change CLI semantics in R1.
   uncertainty are semantic changes even if a JSON field shape stays the same.
 - Release manifests, checksums, provenance, and package identity bind an
   artifact to the exact source and format that produced it.
-

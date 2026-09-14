@@ -1,6 +1,6 @@
 # Tethers 1.0 Support Matrix
 
-Status: living support promise  
+Status: living support promise
 Updated: 2026-09-14
 
 Support is a product promise, not a claim that code cannot happen to compile

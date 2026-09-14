@@ -1,8 +1,8 @@
 # Tethers Road to 1.0
 
-Status: living programme contract  
-Updated: 2026-09-14  
-Starting product: Tethers 0.7.0  
+Status: living programme contract
+Updated: 2026-09-14
+Starting product: Tethers 0.7.0
 Accepted preflight main: `cd6cc23f2f0d7248bb31a5b650862f26699b2a65`
 
 ## Meaning of 1.0
@@ -164,4 +164,3 @@ and triggering event, and support SBOM attestations verified with GitHub CLI.
 R5 should select the least complex reproducible implementation, with explicit
 workflow permissions, checksums, manifest/source binding, provenance, SBOM
 policy, and clean-machine verification.
-

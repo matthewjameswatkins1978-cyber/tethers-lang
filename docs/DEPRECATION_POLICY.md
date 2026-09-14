@@ -1,6 +1,6 @@
 # Tethers Deprecation Policy
 
-Status: living policy  
+Status: living policy
 Updated: 2026-09-14
 
 For Tethers 1.x:
@@ -21,4 +21,3 @@ Deprecation notices should state the affected versioned surface, the reason,
 the replacement or migration where available, and the release boundary at
 which removal could occur. This policy makes no unrealistic calendar-based
 guarantee.
-

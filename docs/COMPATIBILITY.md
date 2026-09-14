@@ -1,6 +1,6 @@
 # Tethers 1.0 Compatibility Contract
 
-Status: living contract  
+Status: living contract
 Updated: 2026-09-14
 
 Tethers 1.0 compatibility is compatibility of meaning at the consequential
@@ -114,4 +114,3 @@ pretend that an old fixture was already a 1.0 contract.
 Core owns deterministic interpretation. The host owns policy, scope, provider
 trust, execution, persistence, replay, and Trail truth. A provider or MCP server
 cannot redefine compatibility by advertising a different contract at runtime.
-
