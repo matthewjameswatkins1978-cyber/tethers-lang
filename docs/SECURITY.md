@@ -229,7 +229,7 @@ Tethers keeps those claims distinct.
 
 ## Discovery and preview do not grant authority
 
-The published Tethers 0.6 release line includes read-only discovery, Capability inspection, installed Plug inspection, side-effect-free planning, and bounded Trail receipt surfaces.
+The published Tethers 0.7 release line includes read-only discovery, Capability inspection, installed Plug inspection, side-effect-free planning, and bounded Trail receipt surfaces.
 
 Those are observation surfaces. They do not:
 
@@ -243,7 +243,7 @@ Agents should be able to learn what Tethers can do without that act of discovery
 
 ## Platform note
 
-The published Tethers 0.6 practical release provides Windows x64 and Linux x64 musl bundles. The smaller Portable Workbench is also packaged for both platforms.
+The published Tethers 0.7 practical release provides a Windows x64 full-runtime bundle. Linux host parity and a Linux 0.7 asset are not established by this release evidence. The smaller Portable Workbench remains a separate compatibility surface.
 
 That packaging fact should not be overstated into a claim that every platform-specific containment or durability mechanism is identical. Some host lifecycle and containment paths are platform-specific, and the security guarantee is the documented semantic/trust boundary, not “Windows and Linux implement every low-level mechanism in exactly the same way.”
 
@@ -267,9 +267,9 @@ That is a substantial security contribution even though it is not process sandbo
 
 ## Release/source note
 
-The latest published GitHub product release is Tethers 0.6, tagged `tethers-v0.6.0`.
+The latest published GitHub product release is Tethers 0.7.0, tagged `tethers-v0.7.0`.
 
-Security claims about exact 0.6 discovery/provider surfaces should be verified against the tagged release source and its SHA-256 package evidence.
+Security claims about exact 0.7 discovery/provider surfaces should be verified against the tagged release source and its SHA-256 package evidence.
 
 ## Read the deeper contracts
 

@@ -1450,7 +1450,10 @@ mod tests {
 
     #[test]
     fn file_trail_writes_durable_jsonl_intent() {
-        let dir = std::env::temp_dir().join("tethers-dispatch-test-file-trail");
+        let dir = std::env::temp_dir().join(format!(
+            "tethers-dispatch-test-file-trail-{}",
+            uuid::Uuid::new_v4()
+        ));
         let _ = std::fs::create_dir_all(&dir);
         let trail_path = dir.join("trail.jsonl");
 
@@ -1706,7 +1709,10 @@ mod tests {
     // Test O6: FileTrail durability — intent + outcome survive close and re-read.
     #[test]
     fn file_trail_writes_durable_intent_and_outcome() {
-        let dir = std::env::temp_dir().join("tethers-dispatch-test-intent-outcome");
+        let dir = std::env::temp_dir().join(format!(
+            "tethers-dispatch-test-intent-outcome-{}",
+            uuid::Uuid::new_v4()
+        ));
         let _ = std::fs::create_dir_all(&dir);
         let trail_path = dir.join("trail.jsonl");
 

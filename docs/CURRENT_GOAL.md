@@ -25,7 +25,7 @@ The Tethers 0.7 release line carries forward the major capabilities delivered by
 - agent-oriented workspace/text/hash/patch reference capabilities;
 - structured Git, argv-only process, and named verification reference capabilities;
 - deterministic `tethers-bench` verification tooling;
-- Windows x64 and Linux x64 musl practical release bundles;
+- Windows x64 full-runtime 0.7.0 practical release bundle;
 - the separate Portable Workbench 0.2.2 authority façade.
 
 The current product release line is Tethers 0.7.0, tagged `tethers-v0.7.0`.
@@ -81,11 +81,10 @@ Tethers currently carries several legitimate version axes:
 - Portable Workbench: `0.2.2`;
 - completed Plug milestone: `0.3`;
 - completed Together/concurrency milestone: `0.4`;
-- practical product release: `0.5`, latest tag `tethers-v0.5.8`.
+- practical product release: `0.7.0`, latest tag `tethers-v0.7.0`.
 
-The 0.6 release assets use `tethers-0.6.0-*` filenames, matching the public
-product line and tag. The language and compatibility package versions remain
-separate axes by design.
+The 0.7 public asset is a Windows x64 full-runtime archive. The language and
+compatibility package versions remain separate axes by design.
 
 ### 3. Use Tethers in real agent work
 
