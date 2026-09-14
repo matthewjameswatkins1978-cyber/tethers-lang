@@ -47,9 +47,18 @@ function Invoke-VerificationStep {
         $detailLines = if ($lines.Count -le 24) {
             @($lines)
         } else {
-            @($lines | Select-Object -First 4) +
-                @('... failure detail truncated ...') +
-                @($lines | Select-Object -Last 19)
+            $signals = @($lines | Where-Object {
+                    $_ -match 'panicked|assertion|left:|right:|^----|^failures:|test result'
+                })
+            if ($signals.Count -gt 0) {
+                @($lines | Select-Object -First 4) +
+                    @('... failure detail truncated ...') +
+                    @($signals | Select-Object -First 36)
+            } else {
+                @($lines | Select-Object -First 4) +
+                    @('... failure detail truncated ...') +
+                    @($lines | Select-Object -Last 19)
+            }
         }
         $detail = ($detailLines -join "`n").Trim()
         if (-not [string]::IsNullOrWhiteSpace($detail)) {
