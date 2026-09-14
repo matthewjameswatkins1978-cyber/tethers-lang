@@ -1,9 +1,15 @@
 # Tethers Project Overview
 
 Status: current whole-system overview
-Updated: 2026-09-10
+Updated: 2026-09-14
 
 Tethers is a deterministic behaviour language surrounded by a typed capability, trust, execution, replay, and evidence platform.
+
+The active programme is the [Road to Tethers 1.0](ROAD_TO_1_0.md). R1 freezes
+the public contract; later packages prove verification, Linux parity, current
+MCP compatibility, release provenance, migration, security/recovery, and real
+workloads. This programme adds no new Core syntax or execution machinery by
+itself.
 
 Its most useful role is underneath AI and automation:
 
@@ -398,5 +404,8 @@ Use documents by purpose rather than treating every old roadmap as current truth
 7. [`SECURITY.md`](SECURITY.md) - current security claims and limits.
 8. [`PLUG_AUTHORING.md`](PLUG_AUTHORING.md) - public Plug author contract.
 9. [`CURRENT_GOAL.md`](CURRENT_GOAL.md) and [`PROJECT_DASHBOARD.md`](PROJECT_DASHBOARD.md) - living direction and status.
+10. [`ROAD_TO_1_0.md`](ROAD_TO_1_0.md), [`VERSIONING.md`](VERSIONING.md),
+    [`COMPATIBILITY.md`](COMPATIBILITY.md), [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md),
+    and [`DEPRECATION_POLICY.md`](DEPRECATION_POLICY.md) - current 1.0 contract.
 
-`ROAD_TO_*`, `worker-notes/`, `review/`, `perf/`, and foundation-pass documents are implementation history and evidence. Their old checkpoint statements should remain historical rather than being silently rewritten into present tense.
+Historical `ROAD_TO_0_*`, `worker-notes/`, `review/`, `perf/`, and foundation-pass documents are implementation history and evidence. Their old checkpoint statements should remain historical rather than being silently rewritten into present tense. The living `ROAD_TO_1_0.md` is part of the current contract set above.

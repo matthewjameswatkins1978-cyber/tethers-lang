@@ -1,7 +1,7 @@
 # Tethers MCP Plan
 
 Status: proposed post-0.1 architecture plan  
-Date researched: 2026-07-20  
+Date researched: 2026-09-14
 Owner: Matthew  
 Purpose: durable direction for connecting MCP directly to Tethers
 
@@ -9,6 +9,13 @@ Status note: This document governs Tethers exposing its deterministic Core
 through an MCP server. It does not define the Universal Plug provider Socket.
 The J18 Socket documents are authoritative for the host-as-client provider
 binding. These two MCP directions must not be conflated.
+
+Current protocol note: Tethers' current implementation and fixtures target MCP
+`2025-11-25`. The current external MCP specification resolves to
+`2026-07-28`, which changes the base presentation toward stateless,
+self-contained requests with per-request metadata and adds current tool/result
+and extension rules. R4 owns the compatibility decision and implementation
+pass. R1 does not upgrade the adapter or alter the existing fixtures.
 
 ## The decision in one sentence
 
@@ -54,7 +61,11 @@ Tethers remains the mixing desk. Applications provide the sockets. MCP provides 
 
 ## What current MCP research says
 
-The current published MCP specification is revision `2025-11-25`. MCP uses JSON-RPC 2.0 and requires lifecycle initialization and capability negotiation before normal operation.
+The current external MCP specification is revision `2026-07-28`; Tethers'
+implemented target remains `2025-11-25` until the explicit R4 compatibility
+pass. The current external revision presents a stateless, self-contained base
+with per-request metadata, while the Tethers adapter and fixtures use the
+earlier connection-scoped initialize/capability-negotiation model.
 
 The two standard transports are stdio and Streamable HTTP. In stdio mode, the client launches the server, messages are UTF-8 JSON-RPC values delimited by newlines, embedded newlines are forbidden, and stdout must contain only MCP messages. Stdio is therefore the correct first transport for local Codex and Cline integration.
 
@@ -343,6 +354,7 @@ Lantern Keeper may later expose its own capabilities to a Tethers host, but it d
 ## Official and primary references
 
 - MCP specification revision 2025-11-25: https://modelcontextprotocol.io/specification/2025-11-25
+- Current MCP specification revision 2026-07-28: https://modelcontextprotocol.io/specification/2026-07-28
 - MCP lifecycle and capability negotiation: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
 - MCP stdio and Streamable HTTP transports: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
 - MCP tools, schemas, structured content and errors: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
