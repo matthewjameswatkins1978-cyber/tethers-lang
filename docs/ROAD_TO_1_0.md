@@ -106,7 +106,9 @@ These may be useful future work. They are not silently promised by 1.0.
 
 Current examples are Linux native parity and release automation (REQUIREMENT),
 licence resolution (REQUIREMENT plus OWNER DECISION), existing non-fatal Clippy
-warnings (DEBT), and the historical GARY checkpoint mismatch (EXTERNAL).
+warnings (DEBT), the historical GARY checkpoint mismatch (EXTERNAL), and the
+missing authorised OCaml switch/current engine build in a fresh worktree
+(EXTERNAL verification issue, not product-regression evidence).
 The preflight Core blocker is NONE.
 
 ## Verification policy
