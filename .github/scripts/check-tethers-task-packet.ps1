@@ -44,6 +44,43 @@ function Get-Section {
     return $match.Groups[1].Value.Trim()
 }
 
+function Get-OptionalField {
+    param([string]$Content, [string]$Name)
+    $pattern = '(?mi)^{0}:\s*`([^`]+)`\s*$' -f [regex]::Escape($Name)
+    $match = [regex]::Match($Content, $pattern)
+    if ($match.Success) { return $match.Groups[1].Value.Trim() }
+    return $null
+}
+
+function Get-OptionalSection {
+    param([string]$Content, [string]$Name)
+    $pattern = '(?ims)^## {0}\s*(.*?)(?=^## |\z)' -f [regex]::Escape($Name)
+    $match = [regex]::Match($Content, $pattern)
+    if ($match.Success) { return $match.Groups[1].Value.Trim() }
+    return $null
+}
+
+function Assert-CommitCheckpoint {
+    param(
+        [string]$Checkpoint,
+        [string]$BaseCommit,
+        [string]$HeadCommit,
+        [string]$Label
+    )
+    if ([string]::IsNullOrWhiteSpace($Checkpoint) -or
+        $Checkpoint -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "$Label must be one full 40-character commit SHA."
+    }
+    $normalized = $Checkpoint.ToLowerInvariant()
+    & git cat-file -e "$normalized`^{commit}"
+    if ($LASTEXITCODE -ne 0) { throw "$Label does not identify a local commit: $normalized" }
+    & git merge-base --is-ancestor $BaseCommit $normalized
+    if ($LASTEXITCODE -ne 0) { throw "Base commit $BaseCommit is not an ancestor of $Label $normalized." }
+    & git merge-base --is-ancestor $normalized $HeadCommit
+    if ($LASTEXITCODE -ne 0) { throw "$Label $normalized is not an ancestor of HEAD $HeadCommit." }
+    return $normalized
+}
+
 function Assert-WorkerNote {
     param(
         [string]$RepositoryRoot,
@@ -264,47 +301,51 @@ if ($controlV1) {
             )
         }
 
-        & git cat-file -e "$checkpoint`^{commit}"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Implementation checkpoint does not identify a local commit: $checkpoint"
-        }
+        Assert-CommitCheckpoint `
+            -Checkpoint $checkpoint `
+            -BaseCommit $baseCommit `
+            -HeadCommit $headCommit `
+            -Label "Implementation checkpoint" | Out-Null
 
-        & git merge-base --is-ancestor $baseCommit $checkpoint
-        if ($LASTEXITCODE -ne 0) {
-            throw (
-                "Base commit $baseCommit is not an ancestor of " +
-                "implementation checkpoint $checkpoint."
+        # A completed packet is historical evidence. Its checkpoint proves
+        # the accepted implementation state; later work in a living
+        # repository must not invalidate that historical packet.
+    }
+
+    if ($controlV1 -and $taskStatus -eq "IN_PROGRESS") {
+        $evidenceCheckpoint = Get-OptionalField -Content $packet -Name "Evidence checkpoint"
+        $scopeBody = Get-OptionalSection -Content $packet -Name "Implementation scope"
+        if ($null -ne $evidenceCheckpoint) {
+            if ([string]::IsNullOrWhiteSpace($scopeBody)) {
+                throw "IN_PROGRESS evidence requires both Evidence checkpoint and a non-empty Implementation scope."
+            }
+            $scopePaths = @(
+                @(
+                    [regex]::Matches($scopeBody, '(?m)^-\s+`([^`]+)`\s*$') |
+                        ForEach-Object { $_.Groups[1].Value.Replace('\', '/') }
+                ) | Sort-Object -Unique
             )
-        }
-
-        & git merge-base --is-ancestor $checkpoint $headCommit
-        if ($LASTEXITCODE -ne 0) {
-            throw (
-                "Implementation checkpoint $checkpoint is not an ancestor " +
-                "of HEAD $headCommit."
+            if ($scopePaths.Count -eq 0) {
+                throw "Implementation scope must list at least one repository-relative path."
+            }
+            $evidenceCommit = Assert-CommitCheckpoint `
+                -Checkpoint $evidenceCheckpoint `
+                -BaseCommit $baseCommit `
+                -HeadCommit $headCommit `
+                -Label "Evidence checkpoint"
+            $changedScopedPaths = @(
+                @(
+                    Invoke-Git diff --name-only "$evidenceCommit..$headCommit" --
+                ) | ForEach-Object { $_.Replace('\', '/') } |
+                    Where-Object { $_ -in $scopePaths }
             )
-        }
-
-        $closeoutPaths = @(
-            $PacketPath,
-            $workerNotePath,
-            "docs/PROJECT_DASHBOARD.md"
-        ) | ForEach-Object { $_.Replace('\', '/') }
-
-        $postCheckpointPaths = @(
-            Invoke-Git diff --name-only "$checkpoint..$headCommit" --
-        ) | Where-Object { $_ -ne "" }
-
-        $nonCloseoutPaths = @(
-            $postCheckpointPaths | Where-Object { $_ -notin $closeoutPaths }
-        )
-        if ($nonCloseoutPaths.Count -gt 0) {
-            throw (
-                "Implementation changed after recorded evidence checkpoint; " +
-                "establish a new implementation checkpoint and verify again. " +
-                "Non-closeout paths after checkpoint: " +
-                ($nonCloseoutPaths -join ", ")
-            )
+            if ($changedScopedPaths.Count -gt 0) {
+                throw (
+                    "STALE CURRENT TASK EVIDENCE: implementation scope changed " +
+                    "after Evidence checkpoint ${evidenceCommit}: " +
+                    ($changedScopedPaths -join ", ")
+                )
+            }
         }
     }
 }

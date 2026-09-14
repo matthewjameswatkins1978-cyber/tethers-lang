@@ -4175,23 +4175,15 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn core9b_engine_binary_path() -> Option<PathBuf> {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.pop();
-        path.push("engine-ocaml");
-        path.push("_build");
-        path.push("default");
-        path.push("bin");
-        path.push("tethers_mcp_main.exe");
-        if path.exists() {
-            Some(path)
-        } else {
-            None
-        }
+        std::env::var_os("TETHERS_VERIFIED_ENGINE")
+            .map(PathBuf::from)
+            .filter(|path| path.is_file())
     }
 
     fn core9b_require_engine() -> (PathBuf, PathBuf) {
-        let ep = core9b_engine_binary_path()
-            .expect("engine binary not found; build with opam exec -- dune build");
+        let ep = core9b_engine_binary_path().expect(
+            "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+        );
         let wd = ep.parent().unwrap().to_path_buf();
         (ep, wd)
     }

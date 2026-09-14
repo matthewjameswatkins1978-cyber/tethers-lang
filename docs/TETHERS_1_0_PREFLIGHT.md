@@ -276,3 +276,15 @@ isolation and documentation/MCP alignment commits, the two preflight-record
 commits, and the closeout commit containing Rocket scale evidence and C-B1
 retirement. Publication and merge are handled as the final closeout actions;
 the resulting PR and accepted `main` SHA are recorded in the final handoff.
+
+## 0.8-B verification-control update — 2026-09-14
+
+| Finding | Classification | Current evidence |
+| --- | --- | --- |
+| Rocket sequential action evidence | RESOLVED | Existing 10/50/100/1000 evidence remains preserved; R2 does not alter canonical semantics. |
+| C-B1 benchmark residue | RESOLVED / NON-BLOCKING DEBT | Obsolete research residue; no current product benchmark is suppressed. |
+| Historical GARY checkpoint mismatch | EXTERNAL TOOLING ISSUE | Completed historical packets no longer poison current repository verification; GARY/task metadata ownership remains external. |
+| Linux native runtime/package/release support | 1.0 REQUIREMENT | R2 adds no Linux implementation; code, build, package and CI parity remain R3/R5 work. |
+| Licence | OWNER DECISION | Apache-2.0 remains recommended; no licence was added without approval. |
+| Current OCaml engine prerequisite | RESOLVED | Verification builds the current engine and records `tethers.engine/1` source/tree/binary identity before Rust cross-language tests. |
+| Full verification report | RESOLVED | `just verify` is the aggregate route and writes `verification/tethers-verification.json` (`tethers.verify/1`). |

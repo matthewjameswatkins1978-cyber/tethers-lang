@@ -113,9 +113,10 @@ The preflight Core blocker is NONE.
 
 ## Verification policy
 
-There must eventually be one trustworthy aggregate release-verification command.
-The current `just verify` route is not yet that command because the historical
-packet checker stops before product verification. R2 owns that repair.
+`just verify` is now the repository-owned aggregate release-verification route.
+It builds and proves the current first-party engine before dependent product
+tests and emits `verification/tethers-verification.json` with schema
+`tethers.verify/1`.
 
 Until then, every report must distinguish:
 
@@ -125,6 +126,16 @@ Until then, every report must distinguish:
 
 Each result is `PASS`, `FAIL`, `SKIPPED WITH REASON`, or `NOT APPLICABLE`.
 “Mostly green” is not an acceptance state.
+
+## R2 closeout
+
+R1 Contract Freeze — COMPLETE<br>
+R2 Verification/Release Control — COMPLETE<br>
+R3 Linux Native Parity — NEXT
+
+R2 repaired the historical packet-checkpoint model, made engine provenance
+explicit, classified prerequisite and optional outcomes, added the 0.7 seed
+compatibility corpus, and established the bounded PR verification workflow.
 
 ## Research evidence — 2026-09-14
 
