@@ -43,7 +43,14 @@ function Invoke-VerificationStep {
     }
     [void]$results.Add($result)
     Write-Host ("{0}: {1}" -f $status, $Name)
-    if ($exitCode -ne 0 -and $null -eq $script:firstFailure) { $script:firstFailure = $result }
+    if ($exitCode -ne 0) {
+        $detail = (@($lines | Select-Object -First 8) -join "`n").Trim()
+        if (-not [string]::IsNullOrWhiteSpace($detail)) {
+            Write-Host ("First failure detail: {0}" -f $detail)
+            $result | Add-Member -NotePropertyName failure_detail -NotePropertyValue $detail
+        }
+        if ($null -eq $script:firstFailure) { $script:firstFailure = $result }
+    }
     return $result
 }
 
