@@ -56,13 +56,21 @@ export interface CalleSdkClientOptions {
   client?: CalleSdkClientLike;
   api_key?: string;
   base_url?: string;
+  /** Explicit account compatibility mode; omission keeps structured extraction enabled. */
+  result_schema_mode?: "recipient" | "none";
+  /** Optional proof-specific schema; defaults to the normal CallPermit schema. */
+  result_schema?: JsonObject;
 }
 
 /** A real CALL-E SDK transport implementing CallPermit's narrow interface. */
 export class CalleSdkClient implements CalleClient {
   private readonly client: CalleSdkClientLike;
+  private readonly resultSchemaMode: "recipient" | "none";
+  private readonly resultSchema: JsonObject;
 
   constructor(options: CalleSdkClientOptions = {}) {
+    this.resultSchemaMode = options.result_schema_mode ?? "recipient";
+    this.resultSchema = options.result_schema ?? CALLPERMIT_RESULT_SCHEMA;
     if (options.client) {
       this.client = options.client;
       return;
@@ -87,10 +95,19 @@ export class CalleSdkClient implements CalleClient {
     const identity = computeCallIdentity(credentials.phone_number, params, authorityDigest);
     const input: CreateCallInput = {
       task: params.prompt ?? `Call ${params.to} and complete the bounded ${params.capability} task.`,
-      recipients: [{ phones: [params.to] }],
-      resultSchema: CALLPERMIT_RESULT_SCHEMA,
+      recipients: [{
+        phones: [params.to],
+        ...(params.region ? { region: params.region } : {}),
+        ...(params.locale ? { locale: params.locale } : {}),
+      }],
       metadata: params.metadata ?? {},
     };
+    if (this.resultSchemaMode !== "none") {
+      // The live 0.7.0 SDK exposes per-recipient extraction.  Some deployed
+      // accounts reject both schema fields before call creation; callers must
+      // opt into `none` explicitly rather than silently weakening evidence.
+      input.recipientResultSchema = this.resultSchema;
+    }
     const raw = await this.client.calls.createAndWait(input, {
       idempotencyKey: `callpermit-${identity.slice("call:".length)}`,
       ...(options.timeout_ms !== undefined ? { timeoutMs: options.timeout_ms } : {}),
@@ -170,6 +187,9 @@ export function mapOfficialCall(call: OfficialCall): CallResult {
     commitment_made: nullableBoolean(structured.commitment_made),
     defer_reason: nullableString(structured.defer_reason),
     recipient_words_supporting_result: stringArray(structured.recipient_words_supporting_result),
+    structured_result: structured as Record<string, unknown>,
+    evidence: call.evidence,
+    completion_confidence: call.completionConfidence as Record<string, unknown> | null,
   };
   if (call.status === "canceled") {
     result.error = { code: "CALL_CANCELLED", message: "CALL-E canceled the call" };

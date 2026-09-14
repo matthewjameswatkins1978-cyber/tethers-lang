@@ -1,9 +1,9 @@
 # CallPermit demo script (about 3 minutes)
 
-This is an honest offline demo unless Matthew has separately approved one
-controlled test call. Do not imply that Tethers intercepts or stops speech
-mid-call: CALL-E handles the conversation; Tethers defines the permission slip
-before the call.
+This is an honest offline demo unless the explicit `official-hotline` profile
+has been selected and Matthew has approved the single controlled CALL-E test
+call. Do not imply that Tethers intercepts or stops speech mid-call: CALL-E
+handles the conversation; Tethers defines the permission slip before the call.
 
 ## Recording sequence
 
@@ -30,6 +30,22 @@ before the call.
 6. **2:45–3:00 — recovery.** Show the persisted call identity and explain that
    a timeout after CALL-E assigns an ID is observed, never blindly retried. A
    later approval must create a new envelope and a new atomic call identity.
+
+## Optional genuine CALL-E proof
+
+For the one approved integration-test call, select the named profile explicitly
+and keep the API key in the process environment:
+
+```powershell
+$env:CALLPERMIT_LIVE_PROFILE = 'official-hotline'
+$env:CALLE_API_KEY = '<local-only-key>'
+node --import tsx demo/live-runner.ts
+```
+
+The profile is CALL-E's public hackathon test hotline using US/en-US. It is not
+Matthew's number and does not prove UK delivery. Record only the genuine call
+ID and provider result produced by that run. If the provider returns no call ID,
+the runner does not replay the request.
 
 ## Optional Tethers proof insertion
 

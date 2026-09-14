@@ -17,6 +17,12 @@ import {
 } from "../src/calle.js";
 import { createFakeCalleClient } from "../src/fake-calle.js";
 import { CalleSdkClient, mapOfficialCall } from "../src/calle-sdk.js";
+import {
+  CALLE_OFFICIAL_TEST_HOTLINE,
+  LIVE_PROOF_PROMPT,
+  LIVE_PROOF_RESULT_SCHEMA,
+  requireOfficialHotlineProfile,
+} from "../src/live-proof.js";
 import type { CalleCredentials, CallParams, CallResult, CallRecord } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -516,5 +522,21 @@ describe("official CALL-E SDK adapter", () => {
     assert.equal(result.error?.code, "CALL_CANCELLED");
     assert.equal(result.task_completed, true);
     assert.equal(result.outcome, "COMMITTED");
+  });
+});
+
+describe("official hotline live-proof profile", () => {
+  it("resolves only the explicitly selected public test profile", () => {
+    assert.deepEqual(requireOfficialHotlineProfile("official-hotline"), CALLE_OFFICIAL_TEST_HOTLINE);
+    assert.equal(CALLE_OFFICIAL_TEST_HOTLINE.phone, "+12763229632");
+    assert.equal(CALLE_OFFICIAL_TEST_HOTLINE.region, "US");
+    assert.equal(CALLE_OFFICIAL_TEST_HOTLINE.locale, "en-US");
+    assert.throws(() => requireOfficialHotlineProfile(undefined), /refuse arbitrary live destinations/);
+  });
+
+  it("keeps the harmless task and proof schema explicit", () => {
+    assert.match(LIVE_PROOF_PROMPT, /integration-test hotline/);
+    assert.match(LIVE_PROOF_PROMPT, /Do not make appointments/);
+    assert.deepEqual(LIVE_PROOF_RESULT_SCHEMA.required, ["connected", "test_response_observed"]);
   });
 });

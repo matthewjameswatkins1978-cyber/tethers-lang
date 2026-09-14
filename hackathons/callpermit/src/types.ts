@@ -238,6 +238,9 @@ export interface CalleCredentials {
 export interface CallParams {
   /** Destination phone number (E.164 format recommended). */
   to: string;
+  /** Optional provider routing hints for the destination region and language. */
+  region?: string;
+  locale?: string;
   /** Capability name this call fulfills. */
   capability: string;
   /** Optional capability version. */
@@ -283,6 +286,12 @@ export interface CallResult {
   recipient_words_supporting_result?: string[];
   /** CALL-E task completion is evidence only, not authority. */
   task_completed?: boolean;
+  /** Provider-returned structured evidence, never treated as authority. */
+  structured_result?: Record<string, unknown>;
+  /** Provider-returned evidence items, when available. */
+  evidence?: string[];
+  /** Provider completion-confidence metadata, when available. */
+  completion_confidence?: Record<string, unknown> | null;
 }
 
 /** Persisted record of a single call lifecycle. */

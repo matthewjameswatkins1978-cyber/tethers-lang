@@ -37,6 +37,10 @@ export interface RunAppointmentOptions {
   credentials: CalleCredentials;
   registry: CallRegistry;
   destination: string;
+  recipient_region?: string;
+  recipient_locale?: string;
+  prompt_override?: string;
+  timeout_ms?: number;
   evaluation_id?: string;
   client: CalleClient;
 }
@@ -45,21 +49,26 @@ export interface RunAppointmentOptions {
 export function compileAppointmentCall(
   envelope: AuthorityEnvelope,
   terms: AppointmentTerms,
-  destination: string
+  destination: string,
+  recipient: { region?: string; locale?: string } = {},
+  overrides: { prompt?: string; timeout_ms?: number } = {},
 ): CallParams {
   const policy = envelope.appointment_policy;
   if (!policy) throw new Error("cannot compile a call without appointment policy");
   return {
     to: destination,
+    ...(recipient.region ? { region: recipient.region } : {}),
+    ...(recipient.locale ? { locale: recipient.locale } : {}),
     capability: policy.capability_name,
     capability_version: "1.0.0",
-    prompt: [
+    prompt: overrides.prompt ?? [
       `Arrange one ${policy.service} appointment.`,
       `Offer only ${terms.offered_date} at or after ${policy.earliest_local_time}.`,
       `Do not agree above ${policy.maximum_price_minor} pence ${policy.currency}.`,
       "Do not accept extras, subscriptions, memberships, deposits, purchases, or materially different commitments.",
       "If the recipient proposes anything outside these terms, do not commit; say you need to check with Matthew and return the terms as evidence.",
     ].join(" "),
+    ...(overrides.timeout_ms !== undefined ? { timeout_ms: overrides.timeout_ms } : {}),
     metadata: {
       authority_digest: envelope.digest,
       authority_policy_id: envelope.policy_id,
@@ -86,7 +95,10 @@ export async function runAppointmentCall(options: RunAppointmentOptions): Promis
     };
     return {
       authority,
-      call_params: compileAppointmentCall(options.envelope, options.terms, options.destination),
+      call_params: compileAppointmentCall(options.envelope, options.terms, options.destination, {
+        region: options.recipient_region,
+        locale: options.recipient_locale,
+      }, { prompt: options.prompt_override, timeout_ms: options.timeout_ms }),
       call_result: null,
       reconciliation: null,
     };
@@ -99,7 +111,10 @@ export async function runAppointmentCall(options: RunAppointmentOptions): Promis
     };
     return {
       authority,
-      call_params: compileAppointmentCall(options.envelope, options.terms, options.destination),
+      call_params: compileAppointmentCall(options.envelope, options.terms, options.destination, {
+        region: options.recipient_region,
+        locale: options.recipient_locale,
+      }, { prompt: options.prompt_override, timeout_ms: options.timeout_ms }),
       call_result: null,
       reconciliation: null,
     };
@@ -112,7 +127,10 @@ export async function runAppointmentCall(options: RunAppointmentOptions): Promis
     };
     return {
       authority,
-      call_params: compileAppointmentCall(options.envelope, options.terms, options.destination),
+      call_params: compileAppointmentCall(options.envelope, options.terms, options.destination, {
+        region: options.recipient_region,
+        locale: options.recipient_locale,
+      }, { prompt: options.prompt_override, timeout_ms: options.timeout_ms }),
       call_result: null,
       reconciliation: null,
     };
@@ -125,7 +143,12 @@ export async function runAppointmentCall(options: RunAppointmentOptions): Promis
   const call_params = compileAppointmentCall(
     options.envelope,
     options.terms,
-    options.destination
+    options.destination,
+    {
+      region: options.recipient_region,
+      locale: options.recipient_locale,
+    },
+    { prompt: options.prompt_override, timeout_ms: options.timeout_ms },
   );
   if (authority.decision !== "ALLOW") {
     return { authority, call_params, call_result: null, reconciliation: null };

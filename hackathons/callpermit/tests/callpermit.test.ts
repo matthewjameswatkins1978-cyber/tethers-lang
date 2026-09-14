@@ -100,6 +100,23 @@ describe("CallPermit offline runtime", () => {
     assert.equal(client.callCount, 0);
   });
 
+  it("does not dispatch when frozen authority returns DENY", async () => {
+    const t = terms({ commitment_kind: "subscription", subscription: true });
+    const client = createFakeCalleClient();
+    const result = await runAppointmentCall({
+      envelope,
+      terms: t,
+      tethers_response: buildMatchedTethersResponse(envelope, t),
+      credentials,
+      registry: createCallRegistry(),
+      destination: "+15555550101",
+      client,
+    });
+    assert.equal(result.authority.decision, "DENY");
+    assert.equal(result.call_result, null);
+    assert.equal(client.callCount, 0);
+  });
+
   it("reconciles an allowed fake commitment", async () => {
     const t = terms();
     const client = createFakeCalleClient({ fixedResult: responseResult(t) });

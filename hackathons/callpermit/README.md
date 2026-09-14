@@ -74,3 +74,23 @@ retry.
 
 The contribution package and honest demo script are under
 `contribution/apps/typescript/callpermit/` and `demo/DEMO_SCRIPT.md`.
+
+## Official CALL-E integration-test profile
+
+The explicit live-proof runner supports only `CALLPERMIT_LIVE_PROFILE=official-hotline`.
+That profile targets CALL-E's publicly announced hackathon integration-test
+hotline with `US` / `en-US` routing. It is a CALL-E test destination, not
+Matthew's recipient and not evidence that UK delivery is currently available.
+
+The live proof uses a harmless integration-test prompt and keeps the API key
+in `CALLE_API_KEY` only. It never falls back to an arbitrary `CALLE_TEST_PHONE`;
+if that variable is present it must match the named profile. `ASK` and `DENY`
+stop before the SDK boundary. A repeat is attempted only after the first
+provider response contains a call ID; otherwise replay is skipped to avoid
+turning uncertain provider state into a second call.
+
+The earlier controlled UK attempt reached the genuine SDK boundary but was
+rejected before call creation by current runtime routing restrictions. No UK
+call ID, transcript, structured result, or UK delivery claim is represented
+as successful. The official hotline profile proves the CALL-E integration and
+real dispatch path only; it does not prove UK route availability.
