@@ -16,6 +16,7 @@ import {
   serialiseRegistry,
 } from "../src/calle.js";
 import { createFakeCalleClient } from "../src/fake-calle.js";
+import { CalleSdkClient, mapOfficialCall } from "../src/calle-sdk.js";
 import type { CalleCredentials, CallParams, CallResult, CallRecord } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -412,5 +413,108 @@ describe("restart safety", () => {
     await dispatchCall(client, reg, CREDS, { ...PARAMS, capability: "call.schedule" });
 
     assert.equal(client.callCount, 2, "different capabilities should each dispatch");
+  });
+});
+
+describe("official CALL-E SDK adapter", () => {
+  it("maps structured recipient evidence and sends the current SDK request shape", async () => {
+    let receivedInput: Record<string, unknown> | undefined;
+    let receivedOptions: Record<string, unknown> | undefined;
+    const client = new CalleSdkClient({
+      client: {
+        calls: {
+          async createAndWait(input, options) {
+            receivedInput = input;
+            receivedOptions = options;
+            return {
+              id: "calle-call-42",
+              object: "call_task",
+              status: "completed",
+              task: input.task,
+              recipients: [{
+                id: "recipient-1",
+                phones: [PARAMS.to],
+                locale: null,
+                region: null,
+                status: "completed",
+                summary: "Appointment confirmed.",
+                structuredResult: {
+                  outcome: "COMMITTED",
+                  offered_date: "2026-09-15",
+                  offered_time: "15:30",
+                  offered_price_minor: 4500,
+                  currency: "GBP",
+                  service: "standard service",
+                  commitment_made: true,
+                  recipient_words_supporting_result: ["Confirmed for Tuesday."],
+                },
+                attempts: [{
+                  id: "attempt-1",
+                  phone: PARAMS.to,
+                  status: "completed",
+                  startedAt: null,
+                  completedAt: null,
+                  summary: null,
+                  transcriptTurns: [{ speaker: "user", text: "Confirmed for Tuesday.", offset_seconds: null }],
+                  providerCallId: "provider-42",
+                  failureCode: null,
+                  failureMessage: null,
+                }],
+              }],
+              structuredResult: null,
+              summary: "Appointment confirmed.",
+              taskCompleted: true,
+              completionConfidence: { score: 0.99, label: "high" },
+              evidence: ["recipient confirmed the appointment"],
+              metadata: {},
+              failureCode: null,
+              failureMessage: null,
+              createdAt: "2026-09-15T14:00:00Z",
+              completedAt: "2026-09-15T14:02:00Z",
+            };
+          },
+        },
+      },
+    });
+
+    const result = await client.createAndWait(
+      { api_key: "test-key", phone_number: CREDS.phone_number },
+      { ...PARAMS, metadata: { authority_digest: "sha256:test" } },
+      { timeout_ms: 12_000 },
+    );
+
+    assert.equal(result.call_id, "calle-call-42");
+    assert.equal(result.status, "completed");
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(result.offered_price_minor, 4500);
+    assert.match(result.transcript ?? "", /Confirmed for Tuesday/);
+    assert.equal(receivedInput?.recipients?.[0]?.phones?.[0], PARAMS.to);
+    assert.deepEqual(receivedInput?.metadata, { authority_digest: "sha256:test" });
+    assert.equal(receivedOptions?.timeoutMs, 12_000);
+    assert.match(String(receivedOptions?.idempotencyKey), /^callpermit-[0-9a-f]{16}$/);
+  });
+
+  it("maps cancellation and failure without treating task completion as commitment", () => {
+    const result = mapOfficialCall({
+      id: "calle-canceled-1",
+      object: "call_task",
+      status: "canceled",
+      task: "test",
+      recipients: [],
+      structuredResult: { outcome: "COMMITTED", commitment_made: true },
+      summary: null,
+      taskCompleted: true,
+      completionConfidence: null,
+      evidence: [],
+      metadata: {},
+      failureCode: null,
+      failureMessage: null,
+      createdAt: "2026-09-15T14:00:00Z",
+      completedAt: null,
+    });
+    assert.equal(result.status, "failed");
+    assert.equal(result.error?.code, "CALL_CANCELLED");
+    assert.equal(result.task_completed, true);
+    assert.equal(result.outcome, "COMMITTED");
   });
 });

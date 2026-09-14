@@ -21,6 +21,8 @@ an in-progress identity is not dispatched again; and any record with a provider
 call ID is observed/reconciled rather than retried blindly after a timeout.
 Only a failure with no provider ID can be retried safely.
 
-This checkpoint uses `src/fake-calle.ts`. It has no network path and no secret
-handling. No live CALL-E call, public PR, purchase, booking, or external
+Acceptance and dry-run use `src/fake-calle.ts`, which has no network path and
+no secret handling. `src/calle-sdk.ts` is the separately gated official
+transport adapter; it receives credentials only from its caller and does not
+log them. No live CALL-E call, public PR, purchase, booking, or external
 commitment is performed by acceptance or dry-run.

@@ -9,14 +9,22 @@
     "build": "tsc",
     "test": "node --import tsx --test tests/*.test.ts",
     "dry-run": "node --import tsx src/cli.ts",
+    "tethers-check": "node --import tsx src/tethers-proof.ts",
     "acceptance": "npm ci && npm run build && npm test && npm run dry-run"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.7.0"
   },
-  "keywords": ["tethers", "authority", "call-e"],
+  "keywords": [
+    "tethers",
+    "authority",
+    "call-e"
+  ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@call-e/calle": "0.7.0"
+  }
 }

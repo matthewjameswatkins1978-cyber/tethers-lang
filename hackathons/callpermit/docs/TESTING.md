@@ -20,6 +20,12 @@ smoke. The test suite covers:
 - duplicate dispatch prevention across registry persistence/restart;
 - no dispatch when authority is `ASK` or `DENY`.
 
-The acceptance path does not invoke a real phone provider. A real CALL-E SDK
-adapter and live proof are intentionally deferred until the offline checkpoint
-is accepted and Matthew explicitly approves the separate live-call boundary.
+The acceptance path does not invoke a real phone provider. The official SDK
+adapter is covered with an injected provider-shaped response, so mapping and
+request construction are tested without a network. A live proof remains a
+separate human-approved boundary.
+
+`npm run tethers-check` invokes the installed Tethers host's read-only `check`
+interface when `TETHERS_CONFIG` and `TETHERS_ENGINE` are supplied. It is kept
+separate from acceptance because Tethers installation paths and host state are
+machine-specific.
