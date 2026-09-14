@@ -221,11 +221,9 @@ fn default_state_root() -> Result<PathBuf, CoreError> {
 }
 
 fn normalize_for_identity(path: &Path) -> String {
-    let mut value = path.to_string_lossy().replace('\\', "/");
+    let value = path.to_string_lossy().replace('\\', "/");
     #[cfg(windows)]
-    {
-        value = value.to_ascii_lowercase();
-    }
+    let value = value.to_ascii_lowercase();
     value
 }
 

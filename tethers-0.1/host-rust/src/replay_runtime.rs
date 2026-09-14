@@ -64,24 +64,21 @@ use std::rc::Rc;
 /// opens nor provisions replay storage.
 pub struct FileReplayAuthority {
     root: Option<PathBuf>,
-    #[cfg(windows)]
-    ledger: RefCell<Option<Rc<crate::replay_windows::ReplayLedger>>>,
+    ledger: RefCell<Option<Rc<crate::replay_store::ReplayLedger>>>,
 }
 
 impl FileReplayAuthority {
     pub fn new(root: Option<&Path>) -> Self {
         Self {
             root: root.map(Path::to_path_buf),
-            #[cfg(windows)]
             ledger: RefCell::new(None),
         }
     }
 }
 
-#[cfg(windows)]
-impl ReplayAdmissionGuard for crate::replay_windows::ReplayAdmission {
+impl ReplayAdmissionGuard for crate::replay_store::ReplayAdmission {
     fn execution_id(&self) -> &str {
-        crate::replay_windows::ReplayAdmission::execution_id(self)
+        crate::replay_store::ReplayAdmission::execution_id(self)
     }
 
     fn state(&self) -> ReplayState {
@@ -119,29 +116,21 @@ impl ReplayAuthority for FileReplayAuthority {
             .root
             .as_deref()
             .ok_or(ReplayError::PersistenceUnavailable)?;
-        #[cfg(windows)]
-        {
-            let mut ledger_ref = self.ledger.borrow_mut();
-            if ledger_ref.is_none() {
-                *ledger_ref = Some(Rc::new(crate::replay_windows::ReplayLedger::open(root)?));
-            }
-            let ledger = Rc::clone(
-                ledger_ref
-                    .as_ref()
-                    .ok_or(ReplayError::PersistenceUnavailable)?,
-            );
-            let admission = crate::replay_windows::ReplayLedger::admit_or_recover_owned(
-                &ledger,
-                logical_key.clone(),
-                binding.clone(),
-            )?;
-            Ok(Box::new(admission))
+        let mut ledger_ref = self.ledger.borrow_mut();
+        if ledger_ref.is_none() {
+            *ledger_ref = Some(Rc::new(crate::replay_store::ReplayLedger::open(root)?));
         }
-        #[cfg(not(windows))]
-        {
-            let _ = (root, logical_key, binding);
-            Err(ReplayError::PersistenceUnavailable)
-        }
+        let ledger = Rc::clone(
+            ledger_ref
+                .as_ref()
+                .ok_or(ReplayError::PersistenceUnavailable)?,
+        );
+        let admission = crate::replay_store::ReplayLedger::admit_or_recover_owned(
+            &ledger,
+            logical_key.clone(),
+            binding.clone(),
+        )?;
+        Ok(Box::new(admission))
     }
 }
 

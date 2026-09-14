@@ -4912,8 +4912,8 @@ mod tests {
             "T15: replay root must receive the accepted protected ACL"
         );
         assert!(matches!(
-            crate::replay_windows::provision_replay(root),
-            Ok(crate::replay_windows::ProvisionReplayOutcome::Provisioned)
+            crate::replay_store::provision_replay(root),
+            Ok(crate::replay_store::ProvisionReplayOutcome::Provisioned)
         ));
     }
 

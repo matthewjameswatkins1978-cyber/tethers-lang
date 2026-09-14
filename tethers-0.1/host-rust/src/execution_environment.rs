@@ -1089,8 +1089,10 @@ fn capability_failure(class: &RequirementClass) -> CapabilityState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
     use std::path::Path;
 
+    #[cfg(windows)]
     fn create_junction(link: &Path, target: &Path) -> Result<(), String> {
         let output = std::process::Command::new("cmd")
             .args([
@@ -1119,6 +1121,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     fn broad_permissions() -> PermissionScopes {
         let temp = std::env::temp_dir();
         let temp_str = temp.to_string_lossy().replace('/', "\\");
@@ -1976,6 +1979,7 @@ mod tests {
 
     // ── canonical script-path tests ──────────────────────────────
 
+    #[cfg(windows)]
     fn resolve_pwsh() -> Option<String> {
         // Use the same PATH-resolved executable that the local environment
         // probe reaches, rather than assuming a fixed PowerShell installation.
@@ -1995,6 +1999,7 @@ mod tests {
         None
     }
 
+    #[cfg(windows)]
     fn powershell_launch_environment() -> BTreeMap<String, String> {
         let system_root = std::env::var("SystemRoot")
             .expect("SystemRoot is required for the verified local PowerShell launch");

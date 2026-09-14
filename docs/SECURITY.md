@@ -4,8 +4,9 @@ Status: current security summary
 Updated: 2026-09-10
 Tethers 0.7 provider execution uses process supervision but is not a hostile-code sandbox.
 The current guarantees include explicit launch, bounded protocol I/O, retained
-child ownership, Windows Job Object lifecycle management, replay protection,
-strict manifest checks and redacted outcomes. They do not prove filesystem,
+child ownership, Windows Job Object or Linux process-group lifecycle
+management, replay protection, strict manifest checks and redacted outcomes.
+They do not prove filesystem,
 network, credential, token or DLL isolation.
 
 Tethers has a serious trust and execution model, but it is important to describe exactly what that model does and does not guarantee.
@@ -243,7 +244,7 @@ Agents should be able to learn what Tethers can do without that act of discovery
 
 ## Platform note
 
-The published Tethers 0.7 practical release provides a Windows x64 full-runtime bundle. Linux host parity and a Linux 0.7 asset are not established by this release evidence. The smaller Portable Workbench remains a separate compatibility surface.
+The published Tethers 0.7 practical release provides a Windows x64 full-runtime bundle. Linux R3 adds native implementation and verification routes, but Linux is not an official support promise until native CI, package, clean-install, runtime, recovery, and release evidence are accepted. The smaller Portable Workbench remains a separate compatibility surface.
 
 That packaging fact should not be overstated into a claim that every platform-specific containment or durability mechanism is identical. Some host lifecycle and containment paths are platform-specific, and the security guarantee is the documented semantic/trust boundary, not “Windows and Linux implement every low-level mechanism in exactly the same way.”
 

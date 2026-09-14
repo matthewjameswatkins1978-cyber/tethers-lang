@@ -344,8 +344,16 @@ The Windows bundle is reproducible locally:
 pwsh -NoProfile -File .\scripts\package-0.7.ps1
 ```
 
-Linux parity and a Linux 0.7 release asset are not established by this
-Windows-only public package; do not infer them from the portable workbench.
+The R3 Linux x86-64 package is built separately with the native Linux OCaml
+switch:
+
+```bash
+pwsh -NoProfile -File ./scripts/package-linux.ps1 -OcamlSwitchPath "$TETHERS_OCAML_SWITCH"
+```
+
+Run `scripts/test-linux-package.ps1` against the resulting tarball to verify a
+clean extraction outside the checkout. Linux is not an official support claim
+until its native CI and clean-install evidence are accepted.
 
 The shortest accurate mental model is:
 

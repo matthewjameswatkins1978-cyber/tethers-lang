@@ -83,9 +83,11 @@ Git remote mutation is not exposed; exec never inserts a shell. `threadmoth`
 is an optional explicit integration and is never hidden inside `workspace.replace`.
 
 The normal Windows full-runtime package contains `tethers.exe` and its sibling
-`tethers-engine.exe`; Rust, Cargo, OCaml, opam and Dune are development tools,
-not end-user prerequisites. A portable host can inspect and plan without
-claiming the full local execution surface.
+`tethers-engine.exe`; the R3 Linux x86-64 package uses the same two roles with
+extensionless native ELF binaries. Rust, Cargo, OCaml, opam and Dune are
+development tools, not end-user prerequisites. Linux remains provisional until
+the native CI and clean-install gates are accepted; see
+[`docs/LINUX_PORTABILITY_AUDIT.md`](docs/LINUX_PORTABILITY_AUDIT.md).
 
 ## Repository Map
 
@@ -374,9 +376,10 @@ The 0.7 source tree includes three starter Tether Set examples under
 language and runtime configuration; they do not introduce a second Set
 semantic or permission model.
 
-The 0.7 release publishes a Windows x64 full-runtime archive containing
-`tethers.exe` and `tethers-engine.exe`; the language and compatibility package
-versions remain separate axes by design.
+The published 0.7 release contains the Windows x64 full-runtime archive with
+`tethers.exe` and `tethers-engine.exe`. The language and compatibility package
+versions remain separate axes by design. A Linux archive is a separate R3
+artifact and must not be inferred from the portable workbench or Windows asset.
 
 ## Security posture
 

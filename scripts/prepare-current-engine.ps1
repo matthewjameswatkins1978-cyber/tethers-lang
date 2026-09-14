@@ -11,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $engineRoot = Join-Path $repositoryRoot 'tethers-0.1/engine-ocaml'
 $manifestPath = Join-Path $repositoryRoot 'verification/current-engine-provenance.json'
+$pwsh = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { 'pwsh.exe' } else { 'pwsh' }
 
 function Emit-Failure {
     param([string]$Message)
@@ -58,7 +59,7 @@ try {
         if ($status.Count -gt 0) { Emit-Failure 'Release verification requires a clean Git worktree.' }
     }
 
-    $toolchainOutput = @(& pwsh.exe -NoProfile -File (Join-Path $repositoryRoot '.github/scripts/check-tethers-toolchains.ps1') -OcamlSwitchPath $OcamlSwitchPath 2>&1 | ForEach-Object { "$($_)" })
+    $toolchainOutput = @(& $pwsh -NoProfile -File (Join-Path $repositoryRoot '.github/scripts/check-tethers-toolchains.ps1') -OcamlSwitchPath $OcamlSwitchPath 2>&1 | ForEach-Object { "$($_)" })
     if ($LASTEXITCODE -ne 0) {
         $first = ($toolchainOutput | Where-Object { $_ -match 'FAIL:' } | Select-Object -First 1)
         if ([string]::IsNullOrWhiteSpace($first)) { $first = ($toolchainOutput | Select-Object -Last 1) }
@@ -76,9 +77,14 @@ try {
         Emit-Failure "The current OCaml engine could not be built from source commit $sourceCommit. First error: $firstBuildError. Cross-language host tests were not attempted."
     }
 
-    $enginePath = Join-Path $engineRoot '_build/default/bin/tethers_mcp_main.exe'
+    $engineName = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        'tethers_mcp_main.exe'
+    } else {
+        'tethers_mcp_main'
+    }
+    $enginePath = Join-Path $engineRoot (Join-Path '_build/default/bin' $engineName)
     if (-not (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
-        Emit-Failure "The current OCaml build completed without producing the required engine: tethers-0.1/engine-ocaml/_build/default/bin/tethers_mcp_main.exe"
+        Emit-Failure "The current OCaml build completed without producing the required engine: tethers-0.1/engine-ocaml/_build/default/bin/$engineName"
     }
     $enginePath = [System.IO.Path]::GetFullPath($enginePath)
     $engineHash = (Get-FileHash -LiteralPath $enginePath -Algorithm SHA256).Hash.ToLowerInvariant()

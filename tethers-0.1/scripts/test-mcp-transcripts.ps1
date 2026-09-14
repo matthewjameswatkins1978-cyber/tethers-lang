@@ -3,7 +3,13 @@ $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $TranscriptRoot = Join-Path $Root "protocol/mcp-transcripts"
-$ServerExe = Join-Path $Root "engine-ocaml\_build\default\bin\tethers_mcp_main.exe"
+$serverName = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+    'tethers_mcp_main.exe'
+} else {
+    'tethers_mcp_main'
+}
+$ServerExe = Join-Path $Root (Join-Path '_build/default/bin' $serverName)
+$tempRoot = [System.IO.Path]::GetTempPath()
 
 function ConvertTo-CanonicalJson {
     param(
@@ -244,8 +250,8 @@ function Run-ServerAndCompare {
     $stdin = Read-JsonLines $stdinPath
     $expectedStdout = Read-JsonLines $stdoutPath
 
-    $stdoutTemp = Join-Path $env:TEMP "mcp_stdout_$CaseName.txt"
-    $stderrTemp = Join-Path $env:TEMP "mcp_stderr_$CaseName.txt"
+    $stdoutTemp = Join-Path $tempRoot "mcp_stdout_$CaseName.txt"
+    $stderrTemp = Join-Path $tempRoot "mcp_stderr_$CaseName.txt"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $ServerExe

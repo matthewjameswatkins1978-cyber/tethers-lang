@@ -186,8 +186,7 @@ fn provision_replay_root(root: &Path) {
         status.success(),
         "host-data root must receive protected ACL"
     );
-    let _ =
-        tethers_reference_host::replay_windows::provision_replay(root).expect("provision_replay");
+    let _ = tethers_reference_host::replay_store::provision_replay(root).expect("provision_replay");
 }
 
 // ---------------------------------------------------------------------------
