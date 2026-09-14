@@ -217,6 +217,11 @@ No implementation semantics, 0.1 syntax, architecture boundary, historical
 worker note, current task packet, public history, branch, tag, release, or
 unexplained worktree was rewritten.
 
+The audit-created release extraction and CLI test directories remain outside
+the repository because the host rejected the recursive cleanup command. They
+are disposable, contain no repository state, and are explicitly listed in the
+handoff rather than silently treated as removed.
+
 ## 12. Start line for Tethers 1.0
 
 The repository has a reproducible current `origin/main` baseline with a
