@@ -41,7 +41,9 @@ function Write-Packet {
     param(
         [string]$Status,
         [string]$BaseCommit,
-        [string]$NotePath = "docs/worker-notes/test-note.md"
+        [string]$NotePath = "docs/worker-notes/test-note.md",
+        [string]$EvidenceCheckpoint,
+        [switch]$ScopedEvidence
     )
     $content = @"
 # Current Implementation Task
@@ -60,6 +62,7 @@ Implementation branch: ``test-branch``
 OCaml switch path: ``N/A``
 Rust toolchain: read exact channel from ``rust-toolchain.toml``; use plain Cargo (resolved by root pin); ``--locked`` mandatory
 Toolchain preflight: ``pwsh -NoProfile -File scripts/check-dev-tools.ps1``
+$(if ($ScopedEvidence) { "Evidence checkpoint: ``$EvidenceCheckpoint```r`n" } else { '' })
 
 ## Objective
 
@@ -92,6 +95,8 @@ None.
 ## Expected pre-existing changes
 
 None
+
+$(if ($ScopedEvidence) { "## Implementation scope`r`n`r`n- ``src/lib.rs```r`n" } else { '' })
 
 ## Acceptance criteria
 
@@ -255,7 +260,7 @@ Pop-Location
 Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue
 
 # ═════════════════════════════════════════════════
-# TEST E: COMPLETE + production changed after checkpoint -> FAIL
+# TEST E: COMPLETE + later implementation belongs to a later task -> PASS
 # ═════════════════════════════════════════════════
 $repo = New-TestRepo
 New-InitCommit
@@ -270,12 +275,12 @@ Write-Note -Status "COMPLETE" -BaseCommit $baseSha -Checkpoint $checkpointSha
 Set-Content -LiteralPath "src/lib.rs" -Value "// changed after checkpoint"
 & git add -- src/lib.rs docs/CURRENT_CLINE_TASK.md docs/worker-notes/test-note.md
 & git commit --quiet -m "tainted: production change after closeout" 2>&1 | Out-Null
-Assert-CheckerFail "TEST E: COMPLETE + production changed after checkpoint is rejected"
+Assert-CheckerPass "TEST E: COMPLETE + later implementation does not invalidate historical evidence"
 Pop-Location
 Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue
 
 # ═════════════════════════════════════════════════
-# TEST F: COMPLETE + arbitrary doc changed after checkpoint -> FAIL
+# TEST F: COMPLETE + arbitrary doc changed after checkpoint -> PASS
 # ═════════════════════════════════════════════════
 $repo = New-TestRepo
 New-InitCommit
@@ -290,7 +295,7 @@ Write-Note -Status "COMPLETE" -BaseCommit $baseSha -Checkpoint $checkpointSha
 Set-Content -LiteralPath "docs/AGENT_WORKFLOW.md" -Value "# Unrelated edit"
 & git add -- docs/AGENT_WORKFLOW.md docs/CURRENT_CLINE_TASK.md docs/worker-notes/test-note.md
 & git commit --quiet -m "tainted: unrelated doc change" 2>&1 | Out-Null
-Assert-CheckerFail "TEST F: COMPLETE + non-closeout doc changed after checkpoint is rejected"
+Assert-CheckerPass "TEST F: COMPLETE + unrelated later documentation remains valid historical evidence"
 Pop-Location
 Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -309,6 +314,28 @@ Write-Packet -Status "COMPLETE" -BaseCommit $baseSha
 Write-Note -Status "COMPLETE" -BaseCommit $baseSha -Checkpoint $checkpointSha
 Commit-Closeout
 Assert-CheckerPass "TEST G: COMPLETE + packet and worker-note closeout only passes"
+Pop-Location
+Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue
+
+# ═════════════════════════════════════════════════
+# TEST H: IN_PROGRESS scoped evidence detects stale implementation only
+# ═════════════════════════════════════════════════
+$repo = New-TestRepo
+New-InitCommit
+$baseSha = (& git rev-parse HEAD)
+New-Item -ItemType Directory -Path "src" -Force | Out-Null
+Set-Content -LiteralPath "src/lib.rs" -Value "// current implementation"
+& git add -- src/lib.rs
+& git commit --quiet -m "implementation evidence" 2>&1 | Out-Null
+$evidenceSha = (& git rev-parse HEAD)
+Write-Packet -Status "IN_PROGRESS" -BaseCommit $baseSha -EvidenceCheckpoint $evidenceSha -ScopedEvidence
+& git add -- docs/CURRENT_CLINE_TASK.md
+& git commit --quiet -m "record current evidence" 2>&1 | Out-Null
+Assert-CheckerPass "TEST H: current implementation matches scoped evidence"
+Set-Content -LiteralPath "src/lib.rs" -Value "// stale implementation"
+& git add -- src/lib.rs
+& git commit --quiet -m "tainted current implementation" 2>&1 | Out-Null
+Assert-CheckerFail "TEST I: current implementation changed after evidence checkpoint"
 Pop-Location
 Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue
 

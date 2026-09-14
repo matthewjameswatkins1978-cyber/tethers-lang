@@ -1,0 +1,36 @@
+name: Tethers verification foundations
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-verification:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check required CI tools
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -Command "Get-Command git, cargo, rustfmt | Out-Null"
+      - name: Rust formatting
+        shell: pwsh
+        run: cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
+      - name: Rust static checks
+        shell: pwsh
+        run: cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+      - name: Packet checker tests
+        shell: pwsh
+        run: pwsh -NoProfile -File .github/scripts/test-check-tethers-task-packet.ps1
+      - name: Compatibility corpus
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-compatibility-corpus.ps1
+      - name: Whitespace and repository checks
+        shell: pwsh
+        run: git diff --check

@@ -199,6 +199,7 @@ function Invoke-TethersToolchainCheck {
     $pkgList = & opam list --switch="$CanonicalSwitch" --installed --columns=name,version 2>&1
     if ($LASTEXITCODE -ne 0) { Fail "opam list failed"; return $Script:ExitCode }
     if ($pkgList -match "yojson\s+2\.2\.2") { Pass "Yojson 2.2.2" } else { Fail "Yojson 2.2.2 not found in installed packages" }
+    if ($pkgList -match "digestif\s+1\.3\.1") { Pass "Digestif 1.3.1" } else { Fail "Digestif 1.3.1 not found in installed packages" }
 
     # --- Repository OCaml checks ---
     $opamFile = Join-Path $repoRoot "tethers-0.1/engine-ocaml/tethers_engine.opam"
