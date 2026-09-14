@@ -114,7 +114,7 @@ Important properties include:
 - canonicalisation fails closed when validation or deterministic work budgets fail;
 - independent implementations and oracles can be used as differential evidence.
 
-The 0.6 release line extends the exact implementation portfolio around that frozen identity rather than changing the identity format itself. Rocket work changes how exact canonical results are reached and evidenced, not what a valid canonical answer means.
+The 0.7 release line extends the exact implementation portfolio around that frozen identity rather than changing the identity format itself. Rocket work changes how exact canonical results are reached and evidenced, not what a valid canonical answer means.
 
 That distinction matters because performance machinery must not quietly become a new semantic specification.
 
@@ -305,11 +305,11 @@ It can record reception, evaluation, planning, semantic Action/group position, a
 
 Pure deterministic Core entries remain independent of wall-clock time. Host execution entries may include timestamps because the host is the effectful runtime boundary.
 
-The 0.6 release line also includes a bounded receipt projection over validated Trail evidence for agent-friendly inspection without introducing a second persistence store.
+The 0.7 release line also includes a bounded receipt projection over validated Trail evidence for agent-friendly inspection without introducing a second persistence store.
 
-## 13. Agent-facing 0.6 surface
+## 13. Agent-facing 0.7 surface
 
-The published Tethers 0.6 practical release adds a machine-oriented front door so an unfamiliar agent does not need private knowledge of the host.
+The published Tethers 0.7 practical release adds a machine-oriented front door so an unfamiliar agent does not need private knowledge of the host.
 
 The tagged release source includes surfaces for:
 
@@ -325,9 +325,7 @@ describe the host
 
 It also includes agent-oriented workspace/text/hash/patch capabilities, structured Git capabilities, bounded argv-only process execution, named verification checks, and the deterministic `tethers-bench` verification tool.
 
-For exact 0.6 commands and source, use the [`tethers-v0.6.0` release tag](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.6.0).
-
-That source/release mismatch should be treated as repository hygiene, not hidden by documentation.
+For exact commands and source, use the [`tethers-v0.7.0` release tag](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.0).
 
 ## 14. Portable workbench
 
@@ -366,10 +364,10 @@ Tethers currently carries several version axes:
 | Portable workbench | `0.2.2` |
 | Public Plug authoring milestone | `0.3` complete |
 | Together/concurrency milestone | `0.4` complete |
-| Practical product release | `0.6` |
-| Latest public GitHub tag | `tethers-v0.6.0` |
+| Practical product release | `0.7.0` |
+| Latest public GitHub tag | `tethers-v0.7.0` |
 
-The current 0.6 release asset filenames use the `tethers-0.6.0-*` form. The
+The current 0.7 public asset is a Windows x64 full-runtime archive. The
 language and compatibility package versions are related but not interchangeable.
 
 ## 17. Where Tethers is strongest

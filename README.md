@@ -14,7 +14,7 @@
     ·
     <a href="docs/PLUG_AUTHORING.md">Build a Plug</a>
     ·
-    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.6.0">Tethers 0.6 release</a>
+    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.0">Tethers 0.7 release</a>
   </p>
 </div>
 
@@ -49,7 +49,7 @@ Most automation stacks blur several different questions together:
 ## Tethers 0.7.0
 
 - Tethers product version: 0.7.0
-- Status: release candidate implementation
+- Status: released 2026-09-11
 - Language semantics: 0.1
 - Release notes: [`docs/releases/v0.7.0.md`](docs/releases/v0.7.0.md)
 
@@ -108,7 +108,7 @@ Tethers uses a layered set of authoritative and operational documents:
 - `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the
   two durable sides of each implementation handoff.
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
-- `docs/releases/v0.7.0.md` records the current 0.7.0 release-candidate gates;
+- `docs/releases/v0.7.0.md` records the published 0.7.0 release and its evidence;
   older `ROAD_TO_0_2.md` material is retained as historical project context.
 
 Current operating route:
@@ -343,11 +343,10 @@ projection over validated Trail entries.
 
 ## Download the portable workbench
 
-For the full 0.5 host bundle, download the platform asset from the
-[Tethers 0.6 release](docs/TETHERS_0_6_RELEASE.md). It contains the native
-host, the smaller portable workbench, agent-facing manuals, and SHA-256
-evidence. The portable workbench remains separately versioned at 0.2.2 for
-compatibility.
+For the current native host, download the Windows x64 full-runtime asset from
+the [Tethers 0.7.0 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.0).
+Verify its `SHA256SUMS` and release manifest before extraction. The portable
+workbench remains separately versioned at 0.2.2 for compatibility.
 
 ## Version map
 
@@ -360,16 +359,16 @@ Tethers currently has several version axes. They describe different things:
 | Portable workbench | `0.2.2` |
 | Public Plug-authoring programme | `0.3` milestone complete and integrated |
 | Together/concurrency programme | `0.4` milestone complete and integrated |
-| Practical release line | `0.6` — Plan, execution, replay, Trail proof, and Agent Essentials |
+| Practical release line | `0.7.0` — execution boundary, Agent Core, Plug/replay/Trail surfaces |
 
-The 0.6 source tree includes three starter Tether Set examples under
+The 0.7 source tree includes three starter Tether Set examples under
 [`examples/tether-sets`](examples/tether-sets). They use the existing Tether
 language and runtime configuration; they do not introduce a second Set
 semantic or permission model.
 
-The 0.6 release assets use `tethers-0.6.0-*` filenames and the GitHub tag is
-`tethers-v0.6.0`. The language and compatibility package versions remain
-separate axes by design.
+The 0.7 release publishes a Windows x64 full-runtime archive containing
+`tethers.exe` and `tethers-engine.exe`; the language and compatibility package
+versions remain separate axes by design.
 
 ## Security posture
 
