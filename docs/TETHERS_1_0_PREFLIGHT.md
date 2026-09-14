@@ -17,9 +17,9 @@ and historical worktrees were not disturbed.
 | --- | --- |
 | Audit root | `D:\The Next Thing\Tethers Lang - 1.0 Preflight` |
 | Audit branch | `codex/tethers-1.0-preflight` |
-| Audit HEAD | `699f9c8f48359b8b3de0d3614b8827acecf977cf` |
+| Audit HEAD | `87e66b5` |
 | `origin/main` at audit | `699f9c8f48359b8b3de0d3614b8827acecf977cf` |
-| Audit divergence | `0 ahead / 0 behind` |
+| Audit divergence | `6 ahead / 0 behind` |
 | Canonical occupied checkout | `D:\The Next Thing\Tethers Lang - J16 Clean` |
 | Occupied checkout branch | `opencode/j19-m5-durable-local-anchor` |
 | Occupied checkout HEAD | `777026be2945895c86e36ce997ba8e15d4f8b0f6` |
@@ -55,9 +55,10 @@ environment-handshake, J20, J21 PDF provider work, and this audit tree. No
 branch or worktree was deleted. This preserves unexplained work, unique commits,
 and the untracked `release/` directory.
 
-There are no open GitHub pull requests at the time of audit. This closeout has
-not yet pushed or merged the new closeout commits. No history rewrite or tag
-mutation was performed.
+There were no open GitHub pull requests at the time of the initial audit. The
+closeout branch now contains six history-preserving commits, ready for the
+authorized push and PR review described by the closeout packet. No history
+rewrite or tag mutation was performed.
 
 ## 3. Version and product truth
 
@@ -270,6 +271,8 @@ automation are **1.0 REQUIREMENTS**, and the packet-checker mismatch is
 **EXTERNAL TOOLING ISSUE**. Rocket scale evidence and C-B1 residue are
 resolved.
 
-Recommended small local commits on this audit branch are: (1) test isolation,
-(2) documentation and MCP fixture alignment, and (3) this preflight artifact.
-They are intentionally not pushed or merged by this audit.
+The audit branch preserves six history-preserving commits: the earlier test
+isolation and documentation/MCP alignment commits, the two preflight-record
+commits, and the closeout commit containing Rocket scale evidence and C-B1
+retirement. Publication and merge are handled as the final closeout actions;
+the resulting PR and accepted `main` SHA are recorded in the final handoff.
