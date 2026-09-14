@@ -191,6 +191,23 @@ Living documents must track accepted truth:
 
 Document decisions future work needs. Do not create paperwork about paperwork.
 
+## Canonical Tethers Development Checkout
+
+The canonical checkout for the road to Tethers 1.0 is:
+
+```text
+D:\The Next Thing\Tethers Lang - J16 Clean
+```
+
+It must remain on `main` and track `origin/main`. Before each new task, fetch
+the remote, confirm the accepted `origin/main` SHA, confirm local relationship
+and working-tree cleanliness, and then create the isolated task branch or
+worktree from that accepted main. Temporary Codex, GARY, historical, and
+experiment worktrees are not continuation authority.
+
+Every future Tethers handoff should name this canonical path, the starting main
+SHA, and the task branch explicitly.
+
 ## Improvement Rule
 
 The shop itself is a product.
