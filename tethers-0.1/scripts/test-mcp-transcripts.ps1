@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $TranscriptRoot = Join-Path $Root "protocol/mcp-transcripts"
-$serverDirectory = Join-Path $Root '_build/default/bin'
+$serverDirectory = Join-Path (Join-Path $Root 'engine-ocaml') '_build/default/bin'
 $ServerExe = $null
 foreach ($serverName in @('tethers_mcp_main.exe', 'tethers_mcp_main')) {
     $candidate = Join-Path $serverDirectory $serverName
@@ -337,7 +337,7 @@ $requiredCases = @(
 
 Test-SemanticComparisonSelfChecks
 
-Assert-True (Test-Path -LiteralPath $ServerExe -PathType Leaf) "MCP server executable not found: $ServerExe"
+Assert-True (($null -ne $ServerExe) -and (Test-Path -LiteralPath $ServerExe -PathType Leaf)) "MCP server executable not found under: $serverDirectory"
 
 foreach ($caseName in $requiredCases) {
     $caseRoot = Join-Path $TranscriptRoot $caseName
