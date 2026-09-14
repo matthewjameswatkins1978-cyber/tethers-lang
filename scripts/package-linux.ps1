@@ -19,7 +19,8 @@ $version = (Get-Content -Raw (Join-Path $repositoryRoot 'VERSION')).Trim()
 $hostManifest = Join-Path $repositoryRoot 'tethers-0.1/host-rust/Cargo.toml'
 $engineRoot = Join-Path $repositoryRoot 'tethers-0.1/engine-ocaml'
 $releaseDirectory = Join-Path $repositoryRoot 'tethers-0.1/host-rust/target/release'
-$enginePath = Join-Path $engineRoot '_build/default/bin/tethers_mcp_main'
+$engineDirectory = Join-Path $engineRoot '_build/default/bin'
+$enginePath = $null
 $dist = Join-Path $repositoryRoot 'dist'
 if ([string]::IsNullOrWhiteSpace($Output)) {
     $Output = Join-Path $dist "tethers-$version-linux-x86_64.tar.gz"
@@ -55,6 +56,17 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "native Linux OCaml engine build failed with exit code $LASTEXITCODE" }
     }
     finally { Pop-Location }
+
+    foreach ($engineName in @('tethers_mcp_main.exe', 'tethers_mcp_main')) {
+        $candidate = Join-Path $engineDirectory $engineName
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $enginePath = $candidate
+            break
+        }
+    }
+    if ($null -eq $enginePath) {
+        throw 'native Linux OCaml build produced no tethers_mcp_main(.exe) engine binary'
+    }
 
     $hostPath = Join-Path $releaseDirectory 'tethers'
     foreach ($path in @($hostPath, $enginePath)) {

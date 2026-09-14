@@ -77,14 +77,17 @@ try {
         Emit-Failure "The current OCaml engine could not be built from source commit $sourceCommit. First error: $firstBuildError. Cross-language host tests were not attempted."
     }
 
-    $engineName = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
-        'tethers_mcp_main.exe'
-    } else {
-        'tethers_mcp_main'
+    $engineDirectory = Join-Path $engineRoot '_build/default/bin'
+    $enginePath = $null
+    foreach ($engineName in @('tethers_mcp_main.exe', 'tethers_mcp_main')) {
+        $candidate = Join-Path $engineDirectory $engineName
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $enginePath = $candidate
+            break
+        }
     }
-    $enginePath = Join-Path $engineRoot (Join-Path '_build/default/bin' $engineName)
-    if (-not (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
-        Emit-Failure "The current OCaml build completed without producing the required engine: tethers-0.1/engine-ocaml/_build/default/bin/$engineName"
+    if ($null -eq $enginePath) {
+        Emit-Failure 'The current OCaml build completed without producing tethers_mcp_main(.exe) in tethers-0.1/engine-ocaml/_build/default/bin.'
     }
     $enginePath = [System.IO.Path]::GetFullPath($enginePath)
     $engineHash = (Get-FileHash -LiteralPath $enginePath -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -3,12 +3,15 @@ $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $TranscriptRoot = Join-Path $Root "protocol/mcp-transcripts"
-$serverName = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
-    'tethers_mcp_main.exe'
-} else {
-    'tethers_mcp_main'
+$serverDirectory = Join-Path $Root '_build/default/bin'
+$ServerExe = $null
+foreach ($serverName in @('tethers_mcp_main.exe', 'tethers_mcp_main')) {
+    $candidate = Join-Path $serverDirectory $serverName
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+        $ServerExe = $candidate
+        break
+    }
 }
-$ServerExe = Join-Path $Root (Join-Path '_build/default/bin' $serverName)
 $tempRoot = [System.IO.Path]::GetTempPath()
 
 function ConvertTo-CanonicalJson {
