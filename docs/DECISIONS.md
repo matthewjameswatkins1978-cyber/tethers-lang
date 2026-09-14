@@ -1145,3 +1145,34 @@ The canonical text was recovered unchanged from the earlier Work-mode branch
 docs/git-worktrees-line-endings-guide at
 3e958ceba22bbeed1937b1fa62fa3054fab1596b. The later Goose duplicate at
 e63a90d0587c918a07dc2697db6c0f1dace77872 is not authority for this guide.
+
+## 2026-09-14: R2 Verification Owns Current Evidence
+
+Decision: Repository-owned verification tooling is the authority for current
+verification truth. A completed historical packet records the implementation
+checkpoint it accepted; later unrelated implementation or documentation does
+not invalidate that historical evidence. An active packet may declare a scoped
+Evidence checkpoint, and only changes inside that implementation scope make
+that current evidence stale.
+
+## 2026-09-14: R2 Current Engine Provenance
+
+Decision: Cross-language verification uses only an OCaml engine built from the
+current checkout and bound by source commit, source tree, binary path and
+SHA-256 in `tethers.engine/1` provenance evidence. The Rust test helpers do not
+fall back to PATH, a sibling worktree or an arbitrary stale `_build` binary.
+
+## 2026-09-14: R2 Environment Failure Classification
+
+Decision: Missing required tools, packages, switches or current engine builds
+are prerequisite failures reported before dependent product tests. They are
+not converted into downstream semantic failures. Optional external providers
+remain explicit skips, and packet/checkpoint machinery remains external project
+tooling.
+
+## 2026-09-14: R2 Compatibility Seed Corpus
+
+Decision: Historical 0.7 compatibility fixtures are first-class release
+evidence under `compat/0.7/`, with release provenance and protected version
+identifiers. The seed harness is intentionally smaller than the R6 migration
+audit and does not invent compatibility values.
