@@ -14,6 +14,20 @@ Full doctrine: `docs/GORILLA_BUNNY_MANIFESTO.md`.
 
 The Constitution, specifications, accepted decisions, code, tests, fixtures, Trails and Git remain authoritative for product behaviour and engineering evidence.
 
+## Canonical Tethers 1.0 Checkout
+
+The canonical development checkout for the road to Tethers 1.0 is:
+
+`D:\The Next Thing\Tethers Lang - J16 Clean`
+
+It is currently on local `main`, tracking `origin/main`, at accepted main SHA
+`d1959b09c125f7d7caa86e7b51844f9ea5c0322a`. Before each new task, fetch
+`origin`, verify the current `origin/main` SHA and checkout cleanliness, then
+create a fresh isolated `codex/` task branch or worktree from that accepted
+main. Complete work is published through the normal branch, verification, PR,
+review, merge, and accepted-main-SHA confirmation cycle. Do not start new work
+from historical or temporary branches merely because their names are relevant.
+
 ## Control Roles
 
 - **Matthew, product owner:** direction, taste, priorities, consequential trade-offs, publication and final human judgement. Matthew is also happy to act as the short copy/paste relay between Lucy and agents when that keeps him visibly in the loop without creating unnecessary admin.
