@@ -1,4 +1,34 @@
 # Decisions
+
+## 2026-09-14: R1 / 0.8-A Tethers 1.0 contract freeze
+
+Decision: Tethers 1.0 is defined as a stable consequential execution boundary,
+not completion of every planned interface.
+
+Consequences:
+
+1. The critical path is compatibility, support truth, Linux parity,
+   verification, reproducible release, security/recovery evidence, and real
+   workload proof.
+2. The critical path does not automatically include HQ, Shell, Guidance,
+   Presentation Contract, new syntax, an ecosystem marketplace, remote
+   execution, or every experimental interface.
+3. Product, Human Tether language, Core/wire, CLI, Plan, Trail, package,
+   Socket, MCP, persistent-state, and Portable Workbench versions remain
+   separate axes.
+4. Tethers 1.x preserves the meaning of explicitly supported public versions;
+   incompatible successors receive explicit versions and do not silently
+   reinterpret old inputs.
+5. Windows x86-64 is the current official practical target. Linux x86-64 is a
+   required 1.0 target but is not yet an official supported release claim.
+6. Apache-2.0 remains the recommendation from preflight, but licence selection
+   is an owner decision and no licence is applied by R1 without approval.
+7. The current aggregate verification route remains externally blocked by the
+   historical GARY packet-checkpoint mismatch; R2 owns the repair.
+
+The living contract set is `ROAD_TO_1_0.md`, `VERSIONING.md`,
+`COMPATIBILITY.md`, `SUPPORT_MATRIX.md`, and `DEPRECATION_POLICY.md`.
+
 ## 2026-08-01: J18 architecture frozen and implementation roadmap opened
 
 1. J18H is accepted with verdict `VALIDATED`.
