@@ -13,7 +13,7 @@ use tethers_reference_host::{SharedExecutionOutcome, SharedExecutionResult};
 const TETHERS_BASELINE_SHA: &str = "07870c356e034103573c5499347c61fce0700218";
 // The fixture commit follows this implementation checkpoint so the pinned
 // semantic authority remains immutable and reviewable.
-const TETHERS_P4_IMPLEMENTATION_SHA: &str = "efa9c714cc08550bbab9b487378c51daa953c22c";
+const TETHERS_P4_IMPLEMENTATION_SHA: &str = "78e1300657dc6bf30b1803aca76190b473dd0b1b";
 const RESOLVE_R0_SHA: &str = "8d42e5b061f86b2b2a2c1949c629654968a550ff";
 
 struct RecordingResolveAdapter {
@@ -77,10 +77,9 @@ fn paths() -> (PathBuf, PathBuf, PathBuf, PathBuf) {
 
 #[test]
 fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
-    assert_eq!(TETHERS_BASELINE_SHA.len(), 40);
     assert_eq!(
         TETHERS_P4_IMPLEMENTATION_SHA,
-        "efa9c714cc08550bbab9b487378c51daa953c22c"
+        "78e1300657dc6bf30b1803aca76190b473dd0b1b"
     );
     assert_eq!(RESOLVE_R0_SHA, "8d42e5b061f86b2b2a2c1949c629654968a550ff");
 

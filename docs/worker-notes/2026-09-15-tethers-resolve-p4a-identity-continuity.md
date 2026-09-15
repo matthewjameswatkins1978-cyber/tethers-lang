@@ -6,9 +6,11 @@ Task packet: `User-authorized P4a repair packet; Resolve R0 authority is commit 
 
 Owner: `Codex`
 
-Status: `IMPLEMENTATION IN PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `9fb8517acd1192e9a1dbee8fa70c0f520d6c0fad`
+
+Implementation checkpoint: `78e1300657dc6bf30b1803aca76190b473dd0b1b`
 
 ## Frozen objective
 
