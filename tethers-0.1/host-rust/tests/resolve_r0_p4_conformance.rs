@@ -110,7 +110,6 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     let known_outcome = provider.execute();
     assert_eq!(known_outcome, ResolveOutcome::Succeeded);
 
-    let action_ref = TethersActionRef::from_host_value("tethers-action-p4-secretless").unwrap();
     let preparation_digest =
         tethers_reference_host::resolve_guard::GuardPreparationProofDigest::from_host_value(
             &format!("sha256:{}", "a".repeat(64)),
