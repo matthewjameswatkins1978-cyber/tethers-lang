@@ -580,13 +580,8 @@ mod tests {
         }
 
         fn append(&mut self, entry: &StoredResolveOutcome) -> Result<(), ResolveOutcomeStoreError> {
-<<<<<<< HEAD
-            validate_append(self.latest.get(entry.action_ref()), entry)?;
-            self.latest
-                .insert(entry.action_ref().clone(), entry.clone());
-=======
+            validate_append(self.latest.get(&entry.key()), entry)?;
             self.latest.insert(entry.key(), entry.clone());
->>>>>>> ba44ace (resolve: add live guard transport and outcome delivery)
             Ok(())
         }
     }
