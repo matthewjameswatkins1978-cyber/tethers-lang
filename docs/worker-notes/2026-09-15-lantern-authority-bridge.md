@@ -4,7 +4,7 @@ Task: `LANTERN KEEPER x TETHERS / Milestone 3 authority bridge`
 
 Owner: `Codex`
 
-Status: `IN_PROGRESS`
+Status: `READY_FOR_REVIEW`
 
 Base commit: `7066c9604e7062bf46529b9509dc92287e742379`
 
@@ -27,12 +27,19 @@ and server-sealed audit receipts.
   sync, with no retry after execution.
 - Added grouped-action pre-dispatch enforcement and cross-repository fixtures.
 
-## Verification so far
+## Verification
 
 - Required startup/tool diagnostics passed.
 - `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml` passed.
 - Rust formatting check passed after formatting.
-- Focused and full verification remain pending before publication.
+- Focused `lantern_authority` provider test passed (1 passed).
+- The full verifier passed all 10 suites: task packet checker, Rust
+  formatting, OCaml engine/provenance, OCaml tests, Rust static checks,
+  warning ratchet, Rust and cross-language tests, protocol fixture sanity,
+  MCP transcript suite, and compatibility corpus.
+- The report was run against the exact pinned base source commit in this
+  dirty implementation worktree; its release-eligibility field therefore
+  remains false until branch CI verifies the committed tip.
 
 ## Constraints
 
