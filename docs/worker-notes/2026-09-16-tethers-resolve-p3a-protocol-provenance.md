@@ -73,4 +73,3 @@ No new endpoint, JSON member, protocol version, authentication scheme, retry
 policy, scheduler, Resolve Plug, MCP/A2A transport, provider retry,
 UNCERTAIN reconciliation, Core/OCaml change, Tether syntax change, or P5 work
 was added.
-
