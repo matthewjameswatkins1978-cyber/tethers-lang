@@ -1,156 +1,128 @@
-# TETHERS x RESOLVE01 - P2 Guard Admission Boundary
+# TETHERS x RESOLVE01 - P3 Resolve Guard Transport and Durable Coordination
 
-Task: `TETHERS x RESOLVE01 / P2 - Guard Admission Boundary`
+Task: `TETHERS x RESOLVE01 / P3 - Resolve Guard Transport & Durable Coordination`
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `BLOCKED`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Implement the bounded Rust-host guard-admission seam over the accepted P1 preparation proof. Preserve Tethers as the sole authority for resolution, scope, policy, approval, replay, durable intent, execution and outcomes. Resolve may only admit or refuse a request and may never grant permission. P2 ends before any live Resolve transport or outcome delivery.`
+Route: `Implement the real Resolve guard transport and bounded outcome-delivery coordination only after Gate 0 proves that Resolve has published an accepted, versioned and sufficiently specific S3 protocol contract. Until then, preserve the accepted P2 boundary and make no production changes.`
 
-Base commit: `fab258663af363b6e5902ea3bbe5d3dd8de61678`
+Base commit: `ccbb567b938d4fc1edaeba48d249f684b0e790bb`
 
-Implementation checkpoint: `be2606e9233455b536cee8b33dda8a8b35a3240e`
+Implementation checkpoint: `WORKTREE`
 
-Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p2.md`
+Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p3.md`
 
 Suggested branch:
 
-`codex/tethers-resolve-p2-guard-admission`
+`codex/tethers-resolve-p3-transport-coordination`
 
 ## Objective
 
-Add one narrow, non-transport guard-admission boundary to the Rust host. The
-route must rerun current Tethers preparation authorities, record durable intent,
-ask Resolve one closed admission question, then continue through the existing
-deadline, replay G1, provider, outcome, Result Anchor and Trail path only when
-Resolve returns `Admitted`. Preparation and admission are evidence/coordination;
-neither grants Tethers permission.
+Connect the accepted P2 `ResolveGuardAdapter` to the real Resolve01 guard
+protocol and, only where the accepted protocol requires it, add bounded durable
+coordination and outcome delivery. This packet is blocked at Gate 0 because no
+accepted Resolve S3 contract could be located. P3 must not invent that contract.
 
 ## Relevant background and existing behaviour
 
-P0 and P1 are accepted. `GuardPreparationProof`, `ResolveGuardRequired`,
-opaque `ScopeKey`, exact fresh reconstruction, current capability/schema/scope/
-policy/approval checks, replay authority, `DispatchReadyAction`, existing
-provider execution, outcomes, Result Anchors and FileTrail already exist in the
-Rust host. The P1 proof is not authority and must be rebuilt before each guarded
-request.
+P2 is accepted on `main` at `ccbb567b938d4fc1edaeba48d249f684b0e790bb`.
+Tethers currently owns preparation, permission, replay, durable intent,
+provider execution, provider outcomes and Trail evidence. P2 provides the
+closed `Admitted`, `Rejected`, `Indeterminate` adapter boundary, but deliberately
+contains no live transport or outcome delivery.
+
+The Resolve repositories inspected were `C:\dev\resolve-ai` at
+`c684ee60d563d6cb0a03ce5066aad8e518978070` and
+`D:\The Next Thing\resolve-ai` at
+`3e302e7d33c06219d5ac2f56373e64005bcdc83d`. Neither contains an accepted S3
+guard protocol contract, and neither has an S3/guard/transport contract branch
+or pull request in its fetched repository state.
 
 ## Required behaviour
 
-1. Add an opaque validated `ResolveGuardRef`; raw values never enter Trail,
-   logs, diagnostics, anchors or Resolve-facing evidence.
-2. Add exactly one narrow adapter trait with the closed result set:
-   `Admitted`, `Rejected`, `Indeterminate`. Adapter errors map to
-   `Indeterminate` unless a host configuration error is detected before the
-   adapter boundary.
-3. The request contains only the opaque guard reference, P1 proof identity/
-   `ResolveGuardRequired`, opaque `ScopeKey`s, and the existing Tethers action
-   identity/reference. No raw arguments, paths, manifests, policy internals or
-   Resolve state cross the seam.
-4. Guarded execution is explicitly host-selected and disabled by default.
-   Provider/Plug/manifest/Tether data cannot enable it. Do not mutate the frozen
-   `tethers.project/1` schema unless a separately authorised compatibility
-   decision makes that safe.
-5. Preserve this order: current Tethers gates, replay admission, durable intent,
-   guard admission, deadline, replay G1, existing executor/provider and outcome.
-   Durable-intent failure means zero adapter/provider calls.
-6. Denied, unavailable, unresolved Ask, invalid action/schema, scope refusal,
-   stale P1 proof, replay refusal and missing adapter never call the adapter.
-7. `Rejected` and `Indeterminate` stop before deadline/G1/provider, produce
-   bounded typed host/Trail evidence, and are not relabelled as Tethers DENY or
-   provider FAILED/UNCERTAIN. No automatic retry.
-8. Together preparation and durable intent remain serial and deterministic. All
-   members must be admitted before any group provider invocation; any refusal or
-   indeterminate result yields zero group provider calls.
-9. Preserve existing replay, provider execution, outcome, Result Anchor, Plan,
-   Core and syntax semantics. No live Resolve transport/database or public Plug.
+1. Do not write live transport, response parsing, timeout handling, durable
+   coordination, or outcome delivery until Gate 0 is satisfied by an accepted
+   Resolve-owned S3 contract.
+2. Once Gate 0 is satisfied in a future packet, implement exactly that
+   contract below the existing P2 adapter, fail closed on all undefined or
+   malformed protocol states, preserve durable Tethers truth before any
+   delivery, and keep provider calls at zero for admission failure.
 
 ## Frozen decisions and invariants
 
-- Tethers remains the authority for capability, manifest, provider, argument,
-  scope, binding, trust, policy, approval, replay, durable intent and outcome.
-- Resolve coordinates only the external guard question. It cannot grant
-  permission, alter Tethers policy, invoke a provider or deliver outcomes.
-- P1 preparation is rebuilt from current Tethers state before each guard call;
-  stale evidence is refused exactly and never repaired or widened.
-- The existing execution seam, replay ledger, FileTrail and Result Anchor
-  taxonomy remain the only accepted authorities.
-- P2 has no live Resolve transport, database, public Plug, retry, recovery
-  controller, Core change, syntax change or new product semantics.
+- Resolve owns its guard validity, Claim/Commitment, worker, lease, recovery,
+  wire protocol and outcome application semantics.
+- Tethers remains the sole authority for permission, scope, approval, replay,
+  durable intent, provider execution, provider outcomes and Trail.
+- No guessed transport, protocol version, request/response shape, timeout,
+  authentication/trust boundary, malformed-response or delivery-idempotency
+  rule is valid.
+- No automatic admission or outcome-delivery retry is allowed without an exact
+  Resolve-owned idempotency contract and separate proof.
+- No Resolve database access, generic RPC/HTTP framework, Core change, syntax
+  change, policy change, new scope form, provider outcome, or replay authority.
+- Gate 0 failure is a clean block, not a Tethers product failure.
 
 ## Acceptance criteria
 
-1. Controlled opaque ref and one closed adapter seam exist.
-2. P1 freshness is mandatory and current policy/approval cannot be bypassed.
-3. Durable intent precedes every adapter call; adapter/provider zero-call refusal
-  and failure paths are directly tested.
-4. Admitted serial and Together paths reach existing execution exactly once;
-  Rejected/Indeterminate paths reach no provider and no G1.
-5. Invalid refs, secret leakage, disabled mode, missing adapter, stale proof,
-  crash/recovery boundaries, Trail compatibility and config compatibility are
-  tested.
-6. No HTTP/MCP/Socket/SQLite Resolve implementation, outcome delivery, retry,
-  recovery controller, Core change, syntax change or new Result Anchor class.
-7. Focused P2, relevant Rust/host, formatting/checks, task checker, secret,
-  documentation, whitespace, and repository-authoritative verification pass.
-8. Architecture note and worker note record the actual implementation and
-  explicit P2 exclusions.
-9. The final branch is reviewed, normally published to the task remote branch,
-   and leaves the canonical main checkout unaffected until acceptance.
+1. Gate 0 records an accepted Resolve repository, contract file, accepted SHA,
+   protocol version, request/response identities, timeout semantics and
+   outcome-delivery/idempotency rules before implementation begins.
+2. No production transport or coordination code is added while Gate 0 is
+   unsatisfied; the blocked result and smallest required next action are
+   recorded in the worker note.
 
 ## Relevant components
 
 - `tethers-0.1/host-rust/src/resolve_guard.rs`
 - `tethers-0.1/host-rust/src/application.rs`
 - `tethers-0.1/host-rust/src/host_execution.rs`
-- `tethers-0.1/host-rust/src/plan_execution.rs`
 - `tethers-0.1/host-rust/src/dispatch.rs`
-- `tethers-0.1/host-rust/src/runtime_config.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P2_GUARD_ADMISSION.md`
-- `docs/worker-notes/2026-09-15-tethers-resolve-p2.md`
+- `tethers-0.1/host-rust/src/replay.rs`
+- `tethers-0.1/host-rust/src/replay_runtime.rs`
+- `tethers-0.1/host-rust/src/outcome.rs`
+- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P3_TRANSPORT_COORDINATION.md`
+- `docs/worker-notes/2026-09-15-tethers-resolve-p3.md`
 
 ## Required verification
 
-Run the repository-owned diagnostics, task checker, focused P2 tests, relevant
-serial/Together/recovery/Trail/config tests, `cargo fmt --all -- --check`,
-`cargo check --all-targets --all-features --locked`, relevant Rust/host suites,
-MCP and compatibility checks, warning ratchet, secret scan, documentation/link
-checks, `just verify`, `git diff --check`, complete diff review and final clean
-status. Record commands not run and exact first failures.
+For this Gate 0 audit, run the repository tool diagnostic, inspect fetched
+Resolve repository refs and contract candidates, run the task checker, verify
+the branch contains no production changes, and run `git diff --check`. A future
+unblocked P3 must run the full transport, malformed-input, timeout, bounded-I/O,
+crash, delivery, Rust, cross-language, compatibility, secret, documentation and
+authoritative verification route.
 
 ## Forbidden changes
 
-- No OCaml/Core/parser/AST/evaluator/Plan/syntax/policy vocabulary changes.
-- No Resolve HTTP/MCP/Socket protocol, SQLite/database, scheduler, retry,
-  renewal, redelivery, outcome-delivery or recovery-controller implementation.
-- No public Resolve capability/Plug, new scope form, replay semantic change,
-  provider ordering change, provider outcome taxonomy change or Result Anchor
-  taxonomy change.
-- No raw guard refs, credentials, paths or arguments in evidence/diagnostics.
-- No force push, history rewrite, direct main update or unrelated cleanup.
+- No Rust production implementation while Gate 0 is blocked.
+- No OCaml/Core/parser/AST/evaluator/Plan/Tether syntax changes.
+- No Resolve transport or protocol guessed from Tethers or old plans.
+- No Resolve SQLite/database access, generic client framework, scheduler,
+  retry framework, distributed transaction, public Plug, or provider change.
+- No direct `main` update, force-push, history rewrite, or unrelated cleanup.
 
 ## Stop conditions
 
-Stop and report if the binding/intent authority is ambiguous, Trail cannot
-accept bounded guard evidence without a schema decision, guarded mode cannot be
-represented without silently changing `tethers.project/1`, the current host
-would auto-call Resolve/provider after a crash without explicit fresh admission,
-or implementation begins requiring transport, database, provider execution, Core
-changes or a generic coordination framework. After two materially similar failed
-approaches to the same design issue, stop with exact evidence and one smallest
-unresolved question.
+Stop until Resolve S3 is accepted, versioned, Resolve-owned and specific enough
+to implement without guessing. Stop again if the contract leaves identity,
+timeout, authentication/trust, malformed-response, or delivery-idempotency
+semantics undefined. After two materially similar failed approaches to the same
+contract/design issue, report the exact evidence and one smallest unresolved
+question.
 
 ## Implementation scope
 
-The intended bounded scope is the Rust host guard/application/execution seams,
-their focused tests, one architecture note, this task packet, and the named
-worker note. Do not broaden the packet checker to repository-wide inference.
+While blocked: task packet and worker note only. When Gate 0 is later passed,
+the bounded scope is the Rust-host adapter implementation, its focused tests,
+bounded coordination evidence, the P3 architecture note, this packet and the
+named worker note. The packet checker must remain task-scoped.
 
 ## Expected pre-existing changes
 
