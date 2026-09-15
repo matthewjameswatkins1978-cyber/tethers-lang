@@ -3902,84 +3902,140 @@ mod tests {
                 bridge_provider_identity: Some("lantern-local".into()),
                 arguments: json!({"path": "projects/p1.md"}),
             };
-            let decision = crate::policy::allow_after_exact_approval(&resolved);
-
-            // The preparation route deliberately has no executor input.  Keep
-            // the existing fake executor in this regression so an accidental
-            // provider call would have an observable counter to mutate, while
-            // the API shape also provides compile-time separation from dispatch.
-            struct CountingExecutor {
-                calls: usize,
-            }
-            impl crate::executor::CapabilityExecutor for CountingExecutor {
-                fn provider_identity(&self) -> &str {
-                    "lantern-local"
-                }
-                fn execute(
-                    &mut self,
-                    _ready: &crate::dispatch::DispatchReadyAction,
-                ) -> Result<serde_json::Value, String> {
-                    self.calls += 1;
-                    Ok(json!({}))
-                }
-            }
-
-            let mut executor = CountingExecutor { calls: 0 };
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let approval =
+                approvals.request(crate::approval::ApprovalProof::from_action(&action).unwrap());
+            approvals
+                .decide(
+                    &approval.approval_id,
+                    crate::approval::ApprovalState::Approved,
+                )
+                .unwrap();
             let prepared_guard = crate::resolve_guard::prepare_resolve_guard_evidence(
                 prepared,
                 &action,
-                &resolved,
                 &availability,
-                &decision,
+                Some((&approvals, &approval.approval_id)),
             )
             .unwrap();
-            assert_eq!(executor.calls, 0);
             let mut invalid_action = action.clone();
             invalid_action.arguments = json!({"path": 7});
             assert_eq!(
                 crate::resolve_guard::prepare_resolve_guard_evidence(
                     prepared,
                     &invalid_action,
-                    &resolved,
                     &availability,
-                    &decision,
+                    Some((&approvals, &approval.approval_id)),
                 ),
                 Err(crate::resolve_guard::GuardPreparationError::InvalidArguments)
             );
-            assert_eq!(executor.calls, 0);
             let unavailable = crate::resolver::ProviderAvailability::empty();
             assert_eq!(
                 crate::resolve_guard::reconstruct_resolve_guard_evidence(
                     prepared_guard.proof(),
                     prepared,
                     &action,
-                    &resolved,
                     &unavailable,
-                    &decision,
+                    Some((&approvals, &approval.approval_id)),
                 ),
                 Err(crate::resolve_guard::GuardPreparationError::BindingUnavailable)
             );
-            assert_eq!(executor.calls, 0);
             let required_debug = format!("{:?}", prepared_guard.required());
             assert!(!required_debug.contains("projects/p1.md"));
             let reconstructed = crate::resolve_guard::reconstruct_resolve_guard_evidence(
                 prepared_guard.proof(),
                 prepared,
                 &action,
-                &resolved,
                 &availability,
-                &decision,
+                Some((&approvals, &approval.approval_id)),
             )
             .unwrap();
-            assert_eq!(executor.calls, 0);
+            assert_eq!(prepared_guard.proof(), reconstructed.proof());
+
+            // The configured launch script is deliberately absent from this
+            // prepared test runtime. A provider process cannot be entered by
+            // either route; both succeed using only the inert launch plan and
+            // current host state.
+            assert!(!prepared.config_dir().join("providers/lantern.ps1").exists());
+
+            let changed_action = ProposedAction {
+                arguments: json!({"path": "projects/other.md"}),
+                ..action.clone()
+            };
+            let changed_approval = approvals
+                .request(crate::approval::ApprovalProof::from_action(&changed_action).unwrap());
+            approvals
+                .decide(
+                    &changed_approval.approval_id,
+                    crate::approval::ApprovalState::Approved,
+                )
+                .unwrap();
             assert_eq!(
-                crate::resolve_guard::compare_resolve_guard_preparation(
+                crate::resolve_guard::reconstruct_resolve_guard_evidence(
                     prepared_guard.proof(),
-                    reconstructed.proof(),
+                    prepared,
+                    &changed_action,
+                    &availability,
+                    Some((&approvals, &changed_approval.approval_id)),
                 ),
-                Ok(())
+                Err(
+                    crate::resolve_guard::GuardPreparationError::EvidenceMismatch(
+                        crate::resolve_guard::GuardPreparationMismatch::ArgumentsChanged
+                    )
+                )
             );
-            let _ = &mut executor;
+        });
+    }
+
+    #[test]
+    fn p1_preparation_rejects_missing_or_stale_approval() {
+        with_prepared_runtime(|prepared| {
+            let availability =
+                crate::resolver::ProviderAvailability::from_identities(["lantern-local"]);
+            let action = ProposedAction {
+                evaluation_id: "eval-p1-approval".into(),
+                plan_id: "plan-p1-approval".into(),
+                action_id: "action-p1-approval".into(),
+                capability_name: "lantern.task.record".into(),
+                manifest_digest: Some(
+                    crate::resolver::resolve_capability(
+                        prepared.trusted_store(),
+                        &availability,
+                        "lantern.task.record",
+                        1,
+                        Some("lantern-local"),
+                    )
+                    .unwrap()
+                    .manifest_digest()
+                    .into(),
+                ),
+                bridge_capability_version: Some(1),
+                bridge_provider_identity: Some("lantern-local".into()),
+                arguments: json!({"path": "projects/p1.md"}),
+            };
+
+            assert_eq!(
+                crate::resolve_guard::prepare_resolve_guard_evidence(
+                    prepared,
+                    &action,
+                    &availability,
+                    None,
+                ),
+                Err(crate::resolve_guard::GuardPreparationError::ApprovalRequired)
+            );
+
+            let mut approvals = crate::approval::ApprovalStore::default();
+            let approval =
+                approvals.request(crate::approval::ApprovalProof::from_action(&action).unwrap());
+            assert_eq!(
+                crate::resolve_guard::prepare_resolve_guard_evidence(
+                    prepared,
+                    &action,
+                    &availability,
+                    Some((&approvals, &approval.approval_id)),
+                ),
+                Err(crate::resolve_guard::GuardPreparationError::ApprovalMismatch)
+            );
         });
     }
 }
