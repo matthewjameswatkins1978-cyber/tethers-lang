@@ -13,7 +13,11 @@ fn host_binary() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("target");
     path.push("debug");
-    path.push("tethers-reference-host.exe");
+    path.push(if cfg!(windows) {
+        "tethers-reference-host.exe"
+    } else {
+        "tethers-reference-host"
+    });
     path
 }
 
