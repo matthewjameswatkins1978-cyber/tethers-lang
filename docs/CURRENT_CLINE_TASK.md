@@ -14,7 +14,7 @@ Route: `Implement the Rust-host preparation evidence substrate frozen by P0. Add
 
 Base commit: `66e8360a7247b60ccc8fb6cb447f796b922afb42`
 
-Implementation checkpoint: `6be53ea`
+Implementation checkpoint: `6be53eac120bd0ee675209c2c953641a95ca6d12`
 
 Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`
 
