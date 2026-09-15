@@ -714,6 +714,14 @@ fn escape_json_pointer(segment: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn absolute_test_path(windows_path: &'static str, unix_path: &'static str) -> &'static str {
+        if cfg!(windows) {
+            windows_path
+        } else {
+            unix_path
+        }
+    }
     use serde_json::json;
 
     // -----------------------------------------------------------------------
@@ -1211,7 +1219,12 @@ mod tests {
             },
             "required": ["root"]
         });
-        let scope = json!({"root": "C:\\nonexistent-directory-xyzzy"});
+        let scope = json!({
+            "root": absolute_test_path(
+                r"C:\nonexistent-directory-xyzzy",
+                "/nonexistent-directory-xyzzy",
+            )
+        });
         let err = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap_err();
         assert!(
             err.message.contains("does not exist"),
