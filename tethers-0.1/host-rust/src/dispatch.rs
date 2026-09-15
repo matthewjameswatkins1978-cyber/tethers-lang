@@ -332,6 +332,21 @@ pub struct AuthorisationEntry {
     pub argument_digest: String,
 }
 
+/// Durable coordination evidence for one Resolve guard decision.
+///
+/// This is intentionally separate from authorisation and provider outcomes:
+/// Resolve coordinates a request but never grants Tethers permission and never
+/// classifies a provider result.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct GuardAdmissionEntry {
+    pub execution_id: String,
+    pub action_id: String,
+    pub preparation_digest: String,
+    pub guard_ref_digest: String,
+    /// `admitted`, `rejected`, or `indeterminate`.
+    pub outcome: String,
+}
+
 // ---------------------------------------------------------------------------
 // Group join entry
 // ---------------------------------------------------------------------------
@@ -509,6 +524,7 @@ pub trait Trail: sealed::Sealed {
     /// unconfirmed complete record at the tail.
     fn append_and_flush_intent(&mut self, entry: &IntentEntry) -> Result<(), TrailError>;
     fn append_authorisation(&mut self, entry: &AuthorisationEntry) -> Result<(), TrailError>;
+    fn append_guard_admission(&mut self, entry: &GuardAdmissionEntry) -> Result<(), TrailError>;
 
     /// Serialize, append, flush, and sync an execution outcome to durable
     /// storage.  Returns `Ok(())` only when the outcome is durable.
@@ -614,6 +630,19 @@ impl Trail for FileTrail {
             .map_err(|e| TrailError::FlushFailed(e.to_string()))
     }
 
+    fn append_guard_admission(&mut self, entry: &GuardAdmissionEntry) -> Result<(), TrailError> {
+        let line = serde_json::to_string(entry)
+            .map_err(|e| TrailError::WriteFailed(format!("serialization failed: {e}")))?;
+        writeln!(self.file, "{line}")
+            .map_err(|e| TrailError::WriteFailed(format!("write failed: {e}")))?;
+        self.file
+            .flush()
+            .map_err(|e| TrailError::FlushFailed(format!("flush failed: {e}")))?;
+        self.file
+            .sync_data()
+            .map_err(|e| TrailError::FlushFailed(format!("sync_data failed: {e}")))
+    }
+
     fn append_outcome(&mut self, entry: &OutcomeEntry) -> Result<(), TrailError> {
         let line = serde_json::to_string(entry)
             .map_err(|e| TrailError::WriteFailed(format!("serialization failed: {e}")))?;
@@ -687,6 +716,7 @@ impl Trail for FileTrail {
 pub struct RecordingTrail {
     pub entries: Vec<IntentEntry>,
     pub authorisation_entries: Vec<AuthorisationEntry>,
+    pub guard_admission_entries: Vec<GuardAdmissionEntry>,
     pub outcome_entries: Vec<OutcomeEntry>,
     pub injected_intent_error: Option<TrailError>,
     pub injected_authorisation_error: Option<TrailError>,
@@ -704,6 +734,7 @@ impl RecordingTrail {
         Self {
             entries: Vec::new(),
             authorisation_entries: Vec::new(),
+            guard_admission_entries: Vec::new(),
             outcome_entries: Vec::new(),
             injected_intent_error: None,
             injected_authorisation_error: None,
@@ -741,6 +772,14 @@ impl Trail for RecordingTrail {
             return Err(err);
         }
         self.authorisation_entries.push(entry.clone());
+        Ok(())
+    }
+
+    fn append_guard_admission(&mut self, entry: &GuardAdmissionEntry) -> Result<(), TrailError> {
+        if let Some(events) = &self.event_log {
+            events.borrow_mut().push("trail_guard_admission");
+        }
+        self.guard_admission_entries.push(entry.clone());
         Ok(())
     }
 

@@ -77,6 +77,18 @@ pub enum ExecutionServiceResult {
         reason: String,
         execution_id: Option<String>,
     },
+    /// Resolve refused coordination after durable Tethers intent.
+    GuardRejected {
+        evaluation_id: String,
+        action_id: String,
+        execution_id: Option<String>,
+    },
+    /// Resolve could not provide a determinate admission result.
+    GuardIndeterminate {
+        evaluation_id: String,
+        action_id: String,
+        execution_id: Option<String>,
+    },
     /// The planner returned no actions.
     NoActions {
         evaluation_id: String,
@@ -1555,6 +1567,18 @@ impl<'a> HostExecutionService<'a> {
                 reason: "shared execution boundary denied dispatch".to_owned(),
                 execution_id,
             },
+            crate::SharedExecutionOutcome::GuardRejected => ExecutionServiceResult::GuardRejected {
+                evaluation_id,
+                action_id,
+                execution_id,
+            },
+            crate::SharedExecutionOutcome::GuardIndeterminate => {
+                ExecutionServiceResult::GuardIndeterminate {
+                    evaluation_id,
+                    action_id,
+                    execution_id,
+                }
+            }
             crate::SharedExecutionOutcome::AuditFailed => ExecutionServiceResult::AuditFailed {
                 evaluation_id,
                 action_id,
@@ -1949,6 +1973,43 @@ pub(crate) fn execute_group_concurrent(
     )
 }
 
+/// Explicit host-selected Together route for P2 guard admission. The normal
+/// Together route remains the wrapper below with no guard plan.
+#[allow(dead_code)]
+pub(crate) fn execute_group_concurrent_with_guard_plan(
+    group_id: &str,
+    member_indexes: &[usize],
+    actions: &[Value],
+    response: &mut Value,
+    evaluation_id: &str,
+    trail: &mut dyn dispatch::Trail,
+    service: &HostExecutionService<'_>,
+    input: &PreparedEvaluationInput,
+    provider_sessions: &mut HashMap<String, RetainedProviderSession>,
+    provider_availability: &ProviderAvailability,
+    approvals: &mut crate::approval::ApprovalStore,
+    replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
+    max_active_together_invocations: usize,
+    guard_plan: &mut crate::resolve_guard::GuardAdmissionPlan<'_>,
+) -> ExecutionServiceResult {
+    execute_group_concurrent_with_limit_internal(
+        group_id,
+        member_indexes,
+        actions,
+        response,
+        evaluation_id,
+        trail,
+        service,
+        input,
+        provider_sessions,
+        provider_availability,
+        approvals,
+        replay_authority,
+        max_active_together_invocations,
+        Some(guard_plan),
+    )
+}
+
 /// Execute one `together` group with bounded provider invocation overlap.
 ///
 /// This is the C3-A1 parameterised execution path.  It bounds active
@@ -1989,6 +2050,41 @@ pub(crate) fn execute_group_concurrent_with_limit(
     approvals: &mut crate::approval::ApprovalStore,
     replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
     max_active_together_invocations: usize,
+) -> ExecutionServiceResult {
+    execute_group_concurrent_with_limit_internal(
+        group_id,
+        member_indexes,
+        actions,
+        response,
+        evaluation_id,
+        trail,
+        service,
+        input,
+        provider_sessions,
+        provider_availability,
+        approvals,
+        replay_authority,
+        max_active_together_invocations,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_group_concurrent_with_limit_internal(
+    group_id: &str,
+    member_indexes: &[usize],
+    actions: &[Value],
+    response: &mut Value,
+    evaluation_id: &str,
+    trail: &mut dyn dispatch::Trail,
+    service: &HostExecutionService<'_>,
+    input: &PreparedEvaluationInput,
+    provider_sessions: &mut HashMap<String, RetainedProviderSession>,
+    provider_availability: &ProviderAvailability,
+    approvals: &mut crate::approval::ApprovalStore,
+    replay_authority: &mut dyn crate::replay_runtime::ReplayAuthority,
+    max_active_together_invocations: usize,
+    mut guard_plan: Option<&mut crate::resolve_guard::GuardAdmissionPlan<'_>>,
 ) -> ExecutionServiceResult {
     let max_active = max_active_together_invocations.max(1);
 
@@ -2193,6 +2289,27 @@ pub(crate) fn execute_group_concurrent_with_limit(
         };
         let input_context = crate::InputEventContext::for_initial(event_id);
 
+        let mut guard_context = if let Some(plan) = guard_plan.as_deref_mut() {
+            match plan.prepare_for(service.runtime, &proposed, provider_availability, None) {
+                Ok(context) => Some(context),
+                Err(_error) => {
+                    response["execution_status"] = Value::String("guard_indeterminate".into());
+                    member_states.push(GroupMemberState::PreparationTerminal {
+                        action_id,
+                        step: crate::plan_execution::ActionStep::Boundary(
+                            crate::SharedExecutionResult {
+                                outcome: crate::SharedExecutionOutcome::GuardIndeterminate,
+                                execution_id: None,
+                            },
+                        ),
+                    });
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+
         // Execute the prepare phase (replay admission, G0, Trail intent).
         // This produces a real DispatchReadyAction — no fabricated objects.
         match crate::application::execute_boundary_prepare(
@@ -2205,6 +2322,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
             true,
             replay_authority,
             Some(&position),
+            guard_context.as_mut(),
         ) {
             Ok((ready, prepared, admission)) => {
                 member_states.push(GroupMemberState::Prepared {
@@ -9528,6 +9646,143 @@ mod tests {
             &mut approvals,
             &mut replay_authority,
         )
+    }
+
+    struct P2GroupRejectAdapter {
+        calls: usize,
+    }
+
+    impl crate::resolve_guard::ResolveGuardAdapter for P2GroupRejectAdapter {
+        fn admit_guard(
+            &mut self,
+            _guard_ref: &crate::resolve_guard::ResolveGuardRef,
+            _required: &crate::resolve_guard::ResolveGuardRequired,
+        ) -> Result<
+            crate::resolve_guard::ResolveGuardAdmission,
+            crate::resolve_guard::ResolveGuardAdapterError,
+        > {
+            self.calls += 1;
+            Ok(crate::resolve_guard::ResolveGuardAdmission::Rejected)
+        }
+    }
+
+    fn p2_run_guarded_group_rejected(
+        harness: &C3A1GroupHarness,
+        eval_id: &str,
+        adapter: &mut P2GroupRejectAdapter,
+    ) -> ExecutionServiceResult {
+        let tag = harness.members.first().expect("guard group member");
+        let provider_id = format!("provider-{tag}");
+        let provider = harness
+            .runtime
+            .providers()
+            .iter()
+            .find(|provider| provider.identity == provider_id)
+            .expect("guard group provider");
+        let manifest = provider.capabilities[0].verified_manifest.manifest();
+        let mut sessions = HashMap::new();
+        sessions.insert(
+            provider_id.clone(),
+            RetainedProviderSession::establish(SocketEstablishment {
+                command: &provider.stdio_config.command,
+                args: &provider.stdio_config.args,
+                working_directory: &provider.working_directory,
+                protocol_version: &provider.stdio_config.protocol_version,
+                server_name: &manifest.binding.server_name,
+                identity: &provider.identity,
+            })
+            .expect("guard group provider session establishment"),
+        );
+        let cap_name = format!("fixture.ping-{tag}");
+        let manifest_digest = provider.capabilities[0]
+            .verified_manifest
+            .verified_digest()
+            .to_owned();
+        let action_id = format!("member-{tag}");
+        let action = json!({
+            "action_id": action_id,
+            "idempotency_key": format!("{eval_id}/member-{tag}"),
+            "capability": cap_name,
+            "capability_version": "1.0.0",
+            "bridge_capability_version": 1,
+            "bridge_provider_identity": provider_id,
+            "manifest_digest": manifest_digest,
+            "arguments": {"message": format!("member/{tag}")},
+        });
+        let mut response = json!({
+            "status": "matched",
+            "evaluation_id": eval_id,
+            "plan": {
+                "id": format!("plan-{eval_id}"),
+                "actions": [action],
+                "groups": [{"group_id": "together-1", "member_action_ids": [action_id]}]
+            },
+            "trail": [],
+        });
+        let actions = response["plan"]["actions"].as_array().unwrap().clone();
+        let availability = ProviderAvailability::from_identities([provider_id.as_str()]);
+        let mut trail = dispatch::FileTrail::open(&harness.trail_path).unwrap();
+        let mut approvals = crate::approval::ApprovalStore::default();
+        let mut replay_authority =
+            crate::replay_runtime::test_support::TestReplayAuthority::default();
+        let engine_path = PathBuf::from("unused-engine");
+        let service =
+            HostExecutionService::new(&harness.runtime, &engine_path, &harness.trail_path, None);
+        let mut requests = HashMap::new();
+        requests.insert(
+            action_id,
+            crate::resolve_guard::GuardAdmissionRequest {
+                guard_ref: crate::resolve_guard::ResolveGuardRef::from_host_value(
+                    "resolve/guard/p2-test",
+                )
+                .unwrap(),
+                previous: None,
+            },
+        );
+        let mut guard_plan = crate::resolve_guard::GuardAdmissionPlan::new(adapter, requests);
+        let result = execute_group_concurrent_with_guard_plan(
+            "together-1",
+            &[0],
+            &actions,
+            &mut response,
+            eval_id,
+            &mut trail,
+            &service,
+            &PreparedEvaluationInput {
+                tether_id: "together-test".to_owned(),
+                tether_version: "1".to_owned(),
+                evaluation_id: eval_id.to_owned(),
+                anchor_event: json!({"id": format!("evt-{eval_id}"), "name": "test"}),
+                facts: json!({}),
+            },
+            &mut sessions,
+            &availability,
+            &mut approvals,
+            &mut replay_authority,
+            1,
+            &mut guard_plan,
+        );
+        drop(guard_plan);
+        result
+    }
+
+    #[test]
+    fn p2_guarded_together_rejection_precedes_g1_and_provider() {
+        let h = c3a4_harness_with_config("p2-guarded-together", &["a"], None);
+        let mut adapter = P2GroupRejectAdapter { calls: 0 };
+        let result = p2_run_guarded_group_rejected(&h, "eval-p2-guarded-together", &mut adapter);
+
+        assert!(matches!(
+            result,
+            ExecutionServiceResult::GuardRejected { ref action_id, .. } if action_id == "member-a"
+        ));
+        assert_eq!(adapter.calls, 1);
+        assert!(
+            !h.has_entered("a"),
+            "guard rejection must prevent provider invocation"
+        );
+        let trail = h.trail_content();
+        assert!(trail.contains("\"outcome\":\"rejected\""));
     }
 
     // A4.9: Physical default-N=2 proof using execute_group_concurrent wrapper.

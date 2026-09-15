@@ -359,6 +359,36 @@ pub(crate) fn map_execution_result(result: &ExecutionServiceResult) -> CliEnvelo
             "execution is unavailable",
             execution_data(evaluation_id, None, None),
         ),
+        ExecutionServiceResult::GuardRejected {
+            evaluation_id,
+            action_id,
+            execution_id,
+        } => error_with_data(
+            OutcomeStatus::Unavailable,
+            "GUARD_REJECTED",
+            "external guard rejected coordination",
+            execution_data_with_id(
+                evaluation_id,
+                Some(action_id),
+                Some("guard_rejected"),
+                execution_id.as_deref(),
+            ),
+        ),
+        ExecutionServiceResult::GuardIndeterminate {
+            evaluation_id,
+            action_id,
+            execution_id,
+        } => error_with_data(
+            OutcomeStatus::Unavailable,
+            "GUARD_INDETERMINATE",
+            "external guard admission was indeterminate",
+            execution_data_with_id(
+                evaluation_id,
+                Some(action_id),
+                Some("guard_indeterminate"),
+                execution_id.as_deref(),
+            ),
+        ),
         ExecutionServiceResult::Failed {
             evaluation_id,
             action_id,
