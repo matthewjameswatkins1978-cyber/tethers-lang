@@ -6,7 +6,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `9037862c27688b3715f01ba685e2ea1c2fd1c81d`
 
@@ -41,13 +41,15 @@ provider retry remain absent.
 
 ## Evidence
 
-Passed so far: locked all-target Cargo check; focused `resolve_transport` unit
+Passed: locked all-target Cargo check; focused `resolve_transport` unit
 tests (6 passed, 2 ignored); focused `resolve_guard` unit tests (8 passed);
 focused `resolve_outcome` unit tests (11 passed); the P4a identity/outcome
 regression (1 passed); P2 guard regressions (3 passed); P4 conformance (2
-passed); format, builds and the warning ratchet. A strict Clippy run was not a
-clean gate because the accepted repository currently reports roughly 90
-pre-existing warnings under `-D warnings`.
+passed); full Rust tests (1609 passed, 4 ignored in the library target, with
+all integration targets passing); format, builds, and the warning ratchet.
+`just verify` passed with the current OCaml engine and reported a clean tree.
+A strict Clippy run was not a clean gate because the accepted repository
+currently reports roughly 90 pre-existing warnings under `-D warnings`.
 
 ## Discoveries
 
@@ -88,11 +90,18 @@ emulator smoke are the deciding evidence; the review's proxy and response
 binding objections remain covered by explicit client configuration and the
 request digest contract.
 
+There is no P3 correctness blocker. Accepted repository debt remains the
+duplicate-target warning and the existing repository-wide Clippy findings;
+the warning ratchet passes and no new warning baseline was introduced by P3.
+
+The canonical J16 checkout is clean but remains occupied on its merged P4a
+historical branch. It was not switched or overwritten during this task.
+
 ## Smallest next action
 
-Run the final evidence route and independent review, then publish the clean
-branch for PR acceptance. Keep the canonical main checkout untouched until
-the remote merge is verified.
+After P3 is merged and the canonical checkout is safely refreshed to main,
+begin `TETHERS x RESOLVE01 - P4 End-to-End Guarded Lifecycle & Recovery` from
+fresh accepted main.
 
 ## References
 

@@ -4,7 +4,7 @@ Task: `TETHERS x RESOLVE01 / P3 - Live Guard Transport & Outcome Delivery`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
