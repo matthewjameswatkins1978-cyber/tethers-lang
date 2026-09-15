@@ -2211,6 +2211,8 @@ impl SharedExecutionResult {
 /// intentionally produces no request for pre-provider dispositions.
 pub fn deliver_resolve_outcome<S: crate::resolve_outcome::ResolveOutcomeDeliveryStore>(
     result: &SharedExecutionResult,
+    action_ref: &crate::resolve_outcome::TethersActionRef,
+    preparation_digest: &crate::resolve_guard::GuardPreparationProofDigest,
     delivery: &mut crate::resolve_outcome::ResolveOutcomeDeliveryCoordinator<S>,
     adapter: &mut dyn crate::resolve_outcome::ResolveOutcomeAdapter,
     trail: &mut dyn dispatch::Trail,
@@ -2221,13 +2223,11 @@ pub fn deliver_resolve_outcome<S: crate::resolve_outcome::ResolveOutcomeDelivery
     let Some(outcome) = result.resolve_outcome() else {
         return Ok(None);
     };
-    let execution_id = result
-        .execution_id
-        .as_deref()
-        .ok_or(crate::resolve_outcome::ResolveOutcomeDeliveryError::MissingActionReference)?;
-    let action_ref = crate::resolve_outcome::TethersActionRef::from_host_value(execution_id)
-        .map_err(crate::resolve_outcome::ResolveOutcomeDeliveryError::InvalidActionReference)?;
-    let request = crate::resolve_outcome::ResolveOutcomeRequest::new(action_ref, outcome);
+    let request = crate::resolve_outcome::ResolveOutcomeRequest::new(
+        action_ref.clone(),
+        preparation_digest.clone(),
+        outcome,
+    );
     delivery.deliver(request, adapter, trail).map(Some)
 }
 
@@ -3693,16 +3693,18 @@ mod tests {
     impl crate::resolve_outcome::ResolveOutcomeAdapter for ResolveContractDouble {
         fn deliver_outcome(
             &mut self,
-            action_ref: &crate::resolve_outcome::TethersActionRef,
-            _outcome: crate::resolve_outcome::ResolveOutcome,
-        ) -> Result<(), crate::resolve_outcome::ResolveOutcomeAdapterError> {
+            request: &crate::resolve_outcome::ResolveOutcomeRequest,
+        ) -> Result<
+            crate::resolve_outcome::ResolveOutcomeDeliveryAck,
+            crate::resolve_outcome::ResolveOutcomeAdapterError,
+        > {
             self.outcome_calls += 1;
-            if self.admitted_action_ref.as_deref() != Some(action_ref.as_str()) {
+            if self.admitted_action_ref.as_deref() != Some(request.action_ref().as_str()) {
                 return Err(crate::resolve_outcome::ResolveOutcomeAdapterError);
             }
             self.outcome_action_refs
-                .push(action_ref.as_str().to_owned());
-            Ok(())
+                .push(request.action_ref().as_str().to_owned());
+            Ok(crate::resolve_outcome::ResolveOutcomeDeliveryAck::Recorded)
         }
     }
 

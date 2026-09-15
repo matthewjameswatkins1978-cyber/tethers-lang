@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use tethers_reference_host::dispatch::FileTrail;
 use tethers_reference_host::resolve_outcome::{
     FileResolveOutcomeDeliveryStore, ResolveOutcome, ResolveOutcomeAdapter,
-    ResolveOutcomeAdapterError, ResolveOutcomeDeliveryCoordinator, ResolveOutcomeDeliveryResult,
-    ResolveOutcomeDeliveryStore, TethersActionRef,
+    ResolveOutcomeAdapterError, ResolveOutcomeDeliveryAck, ResolveOutcomeDeliveryCoordinator,
+    ResolveOutcomeDeliveryResult, ResolveOutcomeDeliveryStore, TethersActionRef,
 };
 use tethers_reference_host::{SharedExecutionOutcome, SharedExecutionResult};
 
@@ -33,14 +33,13 @@ impl RecordingResolveAdapter {
 impl ResolveOutcomeAdapter for RecordingResolveAdapter {
     fn deliver_outcome(
         &mut self,
-        action_ref: &TethersActionRef,
-        _outcome: ResolveOutcome,
-    ) -> Result<(), ResolveOutcomeAdapterError> {
-        if self.admitted_action_ref.as_deref() != Some(action_ref.as_str()) {
+        request: &tethers_reference_host::resolve_outcome::ResolveOutcomeRequest,
+    ) -> Result<ResolveOutcomeDeliveryAck, ResolveOutcomeAdapterError> {
+        if self.admitted_action_ref.as_deref() != Some(request.action_ref().as_str()) {
             return Err(ResolveOutcomeAdapterError);
         }
         self.calls += 1;
-        Ok(())
+        Ok(ResolveOutcomeDeliveryAck::Recorded)
     }
 }
 
@@ -111,6 +110,12 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     let known_outcome = provider.execute();
     assert_eq!(known_outcome, ResolveOutcome::Succeeded);
 
+    let action_ref = TethersActionRef::from_host_value("tethers-action-p4-secretless").unwrap();
+    let preparation_digest =
+        tethers_reference_host::resolve_guard::GuardPreparationProofDigest::from_host_value(
+            &format!("sha256:{}", "a".repeat(64)),
+        )
+        .unwrap();
     let store = FileResolveOutcomeDeliveryStore::open(&delivery_path).unwrap();
     let mut trail = FileTrail::open(&trail_path).unwrap();
     let mut delivery = ResolveOutcomeDeliveryCoordinator::new(store);
@@ -122,6 +127,8 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     assert_eq!(
         tethers_reference_host::application::deliver_resolve_outcome(
             &execution_result,
+            &action_ref,
+            &preparation_digest,
             &mut delivery,
             &mut adapter,
             &mut trail,
@@ -134,7 +141,7 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     // the same known outcome and never calls the provider.
     assert_eq!(
         delivery
-            .retry(&action_ref, &mut adapter, &mut trail)
+            .retry(&action_ref, &preparation_digest, &mut adapter, &mut trail)
             .unwrap(),
         ResolveOutcomeDeliveryResult::Delivered
     );
@@ -146,14 +153,18 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     drop(delivery);
     let store = FileResolveOutcomeDeliveryStore::open(&delivery_path).unwrap();
     assert_eq!(
-        store.current(&action_ref).unwrap().unwrap().state(),
+        store
+            .current(&action_ref, &preparation_digest)
+            .unwrap()
+            .unwrap()
+            .state(),
         tethers_reference_host::resolve_outcome::ResolveOutcomeDeliveryState::Delivered
     );
     let mut delivery = ResolveOutcomeDeliveryCoordinator::new(store);
     let mut trail = FileTrail::open(&trail_path).unwrap();
     assert_eq!(
         delivery
-            .retry(&action_ref, &mut adapter, &mut trail)
+            .retry(&action_ref, &preparation_digest, &mut adapter, &mut trail)
             .unwrap(),
         ResolveOutcomeDeliveryResult::Delivered
     );

@@ -1176,3 +1176,17 @@ Decision: Historical 0.7 compatibility fixtures are first-class release
 evidence under `compat/0.7/`, with release provenance and protected version
 identifiers. The seed harness is intentionally smaller than the R6 migration
 audit and does not invent compatibility values.
+
+## 2026-09-15: Resolve01 P3 Transport Ownership
+
+Decision: the Rust host owns the Resolve v1 HTTPS adapter and sends only the
+accepted P2 opaque admission projection plus the already durable Tethers
+outcome. Existing JCS/SHA-256 digest authority is reused for request and
+response binding. Resolve transport errors are coordination indeterminacy, not
+provider outcomes, and admission has no automatic retry.
+
+Decision: outcome delivery identity is the exact Tethers action reference plus
+P1 preparation digest plus outcome. `ALREADY_RECORDED` confirms delivery;
+`CONFLICT` is durable coordination failure and cannot rewrite Tethers outcome.
+Explicit redelivery may use the existing bounded journal, but no scheduler or
+provider retry is introduced. No Resolve database or SDK is used by Tethers.

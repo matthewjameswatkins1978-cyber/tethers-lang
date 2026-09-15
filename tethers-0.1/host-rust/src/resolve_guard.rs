@@ -54,9 +54,39 @@ pub struct GuardPreparationProofDigest {
 }
 
 impl GuardPreparationProofDigest {
+    pub fn from_host_value(value: &str) -> Result<Self, GuardPreparationProofDigestError> {
+        if is_sha256_digest(value) {
+            Ok(Self {
+                digest: value.to_owned(),
+            })
+        } else {
+            Err(GuardPreparationProofDigestError::Invalid)
+        }
+    }
+
     pub fn as_str(&self) -> &str {
         &self.digest
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GuardPreparationProofDigestError {
+    Invalid,
+}
+
+impl fmt::Display for GuardPreparationProofDigestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid guard preparation digest")
+    }
+}
+
+impl std::error::Error for GuardPreparationProofDigestError {}
+
+fn is_sha256_digest(value: &str) -> bool {
+    value.len() == 71
+        && value.starts_with("sha256:")
+        && value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        && value[7..].bytes().all(|byte| !byte.is_ascii_uppercase())
 }
 
 impl fmt::Debug for GuardPreparationProofDigest {
@@ -463,7 +493,7 @@ pub(crate) fn test_guard_admission_context<'a>(
         scope_keys: proof.scope_keys.clone(),
     };
     GuardAdmissionContext::new(
-        ResolveGuardRef::from_host_value("guard/test-1").expect("test guard reference is valid"),
+        ResolveGuardRef::from_host_value("guard-test-1").expect("test guard reference is valid"),
         PreparedResolveGuard { proof, required },
         adapter,
     )

@@ -91,6 +91,7 @@ pub mod replay_runtime;
 pub mod replay_windows;
 pub mod resolve_guard;
 pub mod resolve_outcome;
+pub mod resolve_transport;
 pub mod resolver;
 mod result_anchor;
 pub mod run_command;
