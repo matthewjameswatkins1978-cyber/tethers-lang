@@ -6,14 +6,14 @@ use tethers_reference_host::dispatch::FileTrail;
 use tethers_reference_host::resolve_outcome::{
     FileResolveOutcomeDeliveryStore, ResolveOutcome, ResolveOutcomeAdapter,
     ResolveOutcomeAdapterError, ResolveOutcomeDeliveryCoordinator, ResolveOutcomeDeliveryResult,
-    ResolveOutcomeDeliveryStore, ResolveOutcomeRequest, TethersActionRef,
+    ResolveOutcomeDeliveryStore, TethersActionRef,
 };
 use tethers_reference_host::{SharedExecutionOutcome, SharedExecutionResult};
 
 const TETHERS_BASELINE_SHA: &str = "07870c356e034103573c5499347c61fce0700218";
 // The fixture commit follows this implementation checkpoint so the pinned
 // semantic authority remains immutable and reviewable.
-const TETHERS_P4_IMPLEMENTATION_SHA: &str = "b003b88c0da2ccce90fda4c3a116612badd63377";
+const TETHERS_P4_IMPLEMENTATION_SHA: &str = "efa9c714cc08550bbab9b487378c51daa953c22c";
 const RESOLVE_R0_SHA: &str = "8d42e5b061f86b2b2a2c1949c629654968a550ff";
 
 struct RecordingResolveAdapter {
@@ -67,7 +67,7 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     assert_eq!(TETHERS_BASELINE_SHA.len(), 40);
     assert_eq!(
         TETHERS_P4_IMPLEMENTATION_SHA,
-        "b003b88c0da2ccce90fda4c3a116612badd63377"
+        "efa9c714cc08550bbab9b487378c51daa953c22c"
     );
     assert_eq!(RESOLVE_R0_SHA, "8d42e5b061f86b2b2a2c1949c629654968a550ff");
 
@@ -87,14 +87,24 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     assert_eq!(known_outcome, ResolveOutcome::Succeeded);
 
     let action_ref = TethersActionRef::from_host_value("tethers-action-p4-secretless").unwrap();
-    let request = ResolveOutcomeRequest::new(action_ref.clone(), known_outcome);
     let store = FileResolveOutcomeDeliveryStore::open(&delivery_path).unwrap();
     let mut trail = FileTrail::open(&trail_path).unwrap();
     let mut adapter = RecordingResolveAdapter { calls: 0 };
     let mut delivery = ResolveOutcomeDeliveryCoordinator::new(store);
+    let execution_result = SharedExecutionResult {
+        outcome: SharedExecutionOutcome::Completed,
+        execution_id: Some(action_ref.as_str().to_owned()),
+    };
+    assert_eq!(execution_result.resolve_outcome(), Some(known_outcome));
     assert_eq!(
-        delivery.deliver(request, &mut adapter, &mut trail).unwrap(),
-        ResolveOutcomeDeliveryResult::Delivered
+        tethers_reference_host::application::deliver_resolve_outcome(
+            &execution_result,
+            &mut delivery,
+            &mut adapter,
+            &mut trail,
+        )
+        .unwrap(),
+        Some(ResolveOutcomeDeliveryResult::Delivered)
     );
 
     // Exact duplicate delivery is allowed by Resolve R0 idempotency. It uses
