@@ -27,10 +27,11 @@ prepare_resolve_guard_evidence(
 ) -> PreparedResolveGuard
 ```
 
-`PermissionDecision::Allow` must already exist. The route does not manufacture
-policy or approval authority. `reconstruct_resolve_guard_evidence` reruns the
-same route against current runtime inputs; it does not copy fields out of the
-old proof.
+`PermissionDecision::Allow` must already exist. The route also revalidates the
+complete action against the resolved capability input schema. It does not
+manufacture policy or approval authority. `reconstruct_resolve_guard_evidence`
+reruns the same route against current runtime inputs; it does not copy fields
+out of the old proof.
 
 ## GuardPreparationProof
 

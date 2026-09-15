@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Base commit: `66e8360a7247b60ccc8fb6cb447f796b922afb42`
 
-Implementation checkpoint: `54cad2d49115dac42d2b87cf0225c1f3c2e165b8`
+Implementation checkpoint: `pending review-fix commit`
 
 ## Requested outcome
 
@@ -32,6 +32,12 @@ syntax semantics.
   scoped P1 packet.
 - Added focused unit tests and a prepared-runtime zero-provider-invocation
   test.
+- Independent review identified a missing preparation-boundary input-schema
+  check and evidence wording that could be read as stronger than the counting
+  test proved. The route now revalidates action arguments against the resolved
+  manifest schema; the test documents compile-time executor separation and
+  checks the counter remains zero for valid, invalid, matching, and
+  reconstruction paths.
 
 ## Decisions and assumptions
 
@@ -45,7 +51,7 @@ not create policy or approval authority.
 ## Evidence
 
 - Accepted starting baseline: `66e8360a7247b60ccc8fb6cb447f796b922afb42`.
-- Implementation checkpoint: `54cad2d49115dac42d2b87cf0225c1f3c2e165b8`.
+- Implementation checkpoint before review fix: `54cad2d49115dac42d2b87cf0225c1f3c2e165b8`.
 - Task packet checker passes in `COMPLETE` state.
 - `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml` passes.
 - `resolve_guard::tests`: 5 passed.
@@ -68,9 +74,7 @@ remain a pure host computation.
 
 ## Remaining risks
 
-Final diff review, independent review, commit publication, PR, merge, and
-post-merge canonical-main confirmation remain. The repository's existing
-duplicate-target warning remains pre-existing debt.
+The repository's existing duplicate-target warning remains pre-existing debt.
 
 ## Smallest next action
 

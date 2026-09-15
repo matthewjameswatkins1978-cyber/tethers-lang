@@ -3904,6 +3904,10 @@ mod tests {
             };
             let decision = crate::policy::allow_after_exact_approval(&resolved);
 
+            // The preparation route deliberately has no executor input.  Keep
+            // the existing fake executor in this regression so an accidental
+            // provider call would have an observable counter to mutate, while
+            // the API shape also provides compile-time separation from dispatch.
             struct CountingExecutor {
                 calls: usize,
             }
@@ -3925,6 +3929,18 @@ mod tests {
                 prepared, &action, &resolved, &decision,
             )
             .unwrap();
+            assert_eq!(executor.calls, 0);
+            let mut invalid_action = action.clone();
+            invalid_action.arguments = json!({"path": 7});
+            assert_eq!(
+                crate::resolve_guard::prepare_resolve_guard_evidence(
+                    prepared,
+                    &invalid_action,
+                    &resolved,
+                    &decision,
+                ),
+                Err(crate::resolve_guard::GuardPreparationError::InvalidArguments)
+            );
             assert_eq!(executor.calls, 0);
             let required_debug = format!("{:?}", prepared_guard.required());
             assert!(!required_debug.contains("projects/p1.md"));

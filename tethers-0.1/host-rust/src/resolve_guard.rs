@@ -212,6 +212,7 @@ pub enum GuardPreparationError {
     InvalidIdentifier(&'static str),
     MissingBridgePin(&'static str),
     CapabilityMismatch,
+    InvalidArguments,
     ManifestMismatch,
     ProviderMismatch,
     BindingUnavailable,
@@ -229,6 +230,7 @@ impl fmt::Display for GuardPreparationError {
             Self::InvalidIdentifier(field) => write!(f, "invalid preparation identifier: {field}"),
             Self::MissingBridgePin(field) => write!(f, "missing preparation bridge pin: {field}"),
             Self::CapabilityMismatch => write!(f, "resolved capability does not match the action"),
+            Self::InvalidArguments => write!(f, "action arguments failed the capability schema"),
             Self::ManifestMismatch => write!(f, "resolved manifest does not match the action"),
             Self::ProviderMismatch => write!(f, "resolved provider does not match the action"),
             Self::BindingUnavailable => write!(f, "trusted execution binding is unavailable"),
@@ -485,6 +487,11 @@ fn prepare_from_parts(
     {
         return Err(GuardPreparationError::ProviderMismatch);
     }
+    crate::validation::validate_against_schema(
+        &resolved.manifest().manifest().input_schema,
+        &action.arguments,
+    )
+    .map_err(|_| GuardPreparationError::InvalidArguments)?;
 
     let binding_digest = binding_digest(provider, prepared, resolved, scope)?;
     let proof = GuardPreparationProof {
