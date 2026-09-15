@@ -281,6 +281,8 @@ pub enum ResolveOutcomeDeliveryResult {
 
 #[derive(Debug)]
 pub enum ResolveOutcomeDeliveryError {
+    MissingActionReference,
+    InvalidActionReference(ActionRefError),
     NoRecordedOutcome {
         action_ref: TethersActionRef,
     },
@@ -296,6 +298,10 @@ pub enum ResolveOutcomeDeliveryError {
 impl fmt::Display for ResolveOutcomeDeliveryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingActionReference => {
+                f.write_str("provider outcome has no trusted Tethers action reference")
+            }
+            Self::InvalidActionReference(error) => error.fmt(f),
             Self::NoRecordedOutcome { .. } => {
                 f.write_str("Resolve outcome retry has no recorded provider outcome")
             }
