@@ -7,8 +7,8 @@
 
 use crate::approval;
 use crate::resolve_guard::{
-    ResolveGuardAdapter, ResolveGuardAdapterError, ResolveGuardAdmission, ResolveGuardRef,
-    ResolveGuardRequired,
+    ResolveGuardAdapter, ResolveGuardAdapterError, ResolveGuardAdmission,
+    ResolveGuardAdmissionRequest,
 };
 use crate::resolve_outcome::{
     ResolveOutcomeAdapter, ResolveOutcomeAdapterError, ResolveOutcomeDeliveryAck,
@@ -183,12 +183,11 @@ impl ResolveGuardHttpClient {
 
     pub fn admit_guard_detailed(
         &mut self,
-        guard_ref: &ResolveGuardRef,
-        required: &ResolveGuardRequired,
+        request: &ResolveGuardAdmissionRequest,
     ) -> Result<ResolveGuardAdmission, ResolveTransportError> {
-        let request = admission_request(guard_ref, required)?;
-        let expected_digest = approval::digest(&request);
-        let body = encode_bounded(&request)?;
+        let payload = admission_request(request)?;
+        let expected_digest = approval::digest(&payload);
+        let body = encode_bounded(&payload)?;
         let response = self.post_json(ADMISSION_PATH, &body)?;
         parse_admission_response(&response, &expected_digest)
     }
@@ -242,10 +241,9 @@ impl ResolveGuardHttpClient {
 impl ResolveGuardAdapter for ResolveGuardHttpClient {
     fn admit_guard(
         &mut self,
-        guard_ref: &ResolveGuardRef,
-        required: &ResolveGuardRequired,
+        request: &ResolveGuardAdmissionRequest,
     ) -> Result<ResolveGuardAdmission, ResolveGuardAdapterError> {
-        self.admit_guard_detailed(guard_ref, required)
+        self.admit_guard_detailed(request)
             .map_err(|_| ResolveGuardAdapterError)
     }
 }
@@ -313,29 +311,28 @@ impl fmt::Display for ResolveTransportError {
 impl std::error::Error for ResolveTransportError {}
 
 fn admission_request(
-    guard_ref: &ResolveGuardRef,
-    required: &ResolveGuardRequired,
+    request: &ResolveGuardAdmissionRequest,
 ) -> Result<Value, ResolveTransportError> {
-    validate_digest(guard_ref.digest())?;
-    validate_digest(required.preparation_digest().as_str())?;
-    validate_action_id(required.action_id())?;
-    if required.scope_keys().len() > MAX_RESOLVE_SCOPE_KEYS
-        || required
+    validate_digest(request.guard_id().digest())?;
+    validate_digest(request.preparation_digest().as_str())?;
+    validate_action_id(request.action_ref().as_str())?;
+    if request.scope_keys().len() > MAX_RESOLVE_SCOPE_KEYS
+        || request
             .scope_keys()
             .windows(2)
             .any(|window| window[0] >= window[1])
     {
         return Err(ResolveTransportError::InvalidRequest);
     }
-    for key in required.scope_keys() {
+    for key in request.scope_keys() {
         validate_digest(key.as_str())?;
     }
     Ok(serde_json::json!({
         "protocol_version": RESOLVE_GUARD_PROTOCOL_VERSION,
-        "guard_ref": guard_ref.digest(),
-        "action_id": required.action_id(),
-        "preparation_digest": required.preparation_digest().as_str(),
-        "scope_keys": required.scope_keys().iter().map(|key| key.as_str()).collect::<Vec<_>>(),
+        "guard_ref": request.guard_id().digest(),
+        "action_id": request.action_ref().as_str(),
+        "preparation_digest": request.preparation_digest().as_str(),
+        "scope_keys": request.scope_keys().iter().map(|key| key.as_str()).collect::<Vec<_>>(),
     }))
 }
 
@@ -574,7 +571,10 @@ mod tests {
         .unwrap();
         let mut client = ResolveGuardHttpClient::new(config);
         let mut context = test_guard_admission_context(&mut client);
-        assert_eq!(context.admit(), ResolveGuardAdmission::Admitted);
+        assert_eq!(
+            context.admit_for_test(crate::dispatch::ExecutionId::from_replay("action-1")),
+            ResolveGuardAdmission::Admitted
+        );
         let body = rx.recv().unwrap();
         let value: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(value["protocol_version"], RESOLVE_GUARD_PROTOCOL_VERSION);
@@ -604,7 +604,10 @@ mod tests {
             .unwrap();
             let mut client = ResolveGuardHttpClient::new(config);
             let mut context = test_guard_admission_context(&mut client);
-            assert_ne!(context.admit(), ResolveGuardAdmission::Admitted);
+            assert_ne!(
+                context.admit_for_test(crate::dispatch::ExecutionId::from_replay("action-1")),
+                ResolveGuardAdmission::Admitted
+            );
             drop(context);
             handle.join().unwrap();
         }
@@ -666,7 +669,10 @@ mod tests {
         let mut client = ResolveGuardHttpClient::new(config);
         assert!(!format!("{client:?}").contains("bridge-secret"));
         let mut context = test_guard_admission_context(&mut client);
-        assert_ne!(context.admit(), ResolveGuardAdmission::Admitted);
+        assert_ne!(
+            context.admit_for_test(crate::dispatch::ExecutionId::from_replay("action-1")),
+            ResolveGuardAdmission::Admitted
+        );
         drop(context);
         handle.join().unwrap();
     }
@@ -682,7 +688,10 @@ mod tests {
         .unwrap();
         let mut client = ResolveGuardHttpClient::new(config);
         let mut context = test_guard_admission_context(&mut client);
-        assert_eq!(context.admit(), ResolveGuardAdmission::Indeterminate);
+        assert_eq!(
+            context.admit_for_test(crate::dispatch::ExecutionId::from_replay("action-1")),
+            ResolveGuardAdmission::Indeterminate
+        );
         drop(context);
         handle.join().unwrap();
 
@@ -698,7 +707,10 @@ mod tests {
         .unwrap();
         let mut client = ResolveGuardHttpClient::new(config);
         let mut context = test_guard_admission_context(&mut client);
-        assert_eq!(context.admit(), ResolveGuardAdmission::Indeterminate);
+        assert_eq!(
+            context.admit_for_test(crate::dispatch::ExecutionId::from_replay("action-1")),
+            ResolveGuardAdmission::Indeterminate
+        );
         drop(context);
         handle.join().unwrap();
     }
@@ -736,7 +748,10 @@ mod tests {
     fn live_resolve_s3_smoke_records_and_redelivers_exact_outcome() {
         let mut client = ResolveGuardHttpClient::from_environment().unwrap();
         let mut context = test_guard_admission_context(&mut client);
-        assert_eq!(context.admit(), ResolveGuardAdmission::Admitted);
+        assert_eq!(
+            context.admit_for_test(crate::dispatch::ExecutionId::from_replay("action-1")),
+            ResolveGuardAdmission::Admitted
+        );
         let preparation_digest = context.required().preparation_digest().clone();
         drop(context);
 
@@ -769,6 +784,9 @@ mod tests {
     fn live_resolve_s3_rejects_revoked_guard() {
         let mut client = ResolveGuardHttpClient::from_environment().unwrap();
         let mut context = test_guard_admission_context(&mut client);
-        assert_eq!(context.admit(), ResolveGuardAdmission::Rejected);
+        assert_eq!(
+            context.admit_for_test(crate::dispatch::ExecutionId::from_replay("action-1")),
+            ResolveGuardAdmission::Rejected
+        );
     }
 }

@@ -424,6 +424,9 @@ impl<S: ResolveOutcomeDeliveryStore> ResolveOutcomeDeliveryCoordinator<S> {
             if previous.state() == ResolveOutcomeDeliveryState::Delivered {
                 return Ok(ResolveOutcomeDeliveryResult::Delivered);
             }
+            if previous.state() == ResolveOutcomeDeliveryState::Conflict {
+                return Ok(ResolveOutcomeDeliveryResult::Conflict);
+            }
         }
 
         let needs_pending = previous
@@ -527,6 +530,9 @@ fn valid_delivery_transition(
         ) | (
             ResolveOutcomeDeliveryState::Indeterminate,
             ResolveOutcomeDeliveryState::Pending
+        ) | (
+            ResolveOutcomeDeliveryState::Pending,
+            ResolveOutcomeDeliveryState::Conflict
         )
     )
 }
@@ -829,11 +835,12 @@ mod tests {
                 .unwrap(),
             ResolveOutcomeDeliveryResult::Indeterminate
         );
-        adapter.result = Ok(());
+        adapter.result = Ok(ResolveOutcomeDeliveryAck::Recorded);
         assert_eq!(
             coordinator
                 .retry(
                     &TethersActionRef::from_host_value("exec_p4-test").unwrap(),
+                    request(ResolveOutcome::Uncertain).preparation_digest(),
                     &mut adapter,
                     &mut trail,
                 )
@@ -844,7 +851,10 @@ mod tests {
         assert_eq!(
             coordinator
                 .store()
-                .current(&TethersActionRef::from_host_value("exec_p4-test").unwrap())
+                .current(
+                    &TethersActionRef::from_host_value("exec_p4-test").unwrap(),
+                    request(ResolveOutcome::Uncertain).preparation_digest(),
+                )
                 .unwrap()
                 .unwrap()
                 .state(),
@@ -857,7 +867,7 @@ mod tests {
         let calls = Rc::new(Cell::new(0));
         let mut adapter = TestAdapter {
             calls: Rc::clone(&calls),
-            result: Ok(()),
+            result: Ok(ResolveOutcomeDeliveryAck::Recorded),
         };
         let mut trail = trail();
         let mut store = MemoryStore::default();
@@ -872,6 +882,7 @@ mod tests {
             coordinator
                 .retry(
                     &TethersActionRef::from_host_value("exec_p4-test").unwrap(),
+                    request(ResolveOutcome::Succeeded).preparation_digest(),
                     &mut adapter,
                     &mut trail,
                 )
@@ -893,7 +904,7 @@ mod tests {
         let calls = Rc::new(Cell::new(0));
         let mut adapter = TestAdapter {
             calls: Rc::clone(&calls),
-            result: Ok(()),
+            result: Ok(ResolveOutcomeDeliveryAck::Recorded),
         };
         {
             let store = FileResolveOutcomeDeliveryStore::open(&path).unwrap();
@@ -914,6 +925,7 @@ mod tests {
             coordinator
                 .retry(
                     &TethersActionRef::from_host_value("exec_p4-test").unwrap(),
+                    request(ResolveOutcome::Succeeded).preparation_digest(),
                     &mut adapter,
                     &mut trail,
                 )
@@ -950,11 +962,13 @@ mod tests {
             let _ = fs::remove_file(&path);
             let first = PersistedResolveOutcome {
                 action_ref: "exec_p4-test".to_owned(),
+                preparation_digest: format!("sha256:{}", "a".repeat(64)),
                 outcome: ResolveOutcome::Succeeded,
                 state: first,
             };
             let second = PersistedResolveOutcome {
                 action_ref: "exec_p4-test".to_owned(),
+                preparation_digest: format!("sha256:{}", "a".repeat(64)),
                 outcome: ResolveOutcome::Succeeded,
                 state: second,
             };

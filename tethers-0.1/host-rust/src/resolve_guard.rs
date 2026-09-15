@@ -303,6 +303,7 @@ pub struct ResolveGuardAdapterError;
 pub struct ResolveGuardAdmissionRequest {
     guard_id: ResolveGuardRef,
     action_ref: ExecutionId,
+    preparation_digest: GuardPreparationProofDigest,
     scope_keys: Vec<ScopeKey>,
 }
 
@@ -313,6 +314,10 @@ impl ResolveGuardAdmissionRequest {
 
     pub fn action_ref(&self) -> &ExecutionId {
         &self.action_ref
+    }
+
+    pub fn preparation_digest(&self) -> &GuardPreparationProofDigest {
+        &self.preparation_digest
     }
 
     pub fn scope_keys(&self) -> &[ScopeKey] {
@@ -327,6 +332,7 @@ impl ResolveGuardAdmissionRequest {
         Self {
             guard_id: guard_id.clone(),
             action_ref: ready.execution_id().clone(),
+            preparation_digest: required.preparation_digest.clone(),
             scope_keys: required.scope_keys.clone(),
         }
     }
@@ -436,10 +442,11 @@ impl<'a> GuardAdmissionContext<'a> {
     }
 
     #[cfg(test)]
-    fn admit_for_test(&mut self, action_ref: ExecutionId) -> ResolveGuardAdmission {
+    pub(crate) fn admit_for_test(&mut self, action_ref: ExecutionId) -> ResolveGuardAdmission {
         let request = ResolveGuardAdmissionRequest {
             guard_id: self.guard_ref.clone(),
             action_ref,
+            preparation_digest: self.required.preparation_digest.clone(),
             scope_keys: self.required.scope_keys.clone(),
         };
         self.admit_request(&request)

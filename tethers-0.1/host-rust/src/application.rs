@@ -9983,11 +9983,15 @@ mod tests {
             &mut guard,
         )
         .unwrap();
+        let preparation_digest = guard.required().preparation_digest().clone();
         drop(guard);
 
         assert_eq!(adapter.guard_calls, 1);
         assert_eq!(executor.completed.len(), 1);
         let admitted_action_ref = adapter.admitted_action_ref.clone().unwrap();
+        let action_ref =
+            crate::resolve_outcome::TethersActionRef::from_host_value(&admitted_action_ref)
+                .unwrap();
         assert_eq!(
             result.execution_id.as_deref(),
             Some(admitted_action_ref.as_str())
@@ -10005,9 +10009,16 @@ mod tests {
         let store = crate::resolve_outcome::FileResolveOutcomeDeliveryStore::open(&path).unwrap();
         let mut delivery = crate::resolve_outcome::ResolveOutcomeDeliveryCoordinator::new(store);
         assert_eq!(
-            deliver_resolve_outcome(&result, &mut delivery, &mut adapter, &mut trail)
-                .unwrap()
-                .unwrap(),
+            deliver_resolve_outcome(
+                &result,
+                &action_ref,
+                &preparation_digest,
+                &mut delivery,
+                &mut adapter,
+                &mut trail,
+            )
+            .unwrap()
+            .unwrap(),
             crate::resolve_outcome::ResolveOutcomeDeliveryResult::Delivered
         );
         assert_eq!(
@@ -10015,12 +10026,9 @@ mod tests {
             vec![admitted_action_ref.clone()]
         );
 
-        let action_ref =
-            crate::resolve_outcome::TethersActionRef::from_host_value(&admitted_action_ref)
-                .unwrap();
         assert_eq!(
             delivery
-                .retry(&action_ref, &mut adapter, &mut trail)
+                .retry(&action_ref, &preparation_digest, &mut adapter, &mut trail)
                 .unwrap(),
             crate::resolve_outcome::ResolveOutcomeDeliveryResult::Delivered
         );
@@ -10031,6 +10039,7 @@ mod tests {
                 .unwrap();
         let wrong_request = crate::resolve_outcome::ResolveOutcomeRequest::new(
             wrong_action_ref,
+            preparation_digest,
             crate::resolve_outcome::ResolveOutcome::Succeeded,
         );
         assert_eq!(
