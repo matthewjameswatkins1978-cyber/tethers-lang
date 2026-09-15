@@ -1,171 +1,157 @@
-# TETHERS x RESOLVE01 - P1 Preparation Proof Remediation
+# TETHERS x RESOLVE01 - P2 Guard Admission Boundary
 
-Task: `TETHERS x RESOLVE01 / P1 remediation`
+Task: `TETHERS x RESOLVE01 / P2 - Guard Admission Boundary`
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Repair the accepted P1 Rust-host preparation boundary identified by review: preparation must derive current capability/policy authority itself, require authoritative exact approval state for current Ask decisions, and make reconstruction compare before returning. Add direct focused evidence for zero provider/process invocation. Do not contact Resolve or change Tethers product semantics.`
+Route: `Implement the bounded Rust-host guard-admission seam over the accepted P1 preparation proof. Preserve Tethers as the sole authority for resolution, scope, policy, approval, replay, durable intent, execution and outcomes. Resolve may only admit or refuse a request and may never grant permission. P2 ends before any live Resolve transport or outcome delivery.`
 
-Base commit: `7066c9604e7062bf46529b9509dc92287e742379`
+Base commit: `fab258663af363b6e5902ea3bbe5d3dd8de61678`
 
-Implementation checkpoint: `ffdf368ac785e9b8a57a147200ffb080d9d1555f`
+Implementation checkpoint: `fab258663af363b6e5902ea3bbe5d3dd8de61678`
 
-Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`
+Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p2.md`
 
 Suggested branch:
 
-`codex/tethers-resolve-p1-remediation`
+`codex/tethers-resolve-p2-guard-admission`
 
 ## Objective
 
-Repair P1 so deterministic evidence can only be produced from current
-Tethers-owned capability, manifest/provider, schema, scope, policy, and
-approval authorities. Preparation remains evidence only; it grants no
-permission, performs no provider work, and does not implement guard admission.
+Add one narrow, non-transport guard-admission boundary to the Rust host. The
+route must rerun current Tethers preparation authorities, record durable intent,
+ask Resolve one closed admission question, then continue through the existing
+deadline, replay G1, provider, outcome, Result Anchor and Trail path only when
+Resolve returns `Admitted`. Preparation and admission are evidence/coordination;
+neither grants Tethers permission.
 
 ## Relevant background and existing behaviour
 
-P0 is accepted at `66e8360a7247b60ccc8fb6cb447f796b922afb42`. The Rust host
-already owns capability resolution, verified manifest/provider binding,
-validated arguments, binding-owned scope assessment, effective policy, fresh
-approval checks, replay, durable intent, provider invocation, outcomes, Trail,
-and Result Anchors. Existing `approval::digest` is the repository JCS/SHA-256
-authority. Current safe scope forms are PathPrefix and Unrestricted; other
-manifest scope forms are not established for this integration. P1 adds only
-preparation evidence over those existing authorities.
+P0 and P1 are accepted. `GuardPreparationProof`, `ResolveGuardRequired`,
+opaque `ScopeKey`, exact fresh reconstruction, current capability/schema/scope/
+policy/approval checks, replay authority, `DispatchReadyAction`, existing
+provider execution, outcomes, Result Anchors and FileTrail already exist in the
+Rust host. The P1 proof is not authority and must be rebuilt before each guarded
+request.
 
 ## Required behaviour
 
-This remediation preserves the accepted P1 substrate and changes only its
-freshness/authority boundary:
-
-1. Preparation must not accept caller-supplied `ResolvedCapability` or
-   `PermissionDecision` as authority. It resolves the current capability and
-   current effective policy itself.
-2. When current policy is `Ask`, preparation requires the existing authoritative
-   `ApprovalStore` record to be `Approved` and to exactly match a fresh proof
-   derived from the current action. A cloned or stale `Allow` is unusable.
-3. Reconstruction must rebuild current evidence and perform exact comparison
-   internally; it must refuse mismatches rather than return fresh evidence for
-   callers to compare optionally.
-4. Focused evidence must exercise the real preparation boundary and prove no
-   provider process or executor boundary is entered.
-
-5. Preserve the existing controlled `GuardPreparationProof` containing every P0-required field:
-   format version, evaluation/plan/action identity, capability identity,
-   argument/manifest/provider identity, resolved scope digest, opaque ScopeKeys,
-   and binding digest.
-6. Preserve the opaque, validated `ScopeKey` whose deterministic projection is
-   derived only from already resolved binding-owned Tethers scope.
-7. Support the current safe `PathPrefix` and explicit `Unrestricted` forms;
-   refuse `Repository`, `Calendar`, and `ScopeNotEstablished` without hashing
-   raw input or downgrading to unrestricted.
-8. Reuse the existing JCS and SHA-256 digest authority. Do not create a second
-   canonicalisation or hashing stack.
-9. Preserve `ResolveGuardRequired` containing only preparation identity, Tethers
-   action identity, and opaque ScopeKeys.
-10. Expose a bounded host-owned preparation route after exact capability,
-   manifest/provider, scope, policy, and approval checks. It must not dispatch,
-   touch replay, record a provider outcome, or write a Result Anchor.
-11. Reconstruct fresh evidence from current host state and compare every
-   material proof field exactly. Any drift returns a typed refusal reason.
-12. Keep raw arguments, credentials, raw scope values, Resolve state, and policy
-   internals out of proof and Resolve-facing projections and diagnostics.
-13. Preserve focused deterministic, adversarial, drift, unsupported-version, and
-   zero-provider-invocation tests.
-14. Document the actual implementation contract for P2 and this remediation.
+1. Add an opaque validated `ResolveGuardRef`; raw values never enter Trail,
+   logs, diagnostics, anchors or Resolve-facing evidence.
+2. Add exactly one narrow adapter trait with the closed result set:
+   `Admitted`, `Rejected`, `Indeterminate`. Adapter errors map to
+   `Indeterminate` unless a host configuration error is detected before the
+   adapter boundary.
+3. The request contains only the opaque guard reference, P1 proof identity/
+   `ResolveGuardRequired`, opaque `ScopeKey`s, and the existing Tethers action
+   identity/reference. No raw arguments, paths, manifests, policy internals or
+   Resolve state cross the seam.
+4. Guarded execution is explicitly host-selected and disabled by default.
+   Provider/Plug/manifest/Tether data cannot enable it. Do not mutate the frozen
+   `tethers.project/1` schema unless a separately authorised compatibility
+   decision makes that safe.
+5. Preserve this order: current Tethers gates, replay admission, durable intent,
+   guard admission, deadline, replay G1, existing executor/provider and outcome.
+   Durable-intent failure means zero adapter/provider calls.
+6. Denied, unavailable, unresolved Ask, invalid action/schema, scope refusal,
+   stale P1 proof, replay refusal and missing adapter never call the adapter.
+7. `Rejected` and `Indeterminate` stop before deadline/G1/provider, produce
+   bounded typed host/Trail evidence, and are not relabelled as Tethers DENY or
+   provider FAILED/UNCERTAIN. No automatic retry.
+8. Together preparation and durable intent remain serial and deterministic. All
+   members must be admitted before any group provider invocation; any refusal or
+   indeterminate result yields zero group provider calls.
+9. Preserve existing replay, provider execution, outcome, Result Anchor, Plan,
+   Core and syntax semantics. No live Resolve transport/database or public Plug.
 
 ## Frozen decisions and invariants
 
 - Tethers remains the authority for capability, manifest, provider, argument,
-  scope, binding, trust, policy, and approval truth.
-- Preparation evidence is never permission and never invokes a provider.
-- ScopeKeys are opaque equality dimensions; Resolve must not interpret them.
-- Fresh reconstruction reruns current Tethers authorities and exact comparison
-  refuses any material drift; old evidence is never repaired or widened.
-- P1 has no live Resolve boundary, database, wire protocol, Core change, syntax
-  change, replay change, provider execution change, or outcome change.
+  scope, binding, trust, policy, approval, replay, durable intent and outcome.
+- Resolve coordinates only the external guard question. It cannot grant
+  permission, alter Tethers policy, invoke a provider or deliver outcomes.
+- P1 preparation is rebuilt from current Tethers state before each guard call;
+  stale evidence is refused exactly and never repaired or widened.
+- The existing execution seam, replay ledger, FileTrail and Result Anchor
+  taxonomy remain the only accepted authorities.
+- P2 has no live Resolve transport, database, public Plug, retry, recovery
+  controller, Core change, syntax change or new product semantics.
 
 ## Acceptance criteria
 
-1. Rust host only: no OCaml/Core, Tether syntax, Plan schema, replay,
-   provider-execution, outcome, or Resolve transport/database changes.
-2. Proof construction is controlled and cannot be freely fabricated from raw
-   strings by external callers.
-3. ScopeKeys are versioned, opaque, sorted, duplicate-free, deterministic, and
-   based only on resolved PathPrefix/Unrestricted scope.
-4. Missing/unsupported scope and malformed/future proof versions fail closed.
-5. Argument, manifest, provider, binding, scope, capability, action, plan, and
-   evaluation drift are individually refused; unchanged reconstruction matches.
-6. Existing JCS/SHA-256 authorities are reused and field authorities are
-   recorded in the architecture note.
-7. Preparation and reconstruction demonstrably invoke zero target providers.
-8. Focused P1 tests, relevant Rust/host tests, repository verification,
-   task-packet checker, secret scan, documentation checks, and `git diff --check`
-   pass from the task branch.
-9. The final worker note records the starting SHA, checkpoint, files, tests,
-   decisions, unresolved questions, and stop conditions.
-10. The architecture note accurately records the P1 implementation and the
-    exact bounded input contract handed to P2.
-11. Preparation derives current capability and effective policy state internally
-    rather than trusting caller-supplied resolved or permission values.
-12. Current `Ask` policy requires an authoritative exact `ApprovalStore` record
-    in `Approved` state; missing, pending, stale, or mismatched approval fails.
-13. Reconstruction performs exact comparison before returning; material drift
-    is returned as typed evidence mismatch and never as successful fresh state.
-14. The zero-provider test exercises the real preparation/reconstruction route
-    with an absent provider launch script and proves no process boundary is
-    required.
+1. Controlled opaque ref and one closed adapter seam exist.
+2. P1 freshness is mandatory and current policy/approval cannot be bypassed.
+3. Durable intent precedes every adapter call; adapter/provider zero-call refusal
+  and failure paths are directly tested.
+4. Admitted serial and Together paths reach existing execution exactly once;
+  Rejected/Indeterminate paths reach no provider and no G1.
+5. Invalid refs, secret leakage, disabled mode, missing adapter, stale proof,
+  crash/recovery boundaries, Trail compatibility and config compatibility are
+  tested.
+6. No HTTP/MCP/Socket/SQLite Resolve implementation, outcome delivery, retry,
+  recovery controller, Core change, syntax change or new Result Anchor class.
+7. Focused P2, relevant Rust/host, formatting/checks, task checker, secret,
+  documentation, whitespace, and repository-authoritative verification pass.
+8. Architecture note and worker note record the actual implementation and
+  explicit P2 exclusions.
+9. The final branch is reviewed, normally published to the task remote branch,
+   and leaves the canonical main checkout unaffected until acceptance.
 
 ## Relevant components
 
 - `tethers-0.1/host-rust/src/resolve_guard.rs`
+- `tethers-0.1/host-rust/src/application.rs`
+- `tethers-0.1/host-rust/src/host_execution.rs`
+- `tethers-0.1/host-rust/src/plan_execution.rs`
+- `tethers-0.1/host-rust/src/dispatch.rs`
+- `tethers-0.1/host-rust/src/runtime_config.rs`
 - `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/configured_runtime.rs`
-- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P1_PREPARATION_PROOF.md`
-- `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`
+- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P2_GUARD_ADMISSION.md`
+- `docs/worker-notes/2026-09-15-tethers-resolve-p2.md`
 
 ## Required verification
 
-Run the repository-owned tool diagnostic, task-packet checker, `cargo fmt
---all -- --check`, focused P1 tests, relevant host/Rust tests, `just verify`,
-secret scan, documentation/link checks, `git diff --check`, complete diff/path
-inspection, and final clean-status checks. Do not inherit P0 evidence.
+Run the repository-owned diagnostics, task checker, focused P2 tests, relevant
+serial/Together/recovery/Trail/config tests, `cargo fmt --all -- --check`,
+`cargo check --all-targets --all-features --locked`, relevant Rust/host suites,
+MCP and compatibility checks, warning ratchet, secret scan, documentation/link
+checks, `just verify`, `git diff --check`, complete diff review and final clean
+status. Record commands not run and exact first failures.
 
 ## Forbidden changes
 
-- No OCaml/Core/parser/AST/evaluator/Plan or syntax changes.
-- No Resolve network, wire protocol, database, guard-admission trait, or live
-  adapter.
-- No provider invocation, replay mutation, Trail guard event, Result Anchor
-  taxonomy change, policy redesign, approval bypass, or new scope form.
-- No raw secrets or arbitrary raw argument/scope values in evidence.
-- No force-push, history rewrite, direct main update, or unrelated cleanup.
+- No OCaml/Core/parser/AST/evaluator/Plan/syntax/policy vocabulary changes.
+- No Resolve HTTP/MCP/Socket protocol, SQLite/database, scheduler, retry,
+  renewal, redelivery, outcome-delivery or recovery-controller implementation.
+- No public Resolve capability/Plug, new scope form, replay semantic change,
+  provider ordering change, provider outcome taxonomy change or Result Anchor
+  taxonomy change.
+- No raw guard refs, credentials, paths or arguments in evidence/diagnostics.
+- No force push, history rewrite, direct main update or unrelated cleanup.
 
 ## Stop conditions
 
-Stop and report if binding digest cannot be defined from one existing semantic
-authority, if safe scope projection is unavailable, if Core changes or a new
-semantic authority are required, if fresh policy/approval cannot be rerun, or if
-P1 starts becoming a generic coordination framework. After two materially
-similar failed implementation attempts against one design issue, stop with the
-exact evidence and smallest unresolved question.
-
-## Expected pre-existing changes
-
-None
+Stop and report if the binding/intent authority is ambiguous, Trail cannot
+accept bounded guard evidence without a schema decision, guarded mode cannot be
+represented without silently changing `tethers.project/1`, the current host
+would auto-call Resolve/provider after a crash without explicit fresh admission,
+or implementation begins requiring transport, database, provider execution, Core
+changes or a generic coordination framework. After two materially similar failed
+approaches to the same design issue, stop with exact evidence and one smallest
+unresolved question.
 
 ## Implementation scope
 
-- `tethers-0.1/host-rust/src/resolve_guard.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/configured_runtime.rs`
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P1_PREPARATION_PROOF.md`
-- `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`
+The intended bounded scope is the Rust host guard/application/execution seams,
+their focused tests, one architecture note, this task packet, and the named
+worker note. Do not broaden the packet checker to repository-wide inference.
+
+## Expected pre-existing changes
+
+None.

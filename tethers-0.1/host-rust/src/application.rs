@@ -2190,6 +2190,12 @@ pub enum SharedExecutionOutcome {
     Uncertain,
     Unattempted,
     Denied,
+    /// Resolve refused coordination after durable Tethers intent.  This is
+    /// neither a Tethers policy denial nor a provider outcome.
+    GuardRejected,
+    /// Resolve could not establish a determinate admission result.  This is
+    /// not provider uncertainty and must stop before G1/provider invocation.
+    GuardIndeterminate,
     AuditFailed,
     Replay(replay_runtime::ReplayDispatchResult),
 }
@@ -2224,6 +2230,54 @@ pub(crate) fn execute_shared_boundary(
         approval_consumption,
         anchor_writer,
         semantic_position,
+        None,
+    )?;
+    if response
+        .get("trail")
+        .and_then(Value::as_array)
+        .is_some_and(|entries| entries.iter().any(|entry| entry["kind"] == "audit_failure"))
+    {
+        result.outcome = SharedExecutionOutcome::AuditFailed;
+    }
+    Ok(result)
+}
+
+/// Execute the existing shared boundary with one explicit host-selected guard
+/// admission context.  The ordinary execution route above remains unchanged
+/// and is the default when no guarded mode is selected.
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_shared_boundary_with_guard(
+    response: &mut Value,
+    action: &Value,
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    trail: &mut dyn dispatch::Trail,
+    executor: &mut dyn CapabilityExecutor,
+    input_context: &InputEventContext,
+    bridge_pins_required: bool,
+    clock: &dyn outcome::MonotonicClock,
+    replay_authority: &dyn replay_runtime::ReplayAuthority,
+    approval_consumption: Option<&mut dyn ApprovalConsumption>,
+    anchor_writer: &mut dyn ResultAnchorWriter,
+    semantic_position: Option<&dispatch::SemanticPosition>,
+    guard: &mut crate::resolve_guard::GuardAdmissionContext<'_>,
+) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
+    let mut result = execute_boundary_impl(
+        response,
+        action,
+        decision,
+        resolved,
+        trail,
+        executor,
+        input_context,
+        bridge_pins_required,
+        clock,
+        replay_authority,
+        approval_consumption,
+        anchor_writer,
+        semantic_position,
+        Some(guard),
     )?;
     if response
         .get("trail")
@@ -2283,6 +2337,7 @@ fn execute_boundary_impl(
     approval_consumption: Option<&mut dyn ApprovalConsumption>,
     anchor_writer: &mut dyn ResultAnchorWriter,
     semantic_position: Option<&dispatch::SemanticPosition>,
+    mut guard: Option<&mut crate::resolve_guard::GuardAdmissionContext<'_>>,
 ) -> Result<SharedExecutionResult, Box<dyn std::error::Error>> {
     let original_event_id = input_context.event_id.as_str();
 
@@ -2466,6 +2521,72 @@ fn execute_boundary_impl(
             });
         }
     };
+
+    // Durable Tethers intent is the first point at which a guard question may
+    // be asked.  The request is already rebuilt from current Tethers-owned P1
+    // evidence; Resolve can only coordinate the next step.
+    if let Some(guard) = guard.as_deref_mut() {
+        let action_matches = guard.required().action_id() == ready.action_id().0;
+        let admission = if action_matches {
+            Some(guard.admit())
+        } else {
+            None
+        };
+        let outcome_name = match admission {
+            Some(crate::resolve_guard::ResolveGuardAdmission::Admitted) => "admitted",
+            Some(crate::resolve_guard::ResolveGuardAdmission::Rejected) => "rejected",
+            Some(crate::resolve_guard::ResolveGuardAdmission::Indeterminate) | None => {
+                "indeterminate"
+            }
+        };
+        let entry = dispatch::GuardAdmissionEntry {
+            execution_id: ready.execution_id().0.clone(),
+            action_id: ready.action_id().0.clone(),
+            preparation_digest: guard.required().preparation_digest().as_str().to_owned(),
+            guard_ref_digest: guard.guard_ref_digest().to_owned(),
+            outcome: outcome_name.to_owned(),
+        };
+        if trail.append_guard_admission(&entry).is_err() {
+            json_trail.push(trail_entry(
+                sequence,
+                "coordination",
+                "guard_admission_audit_failed",
+                "failed",
+                "guard admission evidence could not be durably recorded".to_owned(),
+                Some(&ready.action_id().0),
+            ));
+            return Ok(SharedExecutionResult {
+                outcome: SharedExecutionOutcome::AuditFailed,
+                execution_id: trusted_id.clone(),
+            });
+        }
+        json_trail.push(trail_entry(
+            sequence,
+            "coordination",
+            "guard_admission",
+            outcome_name,
+            "Resolve guard admission decision recorded".to_owned(),
+            Some(&ready.action_id().0),
+        ));
+        sequence += 1;
+        match admission {
+            Some(crate::resolve_guard::ResolveGuardAdmission::Admitted) => {}
+            Some(crate::resolve_guard::ResolveGuardAdmission::Rejected) => {
+                response["execution_status"] = Value::String("guard_rejected".into());
+                return Ok(SharedExecutionResult {
+                    outcome: SharedExecutionOutcome::GuardRejected,
+                    execution_id: trusted_id.clone(),
+                });
+            }
+            Some(crate::resolve_guard::ResolveGuardAdmission::Indeterminate) | None => {
+                response["execution_status"] = Value::String("guard_indeterminate".into());
+                return Ok(SharedExecutionResult {
+                    outcome: SharedExecutionOutcome::GuardIndeterminate,
+                    execution_id: trusted_id.clone(),
+                });
+            }
+        }
+    }
 
     // Intent is durable.  The execution deadline starts only now; policy,
     // approvals, and a failed intent write have already happened outside it.
@@ -2788,6 +2909,67 @@ pub(crate) struct PreparedInvoke {
 ///
 /// The replay admission is returned separately so the coordinator can
 /// publish G1 and G2 at the correct points.
+fn record_guard_admission(
+    response: &mut Value,
+    ready: &dispatch::DispatchReadyAction,
+    trail: &mut dyn dispatch::Trail,
+    guard: &mut crate::resolve_guard::GuardAdmissionContext<'_>,
+) -> Result<crate::resolve_guard::ResolveGuardAdmission, SharedExecutionResult> {
+    if response.get("trail").and_then(Value::as_array).is_none() {
+        return Err(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id: Some(ready.execution_id().0.clone()),
+        });
+    }
+    let action_matches = guard.required().action_id() == ready.action_id().0;
+    let admission = if action_matches {
+        guard.admit()
+    } else {
+        crate::resolve_guard::ResolveGuardAdmission::Indeterminate
+    };
+    let outcome_name = match admission {
+        crate::resolve_guard::ResolveGuardAdmission::Admitted => "admitted",
+        crate::resolve_guard::ResolveGuardAdmission::Rejected => "rejected",
+        crate::resolve_guard::ResolveGuardAdmission::Indeterminate => "indeterminate",
+    };
+    let entry = dispatch::GuardAdmissionEntry {
+        execution_id: ready.execution_id().0.clone(),
+        action_id: ready.action_id().0.clone(),
+        preparation_digest: guard.required().preparation_digest().as_str().to_owned(),
+        guard_ref_digest: guard.guard_ref_digest().to_owned(),
+        outcome: outcome_name.to_owned(),
+    };
+    if trail.append_guard_admission(&entry).is_err() {
+        if let Some(json_trail) = response.get_mut("trail").and_then(Value::as_array_mut) {
+            let sequence = json_trail.len() as u64 + 1;
+            json_trail.push(trail_entry(
+                sequence,
+                "coordination",
+                "guard_admission_audit_failed",
+                "failed",
+                "guard admission evidence could not be durably recorded".to_owned(),
+                Some(&ready.action_id().0),
+            ));
+        }
+        return Err(SharedExecutionResult {
+            outcome: SharedExecutionOutcome::AuditFailed,
+            execution_id: Some(ready.execution_id().0.clone()),
+        });
+    }
+    if let Some(json_trail) = response.get_mut("trail").and_then(Value::as_array_mut) {
+        let sequence = json_trail.len() as u64 + 1;
+        json_trail.push(trail_entry(
+            sequence,
+            "coordination",
+            "guard_admission",
+            outcome_name,
+            "Resolve guard admission decision recorded".to_owned(),
+            Some(&ready.action_id().0),
+        ));
+    }
+    Ok(admission)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_boundary_prepare(
     response: &mut Value,
@@ -2799,6 +2981,7 @@ pub(crate) fn execute_boundary_prepare(
     bridge_pins_required: bool,
     replay_authority: &dyn replay_runtime::ReplayAuthority,
     semantic_position: Option<&dispatch::SemanticPosition>,
+    mut guard: Option<&mut crate::resolve_guard::GuardAdmissionContext<'_>>,
 ) -> Result<
     (
         dispatch::DispatchReadyAction,
@@ -2970,6 +3153,33 @@ pub(crate) fn execute_boundary_prepare(
             });
         }
     };
+
+    // Durable Tethers intent is the first point at which a guarded Together
+    // member may ask the future adapter. No deadline, G1, or provider effect
+    // has occurred yet.
+    if let Some(guard) = guard.as_deref_mut() {
+        let admission = match record_guard_admission(response, &ready, trail, guard) {
+            Ok(admission) => admission,
+            Err(result) => return Err(result),
+        };
+        match admission {
+            crate::resolve_guard::ResolveGuardAdmission::Admitted => {}
+            crate::resolve_guard::ResolveGuardAdmission::Rejected => {
+                response["execution_status"] = Value::String("guard_rejected".into());
+                return Err(SharedExecutionResult {
+                    outcome: SharedExecutionOutcome::GuardRejected,
+                    execution_id: Some(execution_id_str),
+                });
+            }
+            crate::resolve_guard::ResolveGuardAdmission::Indeterminate => {
+                response["execution_status"] = Value::String("guard_indeterminate".into());
+                return Err(SharedExecutionResult {
+                    outcome: SharedExecutionOutcome::GuardIndeterminate,
+                    execution_id: Some(execution_id_str),
+                });
+            }
+        }
+    }
 
     let prepared = PreparedInvoke {
         input_context: input_context.clone(),
@@ -3395,6 +3605,28 @@ mod tests {
     use crate::policy::{self, CapabilityRequirement, HostLocalPolicy, PolicyRule};
     use crate::resolver::{self, ProviderAvailability};
     use crate::trusted_store::TrustedManifestStore;
+
+    struct P2TestAdapter {
+        result: Result<
+            crate::resolve_guard::ResolveGuardAdmission,
+            crate::resolve_guard::ResolveGuardAdapterError,
+        >,
+        calls: usize,
+    }
+
+    impl crate::resolve_guard::ResolveGuardAdapter for P2TestAdapter {
+        fn admit_guard(
+            &mut self,
+            _guard_ref: &crate::resolve_guard::ResolveGuardRef,
+            _required: &crate::resolve_guard::ResolveGuardRequired,
+        ) -> Result<
+            crate::resolve_guard::ResolveGuardAdmission,
+            crate::resolve_guard::ResolveGuardAdapterError,
+        > {
+            self.calls += 1;
+            self.result.clone()
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Helpers
@@ -9473,5 +9705,152 @@ mod tests {
             );
             assert_no_execution_id_in_anchor(&response);
         }
+    }
+
+    #[test]
+    fn p2_guard_rejection_is_after_intent_and_before_provider() {
+        let (_store, resolved) = resolved_lantern();
+        let mut response = make_matched_response(
+            "evaluation-1",
+            "action-1",
+            resolved.capability_name(),
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut adapter = P2TestAdapter {
+            result: Ok(crate::resolve_guard::ResolveGuardAdmission::Rejected),
+            calls: 0,
+        };
+        let mut guard = crate::resolve_guard::test_guard_admission_context(&mut adapter);
+        let mut executor = MockExecutor::new();
+        let mut trail = RecordingTrail::new();
+        let clock = outcome::ProductionMonotonicClock::new();
+        let replay = replay_runtime::test_support::TestReplayAuthority::default();
+        let mut anchors = ResponseResultAnchorWriter;
+        let action = extract_single_action(&response).unwrap().clone();
+        let context = InputEventContext::for_initial("event-1");
+
+        let result = execute_shared_boundary_with_guard(
+            &mut response,
+            &action,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context,
+            false,
+            &clock,
+            &replay,
+            None,
+            &mut anchors,
+            None,
+            &mut guard,
+        )
+        .unwrap();
+
+        assert_eq!(result.outcome, SharedExecutionOutcome::GuardRejected);
+        drop(guard);
+        assert_eq!(adapter.calls, 1);
+        assert!(executor.completed.is_empty());
+        assert_eq!(trail.entries.len(), 1, "intent must precede guard");
+        assert_eq!(trail.guard_admission_entries.len(), 1);
+        assert_eq!(trail.guard_admission_entries[0].outcome, "rejected");
+        assert!(response.get("result_anchor").is_none());
+    }
+
+    #[test]
+    fn p2_guard_admission_reaches_existing_provider_boundary_once() {
+        let (_store, resolved) = resolved_lantern();
+        let mut response = make_matched_response(
+            "evaluation-1",
+            "action-1",
+            resolved.capability_name(),
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut adapter = P2TestAdapter {
+            result: Ok(crate::resolve_guard::ResolveGuardAdmission::Admitted),
+            calls: 0,
+        };
+        let mut guard = crate::resolve_guard::test_guard_admission_context(&mut adapter);
+        let mut executor = MockExecutor::new();
+        let mut trail = RecordingTrail::new();
+        let clock = outcome::ProductionMonotonicClock::new();
+        let replay = replay_runtime::test_support::TestReplayAuthority::default();
+        let mut anchors = ResponseResultAnchorWriter;
+        let action = extract_single_action(&response).unwrap().clone();
+        let context = InputEventContext::for_initial("event-1");
+
+        let result = execute_shared_boundary_with_guard(
+            &mut response,
+            &action,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context,
+            false,
+            &clock,
+            &replay,
+            None,
+            &mut anchors,
+            None,
+            &mut guard,
+        )
+        .unwrap();
+
+        assert_eq!(result.outcome, SharedExecutionOutcome::Completed);
+        drop(guard);
+        assert_eq!(adapter.calls, 1);
+        assert_eq!(executor.completed.len(), 1);
+        assert_eq!(trail.guard_admission_entries.len(), 1);
+        assert_eq!(trail.guard_admission_entries[0].outcome, "admitted");
+        assert!(response.get("result_anchor").is_some());
+    }
+
+    #[test]
+    fn p2_intent_failure_prevents_guard_and_provider_calls() {
+        let (_store, resolved) = resolved_lantern();
+        let mut response = make_matched_response(
+            "evaluation-1",
+            "action-1",
+            resolved.capability_name(),
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut adapter = P2TestAdapter {
+            result: Ok(crate::resolve_guard::ResolveGuardAdmission::Admitted),
+            calls: 0,
+        };
+        let mut guard = crate::resolve_guard::test_guard_admission_context(&mut adapter);
+        let mut executor = MockExecutor::new();
+        let mut trail = RecordingTrail::new();
+        trail.injected_intent_error = Some(dispatch::TrailError::WriteFailed("test".into()));
+        let clock = outcome::ProductionMonotonicClock::new();
+        let replay = replay_runtime::test_support::TestReplayAuthority::default();
+        let mut anchors = ResponseResultAnchorWriter;
+        let action = extract_single_action(&response).unwrap().clone();
+        let context = InputEventContext::for_initial("event-1");
+
+        let result = execute_shared_boundary_with_guard(
+            &mut response,
+            &action,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context,
+            false,
+            &clock,
+            &replay,
+            None,
+            &mut anchors,
+            None,
+            &mut guard,
+        )
+        .unwrap();
+
+        assert_eq!(result.outcome, SharedExecutionOutcome::Denied);
+        drop(guard);
+        assert_eq!(adapter.calls, 0);
+        assert!(executor.completed.is_empty());
+        assert!(trail.guard_admission_entries.is_empty());
     }
 }

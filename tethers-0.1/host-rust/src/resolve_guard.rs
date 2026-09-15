@@ -11,11 +11,13 @@ use crate::manifest::{BindingKind, IdentitySource};
 use crate::policy::{PermissionDecision, ProposedAction, ScopeAssessment};
 use crate::resolver::{self, ProviderAvailability, ResolvedCapability};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fmt;
 
 pub const GUARD_PREPARATION_FORMAT_VERSION: &str = "tethers.resolve.guard-preparation/1";
 pub const SCOPE_KEY_FORMAT_VERSION: &str = "tethers.resolve.scope-key/1";
 pub const BINDING_DIGEST_FORMAT_VERSION: &str = "tethers.resolve.binding/1";
+const RESOLVE_GUARD_REF_MAX_BYTES: usize = 512;
 
 /// Opaque equality evidence for one reviewed Tethers scope dimension.
 ///
@@ -188,6 +190,228 @@ impl ResolveGuardRequired {
     }
 }
 
+/// Opaque identity of a Resolve guard request.
+///
+/// P2 deliberately does not interpret the value or expose it through
+/// formatting.  The future transport adapter receives the validated object;
+/// host evidence records only its existing SHA-256 digest.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ResolveGuardRef {
+    digest: String,
+}
+
+impl ResolveGuardRef {
+    /// Construct a reference supplied by a host-owned integration boundary.
+    /// The value is only checked as bounded opaque UTF-8; P2 does not assign
+    /// semantics to Resolve identifiers.
+    pub fn from_host_value(value: &str) -> Result<Self, ResolveGuardRefError> {
+        if value.is_empty() {
+            return Err(ResolveGuardRefError::Empty);
+        }
+        if value.len() > RESOLVE_GUARD_REF_MAX_BYTES {
+            return Err(ResolveGuardRefError::TooLong);
+        }
+        if value.chars().any(char::is_control) {
+            return Err(ResolveGuardRefError::ControlCharacter);
+        }
+        Ok(Self {
+            digest: approval::digest(&Value::String(value.to_owned())),
+        })
+    }
+
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+}
+
+impl fmt::Debug for ResolveGuardRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ResolveGuardRef")
+            .field(&self.digest)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResolveGuardRefError {
+    Empty,
+    TooLong,
+    ControlCharacter,
+}
+
+impl fmt::Display for ResolveGuardRefError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::Empty => "guard reference is empty",
+            Self::TooLong => "guard reference exceeds the bounded length",
+            Self::ControlCharacter => "guard reference contains a control character",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for ResolveGuardRefError {}
+
+/// The only decisions a P2 adapter may return.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResolveGuardAdmission {
+    Admitted,
+    Rejected,
+    Indeterminate,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolveGuardAdapterError;
+
+/// One deliberately narrow future Resolve boundary.  P2 supplies no live
+/// transport implementation; adapter errors are mapped to Indeterminate by
+/// the host seam.
+pub trait ResolveGuardAdapter {
+    fn admit_guard(
+        &mut self,
+        guard_ref: &ResolveGuardRef,
+        required: &ResolveGuardRequired,
+    ) -> Result<ResolveGuardAdmission, ResolveGuardAdapterError>;
+}
+
+/// Request state that has been rebuilt from current Tethers authorities and is
+/// safe to present at the future adapter boundary.
+pub struct GuardAdmissionContext<'a> {
+    guard_ref: ResolveGuardRef,
+    required: ResolveGuardRequired,
+    adapter: &'a mut dyn ResolveGuardAdapter,
+}
+
+/// Explicit host-selected guard inputs for a Together group. The plan is
+/// keyed by already validated Action identity; it never discovers guard
+/// references from arguments, provider labels, or free text.
+pub(crate) struct GuardAdmissionPlan<'a> {
+    adapter: &'a mut dyn ResolveGuardAdapter,
+    requests: HashMap<String, GuardAdmissionRequest>,
+}
+
+pub(crate) struct GuardAdmissionRequest {
+    pub(crate) guard_ref: ResolveGuardRef,
+    pub(crate) previous: Option<GuardPreparationProof>,
+}
+
+impl<'a> GuardAdmissionPlan<'a> {
+    #[allow(dead_code)]
+    // The default production route remains unguarded until an explicit host
+    // integration selects this P2 Together seam.
+    pub(crate) fn new(
+        adapter: &'a mut dyn ResolveGuardAdapter,
+        requests: HashMap<String, GuardAdmissionRequest>,
+    ) -> Self {
+        Self { adapter, requests }
+    }
+
+    pub(crate) fn prepare_for(
+        &mut self,
+        runtime: &PreparedRuntime,
+        action: &ProposedAction,
+        availability: &ProviderAvailability,
+        approval: Option<(&approval::ApprovalStore, &str)>,
+    ) -> Result<GuardAdmissionContext<'_>, GuardPreparationError> {
+        let request = self
+            .requests
+            .get(&action.action_id)
+            .ok_or(GuardPreparationError::MissingGuardReference)?;
+        prepare_guard_admission(
+            runtime,
+            action,
+            availability,
+            approval,
+            request.guard_ref.clone(),
+            request.previous.as_ref(),
+            self.adapter,
+        )
+    }
+}
+
+impl<'a> GuardAdmissionContext<'a> {
+    #[allow(dead_code)]
+    // Construction is controlled by the current-authority preparation route.
+    pub(crate) fn new(
+        guard_ref: ResolveGuardRef,
+        prepared: PreparedResolveGuard,
+        adapter: &'a mut dyn ResolveGuardAdapter,
+    ) -> Self {
+        Self {
+            guard_ref,
+            required: prepared.required,
+            adapter,
+        }
+    }
+
+    pub(crate) fn required(&self) -> &ResolveGuardRequired {
+        &self.required
+    }
+
+    pub(crate) fn guard_ref_digest(&self) -> &str {
+        self.guard_ref.digest()
+    }
+
+    pub(crate) fn admit(&mut self) -> ResolveGuardAdmission {
+        self.adapter
+            .admit_guard(&self.guard_ref, &self.required)
+            .unwrap_or(ResolveGuardAdmission::Indeterminate)
+    }
+}
+
+/// Build the guarded execution context from current Tethers-owned evidence.
+/// An optional previous proof is comparison input only, never an authority
+/// source.  `None` is the fresh preparation path; `Some` is explicit resume.
+#[allow(dead_code)]
+pub(crate) fn prepare_guard_admission<'a>(
+    runtime: &PreparedRuntime,
+    action: &ProposedAction,
+    availability: &ProviderAvailability,
+    approval: Option<(&approval::ApprovalStore, &str)>,
+    guard_ref: ResolveGuardRef,
+    previous: Option<&GuardPreparationProof>,
+    adapter: &'a mut dyn ResolveGuardAdapter,
+) -> Result<GuardAdmissionContext<'a>, GuardPreparationError> {
+    let prepared = match previous {
+        Some(previous) => {
+            reconstruct_resolve_guard_evidence(previous, runtime, action, availability, approval)?
+        }
+        None => prepare_resolve_guard_evidence(runtime, action, availability, approval)?,
+    };
+    Ok(GuardAdmissionContext::new(guard_ref, prepared, adapter))
+}
+
+#[cfg(test)]
+pub(crate) fn test_guard_admission_context<'a>(
+    adapter: &'a mut dyn ResolveGuardAdapter,
+) -> GuardAdmissionContext<'a> {
+    let scope = ResolvedActionScope::unrestricted();
+    let proof = GuardPreparationProof {
+        format_version: GUARD_PREPARATION_FORMAT_VERSION.to_owned(),
+        evaluation_id: "evaluation-1".to_owned(),
+        plan_id: "plan-1".to_owned(),
+        action_id: "action-1".to_owned(),
+        capability_name: "lantern.task.record".to_owned(),
+        capability_version: 1,
+        argument_digest: approval::digest(&json!({})),
+        manifest_digest: approval::digest(&json!({"manifest": 1})),
+        provider_identity: "lantern-local".to_owned(),
+        resolved_scope_digest: scope.digest(),
+        scope_keys: scope_keys(&scope),
+        binding_digest: approval::digest(&json!({"binding": 1})),
+    };
+    let required = ResolveGuardRequired {
+        preparation_digest: proof.digest(),
+        action_id: proof.action_id.clone(),
+        scope_keys: proof.scope_keys.clone(),
+    };
+    GuardAdmissionContext::new(
+        ResolveGuardRef::from_host_value("guard/test-1").expect("test guard reference is valid"),
+        PreparedResolveGuard { proof, required },
+        adapter,
+    )
+}
+
 /// Both the complete proof and its bounded future-adapter projection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreparedResolveGuard {
@@ -218,6 +442,7 @@ pub enum GuardPreparationError {
     BindingUnavailable,
     ApprovalRequired,
     ApprovalMismatch,
+    MissingGuardReference,
     EvidenceMismatch(GuardPreparationMismatch),
     ScopeViolation,
     ScopeNotEstablished,
@@ -239,6 +464,12 @@ impl fmt::Display for GuardPreparationError {
             Self::BindingUnavailable => write!(f, "trusted execution binding is unavailable"),
             Self::ApprovalRequired => write!(f, "current policy requires exact approval"),
             Self::ApprovalMismatch => write!(f, "exact approval is not current for this action"),
+            Self::MissingGuardReference => {
+                write!(
+                    f,
+                    "guard preparation has no explicit guard reference for this action"
+                )
+            }
             Self::EvidenceMismatch(reason) => write!(f, "{reason}"),
             Self::ScopeViolation => {
                 write!(f, "resolved action scope is outside the reviewed scope")
@@ -886,5 +1117,81 @@ mod tests {
             compare_resolve_guard_preparation(&malformed, &proof()),
             Err(GuardPreparationMismatch::MalformedEvidence)
         );
+    }
+
+    struct TestAdapter {
+        result: Result<ResolveGuardAdmission, ResolveGuardAdapterError>,
+        calls: usize,
+    }
+
+    impl ResolveGuardAdapter for TestAdapter {
+        fn admit_guard(
+            &mut self,
+            _guard_ref: &ResolveGuardRef,
+            _required: &ResolveGuardRequired,
+        ) -> Result<ResolveGuardAdmission, ResolveGuardAdapterError> {
+            self.calls += 1;
+            self.result.clone()
+        }
+    }
+
+    fn test_context(adapter: &mut TestAdapter) -> GuardAdmissionContext<'_> {
+        let proof = proof();
+        let required = ResolveGuardRequired {
+            preparation_digest: proof.digest(),
+            action_id: proof.action_id.clone(),
+            scope_keys: proof.scope_keys.clone(),
+        };
+        let prepared = PreparedResolveGuard { proof, required };
+        GuardAdmissionContext::new(
+            ResolveGuardRef::from_host_value("guard/opaque-1").unwrap(),
+            prepared,
+            adapter,
+        )
+    }
+
+    #[test]
+    fn guard_reference_is_bounded_and_never_debug_leaks_value() {
+        assert_eq!(
+            ResolveGuardRef::from_host_value(""),
+            Err(ResolveGuardRefError::Empty)
+        );
+        assert_eq!(
+            ResolveGuardRef::from_host_value("bad\nref"),
+            Err(ResolveGuardRefError::ControlCharacter)
+        );
+        let value = "guard/secret-looking-value";
+        let guard_ref = ResolveGuardRef::from_host_value(value).unwrap();
+        assert!(is_digest(guard_ref.digest()));
+        assert!(!format!("{guard_ref:?}").contains(value));
+    }
+
+    #[test]
+    fn adapter_error_is_closed_to_indeterminate() {
+        let mut adapter = TestAdapter {
+            result: Err(ResolveGuardAdapterError),
+            calls: 0,
+        };
+        let mut context = test_context(&mut adapter);
+        assert_eq!(context.admit(), ResolveGuardAdmission::Indeterminate);
+        drop(context);
+        assert_eq!(adapter.calls, 1);
+    }
+
+    #[test]
+    fn adapter_receives_only_bounded_required_projection() {
+        let mut adapter = TestAdapter {
+            result: Ok(ResolveGuardAdmission::Admitted),
+            calls: 0,
+        };
+        let mut context = test_context(&mut adapter);
+        assert_eq!(context.admit(), ResolveGuardAdmission::Admitted);
+        drop(context);
+        assert_eq!(adapter.calls, 1);
+        assert!(!format!(
+            "{:?}",
+            ResolveGuardRef::from_host_value("guard/opaque-1").unwrap()
+        )
+        .contains("opaque-1"));
     }
 }
