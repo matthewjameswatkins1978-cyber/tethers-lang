@@ -54,9 +54,39 @@ pub struct GuardPreparationProofDigest {
 }
 
 impl GuardPreparationProofDigest {
+    pub fn from_host_value(value: &str) -> Result<Self, GuardPreparationProofDigestError> {
+        if is_sha256_digest(value) {
+            Ok(Self {
+                digest: value.to_owned(),
+            })
+        } else {
+            Err(GuardPreparationProofDigestError::Invalid)
+        }
+    }
+
     pub fn as_str(&self) -> &str {
         &self.digest
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GuardPreparationProofDigestError {
+    Invalid,
+}
+
+impl fmt::Display for GuardPreparationProofDigestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid guard preparation digest")
+    }
+}
+
+impl std::error::Error for GuardPreparationProofDigestError {}
+
+fn is_sha256_digest(value: &str) -> bool {
+    value.len() == 71
+        && value.starts_with("sha256:")
+        && value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        && value[7..].bytes().all(|byte| !byte.is_ascii_uppercase())
 }
 
 impl fmt::Debug for GuardPreparationProofDigest {
@@ -273,6 +303,7 @@ pub struct ResolveGuardAdapterError;
 pub struct ResolveGuardAdmissionRequest {
     guard_id: ResolveGuardRef,
     action_ref: ExecutionId,
+    preparation_digest: GuardPreparationProofDigest,
     scope_keys: Vec<ScopeKey>,
 }
 
@@ -283,6 +314,10 @@ impl ResolveGuardAdmissionRequest {
 
     pub fn action_ref(&self) -> &ExecutionId {
         &self.action_ref
+    }
+
+    pub fn preparation_digest(&self) -> &GuardPreparationProofDigest {
+        &self.preparation_digest
     }
 
     pub fn scope_keys(&self) -> &[ScopeKey] {
@@ -297,6 +332,7 @@ impl ResolveGuardAdmissionRequest {
         Self {
             guard_id: guard_id.clone(),
             action_ref: ready.execution_id().clone(),
+            preparation_digest: required.preparation_digest.clone(),
             scope_keys: required.scope_keys.clone(),
         }
     }
@@ -406,10 +442,11 @@ impl<'a> GuardAdmissionContext<'a> {
     }
 
     #[cfg(test)]
-    fn admit_for_test(&mut self, action_ref: ExecutionId) -> ResolveGuardAdmission {
+    pub(crate) fn admit_for_test(&mut self, action_ref: ExecutionId) -> ResolveGuardAdmission {
         let request = ResolveGuardAdmissionRequest {
             guard_id: self.guard_ref.clone(),
             action_ref,
+            preparation_digest: self.required.preparation_digest.clone(),
             scope_keys: self.required.scope_keys.clone(),
         };
         self.admit_request(&request)
@@ -463,7 +500,7 @@ pub(crate) fn test_guard_admission_context<'a>(
         scope_keys: proof.scope_keys.clone(),
     };
     GuardAdmissionContext::new(
-        ResolveGuardRef::from_host_value("guard/test-1").expect("test guard reference is valid"),
+        ResolveGuardRef::from_host_value("guard-test-1").expect("test guard reference is valid"),
         PreparedResolveGuard { proof, required },
         adapter,
     )

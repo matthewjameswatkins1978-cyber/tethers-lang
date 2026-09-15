@@ -34,9 +34,10 @@ value has no P2 semantics.
 The adapter receives one private-field `ResolveGuardAdmissionRequest` only
 after replay admission has produced the real host `ExecutionId`. Its semantic
 projection is exactly the Resolve R0 boundary: opaque guard ID, opaque action
-reference, and opaque sorted duplicate-free ScopeKeys. The preparation digest
-and planner `ActionId` remain host evidence used to build and validate the
-request; they are not Resolve concepts and do not cross this adapter boundary.
+reference, opaque preparation digest, and opaque sorted duplicate-free
+ScopeKeys. The planner `ActionId` remains host evidence used to build and
+validate the request; it is not a Resolve concept and does not cross this
+adapter boundary.
 Adapter errors map to `Indeterminate`; there is no fourth adapter state.
 
 `ActionId` names the planned logical action. `ExecutionId` names the
