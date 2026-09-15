@@ -31,8 +31,9 @@ execution-result string. Cargo uses `ureq` with rustls only.
 
 ## Decisions and assumptions
 
-The accepted Resolve contract at
-`b450305e72815d33357359c6db641d315d6b2975` is authoritative. Tethers' existing
+The accepted Resolve protocol source at
+`Resolve01/docs/TETHERS_GUARD_PROTOCOL.md` commit
+`70f86ff47cbfd38e702cdd8c1433ccd04ecb43bd` is authoritative. Tethers' existing
 JCS/SHA-256 `approval::digest` is compatible with the Resolve semantic digest
 projection. HTTPS is mandatory outside explicit loopback test construction;
 timeouts, bodies, identifiers and ScopeKeys are bounded; redirects are off.
@@ -107,5 +108,5 @@ fresh accepted main.
 
 - `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P3_LIVE_TRANSPORT.md`
 - `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P2_GUARD_ADMISSION.md`
-- `C:\dev\resolve-ai\docs\TETHERS_GUARD_PROTOCOL.md`
-- `C:\dev\resolve-ai\control_plane\tethers_guard.py`
+- `Resolve01/docs/TETHERS_GUARD_PROTOCOL.md`
+- `Resolve01/docs/TETHERS_GUARD_PROTOCOL_PROVENANCE.md`
