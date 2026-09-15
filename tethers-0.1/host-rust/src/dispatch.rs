@@ -766,6 +766,7 @@ pub struct RecordingTrail {
     pub outcome_entries: Vec<OutcomeEntry>,
     pub injected_intent_error: Option<TrailError>,
     pub injected_authorisation_error: Option<TrailError>,
+    pub injected_guard_admission_error: Option<TrailError>,
     pub injected_outcome_error: Option<TrailError>,
     pub event_log: Option<std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>>,
     pub event_admission_entries: Vec<EventAdmissionEntry>,
@@ -787,6 +788,7 @@ impl RecordingTrail {
             outcome_entries: Vec::new(),
             injected_intent_error: None,
             injected_authorisation_error: None,
+            injected_guard_admission_error: None,
             injected_outcome_error: None,
             event_log: None,
             event_admission_entries: Vec::new(),
@@ -827,6 +829,9 @@ impl Trail for RecordingTrail {
     fn append_guard_admission(&mut self, entry: &GuardAdmissionEntry) -> Result<(), TrailError> {
         if let Some(events) = &self.event_log {
             events.borrow_mut().push("trail_guard_admission");
+        }
+        if let Some(err) = self.injected_guard_admission_error.take() {
+            return Err(err);
         }
         self.guard_admission_entries.push(entry.clone());
         Ok(())
