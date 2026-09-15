@@ -482,26 +482,32 @@ mod tests {
 
     #[test]
     fn delivery_failure_preserves_known_outcome_and_recovery_state() {
-        let calls = Rc::new(Cell::new(0));
-        let mut adapter = TestAdapter {
-            calls: Rc::clone(&calls),
-            result: Err(ResolveOutcomeAdapterError),
-        };
-        let mut trail = trail();
-        let mut coordinator = ResolveOutcomeDeliveryCoordinator::new(MemoryStore::default());
-        assert!(matches!(
-            coordinator.deliver(request(ResolveOutcome::Succeeded), &mut adapter, &mut trail),
-            Ok(ResolveOutcomeDeliveryResult::Indeterminate)
-        ));
-        assert_eq!(calls.get(), 1);
-        let stored = coordinator
-            .store()
-            .current(&TethersActionRef::from_host_value("exec_p4-test").unwrap())
-            .unwrap()
-            .unwrap();
-        assert_eq!(stored.outcome(), ResolveOutcome::Succeeded);
-        assert_eq!(stored.state(), ResolveOutcomeDeliveryState::Indeterminate);
-        assert_eq!(trail.coordination_delivery_entries.len(), 2);
+        for outcome in [
+            ResolveOutcome::Succeeded,
+            ResolveOutcome::Failed,
+            ResolveOutcome::Uncertain,
+        ] {
+            let calls = Rc::new(Cell::new(0));
+            let mut adapter = TestAdapter {
+                calls: Rc::clone(&calls),
+                result: Err(ResolveOutcomeAdapterError),
+            };
+            let mut trail = trail();
+            let mut coordinator = ResolveOutcomeDeliveryCoordinator::new(MemoryStore::default());
+            assert!(matches!(
+                coordinator.deliver(request(outcome), &mut adapter, &mut trail),
+                Ok(ResolveOutcomeDeliveryResult::Indeterminate)
+            ));
+            assert_eq!(calls.get(), 1);
+            let stored = coordinator
+                .store()
+                .current(&TethersActionRef::from_host_value("exec_p4-test").unwrap())
+                .unwrap()
+                .unwrap();
+            assert_eq!(stored.outcome(), outcome);
+            assert_eq!(stored.state(), ResolveOutcomeDeliveryState::Indeterminate);
+            assert_eq!(trail.coordination_delivery_entries.len(), 2);
+        }
     }
 
     #[test]
