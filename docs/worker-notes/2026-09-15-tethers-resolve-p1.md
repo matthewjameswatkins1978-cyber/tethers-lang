@@ -8,9 +8,12 @@ Owner: `Codex`
 
 Status: `COMPLETE`
 
-Base commit: `66e8360a7247b60ccc8fb6cb447f796b922afb42`
+This note contains the original P1 acceptance record followed by the remediation
+closeout record below.
 
-Implementation checkpoint: `6be53eac120bd0ee675209c2c953641a95ca6d12`
+Base commit: `7066c9604e7062bf46529b9509dc92287e742379`
+
+Implementation checkpoint: `ffdf368ac785e9b8a57a147200ffb080d9d1555f`
 
 ## Requested outcome
 
@@ -37,29 +40,29 @@ syntax semantics.
   current provider-availability snapshot, re-evaluates effective policy, and
   revalidates action arguments against the current manifest schema. The test
   also checks unavailable-provider reconstruction fails closed while the
-  executor counter remains zero.
+  preparation route has no provider-process boundary.
 
 ## Decisions and assumptions
 
 The existing `approval::digest` is reused for JCS canonicalisation and
 SHA-256. Binding evidence commits to existing verified manifest/provider/MCP
 binding facts, configured scope binding, and the prepared provider launch
-configuration, while exposing none of those raw values in the Resolve-facing
-projection. A pre-existing current `PermissionDecision::Allow` is required;
-P1 does not create or consume policy/approval authority. Preparation itself
-rechecks current resolution and effective policy; an `Ask` result still
-requires the caller to provide the fresh Allow produced by exact approval.
+  configuration, while exposing none of those raw values in the Resolve-facing
+  projection. P1 does not create or consume policy/approval authority. The
+  preparation route rechecks current resolution and effective policy itself;
+  when the result is `Ask`, it requires the authoritative `ApprovalStore` to
+  contain an exact fresh approval for the current action.
 
 ## Evidence
 
 - Accepted starting baseline: `66e8360a7247b60ccc8fb6cb447f796b922afb42`.
 - Implementation checkpoint before review fix: `54cad2d49115dac42d2b87cf0225c1f3c2e165b8`.
-- Task packet checker passes in `COMPLETE` state at `6be53eac120bd0ee675209c2c953641a95ca6d12`.
-- `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml` passes.
-- `resolve_guard::tests`: 5 passed.
-- Prepared-runtime P1 zero-provider/reconstruction test: 1 passed.
-- `just verify` passes: engine provenance, OCaml, Rust/static, warning ratchet,
-  cross-language, protocol fixtures, MCP transcripts, and compatibility corpus.
+- Task packet checker passes in `COMPLETE` state after the remediation closeout.
+- `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --locked` passes.
+- `resolve_guard::tests`: 5 passed; prepared-runtime remediation tests: 2 passed.
+- `just verify` passes from the remediation checkout with a current engine built
+  from that checkout: OCaml, Rust/static, warning ratchet, cross-language,
+  protocol fixtures, MCP transcripts, and compatibility corpus.
 - Cargo formatter was run and its immediate diff was limited to the authorised
   Rust files; `git diff --check` passes.
 - The explicit all-target Clippy probe remains non-green because of broad
@@ -91,3 +94,55 @@ actual PR, merge when green, and confirm the resulting main SHA.
 - `docs/CAPABILITY_BRIDGE.md`
 - `docs/PROJECT_CONTROL.md`
 - `docs/RUST_ENGINEERING_GUIDE_FOR_AGENTS.md`
+
+## P1 remediation review and closeout
+
+The accepted P1 review identified two authority-boundary defects and one
+ineffective test. This remediation is based on `7066c9604e7062bf46529b9509dc92287e742379`
+on branch `codex/tethers-resolve-p1-remediation`; the implementation checkpoint
+is `ffdf368ac785e9b8a57a147200ffb080d9d1555f`.
+
+The preparation route now derives the current pinned capability and effective
+policy decision internally. It accepts no caller-supplied
+`ResolvedCapability` or `PermissionDecision`. When current policy is `Ask`, it
+requires the existing `ApprovalStore` record to be `Approved` and to exactly
+match a fresh `ApprovalProof` derived from the current action. A missing,
+pending, stale, or mismatched approval is refused.
+
+Fresh reconstruction now compares the rebuilt proof against the previous proof
+before returning. Material drift is returned as typed `EvidenceMismatch`; a
+caller cannot accidentally treat unequal fresh evidence as successful resume.
+
+The prior unused `CountingExecutor` test double was removed. The focused
+prepared-runtime test now exercises the actual preparation and reconstruction
+routes with the configured provider launch script absent, proves matching
+reconstruction and typed argument drift refusal, and verifies that no provider
+process is required by either route. The production API has no executor or
+provider-session input.
+
+Focused remediation evidence so far:
+
+- `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check` — PASS.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --locked resolve_guard::tests` — 5 passed.
+- `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --locked configured_runtime::tests::p1_preparation` — 2 passed.
+- `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --locked` — PASS.
+- task packet checker — PASS for the remediation packet while it was in
+  `IN_PROGRESS` state.
+
+Final remediation verification:
+
+- Task packet checker — PASS (`COMPLETE` state).
+- `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check` — PASS.
+- `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --locked` — PASS.
+- `just verify` — PASS; source commit `ffdf368ac785e9b8a57a147200ffb080d9d1555f`,
+  current engine SHA-256 `b29ee1da37b063914e9b4b3218a3e5ab370af901a1661830b29725d6b8fc03e1`,
+  10 PASS, 0 FAIL, 0 skipped, 0 not applicable.
+- The full Rust/cross-language suite inside `just verify` passed. A prior
+  standalone run before current-engine preparation had 22 dependent failures;
+  each stopped at the explicit missing-engine prerequisite and was not treated
+  as a product regression.
+- `git diff --check` — PASS. No OCaml/Core, syntax, Plan, provider execution,
+  replay, outcome, Resolve transport, or Resolve database changes are in scope.
+
+The remaining publication evidence is recorded in the final closeout response
+after branch, PR, and main integration checks.

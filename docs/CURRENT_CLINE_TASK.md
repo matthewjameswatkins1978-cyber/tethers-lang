@@ -1,6 +1,6 @@
-# TETHERS x RESOLVE01 - P1 Preparation Proof and ScopeKey Foundation
+# TETHERS x RESOLVE01 - P1 Preparation Proof Remediation
 
-Task: `TETHERS x RESOLVE01 / P1`
+Task: `TETHERS x RESOLVE01 / P1 remediation`
 
 Control contract: `1`
 
@@ -10,25 +10,24 @@ Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Implement the Rust-host preparation evidence substrate frozen by P0. Add controlled GuardPreparationProof and opaque ScopeKey types, deterministic current-source evidence, fresh reconstruction, exact comparison, bounded mismatch reasons, and the ResolveGuardRequired projection. Do not contact Resolve or change Tethers product semantics.`
+Route: `Repair the accepted P1 Rust-host preparation boundary identified by review: preparation must derive current capability/policy authority itself, require authoritative exact approval state for current Ask decisions, and make reconstruction compare before returning. Add direct focused evidence for zero provider/process invocation. Do not contact Resolve or change Tethers product semantics.`
 
-Base commit: `66e8360a7247b60ccc8fb6cb447f796b922afb42`
+Base commit: `7066c9604e7062bf46529b9509dc92287e742379`
 
-Implementation checkpoint: `6be53eac120bd0ee675209c2c953641a95ca6d12`
+Implementation checkpoint: `ffdf368ac785e9b8a57a147200ffb080d9d1555f`
 
 Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`
 
 Suggested branch:
 
-`codex/tethers-resolve-p1-preparation-proof`
+`codex/tethers-resolve-p1-remediation`
 
 ## Objective
 
-Produce deterministic, machine-verifiable evidence of the Tethers capability,
-manifest, provider, validated arguments, resolved scope, binding, and current
-policy/approval state needed by a future Resolve guard request. Preparation is
-evidence only; it grants no permission, performs no provider work, and does not
-implement guard admission.
+Repair P1 so deterministic evidence can only be produced from current
+Tethers-owned capability, manifest/provider, schema, scope, policy, and
+approval authorities. Preparation remains evidence only; it grants no
+permission, performs no provider work, and does not implement guard admission.
 
 ## Relevant background and existing behaviour
 
@@ -43,29 +42,44 @@ preparation evidence over those existing authorities.
 
 ## Required behaviour
 
-1. Add a controlled `GuardPreparationProof` containing every P0-required field:
+This remediation preserves the accepted P1 substrate and changes only its
+freshness/authority boundary:
+
+1. Preparation must not accept caller-supplied `ResolvedCapability` or
+   `PermissionDecision` as authority. It resolves the current capability and
+   current effective policy itself.
+2. When current policy is `Ask`, preparation requires the existing authoritative
+   `ApprovalStore` record to be `Approved` and to exactly match a fresh proof
+   derived from the current action. A cloned or stale `Allow` is unusable.
+3. Reconstruction must rebuild current evidence and perform exact comparison
+   internally; it must refuse mismatches rather than return fresh evidence for
+   callers to compare optionally.
+4. Focused evidence must exercise the real preparation boundary and prove no
+   provider process or executor boundary is entered.
+
+5. Preserve the existing controlled `GuardPreparationProof` containing every P0-required field:
    format version, evaluation/plan/action identity, capability identity,
    argument/manifest/provider identity, resolved scope digest, opaque ScopeKeys,
    and binding digest.
-2. Add an opaque, validated `ScopeKey` whose deterministic projection is
+6. Preserve the opaque, validated `ScopeKey` whose deterministic projection is
    derived only from already resolved binding-owned Tethers scope.
-3. Support the current safe `PathPrefix` and explicit `Unrestricted` forms;
+7. Support the current safe `PathPrefix` and explicit `Unrestricted` forms;
    refuse `Repository`, `Calendar`, and `ScopeNotEstablished` without hashing
    raw input or downgrading to unrestricted.
-4. Reuse the existing JCS and SHA-256 digest authority. Do not create a second
+8. Reuse the existing JCS and SHA-256 digest authority. Do not create a second
    canonicalisation or hashing stack.
-5. Add `ResolveGuardRequired` containing only preparation identity, Tethers
+9. Preserve `ResolveGuardRequired` containing only preparation identity, Tethers
    action identity, and opaque ScopeKeys.
-6. Expose a bounded host-owned preparation route after exact capability,
+10. Expose a bounded host-owned preparation route after exact capability,
    manifest/provider, scope, policy, and approval checks. It must not dispatch,
    touch replay, record a provider outcome, or write a Result Anchor.
-7. Reconstruct fresh evidence from current host state and compare every
+11. Reconstruct fresh evidence from current host state and compare every
    material proof field exactly. Any drift returns a typed refusal reason.
-8. Keep raw arguments, credentials, raw scope values, Resolve state, and policy
+12. Keep raw arguments, credentials, raw scope values, Resolve state, and policy
    internals out of proof and Resolve-facing projections and diagnostics.
-9. Add focused deterministic, adversarial, drift, unsupported-version, and
+13. Preserve focused deterministic, adversarial, drift, unsupported-version, and
    zero-provider-invocation tests.
-10. Document the actual implementation contract for P2.
+14. Document the actual implementation contract for P2 and this remediation.
 
 ## Frozen decisions and invariants
 
@@ -99,6 +113,15 @@ preparation evidence over those existing authorities.
    decisions, unresolved questions, and stop conditions.
 10. The architecture note accurately records the P1 implementation and the
     exact bounded input contract handed to P2.
+11. Preparation derives current capability and effective policy state internally
+    rather than trusting caller-supplied resolved or permission values.
+12. Current `Ask` policy requires an authoritative exact `ApprovalStore` record
+    in `Approved` state; missing, pending, stale, or mismatched approval fails.
+13. Reconstruction performs exact comparison before returning; material drift
+    is returned as typed evidence mismatch and never as successful fresh state.
+14. The zero-provider test exercises the real preparation/reconstruction route
+    with an absent provider launch script and proves no process boundary is
+    required.
 
 ## Relevant components
 
