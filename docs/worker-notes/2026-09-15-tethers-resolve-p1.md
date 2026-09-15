@@ -134,7 +134,7 @@ Final remediation verification:
 - Task packet checker — PASS (`COMPLETE` state).
 - `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check` — PASS.
 - `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --locked` — PASS.
-- `just verify` — PASS; source commit `ffdf368ac785e9b8a57a147200ffb080d9d1555f`,
+- `just verify` — PASS; source commit `b4d44f8515094dddabfe228bd39c8f5f944ea02b`,
   current engine SHA-256 `b29ee1da37b063914e9b4b3218a3e5ab370af901a1661830b29725d6b8fc03e1`,
   10 PASS, 0 FAIL, 0 skipped, 0 not applicable.
 - The full Rust/cross-language suite inside `just verify` passed. A prior
