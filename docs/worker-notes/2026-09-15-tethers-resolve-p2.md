@@ -3,9 +3,9 @@
 Task: `TETHERS x RESOLVE01 / P2 - Guard Admission Boundary`
 Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `Codex`
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 Base commit: `fab258663af363b6e5902ea3bbe5d3dd8de61678`
-Implementation checkpoint: `fab258663af363b6e5902ea3bbe5d3dd8de61678`
+Implementation checkpoint: `be2606e3efb68be07a9a79283df9b6a922e2f3b2`
 
 ## Requested outcome
 
@@ -50,8 +50,8 @@ provider semantics, Resolve transport or database changes.
 
 ## Implementation checkpoint
 
-The first coherent implementation is currently in the cleanly formatted
-worktree and will be recorded as a committed SHA before the packet is closed.
+The first coherent implementation was committed as
+`be2606e3efb68be07a9a79283df9b6a922e2f3b2`.
 
 ## Decisions and assumptions
 
@@ -106,8 +106,8 @@ function; ordinary execution cannot opt in from manifest or provider data.
 
 ## Smallest next action
 
-Run the final diff review, record the committed implementation checkpoint,
-close the packet honestly, and rerun the clean authoritative verification.
+The implementation checkpoint is committed. The clean-tree authoritative
+verification and final branch publication remain the closeout steps.
 
 ## References
 
