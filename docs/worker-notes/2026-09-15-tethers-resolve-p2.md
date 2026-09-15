@@ -5,7 +5,7 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 Owner: `Codex`
 Status: `COMPLETE`
 Base commit: `fab258663af363b6e5902ea3bbe5d3dd8de61678`
-Implementation checkpoint: `be2606e3efb68be07a9a79283df9b6a922e2f3b2`
+Implementation checkpoint: `be2606e9233455b536cee8b33dda8a8b35a3240e`
 
 ## Requested outcome
 
@@ -51,7 +51,7 @@ provider semantics, Resolve transport or database changes.
 ## Implementation checkpoint
 
 The first coherent implementation was committed as
-`be2606e3efb68be07a9a79283df9b6a922e2f3b2`.
+`be2606e9233455b536cee8b33dda8a8b35a3240e`.
 
 ## Decisions and assumptions
 
