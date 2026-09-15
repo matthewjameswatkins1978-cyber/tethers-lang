@@ -87,6 +87,14 @@ pub struct PreparedRuntime {
     /// Validated N >= 1 from configuration, defaults to
     /// `DEFAULT_MAX_ACTIVE_TOGETHER_INVOCATIONS` (2).
     max_active_together_invocations: usize,
+    authority: Option<PreparedAuthorityConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedAuthorityConfig {
+    pub endpoint: String,
+    pub principal_id: String,
+    pub required_capabilities: Vec<(String, u32)>,
 }
 
 /// One Tether source file loaded into memory.
@@ -256,6 +264,21 @@ impl PreparedRuntime {
     /// group execution.  Validated N >= 1 from configuration.
     pub fn max_active_together_invocations(&self) -> usize {
         self.max_active_together_invocations
+    }
+
+    pub fn authority(&self) -> Option<&PreparedAuthorityConfig> {
+        self.authority.as_ref()
+    }
+
+    pub fn authority_required(&self, name: &str, version: u32) -> bool {
+        self.authority.as_ref().is_some_and(|config| {
+            config
+                .required_capabilities
+                .iter()
+                .any(|(required_name, required_version)| {
+                    required_name == name && *required_version == version
+                })
+        })
     }
 
     /// All prepared capabilities across all providers.
@@ -1054,6 +1077,19 @@ pub fn prepare_runtime(
         policy,
         trusted_store,
         max_active_together_invocations: loaded.config.max_active_together_invocations,
+        authority: loaded
+            .config
+            .authority
+            .as_ref()
+            .map(|authority| PreparedAuthorityConfig {
+                endpoint: authority.endpoint.clone(),
+                principal_id: authority.principal_id.clone(),
+                required_capabilities: authority
+                    .required_capabilities
+                    .iter()
+                    .map(|required| (required.name.clone(), required.version))
+                    .collect(),
+            }),
     })
 }
 

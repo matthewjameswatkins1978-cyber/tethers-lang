@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Duration;
 use tethers_reference_host::child_process;
 use tethers_reference_host::engine_stdio::{EngineError, EngineSession, PlannerResponseWire};
@@ -393,6 +394,7 @@ pub struct HostExecutionService<'a> {
     engine_path: &'a Path,
     trail_path: &'a Path,
     host_data_root: Option<&'a Path>,
+    authority: Option<Arc<dyn crate::lantern_authority::AuthorityProvider>>,
 }
 
 /// Execute one already-planned Action through the existing host boundary using
@@ -483,7 +485,35 @@ impl<'a> HostExecutionService<'a> {
             engine_path,
             trail_path,
             host_data_root,
+            authority: None,
         }
+    }
+
+    pub fn with_authority(
+        mut self,
+        authority: Arc<dyn crate::lantern_authority::AuthorityProvider>,
+    ) -> Self {
+        self.authority = Some(authority);
+        self
+    }
+
+    /// Build the host-configured Lantern provider without allowing planner
+    /// input to choose or disable it.  Missing configuration remains a
+    /// fail-closed unavailable state for any capability marked required.
+    pub fn with_authority_if_configured(mut self, runtime: &PreparedRuntime) -> Self {
+        if let Some(config) = runtime.authority() {
+            if let Ok(token) = std::env::var("LANTERN_TETHERS_AUDIT_TOKEN") {
+                if let Ok(provider) =
+                    crate::lantern_authority::LanternHttpAuthorityProvider::from_config(
+                        config.endpoint.clone(),
+                        token,
+                    )
+                {
+                    self.authority = Some(Arc::new(provider));
+                }
+            }
+        }
+        self
     }
 
     /// Expose the runtime reference for benchmark setup.
@@ -1313,6 +1343,162 @@ impl<'a> HostExecutionService<'a> {
         }
     }
 
+    fn authority_precheck(
+        &self,
+        proposed: &policy::ProposedAction,
+        resolved: &ResolvedCapability,
+        trail: &mut dyn dispatch::Trail,
+    ) -> Result<Option<(crate::lantern_authority::AuthorityRequest, String)>, ExecutionServiceResult>
+    {
+        if !self
+            .runtime
+            .authority_required(resolved.capability_name(), resolved.capability_version())
+        {
+            return Ok(None);
+        }
+        let Some(config) = self.runtime.authority() else {
+            return Err(ExecutionServiceResult::Unavailable {
+                evaluation_id: proposed.evaluation_id.clone(),
+                reason: "authority-required capability has no host authority configuration"
+                    .to_owned(),
+            });
+        };
+        let Some(provider) = self.authority.as_ref() else {
+            return Err(ExecutionServiceResult::Unavailable {
+                evaluation_id: proposed.evaluation_id.clone(),
+                reason: "authority-required capability has no Lantern authority provider"
+                    .to_owned(),
+            });
+        };
+        let scope = self
+            .runtime
+            .resolve_action_scope(proposed)
+            .map_err(|assessment| ExecutionServiceResult::Denied {
+                evaluation_id: proposed.evaluation_id.clone(),
+                action_id: proposed.action_id.clone(),
+                reason: format!("authority scope unavailable: {assessment:?}"),
+                execution_id: None,
+            })?;
+        let request = crate::lantern_authority::AuthorityRequest::from_resolved(
+            proposed,
+            resolved,
+            &scope,
+            &config.principal_id,
+        );
+        let verdict =
+            provider
+                .check(&request)
+                .map_err(|error| ExecutionServiceResult::Unavailable {
+                    evaluation_id: proposed.evaluation_id.clone(),
+                    reason: format!("Lantern authority check unavailable: {error}"),
+                })?;
+        let (decision, reason_code, grant_id) = match &verdict {
+            crate::lantern_authority::AuthorityVerdict::Allow { grant_id }
+                if !grant_id.is_empty() =>
+            {
+                (
+                    "ALLOW".to_owned(),
+                    "AUTHORITY_ALLOWED".to_owned(),
+                    Some(grant_id.clone()),
+                )
+            }
+            crate::lantern_authority::AuthorityVerdict::Allow { .. } => {
+                return Err(ExecutionServiceResult::Unavailable {
+                    evaluation_id: proposed.evaluation_id.clone(),
+                    reason: "Lantern authority returned an empty grant id".to_owned(),
+                });
+            }
+            crate::lantern_authority::AuthorityVerdict::Deny { reason_code } => {
+                ("DENY".to_owned(), reason_code.clone(), None)
+            }
+            crate::lantern_authority::AuthorityVerdict::Unavailable { reason } => {
+                return Err(ExecutionServiceResult::Unavailable {
+                    evaluation_id: proposed.evaluation_id.clone(),
+                    reason: reason.clone(),
+                });
+            }
+        };
+        trail
+            .append_authorisation(&dispatch::AuthorisationEntry {
+                execution_id: format!("authority-pending/{}", proposed.action_id),
+                action_id: proposed.action_id.clone(),
+                capability_name: resolved.capability_name().to_owned(),
+                capability_version: resolved.capability_version(),
+                provider_identity: resolved.provider_identity().to_owned(),
+                manifest_digest: resolved.manifest_digest().to_owned(),
+                kind: "lantern_authority".to_owned(),
+                reason_code: reason_code.clone(),
+                argument_digest: crate::lantern_authority::argument_digest(&proposed.arguments),
+            })
+            .map_err(|error| ExecutionServiceResult::AuditFailed {
+                evaluation_id: proposed.evaluation_id.clone(),
+                action_id: proposed.action_id.clone(),
+                reason: format!("Lantern authority Trail decision recording failed: {error}"),
+                execution_id: None,
+            })?;
+        provider
+            .record_receipt(&crate::lantern_authority::decision_receipt(
+                request.clone(),
+                &verdict,
+            ))
+            .map_err(|error| ExecutionServiceResult::AuditFailed {
+                evaluation_id: proposed.evaluation_id.clone(),
+                action_id: proposed.action_id.clone(),
+                reason: format!("Lantern authority decision receipt failed: {error}"),
+                execution_id: None,
+            })?;
+        if decision == "DENY" {
+            return Err(ExecutionServiceResult::Denied {
+                evaluation_id: proposed.evaluation_id.clone(),
+                action_id: proposed.action_id.clone(),
+                reason: reason_code,
+                execution_id: None,
+            });
+        }
+        Ok(Some((
+            request,
+            grant_id.expect("allow grant id checked above"),
+        )))
+    }
+
+    fn authority_post_outcome(
+        &self,
+        proposed: &policy::ProposedAction,
+        request: crate::lantern_authority::AuthorityRequest,
+        grant_id: String,
+        result: &crate::SharedExecutionResult,
+    ) -> Result<(), ExecutionServiceResult> {
+        let Some(provider) = self.authority.as_ref() else {
+            return Ok(());
+        };
+        let (outcome, reason) = match result.outcome {
+            crate::SharedExecutionOutcome::Completed => ("SUCCESS", None),
+            crate::SharedExecutionOutcome::Failed => {
+                ("FAILURE", Some("PROVIDER_FAILURE".to_owned()))
+            }
+            crate::SharedExecutionOutcome::Uncertain => {
+                ("UNCERTAIN", Some("PROVIDER_UNCERTAIN".to_owned()))
+            }
+            _ => return Ok(()),
+        };
+        provider
+            .record_receipt(&crate::lantern_authority::outcome_receipt(
+                request,
+                grant_id,
+                result.execution_id.clone(),
+                outcome,
+                reason,
+            ))
+            .map_err(|error| ExecutionServiceResult::AuditFailed {
+                evaluation_id: proposed.evaluation_id.clone(),
+                action_id: proposed.action_id.clone(),
+                reason: format!(
+                    "Lantern authority outcome receipt sync failed (no retry): {error}"
+                ),
+                execution_id: result.execution_id.clone(),
+            })
+    }
+
     /// Run one planned Action through the full production boundary: scope
     /// assessment, effective policy (Deny / Ask / Unavailable / Allow),
     /// exact capability resolution, retained MCP session and catalogue
@@ -1407,6 +1593,7 @@ impl<'a> HostExecutionService<'a> {
         let resolved = crate::bench_timing::timed("capability_resolve", || {
             self.resolve_exact_capability(&proposed, provider_availability)
         })?;
+        let authority_binding = self.authority_precheck(&proposed, &resolved, trail)?;
         let binding = &resolved.manifest().manifest().binding;
         if binding.kind != BindingKind::Mcp {
             return Err(ExecutionServiceResult::Denied {
@@ -1503,7 +1690,12 @@ impl<'a> HostExecutionService<'a> {
             )
         });
         match shared_result {
-            Ok(result) => Ok(result),
+            Ok(result) => {
+                if let Some((request, grant_id)) = authority_binding {
+                    self.authority_post_outcome(&proposed, request, grant_id, &result)?;
+                }
+                Ok(result)
+            }
             Err(error) => Err(ExecutionServiceResult::AuditFailed {
                 evaluation_id,
                 action_id,
@@ -1756,6 +1948,7 @@ pub(crate) enum GroupMemberState {
         prepared: crate::application::PreparedInvoke,
         admission: Option<Box<dyn crate::replay_runtime::ReplayAdmissionGuard>>,
         deadline: Duration,
+        authority: Option<(crate::lantern_authority::AuthorityRequest, String)>,
     },
 
     /// Worker thread has been launched.  Coordinator retains the
@@ -1768,6 +1961,7 @@ pub(crate) enum GroupMemberState {
         ready: Option<dispatch::DispatchReadyAction>,
         prepared: Option<crate::application::PreparedInvoke>,
         admission: Option<Box<dyn crate::replay_runtime::ReplayAdmissionGuard>>,
+        authority: Option<(crate::lantern_authority::AuthorityRequest, String)>,
     },
 
     /// Owns no domain object while a Prepared member is being moved into the
@@ -2130,6 +2324,17 @@ pub(crate) fn execute_group_concurrent_with_limit(
             continue;
         }
 
+        let authority_binding = match service.authority_precheck(&proposed, &resolved, trail) {
+            Ok(binding) => binding,
+            Err(result) => {
+                member_states.push(GroupMemberState::PreparationTerminal {
+                    action_id,
+                    step: crate::plan_execution::ActionStep::Stopped(result),
+                });
+                continue;
+            }
+        };
+
         // Ensure provider session exists.
         if provider_sessions
             .get(resolved.provider_identity())
@@ -2215,6 +2420,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                     prepared,
                     admission: Some(admission),
                     deadline: Duration::from_millis(resolved.manifest().manifest().timeout_ms),
+                    authority: authority_binding,
                 });
             }
             Err(result) => {
@@ -2258,27 +2464,37 @@ pub(crate) fn execute_group_concurrent_with_limit(
                 };
                 let prior = std::mem::replace(&mut member_states[idx], transition);
 
-                let (action_index, action_id, position, ready, prepared, mut admission, deadline) =
-                    match prior {
-                        GroupMemberState::Prepared {
-                            action_index,
-                            action_id,
-                            semantic_position,
-                            ready,
-                            prepared,
-                            admission: Some(admission),
-                            deadline,
-                        } => (
-                            action_index,
-                            action_id,
-                            semantic_position,
-                            ready,
-                            prepared,
-                            admission,
-                            deadline,
-                        ),
-                        _ => unreachable!("only Prepared members enter the launch transition"),
-                    };
+                let (
+                    action_index,
+                    action_id,
+                    position,
+                    ready,
+                    prepared,
+                    mut admission,
+                    deadline,
+                    authority_binding,
+                ) = match prior {
+                    GroupMemberState::Prepared {
+                        action_index,
+                        action_id,
+                        semantic_position,
+                        ready,
+                        prepared,
+                        admission: Some(admission),
+                        deadline,
+                        authority,
+                    } => (
+                        action_index,
+                        action_id,
+                        semantic_position,
+                        ready,
+                        prepared,
+                        admission,
+                        deadline,
+                        authority,
+                    ),
+                    _ => unreachable!("only Prepared members enter the launch transition"),
+                };
 
                 let deadline_start = clock.now();
                 let remaining = match crate::outcome::remaining_until_deadline(
@@ -2358,6 +2574,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                     ready: Some(ready),
                     prepared: Some(prepared),
                     admission: Some(admission),
+                    authority: authority_binding,
                 };
 
                 let worker_input = WorkerInput {
@@ -2390,6 +2607,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                         dispatch::DispatchReadyAction,
                         crate::application::PreparedInvoke,
                         Box<dyn crate::replay_runtime::ReplayAdmissionGuard>,
+                        Option<(crate::lantern_authority::AuthorityRequest, String)>,
                     )> = None;
 
                     for state in member_states.iter_mut() {
@@ -2400,6 +2618,7 @@ pub(crate) fn execute_group_concurrent_with_limit(
                             ready,
                             prepared,
                             admission,
+                            authority,
                             ..
                         } = state
                         {
@@ -2418,17 +2637,25 @@ pub(crate) fn execute_group_concurrent_with_limit(
                                     taken_ready,
                                     taken_prepared,
                                     taken_admission,
+                                    authority.take(),
                                 ));
                                 break;
                             }
                         }
                     }
 
-                    let (action_index, action_id, _position, ready, prepared, mut admission) =
-                        match found {
-                            Some(v) => v,
-                            None => continue,
-                        };
+                    let (
+                        action_index,
+                        action_id,
+                        _position,
+                        ready,
+                        prepared,
+                        mut admission,
+                        authority_binding,
+                    ) = match found {
+                        Some(v) => v,
+                        None => continue,
+                    };
 
                     let response_trail_len_before = response
                         .get("trail")
@@ -2446,6 +2673,35 @@ pub(crate) fn execute_group_concurrent_with_limit(
                         false,
                     ) {
                         Ok(mut result) => {
+                            if let Some((request, grant_id)) = authority_binding {
+                                let proposed =
+                                    crate::extract_proposed_action_at(response, action_index);
+                                if let Ok(proposed) = proposed {
+                                    if let Err(error) = service.authority_post_outcome(
+                                        &proposed, request, grant_id, &result,
+                                    ) {
+                                        launches_halted = true;
+                                        let step =
+                                            crate::plan_execution::ActionStep::Stopped(error);
+                                        for state in member_states.iter_mut() {
+                                            if let GroupMemberState::Launched {
+                                                action_index: idx,
+                                                ..
+                                            } = state
+                                            {
+                                                if *idx == action_index {
+                                                    *state = GroupMemberState::Terminal {
+                                                        action_id: action_id.clone(),
+                                                        step,
+                                                    };
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                }
+                            }
                             let current_boundary_audit_failed = response
                                 .get("trail")
                                 .and_then(Value::as_array)

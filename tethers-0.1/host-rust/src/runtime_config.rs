@@ -50,6 +50,19 @@ pub struct RuntimeConfig {
     pub tether_set: TetherSetConfig,
     pub providers: Vec<ProviderBindingConfig>,
     pub policy: PolicyConfig,
+    #[serde(default)]
+    pub authority: Option<AuthorityConfig>,
+}
+
+/// Host-owned Lantern authority bridge configuration.  It is deliberately
+/// outside planner input and cannot be disabled by an Action or provider.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorityConfig {
+    pub endpoint: String,
+    pub principal_id: String,
+    #[serde(default)]
+    pub required_capabilities: Vec<CapabilityRequirementConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -348,6 +361,32 @@ fn json_pointer_child(parent: &str, segment: &str) -> String {
 fn validate(config: &RuntimeConfig) -> Result<(), RuntimeConfigError> {
     validate_format_version(config)?;
     validate_max_active_together_invocations(config)?;
+    if let Some(authority) = &config.authority {
+        if authority.endpoint.trim().is_empty() || !authority.endpoint.starts_with("http://") {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "authority endpoint must be a non-empty http:// URL",
+                "/authority/endpoint",
+            ));
+        }
+        if authority.principal_id.trim().is_empty() {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "authority principal_id cannot be blank",
+                "/authority/principal_id",
+            ));
+        }
+        let mut seen = HashSet::new();
+        for (index, required) in authority.required_capabilities.iter().enumerate() {
+            if !seen.insert((required.name.clone(), required.version)) {
+                return Err(RuntimeConfigError::with_field(
+                    RuntimeConfigErrorCode::DuplicateEntry,
+                    "authority required capability is duplicated",
+                    format!("/authority/required_capabilities/{index}"),
+                ));
+            }
+        }
+    }
     validate_tether_set(&config.tether_set)?;
     validate_providers(&config.providers)?;
     validate_policy(&config.policy)?;
