@@ -9,7 +9,7 @@ use crate::approval;
 use crate::configured_runtime::PreparedRuntime;
 use crate::manifest::{BindingKind, IdentitySource};
 use crate::policy::{PermissionDecision, ProposedAction, ScopeAssessment};
-use crate::resolver::ResolvedCapability;
+use crate::resolver::{self, ProviderAvailability, ResolvedCapability};
 use serde_json::{json, Value};
 use std::fmt;
 
@@ -384,8 +384,33 @@ pub fn prepare_resolve_guard_evidence(
     runtime: &PreparedRuntime,
     action: &ProposedAction,
     resolved: &ResolvedCapability,
+    availability: &ProviderAvailability,
     decision: &PermissionDecision,
 ) -> Result<PreparedResolveGuard, GuardPreparationError> {
+    let current = resolver::resolve_capability(
+        runtime.trusted_store(),
+        availability,
+        &action.capability_name,
+        action
+            .bridge_capability_version
+            .ok_or(GuardPreparationError::MissingBridgePin(
+                "bridge_capability_version",
+            ))?,
+        action.bridge_provider_identity.as_deref(),
+    )
+    .map_err(|_| GuardPreparationError::BindingUnavailable)?;
+    if current.identity() != resolved.identity()
+        || current.provider_identity() != resolved.provider_identity()
+        || current.manifest_digest() != resolved.manifest_digest()
+    {
+        return Err(GuardPreparationError::BindingUnavailable);
+    }
+    crate::validation::validate_against_schema(
+        &current.manifest().manifest().input_schema,
+        &action.arguments,
+    )
+    .map_err(|_| GuardPreparationError::InvalidArguments)?;
+
     let scope = runtime
         .resolve_action_scope(action)
         .map_err(|assessment| match assessment {
@@ -407,7 +432,25 @@ pub fn prepare_resolve_guard_evidence(
                 && cap.verified_manifest.verified_digest() == resolved.manifest_digest()
         })
         .ok_or(GuardPreparationError::BindingUnavailable)?;
-    prepare_from_parts(action, resolved, decision, &scope, prepared.0, prepared.1)
+    let policy_evaluation = crate::policy::evaluate_effective_policy(
+        action,
+        runtime.requirements(),
+        runtime.trusted_store(),
+        availability,
+        runtime.policy(),
+        if scope.is_within_scope() {
+            ScopeAssessment::WithinScope
+        } else {
+            ScopeAssessment::ScopeViolation
+        },
+    );
+    if matches!(
+        policy_evaluation.decision,
+        PermissionDecision::Deny | PermissionDecision::Unavailable
+    ) {
+        return Err(GuardPreparationError::NotAuthorised);
+    }
+    prepare_from_parts(action, &current, decision, &scope, prepared.0, prepared.1)
 }
 
 /// Rebuilds all evidence from current Tethers state.  The previous proof is
@@ -418,10 +461,11 @@ pub fn reconstruct_resolve_guard_evidence(
     runtime: &PreparedRuntime,
     action: &ProposedAction,
     resolved: &ResolvedCapability,
+    availability: &ProviderAvailability,
     decision: &PermissionDecision,
 ) -> Result<PreparedResolveGuard, GuardPreparationError> {
     let _ = previous;
-    prepare_resolve_guard_evidence(runtime, action, resolved, decision)
+    prepare_resolve_guard_evidence(runtime, action, resolved, availability, decision)
 }
 
 fn prepare_from_parts(

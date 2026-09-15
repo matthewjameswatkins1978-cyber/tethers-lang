@@ -3926,7 +3926,11 @@ mod tests {
 
             let mut executor = CountingExecutor { calls: 0 };
             let prepared_guard = crate::resolve_guard::prepare_resolve_guard_evidence(
-                prepared, &action, &resolved, &decision,
+                prepared,
+                &action,
+                &resolved,
+                &availability,
+                &decision,
             )
             .unwrap();
             assert_eq!(executor.calls, 0);
@@ -3937,9 +3941,23 @@ mod tests {
                     prepared,
                     &invalid_action,
                     &resolved,
+                    &availability,
                     &decision,
                 ),
                 Err(crate::resolve_guard::GuardPreparationError::InvalidArguments)
+            );
+            assert_eq!(executor.calls, 0);
+            let unavailable = crate::resolver::ProviderAvailability::empty();
+            assert_eq!(
+                crate::resolve_guard::reconstruct_resolve_guard_evidence(
+                    prepared_guard.proof(),
+                    prepared,
+                    &action,
+                    &resolved,
+                    &unavailable,
+                    &decision,
+                ),
+                Err(crate::resolve_guard::GuardPreparationError::BindingUnavailable)
             );
             assert_eq!(executor.calls, 0);
             let required_debug = format!("{:?}", prepared_guard.required());
@@ -3949,6 +3967,7 @@ mod tests {
                 prepared,
                 &action,
                 &resolved,
+                &availability,
                 &decision,
             )
             .unwrap();

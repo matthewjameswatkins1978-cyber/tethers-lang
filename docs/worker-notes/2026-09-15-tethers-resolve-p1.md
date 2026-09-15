@@ -32,12 +32,12 @@ syntax semantics.
   scoped P1 packet.
 - Added focused unit tests and a prepared-runtime zero-provider-invocation
   test.
-- Independent review identified a missing preparation-boundary input-schema
-  check and evidence wording that could be read as stronger than the counting
-  test proved. The route now revalidates action arguments against the resolved
-  manifest schema; the test documents compile-time executor separation and
-  checks the counter remains zero for valid, invalid, matching, and
-  reconstruction paths.
+- Independent review identified missing freshness checks at the preparation
+  boundary. The route now re-resolves the exact pinned capability through the
+  current provider-availability snapshot, re-evaluates effective policy, and
+  revalidates action arguments against the current manifest schema. The test
+  also checks unavailable-provider reconstruction fails closed while the
+  executor counter remains zero.
 
 ## Decisions and assumptions
 
@@ -45,8 +45,10 @@ The existing `approval::digest` is reused for JCS canonicalisation and
 SHA-256. Binding evidence commits to existing verified manifest/provider/MCP
 binding facts, configured scope binding, and the prepared provider launch
 configuration, while exposing none of those raw values in the Resolve-facing
-projection. A pre-existing `PermissionDecision::Allow` is required; P1 does
-not create policy or approval authority.
+projection. A pre-existing current `PermissionDecision::Allow` is required;
+P1 does not create or consume policy/approval authority. Preparation itself
+rechecks current resolution and effective policy; an `Ask` result still
+requires the caller to provide the fresh Allow produced by exact approval.
 
 ## Evidence
 

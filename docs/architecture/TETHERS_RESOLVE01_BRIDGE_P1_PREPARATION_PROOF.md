@@ -23,15 +23,21 @@ prepare_resolve_guard_evidence(
     &PreparedRuntime,
     &ProposedAction,
     &ResolvedCapability,
+    &ProviderAvailability,
     &PermissionDecision,
 ) -> PreparedResolveGuard
 ```
 
-`PermissionDecision::Allow` must already exist. The route also revalidates the
-complete action against the resolved capability input schema. It does not
-manufacture policy or approval authority. `reconstruct_resolve_guard_evidence`
-reruns the same route against current runtime inputs; it does not copy fields
-out of the old proof.
+`PermissionDecision::Allow` must already exist as the result of the current
+host approval route; P1 does not manufacture or consume approval. The route
+also resolves the exact pinned capability again through the supplied current
+`ProviderAvailability`, re-evaluates effective policy against the prepared
+runtime, and revalidates the complete action against the current capability
+input schema. An unavailable provider or current deny/unavailable policy result
+fails closed before evidence is produced. `reconstruct_resolve_guard_evidence`
+reruns those authorities against current runtime inputs; it does not copy
+fields out of the old proof. For an `Ask` result, callers must supply the new
+`Allow` produced by the current exact-approval route.
 
 ## GuardPreparationProof
 
