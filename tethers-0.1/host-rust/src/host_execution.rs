@@ -9911,8 +9911,7 @@ mod tests {
     impl crate::resolve_guard::ResolveGuardAdapter for P2GroupRejectAdapter {
         fn admit_guard(
             &mut self,
-            _guard_ref: &crate::resolve_guard::ResolveGuardRef,
-            _required: &crate::resolve_guard::ResolveGuardRequired,
+            _request: &crate::resolve_guard::ResolveGuardAdmissionRequest,
         ) -> Result<
             crate::resolve_guard::ResolveGuardAdmission,
             crate::resolve_guard::ResolveGuardAdapterError,

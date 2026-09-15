@@ -50,11 +50,21 @@ impl ExecutionId {
     pub(crate) fn from_replay(value: &str) -> Self {
         Self(value.to_owned())
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Caller-supplied stable action identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionId(pub String);
+
+impl ActionId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Semantic position
@@ -751,6 +761,8 @@ pub struct RecordingTrail {
     pub authorisation_entries: Vec<AuthorisationEntry>,
     pub guard_admission_entries: Vec<GuardAdmissionEntry>,
     pub coordination_delivery_entries: Vec<CoordinationDeliveryEntry>,
+    pub coordination_delivery_calls: usize,
+    pub fail_coordination_delivery_on: Option<usize>,
     pub outcome_entries: Vec<OutcomeEntry>,
     pub injected_intent_error: Option<TrailError>,
     pub injected_authorisation_error: Option<TrailError>,
@@ -770,6 +782,8 @@ impl RecordingTrail {
             authorisation_entries: Vec::new(),
             guard_admission_entries: Vec::new(),
             coordination_delivery_entries: Vec::new(),
+            coordination_delivery_calls: 0,
+            fail_coordination_delivery_on: None,
             outcome_entries: Vec::new(),
             injected_intent_error: None,
             injected_authorisation_error: None,
@@ -822,8 +836,14 @@ impl Trail for RecordingTrail {
         &mut self,
         entry: &CoordinationDeliveryEntry,
     ) -> Result<(), TrailError> {
+        self.coordination_delivery_calls += 1;
         if let Some(events) = &self.event_log {
             events.borrow_mut().push("trail_coordination_delivery");
+        }
+        if self.fail_coordination_delivery_on == Some(self.coordination_delivery_calls) {
+            return Err(TrailError::WriteFailed(
+                "injected coordination delivery failure".to_owned(),
+            ));
         }
         self.coordination_delivery_entries.push(entry.clone());
         Ok(())

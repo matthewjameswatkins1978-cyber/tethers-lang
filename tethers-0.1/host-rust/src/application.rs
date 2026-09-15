@@ -2574,12 +2574,7 @@ fn execute_boundary_impl(
     // be asked.  The request is already rebuilt from current Tethers-owned P1
     // evidence; Resolve can only coordinate the next step.
     if let Some(guard) = guard.as_deref_mut() {
-        let action_matches = guard.required().action_id() == ready.action_id().0;
-        let admission = if action_matches {
-            Some(guard.admit())
-        } else {
-            None
-        };
+        let admission = Some(guard.admit(&ready));
         let outcome_name = match admission {
             Some(crate::resolve_guard::ResolveGuardAdmission::Admitted) => "admitted",
             Some(crate::resolve_guard::ResolveGuardAdmission::Rejected) => "rejected",
@@ -2588,8 +2583,8 @@ fn execute_boundary_impl(
             }
         };
         let entry = dispatch::GuardAdmissionEntry {
-            execution_id: ready.execution_id().0.clone(),
-            action_id: ready.action_id().0.clone(),
+            execution_id: ready.execution_id().as_str().to_owned(),
+            action_id: ready.action_id().as_str().to_owned(),
             preparation_digest: guard.required().preparation_digest().as_str().to_owned(),
             guard_ref_digest: guard.guard_ref_digest().to_owned(),
             outcome: outcome_name.to_owned(),
@@ -2601,7 +2596,7 @@ fn execute_boundary_impl(
                 "guard_admission_audit_failed",
                 "failed",
                 "guard admission evidence could not be durably recorded".to_owned(),
-                Some(&ready.action_id().0),
+                Some(ready.action_id().as_str()),
             ));
             return Ok(SharedExecutionResult {
                 outcome: SharedExecutionOutcome::AuditFailed,
@@ -2614,7 +2609,7 @@ fn execute_boundary_impl(
             "guard_admission",
             outcome_name,
             "Resolve guard admission decision recorded".to_owned(),
-            Some(&ready.action_id().0),
+            Some(ready.action_id().as_str()),
         ));
         sequence += 1;
         match admission {
@@ -2652,7 +2647,7 @@ fn execute_boundary_impl(
                 "deadline_before_invocation",
                 "unattempted",
                 outcome::deadline_reason().message.into(),
-                Some(&ready.action_id().0),
+                Some(ready.action_id().as_str()),
             ));
             response["execution_status"] = Value::String("unattempted".into());
             return Ok(SharedExecutionResult {
@@ -2969,20 +2964,15 @@ fn record_guard_admission(
             execution_id: Some(ready.execution_id().0.clone()),
         });
     }
-    let action_matches = guard.required().action_id() == ready.action_id().0;
-    let admission = if action_matches {
-        guard.admit()
-    } else {
-        crate::resolve_guard::ResolveGuardAdmission::Indeterminate
-    };
+    let admission = guard.admit(ready);
     let outcome_name = match admission {
         crate::resolve_guard::ResolveGuardAdmission::Admitted => "admitted",
         crate::resolve_guard::ResolveGuardAdmission::Rejected => "rejected",
         crate::resolve_guard::ResolveGuardAdmission::Indeterminate => "indeterminate",
     };
     let entry = dispatch::GuardAdmissionEntry {
-        execution_id: ready.execution_id().0.clone(),
-        action_id: ready.action_id().0.clone(),
+        execution_id: ready.execution_id().as_str().to_owned(),
+        action_id: ready.action_id().as_str().to_owned(),
         preparation_digest: guard.required().preparation_digest().as_str().to_owned(),
         guard_ref_digest: guard.guard_ref_digest().to_owned(),
         outcome: outcome_name.to_owned(),
@@ -2996,7 +2986,7 @@ fn record_guard_admission(
                 "guard_admission_audit_failed",
                 "failed",
                 "guard admission evidence could not be durably recorded".to_owned(),
-                Some(&ready.action_id().0),
+                Some(ready.action_id().as_str()),
             ));
         }
         return Err(SharedExecutionResult {
@@ -3012,7 +3002,7 @@ fn record_guard_admission(
             "guard_admission",
             outcome_name,
             "Resolve guard admission decision recorded".to_owned(),
-            Some(&ready.action_id().0),
+            Some(ready.action_id().as_str()),
         ));
     }
     Ok(admission)
@@ -3660,19 +3650,59 @@ mod tests {
             crate::resolve_guard::ResolveGuardAdapterError,
         >,
         calls: usize,
+        action_refs: Vec<String>,
     }
 
     impl crate::resolve_guard::ResolveGuardAdapter for P2TestAdapter {
         fn admit_guard(
             &mut self,
-            _guard_ref: &crate::resolve_guard::ResolveGuardRef,
-            _required: &crate::resolve_guard::ResolveGuardRequired,
+            request: &crate::resolve_guard::ResolveGuardAdmissionRequest,
         ) -> Result<
             crate::resolve_guard::ResolveGuardAdmission,
             crate::resolve_guard::ResolveGuardAdapterError,
         > {
             self.calls += 1;
+            self.action_refs
+                .push(request.action_ref().as_str().to_owned());
             self.result.clone()
+        }
+    }
+
+    #[derive(Default)]
+    struct ResolveContractDouble {
+        admitted_action_ref: Option<String>,
+        outcome_action_refs: Vec<String>,
+        guard_calls: usize,
+        outcome_calls: usize,
+    }
+
+    impl crate::resolve_guard::ResolveGuardAdapter for ResolveContractDouble {
+        fn admit_guard(
+            &mut self,
+            request: &crate::resolve_guard::ResolveGuardAdmissionRequest,
+        ) -> Result<
+            crate::resolve_guard::ResolveGuardAdmission,
+            crate::resolve_guard::ResolveGuardAdapterError,
+        > {
+            self.guard_calls += 1;
+            self.admitted_action_ref = Some(request.action_ref().as_str().to_owned());
+            Ok(crate::resolve_guard::ResolveGuardAdmission::Admitted)
+        }
+    }
+
+    impl crate::resolve_outcome::ResolveOutcomeAdapter for ResolveContractDouble {
+        fn deliver_outcome(
+            &mut self,
+            action_ref: &crate::resolve_outcome::TethersActionRef,
+            _outcome: crate::resolve_outcome::ResolveOutcome,
+        ) -> Result<(), crate::resolve_outcome::ResolveOutcomeAdapterError> {
+            self.outcome_calls += 1;
+            if self.admitted_action_ref.as_deref() != Some(action_ref.as_str()) {
+                return Err(crate::resolve_outcome::ResolveOutcomeAdapterError);
+            }
+            self.outcome_action_refs
+                .push(action_ref.as_str().to_owned());
+            Ok(())
         }
     }
 
@@ -9767,6 +9797,7 @@ mod tests {
         let mut adapter = P2TestAdapter {
             result: Ok(crate::resolve_guard::ResolveGuardAdmission::Rejected),
             calls: 0,
+            action_refs: Vec::new(),
         };
         let mut guard = crate::resolve_guard::test_guard_admission_context(&mut adapter);
         let mut executor = MockExecutor::new();
@@ -9798,6 +9829,11 @@ mod tests {
         assert_eq!(result.outcome, SharedExecutionOutcome::GuardRejected);
         drop(guard);
         assert_eq!(adapter.calls, 1);
+        assert_eq!(
+            adapter.action_refs,
+            [result.execution_id.as_deref().unwrap()]
+        );
+        assert_ne!(adapter.action_refs[0], "action-1");
         assert!(executor.completed.is_empty());
         assert_eq!(trail.entries.len(), 1, "intent must precede guard");
         assert_eq!(trail.guard_admission_entries.len(), 1);
@@ -9817,6 +9853,7 @@ mod tests {
         let mut adapter = P2TestAdapter {
             result: Ok(crate::resolve_guard::ResolveGuardAdmission::Admitted),
             calls: 0,
+            action_refs: Vec::new(),
         };
         let mut guard = crate::resolve_guard::test_guard_admission_context(&mut adapter);
         let mut executor = MockExecutor::new();
@@ -9848,6 +9885,11 @@ mod tests {
         assert_eq!(result.outcome, SharedExecutionOutcome::Completed);
         drop(guard);
         assert_eq!(adapter.calls, 1);
+        assert_eq!(
+            adapter.action_refs,
+            [result.execution_id.as_deref().unwrap()]
+        );
+        assert_ne!(adapter.action_refs[0], "action-1");
         assert_eq!(executor.completed.len(), 1);
         assert_eq!(trail.guard_admission_entries.len(), 1);
         assert_eq!(trail.guard_admission_entries[0].outcome, "admitted");
@@ -9866,6 +9908,7 @@ mod tests {
         let mut adapter = P2TestAdapter {
             result: Ok(crate::resolve_guard::ResolveGuardAdmission::Admitted),
             calls: 0,
+            action_refs: Vec::new(),
         };
         let mut guard = crate::resolve_guard::test_guard_admission_context(&mut adapter);
         let mut executor = MockExecutor::new();
@@ -9900,5 +9943,102 @@ mod tests {
         assert_eq!(adapter.calls, 0);
         assert!(executor.completed.is_empty());
         assert!(trail.guard_admission_entries.is_empty());
+    }
+
+    #[test]
+    fn p4a_guard_and_outcome_use_one_replay_execution_identity() {
+        let (_store, resolved) = resolved_lantern();
+        let mut response = make_matched_response(
+            "evaluation-1",
+            "action-1",
+            resolved.capability_name(),
+            json!({"project": "p", "task": "t"}),
+        );
+        let mut adapter = ResolveContractDouble::default();
+        let mut guard = crate::resolve_guard::test_guard_admission_context(&mut adapter);
+        let mut executor = MockExecutor::new();
+        let mut trail = RecordingTrail::new();
+        let clock = outcome::ProductionMonotonicClock::new();
+        let replay = replay_runtime::test_support::TestReplayAuthority::default();
+        let mut anchors = ResponseResultAnchorWriter;
+        let action = extract_single_action(&response).unwrap().clone();
+        let context = InputEventContext::for_initial("event-1");
+
+        let result = execute_shared_boundary_with_guard(
+            &mut response,
+            &action,
+            allow_decision_for(&resolved),
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context,
+            false,
+            &clock,
+            &replay,
+            None,
+            &mut anchors,
+            None,
+            &mut guard,
+        )
+        .unwrap();
+        drop(guard);
+
+        assert_eq!(adapter.guard_calls, 1);
+        assert_eq!(executor.completed.len(), 1);
+        let admitted_action_ref = adapter.admitted_action_ref.clone().unwrap();
+        assert_eq!(
+            result.execution_id.as_deref(),
+            Some(admitted_action_ref.as_str())
+        );
+        let planner_action_id = dispatch::ActionId("action-1".to_owned());
+        let host_execution_id = dispatch::ExecutionId::from_replay(&admitted_action_ref);
+        assert_ne!(planner_action_id.as_str(), host_execution_id.as_str());
+
+        let path = std::env::temp_dir().join(format!(
+            "tethers-p4a-identity-{}-{}.jsonl",
+            std::process::id(),
+            crate::approval::digest(&json!("identity"))
+        ));
+        let _ = std::fs::remove_file(&path);
+        let store = crate::resolve_outcome::FileResolveOutcomeDeliveryStore::open(&path).unwrap();
+        let mut delivery = crate::resolve_outcome::ResolveOutcomeDeliveryCoordinator::new(store);
+        assert_eq!(
+            deliver_resolve_outcome(&result, &mut delivery, &mut adapter, &mut trail)
+                .unwrap()
+                .unwrap(),
+            crate::resolve_outcome::ResolveOutcomeDeliveryResult::Delivered
+        );
+        assert_eq!(
+            adapter.outcome_action_refs,
+            vec![admitted_action_ref.clone()]
+        );
+
+        let action_ref =
+            crate::resolve_outcome::TethersActionRef::from_host_value(&admitted_action_ref)
+                .unwrap();
+        assert_eq!(
+            delivery
+                .retry(&action_ref, &mut adapter, &mut trail)
+                .unwrap(),
+            crate::resolve_outcome::ResolveOutcomeDeliveryResult::Delivered
+        );
+        assert_eq!(adapter.outcome_calls, 1);
+
+        let wrong_action_ref =
+            crate::resolve_outcome::TethersActionRef::from_host_value("exec_wrong-identity")
+                .unwrap();
+        let wrong_request = crate::resolve_outcome::ResolveOutcomeRequest::new(
+            wrong_action_ref,
+            crate::resolve_outcome::ResolveOutcome::Succeeded,
+        );
+        assert_eq!(
+            delivery
+                .deliver(wrong_request, &mut adapter, &mut trail)
+                .unwrap(),
+            crate::resolve_outcome::ResolveOutcomeDeliveryResult::Indeterminate
+        );
+        assert_eq!(adapter.outcome_calls, 2);
+        assert_eq!(adapter.outcome_action_refs, vec![admitted_action_ref]);
+        std::fs::remove_file(path).unwrap();
     }
 }
