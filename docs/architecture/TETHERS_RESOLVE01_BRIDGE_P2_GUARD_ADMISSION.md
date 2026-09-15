@@ -1,6 +1,6 @@
 # Tethers x Resolve01 P2 — Guard Admission Boundary
 
-Status: implementation in progress
+Status: accepted on main at PR #30 merge
 
 P2 adds one Rust-host seam for a future Resolve guard decision. It does not add
 a Resolve transport, database, public capability/Plug, outcome delivery,
