@@ -78,6 +78,10 @@ fn paths() -> (PathBuf, PathBuf, PathBuf, PathBuf) {
 #[test]
 fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     assert_eq!(
+        TETHERS_BASELINE_SHA,
+        "07870c356e034103573c5499347c61fce0700218"
+    );
+    assert_eq!(
         TETHERS_P4_IMPLEMENTATION_SHA,
         "78e1300657dc6bf30b1803aca76190b473dd0b1b"
     );
