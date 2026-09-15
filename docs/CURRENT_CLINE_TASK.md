@@ -1,6 +1,6 @@
-# TETHERS x RESOLVE01 - P0 Contract and Seam Audit
+# TETHERS x RESOLVE01 - P1 Preparation Proof and ScopeKey Foundation
 
-Task: `TETHERS x RESOLVE01 / P0`
+Task: `TETHERS x RESOLVE01 / P1`
 
 Control contract: `1`
 
@@ -10,153 +10,129 @@ Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Freeze the Resolve Guard Adapter contract against current Tethers host machinery, document exact insertion points and open dependencies, and make no implementation-semantics change.`
+Route: `Implement the Rust-host preparation evidence substrate frozen by P0. Add controlled GuardPreparationProof and opaque ScopeKey types, deterministic current-source evidence, fresh reconstruction, exact comparison, bounded mismatch reasons, and the ResolveGuardRequired projection. Do not contact Resolve or change Tethers product semantics.`
 
-Base commit: `ddc5d0fccfc0a38ff0af3013c5e9ff6ba357e0b2`
+Base commit: `66e8360a7247b60ccc8fb6cb447f796b922afb42`
 
-Implementation checkpoint: `ca3fd89f4019ca95f0261711c6218ae5c63f30eb`
+Implementation checkpoint: `6be53eac120bd0ee675209c2c953641a95ca6d12`
 
-Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p0.md`
+Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`
 
 Suggested branch:
 
-`codex/tethers-resolve-p0-contract`
+`codex/tethers-resolve-p1-preparation-proof`
 
 ## Objective
 
-Produce the repository-owned P0 architecture note that freezes the Resolve
-Guard Adapter seam without adding Resolve concepts to Tethers Core or creating
-parallel policy, scope, replay, Trail, provider, packaging, or recovery
-machinery.
+Produce deterministic, machine-verifiable evidence of the Tethers capability,
+manifest, provider, validated arguments, resolved scope, binding, and current
+policy/approval state needed by a future Resolve guard request. Preparation is
+evidence only; it grants no permission, performs no provider work, and does not
+implement guard admission.
 
 ## Relevant background and existing behaviour
 
-The Tethers host already owns exact capability resolution, manifest and
-provider binding, input validation, binding-owned scope assessment, effective
-policy, one-shot approval, replay admission, durable intent, provider
-invocation, outcome classification, Trail recording, and Result Anchors. The
-shared execution boundary is used by both ordinary sequential Actions and the
-accepted Together-group prepare/invoke split. Tethers Core remains the
-Resolve-agnostic OCaml planner and must not learn Goal, Commitment, Claim,
-lease, worker, or Resolve recovery concepts.
-
-The supplied Resolve01 plan defines two future components: a trusted Rust-host
-Resolve Guard Adapter and a normal user-facing Resolve01 TetherPlug. P0 covers
-only the contract/seam audit and preparation/resume handshake freeze. The live
-Resolve wire protocol is deferred until Resolve S3 freezes it.
+P0 is accepted at `66e8360a7247b60ccc8fb6cb447f796b922afb42`. The Rust host
+already owns capability resolution, verified manifest/provider binding,
+validated arguments, binding-owned scope assessment, effective policy, fresh
+approval checks, replay, durable intent, provider invocation, outcomes, Trail,
+and Result Anchors. Existing `approval::digest` is the repository JCS/SHA-256
+authority. Current safe scope forms are PathPrefix and Unrestricted; other
+manifest scope forms are not established for this integration. P1 adds only
+preparation evidence over those existing authorities.
 
 ## Required behaviour
 
-1. Record the constitutional ownership boundary: Resolve coordinates, Tethers
-   authorises and executes, and Resolve receives authoritative Tethers outcomes.
-2. Identify the exact current Tethers host seams for resolution, scope,
-   policy, approval, replay, durable intent, provider invocation, Trail,
-   outcomes, Result Anchors, configuration, and Plug lifecycle.
-3. Freeze a preparation/resume handshake in which Tethers-derived scope keys
-   are opaque to Resolve, preparation is evidence rather than authority, and
-   resume reconstructs and exactly compares fresh Tethers evidence.
-4. Freeze the execution ordering: Tethers permission and replay admission,
-   durable intent, Resolve guard admission, existing invocation arming, and
-   existing provider execution; DENY, UNAVAILABLE, unresolved ASK, rejected
-   guard, and indeterminate guard admission never invoke the target provider.
-5. Record the current supported version and package surfaces and explicitly
-   defer Resolve01 public capability and live-wire choices that are not yet
-   frozen by Resolve01.
-6. Define P0 exclusions, acceptance evidence, and stop conditions so later
-   implementation packets cannot silently widen the integration.
-
-## Relevant components
-
-- `tethers-0.1/host-rust/src/configured_runtime.rs`
-- `tethers-0.1/host-rust/src/policy.rs`
-- `tethers-0.1/host-rust/src/approval.rs`
-- `tethers-0.1/host-rust/src/replay_runtime.rs`
-- `tethers-0.1/host-rust/src/replay.rs`
-- `tethers-0.1/host-rust/src/dispatch.rs`
-- `tethers-0.1/host-rust/src/application.rs`
-- `tethers-0.1/host-rust/src/host_execution.rs`
-- `tethers-0.1/host-rust/src/executor.rs`
-- `tethers-0.1/host-rust/src/installed_provider_executor.rs`
-- `tethers-0.1/host-rust/src/runtime_config.rs`
-- `tethers-0.1/host-rust/src/package.rs`
-- `tethers-0.1/host-rust/src/plug_pack.rs`
-- `tethers-0.1/host-rust/src/plug_conform.rs`
-- `docs/CONSTITUTION.md`
-- `tethers-0.1/SPEC.md`
-- `docs/DECISIONS.md`
-- `docs/CAPABILITY_BRIDGE.md`
-- `docs/VERSIONING.md`
-- `docs/COMPATIBILITY.md`
+1. Add a controlled `GuardPreparationProof` containing every P0-required field:
+   format version, evaluation/plan/action identity, capability identity,
+   argument/manifest/provider identity, resolved scope digest, opaque ScopeKeys,
+   and binding digest.
+2. Add an opaque, validated `ScopeKey` whose deterministic projection is
+   derived only from already resolved binding-owned Tethers scope.
+3. Support the current safe `PathPrefix` and explicit `Unrestricted` forms;
+   refuse `Repository`, `Calendar`, and `ScopeNotEstablished` without hashing
+   raw input or downgrading to unrestricted.
+4. Reuse the existing JCS and SHA-256 digest authority. Do not create a second
+   canonicalisation or hashing stack.
+5. Add `ResolveGuardRequired` containing only preparation identity, Tethers
+   action identity, and opaque ScopeKeys.
+6. Expose a bounded host-owned preparation route after exact capability,
+   manifest/provider, scope, policy, and approval checks. It must not dispatch,
+   touch replay, record a provider outcome, or write a Result Anchor.
+7. Reconstruct fresh evidence from current host state and compare every
+   material proof field exactly. Any drift returns a typed refusal reason.
+8. Keep raw arguments, credentials, raw scope values, Resolve state, and policy
+   internals out of proof and Resolve-facing projections and diagnostics.
+9. Add focused deterministic, adversarial, drift, unsupported-version, and
+   zero-provider-invocation tests.
+10. Document the actual implementation contract for P2.
 
 ## Frozen decisions and invariants
 
-- No Tethers Core or OCaml changes are authorised.
-- No Tether syntax, Plan meaning, policy vocabulary, manifest dialect, or
-  Result Anchor taxonomy changes are authorised.
-- Resolve receives only an opaque guard reference and opaque, Tethers-derived
-  ScopeKeys; Tethers does not inspect Resolve Goal, Commitment, Claim, lease,
-  epoch, DAG, worker, or recovery state.
-- Resolve guard admission is coordination, not permission. A valid guard can
-  never turn Tethers DENY, UNAVAILABLE, or unresolved ASK into ALLOW.
-- ScopeKeys are derived only from the existing reviewed Tethers scope
-  representation and are deterministic, versioned, sorted, duplicate-free,
-  and compared by exact equality. No new scope form is added in P0.
-- Preparation evidence never permits execution. Resume reconstructs the fresh
-  Tethers proof and refuses any identity, argument, manifest, provider,
-  binding, scope, or trust drift.
-- Durable Tethers intent remains mandatory before any Resolve admission or
-  provider effect. The existing replay and invocation boundaries remain the
-  only replay/execution machinery.
-- Provider outcomes remain exactly SUCCEEDED, FAILED, or UNCERTAIN. Resolve
-  notification failure cannot rewrite a durable Tethers outcome.
-- The Resolve01 TetherPlug remains ordinary user-facing capability exposure;
-  guard admission is never a normal Tether capability.
+- Tethers remains the authority for capability, manifest, provider, argument,
+  scope, binding, trust, policy, and approval truth.
+- Preparation evidence is never permission and never invokes a provider.
+- ScopeKeys are opaque equality dimensions; Resolve must not interpret them.
+- Fresh reconstruction reruns current Tethers authorities and exact comparison
+  refuses any material drift; old evidence is never repaired or widened.
+- P1 has no live Resolve boundary, database, wire protocol, Core change, syntax
+  change, replay change, provider execution change, or outcome change.
 
 ## Acceptance criteria
 
-1. The architecture note names both components and preserves their ownership
-   boundaries without introducing a third authority.
-2. The note identifies current code/document seams for scope, policy,
-   approval, replay, intent, invocation, outcomes, Trail, anchors, config, and
-   Plug lifecycle.
-3. The preparation proof fields, opaque ScopeKey rule, resume exact-match
-   rule, and deferred Resolve wire seam are explicit and versionable.
-4. The serial and Together-group execution paths have the same documented
-   post-intent/pre-provider guard insertion boundary.
-5. The note records current package/Socket/MCP versions and all unresolved
-   dependencies without inventing Resolve01 API details.
-6. The branch contains only the authorised packet, architecture note, and
-   worker note; no Rust, OCaml, configuration, package, fixture, or test
-   semantics change is present.
+1. Rust host only: no OCaml/Core, Tether syntax, Plan schema, replay,
+   provider-execution, outcome, or Resolve transport/database changes.
+2. Proof construction is controlled and cannot be freely fabricated from raw
+   strings by external callers.
+3. ScopeKeys are versioned, opaque, sorted, duplicate-free, deterministic, and
+   based only on resolved PathPrefix/Unrestricted scope.
+4. Missing/unsupported scope and malformed/future proof versions fail closed.
+5. Argument, manifest, provider, binding, scope, capability, action, plan, and
+   evaluation drift are individually refused; unchanged reconstruction matches.
+6. Existing JCS/SHA-256 authorities are reused and field authorities are
+   recorded in the architecture note.
+7. Preparation and reconstruction demonstrably invoke zero target providers.
+8. Focused P1 tests, relevant Rust/host tests, repository verification,
+   task-packet checker, secret scan, documentation checks, and `git diff --check`
+   pass from the task branch.
+9. The final worker note records the starting SHA, checkpoint, files, tests,
+   decisions, unresolved questions, and stop conditions.
+10. The architecture note accurately records the P1 implementation and the
+    exact bounded input contract handed to P2.
+
+## Relevant components
+
+- `tethers-0.1/host-rust/src/resolve_guard.rs`
+- `tethers-0.1/host-rust/src/lib.rs`
+- `tethers-0.1/host-rust/src/configured_runtime.rs`
+- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P1_PREPARATION_PROOF.md`
+- `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`
 
 ## Required verification
 
-Run the repository-owned tool diagnostic, the task-packet checker in both
-IN_PROGRESS and final state, `cargo fmt --all -- --check`, `git diff --check`,
-and complete diff/path inspection. Product Rust/OCaml tests are not required
-for this documentation-only P0, but must not be represented as run.
+Run the repository-owned tool diagnostic, task-packet checker, `cargo fmt
+--all -- --check`, focused P1 tests, relevant host/Rust tests, `just verify`,
+secret scan, documentation/link checks, `git diff --check`, complete diff/path
+inspection, and final clean-status checks. Do not inherit P0 evidence.
 
 ## Forbidden changes
 
-- No Rust or OCaml production-code changes.
-- No Resolve network calls, SQLite access, live adapter, fake protocol, or
-  generic plugin framework.
-- No new policy state, scope assessor, replay store, Trail file, executor,
-  outcome taxonomy, retry path, scheduler, or recovery controller.
-- No Resolve01 public capability names, schemas, effects, or provider contract
-  before Resolve01 freezes them.
-- No merge, direct `main` update, force-push, history rewrite, installation,
-  dependency update, or unrelated cleanup.
+- No OCaml/Core/parser/AST/evaluator/Plan or syntax changes.
+- No Resolve network, wire protocol, database, guard-admission trait, or live
+  adapter.
+- No provider invocation, replay mutation, Trail guard event, Result Anchor
+  taxonomy change, policy redesign, approval bypass, or new scope form.
+- No raw secrets or arbitrary raw argument/scope values in evidence.
+- No force-push, history rewrite, direct main update, or unrelated cleanup.
 
 ## Stop conditions
 
-Stop and report if the current code cannot expose the required seam without
-duplicating Tethers authority, if the preparation/resume contract requires a
-new Tethers semantic decision, if Resolve concepts must enter Core, if the
-current scope machinery must be broadened solely for Resolve, or if the live
-Resolve protocol is needed before Resolve S3 freezes it. After two materially
-similar failed attempts against the same underlying problem, stop with exact
-evidence and the smallest unresolved question.
+Stop and report if binding digest cannot be defined from one existing semantic
+authority, if safe scope projection is unavailable, if Core changes or a new
+semantic authority are required, if fresh policy/approval cannot be rerun, or if
+P1 starts becoming a generic coordination framework. After two materially
+similar failed implementation attempts against one design issue, stop with the
+exact evidence and smallest unresolved question.
 
 ## Expected pre-existing changes
 
@@ -164,6 +140,9 @@ None
 
 ## Implementation scope
 
+- `tethers-0.1/host-rust/src/resolve_guard.rs`
+- `tethers-0.1/host-rust/src/lib.rs`
+- `tethers-0.1/host-rust/src/configured_runtime.rs`
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P0_SEAM_AUDIT.md`
-- `docs/worker-notes/2026-09-15-tethers-resolve-p0.md`
+- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P1_PREPARATION_PROOF.md`
+- `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`

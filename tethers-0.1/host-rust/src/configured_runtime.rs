@@ -563,47 +563,54 @@ fn validate_allowed_prefixes(prefixes: &[String]) -> Result<(), RuntimePreparati
 // ===========================================================================
 
 impl PreparedRuntime {
-    pub fn assess_action_scope(&self, action: &ProposedAction) -> ScopeAssessment {
-        let prepared = self.locate_capability(action);
-        let cap = match prepared {
-            Some(c) => c,
-            None => return ScopeAssessment::ScopeNotEstablished,
-        };
-
-        let manifest = cap.verified_manifest.manifest();
+    pub(crate) fn resolve_action_scope(
+        &self,
+        action: &ProposedAction,
+    ) -> Result<crate::resolve_guard::ResolvedActionScope, ScopeAssessment> {
+        let prepared = self
+            .locate_capability(action)
+            .ok_or(ScopeAssessment::ScopeNotEstablished)?;
+        let manifest = prepared.verified_manifest.manifest();
 
         match &manifest.permission_scope {
             PermissionScope::PathPrefix { allowed_prefixes } => {
-                let binding = match &cap.scope_binding {
-                    Some(b) => b,
-                    None => return ScopeAssessment::ScopeNotEstablished,
-                };
-
+                let binding = prepared
+                    .scope_binding
+                    .as_ref()
+                    .ok_or(ScopeAssessment::ScopeNotEstablished)?;
                 let extracted =
                     extract_json_pointer(&action.arguments, &binding.argument_json_pointer);
-
                 let path = match extracted {
-                    Some(serde_json::Value::String(s)) => s.clone(),
-                    Some(_) => return ScopeAssessment::ScopeNotEstablished,
-                    None => return ScopeAssessment::ScopeNotEstablished,
+                    Some(serde_json::Value::String(s)) => s,
+                    _ => return Err(ScopeAssessment::ScopeNotEstablished),
                 };
-
                 if validate_resource_path(&path).is_err() {
-                    return ScopeAssessment::ScopeNotEstablished;
+                    return Err(ScopeAssessment::ScopeNotEstablished);
                 }
-
-                for prefix in allowed_prefixes {
-                    if path_starts_with_segment(&path, prefix) {
-                        return ScopeAssessment::WithinScope;
-                    }
-                }
-
-                ScopeAssessment::ScopeViolation
+                let within_scope = allowed_prefixes
+                    .iter()
+                    .any(|prefix| path_starts_with_segment(&path, prefix));
+                Ok(crate::resolve_guard::ResolvedActionScope::path_prefix(
+                    path,
+                    binding.argument_json_pointer.clone(),
+                    allowed_prefixes.clone(),
+                    within_scope,
+                ))
             }
-            PermissionScope::Unrestricted => ScopeAssessment::WithinScope,
+            PermissionScope::Unrestricted => {
+                Ok(crate::resolve_guard::ResolvedActionScope::unrestricted())
+            }
             PermissionScope::Repository { .. } | PermissionScope::Calendar { .. } => {
-                ScopeAssessment::ScopeNotEstablished
+                Err(ScopeAssessment::ScopeNotEstablished)
             }
+        }
+    }
+
+    pub fn assess_action_scope(&self, action: &ProposedAction) -> ScopeAssessment {
+        match self.resolve_action_scope(action) {
+            Ok(scope) if scope.is_within_scope() => ScopeAssessment::WithinScope,
+            Ok(_) => ScopeAssessment::ScopeViolation,
+            Err(reason) => reason,
         }
     }
 
@@ -3870,5 +3877,109 @@ mod tests {
         assert_eq!(prepared.max_active_together_invocations(), 3);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn p1_preparation_reconstruction_never_invokes_provider() {
+        with_prepared_runtime(|prepared| {
+            let availability =
+                crate::resolver::ProviderAvailability::from_identities(["lantern-local"]);
+            let resolved = crate::resolver::resolve_capability(
+                prepared.trusted_store(),
+                &availability,
+                "lantern.task.record",
+                1,
+                Some("lantern-local"),
+            )
+            .unwrap();
+            let action = ProposedAction {
+                evaluation_id: "eval-p1".into(),
+                plan_id: "plan-p1".into(),
+                action_id: "action-p1".into(),
+                capability_name: "lantern.task.record".into(),
+                manifest_digest: Some(resolved.manifest_digest().into()),
+                bridge_capability_version: Some(1),
+                bridge_provider_identity: Some("lantern-local".into()),
+                arguments: json!({"path": "projects/p1.md"}),
+            };
+            let decision = crate::policy::allow_after_exact_approval(&resolved);
+
+            // The preparation route deliberately has no executor input.  Keep
+            // the existing fake executor in this regression so an accidental
+            // provider call would have an observable counter to mutate, while
+            // the API shape also provides compile-time separation from dispatch.
+            struct CountingExecutor {
+                calls: usize,
+            }
+            impl crate::executor::CapabilityExecutor for CountingExecutor {
+                fn provider_identity(&self) -> &str {
+                    "lantern-local"
+                }
+                fn execute(
+                    &mut self,
+                    _ready: &crate::dispatch::DispatchReadyAction,
+                ) -> Result<serde_json::Value, String> {
+                    self.calls += 1;
+                    Ok(json!({}))
+                }
+            }
+
+            let mut executor = CountingExecutor { calls: 0 };
+            let prepared_guard = crate::resolve_guard::prepare_resolve_guard_evidence(
+                prepared,
+                &action,
+                &resolved,
+                &availability,
+                &decision,
+            )
+            .unwrap();
+            assert_eq!(executor.calls, 0);
+            let mut invalid_action = action.clone();
+            invalid_action.arguments = json!({"path": 7});
+            assert_eq!(
+                crate::resolve_guard::prepare_resolve_guard_evidence(
+                    prepared,
+                    &invalid_action,
+                    &resolved,
+                    &availability,
+                    &decision,
+                ),
+                Err(crate::resolve_guard::GuardPreparationError::InvalidArguments)
+            );
+            assert_eq!(executor.calls, 0);
+            let unavailable = crate::resolver::ProviderAvailability::empty();
+            assert_eq!(
+                crate::resolve_guard::reconstruct_resolve_guard_evidence(
+                    prepared_guard.proof(),
+                    prepared,
+                    &action,
+                    &resolved,
+                    &unavailable,
+                    &decision,
+                ),
+                Err(crate::resolve_guard::GuardPreparationError::BindingUnavailable)
+            );
+            assert_eq!(executor.calls, 0);
+            let required_debug = format!("{:?}", prepared_guard.required());
+            assert!(!required_debug.contains("projects/p1.md"));
+            let reconstructed = crate::resolve_guard::reconstruct_resolve_guard_evidence(
+                prepared_guard.proof(),
+                prepared,
+                &action,
+                &resolved,
+                &availability,
+                &decision,
+            )
+            .unwrap();
+            assert_eq!(executor.calls, 0);
+            assert_eq!(
+                crate::resolve_guard::compare_resolve_guard_preparation(
+                    prepared_guard.proof(),
+                    reconstructed.proof(),
+                ),
+                Ok(())
+            );
+            let _ = &mut executor;
+        });
     }
 }
