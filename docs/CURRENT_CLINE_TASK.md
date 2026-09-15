@@ -4,7 +4,7 @@ Task: `TETHERS x RESOLVE01 / P0`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -13,6 +13,8 @@ Owner: `Codex`
 Route: `Freeze the Resolve Guard Adapter contract against current Tethers host machinery, document exact insertion points and open dependencies, and make no implementation-semantics change.`
 
 Base commit: `ddc5d0fccfc0a38ff0af3013c5e9ff6ba357e0b2`
+
+Implementation checkpoint: `ca3fd89f4019ca95f0261711c6218ae5c63f30eb`
 
 Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p0.md`
 
