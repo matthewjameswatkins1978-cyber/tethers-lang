@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `66e8360a7247b60ccc8fb6cb447f796b922afb42`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `54cad2d49115dac42d2b87cf0225c1f3c2e165b8`
 
 ## Requested outcome
 
@@ -45,12 +45,18 @@ not create policy or approval authority.
 ## Evidence
 
 - Accepted starting baseline: `66e8360a7247b60ccc8fb6cb447f796b922afb42`.
-- Task packet checker passes in `IN_PROGRESS` state.
+- Implementation checkpoint: `54cad2d49115dac42d2b87cf0225c1f3c2e165b8`.
+- Task packet checker passes in `COMPLETE` state.
 - `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml` passes.
 - `resolve_guard::tests`: 5 passed.
 - Prepared-runtime P1 zero-provider/reconstruction test: 1 passed.
-- Cargo formatter was run and its immediate diff is limited to the authorised
-  Rust files.
+- `just verify` passes: engine provenance, OCaml, Rust/static, warning ratchet,
+  cross-language, protocol fixtures, MCP transcripts, and compatibility corpus.
+- Cargo formatter was run and its immediate diff was limited to the authorised
+  Rust files; `git diff --check` passes.
+- The explicit all-target Clippy probe remains non-green because of broad
+  pre-existing repository lint debt; no P1-file diagnostic was reported and
+  the repository-authoritative `just check` and warning ratchet pass.
 
 ## Discoveries
 
@@ -62,15 +68,14 @@ remain a pure host computation.
 
 ## Remaining risks
 
-Full repository verification, final diff review, independent review, commit,
-push, PR, merge, and post-merge canonical-main confirmation remain. The
-repository's existing duplicate-target warning remains pre-existing debt.
+Final diff review, independent review, commit publication, PR, merge, and
+post-merge canonical-main confirmation remain. The repository's existing
+duplicate-target warning remains pre-existing debt.
 
 ## Smallest next action
 
-Run the complete Rust and repository verification route, inspect the full diff,
-then update this note and the task packet with the committed checkpoint before
-publication.
+Publish the accepted checkpoint through the normal branch/PR route, inspect the
+actual PR, merge when green, and confirm the resulting main SHA.
 
 ## References
 

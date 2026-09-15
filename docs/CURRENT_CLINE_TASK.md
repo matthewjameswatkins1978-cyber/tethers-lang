@@ -4,7 +4,7 @@ Task: `TETHERS x RESOLVE01 / P1`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -14,7 +14,7 @@ Route: `Implement the Rust-host preparation evidence substrate frozen by P0. Add
 
 Base commit: `66e8360a7247b60ccc8fb6cb447f796b922afb42`
 
-Implementation checkpoint: `PENDING`
+Implementation checkpoint: `54cad2d49115dac42d2b87cf0225c1f3c2e165b8`
 
 Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p1.md`
 
