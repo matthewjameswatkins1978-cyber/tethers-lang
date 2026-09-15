@@ -31,15 +31,15 @@ try {
         $actual = (Get-FileHash (Join-Path $package.FullName $binary.name) -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($actual -ne $binary.sha256) { throw "binary digest mismatch: $($binary.name)" }
     }
-    $host = Join-Path $package.FullName 'tethers'
-    & $host --version | Out-Null
+    $hostBinary = Join-Path $package.FullName 'tethers'
+    & $hostBinary --version | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'clean package --version failed' }
-    & $host --help | Out-Null
+    & $hostBinary --help | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'clean package --help failed' }
-    $describe = & $host describe --json
+    $describe = & $hostBinary describe --json
     if ($LASTEXITCODE -ne 0) { throw 'clean package describe --json failed' }
     $describe | ConvertFrom-Json | Out-Null
-    $doctor = & $host doctor --json
+    $doctor = & $hostBinary doctor --json
     if ($LASTEXITCODE -ne 0) { throw 'clean package doctor --json failed' }
     $doctor | ConvertFrom-Json | Out-Null
     Write-Host 'PASS clean Linux package install smoke (--version, --help, describe, doctor)'
