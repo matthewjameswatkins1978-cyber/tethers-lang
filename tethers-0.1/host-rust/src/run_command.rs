@@ -55,6 +55,7 @@ pub fn run(args: RunCommandArgs) -> RunResult {
                 &paths.trail,
                 Some(&paths.host_data_root),
             )
+            .with_authority_if_configured(&runtime)
             .run_selected(std::slice::from_ref(&prepared_input))
         },
     )

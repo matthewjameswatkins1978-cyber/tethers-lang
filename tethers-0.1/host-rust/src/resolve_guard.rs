@@ -551,6 +551,36 @@ impl ResolvedActionScope {
         }
     }
 
+    /// Canonical scalar map for the Lantern authority wire contract.  This is
+    /// a projection of the already validated Tethers scope; it is not a
+    /// second scope parser or an authority decision.
+    pub(crate) fn authority_scope(&self) -> std::collections::BTreeMap<String, String> {
+        let mut scope = std::collections::BTreeMap::new();
+        match self {
+            Self::PathPrefix {
+                value,
+                argument_json_pointer,
+                allowed_prefixes,
+                ..
+            } => {
+                scope.insert("kind".to_owned(), "path_prefix".to_owned());
+                scope.insert("value".to_owned(), value.clone());
+                scope.insert(
+                    "argument_json_pointer".to_owned(),
+                    argument_json_pointer.clone(),
+                );
+                let mut prefixes = allowed_prefixes.clone();
+                prefixes.sort();
+                prefixes.dedup();
+                scope.insert("allowed_prefixes".to_owned(), prefixes.join("\u{001f}"));
+            }
+            Self::Unrestricted => {
+                scope.insert("kind".to_owned(), "unrestricted".to_owned());
+            }
+        }
+        scope
+    }
+
     fn key(&self) -> ScopeKey {
         let projection = match self {
             Self::PathPrefix { value, .. } => json!({
