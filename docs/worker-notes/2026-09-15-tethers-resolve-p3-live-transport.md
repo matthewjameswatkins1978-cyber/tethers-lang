@@ -8,9 +8,9 @@ Owner: `Codex`
 
 Status: `IN_PROGRESS`
 
-Base commit: `9fb8517acd1192e9a1dbee8fa70c0f520d6c0fad`
+Base commit: `9037862c27688b3715f01ba685e2ea1c2fd1c81d`
 
-Implementation checkpoint: `ba44ace73dba04745d2206fa99100f283447461d`
+Implementation checkpoint: `99630d4833e098235cdf3ee120441cc09a92054d`
 
 ## Requested outcome
 
@@ -42,30 +42,51 @@ provider retry remain absent.
 ## Evidence
 
 Passed so far: locked all-target Cargo check; focused `resolve_transport` unit
-tests (4 passed); focused `resolve_guard` unit tests (8 passed); Rust format was
-applied only to authorized files; the pre-existing P4 conformance API was
-updated and compiles as part of the all-target check. A strict Clippy run was
-not a clean gate because the accepted repository currently reports roughly 90
+tests (6 passed, 2 ignored); focused `resolve_guard` unit tests (8 passed);
+focused `resolve_outcome` unit tests (11 passed); the P4a identity/outcome
+regression (1 passed); P2 guard regressions (3 passed); P4 conformance (2
+passed); format, builds and the warning ratchet. A strict Clippy run was not a
+clean gate because the accepted repository currently reports roughly 90
 pre-existing warnings under `-D warnings`.
 
 ## Discoveries
 
 Resolve S3 exposes the required routes in `control_plane/app.py` and validates
 the same exact JSON shapes, digest prefixes, bounds and outcome result set. The
-local machine has gcloud and the Resolve Python environment, but no Firestore
-emulator or Resolve service is currently listening on the documented local
-ports. The existing Rust full test run consequently reaches known
-cross-language failures when the current OCaml engine is unavailable; this is
-an environment prerequisite result, not evidence to weaken product tests.
+local machine has gcloud and the Resolve Python environment. The accepted
+Resolve service plus Firestore emulator were started for the live smoke and
+then stopped cleanly. A prior no-switch verification attempt failed before
+dependent suites with the explicit OCaml prerequisite message; the final
+verification used the repository's external OCaml 5.5 switch and current
+engine provenance.
 
 ## Remaining risks
 
-Independent review and final publication are not complete at this checkpoint.
 The transport tests use an explicit loopback fake server and the ignored live
-test was also run against the accepted Resolve service with its Firestore
-emulator: admission, revoked rejection, outcome recording, exact redelivery
-and conflict all passed. Before completion, inspect the post-checkpoint diff,
-run the final gates, and record exact remote SHAs.
+test was run against the accepted Resolve service with its Firestore emulator:
+admission, revoked rejection, outcome recording, exact redelivery and conflict
+all passed. The branch was rebuilt from accepted main `9037862` after P4a
+merged, retaining both P4a identity continuity and P3 preparation/outcome
+evidence. Independent review found no publication blocker. Its only substantive
+concern was whether the outcome response should echo action and preparation
+fields; the accepted Resolve schema instead returns a digest over the complete
+semantic request, which the client recomputes and compares. The review also
+identified the need to keep the preparation digest in the P4a admission
+request; that seam repair is included in checkpoint
+`99630d4833e098235cdf3ee120441cc09a92054d`.
+
+## Independent review
+
+Reviewer: Gemini, model `gemini-3.8-flash`, thinking level `high`.
+
+Transport status: completed, response complete, model matched. Recommendation:
+safe to publish within the frozen P3 scope. The review confirmed the bounded
+HTTPS/default, loopback-only HTTP test mode, strict JSON/digest validation,
+opaque errors, no provider/replay/Core/Resolve-database changes, and outcome
+idempotency/conflict handling. The local fake-server tests and real Resolve
+emulator smoke are the deciding evidence; the review's proxy and response
+binding objections remain covered by explicit client configuration and the
+request digest contract.
 
 ## Smallest next action
 

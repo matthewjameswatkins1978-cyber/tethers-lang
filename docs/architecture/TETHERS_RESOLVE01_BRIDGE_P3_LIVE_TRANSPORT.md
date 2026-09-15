@@ -39,8 +39,8 @@ The client is `tethers-0.1/host-rust/src/resolve_transport.rs`:
   `TETHERS_RESOLVE_TIMEOUT_MS`, and explicit `TETHERS_RESOLVE_LOCAL_MODE=1`
   for loopback HTTP tests.
 - Timeout defaults to five seconds and is bounded to 100 ms–30 s. Request and
-  response bodies are bounded at 16 KiB. Redirects are disabled. Production
-  endpoints must use HTTPS.
+  response bodies are bounded at 16 KiB. Redirects and ambient proxy use are
+  disabled. Production endpoints must use HTTPS.
 - The bridge key is sent only as `X-Resolve-Tethers-Key`; it is absent from
   `Debug`, `Display`, errors, Trail and verification evidence.
 

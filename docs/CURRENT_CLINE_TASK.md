@@ -12,9 +12,9 @@ Owner: `Codex`
 
 Route: `Implement the bounded Rust-host HTTPS adapter for the accepted Resolve v1 guard-admission contract and explicit durable delivery of already-recorded Tethers provider outcomes. Preserve Tethers authority and accepted P2 ordering. Do not alter Core, syntax, provider execution, replay semantics, or Resolve data access.`
 
-Base commit: `9fb8517acd1192e9a1dbee8fa70c0f520d6c0fad`
+Base commit: `9037862c27688b3715f01ba685e2ea1c2fd1c81d`
 
-Evidence checkpoint: `ba44ace73dba04745d2206fa99100f283447461d`
+Evidence checkpoint: `99630d4833e098235cdf3ee120441cc09a92054d`
 
 Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p3-live-transport.md`
 
