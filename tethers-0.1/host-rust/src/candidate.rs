@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 #[cfg(windows)]
@@ -118,10 +120,18 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), PackageError> {
     io(out.write_all(bytes))?;
     io(out.sync_all())
 }
-fn mark_read_only(path: &Path) -> Result<(), PackageError> {
+fn mark_read_only(path: &Path, executable: bool) -> Result<(), PackageError> {
     let mut permissions = io(fs::metadata(path))?.permissions();
     permissions.set_readonly(true);
     io(fs::set_permissions(path, permissions))?;
+    #[cfg(not(unix))]
+    let _ = executable;
+    #[cfg(unix)]
+    if executable {
+        let mut permissions = io(fs::metadata(path))?.permissions();
+        permissions.set_mode((permissions.mode() | 0o111) & !0o222);
+        io(fs::set_permissions(path, permissions))?;
+    }
     #[cfg(windows)]
     {
         let path_w = wide(path);
@@ -281,7 +291,7 @@ pub fn extract_to_quarantine(
             }
             write_new(&target, &bytes)?;
         }
-        for (key, _) in &expected {
+        for (key, evidence) in &expected {
             let file = staging.join(key);
             if !file.is_file() {
                 return Err(err(
@@ -289,7 +299,7 @@ pub fn extract_to_quarantine(
                     "accepted archive entry was not extracted",
                 ));
             }
-            mark_read_only(&file)?;
+            mark_read_only(&file, evidence.role == "provider_executable")?;
         }
         Ok(())
     })();
