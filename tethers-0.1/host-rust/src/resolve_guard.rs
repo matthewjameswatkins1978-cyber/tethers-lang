@@ -7,6 +7,7 @@
 
 use crate::approval;
 use crate::configured_runtime::PreparedRuntime;
+use crate::dispatch::{DispatchReadyAction, ExecutionId};
 use crate::manifest::{BindingKind, IdentitySource};
 use crate::policy::{PermissionDecision, ProposedAction, ScopeAssessment};
 use crate::resolver::{self, ProviderAvailability, ResolvedCapability};
@@ -263,14 +264,51 @@ pub enum ResolveGuardAdmission {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolveGuardAdapterError;
 
+/// The exact semantic request crossing the P2 Resolve boundary.
+///
+/// The request is constructed only after replay admission has produced a real
+/// `DispatchReadyAction`.  Its private fields prevent an adapter caller from
+/// substituting a planner `ActionId` or inventing a second action reference.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolveGuardAdmissionRequest {
+    guard_id: ResolveGuardRef,
+    action_ref: ExecutionId,
+    scope_keys: Vec<ScopeKey>,
+}
+
+impl ResolveGuardAdmissionRequest {
+    pub fn guard_id(&self) -> &ResolveGuardRef {
+        &self.guard_id
+    }
+
+    pub fn action_ref(&self) -> &ExecutionId {
+        &self.action_ref
+    }
+
+    pub fn scope_keys(&self) -> &[ScopeKey] {
+        &self.scope_keys
+    }
+
+    fn from_ready(
+        guard_id: &ResolveGuardRef,
+        required: &ResolveGuardRequired,
+        ready: &DispatchReadyAction,
+    ) -> Self {
+        Self {
+            guard_id: guard_id.clone(),
+            action_ref: ready.execution_id().clone(),
+            scope_keys: required.scope_keys.clone(),
+        }
+    }
+}
+
 /// One deliberately narrow future Resolve boundary.  P2 supplies no live
 /// transport implementation; adapter errors are mapped to Indeterminate by
 /// the host seam.
 pub trait ResolveGuardAdapter {
     fn admit_guard(
         &mut self,
-        guard_ref: &ResolveGuardRef,
-        required: &ResolveGuardRequired,
+        request: &ResolveGuardAdmissionRequest,
     ) -> Result<ResolveGuardAdmission, ResolveGuardAdapterError>;
 }
 
@@ -352,10 +390,29 @@ impl<'a> GuardAdmissionContext<'a> {
         self.guard_ref.digest()
     }
 
-    pub(crate) fn admit(&mut self) -> ResolveGuardAdmission {
+    pub(crate) fn admit(&mut self, ready: &DispatchReadyAction) -> ResolveGuardAdmission {
+        if self.required.action_id() != ready.action_id().as_str() {
+            return ResolveGuardAdmission::Indeterminate;
+        }
+        let request =
+            ResolveGuardAdmissionRequest::from_ready(&self.guard_ref, &self.required, ready);
+        self.admit_request(&request)
+    }
+
+    fn admit_request(&mut self, request: &ResolveGuardAdmissionRequest) -> ResolveGuardAdmission {
         self.adapter
-            .admit_guard(&self.guard_ref, &self.required)
+            .admit_guard(request)
             .unwrap_or(ResolveGuardAdmission::Indeterminate)
+    }
+
+    #[cfg(test)]
+    fn admit_for_test(&mut self, action_ref: ExecutionId) -> ResolveGuardAdmission {
+        let request = ResolveGuardAdmissionRequest {
+            guard_id: self.guard_ref.clone(),
+            action_ref,
+            scope_keys: self.required.scope_keys.clone(),
+        };
+        self.admit_request(&request)
     }
 }
 
@@ -1152,15 +1209,17 @@ mod tests {
     struct TestAdapter {
         result: Result<ResolveGuardAdmission, ResolveGuardAdapterError>,
         calls: usize,
+        action_refs: Vec<String>,
     }
 
     impl ResolveGuardAdapter for TestAdapter {
         fn admit_guard(
             &mut self,
-            _guard_ref: &ResolveGuardRef,
-            _required: &ResolveGuardRequired,
+            request: &ResolveGuardAdmissionRequest,
         ) -> Result<ResolveGuardAdmission, ResolveGuardAdapterError> {
             self.calls += 1;
+            self.action_refs
+                .push(request.action_ref().as_str().to_owned());
             self.result.clone()
         }
     }
@@ -1201,23 +1260,33 @@ mod tests {
         let mut adapter = TestAdapter {
             result: Err(ResolveGuardAdapterError),
             calls: 0,
+            action_refs: Vec::new(),
         };
         let mut context = test_context(&mut adapter);
-        assert_eq!(context.admit(), ResolveGuardAdmission::Indeterminate);
+        assert_eq!(
+            context.admit_for_test(ExecutionId::from_replay("exec-test")),
+            ResolveGuardAdmission::Indeterminate
+        );
         drop(context);
         assert_eq!(adapter.calls, 1);
+        assert_eq!(adapter.action_refs, ["exec-test"]);
     }
 
     #[test]
-    fn adapter_receives_only_bounded_required_projection() {
+    fn adapter_receives_host_execution_identity_request() {
         let mut adapter = TestAdapter {
             result: Ok(ResolveGuardAdmission::Admitted),
             calls: 0,
+            action_refs: Vec::new(),
         };
         let mut context = test_context(&mut adapter);
-        assert_eq!(context.admit(), ResolveGuardAdmission::Admitted);
+        assert_eq!(
+            context.admit_for_test(ExecutionId::from_replay("exec-test")),
+            ResolveGuardAdmission::Admitted
+        );
         drop(context);
         assert_eq!(adapter.calls, 1);
+        assert_eq!(adapter.action_refs, ["exec-test"]);
         assert!(!format!(
             "{:?}",
             ResolveGuardRef::from_host_value("guard/opaque-1").unwrap()

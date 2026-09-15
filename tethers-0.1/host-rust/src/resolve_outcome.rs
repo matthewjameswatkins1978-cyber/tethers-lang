@@ -20,6 +20,14 @@ const MAX_ACTION_REF_BYTES: usize = 512;
 pub struct TethersActionRef(String);
 
 impl TethersActionRef {
+    /// Project the host-created replay identity without accepting a second
+    /// caller-chosen action-reference representation.
+    pub fn from_execution_id(
+        execution_id: &crate::replay::ExecutionId,
+    ) -> Result<Self, ActionRefError> {
+        Self::from_host_value(execution_id.as_str())
+    }
+
     /// Validate an action reference from the host integration boundary.
     pub fn from_host_value(value: &str) -> Result<Self, ActionRefError> {
         if value.is_empty() {
@@ -203,6 +211,7 @@ impl ResolveOutcomeDeliveryStore for FileResolveOutcomeDeliveryStore {
     }
 
     fn append(&mut self, entry: &StoredResolveOutcome) -> Result<(), ResolveOutcomeStoreError> {
+        validate_append(self.latest.get(entry.action_ref()), entry)?;
         let persisted = PersistedResolveOutcome {
             action_ref: entry.action_ref().as_str().to_owned(),
             outcome: entry.outcome(),
@@ -250,11 +259,8 @@ fn read_latest(
             request: ResolveOutcomeRequest::new(action_ref.clone(), persisted.outcome),
             state: persisted.state,
         };
-        if let Some(previous) = latest.get(&action_ref) {
-            if previous.outcome() != entry.outcome() {
-                return Err(ResolveOutcomeStoreError::InvalidRecord);
-            }
-        }
+        validate_append(latest.get(&action_ref), &entry)
+            .map_err(|_| ResolveOutcomeStoreError::InvalidRecord)?;
         latest.insert(action_ref, entry);
     }
     Ok(latest)
@@ -341,11 +347,11 @@ impl<S: ResolveOutcomeDeliveryStore> ResolveOutcomeDeliveryCoordinator<S> {
         adapter: &mut dyn ResolveOutcomeAdapter,
         trail: &mut dyn Trail,
     ) -> Result<ResolveOutcomeDeliveryResult, ResolveOutcomeDeliveryError> {
-        if let Some(previous) = self
+        let previous = self
             .store
             .current(request.action_ref())
-            .map_err(ResolveOutcomeDeliveryError::Store)?
-        {
+            .map_err(ResolveOutcomeDeliveryError::Store)?;
+        if let Some(previous) = &previous {
             if previous.outcome() != request.outcome() {
                 return Err(ResolveOutcomeDeliveryError::ContradictoryOutcome {
                     action_ref: request.action_ref().clone(),
@@ -353,16 +359,24 @@ impl<S: ResolveOutcomeDeliveryStore> ResolveOutcomeDeliveryCoordinator<S> {
                     supplied: request.outcome(),
                 });
             }
+            if previous.state() == ResolveOutcomeDeliveryState::Delivered {
+                return Ok(ResolveOutcomeDeliveryResult::Delivered);
+            }
         }
 
-        let pending = StoredResolveOutcome {
-            request: request.clone(),
-            state: ResolveOutcomeDeliveryState::Pending,
-        };
-        self.store
-            .append(&pending)
-            .map_err(ResolveOutcomeDeliveryError::Store)?;
-        append_evidence(trail, &pending)?;
+        let needs_pending = previous
+            .as_ref()
+            .is_none_or(|entry| entry.state() == ResolveOutcomeDeliveryState::Indeterminate);
+        if needs_pending {
+            let pending = StoredResolveOutcome {
+                request: request.clone(),
+                state: ResolveOutcomeDeliveryState::Pending,
+            };
+            self.store
+                .append(&pending)
+                .map_err(ResolveOutcomeDeliveryError::Store)?;
+            append_evidence(trail, &pending)?;
+        }
 
         if adapter
             .deliver_outcome(request.action_ref(), request.outcome())
@@ -409,6 +423,41 @@ impl<S: ResolveOutcomeDeliveryStore> ResolveOutcomeDeliveryCoordinator<S> {
     }
 }
 
+fn validate_append(
+    previous: Option<&StoredResolveOutcome>,
+    next: &StoredResolveOutcome,
+) -> Result<(), ResolveOutcomeStoreError> {
+    if let Some(previous) = previous {
+        if previous.outcome() != next.outcome()
+            || !valid_delivery_transition(previous.state(), next.state())
+        {
+            return Err(ResolveOutcomeStoreError::InvalidRecord);
+        }
+    } else if next.state() != ResolveOutcomeDeliveryState::Pending {
+        return Err(ResolveOutcomeStoreError::InvalidRecord);
+    }
+    Ok(())
+}
+
+fn valid_delivery_transition(
+    previous: ResolveOutcomeDeliveryState,
+    next: ResolveOutcomeDeliveryState,
+) -> bool {
+    matches!(
+        (previous, next),
+        (
+            ResolveOutcomeDeliveryState::Pending,
+            ResolveOutcomeDeliveryState::Delivered
+        ) | (
+            ResolveOutcomeDeliveryState::Pending,
+            ResolveOutcomeDeliveryState::Indeterminate
+        ) | (
+            ResolveOutcomeDeliveryState::Indeterminate,
+            ResolveOutcomeDeliveryState::Pending
+        )
+    )
+}
+
 fn append_evidence(
     trail: &mut dyn Trail,
     entry: &StoredResolveOutcome,
@@ -453,6 +502,7 @@ mod tests {
         }
 
         fn append(&mut self, entry: &StoredResolveOutcome) -> Result<(), ResolveOutcomeStoreError> {
+            validate_append(self.latest.get(entry.action_ref()), entry)?;
             self.latest
                 .insert(entry.action_ref().clone(), entry.clone());
             Ok(())
@@ -529,11 +579,16 @@ mod tests {
             coordinator.deliver(request(ResolveOutcome::Failed), &mut adapter, &mut trail),
             Ok(ResolveOutcomeDeliveryResult::Delivered)
         ));
+        let evidence_before_duplicate = trail.coordination_delivery_entries.len();
         assert!(matches!(
             coordinator.deliver(request(ResolveOutcome::Failed), &mut adapter, &mut trail),
             Ok(ResolveOutcomeDeliveryResult::Delivered)
         ));
-        assert_eq!(calls.get(), 2);
+        assert_eq!(calls.get(), 1);
+        assert_eq!(
+            trail.coordination_delivery_entries.len(),
+            evidence_before_duplicate
+        );
         assert_eq!(
             coordinator
                 .store()
@@ -569,7 +624,7 @@ mod tests {
                     &mut trail,
                 )
                 .unwrap();
-            assert_eq!(calls.get(), 2);
+            assert_eq!(calls.get(), 1);
             assert_eq!(
                 coordinator
                     .store()
@@ -620,11 +675,16 @@ mod tests {
         let _ = fs::remove_file(&path);
         {
             let mut store = FileResolveOutcomeDeliveryStore::open(&path).unwrap();
-            let entry = StoredResolveOutcome {
+            let pending = StoredResolveOutcome {
+                request: request(ResolveOutcome::Uncertain),
+                state: ResolveOutcomeDeliveryState::Pending,
+            };
+            store.append(&pending).unwrap();
+            let indeterminate = StoredResolveOutcome {
                 request: request(ResolveOutcome::Uncertain),
                 state: ResolveOutcomeDeliveryState::Indeterminate,
             };
-            store.append(&entry).unwrap();
+            store.append(&indeterminate).unwrap();
         }
         let store = FileResolveOutcomeDeliveryStore::open(&path).unwrap();
         let current = store
@@ -634,5 +694,161 @@ mod tests {
         assert_eq!(current.outcome(), ResolveOutcome::Uncertain);
         assert_eq!(current.state(), ResolveOutcomeDeliveryState::Indeterminate);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn indeterminate_retry_reopens_delivery_attempt_without_provider_access() {
+        let calls = Rc::new(Cell::new(0));
+        let mut adapter = TestAdapter {
+            calls: Rc::clone(&calls),
+            result: Err(ResolveOutcomeAdapterError),
+        };
+        let mut trail = trail();
+        let mut coordinator = ResolveOutcomeDeliveryCoordinator::new(MemoryStore::default());
+        assert_eq!(
+            coordinator
+                .deliver(request(ResolveOutcome::Uncertain), &mut adapter, &mut trail)
+                .unwrap(),
+            ResolveOutcomeDeliveryResult::Indeterminate
+        );
+        adapter.result = Ok(());
+        assert_eq!(
+            coordinator
+                .retry(
+                    &TethersActionRef::from_host_value("exec_p4-test").unwrap(),
+                    &mut adapter,
+                    &mut trail,
+                )
+                .unwrap(),
+            ResolveOutcomeDeliveryResult::Delivered
+        );
+        assert_eq!(calls.get(), 2);
+        assert_eq!(
+            coordinator
+                .store()
+                .current(&TethersActionRef::from_host_value("exec_p4-test").unwrap())
+                .unwrap()
+                .unwrap()
+                .state(),
+            ResolveOutcomeDeliveryState::Delivered
+        );
+    }
+
+    #[test]
+    fn pending_recovery_retries_without_reappending_pending() {
+        let calls = Rc::new(Cell::new(0));
+        let mut adapter = TestAdapter {
+            calls: Rc::clone(&calls),
+            result: Ok(()),
+        };
+        let mut trail = trail();
+        let mut store = MemoryStore::default();
+        store
+            .append(&StoredResolveOutcome {
+                request: request(ResolveOutcome::Succeeded),
+                state: ResolveOutcomeDeliveryState::Pending,
+            })
+            .unwrap();
+        let mut coordinator = ResolveOutcomeDeliveryCoordinator::new(store);
+        assert_eq!(
+            coordinator
+                .retry(
+                    &TethersActionRef::from_host_value("exec_p4-test").unwrap(),
+                    &mut adapter,
+                    &mut trail,
+                )
+                .unwrap(),
+            ResolveOutcomeDeliveryResult::Delivered
+        );
+        assert_eq!(calls.get(), 1);
+        assert_eq!(trail.coordination_delivery_entries.len(), 1);
+    }
+
+    #[test]
+    fn delivered_is_terminal_even_after_restart_and_trail_failure() {
+        let path = std::env::temp_dir().join(format!(
+            "tethers-p4-delivered-terminal-{}-{}.jsonl",
+            std::process::id(),
+            crate::approval::digest(&serde_json::json!("delivered"))
+        ));
+        let _ = fs::remove_file(&path);
+        let calls = Rc::new(Cell::new(0));
+        let mut adapter = TestAdapter {
+            calls: Rc::clone(&calls),
+            result: Ok(()),
+        };
+        {
+            let store = FileResolveOutcomeDeliveryStore::open(&path).unwrap();
+            let mut coordinator = ResolveOutcomeDeliveryCoordinator::new(store);
+            let mut trail = trail();
+            trail.fail_coordination_delivery_on = Some(2);
+            assert!(matches!(
+                coordinator.deliver(request(ResolveOutcome::Succeeded), &mut adapter, &mut trail),
+                Err(ResolveOutcomeDeliveryError::Trail(_))
+            ));
+            assert_eq!(calls.get(), 1);
+        }
+        let store = FileResolveOutcomeDeliveryStore::open(&path).unwrap();
+        let mut coordinator = ResolveOutcomeDeliveryCoordinator::new(store);
+        let mut trail = trail();
+        trail.fail_coordination_delivery_on = Some(1);
+        assert_eq!(
+            coordinator
+                .retry(
+                    &TethersActionRef::from_host_value("exec_p4-test").unwrap(),
+                    &mut adapter,
+                    &mut trail,
+                )
+                .unwrap(),
+            ResolveOutcomeDeliveryResult::Delivered
+        );
+        assert_eq!(calls.get(), 1);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn malformed_delivery_histories_fail_closed_on_reopen() {
+        let cases = [
+            (
+                ResolveOutcomeDeliveryState::Delivered,
+                ResolveOutcomeDeliveryState::Pending,
+            ),
+            (
+                ResolveOutcomeDeliveryState::Delivered,
+                ResolveOutcomeDeliveryState::Indeterminate,
+            ),
+            (
+                ResolveOutcomeDeliveryState::Indeterminate,
+                ResolveOutcomeDeliveryState::Delivered,
+            ),
+        ];
+        for (first, second) in cases {
+            let path = std::env::temp_dir().join(format!(
+                "tethers-p4-malformed-{}-{}-{}.jsonl",
+                std::process::id(),
+                first.as_str(),
+                second.as_str()
+            ));
+            let _ = fs::remove_file(&path);
+            let first = PersistedResolveOutcome {
+                action_ref: "exec_p4-test".to_owned(),
+                outcome: ResolveOutcome::Succeeded,
+                state: first,
+            };
+            let second = PersistedResolveOutcome {
+                action_ref: "exec_p4-test".to_owned(),
+                outcome: ResolveOutcome::Succeeded,
+                state: second,
+            };
+            let mut file = File::create(&path).unwrap();
+            writeln!(file, "{}", serde_json::to_string(&first).unwrap()).unwrap();
+            writeln!(file, "{}", serde_json::to_string(&second).unwrap()).unwrap();
+            drop(file);
+            assert!(matches!(
+                FileResolveOutcomeDeliveryStore::open(&path),
+                Err(ResolveOutcomeStoreError::InvalidRecord)
+            ));
+            fs::remove_file(path).unwrap();
+        }
     }
 }

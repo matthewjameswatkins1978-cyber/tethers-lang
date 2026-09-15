@@ -17,15 +17,28 @@ const TETHERS_P4_IMPLEMENTATION_SHA: &str = "efa9c714cc08550bbab9b487378c51daa95
 const RESOLVE_R0_SHA: &str = "8d42e5b061f86b2b2a2c1949c629654968a550ff";
 
 struct RecordingResolveAdapter {
+    admitted_action_ref: Option<String>,
     calls: usize,
+}
+
+impl RecordingResolveAdapter {
+    fn record_guard_admission(
+        &mut self,
+        execution_id: &tethers_reference_host::replay::ExecutionId,
+    ) {
+        self.admitted_action_ref = Some(execution_id.as_str().to_owned());
+    }
 }
 
 impl ResolveOutcomeAdapter for RecordingResolveAdapter {
     fn deliver_outcome(
         &mut self,
-        _action_ref: &TethersActionRef,
+        action_ref: &TethersActionRef,
         _outcome: ResolveOutcome,
     ) -> Result<(), ResolveOutcomeAdapterError> {
+        if self.admitted_action_ref.as_deref() != Some(action_ref.as_str()) {
+            return Err(ResolveOutcomeAdapterError);
+        }
         self.calls += 1;
         Ok(())
     }
@@ -76,20 +89,27 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
     writeln!(intent, "durable intent: action=action-p4").unwrap();
     intent.sync_data().unwrap();
 
-    // The guard is issued externally by Resolve; Tethers sees only its
-    // already-admitted execution path and the eventual action reference.
-    let guard_issued_externally = true;
-    let resumed = guard_issued_externally;
-    assert!(resumed);
+    // Replay admission creates the one host-owned execution identity. The
+    // stateful Resolve double records that identity at the guard seam and
+    // accepts outcome delivery only for the exact same bytes.
+    let execution_id = tethers_reference_host::replay::ExecutionId::generate();
+    let mut adapter = RecordingResolveAdapter {
+        admitted_action_ref: None,
+        calls: 0,
+    };
+    adapter.record_guard_admission(&execution_id);
+    let action_ref = TethersActionRef::from_execution_id(&execution_id).unwrap();
+    assert_eq!(
+        adapter.admitted_action_ref.as_deref(),
+        Some(action_ref.as_str())
+    );
 
     let mut provider = ExactlyOnceProvider { calls: 0 };
     let known_outcome = provider.execute();
     assert_eq!(known_outcome, ResolveOutcome::Succeeded);
 
-    let action_ref = TethersActionRef::from_host_value("tethers-action-p4-secretless").unwrap();
     let store = FileResolveOutcomeDeliveryStore::open(&delivery_path).unwrap();
     let mut trail = FileTrail::open(&trail_path).unwrap();
-    let mut adapter = RecordingResolveAdapter { calls: 0 };
     let mut delivery = ResolveOutcomeDeliveryCoordinator::new(store);
     let execution_result = SharedExecutionResult {
         outcome: SharedExecutionOutcome::Completed,
@@ -116,7 +136,7 @@ fn frozen_resolve_r0_handshake_delivers_known_outcome_once_across_restart() {
         ResolveOutcomeDeliveryResult::Delivered
     );
     assert_eq!(provider.calls, 1);
-    assert_eq!(adapter.calls, 2);
+    assert_eq!(adapter.calls, 1);
 
     // Restart/reopen reconstructs delivery state and permits another exact
     // retry without any provider handle or provider input.

@@ -31,10 +31,17 @@ The ref is bounded opaque input and is represented in diagnostics and durable
 evidence only by the existing `approval::digest` JCS/SHA-256 authority. Its
 value has no P2 semantics.
 
-The adapter receives only the ref object and the existing P1
-`ResolveGuardRequired` projection: preparation digest, Tethers action identity,
-and opaque sorted duplicate-free ScopeKeys. Adapter errors map to
-`Indeterminate`; there is no fourth adapter state.
+The adapter receives one private-field `ResolveGuardAdmissionRequest` only
+after replay admission has produced the real host `ExecutionId`. Its semantic
+projection is exactly the Resolve R0 boundary: opaque guard ID, opaque action
+reference, and opaque sorted duplicate-free ScopeKeys. The preparation digest
+and planner `ActionId` remain host evidence used to build and validate the
+request; they are not Resolve concepts and do not cross this adapter boundary.
+Adapter errors map to `Indeterminate`; there is no fourth adapter state.
+
+`ActionId` names the planned logical action. `ExecutionId` names the
+host-admitted execution. Resolve sees `ExecutionId` as its opaque `action_ref`
+at guard admission; P4 outcome delivery uses that same identity.
 
 P1 preparation is rebuilt from current Tethers-owned authorities before a
 guarded request is formed. Explicit resume uses P1 exact reconstruction and
