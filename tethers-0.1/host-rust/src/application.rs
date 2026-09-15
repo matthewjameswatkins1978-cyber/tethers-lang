@@ -2183,6 +2183,29 @@ pub struct SharedExecutionResult {
     pub execution_id: Option<String>,
 }
 
+impl SharedExecutionResult {
+    /// Project only the already-classified provider truth required by the
+    /// Resolve boundary. Coordination delivery cannot see result payloads or
+    /// any executor state through this projection.
+    pub fn resolve_outcome(&self) -> Option<crate::resolve_outcome::ResolveOutcome> {
+        match self.outcome {
+            SharedExecutionOutcome::Completed => {
+                Some(crate::resolve_outcome::ResolveOutcome::Succeeded)
+            }
+            SharedExecutionOutcome::Failed => Some(crate::resolve_outcome::ResolveOutcome::Failed),
+            SharedExecutionOutcome::Uncertain => {
+                Some(crate::resolve_outcome::ResolveOutcome::Uncertain)
+            }
+            SharedExecutionOutcome::Unattempted
+            | SharedExecutionOutcome::Denied
+            | SharedExecutionOutcome::GuardRejected
+            | SharedExecutionOutcome::GuardIndeterminate
+            | SharedExecutionOutcome::AuditFailed
+            | SharedExecutionOutcome::Replay(_) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SharedExecutionOutcome {
     Completed,

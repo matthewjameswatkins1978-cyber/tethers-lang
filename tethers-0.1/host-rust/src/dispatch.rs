@@ -347,6 +347,18 @@ pub struct GuardAdmissionEntry {
     pub outcome: String,
 }
 
+/// Bounded evidence for delivery of an already durable Tethers outcome to
+/// Resolve. The action reference is represented only by its digest; provider
+/// output, adapter diagnostics, and other private data never enter Trail.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CoordinationDeliveryEntry {
+    pub action_ref_digest: String,
+    /// `SUCCEEDED`, `FAILED`, or `UNCERTAIN`.
+    pub outcome: String,
+    /// `pending`, `delivered`, or `indeterminate`.
+    pub state: String,
+}
+
 // ---------------------------------------------------------------------------
 // Group join entry
 // ---------------------------------------------------------------------------
@@ -526,6 +538,11 @@ pub trait Trail: sealed::Sealed {
     fn append_authorisation(&mut self, entry: &AuthorisationEntry) -> Result<(), TrailError>;
     fn append_guard_admission(&mut self, entry: &GuardAdmissionEntry) -> Result<(), TrailError>;
 
+    fn append_coordination_delivery(
+        &mut self,
+        entry: &CoordinationDeliveryEntry,
+    ) -> Result<(), TrailError>;
+
     /// Serialize, append, flush, and sync an execution outcome to durable
     /// storage.  Returns `Ok(())` only when the outcome is durable.
     ///
@@ -643,6 +660,22 @@ impl Trail for FileTrail {
             .map_err(|e| TrailError::FlushFailed(format!("sync_data failed: {e}")))
     }
 
+    fn append_coordination_delivery(
+        &mut self,
+        entry: &CoordinationDeliveryEntry,
+    ) -> Result<(), TrailError> {
+        let line = serde_json::to_string(entry)
+            .map_err(|e| TrailError::WriteFailed(format!("serialization failed: {e}")))?;
+        writeln!(self.file, "{line}")
+            .map_err(|e| TrailError::WriteFailed(format!("write failed: {e}")))?;
+        self.file
+            .flush()
+            .map_err(|e| TrailError::FlushFailed(format!("flush failed: {e}")))?;
+        self.file
+            .sync_data()
+            .map_err(|e| TrailError::FlushFailed(format!("sync_data failed: {e}")))
+    }
+
     fn append_outcome(&mut self, entry: &OutcomeEntry) -> Result<(), TrailError> {
         let line = serde_json::to_string(entry)
             .map_err(|e| TrailError::WriteFailed(format!("serialization failed: {e}")))?;
@@ -717,6 +750,7 @@ pub struct RecordingTrail {
     pub entries: Vec<IntentEntry>,
     pub authorisation_entries: Vec<AuthorisationEntry>,
     pub guard_admission_entries: Vec<GuardAdmissionEntry>,
+    pub coordination_delivery_entries: Vec<CoordinationDeliveryEntry>,
     pub outcome_entries: Vec<OutcomeEntry>,
     pub injected_intent_error: Option<TrailError>,
     pub injected_authorisation_error: Option<TrailError>,
@@ -735,6 +769,7 @@ impl RecordingTrail {
             entries: Vec::new(),
             authorisation_entries: Vec::new(),
             guard_admission_entries: Vec::new(),
+            coordination_delivery_entries: Vec::new(),
             outcome_entries: Vec::new(),
             injected_intent_error: None,
             injected_authorisation_error: None,
@@ -780,6 +815,17 @@ impl Trail for RecordingTrail {
             events.borrow_mut().push("trail_guard_admission");
         }
         self.guard_admission_entries.push(entry.clone());
+        Ok(())
+    }
+
+    fn append_coordination_delivery(
+        &mut self,
+        entry: &CoordinationDeliveryEntry,
+    ) -> Result<(), TrailError> {
+        if let Some(events) = &self.event_log {
+            events.borrow_mut().push("trail_coordination_delivery");
+        }
+        self.coordination_delivery_entries.push(entry.clone());
         Ok(())
     }
 
