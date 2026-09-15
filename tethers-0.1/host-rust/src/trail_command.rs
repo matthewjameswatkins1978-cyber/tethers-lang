@@ -430,6 +430,14 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    fn absolute_test_path(windows_path: &'static str, unix_path: &'static str) -> &'static str {
+        if cfg!(windows) {
+            windows_path
+        } else {
+            unix_path
+        }
+    }
+
     // Helper: build a JSONL string from a slice of raw JSON strings.
     fn jsonl(lines: &[&str]) -> String {
         let mut out = String::new();
@@ -556,7 +564,10 @@ mod tests {
 
     #[test]
     fn j13c_missing_trail_file_maps_to_not_found() {
-        let missing = Path::new("C:\\does-not-exist-j13c-test.jsonl");
+        let missing = Path::new(absolute_test_path(
+            r"C:\does-not-exist-j13c-test.jsonl",
+            "/does-not-exist-j13c-test.jsonl",
+        ));
         let result = run_trail(missing, "exec_00000000-0000-4000-8000-000000000000");
         let envelope: Value = serde_json::from_str(&result.json_output).unwrap();
         assert_eq!(envelope["status"], "not_found");
