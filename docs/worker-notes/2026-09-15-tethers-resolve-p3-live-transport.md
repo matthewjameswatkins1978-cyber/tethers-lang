@@ -10,7 +10,7 @@ Status: `IN_PROGRESS`
 
 Base commit: `9037862c27688b3715f01ba685e2ea1c2fd1c81d`
 
-Implementation checkpoint: `c791fee5c97052c70d9a4865a0fd75e83028e12c`
+Implementation checkpoint: `c791feebd38496b2d7946b3dbfc96547d233ad88`
 
 ## Requested outcome
 
@@ -73,7 +73,7 @@ fields; the accepted Resolve schema instead returns a digest over the complete
 semantic request, which the client recomputes and compares. The review also
 identified the need to keep the preparation digest in the P4a admission
 request; that seam repair is included in checkpoint
-`c791fee5c97052c70d9a4865a0fd75e83028e12c`.
+`c791feebd38496b2d7946b3dbfc96547d233ad88`.
 
 ## Independent review
 

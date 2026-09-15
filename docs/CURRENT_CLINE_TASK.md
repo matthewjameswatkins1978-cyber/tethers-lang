@@ -14,7 +14,7 @@ Route: `Implement the bounded Rust-host HTTPS adapter for the accepted Resolve v
 
 Base commit: `9037862c27688b3715f01ba685e2ea1c2fd1c81d`
 
-Evidence checkpoint: `c791fee5c97052c70d9a4865a0fd75e83028e12c`
+Evidence checkpoint: `c791feebd38496b2d7946b3dbfc96547d233ad88`
 
 Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p3-live-transport.md`
 
