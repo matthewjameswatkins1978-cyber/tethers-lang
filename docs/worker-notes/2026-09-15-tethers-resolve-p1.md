@@ -146,3 +146,22 @@ Final remediation verification:
 
 The remaining publication evidence is recorded in the final closeout response
 after branch, PR, and main integration checks.
+
+## Independent review
+
+Gemini independently reviewed the redacted remediation contract using the
+official `gemini-3.8-flash` model at `high` thinking level; the completed
+response condition was verified. It conditionally approved the remediation and
+confirmed that internal capability/policy derivation, exact approval matching,
+internal reconstruction comparison, and the executor-free preparation API
+address the four reported findings.
+
+The review requested source confirmation that proof/result fields remain
+private and questioned the older public `evaluate_permission_resolved` helper.
+Source inspection confirms `GuardPreparationProof`, `PreparedResolveGuard`, and
+their nested evidence fields have no public unchecked constructor or public
+fields. The older helper remains for existing non-P1 host paths, but its result
+is no longer accepted by either P1 preparation or reconstruction; P1 always
+calls `evaluate_effective_policy` internally. This is a bounded adjacent API
+debt, not a P1 preparation bypass, and changing it would expand into policy
+redesign outside this remediation.
