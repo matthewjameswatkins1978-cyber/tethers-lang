@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `66e8360a7247b60ccc8fb6cb447f796b922afb42`
 
-Implementation checkpoint: `pending review-fix commit`
+Implementation checkpoint: `5235b04d0da08aa0b90f0a0519869e17025f3496`
 
 ## Requested outcome
 
@@ -52,7 +52,7 @@ not create policy or approval authority.
 
 - Accepted starting baseline: `66e8360a7247b60ccc8fb6cb447f796b922afb42`.
 - Implementation checkpoint before review fix: `54cad2d49115dac42d2b87cf0225c1f3c2e165b8`.
-- Task packet checker passes in `COMPLETE` state.
+- Task packet checker passes in `COMPLETE` state at `5235b04`.
 - `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml` passes.
 - `resolve_guard::tests`: 5 passed.
 - Prepared-runtime P1 zero-provider/reconstruction test: 1 passed.
