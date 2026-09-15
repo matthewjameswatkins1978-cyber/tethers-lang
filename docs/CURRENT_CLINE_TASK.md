@@ -26,7 +26,9 @@ Suggested branch:
 
 Add the production Rust-host transport under the accepted P2 seams. Admission
 uses authenticated HTTPS+JSON against Resolve protocol
-`resolve.tethers-guard/1`; outcome delivery uses the same protocol after the
+`resolve.tethers-guard/1`, whose canonical document is
+`Resolve01/docs/TETHERS_GUARD_PROTOCOL.md` at Resolve commit
+`70f86ff47cbfd38e702cdd8c1433ccd04ecb43bd`; outcome delivery uses the same protocol after the
 existing Tethers provider outcome is durable. The implementation must fail
 closed, verify semantic response digests, preserve exact P2 ordering, and make
 delivery recovery explicit without adding a generic scheduler.
@@ -36,8 +38,9 @@ delivery recovery explicit without adding a generic scheduler.
 P0/P1/P2 preparation, opaque ScopeKeys, exact current preparation, the closed
 `Admitted`/`Rejected`/`Indeterminate` seam, durable intent, replay/G1, provider
 execution, Trail, outcomes and Result Anchors are accepted on main. P4 already
-provides a transport-neutral outcome journal. Resolve S3 at
-`b450305e72815d33357359c6db641d315d6b2975` freezes the admission and outcome
+provides a transport-neutral outcome journal. Resolve S3 at the canonical
+protocol document commit
+`70f86ff47cbfd38e702cdd8c1433ccd04ecb43bd` freezes the admission and outcome
 HTTP contract and proves outcome idempotency.
 
 ## Required behaviour
