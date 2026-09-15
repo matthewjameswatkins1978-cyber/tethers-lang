@@ -37,9 +37,9 @@ and server-sealed audit receipts.
   formatting, OCaml engine/provenance, OCaml tests, Rust static checks,
   warning ratchet, Rust and cross-language tests, protocol fixture sanity,
   MCP transcript suite, and compatibility corpus.
-- The report was run against the exact pinned base source commit in this
-  dirty implementation worktree; its release-eligibility field therefore
-  remains false until branch CI verifies the committed tip.
+- The report was run against the exact pinned base source commit in the dirty
+  implementation worktree; its release-eligibility field was therefore false.
+  The committed branch subsequently passed repository verification in CI.
 
 ## Constraints
 
