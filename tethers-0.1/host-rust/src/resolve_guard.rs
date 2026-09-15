@@ -67,8 +67,8 @@ impl fmt::Debug for GuardPreparationProofDigest {
 /// The controlled host-owned proof frozen by Resolve01 P0.
 ///
 /// Fields are private so callers cannot fabricate a proof from arbitrary
-/// strings.  Construction is available only through the current prepared
-/// runtime and an exact resolved capability plus an existing Allow decision.
+/// strings. Construction is available only through the current prepared
+/// runtime and its current capability, policy, and approval authorities.
 #[derive(Clone, PartialEq, Eq)]
 pub struct GuardPreparationProof {
     format_version: String,
@@ -216,6 +216,9 @@ pub enum GuardPreparationError {
     ManifestMismatch,
     ProviderMismatch,
     BindingUnavailable,
+    ApprovalRequired,
+    ApprovalMismatch,
+    EvidenceMismatch(GuardPreparationMismatch),
     ScopeViolation,
     ScopeNotEstablished,
     UnsupportedScope,
@@ -234,6 +237,9 @@ impl fmt::Display for GuardPreparationError {
             Self::ManifestMismatch => write!(f, "resolved manifest does not match the action"),
             Self::ProviderMismatch => write!(f, "resolved provider does not match the action"),
             Self::BindingUnavailable => write!(f, "trusted execution binding is unavailable"),
+            Self::ApprovalRequired => write!(f, "current policy requires exact approval"),
+            Self::ApprovalMismatch => write!(f, "exact approval is not current for this action"),
+            Self::EvidenceMismatch(reason) => write!(f, "{reason}"),
             Self::ScopeViolation => {
                 write!(f, "resolved action scope is outside the reviewed scope")
             }
@@ -383,9 +389,8 @@ fn scope_keys(scope: &ResolvedActionScope) -> Vec<ScopeKey> {
 pub fn prepare_resolve_guard_evidence(
     runtime: &PreparedRuntime,
     action: &ProposedAction,
-    resolved: &ResolvedCapability,
     availability: &ProviderAvailability,
-    decision: &PermissionDecision,
+    approval: Option<(&approval::ApprovalStore, &str)>,
 ) -> Result<PreparedResolveGuard, GuardPreparationError> {
     let current = resolver::resolve_capability(
         runtime.trusted_store(),
@@ -399,12 +404,6 @@ pub fn prepare_resolve_guard_evidence(
         action.bridge_provider_identity.as_deref(),
     )
     .map_err(|_| GuardPreparationError::BindingUnavailable)?;
-    if current.identity() != resolved.identity()
-        || current.provider_identity() != resolved.provider_identity()
-        || current.manifest_digest() != resolved.manifest_digest()
-    {
-        return Err(GuardPreparationError::BindingUnavailable);
-    }
     crate::validation::validate_against_schema(
         &current.manifest().manifest().input_schema,
         &action.arguments,
@@ -426,10 +425,10 @@ pub fn prepare_resolve_guard_evidence(
         .iter()
         .flat_map(|provider| provider.capabilities.iter().map(move |cap| (provider, cap)))
         .find(|(provider, cap)| {
-            provider.identity == resolved.provider_identity()
-                && cap.name == resolved.capability_name()
-                && cap.version == resolved.capability_version()
-                && cap.verified_manifest.verified_digest() == resolved.manifest_digest()
+            provider.identity == current.provider_identity()
+                && cap.name == current.capability_name()
+                && cap.version == current.capability_version()
+                && cap.verified_manifest.verified_digest() == current.manifest_digest()
         })
         .ok_or(GuardPreparationError::BindingUnavailable)?;
     let policy_evaluation = crate::policy::evaluate_effective_policy(
@@ -444,28 +443,44 @@ pub fn prepare_resolve_guard_evidence(
             ScopeAssessment::ScopeViolation
         },
     );
-    if matches!(
-        policy_evaluation.decision,
-        PermissionDecision::Deny | PermissionDecision::Unavailable
-    ) {
-        return Err(GuardPreparationError::NotAuthorised);
-    }
-    prepare_from_parts(action, &current, decision, &scope, prepared.0, prepared.1)
+    let decision = match policy_evaluation.decision {
+        PermissionDecision::Allow(allowed) => PermissionDecision::Allow(allowed),
+        PermissionDecision::Ask => {
+            let (approvals, approval_id) =
+                approval.ok_or(GuardPreparationError::ApprovalRequired)?;
+            let fresh_approval = approval::ApprovalProof::from_action(action)
+                .map_err(|_| GuardPreparationError::ApprovalMismatch)?;
+            let record = approvals
+                .record(approval_id)
+                .map_err(|_| GuardPreparationError::ApprovalMismatch)?;
+            if record.state != approval::ApprovalState::Approved {
+                return Err(GuardPreparationError::ApprovalMismatch);
+            }
+            if !record.proof.exactly_matches(&fresh_approval) {
+                return Err(GuardPreparationError::ApprovalMismatch);
+            }
+            crate::policy::allow_after_exact_approval(&current)
+        }
+        PermissionDecision::Deny => return Err(GuardPreparationError::NotAuthorised),
+        PermissionDecision::Unavailable => return Err(GuardPreparationError::BindingUnavailable),
+    };
+    prepare_from_parts(action, &current, &decision, &scope, prepared.0, prepared.1)
 }
 
-/// Rebuilds all evidence from current Tethers state.  The previous proof is
-/// deliberately not used as input; it exists only to make the resume route
-/// explicit to callers.
+/// Rebuilds all evidence from current Tethers state and refuses to return it
+/// unless it exactly matches the previous proof. The old proof is comparison
+/// input only; no current authority is reconstructed from it.
 pub fn reconstruct_resolve_guard_evidence(
     previous: &GuardPreparationProof,
     runtime: &PreparedRuntime,
     action: &ProposedAction,
-    resolved: &ResolvedCapability,
     availability: &ProviderAvailability,
-    decision: &PermissionDecision,
+    approval: Option<(&approval::ApprovalStore, &str)>,
 ) -> Result<PreparedResolveGuard, GuardPreparationError> {
-    let _ = previous;
-    prepare_resolve_guard_evidence(runtime, action, resolved, availability, decision)
+    let fresh = prepare_resolve_guard_evidence(runtime, action, availability, approval)?;
+    compare_resolve_guard_preparation(previous, fresh.proof())
+        .map_err(GuardPreparationError::EvidenceMismatch)?;
+    Ok(fresh)
 }
 
 fn prepare_from_parts(
