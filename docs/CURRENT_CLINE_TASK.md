@@ -14,6 +14,8 @@ Route: `Implement the bounded Rust-host HTTPS adapter for the accepted Resolve v
 
 Base commit: `9fb8517acd1192e9a1dbee8fa70c0f520d6c0fad`
 
+Evidence checkpoint: `ba44ace73dba04745d2206fa99100f283447461d`
+
 Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p3-live-transport.md`
 
 Suggested branch:
@@ -132,8 +134,4 @@ None.
 - `tethers-0.1/host-rust/src/resolve_transport.rs`
 - `tethers-0.1/host-rust/src/application.rs`
 - `tethers-0.1/host-rust/tests/resolve_r0_p4_conformance.rs`
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P3_LIVE_TRANSPORT.md`
-- `docs/worker-notes/2026-09-15-tethers-resolve-p3-live-transport.md`
-
 Do not broaden the packet checker to repository-wide inference.

@@ -10,7 +10,7 @@ Status: `IN_PROGRESS`
 
 Base commit: `9fb8517acd1192e9a1dbee8fa70c0f520d6c0fad`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `ba44ace73dba04745d2206fa99100f283447461d`
 
 ## Requested outcome
 
@@ -60,18 +60,18 @@ an environment prerequisite result, not evidence to weaken product tests.
 
 ## Remaining risks
 
-The full repository verification, accepted Resolve emulator-backed smoke, and
-independent review are not complete at this checkpoint. The transport tests
-currently use an explicit loopback fake server. Before completion, verify
-response/body edge cases, run the accepted repository gates, inspect the full
-diff, and record exact external limitations if the emulator cannot be started.
+Independent review and final publication are not complete at this checkpoint.
+The transport tests use an explicit loopback fake server and the ignored live
+test was also run against the accepted Resolve service with its Firestore
+emulator: admission, revoked rejection, outcome recording, exact redelivery
+and conflict all passed. Before completion, inspect the post-checkpoint diff,
+run the final gates, and record exact remote SHAs.
 
 ## Smallest next action
 
-Run focused outcome/transport tests after formatting, then run the repository
-warning-ratchet, packet checker and complete verification route. Attempt the
-accepted Resolve local smoke only if its existing emulator/service
-prerequisites are available.
+Run the final evidence route and independent review, then publish the clean
+branch for PR acceptance. Keep the canonical main checkout untouched until
+the remote merge is verified.
 
 ## References
 
