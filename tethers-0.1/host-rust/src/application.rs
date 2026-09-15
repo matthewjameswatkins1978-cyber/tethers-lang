@@ -2183,6 +2183,54 @@ pub struct SharedExecutionResult {
     pub execution_id: Option<String>,
 }
 
+impl SharedExecutionResult {
+    /// Project only the already-classified provider truth required by the
+    /// Resolve boundary. Coordination delivery cannot see result payloads or
+    /// any executor state through this projection.
+    pub fn resolve_outcome(&self) -> Option<crate::resolve_outcome::ResolveOutcome> {
+        match self.outcome {
+            SharedExecutionOutcome::Completed => {
+                Some(crate::resolve_outcome::ResolveOutcome::Succeeded)
+            }
+            SharedExecutionOutcome::Failed => Some(crate::resolve_outcome::ResolveOutcome::Failed),
+            SharedExecutionOutcome::Uncertain => {
+                Some(crate::resolve_outcome::ResolveOutcome::Uncertain)
+            }
+            SharedExecutionOutcome::Unattempted
+            | SharedExecutionOutcome::Denied
+            | SharedExecutionOutcome::GuardRejected
+            | SharedExecutionOutcome::GuardIndeterminate
+            | SharedExecutionOutcome::AuditFailed
+            | SharedExecutionOutcome::Replay(_) => None,
+        }
+    }
+}
+
+/// Deliver an outcome from the existing shared execution result. The helper
+/// projects only provider truth and the host-issued execution identity; it
+/// intentionally produces no request for pre-provider dispositions.
+pub fn deliver_resolve_outcome<S: crate::resolve_outcome::ResolveOutcomeDeliveryStore>(
+    result: &SharedExecutionResult,
+    delivery: &mut crate::resolve_outcome::ResolveOutcomeDeliveryCoordinator<S>,
+    adapter: &mut dyn crate::resolve_outcome::ResolveOutcomeAdapter,
+    trail: &mut dyn dispatch::Trail,
+) -> Result<
+    Option<crate::resolve_outcome::ResolveOutcomeDeliveryResult>,
+    crate::resolve_outcome::ResolveOutcomeDeliveryError,
+> {
+    let Some(outcome) = result.resolve_outcome() else {
+        return Ok(None);
+    };
+    let execution_id = result
+        .execution_id
+        .as_deref()
+        .ok_or(crate::resolve_outcome::ResolveOutcomeDeliveryError::MissingActionReference)?;
+    let action_ref = crate::resolve_outcome::TethersActionRef::from_host_value(execution_id)
+        .map_err(crate::resolve_outcome::ResolveOutcomeDeliveryError::InvalidActionReference)?;
+    let request = crate::resolve_outcome::ResolveOutcomeRequest::new(action_ref, outcome);
+    delivery.deliver(request, adapter, trail).map(Some)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SharedExecutionOutcome {
     Completed,
