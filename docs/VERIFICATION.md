@@ -21,8 +21,9 @@ seed compatibility corpus, and the warning ratchet.
 
 ## Prerequisites and current engine
 
-The supported Windows development environment uses the repository-local
-path-bound switch at `tethers-0.1/engine-ocaml`, or an explicit absolute path
+The supported Windows and native Linux development environments use the
+repository-local path-bound switch at `tethers-0.1/engine-ocaml`, or an explicit
+absolute switch prefix
 in `TETHERS_OCAML_SWITCH` / `-OcamlSwitchPath`. The switch must contain OCaml
 5.5.0, Dune 3.24.0, Yojson 2.2.2, and Digestif 1.3.1. The locked opam metadata
 is the dependency authority. If a package is missing, verification stops with
@@ -62,9 +63,10 @@ into the complete migration audit.
 ## CI and release eligibility
 
 The bounded PR workflow checks the repository packet, formatting, Rust static
-checks, fixture structure, compatibility seeds, and whitespace. It is not a
-claim of Linux runtime support and does not replace the Windows current-engine
-route where the required OCaml switch is available.
+checks, fixture structure, compatibility seeds, and whitespace. The R3 Ubuntu
+job additionally runs native Core/Rust verification, package creation, and
+clean-package smoke. WSL output is supplemental and is never the Linux support
+gate.
 
 Release-control evidence follows this order:
 
@@ -82,9 +84,16 @@ clean source commit
 ```
 
 Release mode rejects a dirty tree or an engine whose source commit/tree or
-binary hash does not match the checkout. R5 will implement package creation,
-SBOM, attestation, clean-machine installation and final publication. No
+binary hash does not match the checkout. R3 provides a native Linux candidate
+package and clean-extraction smoke only; R5 still owns final package creation,
+SBOM, attestation, clean-machine installation policy, and publication. No
 attestation is made over a file that can later be modified.
+
+The Linux package route is intentionally narrower than final release
+automation: it builds the native ELF host and Core engine, records source and
+binary hashes, writes `SHA256SUMS`, and verifies the extracted binaries from a
+fresh temporary directory. It does not claim SBOM, attestation, or package
+manager support.
 
 ## Warning policy
 

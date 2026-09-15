@@ -1352,6 +1352,14 @@ mod tests {
         parse_runtime_config(&json.to_string()).unwrap_err()
     }
 
+    fn absolute_test_path(windows_path: &'static str, unix_path: &'static str) -> &'static str {
+        if cfg!(windows) {
+            windows_path
+        } else {
+            unix_path
+        }
+    }
+
     fn with_temp_dir<F>(test_fn: F)
     where
         F: FnOnce(&Path),
@@ -1585,8 +1593,10 @@ mod tests {
     #[test]
     fn j12_packet1_absolute_source_path_rejected() {
         let mut json = minimal_config_json();
-        json["tether_set"]["tethers"][0]["source_path"] =
-            serde_json::json!("C:\\absolute\\path.tether");
+        json["tether_set"]["tethers"][0]["source_path"] = serde_json::json!(absolute_test_path(
+            r"C:\absolute\path.tether",
+            "/absolute/path.tether"
+        ));
         let err = parse_err(&json);
         assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
     }
@@ -1595,10 +1605,9 @@ mod tests {
     #[test]
     fn j12_packet1_absolute_manifest_path_rejected() {
         let mut json = minimal_config_json();
-        // Use a Windows absolute path (with drive letter) which Path::is_absolute()
-        // recognises on Windows.
-        json["providers"][0]["capabilities"][0]["manifest_path"] =
-            serde_json::json!("C:\\absolute\\path.json");
+        json["providers"][0]["capabilities"][0]["manifest_path"] = serde_json::json!(
+            absolute_test_path(r"C:\absolute\path.json", "/absolute/path.json")
+        );
         let err = parse_err(&json);
         assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
     }

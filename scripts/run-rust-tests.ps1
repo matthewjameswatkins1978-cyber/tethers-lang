@@ -8,8 +8,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $prepare = Join-Path $repositoryRoot 'scripts/prepare-current-engine.ps1'
+$pwsh = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { 'pwsh.exe' } else { 'pwsh' }
 
-& pwsh.exe -NoProfile -File $prepare -OcamlSwitchPath $OcamlSwitchPath -ReleaseMode:$Release
+& $pwsh -NoProfile -File $prepare -OcamlSwitchPath $OcamlSwitchPath -ReleaseMode:$Release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $provenancePath = Join-Path $repositoryRoot 'verification/current-engine-provenance.json'
@@ -19,7 +20,7 @@ if ($provenance.schema -ne 'tethers.engine/1' -or $provenance.status -ne 'pass')
     Write-Host 'Current engine provenance manifest is missing or invalid; Rust tests were not attempted.'
     exit 1
 }
-$enginePath = Join-Path $repositoryRoot ($provenance.binary_relative_path -replace '/', '\')
+$enginePath = Join-Path $repositoryRoot $provenance.binary_relative_path
 $actualHash = (Get-FileHash -LiteralPath $enginePath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actualHash -ne $provenance.binary_sha256 -or $provenance.source_commit -ne ((& git -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant())) {
     Write-Host 'VERIFICATION PREREQUISITE FAILED'

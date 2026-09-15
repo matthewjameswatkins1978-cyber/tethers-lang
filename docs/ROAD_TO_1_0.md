@@ -76,7 +76,7 @@ audited by the relevant package.
 | Replay/idempotency state | Durable intent and replay records | Host | Versioned but needs 1.0 audit | Stable safety boundary, versioned storage | Explicit identity, outcome, uncertainty, and migration | R7 crash/recovery corpus |
 | MCP adapter | Tethers MCP over stdio, currently `2025-11-25` | Core adapter | Versioned/experimental | Versioned adapter; current revision chosen explicitly | Negotiated MCP revision; one canonical evaluator | R4 current-protocol pass |
 | Portable Workbench | Product/workbench `0.2.2` | Portable host | Versioned | Separate supported surface with its own promise | Workbench version and policy decision contract | R6 compatibility audit |
-| Release archive layout | Windows x64 0.7 full-runtime archive | Release control | Versioned but needs 1.0 audit | Stable per supported target | Manifest, checksums, provenance, documented layout | R5/R9 clean-machine rehearsal |
+| Release archive layout | Windows x64 0.7 full-runtime archive; Linux x86-64 R3 candidate | Release control | Versioned but needs 1.0 audit | Stable per supported target | Manifest, checksums, provenance, documented layout | R3 native Linux gates and R5/R9 clean-machine rehearsal |
 | Release manifest | Current generated package manifest | Release control | Versioned but needs 1.0 audit | Stable verification evidence | Source SHA, artifact hashes, toolchain/build identity | R5 provenance and reproducibility |
 
 ## 1.0 non-goals
@@ -131,7 +131,7 @@ Each result is `PASS`, `FAIL`, `SKIPPED WITH REASON`, or `NOT APPLICABLE`.
 
 R1 Contract Freeze — COMPLETE<br>
 R2 Verification/Release Control — COMPLETE<br>
-R3 Linux Native Parity — NEXT
+R3 Linux Native Parity — IN PROGRESS
 
 R2 repaired the historical packet-checkpoint model, made engine provenance
 explicit, classified prerequisite and optional outcomes, added the 0.7 seed

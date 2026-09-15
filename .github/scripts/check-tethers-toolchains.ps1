@@ -84,17 +84,20 @@ function Invoke-TethersToolchainCheck {
         return $Script:ExitCode
     }
 
-    $OpamDir = Join-Path $CanonicalSwitch "_opam"
-    if (-not (Test-Path -LiteralPath $OpamDir -PathType Container)) {
-        Fail "_opam not found under OcamlSwitchPath: $OpamDir"
-        return $Script:ExitCode
-    }
-
-    $SwitchMarker = Join-Path $OpamDir ".opam-switch"
-    if (-not ((Test-Path -LiteralPath $SwitchMarker -PathType Container) -or
-              (Test-Path -LiteralPath $SwitchMarker -PathType Leaf))) {
-        Fail ".opam-switch not found in _opam: $SwitchMarker"
-        return $Script:ExitCode
+    $localOpamDir = Join-Path $CanonicalSwitch "_opam"
+    if (Test-Path -LiteralPath $localOpamDir -PathType Container) {
+        $OpamDir = $localOpamDir
+        $SwitchMarker = Join-Path $OpamDir ".opam-switch"
+        if (-not ((Test-Path -LiteralPath $SwitchMarker -PathType Container) -or
+                  (Test-Path -LiteralPath $SwitchMarker -PathType Leaf))) {
+            Fail ".opam-switch not found in _opam: $SwitchMarker"
+            return $Script:ExitCode
+        }
+    } else {
+        # Native Linux CI uses setup-ocaml's ordinary global switch prefix.
+        # The repository-local _opam layout remains accepted on Windows.
+        $OpamDir = $CanonicalSwitch
+        Pass "global opam switch prefix accepted: $OpamDir"
     }
 
     # --- Rust process guard ---
@@ -196,10 +199,11 @@ function Invoke-TethersToolchainCheck {
     $duneVer = & opam exec --switch="$CanonicalSwitch" -- dune --version 2>&1
     if ($duneVer -eq "3.24.0") { Pass "Dune $duneVer" } else { Fail "Dune: expected 3.24.0, got $duneVer" }
 
-    $pkgList = & opam list --switch="$CanonicalSwitch" --installed --columns=name,version 2>&1
+    $pkgList = & opam list --switch="$CanonicalSwitch" --installed --columns=name,version --color=never 2>&1
     if ($LASTEXITCODE -ne 0) { Fail "opam list failed"; return $Script:ExitCode }
-    if ($pkgList -match "yojson\s+2\.2\.2") { Pass "Yojson 2.2.2" } else { Fail "Yojson 2.2.2 not found in installed packages" }
-    if ($pkgList -match "digestif\s+1\.3\.1") { Pass "Digestif 1.3.1" } else { Fail "Digestif 1.3.1 not found in installed packages" }
+    $pkgListText = $pkgList -join "`n"
+    if ($pkgListText -match '(?m)^\s*yojson\s+2\.2\.2\s*$') { Pass "Yojson 2.2.2" } else { Fail "Yojson 2.2.2 not found in installed packages" }
+    if ($pkgListText -match '(?m)^\s*digestif\s+1\.3\.1\s*$') { Pass "Digestif 1.3.1" } else { Fail "Digestif 1.3.1 not found in installed packages" }
 
     # --- Repository OCaml checks ---
     $opamFile = Join-Path $repoRoot "tethers-0.1/engine-ocaml/tethers_engine.opam"

@@ -980,6 +980,14 @@ mod publication_hook {
 mod tests {
     use super::*;
 
+    fn absolute_test_path(windows_path: &'static str, unix_path: &'static str) -> &'static str {
+        if cfg!(windows) {
+            windows_path
+        } else {
+            unix_path
+        }
+    }
+
     fn example_plug_json() -> serde_json::Value {
         serde_json::json!({
             "package_format_version": "1",
@@ -1168,7 +1176,11 @@ mod tests {
 
     #[test]
     fn p2a_refuses_wrong_extension() {
-        let err = pack(Path::new("C:\\src"), Path::new("C:\\out.zip")).unwrap_err();
+        let err = pack(
+            Path::new(absolute_test_path(r"C:\src", "/src")),
+            Path::new(absolute_test_path(r"C:\out.zip", "/out.zip")),
+        )
+        .unwrap_err();
         assert_eq!(err.code, "invalid_cli_usage");
         assert!(err.message.contains(".tetherplug"));
     }

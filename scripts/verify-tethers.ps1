@@ -43,7 +43,30 @@ function Invoke-VerificationStep {
     }
     [void]$results.Add($result)
     Write-Host ("{0}: {1}" -f $status, $Name)
-    if ($exitCode -ne 0 -and $null -eq $script:firstFailure) { $script:firstFailure = $result }
+    if ($exitCode -ne 0) {
+        $detailLines = if ($lines.Count -le 24) {
+            @($lines)
+        } else {
+            $signals = @($lines | Where-Object {
+                    $_ -match 'panicked|assertion|left:|right:|^----|^failures:|test result'
+                })
+            if ($signals.Count -gt 0) {
+                @($lines | Select-Object -First 4) +
+                    @('... failure detail truncated ...') +
+                    @($signals | Select-Object -First 36)
+            } else {
+                @($lines | Select-Object -First 4) +
+                    @('... failure detail truncated ...') +
+                    @($lines | Select-Object -Last 19)
+            }
+        }
+        $detail = ($detailLines -join "`n").Trim()
+        if (-not [string]::IsNullOrWhiteSpace($detail)) {
+            Write-Host ("First failure detail: {0}" -f $detail)
+            $result | Add-Member -NotePropertyName failure_detail -NotePropertyValue $detail
+        }
+        if ($null -eq $script:firstFailure) { $script:firstFailure = $result }
+    }
     return $result
 }
 
@@ -54,13 +77,20 @@ $dirty = $statusLines.Count -gt 0
 $effectiveSwitch = $OcamlSwitchPath
 if ([string]::IsNullOrWhiteSpace($effectiveSwitch)) { $effectiveSwitch = [string]$env:TETHERS_OCAML_SWITCH }
 if ([string]::IsNullOrWhiteSpace($effectiveSwitch)) { $effectiveSwitch = Join-Path $repositoryRoot 'tethers-0.1/engine-ocaml' }
+$nativeWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+$pwsh = if ($nativeWindows) { 'pwsh.exe' } else { 'pwsh' }
 
 $report = [ordered]@{
     schema = 'tethers.verify/1'
     source_commit = $head
     source_tree = $tree
     dirty = $dirty
-    platform = [System.Environment]::OSVersion.Platform.ToString()
+    platform = [ordered]@{
+        os = if ($nativeWindows) { 'windows' } else { 'linux' }
+        architecture = $architecture
+        runtime = [System.Runtime.InteropServices.RuntimeInformation]::FrameworkDescription
+    }
     toolchain = [ordered]@{ status = 'NOT_CHECKED' }
     engine = $null
     suites = $results
@@ -69,11 +99,11 @@ $report = [ordered]@{
     release_eligible = $false
 }
 
-$packet = Invoke-VerificationStep 'task packet checker' 'pwsh.exe' @('-NoProfile', '-File', '.github/scripts/check-tethers-task-packet.ps1') -Category 'external'
+$packet = Invoke-VerificationStep 'task packet checker' $pwsh @('-NoProfile', '-File', '.github/scripts/check-tethers-task-packet.ps1') -Category 'external'
 $fmt = Invoke-VerificationStep 'Rust formatting' 'cargo' @('fmt', '--manifest-path', 'tethers-0.1/host-rust/Cargo.toml', '--all', '--', '--check')
 $engineArgs = @('-NoProfile', '-File', 'scripts/prepare-current-engine.ps1')
 if (-not [string]::IsNullOrWhiteSpace($effectiveSwitch)) { $engineArgs += @('-OcamlSwitchPath', $effectiveSwitch) }
-$engine = Invoke-VerificationStep 'current OCaml engine build and provenance' 'pwsh.exe' $engineArgs
+$engine = Invoke-VerificationStep 'current OCaml engine build and provenance' $pwsh $engineArgs
 $manifestPath = Join-Path $repositoryRoot 'verification/current-engine-provenance.json'
 if ($engine.status -eq 'PASS' -and (Test-Path -LiteralPath $manifestPath)) {
     $report.engine = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -89,10 +119,10 @@ if ($engine.status -eq 'PASS') {
     [void](Invoke-VerificationStep 'warning ratchet' 'just' @('warning-ratchet'))
     $rustArgs = @('-NoProfile', '-File', 'scripts/run-rust-tests.ps1', '-OcamlSwitchPath', $effectiveSwitch)
     if ($ReleaseMode) { $rustArgs += '-Release' }
-    [void](Invoke-VerificationStep 'Rust and cross-language tests' 'pwsh.exe' $rustArgs)
-    [void](Invoke-VerificationStep 'protocol fixture sanity' 'pwsh.exe' @('-NoProfile', '-File', 'tethers-0.1/scripts/check-fixtures.ps1'))
-    [void](Invoke-VerificationStep 'MCP transcript suite' 'pwsh.exe' @('-NoProfile', '-File', 'tethers-0.1/scripts/test-mcp-transcripts.ps1'))
-    [void](Invoke-VerificationStep 'compatibility corpus' 'pwsh.exe' @('-NoProfile', '-File', 'scripts/check-compatibility-corpus.ps1'))
+    [void](Invoke-VerificationStep 'Rust and cross-language tests' $pwsh $rustArgs)
+    [void](Invoke-VerificationStep 'protocol fixture sanity' $pwsh @('-NoProfile', '-File', 'tethers-0.1/scripts/check-fixtures.ps1'))
+    [void](Invoke-VerificationStep 'MCP transcript suite' $pwsh @('-NoProfile', '-File', 'tethers-0.1/scripts/test-mcp-transcripts.ps1'))
+    [void](Invoke-VerificationStep 'compatibility corpus' $pwsh @('-NoProfile', '-File', 'scripts/check-compatibility-corpus.ps1'))
 } else {
     [void]$results.Add([pscustomobject]@{ name = 'dependent OCaml/Rust cross-language suites'; category = 'required'; status = 'SKIPPED WITH REASON'; exit_code = $null; duration_ms = 0; first_failure = 'current engine prerequisite failed' })
 }

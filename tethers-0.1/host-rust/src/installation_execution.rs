@@ -9,7 +9,11 @@ use crate::installation_request::InstallationRequest;
 use crate::installation_trust::ExactCandidateTrustStore;
 use crate::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use crate::launch_profile::{LaunchProfileEvidenceStore, PreparedSupervisedLaunch};
-use crate::m3_store::{reject_reparse, verify_chain, M3Error, Result};
+#[cfg(not(windows))]
+use crate::m3_store::verify_chain;
+#[cfg(windows)]
+use crate::m3_store::{reject_reparse, verify_chain};
+use crate::m3_store::{M3Error, Result};
 use crate::trust::PackageTrustEvidence;
 use std::path::Path;
 use std::time::Duration;
@@ -28,33 +32,14 @@ const ERROR_LOCK_VIOLATION: i32 = 33;
 
 #[derive(Debug)]
 struct InstallationLockGuard {
-    #[cfg(windows)]
     _file: std::fs::File,
 }
 
 impl InstallationLockGuard {
-    /// Returns `Ok(())` when compiled targeting a non-Windows OS.
-    /// The caller must still return an error before any mutation or planning.
-    fn assert_windows_lock_support() -> Result<()> {
-        #[cfg(windows)]
-        {
-            Ok(())
-        }
-        #[cfg(not(windows))]
-        {
-            Err(M3Error::new(
-                "installation_lock_invalid",
-                "installation lock path is invalid",
-            ))
-        }
-    }
-
     #[cfg(windows)]
     fn acquire(lock_path: &Path) -> Result<Self> {
         use std::fs::OpenOptions;
         use std::os::windows::fs::OpenOptionsExt;
-
-        Self::assert_windows_lock_support()?;
 
         // Lock path must be absolute.
         if !lock_path.is_absolute() {
@@ -143,10 +128,84 @@ impl InstallationLockGuard {
         Ok(Self { _file: file })
     }
 
-    #[cfg(not(windows))]
+    #[cfg(unix)]
+    fn acquire(lock_path: &Path) -> Result<Self> {
+        use std::fs::OpenOptions;
+        use std::os::fd::AsRawFd;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        if !lock_path.is_absolute() {
+            return Err(M3Error::new(
+                "installation_lock_invalid",
+                "installation lock path is invalid",
+            ));
+        }
+        let parent = lock_path.parent().ok_or_else(|| {
+            M3Error::new(
+                "installation_lock_invalid",
+                "installation lock path is invalid",
+            )
+        })?;
+        verify_chain(parent)?;
+        if !parent.is_dir() {
+            return Err(M3Error::new(
+                "installation_lock_invalid",
+                "installation lock path is invalid",
+            ));
+        }
+        if let Ok(metadata) = std::fs::symlink_metadata(lock_path) {
+            if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+                return Err(M3Error::new(
+                    "installation_lock_invalid",
+                    "installation lock path is invalid",
+                ));
+            }
+            if metadata.len() > 0 {
+                return Err(M3Error::new(
+                    "installation_lock_invalid",
+                    "installation lock path is invalid",
+                ));
+            }
+        }
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(lock_path)
+            .map_err(|error| M3Error::new("installation_lock_io", error.to_string()))?;
+        // SAFETY: the descriptor is owned by this guard and remains live until
+        // the guard is dropped.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            let error = std::io::Error::last_os_error();
+            if let Some(code) = error.raw_os_error() {
+                if code == libc::EWOULDBLOCK || code == libc::EAGAIN {
+                    return Err(M3Error::new(
+                        "installation_busy",
+                        "another installation action is already running",
+                    ));
+                }
+            }
+            return Err(M3Error::new("installation_lock_io", error.to_string()));
+        }
+        if let Ok(metadata) = std::fs::symlink_metadata(lock_path) {
+            if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+                return Err(M3Error::new(
+                    "installation_lock_invalid",
+                    "installation lock path is invalid",
+                ));
+            }
+        }
+        Ok(Self { _file: file })
+    }
+
+    #[cfg(not(any(windows, unix)))]
     fn acquire(_lock_path: &Path) -> Result<Self> {
-        Self::assert_windows_lock_support()?;
-        unreachable!()
+        Err(M3Error::new(
+            "installation_lock_invalid",
+            "installation lock platform is unsupported",
+        ))
     }
 }
 
@@ -1018,6 +1077,7 @@ mod lock_tests {
         fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 
+    #[cfg(windows)]
     #[test]
     fn j24k2_lock_child_cannot_inherit_lock_handle() {
         use crate::child_process::{ChildConfig, SupervisedChild};

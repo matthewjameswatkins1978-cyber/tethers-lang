@@ -324,7 +324,7 @@ fn main() {
             status.success(),
             "host-data root must receive protected ACL"
         );
-        let outcome = tethers_reference_host::replay_windows::provision_replay(&host_data_root)
+        let outcome = tethers_reference_host::replay_store::provision_replay(&host_data_root)
             .expect("provision_replay");
         eprintln!("Replay provisioned: {:?}", outcome);
     }

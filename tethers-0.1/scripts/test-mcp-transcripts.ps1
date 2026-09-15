@@ -3,7 +3,16 @@ $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $TranscriptRoot = Join-Path $Root "protocol/mcp-transcripts"
-$ServerExe = Join-Path $Root "engine-ocaml\_build\default\bin\tethers_mcp_main.exe"
+$serverDirectory = Join-Path (Join-Path $Root 'engine-ocaml') '_build/default/bin'
+$ServerExe = $null
+foreach ($serverName in @('tethers_mcp_main.exe', 'tethers_mcp_main')) {
+    $candidate = Join-Path $serverDirectory $serverName
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+        $ServerExe = $candidate
+        break
+    }
+}
+$tempRoot = [System.IO.Path]::GetTempPath()
 
 function ConvertTo-CanonicalJson {
     param(
@@ -244,8 +253,8 @@ function Run-ServerAndCompare {
     $stdin = Read-JsonLines $stdinPath
     $expectedStdout = Read-JsonLines $stdoutPath
 
-    $stdoutTemp = Join-Path $env:TEMP "mcp_stdout_$CaseName.txt"
-    $stderrTemp = Join-Path $env:TEMP "mcp_stderr_$CaseName.txt"
+    $stdoutTemp = Join-Path $tempRoot "mcp_stdout_$CaseName.txt"
+    $stderrTemp = Join-Path $tempRoot "mcp_stderr_$CaseName.txt"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $ServerExe
@@ -328,7 +337,7 @@ $requiredCases = @(
 
 Test-SemanticComparisonSelfChecks
 
-Assert-True (Test-Path -LiteralPath $ServerExe -PathType Leaf) "MCP server executable not found: $ServerExe"
+Assert-True (($null -ne $ServerExe) -and (Test-Path -LiteralPath $ServerExe -PathType Leaf)) "MCP server executable not found under: $serverDirectory"
 
 foreach ($caseName in $requiredCases) {
     $caseRoot = Join-Path $TranscriptRoot $caseName

@@ -1,4 +1,4 @@
-set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+set shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 
 _manifest := "tethers-0.1/host-rust/Cargo.toml"
 
