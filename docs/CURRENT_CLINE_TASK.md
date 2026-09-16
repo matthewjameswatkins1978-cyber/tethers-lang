@@ -14,6 +14,8 @@ Route: `Prepare, verify, publish and record the bounded Windows x64 0.7.1 mainte
 
 Base commit: `63262b8b27b2d48c6b5ef023fa54c826c565dfe2`
 
+Evidence checkpoint: `24a46128e349483209f2ac296d54689fae28d81f`
+
 Worker note: `docs/worker-notes/2026-09-16-tethers-0-7-1-release.md`
 
 Suggested branch:
@@ -157,7 +159,6 @@ None
 - `tethers-0.1/host-rust/Cargo.lock`
 - `scripts/package-tethers-release.ps1`
 - `scripts/package-0.7.ps1`
-- `docs/CURRENT_CLINE_TASK.md`
 - `docs/VERSIONING.md`
 - `docs/CURRENT_GOAL.md`
 - `docs/PROJECT_DASHBOARD.md`
@@ -168,4 +169,3 @@ None
 - `QUICKSTART.md`
 - `docs/AGENT_QUICKSTART.md`
 - `docs/TETHERS_0_7_1_RELEASE.md`
-- `docs/worker-notes/2026-09-16-tethers-0-7-1-release.md`
