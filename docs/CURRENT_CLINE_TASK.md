@@ -1,6 +1,6 @@
-# TETHERS x RESOLVE01 - P3 Live Guard Transport & Outcome Delivery
+# TETHERS x RESOLVE01 - P4b End-to-End Guarded Lifecycle & Recovery
 
-Task: `TETHERS x RESOLVE01 / P3 - Live Guard Transport & Outcome Delivery`
+Task: `TETHERS x RESOLVE01 / P4b - End-to-End Guarded Lifecycle & Recovery`
 
 Control contract: `1`
 
@@ -10,118 +10,139 @@ Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Implement the bounded Rust-host HTTPS adapter for the accepted Resolve v1 guard-admission contract and explicit durable delivery of already-recorded Tethers provider outcomes. Preserve Tethers authority and accepted P2 ordering. Do not alter Core, syntax, provider execution, replay semantics, or Resolve data access.`
+Route: `Prove the complete guarded lifecycle and recovery composition across the accepted Tethers replay, durable intent, Resolve admission, provider, outcome and delivery authorities. Add only test-only fault injection and focused lifecycle evidence; do not introduce a new recovery engine or change product semantics.`
 
-Base commit: `9037862c27688b3715f01ba685e2ea1c2fd1c81d`
+Base commit: `63aa8e21bfa359ad444d8b32b3007b398fa9002e`
 
-Evidence checkpoint: `c791feebd38496b2d7946b3dbfc96547d233ad88`
+Evidence checkpoint: `00361fd89a381ec48500ff0003e998073e18a347`
 
-Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p3-live-transport.md`
+Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p4b-lifecycle-recovery.md`
 
 Suggested branch:
 
-`codex/tethers-resolve-p3-live-transport`
+`codex/tethers-resolve-p4b-lifecycle-recovery`
 
 ## Objective
 
-Add the production Rust-host transport under the accepted P2 seams. Admission
-uses authenticated HTTPS+JSON against Resolve protocol
-`resolve.tethers-guard/1`, whose canonical document is
-`Resolve01/docs/TETHERS_GUARD_PROTOCOL.md` at Resolve commit
-`70f86ff47cbfd38e702cdd8c1433ccd04ecb43bd`; outcome delivery uses the same protocol after the
-existing Tethers provider outcome is durable. The implementation must fail
-closed, verify semantic response digests, preserve exact P2 ordering, and make
-delivery recovery explicit without adding a generic scheduler.
+Produce direct, deterministic evidence for the P4b guarded lifecycle and crash
+recovery matrix. Demonstrate that Tethers remains authoritative, provider
+effects are bounded to at most one per execution identity, admission is never
+automatically retried, durable outcomes are redelivered exactly, and stale or
+conflicting evidence fails closed.
 
 ## Relevant background and existing behaviour
 
-P0/P1/P2 preparation, opaque ScopeKeys, exact current preparation, the closed
-`Admitted`/`Rejected`/`Indeterminate` seam, durable intent, replay/G1, provider
-execution, Trail, outcomes and Result Anchors are accepted on main. P4 already
-provides a transport-neutral outcome journal. Resolve S3 at the canonical
-protocol document commit
-`70f86ff47cbfd38e702cdd8c1433ccd04ecb43bd` freezes the admission and outcome
-HTTP contract and proves outcome idempotency.
+P1 preparation proof, P2 guard admission, P3 live transport and P4 outcome
+delivery are accepted on `main` at the base commit above. The existing host
+already owns durable intent, replay/G1, provider invocation, outcome
+classification, Result Anchors, Trail evidence and the transport-neutral
+outcome journal. P4b composes and tests those authorities; it does not replace
+them.
+
+The accepted P3a protocol-provenance update on `main` pins the canonical
+Resolve guard contract document and does not supersede this P4b lifecycle
+scope.
 
 ## Required behaviour
 
-1. Implement one small Rust-host HTTPS+JSON client for `/internal/tethers/v1/guard/admit` and `/internal/tethers/v1/outcome`, using the existing JCS/SHA-256 authority and accepted P2 projections.
-2. Require an explicit host-owned base URL and bridge key, default to HTTPS, bound timeouts and bodies, disable redirects, redact the key, and keep ordinary unguarded execution unchanged.
-3. Serialize exact v1 requests and strictly validate protocol version, digest, closed result vocabulary, UTF-8, duplicate members, unknown fields and bounded responses. Transport inability maps to P2 `Indeterminate` and never triggers an automatic admission retry.
-4. Preserve P2 ordering and prove negative admission cases make zero provider calls, while an admitted request reaches the existing provider boundary once.
-5. Extend outcome delivery identity with action identity plus preparation digest, persist only bounded delivery evidence, treat `ALREADY_RECORDED` as success, and record `CONFLICT` without rewriting Tethers outcome or retrying automatically.
-6. Allow only explicit later redelivery of an already durable outcome; never rerun a provider, mutate Result Anchor taxonomy, or turn notification failure into provider uncertainty.
-7. Add strict fake-server/contract tests and, where the local accepted Resolve environment is available, a bounded cross-system smoke against Resolve S3.
-8. Document the actual P3 implementation, security properties, recovery states, configuration, verification evidence and explicit exclusions.
+1. Cover no-intent, intent failure, admission rejection/indeterminacy,
+   admission-evidence failure, pre-G1 failure, post-G1 uncertainty, provider
+   failure/uncertainty, durable-outcome delivery failure, exact redelivery,
+   Delivered terminality and conflict.
+2. Prove that a guarded provider effect occurs at most once for an
+   `ExecutionId`, including replay/restart recovery cases.
+3. Prove that admission and provider execution are never automatically retried.
+   Only explicit exact outcome redelivery is allowed after a durable outcome.
+4. Prove that old admission state is not reusable after restart and that a
+   fresh explicit attempt is required.
+5. Prove that Tethers provider outcome truth is not rewritten by delivery or
+   Resolve coordination failure.
+6. Exercise the Together barrier: rejected, indeterminate and pre-stage-B
+   failures produce no partial provider effect.
+7. Add a named crash-boundary matrix and document which accepted authority
+   supplies each recovery rule.
+8. Use the accepted Resolve S3 contract for any available bounded smoke; record
+   unavailable external prerequisites honestly.
 
 ## Relevant components
 
+- `tethers-0.1/host-rust/src/application.rs`
+- `tethers-0.1/host-rust/src/dispatch.rs`
+- `tethers-0.1/host-rust/src/replay_runtime.rs`
 - `tethers-0.1/host-rust/src/resolve_guard.rs`
 - `tethers-0.1/host-rust/src/resolve_outcome.rs`
-- `tethers-0.1/host-rust/src/resolve_transport.rs`
-- `tethers-0.1/host-rust/src/application.rs`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/tests/resolve_r0_p4_conformance.rs`
-- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P3_LIVE_TRANSPORT.md`
-- `docs/worker-notes/2026-09-15-tethers-resolve-p3-live-transport.md`
+- `tethers-0.1/host-rust/src/p4b_lifecycle.rs`
+- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P4B_LIFECYCLE_RECOVERY.md`
+- `docs/worker-notes/2026-09-15-tethers-resolve-p4b-lifecycle-recovery.md`
 
 ## Frozen decisions and invariants
 
 - Tethers remains the sole authority for capability, manifest, provider,
   arguments, scope, binding, trust, policy, approval, replay, intent and
   provider outcome.
-- Resolve only coordinates admission and records a durable outcome fact. It
-  cannot grant Tethers permission or execute a provider.
-- Admission is one request per explicit attempt, with no automatic retry.
-- Outcome redelivery is permitted only because the accepted Resolve S3 identity
-  is action plus preparation plus outcome and is idempotent.
-- No raw arguments, provider secrets, raw guard references, Resolve state or
-  database data cross the bridge or enter diagnostics.
-- No Core, OCaml, Tether syntax, Plan, replay, provider ordering, Result Anchor
-  taxonomy, public Plug, Resolve database, or live generic coordination change.
+- Resolve coordinates admission and records durable outcome facts. Resolve
+  never grants Tethers permission and never executes a provider.
+- One explicit admission attempt is made. There is no automatic admission or
+  provider retry.
+- An outcome may be explicitly redelivered only after Tethers has durably
+  recorded it; redelivery never reruns the provider.
+- `Delivered` is terminal for the journal identity. `Conflict` is durable and
+  does not rewrite Tethers outcome truth.
+- Replay recovery is fail-closed. An old admission is not a substitute for a
+  fresh current attempt.
+- The Together barrier prevents any provider effect before the required guard
+  admission and durable admission evidence.
+- No new Resolve state machine, transaction protocol, scheduler, retry engine,
+  database access, Core/OCaml change, syntax change, policy semantic change,
+  provider execution change or Result Anchor taxonomy change.
 
 ## Acceptance criteria
 
-1. The HTTPS client implements the exact accepted Resolve v1 routes, headers, request shapes and response mappings.
-2. Current P2 adapter projections are used directly; request and response digests are independently verified with existing canonicalization authority.
-3. TLS, timeout, redirect, body, UTF-8, duplicate-member, unknown-field, unknown-version, unknown-decision, wrong-digest and authentication failures fail closed without provider calls.
-4. Default unguarded execution remains unchanged; guarded missing configuration cannot silently execute.
-5. Durable outcome delivery is keyed by action plus preparation identity, preserves Tethers outcome truth, supports explicit exact redelivery, and records conflicts safely.
-6. Focused admission, outcome, negative-path, secret-redaction, idempotency and no-provider-retry tests pass.
-7. Relevant Rust checks, formatting, warning ratchet, packet checker, secret scan, docs checks, whitespace checks and repository verification are run with exact failures recorded.
-8. Architecture and worker-note evidence match the implementation; the complete diff is scoped and independently reviewed.
-9. The branch is normally pushed and merged only after verification and review; canonical main is then refreshed and proved clean.
+1. The named P4b crash matrix covers all packet boundaries and has direct
+   focused evidence for the consequential failure classes.
+2. Provider effects are zero before admission/G1 and at most one after G1 for
+   every tested execution identity.
+3. Rejection, indeterminacy, replay recovery, delivery failure, terminal
+   delivery, conflict and provider failure/uncertainty have distinct results.
+4. Exact outcome redelivery survives Tethers-side restart without provider
+   access; Delivered remains terminal.
+5. Existing relevant P1/P2/P3/P4/P4a tests remain green.
+6. No production retry or authority bypass is introduced.
+7. Architecture and worker-note evidence match the implementation.
+8. Focused and repository-authoritative verification, packet checks, secret
+   scan, docs checks, whitespace checks and complete diff review pass.
+9. The branch is normally pushed and merged only after review and green gates.
 
 ## Required verification
 
-Run the repository-owned tool diagnostic and packet checker; `cargo fmt --all --
---check`; locked Cargo check/build/test paths; focused transport, guard and
-outcome tests; relevant P2/P4 conformance; warning ratchet; secret scan;
-documentation/link checks; `just verify`; `git diff --check`; complete diff
-review; and final clean status. Run the accepted Resolve S3 tests or bounded
-local smoke when the emulator/service prerequisites are available. Record
-unrun or externally blocked checks rather than inheriting historical PASS.
+Run the repository-owned tool diagnostic and packet checker; Cargo formatting;
+locked Rust check/build/test paths; focused P4b, P1, P2, P3, P4 and P4a tests;
+replay and outcome-journal tests; warning ratchet; secret scan; documentation
+checks; `just verify`; `git diff --check`; complete diff review; and final clean
+status. Run a bounded real Resolve S3 smoke when its service/emulator
+prerequisites are available. Record every unavailable or interrupted check
+with its first real error.
 
 ## Forbidden changes
 
 - No OCaml/Core/parser/AST/evaluator/Plan/syntax or policy-vocabulary changes.
-- No Resolve SDK, Firestore/database access, MCP/Socket protocol, generic HTTP
-  framework, scheduler, lease/claim/commitment model or live guard authority.
-- No provider retry, admission retry, execution-order change, replay change,
-  new provider outcome or Result Anchor class.
-- No raw secret, argument, scoped resource or guard reference in logs, Trail,
-  errors, fixtures or reports.
+- No Resolve database, Firestore, SDK, wire-protocol redesign, scheduler,
+  distributed transaction, lease/claim/commitment model or generic retry
+  framework.
+- No automatic admission retry, provider retry, provider-order change, replay
+  semantic change, new provider outcome or Result Anchor class.
+- No raw secrets, arguments, paths, Resolve state or guard references in logs,
+  Trail, diagnostics, fixtures or reports.
 - No force push, history rewrite, direct main update or unrelated cleanup.
 
 ## Stop conditions
 
-Stop and report if the accepted Resolve contract cannot be matched exactly;
-canonical digest compatibility is unproven; secure endpoint trust cannot be
-bounded; Trail/outcome persistence would require a new semantic decision;
-transport would grant authority; P3 requires Core/OCaml changes, provider
-execution, Resolve database access or a generic coordination framework; or a
-second materially similar implementation attempt fails against the same
-design issue. Do not merge with a real correctness or contract blocker.
+Stop and report if proving the lifecycle requires a new semantic authority;
+provider effects cannot be bounded; old admission can be reused; conflict can
+rewrite Tethers truth; Together can partially execute before admission; the
+accepted P3 contract cannot be used; P4b requires Core/OCaml, syntax, policy,
+database, scheduler, provider retry or distributed transaction changes; or two
+materially similar implementation attempts fail against the same design issue.
 
 ## Expected pre-existing changes
 
@@ -129,12 +150,18 @@ None.
 
 ## Implementation scope
 
-- `tethers-0.1/host-rust/Cargo.toml`
-- `tethers-0.1/host-rust/Cargo.lock`
-- `tethers-0.1/host-rust/src/lib.rs`
-- `tethers-0.1/host-rust/src/resolve_guard.rs`
-- `tethers-0.1/host-rust/src/resolve_outcome.rs`
-- `tethers-0.1/host-rust/src/resolve_transport.rs`
-- `tethers-0.1/host-rust/src/application.rs`
-- `tethers-0.1/host-rust/tests/resolve_r0_p4_conformance.rs`
+- `tethers-0.1/host-rust/src/application.rs` — test-module wiring only.
+- `tethers-0.1/host-rust/src/dispatch.rs` — test-only Trail fault injection.
+- `tethers-0.1/host-rust/src/p4b_lifecycle.rs` — focused composition evidence.
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P4B_LIFECYCLE_RECOVERY.md`
+- `docs/worker-notes/2026-09-15-tethers-resolve-p4b-lifecycle-recovery.md`
+
 Do not broaden the packet checker to repository-wide inference.
+
+## Remaining risks
+
+The P4b tests use deterministic existing test seams rather than unsafe process
+kill hooks. A live two-process Tethers/Resolve restart smoke remains dependent
+on the separately provisioned accepted Resolve S3 environment and must be
+reported as tested or unavailable, not inferred.
