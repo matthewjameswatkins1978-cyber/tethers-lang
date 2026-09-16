@@ -240,14 +240,22 @@ impl CapabilityExecutor for OpenShellExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
     use crate::enablement::{EnabledBindingSnapshot, EnabledCapability};
+    #[cfg(windows)]
     use crate::policy::CapabilityRequirement;
+    #[cfg(windows)]
     use crate::resolver::{self, ProviderAvailability};
+    #[cfg(windows)]
     use crate::trusted_store::TrustedManifestStore;
+    #[cfg(windows)]
     use serde_json::json;
+    #[cfg(windows)]
     use std::path::PathBuf;
+    #[cfg(windows)]
     use std::process::Command;
 
+    #[cfg(windows)]
     fn demo_manifest() -> Value {
         json!({
             "manifest_format_version": "1.0",
@@ -302,6 +310,7 @@ mod tests {
         })
     }
 
+    #[cfg(windows)]
     fn resolved_demo() -> (TrustedManifestStore, resolver::ResolvedCapability) {
         let mut manifest = demo_manifest();
         let (_, digest) = crate::manifest::canonicalize_and_digest(&manifest.to_string()).unwrap();
@@ -322,6 +331,7 @@ mod tests {
         (store, resolved)
     }
 
+    #[cfg(windows)]
     fn response_for(resolved: &resolver::ResolvedCapability) -> Value {
         json!({
             "evaluation_id": "eval-openshell-m4",
@@ -362,6 +372,7 @@ mod tests {
 
     /// Real OpenShell/Tethers boundary test. It is opt-in because ordinary
     /// repository tests must not require Docker, WSL, or a running gateway.
+    #[cfg(windows)]
     #[test]
     fn valid_grant_executes_once_in_openshell() {
         if std::env::var("LANTERN_OPENSHELL_E2E").ok().as_deref() != Some("1") {

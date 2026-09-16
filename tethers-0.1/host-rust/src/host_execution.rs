@@ -3091,6 +3091,7 @@ mod tests {
             } if evaluation_id == "eval" && action_id == "first" && execution_id == "exec-first"
         ));
     }
+    #[cfg(windows)]
     use std::process::Command;
     use tethers_reference_host::cli::OutcomeStatus;
 
@@ -5271,6 +5272,7 @@ mod tests {
             .collect()
     }
 
+    #[cfg(windows)]
     fn core9c_provision_replay_root(root: &Path) {
         std::fs::create_dir_all(root).expect("T15: create replay root");
         let acl_script = format!(
@@ -5291,6 +5293,7 @@ mod tests {
         ));
     }
 
+    #[cfg(windows)]
     #[test]
     fn core9c_t15_production_service_dispatches_core_plan_and_preserves_identity() {
         let marker_path = std::env::temp_dir().join(format!(

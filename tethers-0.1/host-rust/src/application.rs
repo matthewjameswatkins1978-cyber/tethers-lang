@@ -3644,8 +3644,11 @@ mod tests {
     use crate::resolver::{self, ProviderAvailability};
     use crate::trusted_store::TrustedManifestStore;
 
-    #[path = "../../p4b_lifecycle.rs"]
-    mod p4b_lifecycle;
+    // Resolve this fixture relative to application.rs rather than the synthetic
+    // src/application/tests path used for nested inline modules on Linux.
+    mod p4b_lifecycle {
+        include!("p4b_lifecycle.rs");
+    }
 
     struct P2TestAdapter {
         result: Result<
