@@ -25,6 +25,12 @@
 AI is very good at deciding what it wants to do. The dangerous part begins one millisecond later, when that decision becomes a file edit, a Git operation, a network call, a deployment, a message, a database mutation, or some other real effect.
 **Tethers is the execution boundary between an AI's intentions and your computer.**
 
+That describes the Tethers product, which includes a capable Rust reference
+Host. Tethers Core itself remains the deterministic planner and semantic layer:
+it does not execute Actions. A consuming application may use the reference Host
+or may implement the Host lifecycle itself, using Tethers semantics and
+Capability contracts through compatible Plugs and Providers.
+
 Tethers is the deliberately exact layer between **wanting** and **doing**.
 
 ```text
