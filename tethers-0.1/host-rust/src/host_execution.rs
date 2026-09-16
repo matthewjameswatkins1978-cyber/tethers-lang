@@ -10879,4 +10879,242 @@ mod tests {
             });
         }
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn m4_live_lantern_authority_openshell_chain() {
+        if std::env::var("LANTERN_OPENSHELL_E2E").ok().as_deref() != Some("1")
+            || std::env::var("LANTERN_M4_AUTHORITY_ENDPOINT").is_err()
+            || std::env::var("LANTERN_TETHERS_AUDIT_TOKEN").is_err()
+        {
+            return;
+        }
+
+        let endpoint = std::env::var("LANTERN_M4_AUTHORITY_ENDPOINT").unwrap();
+        let token = std::env::var("LANTERN_TETHERS_AUDIT_TOKEN").unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "tethers-m4-live-chain-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(root.join("tethers")).unwrap();
+        std::fs::create_dir_all(root.join("manifests")).unwrap();
+        std::fs::write(
+            root.join("tethers/m4-live.tether"),
+            "when event.task.completed if task.status == \"done\" do demo.export_summary",
+        )
+        .unwrap();
+
+        let mut manifest = json!({
+            "manifest_format_version": "1.0",
+            "capability_name": crate::openshell_executor::DEMO_CAPABILITY_NAME,
+            "capability_version": crate::openshell_executor::DEMO_CAPABILITY_VERSION,
+            "title": "Export a synthetic summary",
+            "description": "Write one bounded synthetic summary into the OpenShell outbox.",
+            "input_schema": {
+                "type": "object",
+                "properties": { "summary": { "type": "string", "maxLength": 4096 } },
+                "required": ["summary"],
+                "additionalProperties": false
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "sandbox": { "type": "string" },
+                    "path": { "type": "string" },
+                    "summary": { "type": "string" }
+                },
+                "required": ["sandbox", "path", "summary"],
+                "additionalProperties": false
+            },
+            "effects": ["filesystem.write"],
+            "permission_scope": { "kind": "path_prefix", "allowed_prefixes": ["sandbox/"] },
+            "reversibility": "reversible",
+            "determinism": "deterministic",
+            "idempotency": { "mechanism": "none" },
+            "confirmation_policy": { "standing_permitted": true, "per_call_required": false },
+            "timeout_ms": 30000,
+            "retry_policy": {
+                "max_retries": 0,
+                "backoff_ms": 0,
+                "allowed_on": [],
+                "requires_idempotency_proof": false
+            },
+            "provider": {
+                "identity": "openshell-lantern-local",
+                "display_name": "OpenShell Lantern demo",
+                "identity_source": "host_configuration",
+                "description": "Explicit local OpenShell sandbox lane."
+            },
+            "binding": {
+                "kind": "mcp",
+                "server_name": "openshell",
+                "tool_name": crate::openshell_executor::DEMO_CAPABILITY_NAME,
+                "adapter": null
+            }
+        });
+        let (_, manifest_digest) =
+            crate::manifest::canonicalize_and_digest(&manifest.to_string()).unwrap();
+        manifest["digest"] = json!(manifest_digest);
+        std::fs::write(
+            root.join("manifests/demo-export-summary.json"),
+            manifest.to_string(),
+        )
+        .unwrap();
+
+        let config = json!({
+            "format_version": "0.1",
+            "tether_set": {
+                "id": "m4-live",
+                "version": "1",
+                "tethers": [{
+                    "id": "m4-live",
+                    "version": "1",
+                    "source_path": "tethers/m4-live.tether"
+                }],
+                "capability_requirements": [{
+                    "name": "demo.export_summary",
+                    "version": 1,
+                    "reason": "M4 live OpenShell proof"
+                }]
+            },
+            "providers": [{
+                "id": "openshell-lantern-local",
+                "display_name": "OpenShell Lantern demo",
+                "transport": {
+                    "kind": "stdio",
+                    "command": "pwsh.exe",
+                    "args": ["-NoProfile", "-Command", "exit 0"],
+                    "protocol_version": "2025-11-25"
+                },
+                "capabilities": [{
+                    "name": "demo.export_summary",
+                    "version": 1,
+                    "manifest_path": "manifests/demo-export-summary.json",
+                    "pinned_digest": manifest_digest,
+                    "scope_binding": {
+                        "kind": "path_prefix",
+                        "argument_json_pointer": "/summary"
+                    }
+                }]
+            }],
+            "policy": {
+                "default": "deny",
+                "rules": [{
+                    "name": "demo.export_summary",
+                    "version": 1,
+                    "decision": "allow"
+                }]
+            },
+            "authority": {
+                "endpoint": endpoint,
+                "principal_id": "agent:lucy",
+                "required_capabilities": [{
+                    "name": "demo.export_summary",
+                    "version": 1,
+                    "reason": "Lantern Warden authority required"
+                }]
+            }
+        });
+        let config_path = root.join("runtime.json");
+        std::fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let loaded = crate::runtime_config::load_runtime_config(&config_path).unwrap();
+        let runtime = prepare_runtime(&loaded).unwrap();
+        let availability = ProviderAvailability::from_identities(["openshell-lantern-local"]);
+        let action = json!({
+            "action_id": "action-1",
+            "idempotency_key": "eval-m4-live/action-1",
+            "capability": "demo.export_summary",
+            "capability_version": "1.0.0",
+            "bridge_capability_version": 1,
+            "bridge_provider_identity": "openshell-lantern-local",
+            "manifest_digest": manifest_digest,
+            "arguments": { "summary": "sandbox/Lantern Warden live OpenShell proof" }
+        });
+        let mut response = json!({
+            "evaluation_id": "eval-m4-live",
+            "plan": {
+                "id": "plan-m4-live",
+                "actions": [action]
+            },
+            "trail": []
+        });
+        let resolved = crate::resolver::resolve_capability(
+            runtime.trusted_store(),
+            &availability,
+            "demo.export_summary",
+            1,
+            Some("openshell-lantern-local"),
+        )
+        .unwrap();
+        let proposed = crate::extract_proposed_action(&response).unwrap();
+        let authority =
+            crate::lantern_authority::LanternHttpAuthorityProvider::from_config(endpoint, token)
+                .unwrap();
+        let trail_path = root.join("trail.jsonl");
+        let service =
+            HostExecutionService::new(&runtime, Path::new("unused-engine"), &trail_path, None)
+                .with_authority(std::sync::Arc::new(authority));
+        let mut trail = crate::dispatch::FileTrail::open(root.join("trail.jsonl")).unwrap();
+        let (authority_request, grant_id) = service
+            .authority_precheck(&proposed, &resolved, &mut trail)
+            .unwrap()
+            .expect("configured capability must use Lantern authority");
+
+        struct AdmitGuard;
+        impl crate::resolve_guard::ResolveGuardAdapter for AdmitGuard {
+            fn admit_guard(
+                &mut self,
+                _request: &crate::resolve_guard::ResolveGuardAdmissionRequest,
+            ) -> Result<
+                crate::resolve_guard::ResolveGuardAdmission,
+                crate::resolve_guard::ResolveGuardAdapterError,
+            > {
+                Ok(crate::resolve_guard::ResolveGuardAdmission::Admitted)
+            }
+        }
+
+        let mut guard_adapter = AdmitGuard;
+        let mut guard = crate::resolve_guard::test_guard_admission_context(&mut guard_adapter);
+        let action = response["plan"]["actions"][0].clone();
+        let decision = crate::policy::evaluate_permission_resolved(
+            runtime.requirements(),
+            &resolved,
+            &HostLocalPolicy::new(crate::policy::PolicyRule::Allow),
+        );
+        let mut executor = crate::openshell_executor::OpenShellExecutor::new(
+            crate::openshell_executor::OpenShellExecutorConfig::from_env().unwrap(),
+        )
+        .unwrap();
+        let clock = crate::outcome::ProductionMonotonicClock::new();
+        let replay = crate::replay_runtime::test_support::TestReplayAuthority::default();
+        let mut anchors = crate::ResponseResultAnchorWriter;
+        let context = crate::InputEventContext::for_initial("event-m4-live");
+        let result = crate::application::execute_shared_boundary_with_guard(
+            &mut response,
+            &action,
+            decision,
+            &resolved,
+            &mut trail,
+            &mut executor,
+            &context,
+            true,
+            &clock,
+            &replay,
+            None,
+            &mut anchors,
+            None,
+            &mut guard,
+        )
+        .unwrap();
+        assert_eq!(result.outcome, crate::SharedExecutionOutcome::Completed);
+        service
+            .authority_post_outcome(&proposed, authority_request, grant_id, &result)
+            .unwrap();
+
+        let trail_text = std::fs::read_to_string(root.join("trail.jsonl")).unwrap();
+        assert!(trail_text.contains("lantern_authority"));
+        assert!(trail_text.contains("\"status\":\"succeeded\""));
+        assert!(!trail_text.contains("m4-local-audit-token"));
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
