@@ -2,7 +2,7 @@
 
 Status: living programme contract
 Updated: 2026-09-14
-Starting product: Tethers 0.7.0
+Starting product: Tethers 0.7.1
 Accepted preflight main: `cd6cc23f2f0d7248bb31a5b650862f26699b2a65`
 
 ## Meaning of 1.0
@@ -60,7 +60,7 @@ audited by the relevant package.
 | OCaml semantic Core | Internal typed Core | Tethers Core | Internal | Internal | No module-shape promise | Core differential/regression evidence |
 | Core JSON protocol | Protocol `0.1` | Core/host boundary | Versioned | Versioned | Explicit protocol version and strict decoding | R6 request/response corpus |
 | ProgramDigest/canonical identity | Canonical Format V2, `tethers:v2:sha256:*` | Core | Versioned | Stable meaning with explicit format identity | Digest prefix and frozen semantic encoding | R2/R6 differential corpus |
-| Native Rust host CLI | Product `0.7.0`; CLI envelope `tethers.cli/1` | Host | Versioned but needs 1.0 audit | Stable versioned machine surface | Command/schema versions and structured exit classes | R2/R6 CLI corpus |
+| Native Rust host CLI | Product `0.7.1`; CLI envelope `tethers.cli/1` | Host | Versioned but needs 1.0 audit | Stable versioned machine surface | Command/schema versions and structured exit classes | R2/R6 CLI corpus |
 | CLI JSON schemas | `tethers.cli/1`, discovery/features JSON | Host | Versioned but needs 1.0 audit | Versioned | Schema field/version negotiation | R6 golden outputs |
 | Configuration | `tethers.project/1` and runtime configuration formats | Host | Versioned | Versioned with protected migration | Explicit format version, validation, migration | R6 migration tests |
 | Plan | `tethers.plan/1` | Core/host | Versioned but needs 1.0 audit | Stable versioned projection | Schema/version and ordered Action semantics | R2/R6 corpus |

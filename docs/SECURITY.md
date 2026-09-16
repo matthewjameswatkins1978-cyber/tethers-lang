@@ -267,7 +267,7 @@ That is a substantial security contribution even though it is not process sandbo
 
 ## Release/source note
 
-The latest published GitHub product release is Tethers 0.7.0, tagged `tethers-v0.7.0`.
+The latest published GitHub product release is Tethers 0.7.1, tagged `tethers-v0.7.1`.
 
 Security claims about exact 0.7 discovery/provider surfaces should be verified against the tagged release source and its SHA-256 package evidence.
 

@@ -18,7 +18,7 @@
     ·
     <a href="docs/PLUG_AUTHORING.md">Build a Plug</a>
     ·
-    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.0">Tethers 0.7 release</a>
+    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1">Tethers 0.7.1 release</a>
   </p>
 </div>
 
@@ -56,12 +56,12 @@ A model can change. A prompt can change. A provider can change. The execution co
 ## Why Tethers?
 
 Most automation stacks blur several different questions together:
-## Tethers 0.7.0
+## Tethers 0.7.1
 
-- Tethers product version: 0.7.0
-- Status: released 2026-09-11
+- Tethers product version: 0.7.1
+- Status: released 2026-09-16
 - Language semantics: 0.1
-- Release notes: [`docs/releases/v0.7.0.md`](docs/releases/v0.7.0.md)
+- Release notes: [`docs/TETHERS_0_7_1_RELEASE.md`](docs/TETHERS_0_7_1_RELEASE.md)
 
 Tethers 0.7 keeps the language deliberately small and adds a discoverable
 host-owned Agent Core for ordinary local repository work. Core plans; hosts
@@ -122,7 +122,8 @@ Tethers uses a layered set of authoritative and operational documents:
 - `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the
   two durable sides of each implementation handoff.
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
-- `docs/releases/v0.7.0.md` records the published 0.7.0 release and its evidence;
+- `docs/TETHERS_0_7_1_RELEASE.md` records the current 0.7.1 release scope;
+  `docs/releases/v0.7.0.md` preserves the previous release evidence;
   older `ROAD_TO_0_2.md` material is retained as historical project context.
 
 Current operating route:
@@ -358,7 +359,7 @@ projection over validated Trail entries.
 ## Download the portable workbench
 
 For the current native host, download the Windows x64 full-runtime asset from
-the [Tethers 0.7.0 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.0).
+the [Tethers 0.7.1 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1).
 Verify its `SHA256SUMS` and release manifest before extraction. The portable
 workbench remains separately versioned at 0.2.2 for compatibility.
 
@@ -369,11 +370,11 @@ Tethers currently has several version axes. They describe different things:
 | Layer | Current meaning |
 | --- | --- |
 | Human Tether language/protocol semantics | `0.1` specification |
-| Rust reference-host package version | `0.2.2` |
+| Rust reference-host package version | `0.7.1` |
 | Portable workbench | `0.2.2` |
 | Public Plug-authoring programme | `0.3` milestone complete and integrated |
 | Together/concurrency programme | `0.4` milestone complete and integrated |
-| Practical release line | `0.7.0` — execution boundary, Agent Core, Plug/replay/Trail surfaces |
+| Practical release line | `0.7.1` — execution boundary, Agent Core, Plug/replay/Trail surfaces |
 
 The 0.7 source tree includes three starter Tether Set examples under
 [`examples/tether-sets`](examples/tether-sets). They use the existing Tether
