@@ -2,7 +2,7 @@
 
 - **Task Packet:** `TETHERS L1 IMPLEMENTATION PACKET — Native Linux Test-Portability Repair`
 - **Owner:** `Codex`
-- **Status:** `COMPLETE`
+- **Status:** `BLOCKED`
 - **Base Commit:** `b0e10dfe1b2834e974a384cd14fc9c43c0460b5b`
 - **Final Commit:** `dcec282abc6b93b9cc4aae8c334d867533bb51d1`
 - **Branch / Worktree:** `feature/tethers-l1-linux-portability` / `/home/matmus/biscuit-linux/projects/tethers`
@@ -75,6 +75,16 @@ Linux test was weakened to hide the P4b portability defect.
 - Full native Linux test execution remains a separate follow-up problem despite
   full test-target compilation succeeding. The exact raw command was
   `cargo test --workspace`; its terminal result was `FAILED. 1258 passed; 245 failed; 4 ignored`.
+
+## Publication
+
+- Normal push was attempted for `feature/tethers-l1-linux-portability`.
+- The WSL remote has no usable GitHub credential: `gh auth status` reports no
+  logged-in host, no Git credential helper or SSH key is configured, and
+  `GIT_TERMINAL_PROMPT=0 git push ...` fails with:
+  `fatal: could not read Username for 'https://github.com': terminal prompts disabled`.
+- No force-push, Git configuration change, or Windows credential fallback was
+  used. The local branch remains clean and recoverable.
 
 ## Recommended Next Action
 
