@@ -4,7 +4,7 @@ Task: `TETHERS 0.7.1 / Fast-track Windows release`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
