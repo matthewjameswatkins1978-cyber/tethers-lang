@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `3739d0c06d51569de985053b764af2dc77fc1f2f`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `93e1f7090fdc8707595bca4b72d3a0e2fdf11529`
 
 ## Requested outcome
 

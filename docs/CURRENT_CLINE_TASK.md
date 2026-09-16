@@ -4,7 +4,7 @@ Task: `TETHERS R1 / External Host Boundary & Resolve Proof`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -17,6 +17,8 @@ Do not alter Resolve, Lantern, Core semantics, Tether syntax, provider
 execution, replay, outcome, or the historical P0-P4b implementation.`
 
 Base commit: `3739d0c06d51569de985053b764af2dc77fc1f2f`
+
+Evidence checkpoint: `93e1f7090fdc8707595bca4b72d3a0e2fdf11529`
 
 Worker note: `docs/worker-notes/2026-09-16-tethers-r1-external-host-boundary.md`
 
