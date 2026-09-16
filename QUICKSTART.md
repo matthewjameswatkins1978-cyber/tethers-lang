@@ -296,8 +296,8 @@ Discovery and preview are deliberately side-effect-free. They do not start a pro
 
 Use the source and manuals attached to the published release when following those commands:
 
-- [Tethers 0.7 release (`tethers-v0.7.0`)](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.0)
-- [0.7 Agent Quickstart](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/blob/tethers-v0.7.0/docs/AGENT_QUICKSTART.md)
+- [Tethers 0.7.1 release (`tethers-v0.7.1`)](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1)
+- [0.7 Agent Quickstart](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/blob/tethers-v0.7.1/docs/AGENT_QUICKSTART.md)
 
 The published 0.7 host is the current public execution-boundary line. The
 portable workbench remains a separate 0.2.2 compatibility surface.
@@ -332,9 +332,9 @@ Do not infer the limits of the full platform from the portable workbench, and do
 - [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) - enduring design principles.
 - [`tethers-0.1/portable-rust/AI-INTEGRATION.md`](tethers-0.1/portable-rust/AI-INTEGRATION.md) - embedding the small authority workbench.
 
-## 11. Install the 0.7 bundle
+## 11. Install the 0.7.1 bundle
 
-Download the Windows x64 full-runtime archive from the [0.7.0 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.0),
+Download the Windows x64 full-runtime archive from the [0.7.1 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1),
 verify its `SHA256SUMS` and release manifest, and extract it. The archive
 contains `tethers.exe` and `tethers-engine.exe`.
 
