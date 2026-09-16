@@ -73,6 +73,7 @@ pub mod launch_profile;
 pub mod local_anchor;
 mod m3_store;
 pub mod manifest;
+pub mod openshell_executor;
 pub mod operational_scope;
 mod outcome;
 pub mod package;

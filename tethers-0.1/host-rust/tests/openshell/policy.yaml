@@ -1,0 +1,20 @@
+version: 1
+
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /bin
+    - /dev
+    - /etc
+    - /lib
+    - /proc
+    - /sys
+    - /usr
+  read_write:
+    - /sandbox/outbox/approved
+
+landlock:
+  compatibility: hard_requirement
+
+process:
+  run_as_user: "1000"
