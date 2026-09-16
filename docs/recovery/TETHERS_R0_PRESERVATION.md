@@ -33,8 +33,8 @@ SHA; no commit content was rewritten.
 | `13057dedb97ce125f74b277085d592bb3f726f1a` | `feat: add 0.7 execution boundary agent core` | unique historical implementation candidate |
 | `272cfc6d2461387e8c2ef4f36b669f2277945087` | `fix: correct script hash identity, powershell shape, canonical scope, descendants, and bypass closure` | unique historical repair |
 | `5b38874f9223efe435f5ee50a1479bf1a355be79` | `docs: draft 0.2.0 release notes` | historical documentation |
-| `76c853d2b1e04dc73abb44b3ecb263bbbba5bb53` | `WIP on opencode/j23c2-pdf-conformance` | dirty-worktree recovery commit |
-| `fa4b3225afa083368577a4d9e33bbae9ca2f1bea` | `index on opencode/j23c2-pdf-conformance` | dirty-worktree recovery index |
+| `76c853d2b1e04dc73abb44b3ecb263bbbba5bb53` | `WIP on opencode/j23c2-pdf-conformance: 533edaa J23C1: tighten scope evidence boundary` | dirty-worktree recovery commit |
+| `fa4b3225afa083368577a4d9e33bbae9ca2f1bea` | `index on opencode/j23c2-pdf-conformance: 533edaa J23C1: tighten scope evidence boundary` | dirty-worktree recovery index |
 | `d7e54243ce94ba4555064187b68259ac8bc2a429` | `docs: align current state for 0.2.0 sign-off` | historical documentation |
 | `87e66b5adaf197cc2782ece554ed5e6496ecdf72` | `docs: close Tethers 1.0 preflight` | historical closeout documentation |
 | `436dca377466818f57d6e4e66999a31b80a6633b` | `fix: enforce contract integrity, windows workbench, powershell policy, supervised usability, and substitute deferral` | historical implementation repair |
