@@ -12,6 +12,9 @@ Base commit: `4493e563a81b7c193c0c815db4ac74b81d1c6e59`
 
 Implementation checkpoint: `48f3a54b9362534156a00dfd9d3d8795cd89aae6`
 
+Publication checkpoint independently reviewed and verified on `origin`:
+`6593b16717ae4d07bff4191e376a81112598352d`.
+
 ## Requested outcome
 
 Recover and freeze the Tethers Host architecture without changing production
