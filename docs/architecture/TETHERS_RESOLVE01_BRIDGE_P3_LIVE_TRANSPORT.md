@@ -1,10 +1,12 @@
 # Tethers x Resolve01 P3 — Live Guard Transport & Outcome Delivery
 
-Status: implementation record on `codex/tethers-resolve-p3-live-transport`
+Status: implementation record on `codex/tethers-resolve-p3-live-transport`; P3a
+protocol-provenance closeout is recorded separately.
 
-Accepted Resolve contract: `b450305e72815d33357359c6db641d315d6b2975`
+Accepted Resolve protocol source commit:
+`70f86ff47cbfd38e702cdd8c1433ccd04ecb43bd`
 
-Resolve contract source: `C:\dev\resolve-ai\docs\TETHERS_GUARD_PROTOCOL.md`
+Resolve contract source: `Resolve01/docs/TETHERS_GUARD_PROTOCOL.md`
 
 ## Boundary
 

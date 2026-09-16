@@ -3644,6 +3644,9 @@ mod tests {
     use crate::resolver::{self, ProviderAvailability};
     use crate::trusted_store::TrustedManifestStore;
 
+    #[path = "../../p4b_lifecycle.rs"]
+    mod p4b_lifecycle;
+
     struct P2TestAdapter {
         result: Result<
             crate::resolve_guard::ResolveGuardAdmission,
