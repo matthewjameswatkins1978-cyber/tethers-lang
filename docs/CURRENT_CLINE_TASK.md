@@ -39,6 +39,10 @@ classification, Result Anchors, Trail evidence and the transport-neutral
 outcome journal. P4b composes and tests those authorities; it does not replace
 them.
 
+The accepted P3a protocol-provenance update on `main` pins the canonical
+Resolve guard contract document and does not supersede this P4b lifecycle
+scope.
+
 ## Required behaviour
 
 1. Cover no-intent, intent failure, admission rejection/indeterminacy,
