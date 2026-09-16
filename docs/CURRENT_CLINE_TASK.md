@@ -4,7 +4,7 @@ Task: `TETHERS R0 / Host Architecture Recovery`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Task colour: `Red`
 
@@ -13,6 +13,8 @@ Owner: `Codex`
 Route: `Architecture recovery only: preserve existing history, classify the Tethers reference Host versus external application Hosts, create the required architecture and ADR documents, reconcile bounded living documentation, and verify without production-code changes.`
 
 Base commit: `4493e563a81b7c193c0c815db4ac74b81d1c6e59`
+
+Evidence checkpoint: `48f3a54b9362534156a00dfd9d3d8795cd89aae6`
 
 Worker note: `docs/worker-notes/2026-09-16-tethers-r0-host-architecture-recovery.md`
 
