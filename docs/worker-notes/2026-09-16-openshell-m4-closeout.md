@@ -38,7 +38,7 @@ route.
 - Windows build `26220`, WSL2 Ubuntu, Docker Desktop `4.91.0`, Docker Engine
   `29.8.0`, OpenShell `0.0.116`.
 - OpenShell gateway health passed on `https://127.0.0.1:17670`.
-- Sandbox `lantern-m4-demo` was `Ready`, with hard Landlock and default-deny
+- Sandbox `lantern-m5-demo` was `Ready`, with hard Landlock and default-deny
   networking.
 - Live Lantern Warden authority check returned `ALLOW` for the exact scoped
   capability and principal.
@@ -46,6 +46,10 @@ route.
   bounded authority Trail evidence and the successful provider outcome.
 - Lantern decision and outcome receipt routes both completed successfully;
   the bearer token was never passed to OpenShell.
+- The successful run persisted decision receipt
+  `receipt_7bdeb192b92f41e094cb5bdfc82d5402` and outcome receipt
+  `receipt_b078f4546653422f9ca20d69dbd6f1a1` for grant
+  `grant_98ad9f6d2dae4cadb3810222452433a8`.
 - Existing OpenShell-only rejection, uncertainty, filesystem, network, and
   credential-isolation probes remain unchanged and pass.
 
@@ -53,6 +57,8 @@ route.
 
 - Tethers baseline: `07870c356e034103573c5499347c61fce0700218`.
 - Published M4 implementation: `0418d42f512f5f7a6937750cf187ed16fb1a7fd6`.
+- Closeout test commit before the normal `origin/main` merge:
+  `02c9efa`.
 - Resolve R0 semantic authority: `8d42e5b061f86b2b2a2c1949c629654968a550ff`.
 
 ## Exclusions
