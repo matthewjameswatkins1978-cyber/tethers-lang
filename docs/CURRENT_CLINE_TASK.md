@@ -1,167 +1,132 @@
-# TETHERS x RESOLVE01 - P4b End-to-End Guarded Lifecycle & Recovery
+# TETHERS R0 - HOST ARCHITECTURE RECOVERY
 
-Task: `TETHERS x RESOLVE01 / P4b - End-to-End Guarded Lifecycle & Recovery`
+Task: `TETHERS R0 / Host Architecture Recovery`
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 Task colour: `Red`
 
 Owner: `Codex`
 
-Route: `Prove the complete guarded lifecycle and recovery composition across the accepted Tethers replay, durable intent, Resolve admission, provider, outcome and delivery authorities. Add only test-only fault injection and focused lifecycle evidence; do not introduce a new recovery engine or change product semantics.`
+Route: `Architecture recovery only: preserve existing history, classify the Tethers reference Host versus external application Hosts, create the required architecture and ADR documents, reconcile bounded living documentation, and verify without production-code changes.`
 
-Base commit: `63aa8e21bfa359ad444d8b32b3007b398fa9002e`
+Base commit: `4493e563a81b7c193c0c815db4ac74b81d1c6e59`
 
-Evidence checkpoint: `00361fd89a381ec48500ff0003e998073e18a347`
-
-Worker note: `docs/worker-notes/2026-09-15-tethers-resolve-p4b-lifecycle-recovery.md`
+Worker note: `docs/worker-notes/2026-09-16-tethers-r0-host-architecture-recovery.md`
 
 Suggested branch:
 
-`codex/tethers-resolve-p4b-lifecycle-recovery`
+`codex/tethers-r0-host-architecture-recovery`
 
 ## Objective
 
-Produce direct, deterministic evidence for the P4b guarded lifecycle and crash
-recovery matrix. Demonstrate that Tethers remains authoritative, provider
-effects are bounded to at most one per execution identity, admission is never
-automatically retried, durable outcomes are redelivered exactly, and stale or
-conflicting evidence fails closed.
+Recover and freeze the correct relationship between Tethers Core, capability
+contracts, Plugs/providers, the Tethers reference Host, and external Hosts such
+as Resolve01. Preserve P0-P4b as historical implementation frozen for recovery;
+do not delete, revert, rewrite, squash, or hide it.
 
 ## Relevant background and existing behaviour
 
-P1 preparation proof, P2 guard admission, P3 live transport and P4 outcome
-delivery are accepted on `main` at the base commit above. The existing host
-already owns durable intent, replay/G1, provider invocation, outcome
-classification, Result Anchors, Trail evidence and the transport-neutral
-outcome journal. P4b composes and tests those authorities; it does not replace
-them.
-
-The accepted P3a protocol-provenance update on `main` pins the canonical
-Resolve guard contract document and does not supersede this P4b lifecycle
-scope.
+The current accepted main contains the Tethers reference Host and the merged
+P0-P4b Resolve integration line. The reference Host legitimately owns policy,
+approvals, replay, durable intent, provider execution, Trail and recovery for
+its own use. The existing P0-P4b integration was implemented against a model in
+which that reference Host was treated as the mandatory execution owner for
+Resolve; R0 must classify that direction as superseded without calling the
+implementation invalid or deleting its history. Lantern already exposes genuine
+memory/claim service surfaces, but R0 records only the architectural consequence
+and makes no Lantern change.
 
 ## Required behaviour
 
-1. Cover no-intent, intent failure, admission rejection/indeterminacy,
-   admission-evidence failure, pre-G1 failure, post-G1 uncertainty, provider
-   failure/uncertainty, durable-outcome delivery failure, exact redelivery,
-   Delivered terminality and conflict.
-2. Prove that a guarded provider effect occurs at most once for an
-   `ExecutionId`, including replay/restart recovery cases.
-3. Prove that admission and provider execution are never automatically retried.
-   Only explicit exact outcome redelivery is allowed after a durable outcome.
-4. Prove that old admission state is not reusable after restart and that a
-   fresh explicit attempt is required.
-5. Prove that Tethers provider outcome truth is not rewritten by delivery or
-   Resolve coordination failure.
-6. Exercise the Together barrier: rejected, indeterminate and pre-stage-B
-   failures produce no partial provider effect.
-7. Add a named crash-boundary matrix and document which accepted authority
-   supplies each recovery rule.
-8. Use the accepted Resolve S3 contract for any available bounded smoke; record
-   unavailable external prerequisites honestly.
+1. Establish the current fetched `origin/main` and exact R0 starting SHA.
+2. Preserve every valuable currently unreachable commit under explicit archive
+   refs, without rewriting history or deleting branches, tags, or worktrees.
+3. Classify all currently visible Tethers worktrees and preserve dirty or
+   unknown content untouched.
+4. Create the durable Host architecture document, execution-ownership ADR,
+   Resolve reclassification table, and preservation report.
+5. Reconcile narrowly ambiguous living documentation so Core, reference Host,
+   external Host, Capability, Plug, Provider, authority, policy, and runtime are
+   not confused.
+6. Test the recovered model against the three required Host shapes and preserve
+   the standalone Tethers and standalone Resolve boundaries.
+7. Verify that no production code, OCaml/Core semantics, Tether syntax, Resolve
+   implementation, Lantern implementation, or P0-P4b history changed.
+8. Leave the task packet and worker note as an evidence-backed R0 closeout.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/application.rs`
-- `tethers-0.1/host-rust/src/dispatch.rs`
-- `tethers-0.1/host-rust/src/replay_runtime.rs`
-- `tethers-0.1/host-rust/src/resolve_guard.rs`
-- `tethers-0.1/host-rust/src/resolve_outcome.rs`
-- `tethers-0.1/host-rust/src/p4b_lifecycle.rs`
-- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P4B_LIFECYCLE_RECOVERY.md`
-- `docs/worker-notes/2026-09-15-tethers-resolve-p4b-lifecycle-recovery.md`
+- `docs/architecture/TETHERS_HOST_ARCHITECTURE.md`
+- `docs/decisions/ADR_HOST_EXECUTION_OWNERSHIP.md`
+- `docs/recovery/TETHERS_RESOLVE_RECLASSIFICATION.md`
+- `docs/recovery/TETHERS_R0_PRESERVATION.md`
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/worker-notes/2026-09-16-tethers-r0-host-architecture-recovery.md`
+- narrowly relevant living documentation, especially `README.md`
+- Git refs under `refs/archive/tethers-r0/`
 
 ## Frozen decisions and invariants
 
-- Tethers remains the sole authority for capability, manifest, provider,
-  arguments, scope, binding, trust, policy, approval, replay, intent and
-  provider outcome.
-- Resolve coordinates admission and records durable outcome facts. Resolve
-  never grants Tethers permission and never executes a provider.
-- One explicit admission attempt is made. There is no automatic admission or
-  provider retry.
-- An outcome may be explicitly redelivered only after Tethers has durably
-  recorded it; redelivery never reruns the provider.
-- `Delivered` is terminal for the journal identity. `Conflict` is durable and
-  does not rewrite Tethers outcome truth.
-- Replay recovery is fail-closed. An old admission is not a substitute for a
-  fresh current attempt.
-- The Together barrier prevents any provider effect before the required guard
-  admission and durable admission evidence.
-- No new Resolve state machine, transaction protocol, scheduler, retry engine,
-  database access, Core/OCaml change, syntax change, policy semantic change,
-  provider execution change or Result Anchor taxonomy change.
+Tethers Core owns deterministic semantics and planning. Capability contracts own
+stable operation meaning. A Host owns application execution lifecycle, policy,
+approvals, recovery, and provider invocation. The Tethers reference Host remains
+a first-class supplied Host implementation, but it is not mandatory for an
+external application such as Resolve01. Plugs/providers translate capability
+contracts into real operations for whichever compatible Host invokes them.
+
+P0-P4b is classified as `HISTORICAL IMPLEMENTATION / FROZEN FOR ARCHITECTURE
+RECOVERY`; its original execution-direction contract is `SUPERSEDED`. Existing
+machinery may be reusable, but no R0 document may claim the historical work was
+invalid. Lantern Plug work remains paused.
 
 ## Acceptance criteria
 
-1. The named P4b crash matrix covers all packet boundaries and has direct
-   focused evidence for the consequential failure classes.
-2. Provider effects are zero before admission/G1 and at most one after G1 for
-   every tested execution identity.
-3. Rejection, indeterminacy, replay recovery, delivery failure, terminal
-   delivery, conflict and provider failure/uncertainty have distinct results.
-4. Exact outcome redelivery survives Tethers-side restart without provider
-   access; Delivered remains terminal.
-5. Existing relevant P1/P2/P3/P4/P4a tests remain green.
-6. No production retry or authority bypass is introduced.
-7. Architecture and worker-note evidence match the implementation.
-8. Focused and repository-authoritative verification, packet checks, secret
-   scan, docs checks, whitespace checks and complete diff review pass.
-9. The branch is normally pushed and merged only after review and green gates.
+1. Fresh current `origin/main` is the R0 base and is recorded.
+2. Every valuable currently unreachable commit is protected by a resolving
+   archive ref, and no history or meaningful content is deleted.
+3. Worktree and branch preservation evidence records current counts, dirty
+   paths, unique unpublished work, open PRs, and the do-not-delete set.
+4. The architecture document and ADR state the ownership model explicitly.
+5. The reclassification table identifies relevant P0-P4b areas as reusable,
+   reference-host, Resolve-host, redesign-required, or historical/document-only.
+6. The terminology audit covers the three Host shapes without broad stylistic
+   rewriting.
+7. The Lantern consequence is recorded without Lantern code or Plug changes.
+8. Production code, Core semantics, Tether syntax, Resolve implementation,
+   Lantern implementation, and historical Git content remain unchanged.
+9. Required verification passes, with any unavailable result recorded honestly.
+10. The worker note and task packet contain exact final SHA and evidence.
 
 ## Required verification
 
-Run the repository-owned tool diagnostic and packet checker; Cargo formatting;
-locked Rust check/build/test paths; focused P4b, P1, P2, P3, P4 and P4a tests;
-replay and outcome-journal tests; warning ratchet; secret scan; documentation
-checks; `just verify`; `git diff --check`; complete diff review; and final clean
-status. Run a bounded real Resolve S3 smoke when its service/emulator
-prerequisites are available. Record every unavailable or interrupted check
-with its first real error.
+Run `git status`, `git diff --check`, the task-packet checker, documentation/link
+checks, and `just verify`. Verify every preservation ref resolves, every
+currently required unreachable commit is protected, no worktree content changed
+accidentally, no branch or tag was deleted, and `origin/main` is unchanged
+apart from a later R0 documentation merge if accepted. Run `cargo fmt --all --
+--check` only because R0 is evidence/documentation-only.
 
 ## Forbidden changes
 
-- No OCaml/Core/parser/AST/evaluator/Plan/syntax or policy-vocabulary changes.
-- No Resolve database, Firestore, SDK, wire-protocol redesign, scheduler,
-  distributed transaction, lease/claim/commitment model or generic retry
-  framework.
-- No automatic admission retry, provider retry, provider-order change, replay
-  semantic change, new provider outcome or Result Anchor class.
-- No raw secrets, arguments, paths, Resolve state or guard references in logs,
-  Trail, diagnostics, fixtures or reports.
-- No force push, history rewrite, direct main update or unrelated cleanup.
+No Rust or OCaml production changes; no Tether syntax or semantic changes; no
+Resolve or Lantern implementation changes; no new Plug/provider; no P0-P4b
+revert; no history rewrite; no branch, tag, or worktree deletion; no force push;
+no direct `main` update; no broad stylistic rewrite; no cleanup of dirty or
+unknown worktrees.
 
 ## Stop conditions
 
-Stop and report if proving the lifecycle requires a new semantic authority;
-provider effects cannot be bounded; old admission can be reused; conflict can
-rewrite Tethers truth; Together can partially execute before admission; the
-accepted P3 contract cannot be used; P4b requires Core/OCaml, syntax, policy,
-database, scheduler, provider retry or distributed transaction changes; or two
-materially similar implementation attempts fail against the same design issue.
+Stop if preservation would require discarding or overwriting unknown work, if
+the Host ownership model remains ambiguous, if a required unreachable commit
+cannot be identified or protected, or if the task starts requiring production
+implementation or a protected semantic decision. After two materially similar
+failed attempts against the same unresolved issue, stop with exact evidence and
+the smallest unresolved question.
 
 ## Expected pre-existing changes
 
-None.
-
-## Implementation scope
-
-- `tethers-0.1/host-rust/src/application.rs` — test-module wiring only.
-- `tethers-0.1/host-rust/src/dispatch.rs` — test-only Trail fault injection.
-- `tethers-0.1/host-rust/src/p4b_lifecycle.rs` — focused composition evidence.
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/architecture/TETHERS_RESOLVE01_BRIDGE_P4B_LIFECYCLE_RECOVERY.md`
-- `docs/worker-notes/2026-09-15-tethers-resolve-p4b-lifecycle-recovery.md`
-
-Do not broaden the packet checker to repository-wide inference.
-
-## Remaining risks
-
-The P4b tests use deterministic existing test seams rather than unsafe process
-kill hooks. A live two-process Tethers/Resolve restart smoke remains dependent
-on the separately provisioned accepted Resolve S3 environment and must be
-reported as tested or unavailable, not inferred.
+None in the fresh R0 worktree. Other occupied worktrees are preserved as found;
+their dirty paths are not imported into R0.
