@@ -6,11 +6,11 @@ Task packet: `docs/CURRENT_CLINE_TASK.md`
 
 Owner: `Codex`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 Base commit: `7054875527dcb4332f9742b83c8d19e683be77a4`
 
-Implementation checkpoint: `WORKTREE`
+Implementation checkpoint: `707760c514cd9021a067f0bbdfd1a4893c3fe482`
 
 ## Requested outcome
 
@@ -67,6 +67,9 @@ fail closed without Windows PowerShell interop or stale engine discovery.
   `tethers.verify/1`, platform `linux`, 10 PASS, 0 FAIL, 0 skipped, verdict
   `PASS`. The report is currently not release-eligible because this worktree is
   intentionally dirty with L1a changes.
+- A separate clean Windows clone of the pushed branch passed the same ten-suite
+  Python authority with the existing Windows OCaml switch. Its report verdict
+  was `PASS` with current engine provenance and no dependent-suite skips.
 - Rust and OCaml evidence used the prepared `bl-tethers-5.5.0` switch, OCaml
   `5.5.0`, Dune `3.24.0`, and the current engine SHA
   `4c89ff26024733218311086f0fff66c0a7fe2e652363a636a7efd358bd60e9af`.
@@ -86,11 +89,6 @@ fail closed without Windows PowerShell interop or stale engine discovery.
 
 ## Remaining risks
 
-- A clean native Windows `just verify` run was not performed in this WSL-only
-  execution because the canonical Windows checkout is outside scope and must
-  remain untouched. The Windows wrapper is syntactically a thin delegate to
-  the same Python authority; Windows acceptance still needs an isolated clean
-  Windows run.
 - `bl doctor tethers` has the previously known rust-analyzer environment issue;
   no workshop configuration was changed.
 - The accepted warning baseline remains technical debt and is intentionally not
@@ -98,9 +96,8 @@ fail closed without Windows PowerShell interop or stale engine discovery.
 
 ## Smallest next action
 
-Run the final clean Linux verification after committing the implementation,
-then publish this branch normally. A separate clean Windows worktree should run
-the same `just verify` before L1a is accepted and integrated into L1.
+Publish the completed branch normally. L1 should review and integrate it with
+the normal no-force workflow before the next packet begins.
 
 ## References
 

@@ -4,9 +4,9 @@ Task: `TETHERS L1a / Native Cross-Platform Verifier`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
-Task colour: `Amber`
+Task colour: `Green`
 
 Owner: `Codex`
 
