@@ -1,0 +1,108 @@
+name: Tethers Linux package proof
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-package-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt
+
+      - name: Install OCaml and opam
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5.0"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 jq
+
+      - name: Set up OCaml switch
+        run: |
+          opam switch create bl-tethers-5.5.0 5.5.0
+          opam install --switch=bl-tethers-5.5.0 -y dune yojson digestif
+
+      - name: Verify environment
+        run: |
+          rustc --version
+          cargo --version
+          opam exec --switch=bl-tethers-5.5.0 -- ocamlc -version
+          opam exec --switch=bl-tethers-5.5.0 -- dune --version
+
+      - name: Run repository verification
+        env:
+          TETHERS_OCAML_SWITCH: bl-tethers-5.5.0
+        run: |
+          sudo ln -sf "$(command -v opam)" /usr/local/bin/opam
+          for tool in cargo rustc rustfmt; do sudo ln -sf "$(command -v "$tool")" "/usr/local/bin/$tool"; done
+          python3 scripts/verify-tethers.py --release
+
+      - name: Clear generated verification evidence and assert clean tree
+        shell: bash
+        run: |
+          printf '%s\n' 'Git status immediately after repository verification:'
+          git status --porcelain=v1 --untracked-files=all
+          for generated in verification/current-engine-provenance.json verification/tethers-verification.json; do
+            if [[ -e "$generated" ]]; then
+              rm -f -- "$generated"
+            fi
+          done
+          dirty=$(git status --porcelain=v1 --untracked-files=all)
+          if [[ -n "$dirty" ]]; then
+            printf '%s\n' 'Unexpected dirty files remain before release packaging:' >&2
+            printf '%s\n' "$dirty" >&2
+            exit 1
+          fi
+          printf '%s\n' 'Release worktree is clean.'
+
+      - name: Build Linux release package
+        env:
+          TETHERS_OCAML_SWITCH: bl-tethers-5.5.0
+        run: |
+          bash scripts/package-linux-release.sh --release
+
+      - name: Verify package checksums
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS
+
+      - name: Extract and test package
+        run: |
+          mkdir -p /tmp/test-package
+          tar xzf dist/Tethers-0.7.1-linux-x64.tar.gz -C /tmp/test-package
+          bash scripts/test-linux-package.sh /tmp/test-package/Tethers-0.7.1-linux-x64
+
+      - name: Runtime dependency audit
+        run: |
+          mkdir -p /tmp/test-deps
+          tar xzf dist/Tethers-0.7.1-linux-x64.tar.gz -C /tmp/test-deps
+          cd /tmp/test-deps/Tethers-0.7.1-linux-x64
+          ldd tethers
+          ldd tethers-engine
+          ldd agent_workspace_provider
+          ldd agent_coding_provider
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tethers-linux-x64
+          path: |
+            dist/Tethers-0.7.1-linux-x64.tar.gz
+            dist/Tethers-0.7.1-linux-x64-manifest.json
+            dist/SHA256SUMS
