@@ -125,9 +125,10 @@ The remaining unresolved Linux behaviour is exclusively
   `4c89ff26024733218311086f0fff66c0a7fe2e652363a636a7efd358bd60e9af`.
 - OCaml `5.5.0`; Dune `3.24.0`.
 
-`bl doctor tethers` was run while the two source edits were uncommitted and
-reported `dirty_files: 2`, so readiness was false for that intermediate state.
-It must be rerun after the final documentation commit and clean-tree check.
+`bl doctor tethers` was first run while the two source edits were uncommitted
+and reported `dirty_files: 2`, so readiness was false for that intermediate
+state. It was rerun after the final documentation commit and clean-tree check:
+`dirty_files: 0`, mandatory readiness true, no failures or warnings.
 The native WSL image has no `pwsh`, so the PowerShell task-packet checker was
 not run; this is recorded as an environment limitation rather than solved by
 invoking Windows tooling.
