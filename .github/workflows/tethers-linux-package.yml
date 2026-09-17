@@ -1,0 +1,88 @@
+name: Tethers Linux package proof
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-package-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt
+
+      - name: Install OCaml and opam
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5.0"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 jq
+
+      - name: Set up OCaml switch
+        run: |
+          opam switch create bl-tethers-5.5.0 5.5.0
+          opam install -y dune yojson digestif
+
+      - name: Verify environment
+        run: |
+          rustc --version
+          cargo --version
+          opam exec --switch=bl-tethers-5.5.0 -- ocamlc -version
+          opam exec --switch=bl-tethers-5.5.0 -- dune --version
+
+      - name: Run repository verification
+        env:
+          TETHERS_OCAML_SWITCH: bl-tethers-5.5.0
+        run: |
+          opam exec --switch=bl-tethers-5.5.0 -- python3 scripts/verify-tethers.py --release
+
+      - name: Build Linux release package
+        env:
+          TETHERS_OCAML_SWITCH: bl-tethers-5.5.0
+        run: |
+          bash scripts/package-linux-release.sh --release
+
+      - name: Verify package checksums
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS
+
+      - name: Extract and test package
+        run: |
+          mkdir -p /tmp/test-package
+          tar xzf dist/Tethers-0.7.1-linux-x64.tar.gz -C /tmp/test-package
+          bash scripts/test-linux-package.sh /tmp/test-package/Tethers-0.7.1-linux-x64
+
+      - name: Runtime dependency audit
+        run: |
+          mkdir -p /tmp/test-deps
+          tar xzf dist/Tethers-0.7.1-linux-x64.tar.gz -C /tmp/test-deps
+          cd /tmp/test-deps/Tethers-0.7.1-linux-x64
+          ldd tethers
+          ldd tethers-engine
+          ldd agent_workspace_provider
+          ldd agent_coding_provider
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tethers-linux-x64
+          path: |
+            dist/Tethers-0.7.1-linux-x64.tar.gz
+            dist/Tethers-0.7.1-linux-x64-manifest.json
+            dist/SHA256SUMS
