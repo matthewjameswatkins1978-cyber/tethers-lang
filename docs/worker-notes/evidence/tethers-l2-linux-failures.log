@@ -1779,7 +1779,7 @@ read initialize response: ProcessExited(1)
 ---- child_process::tests::j13a_stderr_capture stdout ----
 
 thread 'child_process::tests::j13a_stderr_capture' (102284) panicked at src/child_process.rs:1272:9:
-stderr: 
+stderr:
 
 ---- host_execution::tests::c2a3a_group_join_after_all_terminals stdout ----
 execute_group_concurrent returned: Uncertain { evaluation_id: "eval-join-1", action_id: "member-a", reason: "provider outcome is uncertain", execution_id: Some("exec_00000000-0000-4000-8000-000000000001") }
