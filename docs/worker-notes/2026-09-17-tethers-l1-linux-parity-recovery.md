@@ -88,6 +88,7 @@ Focused native checks:
 - Unix process group/nonexistent-command tests: `4 passed, 0 failed`;
 - full Rust host/integration runner, single-thread: `1,519 passed, 0 failed, 2 ignored`;
 - full Rust host/integration runner, default threading: `1,519 passed, 0 failed, 2 ignored`;
+- native OCaml/Dune test suite: PASS, including the repository Rocket V3 origin-walk and success-path evidence (105/105, 89/89, and chain sizes through 1,000);
 - `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`: PASS;
 - `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --locked`: PASS;
 - `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --no-run --locked`: PASS;
