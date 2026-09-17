@@ -36,7 +36,7 @@ jobs:
       - name: Set up OCaml switch
         run: |
           opam switch create bl-tethers-5.5.0 5.5.0
-          opam install -y dune yojson digestif
+          opam install --switch=bl-tethers-5.5.0 -y dune yojson digestif
 
       - name: Verify environment
         run: |
