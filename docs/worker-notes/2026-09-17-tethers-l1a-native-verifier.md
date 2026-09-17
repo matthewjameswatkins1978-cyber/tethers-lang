@@ -65,8 +65,8 @@ fail closed without Windows PowerShell interop or stale engine discovery.
   transcripts and compatibility corpus.
 - Machine report: `verification/tethers-verification.json`, schema
   `tethers.verify/1`, platform `linux`, 10 PASS, 0 FAIL, 0 skipped, verdict
-  `PASS`. The report is currently not release-eligible because this worktree is
-  intentionally dirty with L1a changes.
+  `PASS`. After terminal closure on the committed tree, the report is
+  release-eligible.
 - A separate clean Windows clone of the pushed branch passed the same ten-suite
   Python authority with the existing Windows OCaml switch. Its report verdict
   was `PASS` with current engine provenance and no dependent-suite skips.
