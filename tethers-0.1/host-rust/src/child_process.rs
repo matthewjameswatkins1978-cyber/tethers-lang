@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+#[cfg(windows)]
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(not(windows))]
@@ -1201,6 +1202,7 @@ mod tests {
     use super::*;
     use std::cell::Cell;
 
+    #[cfg(windows)]
     fn fixture_script() -> std::path::PathBuf {
         let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.pop();
@@ -1209,6 +1211,7 @@ mod tests {
         path
     }
 
+    #[cfg(windows)]
     fn launch_fixture(mode: &str, startup: u64, close: u64) -> Result<SupervisedChild, ChildError> {
         let config = ChildConfig::test_config(
             "pwsh.exe",
@@ -1226,12 +1229,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13a_child_launch_and_shutdown() {
         let child = launch_fixture("valid", 5, 2).expect("launch");
         let _ = child.shutdown();
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13a_named_powershell_child_preserves_piped_protocol() {
         let mut child = launch_fixture("valid", 5, 2).expect("launch");
         child
@@ -1258,6 +1263,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13a_stderr_capture() {
         let mut child = launch_fixture("exit-early", 5, 2).expect("launch");
         // Wait for child to exit and stderr thread to capture.
@@ -1348,6 +1354,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13a_independent_job_objects() {
         let c1 = launch_fixture("valid", 5, 2).expect("c1");
         let c2 = launch_fixture("valid", 5, 2).expect("c2");
@@ -1356,6 +1363,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13a_direct_child_terminated() {
         let mut child = launch_fixture("valid", 5, 2).expect("launch");
         assert!(!child.has_exited());
@@ -1364,18 +1372,21 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13a_descendant_terminated() {
         let child = launch_fixture("descendant-alive", 5, 2).expect("launch");
         let _ = child.shutdown();
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13a_job_handle_closed_on_shutdown() {
         let child = launch_fixture("valid", 5, 2).expect("launch");
         let _ = child.shutdown();
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13a_reader_threads_join() {
         let child = launch_fixture("valid", 5, 2).expect("launch");
         let _ = child.shutdown();
@@ -1383,6 +1394,7 @@ mod tests {
 
     // ── F2a: live stderr visibility ─────────────────────────────────
 
+    #[cfg(windows)]
     fn launch_live_stderr_fixture(startup: u64, close: u64) -> Result<SupervisedChild, ChildError> {
         let config = ChildConfig::test_config(
             "pwsh.exe",
@@ -1399,6 +1411,7 @@ mod tests {
     }
 
     /// Poll `stderr_tail()` until `marker` is present or `deadline` passes.
+    #[cfg(windows)]
     fn poll_stderr_tail(child: &SupervisedChild, marker: &str, deadline: Instant) -> String {
         loop {
             let tail = child.stderr_tail();
@@ -1413,6 +1426,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn f2a_regression_live_stderr_not_visible_before_exit() {
         let mut child = launch_live_stderr_fixture(5, 2).expect("launch");
         let line = child
@@ -1431,6 +1445,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn f2a_live_stderr_visible_before_exit() {
         let mut child = launch_live_stderr_fixture(5, 2).expect("launch");
         let line = child
@@ -1453,6 +1468,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn f2a_bounded_stderr_tail() {
         let small_tail: usize = 100;
         // Emit 200 'X' bytes to stderr (no newlines for deterministic byte
@@ -1500,6 +1516,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn f2a_timeout_remains_timeout_with_stderr_available() {
         let mut child = launch_live_stderr_fixture(5, 2).expect("launch");
         let line = child
@@ -1523,6 +1540,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn f2a_exit_distinguishable_from_timeout_and_disconnect() {
         let config = ChildConfig::test_config(
             "pwsh.exe",
@@ -1552,6 +1570,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn f2a_windows_cleanup_reaps_child_and_joins_threads() {
         let child = launch_live_stderr_fixture(5, 2).expect("launch");
         let child_id = child.child.id();

@@ -954,6 +954,14 @@ mod tests {
     use crate::m3_store::sha256;
     use std::path::PathBuf;
 
+    fn absolute_test_path(name: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!(r"C:\{name}"))
+        } else {
+            PathBuf::from(format!("/tmp/tethers-{name}"))
+        }
+    }
+
     #[test]
     fn j24a_invalid_extension_maps_to_invalid_data() {
         let result = run_inspect(Path::new("not-a-package.zip"));
@@ -1026,7 +1034,8 @@ mod tests {
             Some("/host-data-root")
         );
 
-        let package = run_stage(Path::new("C:\\host"), Path::new("relative-package"));
+        let host = absolute_test_path("host");
+        let package = run_stage(&host, Path::new("relative-package"));
         assert_eq!(package.exit_code, 2);
         assert_eq!(
             package.envelope.error.as_ref().unwrap().field.as_deref(),

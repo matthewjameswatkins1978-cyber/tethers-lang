@@ -1,0 +1,2496 @@
+{
+  "schema": "tethers.l2.linux-failure-taxonomy/1",
+  "source_sha": "47571579315c278bdcdbbef0f0403520bd3b41ed",
+  "command": "cargo test --workspace",
+  "working_directory": "tethers-0.1/host-rust",
+  "platform": "native WSL Ubuntu",
+  "exit_code": 1,
+  "counts": {
+    "passed": 1258,
+    "failed": 245,
+    "ignored": 4
+  },
+  "failure_block_count": 245,
+  "clusters": [
+    {
+      "name": "concurrency-cascade",
+      "failure_count": 41
+    },
+    {
+      "name": "engine-provenance",
+      "failure_count": 21
+    },
+    {
+      "name": "unresolved-linux-behavior",
+      "failure_count": 3
+    },
+    {
+      "name": "windows-launch-environment",
+      "failure_count": 144
+    },
+    {
+      "name": "windows-path-semantics",
+      "failure_count": 16
+    },
+    {
+      "name": "windows-process-boundary",
+      "failure_count": 4
+    },
+    {
+      "name": "windows-provider-fixture",
+      "failure_count": 16
+    }
+  ],
+  "failures": [
+    {
+      "test_name": "application::tests::replay_runtime_integration::j09_runtime_01_cli_accepts_one_absolute_host_data_root",
+      "crate": "tethers-reference-host",
+      "module": "application::tests::replay_runtime_integration",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: \"--host-data-root must be absolute\"",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "application::tests::replay_runtime_integration::j09_runtime_02_cli_rejects_duplicate_host_data_root",
+      "crate": "tethers-reference-host",
+      "module": "application::tests::replay_runtime_integration",
+      "immediate_failure": "assertion `left == right` failed",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "application::tests::replay_runtime_integration::j09_runtime_38_trail_and_replay_roots_remain_explicitly_distinct",
+      "crate": "tethers-reference-host",
+      "module": "application::tests::replay_runtime_integration",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: \"--host-data-root must be absolute\"",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "current_trust_tests::j24k1_approve_with_authority_uses_and_propagates_supplied_authority",
+      "crate": "tethers-reference-host",
+      "module": "current_trust_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "current_trust_tests::j24k1_install_disabled_invokes_authority_again_after_staging_before_publication",
+      "crate": "tethers-reference-host",
+      "module": "current_trust_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "current_trust_tests::j24k1_install_disabled_with_authority_uses_supplied_authority_at_entry",
+      "crate": "tethers-reference-host",
+      "module": "current_trust_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "current_trust_tests::j24k1_prepared_launch_revalidate_current_trust_with_uses_supplied_authority",
+      "crate": "tethers-reference-host",
+      "module": "current_trust_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "current_trust_tests::j24k1_run_host_conformance_with_authority_uses_supplied_authority",
+      "crate": "tethers-reference-host",
+      "module": "current_trust_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "current_trust_tests::j24k1_prepared_launch_launch_for_candidate_with_refuses_before_launch",
+      "crate": "tethers-reference-host",
+      "module": "current_trust_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t10_identity_separation",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t11_bridge_metadata_separation",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t12_real_cross_language_e2e",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t13_wrong_event_not_matched",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t14_occurrence_identity",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t4_mcp_tools_list_contains_two",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t5_evaluate_is_core",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t6_new_evaluate_reaches_core",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t7_core_evaluate_works",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t8_core_evaluate_returns_matched",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::core9b_t9_no_core_environment_fails",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::j13a_engine_no_tethers_evaluate_sent",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::j13a_engine_one_retained_session_multiple_tethers",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::j13a_real_engine_invalid_tether_via_tools_call",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::j13a_real_engine_valid_tether_via_tools_call",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "engine_stdio::tests::j13b_retained_engine_uses_arguments_request_for_multiple_evaluations",
+      "crate": "tethers-reference-host",
+      "module": "engine_stdio::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "child_process::tests::f2a_windows_cleanup_reaps_child_and_joins_threads",
+      "crate": "tethers-reference-host",
+      "module": "child_process::tests",
+      "immediate_failure": "failed to launch process-inspection command: No such file or directory (os error 2)",
+      "underlying_error": "PowerShell/process-inspection child process is unavailable on native WSL",
+      "probable_platform_dependency": "test requires Windows process tooling or executable naming",
+      "root_cause_cluster": "windows-process-boundary",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "child_process::tests::j13a_named_powershell_child_preserves_piped_protocol",
+      "crate": "tethers-reference-host",
+      "module": "child_process::tests",
+      "immediate_failure": "read initialize response: ProcessExited(1)",
+      "underlying_error": "PowerShell/process-inspection child process is unavailable on native WSL",
+      "probable_platform_dependency": "test requires Windows process tooling or executable naming",
+      "root_cause_cluster": "windows-process-boundary",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "child_process::tests::j13a_stderr_capture",
+      "crate": "tethers-reference-host",
+      "module": "child_process::tests",
+      "immediate_failure": "stderr:",
+      "underlying_error": "PowerShell/process-inspection child process is unavailable on native WSL",
+      "probable_platform_dependency": "test requires Windows process tooling or executable naming",
+      "root_cause_cluster": "windows-process-boundary",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_group_join_after_all_terminals",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "assertion failed: matches!(result, ExecutionServiceResult::Completed { .. })",
+      "underlying_error": "captured assertion or outcome does not establish a shared platform dependency",
+      "probable_platform_dependency": "requires L3 investigation; no product change made in L2",
+      "root_cause_cluster": "unresolved-linux-behavior",
+      "classification_confidence": "low"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_stage_c_durability_while_sibling_blocked",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_approval_required_plus_success",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_denied_plus_success",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_deterministic_result_independent_of_order",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_g1_before_effect",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a1_n2_limits_active_invocations_to_at_most_two_and_reaches_two",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_intent_before_effect",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_panic_exact_uncertain",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a2_next_slot_launches_earliest_semantic_waiter",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a2_queue_wait_does_not_consume_provider_timeout",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_unattempted",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a2_waiting_member_has_g0_without_g1_or_provider_effect",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_unavailable_plus_success",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a3_all_terminal_preserves_group_join",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_uncertain",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_trail_physical_order_a_before_b",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_trail_physical_order_b_before_a",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_worker_panic_yields_uncertain_non_success_join",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a3_g1_failure_halts_before_any_later_effect_without_join",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a1_full_width_preserves_full_overlap",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_replay_blocked_completed_failure",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c2a3a_terminal_replay_blocked_completed_success",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a2_queued_member_replay_order_is_g0_wait_g1_g2",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a4_default_two_controls_real_group_execution",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a3_g2_failure_halts_queued_effects_without_join",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a3_outcome_durability_failure_halts_queued_effects_without_join",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a1_n1_limits_active_invocations_to_at_most_one",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a4_explicit_one_controls_real_group_execution",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a3_n2_active_sibling_survives_fatal_halt_truthfully",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a3_worker_panic_terminalises_uncertain_and_releases_slot",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_v1_n1_group_of_five_proves_bound_and_full_terminalisation",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_v1_n2_group_of_five_proves_bound_reached_and_full_terminalisation",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c3_a3_normal_provider_failure_releases_slot_and_joins",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c4_g2_failure_halts_queue_but_active_sibling_finishes_truthfully",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c4_inverse_completion_preserves_semantic_first_failure",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c4_outcome_durability_failure_does_not_contaminate_active_sibling",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c4_repeated_inverse_completion_has_no_state_leak",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c4_fast_failure_releases_slot_while_slow_sibling_runs",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c4_g1_failure_halts_queue_but_active_sibling_finishes_truthfully",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::c4_worker_panic_under_n2_pressure_releases_slot",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::core9c_t16_wrong_event_never_dispatches",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::core9c_t17_missing_core_environment_fails_closed_without_dispatch",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::core9b_t13_builder_wrong_event_not_matched",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::core9b_t14_builder_occurrence_identity",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::core9b_t12_real_rust_built_cross_language_e2e",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "verified engine missing; run just test-rust so the current OCaml engine is built and provenance-checked",
+      "underlying_error": "current first-party OCaml engine is not built/provenance-verified",
+      "probable_platform_dependency": "cross-language tests require the repository-verified engine",
+      "root_cause_cluster": "engine-provenance",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::p2_guarded_together_rejection_precedes_g1_and_provider",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "concurrency test lock poisoned: PoisonError { .. }",
+      "underlying_error": "shared concurrency test lock was poisoned after an earlier failure",
+      "probable_platform_dependency": "dependent failure after platform-sensitive test setup failed",
+      "root_cause_cluster": "concurrency-cascade",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution::lock_tests::j24k2_lock_busy_from_another_thread",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution::lock_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"installation_lock_invalid\", message: \"installation lock path is invalid\" }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution::lock_tests::j24k2_lock_child_cannot_inherit_lock_handle",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution::lock_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"installation_lock_invalid\", message: \"installation lock path is invalid\" }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution::lock_tests::j24k2_lock_acquire_and_release",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution::lock_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"installation_lock_invalid\", message: \"installation lock path is invalid\" }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution::lock_tests::j24k2_lock_release_after_drop_allows_reacquisition",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution::lock_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"installation_lock_invalid\", message: \"installation lock path is invalid\" }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution::lock_tests::j24k2_lock_raii_unwind_releases_lock",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution::lock_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"installation_lock_invalid\", message: \"installation lock path is invalid\" }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution::lock_tests::j24k2_lock_second_acquisition_fails_busy",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution::lock_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"installation_lock_invalid\", message: \"installation lock path is invalid\" }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution::lock_tests::j24k2_lock_preexisting_empty_anchor_accepted",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution::lock_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"installation_lock_invalid\", message: \"installation lock path is invalid\" }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_publication_advances_to_complete",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_global_untracked_destination_blocks_publication_pre_intent_lock_released",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_intent_store_rooted_under_executor_state",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k2_complete_state_is_idempotent_and_mutation_free",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_no_intent_under_wrong_paths",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_returned_plans_and_outcome_exact",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_complete_returns_already_complete_no_mutation",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_destination_and_record_exist_recovery_idle",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_no_second_action_executed",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_second_lock_returns_installation_busy",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_execution_tests::j24k3f_test_only_post_intent_failure_is_recoverable_and_publishes_once",
+      "crate": "tethers-reference-host",
+      "module": "installation_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_destination_plus_matching_record_removes_only_intent",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_completed_publication_classifies_completed_then_idle",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_exact_staging_files_lengths_hashes_and_read_only",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_existing_destination_is_not_overwritten_or_adopted",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_destination_without_record_publishes_exact_record_once",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_existing_staging_is_not_overwritten_or_adopted",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_final_destination_reverified_before_publication",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_intent_plus_staging_prefix_is_recoverable_to_idle",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_intent_only_prefix_is_recoverable_to_idle",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_non_idle_recovery_creates_no_new_state",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_mismatched_record_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_mismatched_destination_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_publication_refuses_duplicate_installed_release",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_publication_refuses_mismatched_record_digest",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_persisted_intent_equals_prepared_before_later_steps",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_quarantine_byte_drift_is_refused_before_intent",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_rename_uses_exact_prepared_destination",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_record_without_destination_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_returned_and_published_record_equal_prepared",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_publication_retains_original_uuid_and_timestamp",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_same_transaction_cannot_duplicate_publication",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_stale_evidence_before_mutation_creates_no_intent",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_success_leaves_idle_recovery_no_intent_no_staging",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_created_time_is_nonzero_and_frozen_through_validation",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_authoritative_plan_changed_after_before_plan_is_refused",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_mutation_tests::j24k3e2_valid_prepared_publication_completes_exactly_once",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_mutation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_disabled_bindings_match_candidate_capabilities_in_accepted_order",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_destination_is_exactly_plug_installed_id",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_digests_remain_stable_under_repeated_validation",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_drifted_approval_evidence_is_refused",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_duplicate_installed_release_is_refused",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_drifted_launch_profile_is_refused",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_drifted_conformance_evidence_is_refused",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_forged_before_plan_pins_are_refused_without_mutation",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_forged_installed_pins_are_refused_without_mutation",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_global_untracked_final_destination_blocks_preparation",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_malformed_intent_blocks_preparation_and_is_retained",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_independent_preparations_differ_in_identity_but_both_stay_read_only",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_intent_record_and_destination_identity_agree",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_missing_candidate_is_refused",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_missing_exact_trust_is_refused",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_no_intent_staging_destination_or_record_is_created",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_non_publication_action_is_refused_without_mutation",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_prepared_installed_id_is_canonical_lowercase_uuid",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_quarantine_byte_drift_is_refused",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_pending_recovery_intent_blocks_preparation_and_is_retained",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_publication_ready_evidence_produces_sealed_prepared_value",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_successful_preparation_leaves_all_durable_roots_unchanged",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_record_fields_exactly_match_pinned_evidence",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_torn_intent_state_blocks_preparation_and_is_retained",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_stale_before_plan_identity_is_refused_without_mutation",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_staging_recovery_conflict_is_not_cleaned_or_adopted",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_wrong_before_plan_action_is_refused_without_mutation",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_publication_preparation_tests::j24k3e1_unsafe_intent_root_preserves_unsafe_store_path",
+      "crate": "tethers-reference-host",
+      "module": "installation_publication_preparation_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_approval_payload_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_approval_candidate_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_approval_launch_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_approval_conformance_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_approval_provider_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_approval_reviewed_capability_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_approval_trust_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_candidate_stale_launch_profile_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_candidate_mismatch_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_changed_exact_trust_record_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_changed_scope_digest_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_changed_scope_schema_with_valid_digest_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_digest_mismatched_approval_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_differently_authorised_trust_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_disabled_target_state_passes_validation",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_exact_candidate_trust_scope_passes_validation",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_genuine_io_failure_maps_to_recovery_io",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_architecture_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_approval_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_capability_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_disabled_binding_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_conformance_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_package_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_physical_evidence_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_launch_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_platform_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_provider_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_installed_record_trust_drift_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_invalid_intent_rejected_before_request_or_store",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_invalid_schema_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_missing_approval_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_mismatched_launch_profile_digest_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_missing_conformance_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_missing_candidate_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_missing_non_isolated_consent_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_quarantined_byte_mutation_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_non_passed_conformance_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_reconstructed_trust_must_equal_intent_trust_evidence",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_old_suite_conformance_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_missing_launch_profile_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_missing_exact_trust_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_success_leaves_stores_quarantine_and_permissions_unchanged",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_scope_schema_match_passes_recovery",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_unrelated_evidence_does_not_satisfy_pinned_records",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_tampered_candidate_record_fails_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_evidence_tests::j24k3c3_valid_chain_passes",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_evidence_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_execution_tests::j24k3d2_completed_publication_removes_only_intent",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_execution_tests::j24k3d2_destination_only_publishes_exact_record_then_returns_idle",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_execution_tests::j24k3d2_exact_record_publication_preserves_all_record_fields",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_execution_tests::j24k3d2_destination_publication_requires_completed_replan",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_execution_tests::j24k3d2_record_conflict_retains_intent_and_destination",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_execution_tests::j24k3d2_recovery_never_adopts_or_deletes_final_destination",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_execution_tests::j24k3d2_stale_destination_prevents_publication_and_retains_intent",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_execution_tests::j24k3d2_unrelated_stores_remain_unchanged",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_execution_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_completed_with_stale_installed_record_fails_evidence_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_completed_publication_returns_verify_then_remove_intent",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_completed_publication_still_requires_evidence_and_destination",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_destination_digest_drift_fails_recovery_conflict",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_destination_file_set_drift_fails_recovery_conflict",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_destination_only_with_evidence_returns_revalidate_then_publish",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_destination_size_drift_fails_recovery_conflict",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_destination_permission_drift_fails_recovery_conflict",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_destination_symlink_is_rejected_at_planner_entry",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_record_root_symlink_is_rejected_at_planner_entry",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_removed_open_install_root_returns_recovery_io",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_stale_conformance_pin_fails_evidence_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_stale_candidate_pin_fails_evidence_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_stale_launch_pin_fails_evidence_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_stale_approval_pin_fails_evidence_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_stale_request_pin_fails_evidence_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_stale_trust_pin_fails_evidence_stale",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_untracked_sibling_destination_fails",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "installation_recovery_plan_tests::j24k3d1_successful_planning_route_is_read_only",
+      "crate": "tethers-reference-host",
+      "module": "installation_recovery_plan_tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: M3Error { code: \"launch_environment\", message: \"SystemRoot is unavailable\" }",
+      "underlying_error": "Windows-only launch environment requires SystemRoot",
+      "probable_platform_dependency": "launch_environment prerequisite is unavailable in native WSL",
+      "root_cause_cluster": "windows-launch-environment",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "plug_command::tests::j24f_relative_stage_paths_are_rejected_before_service_call",
+      "crate": "tethers-reference-host",
+      "module": "plug_command::tests",
+      "immediate_failure": "assertion `left == right` failed",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "plug_install_command::tests::j24l2_missing_host_data_root_returns_unavailable",
+      "crate": "tethers-reference-host",
+      "module": "plug_install_command::tests",
+      "immediate_failure": "assertion `left == right` failed",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "plug_install_command::tests::j24l2_relative_request_path_returns_error_creates_nothing",
+      "crate": "tethers-reference-host",
+      "module": "plug_install_command::tests",
+      "immediate_failure": "assertion `left == right` failed",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "plug_pack::tests::p2a_refuses_wrong_extension",
+      "crate": "tethers-reference-host",
+      "module": "plug_pack::tests",
+      "immediate_failure": "assertion failed: err.message.contains(\".tetherplug\")",
+      "underlying_error": "captured assertion or outcome does not establish a shared platform dependency",
+      "probable_platform_dependency": "requires L3 investigation; no product change made in L2",
+      "root_cause_cluster": "unresolved-linux-behavior",
+      "classification_confidence": "low"
+    },
+    {
+      "test_name": "runtime_config::tests::j12_packet1_absolute_manifest_path_rejected",
+      "crate": "tethers-reference-host",
+      "module": "runtime_config::tests",
+      "immediate_failure": "called `Result::unwrap_err()` on an `Ok` value: RuntimeConfig { format_version: \"0.1\", max_active_together_invocations: 2, tether_set: TetherSetConfig { id: \"example.local\", version: \"1\", tethers: [TetherRef { id: \"record-completed-task\", version: \"demo-v1\", source_path: \"tethers/record-completed-task.tether\", core_environment: None }], capability_requirements: [CapabilityRequirementConfig { name: \"lantern.task.record\", version: 1, reason: Some(\"Record a completed task\") }] }, providers: [ProviderBindingConfig { id: \"lantern-local\", display_name: \"Lantern Local\", transport: TransportConfig { kind: Stdio, command: \"pwsh.exe\", args: [\"-NoProfile\", \"-File\", \"providers/lantern.ps1\"], protocol_version: \"2025-11-25\" }, capabilities: [ProviderCapabilityConfig { name: \"lantern.task.record\", version: 1, manifest_path: \"C:\\\\absolute\\\\path.json\", pinned_digest: \"sha256:0000000000000000000000000000000000000000000000000000000000000000\", scope_binding: None }] }], policy: PolicyConfig { default: Deny, rules: [PolicyRuleConfig { name: \"lantern.task.record\", version: 1, decision: Allow }] }, authority: None }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "runtime_config::tests::j12_packet1_absolute_source_path_rejected",
+      "crate": "tethers-reference-host",
+      "module": "runtime_config::tests",
+      "immediate_failure": "called `Result::unwrap_err()` on an `Ok` value: RuntimeConfig { format_version: \"0.1\", max_active_together_invocations: 2, tether_set: TetherSetConfig { id: \"example.local\", version: \"1\", tethers: [TetherRef { id: \"record-completed-task\", version: \"demo-v1\", source_path: \"C:\\\\absolute\\\\path.tether\", core_environment: None }], capability_requirements: [CapabilityRequirementConfig { name: \"lantern.task.record\", version: 1, reason: Some(\"Record a completed task\") }] }, providers: [ProviderBindingConfig { id: \"lantern-local\", display_name: \"Lantern Local\", transport: TransportConfig { kind: Stdio, command: \"pwsh.exe\", args: [\"-NoProfile\", \"-File\", \"providers/lantern.ps1\"], protocol_version: \"2025-11-25\" }, capabilities: [ProviderCapabilityConfig { name: \"lantern.task.record\", version: 1, manifest_path: \"manifests/lantern-task-record.json\", pinned_digest: \"sha256:0000000000000000000000000000000000000000000000000000000000000000\", scope_binding: None }] }], policy: PolicyConfig { default: Deny, rules: [PolicyRuleConfig { name: \"lantern.task.record\", version: 1, decision: Allow }] }, authority: None }",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "host_execution::tests::j13b_one_retained_provider_serves_multiple_calls_with_monotonic_ids",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: LaunchFailed { command: \"pwsh\", message: \"launch failed for 'pwsh': No such file or directory (os error 2)\" }",
+      "underlying_error": "PowerShell/process-inspection child process is unavailable on native WSL",
+      "probable_platform_dependency": "test requires Windows process tooling or executable naming",
+      "root_cause_cluster": "windows-process-boundary",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "stdio_provider::tests::admitted_fixture_resolves_only_when_host_reports_it_available",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: EmptyResponse",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::j13b_provider_is_unavailable_without_matching_live_discovery_evidence",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: EmptyResponse",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "trail_command::tests::j13c_missing_trail_file_maps_to_not_found",
+      "crate": "tethers-reference-host",
+      "module": "trail_command::tests",
+      "immediate_failure": "assertion `left == right` failed",
+      "underlying_error": "captured assertion or outcome does not establish a shared platform dependency",
+      "probable_platform_dependency": "requires L3 investigation; no product change made in L2",
+      "root_cause_cluster": "unresolved-linux-behavior",
+      "classification_confidence": "low"
+    },
+    {
+      "test_name": "validation::tests::r1c_nonexistent_directory_refused",
+      "crate": "tethers-reference-host",
+      "module": "validation::tests",
+      "immediate_failure": "expected does-not-exist error, got: canonical-directory: path must be absolute: C:\\nonexistent-directory-xyzzy",
+      "underlying_error": "Windows-style fixture path is interpreted by Linux path semantics",
+      "probable_platform_dependency": "test fixture assumes Windows absolute-path recognition",
+      "root_cause_cluster": "windows-path-semantics",
+      "classification_confidence": "high"
+    },
+    {
+      "test_name": "stdio_provider::tests::duplicate_tool_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode duplicate-tool: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::initialization_error_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode initialization-error: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::incompatible_protocol_version_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode incompatible-version: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::j13b_live_tools_list_schema_mismatch_is_not_admitted_available",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode input-schema-mismatch: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::missing_tool_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode missing-tool: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::output_schema_mismatch_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode output-schema-mismatch: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::malformed_json_rpc_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode malformed-json: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::provider_description_cannot_rewrite_trusted_manifest",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: EmptyResponse",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::real_mcp_discovery_admits_only_host_owned_manifest",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "called `Result::unwrap()` on an `Err` value: EmptyResponse",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::server_name_mismatch_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode server-name-mismatch: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "stdio_provider::tests::wrong_tool_name_fails_closed",
+      "crate": "tethers-reference-host",
+      "module": "stdio_provider::tests",
+      "immediate_failure": "unexpected error for mode wrong-tool: provider returned no response",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "host_execution::tests::c2_a3a_different_provider_tools_call_overlap_is_real",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "both provider child processes did not reach tools/call",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "host_execution::tests::c2_a3a_same_provider_tools_call_overlap_is_real",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "both provider child processes did not reach tools/call",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    },
+    {
+      "test_name": "host_execution::tests::c4_same_provider_overlap_and_inverse_completion_preserves_semantic_order",
+      "crate": "tethers-reference-host",
+      "module": "host_execution::tests",
+      "immediate_failure": "both same-provider child processes did not reach tools/call",
+      "underlying_error": "stdio provider fixture did not complete its child-process protocol",
+      "probable_platform_dependency": "provider fixture depends on unavailable Windows-side process execution",
+      "root_cause_cluster": "windows-provider-fixture",
+      "classification_confidence": "medium"
+    }
+  ]
+}

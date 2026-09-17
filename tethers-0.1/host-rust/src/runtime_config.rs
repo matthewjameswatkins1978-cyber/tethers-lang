@@ -1325,6 +1325,14 @@ mod tests {
     use super::*;
     use std::io::Write;
 
+    fn absolute_test_path(name: &str) -> String {
+        if cfg!(windows) {
+            format!(r"C:\{name}")
+        } else {
+            format!("/tmp/tethers-{name}")
+        }
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -1625,7 +1633,7 @@ mod tests {
     fn j12_packet1_absolute_source_path_rejected() {
         let mut json = minimal_config_json();
         json["tether_set"]["tethers"][0]["source_path"] =
-            serde_json::json!("C:\\absolute\\path.tether");
+            serde_json::json!(absolute_test_path("absolute/path.tether"));
         let err = parse_err(&json);
         assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
     }
@@ -1634,10 +1642,8 @@ mod tests {
     #[test]
     fn j12_packet1_absolute_manifest_path_rejected() {
         let mut json = minimal_config_json();
-        // Use a Windows absolute path (with drive letter) which Path::is_absolute()
-        // recognises on Windows.
         json["providers"][0]["capabilities"][0]["manifest_path"] =
-            serde_json::json!("C:\\absolute\\path.json");
+            serde_json::json!(absolute_test_path("absolute/path.json"));
         let err = parse_err(&json);
         assert_eq!(err.code, RuntimeConfigErrorCode::InvalidValue);
     }

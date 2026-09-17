@@ -1,9 +1,9 @@
-//! P4b composition evidence for the existing guarded execution authorities.
-//!
-//! These tests deliberately live under the application test module so they can
-//! drive the real guarded serial boundary.  Faults are deterministic test
-//! inputs at existing replay, Trail, adapter, provider, and delivery seams;
-//! there is no production crash hook or second recovery state machine.
+// P4b composition evidence for the existing guarded execution authorities.
+//
+// These tests deliberately live under the application test module so they can
+// drive the real guarded serial boundary.  Faults are deterministic test
+// inputs at existing replay, Trail, adapter, provider, and delivery seams;
+// there is no production crash hook or second recovery state machine.
 
 use super::*;
 use crate::dispatch::{self, DispatchReadyAction, RecordingTrail};

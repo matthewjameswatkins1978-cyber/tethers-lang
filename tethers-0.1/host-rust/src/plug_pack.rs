@@ -1168,7 +1168,10 @@ mod tests {
 
     #[test]
     fn p2a_refuses_wrong_extension() {
-        let err = pack(Path::new("C:\\src"), Path::new("C:\\out.zip")).unwrap_err();
+        let dir = std::env::temp_dir().join(format!("tethers-p2a-ext-{}", uuid::Uuid::new_v4()));
+        let source = dir.join("src");
+        let output = dir.join("out.zip");
+        let err = pack(&source, &output).unwrap_err();
         assert_eq!(err.code, "invalid_cli_usage");
         assert!(err.message.contains(".tetherplug"));
     }

@@ -642,20 +642,45 @@ mod tests {
         let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.pop();
         path.push("scripts");
+        #[cfg(windows)]
         path.push("tethers-stdio-fixture.ps1");
+        #[cfg(not(windows))]
+        path.push("tethers-stdio-fixture.sh");
         path
     }
 
+    fn fixture_command_args(mode: &str) -> (String, Vec<String>) {
+        #[cfg(windows)]
+        {
+            (
+                "pwsh.exe".to_owned(),
+                vec![
+                    "-NoProfile".to_owned(),
+                    "-File".to_owned(),
+                    fixture_script_path().to_string_lossy().into_owned(),
+                    "-Mode".to_owned(),
+                    mode.to_owned(),
+                ],
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            (
+                "sh".to_owned(),
+                vec![
+                    fixture_script_path().to_string_lossy().into_owned(),
+                    "-Mode".to_owned(),
+                    mode.to_owned(),
+                ],
+            )
+        }
+    }
+
     fn fixture_config(mode: &str) -> StdioProviderConfig {
+        let (command, args) = fixture_command_args(mode);
         StdioProviderConfig {
-            command: "pwsh.exe".to_owned(),
-            args: vec![
-                "-NoProfile".to_owned(),
-                "-File".to_owned(),
-                fixture_script_path().to_string_lossy().into_owned(),
-                "-Mode".to_owned(),
-                mode.to_owned(),
-            ],
+            command,
+            args,
             protocol_version: "2025-11-25".to_owned(),
             provider_config: ProviderConfig {
                 identity: "tethers-stdio-fixture".to_owned(),

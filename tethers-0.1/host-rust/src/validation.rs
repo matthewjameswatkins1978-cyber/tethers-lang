@@ -716,6 +716,13 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn nonexistent_absolute_test_path() -> String {
+        std::env::temp_dir()
+            .join(format!("tethers-r1c-nonexistent-{}", uuid::Uuid::new_v4()))
+            .to_string_lossy()
+            .into_owned()
+    }
+
     // -----------------------------------------------------------------------
     // Test V1: Correct object output passes.
     // -----------------------------------------------------------------------
@@ -1211,7 +1218,7 @@ mod tests {
             },
             "required": ["root"]
         });
-        let scope = json!({"root": "C:\\nonexistent-directory-xyzzy"});
+        let scope = json!({"root": nonexistent_absolute_test_path()});
         let err = validate_and_canonicalize_operational_scope(&schema, &scope).unwrap_err();
         assert!(
             err.message.contains("does not exist"),

@@ -9,7 +9,9 @@ use crate::installation_request::InstallationRequest;
 use crate::installation_trust::ExactCandidateTrustStore;
 use crate::installed::{InstallationApprovalStore, InstalledPlugRegistry};
 use crate::launch_profile::{LaunchProfileEvidenceStore, PreparedSupervisedLaunch};
-use crate::m3_store::{reject_reparse, verify_chain, M3Error, Result};
+#[cfg(windows)]
+use crate::m3_store::{reject_reparse, verify_chain};
+use crate::m3_store::{M3Error, Result};
 use crate::trust::PackageTrustEvidence;
 use std::path::Path;
 use std::time::Duration;
@@ -878,7 +880,7 @@ fn handle_complete(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod lock_tests {
     use super::*;
     use std::fs;

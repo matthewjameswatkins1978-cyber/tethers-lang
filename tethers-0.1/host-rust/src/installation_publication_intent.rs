@@ -177,7 +177,7 @@ impl InstallationPublicationIntentStore {
         Ok(Some(intent))
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     pub(crate) fn root_path(&self) -> &Path {
         self.root.path()
     }
