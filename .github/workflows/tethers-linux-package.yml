@@ -53,6 +53,24 @@ jobs:
           for tool in cargo rustc rustfmt; do sudo ln -sf "$(command -v "$tool")" "/usr/local/bin/$tool"; done
           python3 scripts/verify-tethers.py --release
 
+      - name: Clear generated verification evidence and assert clean tree
+        shell: bash
+        run: |
+          printf '%s\n' 'Git status immediately after repository verification:'
+          git status --porcelain=v1 --untracked-files=all
+          for generated in verification/current-engine-provenance.json verification/tethers-verification.json; do
+            if [[ -e "$generated" ]]; then
+              rm -f -- "$generated"
+            fi
+          done
+          dirty=$(git status --porcelain=v1 --untracked-files=all)
+          if [[ -n "$dirty" ]]; then
+            printf '%s\n' 'Unexpected dirty files remain before release packaging:' >&2
+            printf '%s\n' "$dirty" >&2
+            exit 1
+          fi
+          printf '%s\n' 'Release worktree is clean.'
+
       - name: Build Linux release package
         env:
           TETHERS_OCAML_SWITCH: bl-tethers-5.5.0
