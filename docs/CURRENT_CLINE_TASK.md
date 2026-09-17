@@ -1,133 +1,127 @@
-# TETHERS L5 - Linux Failure Taxonomy and Repair
+# TETHERS L6 - Linux Path Semantics Repair
 
-Task: `TETHERS L5 / Linux Failure Taxonomy and Repair`
+Task: `TETHERS L6 / Linux Path Semantics Repair`
 
 Control contract: `1`
 
 Status: `COMPLETE`
 
-Task colour: `Amber`
+Task colour: `Green`
 
 Owner: `Codex`
 
-Route: `Implement the bounded Linux provider-fixture repair from the accepted L4 branch, classify the three unresolved Linux cases, verify provenance remains fail-closed, document the evidence, commit and push the task branch. Do not merge or repair out-of-scope concurrency and expanded-target failures.`
+Route: `Repair the two bounded Linux path-semantics test fixtures from the accepted L5 branch, verify the concurrency case remains untouched, document the evidence, commit and push the task branch. Do not merge.`
 
-Base commit: `ad5a728e753e1be77c4a4e1be40c34be3f827578`
+Base commit: `6b19b4c9af9fb047c847a82ef93f63f7de4381a5`
 
-Evidence checkpoint: `41db56f8700f59ef919c2a6ca528504920085b75`
+Evidence checkpoint: `a0ed61bf9b86752ecb51378ed0cc3ae1aace7bb5`
 
-Worker note: `docs/worker-notes/2026-09-17-tethers-l5-linux-failure-taxonomy.md`
+Worker note: `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
 
 Suggested branch:
 
-`feature/tethers-l5-linux-failure-taxonomy`
+`feature/tethers-l6-linux-path-semantics`
 
 ## Objective
 
-Make the remaining Linux test failures tell the truth. Repair the shared
-Windows-only provider fixture assumption for native Linux, investigate the
-three explicitly named unresolved cases without expanding into unrelated
-concurrency or platform cleanup, and leave reproducible evidence for the
-remaining taxonomy.
+Make `p2a_refuses_wrong_extension` and
+`j13c_missing_trail_file_maps_to_not_found` express their intended semantic
+scenarios on Linux using native temporary paths. Preserve production path
+validation, Windows behaviour, the verified engine, provider fixtures, and the
+out-of-scope concurrency failure.
 
 ## Relevant background and existing behaviour
 
-L4 established a native Linux OCaml engine build and provenance manifest. The
-verified engine is selected only after source-commit and binary-hash checks.
-The comparable Linux provider-fixture family contains 18 failures caused by
-Windows PowerShell fixture construction. The remaining unresolved cases are
-`c2a3a_group_join_after_all_terminals`, `p2a_refuses_wrong_extension`, and
-`j13c_missing_trail_file_maps_to_not_found`. L4 also records 41 concurrency
-failures and 72 expanded-target platform/provider failures that are not this
-task's repair target.
+L5 reduced provider fixture failures from 18 to 0 and left three unresolved
+Linux cases. The group-join case is a concurrency failure and remains outside
+L6. The two path tests use Windows drive literals; on Linux those are relative
+paths, so the tests exercise the wrong validation branches. Existing
+production code already handles absolute missing paths and wrong extensions
+correctly.
 
 ## Required behaviour
 
-1. Provide a native Linux provider fixture path without changing the existing
-   Windows PowerShell fixture or production provider semantics.
-2. Repair the shared in-scope fixture causes and add focused evidence that the
-   affected provider tests exercise the intended protocol and outcomes.
-3. Re-run and classify the three named unresolved Linux tests without silently
-   repairing or hiding them in this task.
-4. Preserve L4 engine provenance and fail-closed verification, and document
-   before/after Linux totals and every remaining failure family.
+1. Reproduce and repair the two path-semantics fixtures with native,
+   cross-platform temporary paths without weakening assertions.
+2. Keep the `c2a3a_group_join_after_all_terminals` concurrency failure and the
+   remaining concurrency/expanded-target families outside this task.
+3. Preserve L5 provider-fixture results, L4 engine provenance, Windows path
+   semantics, and production behaviour.
+4. Run targeted, containing-module, raw, verified/default, and
+   verified/single-thread checks and document exact before/after evidence.
 5. Commit and normally push the bounded task branch without merging it.
 
 ## Relevant components
 
-- `tethers-0.1/scripts/tethers-stdio-fixture.ps1`
-- `tethers-0.1/scripts/tethers-stdio-fixture.sh`
-- `tethers-0.1/host-rust/src/stdio_provider.rs`
-- `tethers-0.1/host-rust/src/host_execution.rs`
-- `scripts/prepare-current-engine.sh`
+- `tethers-0.1/host-rust/src/plug_pack.rs`
+- `tethers-0.1/host-rust/src/trail_command.rs`
 - `scripts/run-rust-tests.sh`
 - `verification/current-engine-provenance.json`
-- `docs/worker-notes/2026-09-17-tethers-l5-linux-failure-taxonomy.md`
+- `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
 
 ## Frozen decisions and invariants
 
-- Tethers production semantics, provider execution ordering, replay, outcome
-  taxonomy, and the Windows verified-engine path remain unchanged.
-- Linux must not fabricate Windows environment variables or invoke PowerShell
-  as a substitute for a native fixture.
-- Platform boundaries are semantic; no test may be hidden merely because it
-  fails on Linux.
-- L4 provenance must continue to reject missing, stale, tampered, or absent
-  engine evidence and accept only the current verified engine.
-- The three named unresolved tests, the 41 concurrency failures, and the 72
-  expanded-target failures remain outside the repair scope unless direct
-  evidence proves a shared in-scope root cause.
-- No WSL, global Git, toolchain, Windows checkout, or environment repair is
+- The repair is test-fixture-only unless independent evidence proves a
+  production defect.
+- Native temporary paths must be absolute and unique on every supported host.
+- No Windows-specific tests are weakened, disabled, or cfg-gated.
+- The L4 verified engine and fail-closed provenance contract remain unchanged.
+- Provider fixtures remain at zero failures.
+- `c2a3a_group_join_after_all_terminals` remains a concurrency issue and is
+  not repaired here.
+- No WSL, global Git, toolchain, dependency, or environment changes are
   authorised.
 
 ## Acceptance criteria
 
-1. A native Linux provider fixture runs the affected protocol tests and the
-   existing Windows fixture remains unchanged.
-2. The comparable provider-fixture family is structurally classified and its
-   valid shared root cause is repaired without weakened assertions.
-3. The three named unresolved tests are individually rerun and their results
-   are recorded with exact first failures.
-4. Raw and verified Linux totals, taxonomy deltas, provenance checks, and
-   remaining failures are recorded in the worker note.
-5. Formatting, compilation, relevant tests, `bl verify tethers`, and
-   `git diff --check` pass, subject only to explicitly recorded unrelated
-   tooling limitations.
-6. The final branch is clean, committed, pushed normally, and remains
-   unmerged.
+1. Both named path tests pass on Linux with their original semantic assertions
+   intact.
+2. Their containing test modules pass and the full raw/verified measurements
+   show exactly the expected two-failure reduction.
+3. Provider tests remain passing and the concurrency failure remains present
+   and classified as out of scope.
+4. Formatting, compilation, provenance, `bl verify tethers`, `bl doctor
+   tethers`, and `git diff --check` are recorded honestly.
+5. The worker note records the root causes, Threadmoth discovery, taxonomy,
+   unchanged production/Windows semantics, and remaining concurrency case.
+6. The final branch is clean, committed, pushed normally, and unmerged.
 
 ## Required verification
 
+- targeted `p2a_refuses_wrong_extension`
+- targeted `j13c_missing_trail_file_maps_to_not_found`
+- containing plug-pack and trail-command modules
+- raw Linux suite
+- verified/default and verified/single-thread suites
 - `cargo fmt --all -- --check`
 - `cargo check --workspace --locked`
 - `cargo test --workspace --no-run --locked`
-- focused provider and unresolved-test commands
-- verified/default and verified/single-thread Linux test runners
 - `bl verify tethers`
-- L4 provenance valid/stale/tampered/missing checks
+- `bl doctor tethers`
+- valid, stale, tampered, missing-engine, and missing-manifest provenance
+  checks
 - `git diff --check`
-- final clean Git status and remote SHA equality
+- final clean status and remote SHA equality
 
 ## Forbidden changes
 
-- No repair of the concurrency family unless it is proven to share the
-  provider-fixture root cause.
-- No general repair of expanded-target platform/provider failures.
-- No production redesign, provider architecture rewrite, test disabling,
-  assertion weakening, random dependency installation, or fake Windows
-  environment.
-- No changes to the Windows checkout, WSL configuration, global Git
-  configuration, toolchain versions, L4 provenance contract, or main.
+- No repair of `c2a3a_group_join_after_all_terminals` or the 41 concurrency
+  failures.
+- No repair of the 72 expanded-target platform/provider failures.
+- No production path redesign, assertion weakening, ignored tests, cfg-out,
+  dependency additions, or fake platform paths.
+- No changes to Windows files, WSL configuration, global Git configuration,
+  toolchains, L4 provenance scripts, or main.
 
 ## Stop conditions
 
-- Stop if the fix would require changing intended Windows behaviour or
-  weakening a semantic assertion.
-- Stop if a remaining failure cannot be classified without expanding scope.
-- Stop if L4 provenance no longer fails closed or the current engine cannot be
-  attributed to the current source.
-- After two materially similar failed approaches to the same root cause, stop
-  and record the smallest unresolved technical issue.
+- Stop if either test requires a production semantic change rather than a
+  fixture correction.
+- Stop if a path fixture cannot express the same intended scenario on Linux
+  and Windows without platform fiction.
+- Stop if provenance becomes stale or fail-open.
+- After two materially similar failed approaches, stop and record the smallest
+  unresolved issue.
 
 ## Expected pre-existing changes
 
@@ -135,8 +129,7 @@ None.
 
 ## Implementation scope
 
-- `tethers-0.1/scripts/tethers-stdio-fixture.sh`
-- `tethers-0.1/host-rust/src/stdio_provider.rs`
-- `tethers-0.1/host-rust/src/host_execution.rs`
+- `tethers-0.1/host-rust/src/plug_pack.rs`
+- `tethers-0.1/host-rust/src/trail_command.rs`
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-09-17-tethers-l5-linux-failure-taxonomy.md`
+- `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
