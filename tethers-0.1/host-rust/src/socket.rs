@@ -249,6 +249,14 @@ mod tests {
             .join("tethers-stdio-fixture.ps1")
     }
 
+    fn test_shell_program() -> &'static str {
+        if cfg!(windows) {
+            "pwsh.exe"
+        } else {
+            "pwsh"
+        }
+    }
+
     fn establish_fixture(mode: &str) -> RetainedProviderSession {
         let script = fixture_script_path();
         let working_directory = script.parent().unwrap().to_path_buf();
@@ -262,7 +270,7 @@ mod tests {
             mode.to_owned(),
         ];
         RetainedProviderSession::establish(SocketEstablishment {
-            command: "pwsh.exe",
+            command: test_shell_program(),
             args: &args,
             working_directory: &working_directory,
             protocol_version: "2025-11-25",

@@ -514,6 +514,14 @@ mod tests {
         build_check_data("test.set", "1", 2, 2, tethers, providers)
     }
 
+    fn test_shell_program() -> &'static str {
+        if cfg!(windows) {
+            "pwsh.exe"
+        } else {
+            "pwsh"
+        }
+    }
+
     fn test_failure(
         status: OutcomeStatus,
         code: &'static str,
@@ -821,7 +829,7 @@ mod tests {
                 "display_name": "Provider A",
                 "transport": {
                     "kind": "stdio",
-                    "command": "pwsh.exe",
+                    "command": test_shell_program(),
                     "args": [
                         "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                         script.to_str().unwrap(),
