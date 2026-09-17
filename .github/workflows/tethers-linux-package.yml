@@ -50,6 +50,7 @@ jobs:
           TETHERS_OCAML_SWITCH: bl-tethers-5.5.0
         run: |
           sudo ln -sf "$(command -v opam)" /usr/local/bin/opam
+          for tool in cargo rustc rustfmt; do sudo ln -sf "$(command -v "$tool")" "/usr/local/bin/$tool"; done
           python3 scripts/verify-tethers.py --release
 
       - name: Build Linux release package
