@@ -153,6 +153,10 @@ result because their first errors are independent platform-boundary failures.
 ## Provenance and environment
 
 - Current engine preparation and valid provenance checks remained available.
+- Final post-commit preparation recorded source commit
+  `2b9265c43dfdca8bf19da93d93d8734583cc96c8` and source tree
+  `f0069fc18cb3cfa98accc52ced3a03d7ae0c24eb`; the binary hash remained
+  `4c89ff26024733218311086f0fff66c0a7fe2e652363a636a7efd358bd60e9af`.
 - L4’s stale-commit, tampered-hash, missing-engine and missing-manifest
   fail-closed checks were not changed by this task and remain represented by
   the accepted L4 evidence.

@@ -4,15 +4,17 @@ Task: `TETHERS L7 / Concurrency Root-Cause Investigation`
 
 Control contract: `1`
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
-Task colour: `Amber`
+Task colour: `Green`
 
 Owner: `Codex`
 
 Route: `Investigate the named group-join failure from the fresh merged L6 baseline, repair only the demonstrated shared Linux test-harness cause, verify the coordinator invariant, classify the wider concurrency population, document evidence, commit and push the task branch. Do not merge.`
 
 Base commit: `15c85c7ffffb56614b0667b7a39164529a1b7fc4`
+
+Evidence checkpoint: `2b9265c43dfdca8bf19da93d93d8734583cc96c8`
 
 Worker note: `docs/worker-notes/2026-09-17-tethers-l7-concurrency-root-cause.md`
 
