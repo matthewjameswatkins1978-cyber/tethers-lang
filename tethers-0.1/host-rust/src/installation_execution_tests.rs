@@ -645,6 +645,15 @@ fn j24k3f_second_lock_returns_installation_busy() {
     let fix = publication_ready_fixture();
     let lock_path = fix.lock_dir.join("anchor.lock");
     let _held = std::fs::File::create(&lock_path).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsRawFd;
+        assert_eq!(
+            unsafe { libc::flock(_held.as_raw_fd(), libc::LOCK_EX) },
+            0,
+            "test must hold the Unix lock before invoking the second action"
+        );
+    }
 
     let request = complete_request(&fix.candidate.candidate_id);
     let context = InstallationExecutionContext {
