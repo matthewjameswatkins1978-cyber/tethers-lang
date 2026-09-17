@@ -291,18 +291,23 @@ pub fn launch_installed_provider(
             message: "unreviewed launch placeholder".into(),
         });
     }
-    let system_root = std::env::var("SystemRoot").map_err(|_| ChildError::LaunchFailed {
-        command: executable.to_string_lossy().into_owned(),
-        message: "SystemRoot unavailable".into(),
-    })?;
     let scratch = installed_directory.join(".operational-scratch");
     fs::create_dir_all(&scratch).map_err(|error| ChildError::LaunchFailed {
         command: executable.to_string_lossy().into_owned(),
         message: error.to_string(),
     })?;
     let mut environment = BTreeMap::new();
-    environment.insert("SystemRoot".into(), system_root.clone());
-    environment.insert("WINDIR".into(), system_root);
+    #[cfg(windows)]
+    {
+        let system_root = std::env::var("SystemRoot").map_err(|_| ChildError::LaunchFailed {
+            command: executable.to_string_lossy().into_owned(),
+            message: "SystemRoot unavailable".into(),
+        })?;
+        environment.insert("SystemRoot".into(), system_root.clone());
+        environment.insert("WINDIR".into(), system_root);
+    }
+    #[cfg(unix)]
+    environment.insert("TMPDIR".into(), scratch.to_string_lossy().into_owned());
     environment.insert("TEMP".into(), scratch.to_string_lossy().into_owned());
     environment.insert("TMP".into(), scratch.to_string_lossy().into_owned());
     environment.insert("TETHERS_CONFORMANCE".into(), "0".into());
@@ -473,12 +478,17 @@ pub fn revalidate_candidate(record: &CandidateRecord, quarantine_root: &Path) ->
 }
 
 fn approved_environment(scratch: &Path) -> Result<BTreeMap<String, String>> {
-    let system_root = std::env::var("SystemRoot")
-        .map_err(|_| M3Error::new("launch_environment", "SystemRoot is unavailable"))?;
     let mut environment = BTreeMap::new();
-    environment.insert("SystemRoot".into(), system_root.clone());
-    environment.insert("WINDIR".into(), system_root);
+    #[cfg(windows)]
+    {
+        let system_root = std::env::var("SystemRoot")
+            .map_err(|_| M3Error::new("launch_environment", "SystemRoot is unavailable"))?;
+        environment.insert("SystemRoot".into(), system_root.clone());
+        environment.insert("WINDIR".into(), system_root);
+    }
     let scratch = scratch.to_string_lossy().into_owned();
+    #[cfg(unix)]
+    environment.insert("TMPDIR".into(), scratch.clone());
     environment.insert("TEMP".into(), scratch.clone());
     environment.insert("TMP".into(), scratch);
     environment.insert("TETHERS_CONFORMANCE".into(), "1".into());

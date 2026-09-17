@@ -87,7 +87,10 @@ pub mod policy;
 pub mod preview_command;
 pub mod provider;
 pub mod replay;
+#[cfg(not(windows))]
+pub mod replay_linux;
 pub mod replay_runtime;
+pub mod replay_store;
 #[cfg(windows)]
 pub mod replay_windows;
 pub mod resolve_guard;

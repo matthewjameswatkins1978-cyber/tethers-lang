@@ -161,7 +161,7 @@ fn provision_replay_root(root: &PathBuf) {
         .expect("set ACL");
     assert!(status.success(), "ACL");
     let outcome =
-        tethers_reference_host::replay_windows::provision_replay(root).expect("provision_replay");
+        tethers_reference_host::replay_store::provision_replay(root).expect("provision_replay");
     // quiet
     let _ = outcome;
 }

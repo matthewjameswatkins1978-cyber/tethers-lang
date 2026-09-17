@@ -1,12 +1,20 @@
 use clap::Parser;
+#[cfg(windows)]
 use sha2::{Digest, Sha256};
+#[cfg(windows)]
 use std::collections::BTreeMap;
+#[cfg(windows)]
 use std::ffi::OsString;
+#[cfg(windows)]
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::path::Path;
+use std::path::PathBuf;
+#[cfg(windows)]
 use std::process::Command;
 use tethers_reference_host::cli::{Cli, PlugCommand};
 
+#[cfg(windows)]
 fn host_binary() -> PathBuf {
     std::env::var_os("CARGO_BIN_EXE_tethers-reference-host")
         .or_else(|| std::env::var_os("CARGO_BIN_EXE_tethers_reference_host"))
@@ -21,10 +29,12 @@ fn host_binary() -> PathBuf {
         .expect("compiled reference host binary")
 }
 
+#[cfg(windows)]
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("tethers-j24l2-{name}-{}", uuid::Uuid::new_v4()))
 }
 
+#[cfg(windows)]
 fn run(args: Vec<OsString>) -> (i32, serde_json::Value) {
     let output = Command::new(host_binary())
         .args(args)
@@ -47,6 +57,7 @@ fn run(args: Vec<OsString>) -> (i32, serde_json::Value) {
     (process_code, envelope)
 }
 
+#[cfg(windows)]
 fn write_package(root: &Path, name: &str) -> PathBuf {
     let provider_bytes =
         std::fs::read(env!("CARGO_BIN_EXE_m3_fixture_provider")).expect("read provider binary");
@@ -60,14 +71,17 @@ fn write_package(root: &Path, name: &str) -> PathBuf {
     package
 }
 
+#[cfg(windows)]
 fn wrap_args(args: &[&str]) -> Vec<OsString> {
     args.iter().map(|s| OsString::from(*s)).collect()
 }
 
+#[cfg(windows)]
 fn sha256(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
+#[cfg(windows)]
 fn conformance_snapshot(root: &Path) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     if !root.is_dir() {
