@@ -3204,6 +3204,21 @@ mod tests {
         }
     }
 
+    fn stdio_fixture_transport(barrier_dir: &Path, mode: &str) -> Value {
+        let script = stdio_fixture_script_path();
+        let (command, mut args) = stdio_fixture_command_args(&script, mode);
+        args.extend([
+            "-BarrierDirectory".to_owned(),
+            barrier_dir.to_string_lossy().into_owned(),
+        ]);
+        json!({
+            "kind": "stdio",
+            "command": command,
+            "args": args,
+            "protocol_version": "2025-11-25"
+        })
+    }
+
     fn catalogue_test_provider(mode: &str) -> PreparedProvider {
         let script = stdio_fixture_script_path();
         let (command, args) = stdio_fixture_command_args(&script, mode);
@@ -3260,6 +3275,7 @@ mod tests {
     }
 
     fn prove_actual_worker_overlap(same_provider: bool) {
+        let _test_guard = concurrency_test_guard();
         let barrier_dir = std::env::temp_dir().join(format!(
             "tethers-c2-a3a-overlap-{}",
             std::time::SystemTime::now()
@@ -5320,8 +5336,8 @@ mod tests {
             "T15: replay root must receive the accepted protected ACL"
         );
         assert!(matches!(
-            crate::replay_windows::provision_replay(root),
-            Ok(crate::replay_windows::ProvisionReplayOutcome::Provisioned)
+            crate::replay_store::provision_replay(root),
+            Ok(crate::replay_store::ProvisionReplayOutcome::Provisioned)
         ));
     }
 
@@ -5615,12 +5631,13 @@ mod tests {
             let (_, digest_a) = crate::manifest::canonicalize_and_digest(&manifest_a).unwrap();
             let (_, digest_b) = crate::manifest::canonicalize_and_digest(&manifest_b).unwrap();
 
-            let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-                .join("scripts")
-                .join("tethers-stdio-fixture.ps1");
-            let barrier_str = barrier_dir.to_str().unwrap().to_owned();
-
+            let barrier_script = stdio_fixture_script_path();
+            let (barrier_command, mut barrier_args) =
+                stdio_fixture_command_args(&barrier_script, "c2-overlap-barrier");
+            barrier_args.extend([
+                "-BarrierDirectory".to_owned(),
+                barrier_dir.to_string_lossy().into_owned(),
+            ]);
             let config = json!({
                 "format_version": "0.1",
                 "tether_set": {
@@ -5642,13 +5659,8 @@ mod tests {
                         "display_name": "Provider A",
                         "transport": {
                             "kind": "stdio",
-                            "command": "pwsh.exe",
-                            "args": [
-                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                                barrier_script.to_str().unwrap(),
-                                "-Mode", "c2-overlap-barrier",
-                                "-BarrierDirectory", &barrier_str
-                            ],
+                            "command": barrier_command.clone(),
+                            "args": barrier_args.clone(),
                             "protocol_version": "2025-11-25"
                         },
                         "capabilities": [{
@@ -5664,13 +5676,8 @@ mod tests {
                         "display_name": "Provider B",
                         "transport": {
                             "kind": "stdio",
-                            "command": "pwsh.exe",
-                            "args": [
-                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                                barrier_script.to_str().unwrap(),
-                                "-Mode", "c2-overlap-barrier",
-                                "-BarrierDirectory", &barrier_str
-                            ],
+                            "command": barrier_command,
+                            "args": barrier_args,
                             "protocol_version": "2025-11-25"
                         },
                         "capabilities": [{
@@ -6136,6 +6143,9 @@ mod tests {
     #[test]
     fn c2a3a_worker_panic_yields_uncertain_non_success_join() {
         let h = C2A3aGroupHarness::new("panic");
+        // Member B panics before reaching the provider barrier, so A must not
+        // wait for a second provider to enter.
+        std::fs::write(h.barrier_dir.join("peer-count"), "1").unwrap();
 
         // Target worker action_index=1 (member-b) for panic injection.
         // PanicGuard resets to usize::MAX on drop (even if test panics).
@@ -6498,11 +6508,7 @@ mod tests {
             let (_, digest_a) = crate::manifest::canonicalize_and_digest(&manifest_a).unwrap();
             let (_, digest_b) = crate::manifest::canonicalize_and_digest(&manifest_b).unwrap();
 
-            let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-                .join("scripts")
-                .join("tethers-stdio-fixture.ps1");
-            let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+            let barrier_transport = stdio_fixture_transport(&barrier_dir, "c2-overlap-barrier");
 
             let policy_rules = |cap: &str, decision: PolicyDecision| -> serde_json::Value {
                 let d = match decision {
@@ -6517,17 +6523,7 @@ mod tests {
                 json!({
                     "id": "provider-a",
                     "display_name": "Provider A",
-                    "transport": {
-                        "kind": "stdio",
-                        "command": "pwsh.exe",
-                        "args": [
-                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                            barrier_script.to_str().unwrap(),
-                            "-Mode", "c2-overlap-barrier",
-                            "-BarrierDirectory", &barrier_str
-                        ],
-                        "protocol_version": "2025-11-25"
-                    },
+                    "transport": barrier_transport.clone(),
                     "capabilities": [{
                         "name": "fixture.ping-a",
                         "version": 1,
@@ -6539,17 +6535,7 @@ mod tests {
                 json!({
                     "id": "provider-b",
                     "display_name": "Provider B",
-                    "transport": {
-                        "kind": "stdio",
-                        "command": "pwsh.exe",
-                        "args": [
-                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                            barrier_script.to_str().unwrap(),
-                            "-Mode", "c2-overlap-barrier",
-                            "-BarrierDirectory", &barrier_str
-                        ],
-                        "protocol_version": "2025-11-25"
-                    },
+                    "transport": barrier_transport,
                     "capabilities": [{
                         "name": "fixture.ping-b",
                         "version": 1,
@@ -7285,6 +7271,7 @@ mod tests {
         let h = TerminalHarnessBuilder::new("uncertain")
             .policy_a(PolicyDecision::Allow)
             .policy_b(PolicyDecision::Allow)
+            .peer_count(1)
             .build();
 
         let _guard = PanicGuard::target(0);
@@ -7712,11 +7699,7 @@ mod tests {
                 digests.insert((*tag).to_owned(), digest);
             }
 
-            let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-                .join("scripts")
-                .join("tethers-stdio-fixture.ps1");
-            let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+            let barrier_transport = stdio_fixture_transport(&barrier_dir, "c2-overlap-barrier");
 
             let reqs: Vec<serde_json::Value> = member_tags
                 .iter()
@@ -7738,17 +7721,7 @@ mod tests {
                     json!({
                         "id": provider_id,
                         "display_name": format!("Provider {tag}"),
-                        "transport": {
-                            "kind": "stdio",
-                            "command": "pwsh.exe",
-                            "args": [
-                                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                                barrier_script.to_str().unwrap(),
-                                "-Mode", "c2-overlap-barrier",
-                                "-BarrierDirectory", &barrier_str
-                            ],
-                            "protocol_version": "2025-11-25"
-                        },
+                        "transport": barrier_transport.clone(),
                         "capabilities": [{
                             "name": cap_name,
                             "version": 1,
@@ -9723,11 +9696,7 @@ mod tests {
             digests.insert(*tag, digest);
         }
 
-        let barrier_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("scripts")
-            .join("tethers-stdio-fixture.ps1");
-        let barrier_str = barrier_dir.to_str().unwrap().to_owned();
+        let barrier_transport = stdio_fixture_transport(&barrier_dir, "c2-overlap-barrier");
 
         let reqs: Vec<serde_json::Value> = member_tags
             .iter()
@@ -9749,17 +9718,7 @@ mod tests {
                 json!({
                     "id": provider_id,
                     "display_name": format!("Provider {tag}"),
-                    "transport": {
-                        "kind": "stdio",
-                        "command": "pwsh.exe",
-                        "args": [
-                            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                            barrier_script.to_str().unwrap(),
-                            "-Mode", "c2-overlap-barrier",
-                            "-BarrierDirectory", &barrier_str
-                        ],
-                        "protocol_version": "2025-11-25"
-                    },
+                    "transport": barrier_transport.clone(),
                     "capabilities": [{
                         "name": cap_name,
                         "version": 1,

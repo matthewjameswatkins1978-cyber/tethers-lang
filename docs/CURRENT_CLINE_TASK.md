@@ -1,6 +1,6 @@
-# TETHERS L6 - Linux Path Semantics Repair
+# TETHERS L1a - Native Cross-Platform Verifier
 
-Task: `TETHERS L6 / Linux Path Semantics Repair`
+Task: `TETHERS L1a / Native Cross-Platform Verifier`
 
 Control contract: `1`
 
@@ -10,126 +10,132 @@ Task colour: `Green`
 
 Owner: `Codex`
 
-Route: `Repair the two bounded Linux path-semantics test fixtures from the accepted L5 branch, verify the concurrency case remains untouched, document the evidence, commit and push the task branch. Do not merge.`
+Route: `Replace the PowerShell-only aggregate verifier with one repository-owned cross-platform authority, prove native Linux execution, document the contract, commit and push without merging.`
 
-Base commit: `6b19b4c9af9fb047c847a82ef93f63f7de4381a5`
+Base commit: `7054875527dcb4332f9742b83c8d19e683be77a4`
 
-Evidence checkpoint: `a0ed61bf9b86752ecb51378ed0cc3ae1aace7bb5`
-
-Worker note: `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
+Worker note: `docs/worker-notes/2026-09-17-tethers-l1a-native-verifier.md`
 
 Suggested branch:
 
-`feature/tethers-l6-linux-path-semantics`
+`codex/tethers-l1a-native-verifier`
 
 ## Objective
 
-Make `p2a_refuses_wrong_extension` and
-`j13c_missing_trail_file_maps_to_not_found` express their intended semantic
-scenarios on Linux using native temporary paths. Preserve production path
-validation, Windows behaviour, the verified engine, provider fixtures, and the
-out-of-scope concurrency failure.
+Make `just verify` authoritative and native on both Windows and Linux. The
+verification result must describe this checkout, its current first-party OCaml
+engine, every required suite, and any explicit skip or failure. Linux must not
+invoke Windows PowerShell through WSL interop or inherit a stale engine.
 
 ## Relevant background and existing behaviour
 
-L5 reduced provider fixture failures from 18 to 0 and left three unresolved
-Linux cases. The group-join case is a concurrency failure and remains outside
-L6. The two path tests use Windows drive literals; on Linux those are relative
-paths, so the tests exercise the wrong validation branches. Existing
-production code already handles absolute missing paths and wrong extensions
-correctly.
+The native engine preparation and Rust runner already exist as Linux shell
+entry points and bind the engine to the current source commit, tree and SHA-256.
+The aggregate `just verify` recipe still invokes `scripts/verify-tethers.ps1`,
+which causes WSL interop to select Windows PowerShell and fail before product
+verification. The pure fixture, MCP and compatibility checks are currently
+PowerShell-only. L1 product semantics and the Windows checkout are outside this
+task.
 
 ## Required behaviour
 
-1. Reproduce and repair the two path-semantics fixtures with native,
-   cross-platform temporary paths without weakening assertions.
-2. Keep the `c2a3a_group_join_after_all_terminals` concurrency failure and the
-   remaining concurrency/expanded-target families outside this task.
-3. Preserve L5 provider-fixture results, L4 engine provenance, Windows path
-   semantics, and production behaviour.
-4. Run targeted, containing-module, raw, verified/default, and
-   verified/single-thread checks and document exact before/after evidence.
-5. Commit and normally push the bounded task branch without merging it.
+1. Provide one cross-platform Python verification authority at `scripts/verify-tethers.py`.
+2. Preserve the `tethers.verify/1` report schema and required evidence fields.
+3. Run the required packet, formatting, engine, OCaml, Rust, warning, protocol, MCP and compatibility suites in a fixed order.
+4. Use the existing native Linux engine preparation and Rust runner without PowerShell interop.
+5. Preserve the existing Windows engine and Rust verification contract through a native Windows process boundary.
+6. Report PASS, FAIL, SKIPPED WITH REASON and NOT APPLICABLE explicitly and fail on required failures.
+7. Make pure helper checks available natively and retain PowerShell files only as compatibility wrappers where practical.
+8. Add verifier self-tests covering subprocess outcomes, dirty state, first failure, release eligibility, report schema and paths containing spaces or quotes.
+9. Make `just verify` invoke the same authority on both platforms and update verification documentation.
+10. Prove the Linux verification process does not resolve or invoke `pwsh.exe` while still passing the authoritative route.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/plug_pack.rs`
-- `tethers-0.1/host-rust/src/trail_command.rs`
-- `scripts/run-rust-tests.sh`
-- `verification/current-engine-provenance.json`
-- `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
+- `justfile`
+- `scripts/verify-tethers.py`
+- `scripts/verify-tethers.ps1`
+- `scripts/test-verify-tethers.py`
+- `scripts/test-engine-provenance.py`
+- `scripts/verification_support.py`
+- `scripts/prepare-current-engine.sh` and `.ps1`
+- `scripts/run-rust-tests.sh` and `.ps1`
+- `scripts/check-warning-ratchet.py` and `.ps1`
+- `scripts/check-compatibility-corpus.py` and `.ps1`
+- `tethers-0.1/scripts/check-fixtures.py` and `.ps1`
+- `tethers-0.1/scripts/test-mcp-transcripts.py` and `.ps1`
+- `.github/scripts/check-tethers-task-packet.py` and `.ps1`
+- `docs/VERIFICATION.md`
 
 ## Frozen decisions and invariants
 
-- The repair is test-fixture-only unless independent evidence proves a
-  production defect.
-- Native temporary paths must be absolute and unique on every supported host.
-- No Windows-specific tests are weakened, disabled, or cfg-gated.
-- The L4 verified engine and fail-closed provenance contract remain unchanged.
-- Provider fixtures remain at zero failures.
-- `c2a3a_group_join_after_all_terminals` remains a concurrency issue and is
-  not repaired here.
-- No WSL, global Git, toolchain, dependency, or environment changes are
-  authorised.
+- No Tethers product semantics, OCaml Core, Plan, Trail, policy, approval, replay, Resolve, provider, version or package changes.
+- The current OCaml engine must be built from this checkout and verified by provenance before dependent tests run.
+- Rust verification uses the repository lockfile and existing test protocol.
+- Linux verification must not call `pwsh.exe`, `powershell.exe`, `cmd.exe` or Windows-side tools.
+- The machine report remains safe, deterministic and free of credentials or arbitrary environment dumps.
+- A verifier failure is not a product failure unless a required product suite actually runs and fails.
 
 ## Acceptance criteria
 
-1. Both named path tests pass on Linux with their original semantic assertions
-   intact.
-2. Their containing test modules pass and the full raw/verified measurements
-   show exactly the expected two-failure reduction.
-3. Provider tests remain passing and the concurrency failure remains present
-   and classified as out of scope.
-4. Formatting, compilation, provenance, `bl verify tethers`, `bl doctor
-   tethers`, and `git diff --check` are recorded honestly.
-5. The worker note records the root causes, Threadmoth discovery, taxonomy,
-   unchanged production/Windows semantics, and remaining concurrency case.
-6. The final branch is clean, committed, pushed normally, and unmerged.
+1. The Python authority exists and emits `tethers.verify/1` with source, toolchain, engine, suites, counts, first failure, verdict and release eligibility.
+2. `just verify` uses the Python authority on Linux and Windows.
+3. Native Linux verification builds and proves the current OCaml engine before host tests.
+4. Missing, stale or invalid engine provenance fails closed and dependent suites are reported skipped with reason.
+5. The native Linux route does not invoke `pwsh.exe` or Windows interop.
+6. Pure fixture, transcript, compatibility, warning and task checks have native implementations with thin compatibility wrappers.
+7. Verifier self-tests cover pass, failure, missing executable, skip, dirty/clean, first failure, release eligibility, schema and unusual paths.
+8. Existing Windows engine semantics remain unchanged and the PowerShell wrapper delegates to the same authority where applicable.
+9. `docs/VERIFICATION.md` describes the actual cross-platform route and report.
+10. Formatting, focused tests, native `just verify`, whitespace and Git evidence are recorded; no product semantics change.
 
 ## Required verification
 
-- targeted `p2a_refuses_wrong_extension`
-- targeted `j13c_missing_trail_file_maps_to_not_found`
-- containing plug-pack and trail-command modules
-- raw Linux suite
-- verified/default and verified/single-thread suites
-- `cargo fmt --all -- --check`
-- `cargo check --workspace --locked`
-- `cargo test --workspace --no-run --locked`
-- `bl verify tethers`
-- `bl doctor tethers`
-- valid, stale, tampered, missing-engine, and missing-manifest provenance
-  checks
-- `git diff --check`
-- final clean status and remote SHA equality
+- Native Python verifier self-tests.
+- `cargo fmt --all -- --check`.
+- Rust static checks and the current engine/provenance route.
+- Native Linux `just verify` with a sanitized process-local PATH proving no `pwsh.exe` is available.
+- `git diff --check` and clean status before publication.
+- Windows verification evidence if a clean Windows checkout can be used without touching the canonical checkout.
 
 ## Forbidden changes
 
-- No repair of `c2a3a_group_join_after_all_terminals` or the 41 concurrency
-  failures.
-- No repair of the 72 expanded-target platform/provider failures.
-- No production path redesign, assertion weakening, ignored tests, cfg-out,
-  dependency additions, or fake platform paths.
-- No changes to Windows files, WSL configuration, global Git configuration,
-  toolchains, L4 provenance scripts, or main.
+- Tethers product semantics or Core syntax.
+- Plan, Trail, policy, approval, replay, Resolve, provider or packaging behaviour.
+- WSL configuration, global Git configuration, toolchains, authentication or PATH.
+- The Windows canonical checkout.
+- Weakening tests or treating an unverified engine as current.
+- Direct main updates, force-pushes, merges or version changes.
 
 ## Stop conditions
 
-- Stop if either test requires a production semantic change rather than a
-  fixture correction.
-- Stop if a path fixture cannot express the same intended scenario on Linux
-  and Windows without platform fiction.
-- Stop if provenance becomes stale or fail-open.
-- After two materially similar failed approaches, stop and record the smallest
-  unresolved issue.
+- A real product test failure after the verifier is repaired; report it as a separate L1b defect.
+- Current engine provenance or fail-closed behaviour regresses.
+- Native verification requires Windows interop or a new semantic authority.
+- A required toolchain is unavailable and cannot be diagnosed without workshop surgery.
+- Two materially similar failed implementation attempts against the same approach.
 
 ## Expected pre-existing changes
 
-None.
+- The L1 branch remains the source baseline and is not rewritten.
+- The ignored generated engine and verification reports may be refreshed by tests.
+- The Windows canonical checkout may contain unrelated work and must remain untouched.
 
 ## Implementation scope
 
-- `tethers-0.1/host-rust/src/plug_pack.rs`
-- `tethers-0.1/host-rust/src/trail_command.rs`
+- `justfile`
+- `scripts/verify-tethers.py`
+- `scripts/verification_support.py`
+- `scripts/check-warning-ratchet.py`
+- `scripts/check-warning-ratchet.ps1`
+- `scripts/check-compatibility-corpus.py`
+- `scripts/check-compatibility-corpus.ps1`
+- `tethers-0.1/scripts/check-fixtures.py`
+- `tethers-0.1/scripts/check-fixtures.ps1`
+- `tethers-0.1/scripts/test-mcp-transcripts.py`
+- `tethers-0.1/scripts/test-mcp-transcripts.ps1`
+- `.github/scripts/check-tethers-task-packet.py`
+- `.github/scripts/check-tethers-task-packet.ps1`
+- `docs/VERIFICATION.md`
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
+- `docs/worker-notes/2026-09-17-tethers-l1a-native-verifier.md`

@@ -148,24 +148,37 @@ impl Drop for ManagedChild {
 }
 
 #[cfg(not(windows))]
-struct ManagedChild(Child);
+struct ManagedChild {
+    child: Child,
+    #[cfg(unix)]
+    process_group: i32,
+}
 
 #[cfg(not(windows))]
 impl ManagedChild {
     fn id(&self) -> u32 {
-        self.0.id()
+        self.child.id()
     }
     fn try_wait(&mut self) -> std::result::Result<Option<i32>, ()> {
-        self.0
+        self.child
             .try_wait()
             .map(|status| status.map(|status| status.code().unwrap_or(-1)))
             .map_err(|_| ())
     }
     fn kill(&mut self) -> std::result::Result<(), ()> {
-        self.0.kill().map_err(|_| ())
+        #[cfg(unix)]
+        {
+            // SAFETY: the process group id was captured from the session
+            // leader created by this host; a negative id targets that group.
+            let group_result = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
+            if group_result == 0 {
+                return Ok(());
+            }
+        }
+        self.child.kill().map_err(|_| ())
     }
     fn wait(&mut self) -> std::result::Result<i32, ()> {
-        self.0
+        self.child
             .wait()
             .map(|status| status.code().unwrap_or(-1))
             .map_err(|_| ())
@@ -379,6 +392,23 @@ impl SupervisedChild {
                 cmd.current_dir(dir);
             }
 
+            #[cfg(unix)]
+            unsafe {
+                // SAFETY: this closure runs in the child between fork and
+                // exec; it performs only async-signal-safe libc calls and
+                // does not touch Rust allocations or locks.
+                use std::os::unix::process::CommandExt;
+                cmd.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+
             let mut child = cmd.spawn().map_err(|e| ChildError::LaunchFailed {
                 command: config.command.clone(),
                 message: e.to_string(),
@@ -387,7 +417,11 @@ impl SupervisedChild {
             let stdout = child.stdout.take().ok_or(ChildError::StdoutUnavailable)?;
             let stderr_r = child.stderr.take().ok_or(ChildError::StderrUnavailable)?;
             (
-                ManagedChild(child),
+                ManagedChild {
+                    #[cfg(unix)]
+                    process_group: child.id() as i32,
+                    child,
+                },
                 Box::new(stdin) as Box<dyn Write + Send>,
                 Box::new(stdout) as Box<dyn Read + Send>,
                 Box::new(stderr_r) as Box<dyn Read + Send>,
@@ -597,15 +631,22 @@ impl SupervisedChild {
             }
         }
 
-        // 3. Terminate Job Object.
+        // 3. Terminate the Windows Job Object or Linux provider session.
         #[cfg(windows)]
         {
             use windows_sys::Win32::System::JobObjects::TerminateJobObject;
             cleanup.job_terminated = unsafe { TerminateJobObject(self.job_handle, 1) } != 0;
         }
+        #[cfg(not(windows))]
+        {
+            cleanup.job_terminated = self.child.kill().is_ok();
+        }
 
         // 4. Reap direct child.
-        cleanup.child_killed = self.child.kill().is_ok();
+        #[cfg(windows)]
+        {
+            cleanup.child_killed = self.child.kill().is_ok();
+        }
         cleanup.child_waited = self.child.wait().is_ok();
         self.reaped = cleanup.child_waited;
         cleanup.reaped = self.reaped;
@@ -1189,15 +1230,7 @@ fn create_job_object(
     Ok(handle)
 }
 
-#[cfg(not(windows))]
-fn create_job_object(
-    _max_processes: u32,
-    _process_memory_limit_bytes: usize,
-) -> Result<usize, ChildError> {
-    Ok(0)
-}
-
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
     use std::cell::Cell;
@@ -1656,5 +1689,43 @@ mod tests {
     fn f2a_interpret_process_wait_unexpected_wait_result_is_error() {
         let unexpected: u32 = 42;
         assert!(interpret_process_wait(unexpected, 0).is_err());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod unix_tests {
+    use super::*;
+
+    #[test]
+    fn linux_process_group_shutdown_reaps_descendants() {
+        let config = ChildConfig::test_config(
+            "/bin/sh",
+            vec!["-c".into(), "sleep 30 & wait".into()],
+            Duration::from_secs(2),
+            Duration::from_secs(1),
+        );
+        let mut child = SupervisedChild::launch(config).expect("launch native shell fixture");
+        assert!(!child.has_exited());
+        let cleanup = child.shutdown_inner();
+        assert!(
+            cleanup.job_terminated,
+            "the Unix process group must be killed"
+        );
+        assert!(cleanup.child_waited);
+        assert!(cleanup.reaped);
+    }
+
+    #[test]
+    fn linux_nonexistent_command_fails_without_shell_fallback() {
+        let config = ChildConfig::test_config(
+            "tethers-command-that-does-not-exist",
+            Vec::new(),
+            Duration::from_secs(2),
+            Duration::from_secs(1),
+        );
+        assert!(matches!(
+            SupervisedChild::launch(config),
+            Err(ChildError::LaunchFailed { .. })
+        ));
     }
 }

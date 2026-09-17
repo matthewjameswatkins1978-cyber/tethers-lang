@@ -817,38 +817,22 @@ pub fn run() {
         }
         Ok(Cli {
             command: Some(CliCommand::ProvisionReplay { root }),
-        }) => {
-            #[cfg(windows)]
-            {
-                match crate::replay_windows::provision_replay(&root) {
-                    Ok(result) => {
-                        println!("{}", result.as_str());
-                        std::process::exit(0);
-                    }
-                    Err(e) => {
-                        let envelope = CliEnvelope::error(
-                            "provision-replay",
-                            OutcomeStatus::Failed,
-                            "PROVISION_FAILED",
-                            e.to_string(),
-                            None,
-                        );
-                        emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
-                    }
-                }
+        }) => match crate::replay_store::provision_replay(&root) {
+            Ok(result) => {
+                println!("{}", result.as_str());
+                std::process::exit(0);
             }
-            #[cfg(not(windows))]
-            {
+            Err(e) => {
                 let envelope = CliEnvelope::error(
                     "provision-replay",
-                    OutcomeStatus::Unavailable,
-                    "WINDOWS_ONLY",
-                    "replay persistence is available only on native Windows",
+                    OutcomeStatus::Failed,
+                    "PROVISION_FAILED",
+                    e.to_string(),
                     None,
                 );
-                emit_envelope_and_exit(envelope, OutcomeStatus::Unavailable.exit_code());
+                emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
             }
-        }
+        },
         #[cfg(debug_assertions)]
         Ok(Cli {
             command: Some(CliCommand::EventAdmissionProbe { mode }),

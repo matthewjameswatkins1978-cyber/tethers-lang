@@ -51,7 +51,13 @@ fn host_binary() -> PathBuf {
                 .ok()?
                 .parent()?
                 .parent()
-                .map(|path| path.join("tethers-reference-host.exe"))
+                .map(|path| {
+                    path.join(if cfg!(windows) {
+                        "tethers-reference-host.exe"
+                    } else {
+                        "tethers-reference-host"
+                    })
+                })
         })
         .expect("compiled reference host binary")
 }
