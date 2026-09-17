@@ -243,32 +243,49 @@ mod tests {
         include_str!("../../protocol/capability-manifests/fixture-ping.json");
 
     fn fixture_script_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("scripts")
-            .join("tethers-stdio-fixture.ps1")
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.pop();
+        path.push("scripts");
+        #[cfg(windows)]
+        path.push("tethers-stdio-fixture.ps1");
+        #[cfg(not(windows))]
+        path.push("tethers-stdio-fixture.sh");
+        path
     }
 
     fn test_shell_program() -> &'static str {
         if cfg!(windows) {
             "pwsh.exe"
         } else {
-            "pwsh"
+            "sh"
+        }
+    }
+
+    fn fixture_command_args(mode: &str) -> Vec<String> {
+        #[cfg(windows)]
+        {
+            vec![
+                "-NoProfile".to_owned(),
+                "-File".to_owned(),
+                fixture_script_path().to_string_lossy().into_owned(),
+                "-Mode".to_owned(),
+                mode.to_owned(),
+            ]
+        }
+        #[cfg(not(windows))]
+        {
+            vec![
+                fixture_script_path().to_string_lossy().into_owned(),
+                "-Mode".to_owned(),
+                mode.to_owned(),
+            ]
         }
     }
 
     fn establish_fixture(mode: &str) -> RetainedProviderSession {
         let script = fixture_script_path();
         let working_directory = script.parent().unwrap().to_path_buf();
-        let args = vec![
-            "-NoProfile".to_owned(),
-            "-ExecutionPolicy".to_owned(),
-            "Bypass".to_owned(),
-            "-File".to_owned(),
-            script.to_string_lossy().into_owned(),
-            "-Mode".to_owned(),
-            mode.to_owned(),
-        ];
+        let args = fixture_command_args(mode);
         RetainedProviderSession::establish(SocketEstablishment {
             command: test_shell_program(),
             args: &args,

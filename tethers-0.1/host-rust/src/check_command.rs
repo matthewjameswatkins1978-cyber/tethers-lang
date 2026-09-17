@@ -518,7 +518,39 @@ mod tests {
         if cfg!(windows) {
             "pwsh.exe"
         } else {
-            "pwsh"
+            "sh"
+        }
+    }
+
+    fn fixture_command_args(mode: &str) -> Vec<String> {
+        let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts");
+        #[cfg(windows)]
+        {
+            vec![
+                "-NoProfile".to_owned(),
+                "-ExecutionPolicy".to_owned(),
+                "Bypass".to_owned(),
+                "-File".to_owned(),
+                script
+                    .join("tethers-stdio-fixture.ps1")
+                    .to_string_lossy()
+                    .into_owned(),
+                "-Mode".to_owned(),
+                mode.to_owned(),
+            ]
+        }
+        #[cfg(not(windows))]
+        {
+            vec![
+                script
+                    .join("tethers-stdio-fixture.sh")
+                    .to_string_lossy()
+                    .into_owned(),
+                "-Mode".to_owned(),
+                mode.to_owned(),
+            ]
         }
     }
 
@@ -805,11 +837,6 @@ mod tests {
         let manifest_final = serde_json::to_string_pretty(&manifest).unwrap();
         std::fs::write(dir.join("manifests/fixture-ping.json"), &manifest_final).unwrap();
 
-        let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("scripts")
-            .join("tethers-stdio-fixture.ps1");
-
         let config = json!({
             "format_version": "0.1",
             "tether_set": {
@@ -830,11 +857,7 @@ mod tests {
                 "transport": {
                     "kind": "stdio",
                     "command": test_shell_program(),
-                    "args": [
-                        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                        script.to_str().unwrap(),
-                        "-Mode", mode
-                    ],
+                    "args": fixture_command_args(mode),
                     "protocol_version": "2025-11-25"
                 },
                 "capabilities": [{
