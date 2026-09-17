@@ -3260,6 +3260,7 @@ mod tests {
     }
 
     fn prove_actual_worker_overlap(same_provider: bool) {
+        let _test_guard = concurrency_test_guard();
         let barrier_dir = std::env::temp_dir().join(format!(
             "tethers-c2-a3a-overlap-{}",
             std::time::SystemTime::now()

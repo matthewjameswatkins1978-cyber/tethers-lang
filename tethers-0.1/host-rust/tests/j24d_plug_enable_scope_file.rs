@@ -49,9 +49,23 @@ fn host_binary() -> PathBuf {
                 .ok()?
                 .parent()?
                 .parent()
-                .map(|path| path.join("tethers-reference-host.exe"))
+                .map(|path| {
+                    path.join(if cfg!(windows) {
+                        "tethers-reference-host.exe"
+                    } else {
+                        "tethers-reference-host"
+                    })
+                })
         })
         .expect("compiled reference host binary")
+}
+
+fn absolute_test_path(windows: &'static str, unix: &'static str) -> &'static str {
+    if cfg!(windows) {
+        windows
+    } else {
+        unix
+    }
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -580,7 +594,7 @@ fn missing_host_root_fails_with_unavailable() {
     let (code, envelope) = run_enable(
         &missing,
         "00000000-0000-4000-8000-000000000000",
-        &Path::new("C:\\missing.json"),
+        &Path::new(absolute_test_path("C:\\missing.json", "/tmp/missing.json")),
     );
     assert_eq!(code, 4);
     assert_eq!(envelope["status"], "unavailable");
@@ -596,7 +610,7 @@ fn partial_lifecycle_layout_fails_without_mutation() {
     let (code, envelope) = run_enable(
         &root,
         "00000000-0000-4000-8000-000000000000",
-        &Path::new("C:\\scope.json"),
+        &Path::new(absolute_test_path("C:\\scope.json", "/tmp/scope.json")),
     );
     assert_eq!(code, 3);
     assert_eq!(envelope["status"], "invalid_data");
@@ -618,7 +632,7 @@ fn invalid_cli_usage_fails_with_exit_2() {
             "--installed-id",
             "00000000-0000-4000-8000-000000000000",
             "--scope",
-            "C:\\scope.json",
+            absolute_test_path("C:\\scope.json", "/tmp/scope.json"),
         ])
         .output()
         .unwrap();
@@ -633,11 +647,11 @@ fn invalid_cli_usage_fails_with_exit_2() {
             "plug",
             "enable",
             "--host-data-root",
-            "C:\\root",
+            absolute_test_path("C:\\root", "/tmp/root"),
             "--installed-id",
             "not-a-uuid",
             "--scope",
-            "C:\\scope.json",
+            absolute_test_path("C:\\scope.json", "/tmp/scope.json"),
         ])
         .output()
         .unwrap();
@@ -652,7 +666,7 @@ fn invalid_cli_usage_fails_with_exit_2() {
             "plug",
             "enable",
             "--host-data-root",
-            "C:\\root",
+            absolute_test_path("C:\\root", "/tmp/root"),
             "--installed-id",
             "00000000-0000-4000-8000-000000000000",
             "--scope",
