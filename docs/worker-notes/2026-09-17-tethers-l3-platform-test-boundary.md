@@ -127,11 +127,18 @@ These remain assigned to the later unresolved-Linux-behaviour slice.
 - `cargo test --workspace`: completed with `1225 passed; 81 failed; 2 ignored`
 - `git diff --check`: pass
 - `bl doctor tethers`: pass in the prepared login-shell WSL environment
-- `bl verify tethers`: must be recorded at closeout after the final commit
+- `bl verify tethers`: pass; reported `tethers 0.7.1`
+- `bl doctor tethers`: ran on the clean committed tree. WSL, native
+  filesystem, Git cleanliness, OCaml switch, compiler/toolchain, linker, and
+  resource checks passed; the command exits non-zero because the workshop's
+  default stable toolchain has no `rust-analyzer` binary. The project override
+  selects the required `1.97.1` toolchain for verification. No workshop
+  configuration or toolchain was changed.
 
 The remaining compiler warnings are existing duplicate-target, unused/dead
 code, and platform-specific test-support debt; no warning was promoted to a
-semantic failure and no global lint suppression was added.
+semantic failure and no global lint suppression was added. The new Linux
+boundary does not add the previously observed unused Windows helper warnings.
 
 ## Scope and stop conditions
 
