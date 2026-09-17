@@ -3164,11 +3164,49 @@ mod tests {
         })
     }
 
+    fn stdio_fixture_script_path() -> PathBuf {
+        let mut script = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        script.pop();
+        script.push("scripts");
+        #[cfg(windows)]
+        script.push("tethers-stdio-fixture.ps1");
+        #[cfg(not(windows))]
+        script.push("tethers-stdio-fixture.sh");
+        script
+    }
+
+    fn stdio_fixture_command_args(script: &Path, mode: &str) -> (String, Vec<String>) {
+        #[cfg(windows)]
+        {
+            (
+                "pwsh.exe".to_owned(),
+                vec![
+                    "-NoProfile".to_owned(),
+                    "-ExecutionPolicy".to_owned(),
+                    "Bypass".to_owned(),
+                    "-File".to_owned(),
+                    script.to_string_lossy().into_owned(),
+                    "-Mode".to_owned(),
+                    mode.to_owned(),
+                ],
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            (
+                "sh".to_owned(),
+                vec![
+                    script.to_string_lossy().into_owned(),
+                    "-Mode".to_owned(),
+                    mode.to_owned(),
+                ],
+            )
+        }
+    }
+
     fn catalogue_test_provider(mode: &str) -> PreparedProvider {
-        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("scripts")
-            .join("tethers-stdio-fixture.ps1");
+        let script = stdio_fixture_script_path();
+        let (command, args) = stdio_fixture_command_args(&script, mode);
         let verified_manifest = crate::manifest::verify_manifest(include_str!(
             "../../protocol/capability-manifests/fixture-ping.json"
         ))
@@ -3178,16 +3216,8 @@ mod tests {
             display_name: "Tethers Stdio Fixture".to_owned(),
             working_directory: script.parent().unwrap().to_path_buf(),
             stdio_config: crate::stdio_provider::StdioProviderConfig {
-                command: "pwsh.exe".to_owned(),
-                args: vec![
-                    "-NoProfile".to_owned(),
-                    "-ExecutionPolicy".to_owned(),
-                    "Bypass".to_owned(),
-                    "-File".to_owned(),
-                    script.to_string_lossy().into_owned(),
-                    "-Mode".to_owned(),
-                    mode.to_owned(),
-                ],
+                command,
+                args,
                 protocol_version: "2025-11-25".to_owned(),
                 provider_config: crate::provider::ProviderConfig {
                     identity: "tethers-stdio-fixture".to_owned(),
@@ -5173,10 +5203,13 @@ mod tests {
         let (_, manifest_digest) = crate::manifest::canonicalize_and_digest(manifest).unwrap();
         std::fs::write(dir.join("manifests/fixture-ping.json"), manifest).unwrap();
 
-        let fixture_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("scripts")
-            .join("tethers-stdio-fixture.ps1");
+        let fixture_script = stdio_fixture_script_path();
+        let (fixture_command, mut fixture_args) =
+            stdio_fixture_command_args(&fixture_script, "run-success");
+        fixture_args.extend([
+            "-MarkerFile".to_owned(),
+            marker_path.to_string_lossy().into_owned(),
+        ]);
         let mut tether = json!({
             "id": "core-production",
             "version": "1",
@@ -5216,11 +5249,8 @@ mod tests {
                 "display_name": "Tethers Stdio Fixture",
                 "transport": {
                     "kind": "stdio",
-                    "command": "pwsh.exe",
-                    "args": [
-                        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                        fixture_script, "-Mode", "run-success", "-MarkerFile", marker_path
-                    ],
+                    "command": fixture_command,
+                    "args": fixture_args,
                     "protocol_version": "2025-11-25"
                 },
                 "capabilities": [{
