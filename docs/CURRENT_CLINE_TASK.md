@@ -1,171 +1,142 @@
-# TETHERS 0.7.1 - FAST-TRACK WINDOWS RELEASE
+# TETHERS L5 - Linux Failure Taxonomy and Repair
 
-Task: `TETHERS 0.7.1 / Fast-track Windows release`
+Task: `TETHERS L5 / Linux Failure Taxonomy and Repair`
 
 Control contract: `1`
 
 Status: `COMPLETE`
 
-Task colour: `Red`
+Task colour: `Amber`
 
 Owner: `Codex`
 
-Route: `Prepare, verify, publish and record the bounded Windows x64 0.7.1 maintenance release from fresh origin/main. Preserve all language, protocol, package and platform boundaries.`
+Route: `Implement the bounded Linux provider-fixture repair from the accepted L4 branch, classify the three unresolved Linux cases, verify provenance remains fail-closed, document the evidence, commit and push the task branch. Do not merge or repair out-of-scope concurrency and expanded-target failures.`
 
-Base commit: `63262b8b27b2d48c6b5ef023fa54c826c565dfe2`
+Base commit: `ad5a728e753e1be77c4a4e1be40c34be3f827578`
 
-Evidence checkpoint: `24a46128e349483209f2ac296d54689fae28d81f`
+Evidence checkpoint: `41db56f8700f59ef919c2a6ca528504920085b75`
 
-Worker note: `docs/worker-notes/2026-09-16-tethers-0-7-1-release.md`
+Worker note: `docs/worker-notes/2026-09-17-tethers-l5-linux-failure-taxonomy.md`
 
 Suggested branch:
 
-`release/tethers-v0.7.1`
+`feature/tethers-l5-linux-failure-taxonomy`
 
 ## Objective
 
-Ship the current corrected Tethers 0.7 runtime as a truthful Windows x86-64
-maintenance release. Product identity becomes 0.7.1. Human Tether language,
-Core/wire protocol, Plan, Trail, Capability manifest, Plug package/socket and
-MCP protocol identities remain unchanged.
+Make the remaining Linux test failures tell the truth. Repair the shared
+Windows-only provider fixture assumption for native Linux, investigate the
+three explicitly named unresolved cases without expanding into unrelated
+concurrency or platform cleanup, and leave reproducible evidence for the
+remaining taxonomy.
 
 ## Relevant background and existing behaviour
 
-Fetched `origin/main` is the accepted release starting point. The current
-product identity is 0.7.0. The generic release packer still defaults to 0.6.0
-and copies the stale 0.6 release note. The 0.7-specific packer is hard-coded
-to 0.7.0 and uses non-deterministic archive creation. Existing 0.7 release
-history is evidence only and must not be rewritten.
+L4 established a native Linux OCaml engine build and provenance manifest. The
+verified engine is selected only after source-commit and binary-hash checks.
+The comparable Linux provider-fixture family contains 18 failures caused by
+Windows PowerShell fixture construction. The remaining unresolved cases are
+`c2a3a_group_join_after_all_terminals`, `p2a_refuses_wrong_extension`, and
+`j13c_missing_trail_file_maps_to_not_found`. L4 also records 41 concurrency
+failures and 72 expanded-target platform/provider failures that are not this
+task's repair target.
 
 ## Required behaviour
 
-1. Change authoritative product/release identity to 0.7.1 without changing
-   independent language, protocol, Plan, Trail, manifest, Plug, Socket, MCP or
-   Portable Workbench identities.
-2. Repair release packaging so the current release note is included, stale
-   0.6 references are not silently bundled, version mismatches fail clearly,
-   and artifacts are deterministic and bound to the exact source SHA.
-3. Create the 0.7.1 release note with the Windows-only support promise and
-   explicit non-claims for Linux, MCP upgrade, Resolve and Lantern.
-4. Run the authoritative verification and direct compatibility, package,
-   checksum and clean-package smoke evidence.
-5. Inspect merged PR #40 only for contradiction with the accepted R0/R1 Host
-   model; make no architecture project or Lantern/OpenShell redesign.
-6. Publish the reviewed branch through a normal PR merge, then create the
-   immutable `tethers-v0.7.1` tag and GitHub release with the required assets.
+1. Provide a native Linux provider fixture path without changing the existing
+   Windows PowerShell fixture or production provider semantics.
+2. Repair the shared in-scope fixture causes and add focused evidence that the
+   affected provider tests exercise the intended protocol and outcomes.
+3. Re-run and classify the three named unresolved Linux tests without silently
+   repairing or hiding them in this task.
+4. Preserve L4 engine provenance and fail-closed verification, and document
+   before/after Linux totals and every remaining failure family.
+5. Commit and normally push the bounded task branch without merging it.
 
 ## Relevant components
 
-- `VERSION`
-- `tethers-0.1/host-rust/Cargo.toml`
-- `tethers-0.1/host-rust/Cargo.lock`
-- `scripts/package-tethers-release.ps1`
-- `scripts/package-0.7.ps1`
-- `scripts/verify-tethers.ps1`
-- `scripts/check-compatibility-corpus.ps1`
-- `docs/VERSIONING.md`
-- `docs/CURRENT_GOAL.md`
-- `docs/PROJECT_DASHBOARD.md`
-- `docs/PROJECT_OVERVIEW.md`
-- `docs/SECURITY.md`
-- `docs/ROAD_TO_1_0.md`
-- `README.md`
-- `QUICKSTART.md`
-- `docs/AGENT_QUICKSTART.md`
-- `docs/TETHERS_0_7_1_RELEASE.md`
+- `tethers-0.1/scripts/tethers-stdio-fixture.ps1`
+- `tethers-0.1/scripts/tethers-stdio-fixture.sh`
+- `tethers-0.1/host-rust/src/stdio_provider.rs`
+- `tethers-0.1/host-rust/src/host_execution.rs`
+- `scripts/prepare-current-engine.sh`
+- `scripts/run-rust-tests.sh`
+- `verification/current-engine-provenance.json`
+- `docs/worker-notes/2026-09-17-tethers-l5-linux-failure-taxonomy.md`
 
 ## Frozen decisions and invariants
 
-- This is a Windows x86-64 release only. Linux is not an official 0.7.1
-  runtime target.
-- Tethers Core remains deterministic and application-agnostic.
-- A Plan remains a request, not permission; provider execution and Trail truth
-  remain unchanged.
-- Existing MCP protocol support remains the declared Tethers revision.
-- Resolve and Lantern are not required product components.
-- Existing historical release notes and evidence remain historical records.
-- No force-push, history rewrite, direct main update, or unrelated cleanup.
-- The tag must never be moved after creation.
+- Tethers production semantics, provider execution ordering, replay, outcome
+  taxonomy, and the Windows verified-engine path remain unchanged.
+- Linux must not fabricate Windows environment variables or invoke PowerShell
+  as a substitute for a native fixture.
+- Platform boundaries are semantic; no test may be hidden merely because it
+  fails on Linux.
+- L4 provenance must continue to reject missing, stale, tampered, or absent
+  engine evidence and accept only the current verified engine.
+- The three named unresolved tests, the 41 concurrency failures, and the 72
+  expanded-target failures remain outside the repair scope unless direct
+  evidence proves a shared in-scope root cause.
+- No WSL, global Git, toolchain, Windows checkout, or environment repair is
+  authorised.
 
 ## Acceptance criteria
 
-1. Product identity reports 0.7.1 in every authoritative current product
-   surface; independent semantic/protocol identities remain unchanged.
-2. No stale 0.6 release document is included by the current Windows packer,
-   and packer version/source checks fail closed.
-3. `just verify` passes with release eligibility, required suites, clean
-   source and current engine provenance.
-4. Cargo formatting/checking, packet checker, compatibility corpus, MCP
-   transcripts and `git diff --check` pass.
-5. `Tethers-0.7.1-windows-x64.zip`, its manifest, `SHA256SUMS` and archive
-   hash are produced from one exact release source SHA.
-6. A clean extracted package passes version, init, doctor, describe, capability
-   discovery, side-effect-free plan, representative workspace read, bounded
-   argv execution where promised, and engine launch checks without developer
-   tree binaries.
-7. A representative supported 0.7 input preserves Plan meaning, Action order,
-   authority semantics, package major and Trail truth.
-8. The PR diff is reviewed and merged normally; the tag points to the merged
-   release source and the GitHub release assets download with matching hashes.
-9. The worker note records exact SHAs, artifacts, evidence, exclusions and
-   remaining 0.8 work, and the final worktree is clean.
+1. A native Linux provider fixture runs the affected protocol tests and the
+   existing Windows fixture remains unchanged.
+2. The comparable provider-fixture family is structurally classified and its
+   valid shared root cause is repaired without weakened assertions.
+3. The three named unresolved tests are individually rerun and their results
+   are recorded with exact first failures.
+4. Raw and verified Linux totals, taxonomy deltas, provenance checks, and
+   remaining failures are recorded in the worker note.
+5. Formatting, compilation, relevant tests, `bl verify tethers`, and
+   `git diff --check` pass, subject only to explicitly recorded unrelated
+   tooling limitations.
+6. The final branch is clean, committed, pushed normally, and remains
+   unmerged.
 
 ## Required verification
 
-Run from the release worktree:
-
-- `pwsh -NoProfile -File scripts/check-dev-tools.ps1`
-- `pwsh -NoProfile -File .github/scripts/check-tethers-toolchains.ps1`
-- `just verify`
-- Cargo fmt/check/build and relevant locked release tests
-- task packet checker
-- compatibility corpus
-- MCP transcript suite
+- `cargo fmt --all -- --check`
+- `cargo check --workspace --locked`
+- `cargo test --workspace --no-run --locked`
+- focused provider and unresolved-test commands
+- verified/default and verified/single-thread Linux test runners
+- `bl verify tethers`
+- L4 provenance valid/stale/tampered/missing checks
 - `git diff --check`
-- deterministic package build and manifest/checksum verification
-- clean extracted-package smoke using only packaged binaries
-- complete branch diff review against `origin/main`
-- PR checks/diff review, merged-main SHA, tag target and downloadable asset
-  hash verification
+- final clean Git status and remote SHA equality
 
 ## Forbidden changes
 
-- No 0.8 programme work, Linux parity, MCP protocol upgrade, new syntax,
-  generic Host SDK, new package format, Resolve rewrite or Lantern Plug.
-- No changes to OCaml/Core semantics, Plan meaning, Trail/result taxonomy,
-  replay, provider ordering or authority semantics.
-- No dependency refresh unless a demonstrated release blocker requires it.
-- No rewriting historical release docs merely to change their recorded version.
-- No force-push, history rewrite, direct main mutation or stale-branch
-  continuation.
+- No repair of the concurrency family unless it is proven to share the
+  provider-fixture root cause.
+- No general repair of expanded-target platform/provider failures.
+- No production redesign, provider architecture rewrite, test disabling,
+  assertion weakening, random dependency installation, or fake Windows
+  environment.
+- No changes to the Windows checkout, WSL configuration, global Git
+  configuration, toolchain versions, L4 provenance contract, or main.
 
 ## Stop conditions
 
-Stop before publication if product/version axes cannot be classified without
-changing semantics; current verification does not pass; the engine cannot be
-proven current; the package smoke depends on developer-tree binaries; source,
-manifest or checksums disagree; PR #40 contradicts R0/R1 in shipped behaviour;
-GitHub reveals an unexpected diff/check failure; or tag/release publication
-would be based on a different source SHA than the verified artifacts.
+- Stop if the fix would require changing intended Windows behaviour or
+  weakening a semantic assertion.
+- Stop if a remaining failure cannot be classified without expanding scope.
+- Stop if L4 provenance no longer fails closed or the current engine cannot be
+  attributed to the current source.
+- After two materially similar failed approaches to the same root cause, stop
+  and record the smallest unresolved technical issue.
 
 ## Expected pre-existing changes
 
-None
+None.
 
 ## Implementation scope
 
-- `VERSION`
-- `tethers-0.1/host-rust/Cargo.toml`
-- `tethers-0.1/host-rust/Cargo.lock`
-- `scripts/package-tethers-release.ps1`
-- `scripts/package-0.7.ps1`
-- `docs/VERSIONING.md`
-- `docs/CURRENT_GOAL.md`
-- `docs/PROJECT_DASHBOARD.md`
-- `docs/PROJECT_OVERVIEW.md`
-- `docs/SECURITY.md`
-- `docs/ROAD_TO_1_0.md`
-- `README.md`
-- `QUICKSTART.md`
-- `docs/AGENT_QUICKSTART.md`
-- `docs/TETHERS_0_7_1_RELEASE.md`
+- `tethers-0.1/scripts/tethers-stdio-fixture.sh`
+- `tethers-0.1/host-rust/src/stdio_provider.rs`
+- `tethers-0.1/host-rust/src/host_execution.rs`
+- `docs/CURRENT_CLINE_TASK.md`
+- `docs/worker-notes/2026-09-17-tethers-l5-linux-failure-taxonomy.md`
