@@ -72,7 +72,9 @@ barrier_call() {
     [ -n "$barrier_directory" ] || return 0
     mkdir -p "$barrier_directory"
     message=$(request_message "$1")
-    token=$(printf '%s\n' "$message" | sed -n 's/.*\(member-[a-z0-9]*\)$/\1/p')
+    # Keep the Linux fixture's member identity projection aligned with the
+    # Windows fixture. Group actions use both member-a and member/a forms.
+    token=$(printf '%s\n' "$message" | sed -n 's/.*member[-\/]\([a-z0-9]*\)$/member-\1/p')
     [ -n "$token" ] || token="pid-$$"
     touch "$barrier_directory/entered-$token"
     peer_count=2

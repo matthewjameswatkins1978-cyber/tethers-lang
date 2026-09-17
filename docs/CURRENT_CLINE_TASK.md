@@ -1,96 +1,99 @@
-# TETHERS L6 - Linux Path Semantics Repair
+# TETHERS L7 - Concurrency Root-Cause Investigation
 
-Task: `TETHERS L6 / Linux Path Semantics Repair`
+Task: `TETHERS L7 / Concurrency Root-Cause Investigation`
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
-Task colour: `Green`
+Task colour: `Amber`
 
 Owner: `Codex`
 
-Route: `Repair the two bounded Linux path-semantics test fixtures from the accepted L5 branch, verify the concurrency case remains untouched, document the evidence, commit and push the task branch. Do not merge.`
+Route: `Investigate the named group-join failure from the fresh merged L6 baseline, repair only the demonstrated shared Linux test-harness cause, verify the coordinator invariant, classify the wider concurrency population, document evidence, commit and push the task branch. Do not merge.`
 
-Base commit: `6b19b4c9af9fb047c847a82ef93f63f7de4381a5`
+Base commit: `15c85c7ffffb56614b0667b7a39164529a1b7fc4`
 
-Evidence checkpoint: `a0ed61bf9b86752ecb51378ed0cc3ae1aace7bb5`
-
-Worker note: `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
+Worker note: `docs/worker-notes/2026-09-17-tethers-l7-concurrency-root-cause.md`
 
 Suggested branch:
 
-`feature/tethers-l6-linux-path-semantics`
+`feature/tethers-l7-concurrency-root-cause`
 
 ## Objective
 
-Make `p2a_refuses_wrong_extension` and
-`j13c_missing_trail_file_maps_to_not_found` express their intended semantic
-scenarios on Linux using native temporary paths. Preserve production path
-validation, Windows behaviour, the verified engine, provider fixtures, and the
-out-of-scope concurrency failure.
+Determine why `c2a3a_group_join_after_all_terminals` previously observed an
+uncertain result and premature-looking GroupJoin state on Linux. Establish
+whether the defect is in the provider fixture/test harness or production
+coordinator, and repair only the smallest demonstrated shared cause.
 
 ## Relevant background and existing behaviour
 
-L5 reduced provider fixture failures from 18 to 0 and left three unresolved
-Linux cases. The group-join case is a concurrency failure and remains outside
-L6. The two path tests use Windows drive literals; on Linux those are relative
-paths, so the tests exercise the wrong validation branches. Existing
-production code already handles absolute missing paths and wrong extensions
-correctly.
+L6 merged at `15c85c7ffffb56614b0667b7a39164529a1b7fc4`. The verified Linux
+engine, provider fixtures, and Linux path-semantics families are already
+resolved. The prior verified suites reported 41 concurrency failures and 72
+expanded-target platform/provider failures. The named test failed repeatedly
+before L7 changes.
+
+Initial L7 reproduction found the C2A3a harness hard-coded to PowerShell and
+the Linux fixture used a different member-token projection from the Windows
+fixture. The Linux fixture must preserve the same barrier semantics without
+using Windows executables.
 
 ## Required behaviour
 
-1. Reproduce and repair the two path-semantics fixtures with native,
-   cross-platform temporary paths without weakening assertions.
-2. Keep the `c2a3a_group_join_after_all_terminals` concurrency failure and the
-   remaining concurrency/expanded-target families outside this task.
-3. Preserve L5 provider-fixture results, L4 engine provenance, Windows path
-   semantics, and production behaviour.
-4. Run targeted, containing-module, raw, verified/default, and
-   verified/single-thread checks and document exact before/after evidence.
-5. Commit and normally push the bounded task branch without merging it.
+1. Reproduce the named test under default and single-threaded execution and
+   record repeatability.
+2. Use Threadmoth for structural discovery where cross-file or repeated
+   concurrency-harness structure is involved.
+3. Ensure GroupJoin is emitted only after every group member is terminal.
+4. Repair a test/fixture boundary if that is the proven cause; change
+   production coordination only if an independent reproduction proves it.
+5. Classify the wider concurrency population without pretending this slice
+   resolves unrelated failures.
+6. Commit and normally push the bounded task branch without merging it.
 
 ## Relevant components
 
-- `tethers-0.1/host-rust/src/plug_pack.rs`
-- `tethers-0.1/host-rust/src/trail_command.rs`
+- `tethers-0.1/host-rust/src/host_execution.rs`
+- `tethers-0.1/scripts/tethers-stdio-fixture.sh`
+- `tethers-0.1/scripts/tethers-stdio-fixture.ps1`
 - `scripts/run-rust-tests.sh`
 - `verification/current-engine-provenance.json`
-- `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
+- `docs/worker-notes/2026-09-17-tethers-l7-concurrency-root-cause.md`
 
 ## Frozen decisions and invariants
 
-- The repair is test-fixture-only unless independent evidence proves a
-  production defect.
-- Native temporary paths must be absolute and unique on every supported host.
-- No Windows-specific tests are weakened, disabled, or cfg-gated.
-- The L4 verified engine and fail-closed provenance contract remain unchanged.
-- Provider fixtures remain at zero failures.
-- `c2a3a_group_join_after_all_terminals` remains a concurrency issue and is
-  not repaired here.
-- No WSL, global Git, toolchain, dependency, or environment changes are
-  authorised.
+- GroupJoin is valid only after all group members reach terminal state.
+- Provider fixtures must be semantically equivalent across Windows and Linux.
+- No Windows executable may be used as the Linux fixture route.
+- No production concurrency semantics, replay semantics, scheduling policy,
+  timeout, or locking behaviour may be changed without proof of a production
+  defect.
+- Do not add sleeps, globally increase timeouts, disable tests, weaken
+  assertions, or serialize unrelated production.
+- L4 provenance remains fail-closed and unchanged.
+- Windows behaviour remains unchanged.
 
 ## Acceptance criteria
 
-1. Both named path tests pass on Linux with their original semantic assertions
-   intact.
-2. Their containing test modules pass and the full raw/verified measurements
-   show exactly the expected two-failure reduction.
-3. Provider tests remain passing and the concurrency failure remains present
-   and classified as out of scope.
-4. Formatting, compilation, provenance, `bl verify tethers`, `bl doctor
-   tethers`, and `git diff --check` are recorded honestly.
-5. The worker note records the root causes, Threadmoth discovery, taxonomy,
-   unchanged production/Windows semantics, and remaining concurrency case.
-6. The final branch is clean, committed, pushed normally, and unmerged.
+1. The named failure is reproduced before repair and its root cause is
+   evidenced.
+2. The named test passes repeatedly under default and single-threaded runs.
+3. Directly related concurrency harnesses use the correct platform fixture and
+   do not poison later tests through avoidable fixture deadlocks.
+4. The coordinator invariant is tested by existing assertions and no
+   production semantic change is made without independent evidence.
+5. The wider concurrency failures are mapped into honest families.
+6. Formatting, compilation, verified engine, `bl verify tethers`,
+   `bl doctor tethers`, and `git diff --check` are recorded honestly.
+7. The worker note records exact before/after evidence and remaining failures.
+8. The final branch is clean, committed, pushed normally, and unmerged.
 
 ## Required verification
 
-- targeted `p2a_refuses_wrong_extension`
-- targeted `j13c_missing_trail_file_maps_to_not_found`
-- containing plug-pack and trail-command modules
+- repeated named test under default and `--test-threads=1`
+- containing C2A3a concurrency tests
 - raw Linux suite
 - verified/default and verified/single-thread suites
 - `cargo fmt --all -- --check`
@@ -105,20 +108,23 @@ correctly.
 
 ## Forbidden changes
 
-- No repair of `c2a3a_group_join_after_all_terminals` or the 41 concurrency
-  failures.
+- No broad repair of the 41 concurrency failures.
 - No repair of the 72 expanded-target platform/provider failures.
-- No production path redesign, assertion weakening, ignored tests, cfg-out,
-  dependency additions, or fake platform paths.
-- No changes to Windows files, WSL configuration, global Git configuration,
-  toolchains, L4 provenance scripts, or main.
+- No production scheduling, locking, replay, retry, timeout, or outcome
+  redesign.
+- No sleeps or retries added to conceal a race.
+- No ignored tests, disabled tests, weakened assertions, fake Windows
+  environments, dependency additions, or global configuration changes.
+- No changes to the Windows checkout, WSL configuration, toolchains, L4
+  provenance contract, or main.
 
 ## Stop conditions
 
-- Stop if either test requires a production semantic change rather than a
-  fixture correction.
-- Stop if a path fixture cannot express the same intended scenario on Linux
-  and Windows without platform fiction.
+- Stop and report if the named test still fails after the shared fixture
+  boundary is semantically correct and the remaining evidence points to a
+  production race requiring architectural judgement.
+- Stop if a production change would be needed to repair a test-only platform
+  assumption.
 - Stop if provenance becomes stale or fail-open.
 - After two materially similar failed approaches, stop and record the smallest
   unresolved issue.
@@ -129,7 +135,7 @@ None.
 
 ## Implementation scope
 
-- `tethers-0.1/host-rust/src/plug_pack.rs`
-- `tethers-0.1/host-rust/src/trail_command.rs`
+- `tethers-0.1/host-rust/src/host_execution.rs`
+- `tethers-0.1/scripts/tethers-stdio-fixture.sh`
 - `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-09-17-tethers-l6-linux-path-semantics.md`
+- `docs/worker-notes/2026-09-17-tethers-l7-concurrency-root-cause.md`
