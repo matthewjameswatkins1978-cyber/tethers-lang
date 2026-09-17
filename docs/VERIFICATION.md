@@ -36,6 +36,32 @@ the current commit and tree and records its SHA-256. Rust cross-language tests
 accept only the path and provenance supplied by that preparation step; they do
 not search PATH, sibling worktrees, or an arbitrary old `_build`.
 
+The native WSL equivalent is `scripts/prepare-current-engine.sh`, followed by
+`scripts/run-rust-tests.sh`. It uses the prepared `bl-tethers-5.5.0` switch by
+default, or the explicit `TETHERS_OCAML_SWITCH` override, and records the same
+`tethers.engine/1` provenance fields. The Linux build currently emits an ELF
+executable named `tethers_mcp_main.exe` because that is the actual Dune target;
+the file is not renamed or treated as a Windows program. The Linux runner
+verifies the manifest, source commit/tree, executable, and SHA-256 before
+exporting `TETHERS_VERIFIED_ENGINE` and `TETHERS_ENGINE_PROVENANCE`.
+`scripts/run-rust-tests.sh --verify-only` performs the same checks without
+rebuilding or running Rust tests, which makes stale, missing, and tampered
+provenance failures directly testable. The normal runner always prepares the
+current engine first; it never falls back to an existing binary on PATH.
+
+The Windows runner's `--all-targets --all-features` invocation also compiles
+Windows-only benchmark binaries. Those binaries depend on the Windows replay
+module and are not Linux test targets. The Linux equivalent therefore runs the
+host library and then each integration test target explicitly with
+`--lib`/`--test`, the product's default feature set, `--locked`, and
+`--test-threads=1`, preserving the same product-test protocol without
+compiling Windows-only benchmark features.
+
+For a diagnostic comparison only, set `TETHERS_TEST_THREADS=default` before
+the runner to retain Rust's normal threading. This does not change the
+authoritative Linux protocol, which remains single-threaded so its evidence
+matches the established Windows runner.
+
 ## Test classes and outcomes
 
 Required product and first-party suites must be `PASS` or verification fails.
