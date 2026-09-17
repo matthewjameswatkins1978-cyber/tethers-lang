@@ -489,6 +489,14 @@ mod tests {
     use crate::m3_store::M3Error;
     use std::path::PathBuf;
 
+    fn absolute_test_path(name: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!(r"C:\{name}"))
+        } else {
+            PathBuf::from(format!("/tmp/tethers-{name}"))
+        }
+    }
+
     fn plan_with(action: InstallationPlanAction) -> InstallationPlan {
         InstallationPlan {
             candidate_id: "test-candidate".to_string(),
@@ -850,7 +858,7 @@ mod tests {
 
         let result = run_install(
             &PathBuf::from("relative-host"),
-            &PathBuf::from("C:\\req.json"),
+            &absolute_test_path("req.json"),
         );
         assert_eq!(result.exit_code, 2);
         assert_eq!(result.envelope.status, OutcomeStatus::InvalidCliUsage);
@@ -876,7 +884,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
 
         let result = run_install(
-            &PathBuf::from("C:\\host"),
+            &absolute_test_path("host"),
             &PathBuf::from("relative-req.json"),
         );
         assert_eq!(result.exit_code, 2);
@@ -902,7 +910,7 @@ mod tests {
         let root = temp_dir("missing-host");
         let missing = root.join("nonexistent");
 
-        let result = run_install(&missing, &PathBuf::from("C:\\req.json"));
+        let result = run_install(&missing, &absolute_test_path("req.json"));
         assert_eq!(result.exit_code, 4);
         assert_eq!(result.envelope.status, OutcomeStatus::Unavailable);
         assert_eq!(

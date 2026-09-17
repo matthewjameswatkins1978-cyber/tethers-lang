@@ -14,7 +14,7 @@ pub mod cli;
 pub mod configured_runtime;
 pub mod conformance;
 mod current_trust;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod current_trust_tests;
 pub mod discovery;
 pub mod dispatch;
@@ -34,17 +34,17 @@ mod installation_driver;
 #[cfg(test)]
 mod installation_driver_tests;
 pub mod installation_execution;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod installation_execution_tests;
 pub mod installation_plan;
 mod installation_publication_intent;
 #[cfg(test)]
 mod installation_publication_intent_tests;
 mod installation_publication_mutation;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod installation_publication_mutation_tests;
 mod installation_publication_preparation;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod installation_publication_preparation_tests;
 mod installation_recovery;
 #[cfg(test)]
@@ -52,15 +52,15 @@ mod installation_recovery_audit_tests;
 #[cfg(test)]
 mod installation_recovery_destination_tests;
 mod installation_recovery_evidence;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod installation_recovery_evidence_tests;
 mod installation_recovery_execution;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod installation_recovery_execution_tests;
 #[cfg(test)]
 mod installation_recovery_observation_tests;
 mod installation_recovery_plan;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod installation_recovery_plan_tests;
 #[cfg(test)]
 mod installation_recovery_tests;

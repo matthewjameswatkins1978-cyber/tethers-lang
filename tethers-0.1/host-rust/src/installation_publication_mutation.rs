@@ -192,10 +192,12 @@ mod post_intent_failure_test_hook {
     /// A crate-test-only one-shot failure installation at the durable-intent
     /// boundary. Thread-local state prevents unrelated concurrently running
     /// tests from observing the installation.
+    #[cfg(windows)]
     pub(crate) struct PostIntentFailureTestGuard {
         _private: (),
     }
 
+    #[cfg(windows)]
     pub(crate) fn install_post_intent_failure_once_for_test() -> PostIntentFailureTestGuard {
         FAIL_AFTER_DURABLE_INTENT.with(|armed| {
             assert!(
@@ -206,6 +208,7 @@ mod post_intent_failure_test_hook {
         PostIntentFailureTestGuard { _private: () }
     }
 
+    #[cfg(windows)]
     impl Drop for PostIntentFailureTestGuard {
         fn drop(&mut self) {
             FAIL_AFTER_DURABLE_INTENT.with(|armed| armed.set(false));
@@ -224,5 +227,5 @@ mod post_intent_failure_test_hook {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 pub(crate) use post_intent_failure_test_hook::install_post_intent_failure_once_for_test;

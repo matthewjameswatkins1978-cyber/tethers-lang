@@ -3046,6 +3046,7 @@ mod tests {
     use crate::policy::{CapabilityRequirement, HostLocalPolicy, ScopeAssessment};
     use crate::replay::{LogicalExecutionKey, ReplayState};
     use crate::run_command;
+    #[cfg(windows)]
     use crate::stdio_provider::ManagedProvider;
     use crate::trusted_store::TrustedManifestStore;
     use serde_json::json;
@@ -3885,6 +3886,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn j13b_one_retained_provider_serves_multiple_calls_with_monotonic_ids() {
         let marker = std::env::temp_dir().join(format!(
             "tethers-j13b-provider-{}.txt",

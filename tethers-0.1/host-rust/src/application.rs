@@ -3644,6 +3644,14 @@ mod tests {
     use crate::resolver::{self, ProviderAvailability};
     use crate::trusted_store::TrustedManifestStore;
 
+    fn absolute_test_path(name: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!(r"C:\{name}"))
+        } else {
+            PathBuf::from(format!("/tmp/tethers-{name}"))
+        }
+    }
+
     // Resolve this fixture relative to application.rs rather than the synthetic
     // src/application/tests path used for nested inline modules on Linux.
     mod p4b_lifecycle {
@@ -6738,28 +6746,28 @@ mod tests {
 
         #[test]
         fn j09_runtime_01_cli_accepts_one_absolute_host_data_root() {
+            let host_data_root = absolute_test_path("host-data");
             let args = vec![
                 "engine.exe".to_owned(),
                 "request.json".to_owned(),
                 "--host-data-root".to_owned(),
-                r"C:\host-data".to_owned(),
+                host_data_root.to_string_lossy().into_owned(),
             ];
             let parsed = parse_normal_args(&args).unwrap();
-            assert_eq!(
-                parsed.host_data_root.unwrap(),
-                PathBuf::from(r"C:\host-data")
-            );
+            assert_eq!(parsed.host_data_root.unwrap(), host_data_root);
         }
 
         #[test]
         fn j09_runtime_02_cli_rejects_duplicate_host_data_root() {
+            let first_root = absolute_test_path("one");
+            let second_root = absolute_test_path("two");
             let args = vec![
                 "engine.exe".to_owned(),
                 "request.json".to_owned(),
                 "--host-data-root".to_owned(),
-                r"C:\one".to_owned(),
+                first_root.to_string_lossy().into_owned(),
                 "--host-data-root".to_owned(),
-                r"C:\two".to_owned(),
+                second_root.to_string_lossy().into_owned(),
             ];
             assert_eq!(
                 parse_normal_args(&args).unwrap_err(),
@@ -7450,23 +7458,25 @@ mod tests {
 
         #[test]
         fn j09_runtime_38_trail_and_replay_roots_remain_explicitly_distinct() {
+            let trail_path = absolute_test_path("independent-audit").join("trail.jsonl");
+            let host_data_root = absolute_test_path("independent-host-data");
             let args = vec![
                 "engine.exe".to_owned(),
                 "request.json".to_owned(),
                 "allow".to_owned(),
-                r"D:\independent-audit\trail.jsonl".to_owned(),
+                trail_path.to_string_lossy().into_owned(),
                 "success".to_owned(),
                 "--host-data-root".to_owned(),
-                r"C:\independent-host-data".to_owned(),
+                host_data_root.to_string_lossy().into_owned(),
             ];
             let parsed = parse_normal_args(&args).unwrap();
             assert_eq!(
                 parsed.trail_path.as_deref(),
-                Some(r"D:\independent-audit\trail.jsonl")
+                Some(trail_path.to_string_lossy().as_ref())
             );
             assert_eq!(
                 parsed.host_data_root.as_deref(),
-                Some(Path::new(r"C:\independent-host-data"))
+                Some(host_data_root.as_path())
             );
         }
 
