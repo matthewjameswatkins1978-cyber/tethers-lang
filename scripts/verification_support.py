@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -113,11 +114,105 @@ def skipped_step(name: str, reason: str, *, category: str = "required") -> StepR
 
 
 def command_path(name: str) -> str | None:
-    for directory in os.environ.get("PATH", "").split(os.pathsep):
-        candidate = Path(directory) / name
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
-    return None
+    # shutil.which honours PATHEXT on Windows (for example git.exe when asked
+    # for git); a hand-rolled Path check silently reports every Windows tool
+    # missing even though subprocess can launch it.
+    return shutil.which(name)
+
+
+def discover_ocaml_switch(
+    repository_root: Path,
+    *,
+    requested: str | None = None,
+    environ: Mapping[str, str] | None = None,
+    run=subprocess.run,
+) -> str:
+    """Find an installed Tethers OCaml switch without relying on agent PATH lore.
+
+    An explicit request is authoritative and fails closed. Otherwise prefer a
+    switch local to this checkout, then inspect opam's registered switches.
+    Only the repository's pinned compiler and Dune versions are accepted.
+    """
+    env = os.environ if environ is None else environ
+    explicit = requested or env.get("TETHERS_OCAML_SWITCH")
+    if explicit:
+        candidates = [explicit]
+    else:
+        engine_root = repository_root / "tethers-0.1" / "engine-ocaml"
+        candidates = [str(engine_root)] if (engine_root / "_opam").is_dir() else []
+        try:
+            listed = run(
+                ["opam", "switch", "list", "--short"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+        except OSError as error:
+            raise RuntimeError(f"Cannot discover OCaml switches because opam is unavailable: {error}") from error
+        if listed.returncode != 0:
+            detail = (listed.stdout or "").strip()
+            raise RuntimeError(f"opam could not list installed switches: {detail or listed.returncode}")
+        candidates.extend(line.strip() for line in (listed.stdout or "").splitlines() if line.strip())
+
+    seen: set[str] = set()
+    rejected: list[str] = []
+    for candidate in candidates:
+        if os.name == "nt" and not Path(candidate).is_absolute():
+            rejected.append(f"{candidate} (Windows verification requires a project switch path)")
+            if explicit:
+                break
+            continue
+        key = os.path.normcase(os.path.normpath(candidate))
+        if key in seen:
+            continue
+        seen.add(key)
+        versions: dict[str, str] = {}
+        for tool, args in (("ocamlc", ["ocamlc", "-version"]), ("dune", ["dune", "--version"])):
+            try:
+                result = run(
+                    ["opam", "exec", f"--switch={candidate}", "--", *args],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+            except OSError:
+                break
+            if result.returncode != 0:
+                break
+            versions[tool] = (result.stdout or "").strip()
+        if versions == {"ocamlc": "5.5.0", "dune": "3.24.0"}:
+            try:
+                packages = run(
+                    ["opam", "list", f"--switch={candidate}", "--installed", "--columns=name,version"],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+            except OSError:
+                packages = None
+            installed = {}
+            if packages is not None and packages.returncode == 0:
+                for line in (packages.stdout or "").splitlines():
+                    fields = line.split()
+                    if len(fields) >= 2:
+                        installed[fields[0]] = fields[1]
+            if installed.get("yojson") == "2.2.2" and installed.get("digestif") == "1.3.1":
+                return candidate
+            rejected.append(f"{candidate} (required packages Yojson 2.2.2 and Digestif 1.3.1 are missing or mismatched)")
+            if explicit:
+                break
+            continue
+        rejected.append(f"{candidate} (OCaml {versions.get('ocamlc', 'unavailable')}, Dune {versions.get('dune', 'unavailable')})")
+        if explicit:
+            break
+
+    if explicit:
+        raise RuntimeError(f"Requested OCaml switch is unavailable or incompatible: {rejected[0] if rejected else explicit}")
+    inspected = "; ".join(rejected) if rejected else "no registered switches"
+    raise RuntimeError(f"No installed Tethers OCaml switch found (requires OCaml 5.5.0 and Dune 3.24.0): {inspected}")
 
 
 def read_json_lines(path: Path) -> list[object]:

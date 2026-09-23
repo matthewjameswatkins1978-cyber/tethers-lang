@@ -35,9 +35,21 @@ verdict and `release_eligible`.
 
 ## Prerequisites and current engine
 
-Linux uses the prepared `bl-tethers-5.5.0` opam switch by default. An explicit
-`TETHERS_OCAML_SWITCH` may select another repository-authorised switch. The
-native path is:
+The verifier discovers the OCaml switch automatically. It first honours
+`--ocaml-switch` or `TETHERS_OCAML_SWITCH`, then checks this checkout's local
+`tethers-0.1/engine-ocaml/_opam`, then walks the switches registered with opam.
+It selects only a switch that runs the repository-pinned OCaml 5.5.0 and Dune
+3.24.0 and has Yojson 2.2.2 plus Digestif 1.3.1 installed. If none is
+installed, verification reports a prerequisite failure and skips dependent
+suites; it does not install or alter a toolchain. A supplied switch remains
+authoritative and fails closed if it is invalid.
+
+The current engine is always built from this checkout; the switch supplies
+only the OCaml compiler and dependencies. The provenance record binds the
+resulting binary to this checkout's commit, tree and SHA-256. A fresh agent
+worktree therefore needs no remembered absolute switch path when the machine
+already has a registered compatible opam switch. The native preparation path
+is:
 
 ```sh
 bash scripts/prepare-current-engine.sh

@@ -19,6 +19,7 @@ sys.path.insert(0, str(SCRIPT_ROOT))
 from verification_support import (  # noqa: E402
     StepResult,
     command_path,
+    discover_ocaml_switch,
     run_step,
     skipped_step,
 )
@@ -104,7 +105,12 @@ def main() -> int:
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--report-path", default="verification/tethers-verification.json")
     args = parser.parse_args()
-    switch = args.ocaml_switch or os.environ.get("TETHERS_OCAML_SWITCH") or ("bl-tethers-5.5.0" if os.name != "nt" else str(REPOSITORY_ROOT / "tethers-0.1/engine-ocaml"))
+    switch = None
+    switch_error = None
+    try:
+        switch = discover_ocaml_switch(REPOSITORY_ROOT, requested=args.ocaml_switch)
+    except RuntimeError as error:
+        switch_error = str(error)
     results: list[StepResult] = []
     head = git_value("rev-parse", "HEAD").lower()
     tree = git_value("rev-parse", "HEAD^{tree}").lower()
@@ -119,8 +125,20 @@ def main() -> int:
 
     add(run_python("task packet checker", REPOSITORY_ROOT / ".github/scripts/check-tethers-task-packet.py", category="external"))
     add(run_step("Rust formatting", ["cargo", "fmt", "--manifest-path", str(REPOSITORY_ROOT / "tethers-0.1/host-rust/Cargo.toml"), "--all", "--", "--check"], REPOSITORY_ROOT))
-    engine_command, engine_env = engine_commands(switch, args.release)
-    engine_result = add(run_step("current OCaml engine build and provenance", engine_command, REPOSITORY_ROOT, env=engine_env))
+    if switch is None:
+        engine_result = StepResult(
+            name="current OCaml engine build and provenance",
+            category="required",
+            status="FAIL",
+            exit_code=1,
+            duration_ms=0,
+            first_failure=switch_error,
+            output=switch_error or "No compatible OCaml switch was discovered.",
+        )
+        add(engine_result)
+    else:
+        engine_command, engine_env = engine_commands(switch, args.release)
+        engine_result = add(run_step("current OCaml engine build and provenance", engine_command, REPOSITORY_ROOT, env=engine_env))
     provenance_path = REPOSITORY_ROOT / "verification/current-engine-provenance.json"
     provenance = None
     if engine_result.status == "PASS" and provenance_path.is_file():
@@ -140,12 +158,29 @@ def main() -> int:
         add(run_python("warning ratchet", SCRIPT_ROOT / "check-warning-ratchet.py"))
         test_command, test_env = test_commands(switch, args.release)
         add(run_step("Rust and cross-language tests", test_command, REPOSITORY_ROOT, env=test_env))
+        add(
+            run_step(
+                "R2 authority gate suite",
+                [
+                    "cargo",
+                    "test",
+                    "--manifest-path",
+                    str(REPOSITORY_ROOT / "tethers-0.1/host-rust/Cargo.toml"),
+                    "--test",
+                    "r2_authority_gate",
+                    "--locked",
+                    "--",
+                    "--test-threads=1",
+                ],
+                REPOSITORY_ROOT,
+            )
+        )
         add(run_python("protocol fixture sanity", REPOSITORY_ROOT / "tethers-0.1/scripts/check-fixtures.py"))
         add(run_python("MCP transcript suite", REPOSITORY_ROOT / "tethers-0.1/scripts/test-mcp-transcripts.py"))
         add(run_python("compatibility corpus", SCRIPT_ROOT / "check-compatibility-corpus.py"))
     else:
         reason = "current engine prerequisite failed; dependent suites were not run"
-        for name in ("OCaml tests", "Rust static checks", "warning ratchet", "Rust and cross-language tests", "protocol fixture sanity", "MCP transcript suite", "compatibility corpus"):
+        for name in ("OCaml tests", "Rust static checks", "warning ratchet", "Rust and cross-language tests", "R2 authority gate suite", "protocol fixture sanity", "MCP transcript suite", "compatibility corpus"):
             add(skipped_step(name, reason))
 
     counts = {status: sum(result.status == status for result in results) for status in ("PASS", "FAIL", "SKIPPED WITH REASON", "NOT APPLICABLE")}
@@ -157,7 +192,7 @@ def main() -> int:
         "source_tree": tree,
         "dirty": dirty,
         "platform": platform.system().lower(),
-        "toolchain": toolchain_status(switch),
+        "toolchain": toolchain_status(switch) if switch else {"status": "FAIL", "platform": platform.system().lower(), "expected_rust": "1.97.1", "expected_ocaml": "5.5.0", "expected_dune": "3.24.0", "discovery_failure": switch_error},
         "engine": provenance,
         "suites": [result.report() for result in results],
         "outcome_counts": counts,
