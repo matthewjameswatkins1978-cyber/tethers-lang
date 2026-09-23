@@ -130,6 +130,8 @@ pub enum Command {
         stdio: bool,
         #[arg(long = "config", value_name = "PATH")]
         config: PathBuf,
+        #[arg(long = "engine", value_name = "PATH")]
+        engine: PathBuf,
         #[arg(long = "trail", value_name = "ABSOLUTE_PATH")]
         trail: PathBuf,
         #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]

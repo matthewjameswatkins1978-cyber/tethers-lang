@@ -1314,6 +1314,19 @@ impl ReplayLedger {
         Ok(by_execution)
     }
 
+    /// Recover logical key and binding for one durable execution identity.
+    /// Used by Authority Gate restart reconciliation; read-only.
+    pub fn claim_material_for(
+        &self,
+        execution_id: &str,
+    ) -> Option<(LogicalExecutionKey, ExecutionBinding)> {
+        let claims = self.scan_claims().ok()?;
+        claims
+            .into_values()
+            .find(|claim| claim.execution_id.as_str() == execution_id)
+            .map(|claim| (claim.logical_key, claim.binding))
+    }
+
     fn scan_chains(&self, claims: &HashMap<String, Claim>) -> Result<(), ReplayError> {
         let mut seen = HashSet::new();
         for prefix_name in directory_entry_names(&self.chains)? {
@@ -1524,8 +1537,9 @@ impl ReplayAdmission {
         state: ReplayState,
         durable_outcome_digest: String,
     ) -> Result<(), ReplayError> {
-        if !self.fresh || self.state != ReplayState::InvocationArmed || self.generations.len() != 2
-        {
+        // Fresh armed admissions complete normally. Recovered (non-fresh)
+        // armed admissions complete durable outcome after Gate restart.
+        if self.state != ReplayState::InvocationArmed || self.generations.len() != 2 {
             return unavailable();
         }
         let generation = model_unavailable(Generation::terminal(

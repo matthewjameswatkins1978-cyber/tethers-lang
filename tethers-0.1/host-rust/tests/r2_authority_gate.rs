@@ -1,10 +1,7 @@
 //! R2 Authority Gate conformance suite.
 //!
-//! Proves: Plan is not permission; Tethers evaluates current authority;
-//! Ask is Tethers-owned and exact; COMMIT rechecks at the last responsible
-//! moment; revocation between PREPARE and COMMIT prevents dispatch; durable
-//! intent precedes dispatch readiness; replay is preserved; the Gate never
-//! executes the effect; Gate failure fails closed; no Omen ontology.
+//! Proves: Tethers Core defines the Plan; Tethers authorises; the external
+//! Host executes; durable Tethers truth survives Gate death.
 
 use serde_json::{json, Value};
 use std::fs;
@@ -20,6 +17,47 @@ const STANDING_ALLOW_DIGEST: &str =
 const STANDING_ALLOW_MANIFEST: &str =
     include_str!("../../protocol/capability-manifests/fixture-ping-standing-allow.json");
 
+const CORE_TETHER: &str = r#"tether "J14 complete local scenario"
+
+anchor
+    coding.task_completed
+
+when
+    project.type is "software"
+    and task.changed_files greater_than 0
+
+do
+    fixture.ping
+        message: anchor.task
+        path: anchor.path
+"#;
+
+/// Engine binary for Core-backed PREPARE. Prefer the verified engine from
+/// the canonical verifier; fall back to the current-checkout build output.
+fn engine_path() -> PathBuf {
+    if let Ok(path) = std::env::var("TETHERS_VERIFIED_ENGINE") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return path;
+        }
+    }
+    let candidates = [
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../engine-ocaml/_build/default/bin/tethers_mcp_main.exe"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../engine-ocaml/_build/default/bin/tethers_mcp_main"),
+    ];
+    for candidate in candidates {
+        if candidate.is_file() {
+            return candidate.canonicalize().unwrap_or(candidate);
+        }
+    }
+    panic!(
+        "Tethers Core engine not found. Run scripts/prepare-current-engine.ps1 \
+         or set TETHERS_VERIFIED_ENGINE."
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Workspace fixture
 // ---------------------------------------------------------------------------
@@ -29,6 +67,7 @@ struct GateWorkspace {
     config: PathBuf,
     trail: PathBuf,
     host_data: PathBuf,
+    engine: PathBuf,
 }
 
 impl GateWorkspace {
@@ -42,11 +81,7 @@ impl GateWorkspace {
         fs::create_dir_all(root.join("manifests")).unwrap();
         fs::create_dir_all(root.join("host-data")).unwrap();
 
-        fs::write(
-            root.join("tethers/complete.tether"),
-            "tether \"r2 gate fixture\"\n\nanchor\n    coding.task_completed\n",
-        )
-        .unwrap();
+        fs::write(root.join("tethers/complete.tether"), CORE_TETHER).unwrap();
         fs::write(
             root.join("manifests/fixture-ping-standing-allow.json"),
             STANDING_ALLOW_MANIFEST,
@@ -56,11 +91,13 @@ impl GateWorkspace {
         let config = root.join("runtime.json");
         let trail = root.join("trail.jsonl");
         let host_data = root.join("host-data");
+        let engine = engine_path();
         let workspace = Self {
             root,
             config,
             trail,
             host_data,
+            engine,
         };
         workspace.write_config(policy_decision);
         workspace.provision_replay();
@@ -77,7 +114,35 @@ impl GateWorkspace {
                     {
                         "id": "r2-complete",
                         "version": "1",
-                        "source_path": "tethers/complete.tether"
+                        "source_path": "tethers/complete.tether",
+                        "core_environment": {
+                            "program_id": "program.j14.complete",
+                            "core_version": "1",
+                            "capabilities": [
+                                {
+                                    "source_name": "fixture.ping",
+                                    "capability_id": "cap.semantic.fixture-ping",
+                                    "contract_digest": "CORE-CONTRACT-J14",
+                                    "runtime_name": "fixture.ping"
+                                }
+                            ],
+                            "input_facts": [
+                                {
+                                    "source_name": "project.type",
+                                    "fact_id": "fact.project_type",
+                                    "host_snapshot_key": "project.type",
+                                    "scalar_type": "string",
+                                    "schema_description": "project type"
+                                },
+                                {
+                                    "source_name": "task.changed_files",
+                                    "fact_id": "fact.task_changed_files",
+                                    "host_snapshot_key": "task.changed_files",
+                                    "scalar_type": "integer",
+                                    "schema_description": "number of changed files"
+                                }
+                            ]
+                        }
                     }
                 ],
                 "capability_requirements": [
@@ -135,38 +200,43 @@ impl GateWorkspace {
     fn gate(&self) -> AuthorityGate {
         AuthorityGate::new(GateConfig {
             config_path: self.config.clone(),
+            engine_path: self.engine.clone(),
             trail_path: self.trail.clone(),
             host_data_root: self.host_data.clone(),
         })
     }
 
-    fn plan(&self, action_id: &str, arguments: Value) -> Value {
-        json!({
-            "id": "eval_r2_001/plan",
-            "actions": [
-                {
-                    "action_id": action_id,
-                    "idempotency_key": format!("eval_r2_001/{action_id}"),
-                    "capability": "fixture.ping",
-                    "capability_version": "1.0.0",
-                    "arguments": arguments,
-                    "effects": ["fixture.test"],
-                    "manifest_digest": STANDING_ALLOW_DIGEST,
-                    "bridge_capability_version": 1,
-                    "bridge_provider_identity": "tethers-stdio-fixture"
-                }
-            ]
-        })
+    /// Core-authoritative PREPARE payload: run-input material only.
+    fn prepare_payload(&self, action_id: &str, path: &str) -> Value {
+        self.prepare_payload_with_eval(action_id, path, "eval_r2_001", true)
     }
 
-    fn prepare_payload(&self, action_id: &str, arguments: Value) -> Value {
+    fn prepare_payload_with_eval(
+        &self,
+        action_id: &str,
+        path: &str,
+        evaluation_id: &str,
+        matches_condition: bool,
+    ) -> Value {
+        let facts = if matches_condition {
+            json!({ "project.type": "software", "task.changed_files": 3 })
+        } else {
+            json!({ "project.type": "docs", "task.changed_files": 0 })
+        };
         json!({
-            "tether_id": "r2-complete",
-            "tether_version": "1",
-            "evaluation_id": "eval_r2_001",
-            "event_id": "evt_r2_001",
             "action_id": action_id,
-            "plan": self.plan(action_id, arguments)
+            "evaluation_id": evaluation_id,
+            "tether": { "id": "r2-complete", "version": "1" },
+            "event": {
+                "id": "evt_r2_001",
+                "name": "coding.task_completed",
+                "data": {
+                    "project": "lantern-keeper",
+                    "task": "LK-39",
+                    "path": path
+                }
+            },
+            "facts": facts
         })
     }
 
@@ -196,10 +266,6 @@ fn harden_replay_acl(root: &Path) {
     }
     #[cfg(not(windows))]
     let _ = root;
-}
-
-fn args_ok(path: &str) -> Value {
-    json!({ "message": "r2", "path": path })
 }
 
 fn call(
@@ -325,7 +391,7 @@ fn allow_prepare_commit_outcome_zero_gate_effects() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-allow")),
+        workspace.prepare_payload("action_1", "projects/r2-allow"),
     ))
     .clone();
     assert_eq!(prepared["decision"], "allow_prepared");
@@ -366,7 +432,7 @@ fn deny_prepare_refuses_and_commit_is_impossible() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-deny")),
+        workspace.prepare_payload("action_1", "projects/r2-deny"),
     );
     let prepared = ok(&prepared_response).clone();
     assert_eq!(prepared["decision"], "deny");
@@ -392,7 +458,7 @@ fn ask_requires_exact_approval_before_commit() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-ask")),
+        workspace.prepare_payload("action_1", "projects/r2-ask"),
     ))
     .clone();
     assert_eq!(prepared["decision"], "ask");
@@ -443,7 +509,7 @@ fn ask_requires_exact_approval_before_commit() {
 fn unavailable_is_explicit_and_never_coerced() {
     let workspace = GateWorkspace::new("allow");
     let mut gate = workspace.gate();
-    let mut payload = workspace.prepare_payload("action_1", args_ok("projects/r2-unavailable"));
+    let mut payload = workspace.prepare_payload("action_1", "projects/r2-unavailable");
     payload["observations"] = json!({ "available_provider_identities": [] });
 
     let response = call(&mut gate, "p1", "prepare", payload);
@@ -480,7 +546,7 @@ fn live_revocation_between_prepare_and_commit_prevents_dispatch() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-revoke")),
+        workspace.prepare_payload("action_1", "projects/r2-revoke"),
     ))
     .clone();
     assert_eq!(prepared["decision"], "allow_prepared");
@@ -509,7 +575,7 @@ fn capability_removed_between_prepare_and_commit_is_unavailable() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-cap")),
+        workspace.prepare_payload("action_1", "projects/r2-cap"),
     ))
     .clone();
     assert_eq!(prepared["decision"], "allow_prepared");
@@ -533,14 +599,28 @@ fn manifest_digest_drift_between_prepare_and_commit_refuses() {
     let workspace = GateWorkspace::new("allow");
     let mut gate = workspace.gate();
 
-    let mut payload = workspace.prepare_payload("action_1", args_ok("projects/r2-manifest"));
-    payload["plan"]["actions"][0]["manifest_digest"] =
-        json!("sha256:0000000000000000000000000000000000000000000000000000000000000000");
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-manifest"),
+    ))
+    .clone();
+    assert_eq!(prepared["decision"], "allow_prepared");
 
-    let response = call(&mut gate, "p1", "prepare", payload);
-    let prepared = ok(&response).clone();
-    // Prepare already fails closed on pin mismatch (unavailable).
-    assert_eq!(prepared["decision"], "unavailable");
+    // Corrupt the trusted manifest pin between PREPARE and COMMIT.
+    let manifest_path = workspace
+        .root
+        .join("manifests/fixture-ping-standing-allow.json");
+    let original = fs::read_to_string(&manifest_path).unwrap();
+    let mut corrupted: Value = serde_json::from_str(&original).unwrap();
+    // timeout_ms is digest-covered; mutating it breaks the trusted pin.
+    corrupted["timeout_ms"] = json!(9999);
+    fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&corrupted).unwrap(),
+    )
+    .unwrap();
 
     let commit = call(
         &mut gate,
@@ -548,7 +628,11 @@ fn manifest_digest_drift_between_prepare_and_commit_refuses() {
         "commit",
         json!({ "prepared_id": prepared["prepared_id"] }),
     );
-    assert!(err(&commit).starts_with("commit."));
+    assert!(
+        err(&commit).starts_with("commit."),
+        "manifest drift must refuse commit, got {}",
+        err(&commit)
+    );
     assert_eq!(gate.provider_invocations(), 0);
 }
 
@@ -557,20 +641,28 @@ fn provider_identity_substitution_refuses() {
     let workspace = GateWorkspace::new("allow");
     let mut gate = workspace.gate();
 
-    let mut payload = workspace.prepare_payload("action_1", args_ok("projects/r2-provider"));
-    payload["plan"]["actions"][0]["bridge_provider_identity"] = json!("evil-provider");
-
-    let response = call(&mut gate, "p1", "prepare", payload);
-    let prepared = ok(&response).clone();
-    assert_eq!(prepared["decision"], "unavailable");
+    // Core-plan material with a foreign provider pin cannot be supplied by
+    // the Host; instead observe the configured provider as unavailable so
+    // current authority cannot resolve the binding.
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-provider"),
+    ))
+    .clone();
+    assert_eq!(prepared["decision"], "allow_prepared");
 
     let commit = call(
         &mut gate,
         "c1",
         "commit",
-        json!({ "prepared_id": prepared["prepared_id"] }),
+        json!({
+            "prepared_id": prepared["prepared_id"],
+            "observations": { "available_provider_identities": ["evil-provider"] }
+        }),
     );
-    assert!(err(&commit).starts_with("commit."));
+    assert_eq!(err(&commit), "commit.unavailable");
     assert_eq!(gate.provider_invocations(), 0);
 }
 
@@ -583,7 +675,7 @@ fn scope_violation_denies_before_dispatch() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("elsewhere/r2-scope")),
+        workspace.prepare_payload("action_1", "elsewhere/r2-scope"),
     ))
     .clone();
     assert_eq!(prepared["decision"], "deny");
@@ -607,7 +699,7 @@ fn approval_does_not_override_changed_current_authority() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-ask-revoke")),
+        workspace.prepare_payload("action_1", "projects/r2-ask-revoke"),
     ))
     .clone();
     let approval_id = prepared["approval"]["approval_id"]
@@ -647,7 +739,7 @@ fn changed_arguments_with_old_approval_refuses() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-args-a")),
+        workspace.prepare_payload("action_1", "projects/r2-args-a"),
     ))
     .clone();
     let approval_a = prepared_a["approval"]["approval_id"]
@@ -666,7 +758,7 @@ fn changed_arguments_with_old_approval_refuses() {
         &mut gate,
         "p2",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-args-b")),
+        workspace.prepare_payload("action_1", "projects/r2-args-b"),
     ))
     .clone();
     assert_ne!(prepared_a["prepared_id"], prepared_b["prepared_id"]);
@@ -699,7 +791,7 @@ fn multi_step_second_action_requires_fresh_authority() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-step1")),
+        workspace.prepare_payload("action_1", "projects/r2-step1"),
     ))
     .clone();
     let dispatch1 = commit_ok(&mut gate, step1["prepared_id"].as_str().unwrap());
@@ -715,12 +807,13 @@ fn multi_step_second_action_requires_fresh_authority() {
     // Authority changes.
     workspace.write_config("deny");
 
-    // Step 2: independent prepare under new authority.
+    // Step 2: independent prepare under new authority. Core still plans
+    // Action material; current policy must deny it.
     let step2_response = call(
         &mut gate,
         "p2",
         "prepare",
-        workspace.prepare_payload("action_2", args_ok("projects/r2-step2")),
+        workspace.prepare_payload_with_eval("action_1", "projects/r2-step2", "eval_r2_002", true),
     );
     let step2 = ok(&step2_response).clone();
     assert_eq!(step2["decision"], "deny");
@@ -751,7 +844,7 @@ fn duplicate_commit_same_prepared_identity_refuses() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-dup")),
+        workspace.prepare_payload("action_1", "projects/r2-dup"),
     ))
     .clone();
     commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
@@ -773,7 +866,7 @@ fn replay_refuses_second_admission_for_same_logical_key() {
 
     // Two prepares of identical evaluation material produce distinct prepared
     // identities only when material differs; same material is refused.
-    let payload = workspace.prepare_payload("action_1", args_ok("projects/r2-replay"));
+    let payload = workspace.prepare_payload("action_1", "projects/r2-replay");
     let first = ok(&call(&mut gate, "p1", "prepare", payload.clone())).clone();
     let duplicate = call(&mut gate, "p2", "prepare", payload);
     assert_eq!(err(&duplicate), "prepare.duplicate_identity");
@@ -797,7 +890,7 @@ fn replay_refuses_second_admission_for_same_logical_key() {
     // A second Gate session (fresh prepared map) against the same durable
     // replay ledger must not create a second admission for the same key.
     let mut gate2 = workspace.gate();
-    let second_payload = workspace.prepare_payload("action_1", args_ok("projects/r2-replay"));
+    let second_payload = workspace.prepare_payload("action_1", "projects/r2-replay");
     let second_prepare = call(&mut gate2, "p1", "prepare", second_payload);
     let prepared = ok(&second_prepare).clone();
     let commit = call(
@@ -827,7 +920,7 @@ fn wrong_proof_attacks_fail_closed() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-attack-a")),
+        workspace.prepare_payload("action_1", "projects/r2-attack-a"),
     ))
     .clone();
     let approval_a = prepared_a["approval"]["approval_id"]
@@ -841,14 +934,20 @@ fn wrong_proof_attacks_fail_closed() {
         json!({ "approval_id": approval_a, "decision": "approve" }),
     );
 
-    // Prepared B (different action id / args).
+    // Prepared B (same Core action_id under a distinct evaluation identity).
     let prepared_b = ok(&call(
         &mut gate,
         "p2",
         "prepare",
-        workspace.prepare_payload("action_2", args_ok("projects/r2-attack-b")),
+        workspace.prepare_payload_with_eval(
+            "action_1",
+            "projects/r2-attack-b",
+            "eval_r2_002",
+            true,
+        ),
     ))
     .clone();
+    assert_ne!(prepared_a["prepared_id"], prepared_b["prepared_id"]);
 
     // approval A + prepared B.
     let attack1 = call(
@@ -898,7 +997,12 @@ fn wrong_proof_attacks_fail_closed() {
     assert_eq!(err(&attack4), "outcome.unknown_execution");
 
     // Caller cannot supply authority booleans on prepare.
-    let mut forged = workspace.prepare_payload("action_3", args_ok("projects/r2-attack-c"));
+    let mut forged = workspace.prepare_payload_with_eval(
+        "action_1",
+        "projects/r2-attack-c",
+        "eval_r2_003",
+        true,
+    );
     forged["permission"] = json!(true);
     // Frame-level rejection happens in parse_frame; session-level prepare
     // ignores unknown fields but never trusts them — decision is recomputed.
@@ -924,7 +1028,7 @@ fn unconsumed_approval_expires_on_gate_restart() {
             &mut gate,
             "p1",
             "prepare",
-            workspace.prepare_payload("action_1", args_ok("projects/r2-restart")),
+            workspace.prepare_payload("action_1", "projects/r2-restart"),
         ))
         .clone();
         let approval_id = prepared["approval"]["approval_id"]
@@ -969,7 +1073,7 @@ fn durable_committed_intent_survives_gate_restart() {
             &mut gate,
             "p1",
             "prepare",
-            workspace.prepare_payload("action_1", args_ok("projects/r2-durable")),
+            workspace.prepare_payload("action_1", "projects/r2-durable"),
         ))
         .clone();
         let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
@@ -982,12 +1086,13 @@ fn durable_committed_intent_survives_gate_restart() {
 
     let mut gate2 = workspace.gate();
     let status = ok(&call(&mut gate2, "s1", "status", json!({}))).clone();
-    let recovery = status["recovery_required"].as_array().unwrap();
+    let unresolved = status["unresolved_commits"].as_array().unwrap();
     assert!(
-        recovery
+        unresolved
             .iter()
-            .any(|entry| entry["execution_id"] == execution_id),
-        "restarted Gate must report unresolved committed executions: {recovery:?}"
+            .any(|entry| entry["execution_id"] == execution_id
+                && entry["state"] == "COMMITTED_OUTCOME_INCOMPLETE"),
+        "restarted Gate must report unresolved durable commits: {unresolved:?}"
     );
 }
 
@@ -1000,7 +1105,7 @@ fn outcome_after_restart_records_trail_and_flags_recovery() {
             &mut gate,
             "p1",
             "prepare",
-            workspace.prepare_payload("action_1", args_ok("projects/r2-crash")),
+            workspace.prepare_payload("action_1", "projects/r2-crash"),
         ))
         .clone();
         let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
@@ -1009,8 +1114,7 @@ fn outcome_after_restart_records_trail_and_flags_recovery() {
     };
 
     let mut gate2 = workspace.gate();
-    // After restart the in-memory committed map is empty — OUTCOME for the
-    // prior execution is refused as unknown rather than guessed.
+    // Late OUTCOME after restart reconciles from durable Trail + replay claim.
     let outcome = call(
         &mut gate2,
         "o1",
@@ -1022,14 +1126,37 @@ fn outcome_after_restart_records_trail_and_flags_recovery() {
             "result": {"echo": "late"}
         }),
     );
-    assert_eq!(err(&outcome), "outcome.unknown_execution");
+    let recovered = ok(&outcome).clone();
+    assert_eq!(recovered["status"], "succeeded");
+    assert_eq!(recovered["recovered"], true);
+    assert_eq!(recovered["replay_terminal"], "recorded");
 
     let status = ok(&call(&mut gate2, "s1", "status", json!({}))).clone();
-    let recovery = status["recovery_required"].as_array().unwrap();
-    assert!(recovery
-        .iter()
-        .any(|entry| entry["execution_id"] == execution_id
-            && entry["state"] == "committed_outcome_incomplete"));
+    let terminal = status["terminal_outcomes"].as_array().unwrap();
+    assert!(
+        terminal.iter().any(
+            |entry| entry["execution_id"] == execution_id && entry["state"] == "TERMINAL_KNOWN"
+        ),
+        "restarted Gate must report terminal durable truth: {terminal:?}"
+    );
+}
+
+#[test]
+fn late_outcome_for_unknown_execution_refuses() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let outcome = call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": "exec_00000000-0000-4000-8000-000000000000",
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "x"}
+        }),
+    );
+    assert_eq!(err(&outcome), "outcome.unknown_execution");
 }
 
 // ---------------------------------------------------------------------------
@@ -1068,7 +1195,7 @@ fn protocol_surfaces_do_not_leak_argument_values() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok(secretish)),
+        workspace.prepare_payload("action_1", secretish),
     ))
     .clone();
 
@@ -1106,7 +1233,7 @@ fn records_cold_and_retained_gate_timings() {
         &mut gate,
         "p1",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-perf")),
+        workspace.prepare_payload("action_1", "projects/r2-perf"),
     ))
     .clone();
     let prepare_ms = prepare_start.elapsed().as_millis();
@@ -1146,6 +1273,8 @@ impl GateProcess {
                 "--stdio",
                 "--config",
                 workspace.config.to_str().unwrap(),
+                "--engine",
+                workspace.engine.to_str().unwrap(),
                 "--trail",
                 workspace.trail.to_str().unwrap(),
                 "--host-data-root",
@@ -1251,7 +1380,7 @@ fn stdio_gate_hello_prepare_commit_lifecycle() {
     let prepared = process.request(
         "r2",
         "prepare",
-        workspace.prepare_payload("action_1", args_ok("projects/r2-stdio")),
+        workspace.prepare_payload("action_1", "projects/r2-stdio"),
     );
     assert_eq!(prepared["status"], "ok");
     assert_eq!(prepared["result"]["decision"], "allow_prepared");
@@ -1408,6 +1537,8 @@ fn gate_missing_config_fails_closed() {
             "--stdio",
             "--config",
             root.join("nope.json").to_str().unwrap(),
+            "--engine",
+            root.join("nope-engine").to_str().unwrap(),
             "--trail",
             root.join("trail.jsonl").to_str().unwrap(),
             "--host-data-root",
@@ -1432,6 +1563,8 @@ fn gate_wrong_protocol_usage_fails_closed_without_dispatch() {
             "gate",
             "--config",
             workspace.config.to_str().unwrap(),
+            "--engine",
+            workspace.engine.to_str().unwrap(),
             "--trail",
             workspace.trail.to_str().unwrap(),
             "--host-data-root",
@@ -1461,7 +1594,7 @@ fn gate_module_never_reports_provider_effect_execution() {
         ("status", json!({})),
         (
             "prepare",
-            workspace.prepare_payload("action_1", args_ok("projects/r2-struct")),
+            workspace.prepare_payload("action_1", "projects/r2-struct"),
         ),
     ] {
         let response = call(&mut gate, "s", operation, payload);
@@ -1471,4 +1604,457 @@ fn gate_module_never_reports_provider_effect_execution() {
     }
     assert_eq!(gate.provider_invocations(), 0);
     assert!(!workspace.marker_path().exists());
+}
+
+// ---------------------------------------------------------------------------
+// Blocker 1 — Core-authoritative PREPARE
+// ---------------------------------------------------------------------------
+
+#[test]
+fn core_produced_plan_is_authoritative() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-core"),
+    ))
+    .clone();
+    assert_eq!(prepared["decision"], "allow_prepared");
+    assert_eq!(prepared["core_planned"], true);
+    assert_eq!(prepared["action_id"], "action_1");
+    assert_ne!(prepared["evaluation_id"], prepared["action_id"]);
+}
+
+#[test]
+fn forged_caller_plan_is_refused() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let mut payload = workspace.prepare_payload("action_1", "projects/r2-forged");
+    payload["plan"] = json!({
+        "id": "forged/plan",
+        "actions": [{
+            "action_id": "action_1",
+            "capability": "fixture.ping",
+            "arguments": {"message": "x", "path": "projects/evil"}
+        }]
+    });
+    let response = call(&mut gate, "p1", "prepare", payload);
+    assert_eq!(err(&response), "frame.payload_invalid");
+    assert!(response
+        .error
+        .as_ref()
+        .unwrap()
+        .message
+        .contains("caller Plan"));
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert_eq!(status["prepared_count"], 0);
+    assert_eq!(gate.provider_invocations(), 0);
+}
+
+#[test]
+fn no_actions_yields_no_prepared_identity() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let response = call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload_with_eval(
+            "action_1",
+            "projects/r2-noactions",
+            "eval_r2_noactions",
+            false,
+        ),
+    );
+    assert_eq!(err(&response), "prepare.no_actions");
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert_eq!(status["prepared_count"], 0);
+    assert_eq!(gate.provider_invocations(), 0);
+}
+
+#[test]
+fn planner_failure_yields_no_prepared_identity() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    fs::write(workspace.root.join("tethers/complete.tether"), "").unwrap();
+    let response = call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-planner"),
+    );
+    let code = err(&response);
+    assert!(
+        code == "prepare.unavailable"
+            || code == "prepare.planner_error"
+            || code == "prepare.invalid_data"
+            || code == "gate.config_unavailable",
+        "got {code}"
+    );
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert_eq!(status["prepared_count"], 0);
+    assert_eq!(gate.provider_invocations(), 0);
+}
+
+#[test]
+fn stale_action_after_changed_facts_refuses() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+
+    let first = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-stale"),
+    ))
+    .clone();
+    assert_eq!(first["decision"], "allow_prepared");
+
+    let stale = call(
+        &mut gate,
+        "p2",
+        "prepare",
+        workspace.prepare_payload_with_eval(
+            "action_1",
+            "projects/r2-stale",
+            "eval_r2_stale",
+            false,
+        ),
+    );
+    assert_eq!(err(&stale), "prepare.no_actions");
+    assert_eq!(gate.provider_invocations(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Blocker 2 — execution identity continuity
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ask_execution_identity_is_continuous_and_distinct() {
+    let workspace = GateWorkspace::new("ask");
+    let mut gate = workspace.gate();
+
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-cont"),
+    ))
+    .clone();
+    let approval_id = prepared["approval"]["approval_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let evaluation_id = prepared["evaluation_id"].as_str().unwrap().to_owned();
+    let action_id = prepared["action_id"].as_str().unwrap().to_owned();
+    call(
+        &mut gate,
+        "a1",
+        "approval_decision",
+        json!({ "approval_id": approval_id, "decision": "approve" }),
+    );
+    let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+    let execution_id = dispatch["execution_id"].as_str().unwrap().to_owned();
+    assert_ne!(execution_id, evaluation_id);
+    assert_ne!(execution_id, action_id);
+
+    let outcome = call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "r2"}
+        }),
+    );
+    let result = ok(&outcome).clone();
+    assert_eq!(result["execution_id"], execution_id);
+    assert_eq!(result["status"], "succeeded");
+
+    let trail = fs::read_to_string(&workspace.trail).unwrap();
+    let mut saw_authorisation = false;
+    let mut saw_intent = false;
+    let mut saw_outcome = false;
+    for line in trail.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(line).unwrap();
+        let line_execution = value
+            .get("execution_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let kind = value.get("kind").and_then(Value::as_str);
+        if kind == Some("approval_consumed") {
+            saw_authorisation = true;
+            assert_eq!(
+                line_execution, execution_id,
+                "approval authorisation must use Tethers execution_id: {line}"
+            );
+            assert_ne!(line_execution, evaluation_id);
+            assert_ne!(line_execution, action_id);
+        }
+        if value.get("capability_name").is_some()
+            && value.get("arguments").is_some()
+            && value.get("status").is_none()
+            && kind.is_none()
+        {
+            saw_intent = true;
+            assert_eq!(line_execution, execution_id);
+        }
+        if value.get("status").and_then(Value::as_str) == Some("succeeded")
+            && value.get("timestamp_unix_ms").is_some()
+        {
+            saw_outcome = true;
+            assert_eq!(line_execution, execution_id);
+        }
+    }
+    assert!(
+        saw_authorisation,
+        "ASK path must write authorisation evidence"
+    );
+    assert!(saw_intent, "intent must carry the execution identity");
+    assert!(saw_outcome, "outcome must carry the execution identity");
+}
+
+// ---------------------------------------------------------------------------
+// Blocker 3 — output schema validation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn valid_output_passes_trusted_output_schema() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-valid-out"),
+    ))
+    .clone();
+    let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+    let outcome = call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": dispatch["execution_id"],
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "ok"}
+        }),
+    );
+    let result = ok(&outcome).clone();
+    assert_eq!(result["status"], "succeeded");
+    assert_eq!(result["replay_terminal"], "recorded");
+    assert_eq!(gate.provider_invocations(), 0);
+}
+
+#[test]
+fn invalid_claimed_success_becomes_result_validation_failed() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-bad-out"),
+    ))
+    .clone();
+    let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+    let outcome = call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": dispatch["execution_id"],
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"wrong": 123}
+        }),
+    );
+    let result = ok(&outcome).clone();
+    assert_eq!(result["status"], "failed");
+    let trail = fs::read_to_string(&workspace.trail).unwrap();
+    assert!(trail.contains("result_validation_failed"));
+    assert_eq!(gate.provider_invocations(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Blocker 4 — durable recovery extras
+// ---------------------------------------------------------------------------
+
+#[test]
+fn response_lost_terminal_outcome_survives_restart() {
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = {
+        let mut gate = workspace.gate();
+        let prepared = ok(&call(
+            &mut gate,
+            "p1",
+            "prepare",
+            workspace.prepare_payload("action_1", "projects/r2-lost"),
+        ))
+        .clone();
+        let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+        let exec = dispatch["execution_id"].as_str().unwrap().to_owned();
+        call(
+            &mut gate,
+            "o1",
+            "outcome",
+            json!({
+                "execution_id": exec,
+                "classification": "succeeded",
+                "attempted": true,
+                "result": {"echo": "lost"}
+            }),
+        );
+        exec
+    };
+
+    let mut gate2 = workspace.gate();
+    let status = ok(&call(&mut gate2, "s1", "status", json!({}))).clone();
+    let terminal = status["terminal_outcomes"].as_array().unwrap();
+    assert!(
+        terminal.iter().any(
+            |entry| entry["execution_id"] == execution_id && entry["state"] == "TERMINAL_KNOWN"
+        ),
+        "terminal truth must survive restart: {terminal:?}"
+    );
+
+    let again = call(
+        &mut gate2,
+        "o2",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "lost"}
+        }),
+    );
+    let idem = ok(&again).clone();
+    assert_eq!(idem["idempotent"], true);
+
+    let conflict = call(
+        &mut gate2,
+        "o3",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "failed",
+            "attempted": true,
+            "error": "different"
+        }),
+    );
+    assert_eq!(err(&conflict), "outcome.conflict");
+}
+
+#[test]
+fn conflicting_terminal_outcome_in_session_refuses() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-conflict"),
+    ))
+    .clone();
+    let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+    let exec = dispatch["execution_id"].as_str().unwrap();
+    call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": exec,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "first"}
+        }),
+    );
+    let conflict = call(
+        &mut gate,
+        "o2",
+        "outcome",
+        json!({
+            "execution_id": exec,
+            "classification": "failed",
+            "attempted": true,
+            "error": "second"
+        }),
+    );
+    assert_eq!(err(&conflict), "outcome.conflict");
+}
+
+#[test]
+fn durable_disagreement_fails_closed_in_status() {
+    let workspace = GateWorkspace::new("allow");
+    fs::write(
+        &workspace.trail,
+        r#"{"execution_id":"exec_disagree","action_id":"action_1","status":"succeeded","timestamp_unix_ms":1}
+"#,
+    )
+    .unwrap();
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    let recovery = status["recovery_required"].as_array().unwrap();
+    assert!(
+        recovery
+            .iter()
+            .any(|entry| entry["state"] == "outcome_without_intent"),
+        "durable disagreement must be explicit: {recovery:?}"
+    );
+}
+
+#[test]
+fn status_truncation_is_explicit() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert!(status.get("truncated").is_some());
+    assert_eq!(status["truncated"], false);
+}
+
+#[test]
+fn evaluation_id_never_occupies_execution_id_field_in_gate_trail() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-idclass"),
+    ))
+    .clone();
+    let evaluation_id = prepared["evaluation_id"].as_str().unwrap().to_owned();
+    let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+    let execution_id = dispatch["execution_id"].as_str().unwrap().to_owned();
+    call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "ids"}
+        }),
+    );
+
+    let trail = fs::read_to_string(&workspace.trail).unwrap();
+    for line in trail.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(line).unwrap();
+        if value.get("execution_id").and_then(Value::as_str) == Some(evaluation_id.as_str()) {
+            panic!("evaluation_id occupied execution_id field: {line}");
+        }
+    }
 }

@@ -252,6 +252,22 @@ the Host executes it. The Authority Gate is non-executing. It reports
 its PREPARE result always carries `authorizes_dispatch: false`. Delegation
 moves the authority decision into Tethers; it does not move execution there.
 
+Shape D specifics:
+
+- **PREPARE uses Tethers Core.** The Gate invokes
+  `HostExecutionService::plan_only` with the canonical absolute `--engine`
+  path; the caller supplies run-input only and never an authoritative Plan
+  (a `plan` field is refused with `prepare.caller_plan_forbidden`).
+- **Durable restart reconciliation exists.** `status` reconstructs
+  unresolved commits (`COMMITTED_OUTCOME_INCOMPLETE`), terminal outcomes
+  (`TERMINAL_KNOWN`), and durable disagreements from the Trail and replay
+  ledger, and a late `outcome` reconstructs from durable intent plus the
+  replay claim rather than being refused.
+- **Successful results are schema validated.** A `succeeded` result is
+  checked against the trusted capability output schema
+  (`validation::validate_output`); an invalid result is recorded as `failed`
+  with `reason_code: result_validation_failed` and terminal replay `Failed`.
+
 Neither variant makes the other mandatory. A Host that implements its own
 policy (Shapes A–C, R0/R1) remains fully valid; a Host that delegates only
 the authority seam while keeping its own executor (Shape D) is equally

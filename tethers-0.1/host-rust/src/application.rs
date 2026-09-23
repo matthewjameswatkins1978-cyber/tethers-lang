@@ -802,6 +802,7 @@ pub fn run() {
                 Some(CliCommand::Gate {
                     stdio,
                     config,
+                    engine,
                     trail,
                     host_data_root,
                 }),
@@ -809,6 +810,7 @@ pub fn run() {
             let result = crate::gate_command::run_gate(crate::gate_command::GateCommandArgs {
                 stdio,
                 config,
+                engine,
                 trail,
                 host_data_root,
             });
@@ -1516,7 +1518,9 @@ fn approval_trail_entry(
     reason_code: &str,
 ) -> dispatch::AuthorisationEntry {
     dispatch::AuthorisationEntry {
-        execution_id: proof.evaluation_id.clone(),
+        // Pre-admission approval audit has no Tethers execution identity yet.
+        // Evaluation IDs must never occupy the execution_id field.
+        execution_id: String::new(),
         action_id: proof.action_id.clone(),
         capability_name: proof.capability_name.clone(),
         capability_version: proof.capability_version,

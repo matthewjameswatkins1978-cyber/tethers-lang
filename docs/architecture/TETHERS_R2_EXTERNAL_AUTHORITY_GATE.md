@@ -74,17 +74,23 @@ tables, bounds, error codes, and example frames are frozen in
 CLI surface:
 
 ```text
-tethers gate --stdio --config PATH --trail ABS --host-data-root ABS
+tethers gate --stdio --config ABS --engine ABS --trail ABS --host-data-root ABS
 ```
 
-`--stdio` is mandatory; all three paths must be absolute; the config must
-exist. Violations fail closed before any frame is accepted
-(`GATE_STDIO_REQUIRED`, `GATE_PATH_NOT_ABSOLUTE`, `GATE_CONFIG_NOT_FOUND`).
+`--stdio` is mandatory; all four paths must be absolute; the config and the
+engine must be existing files. `--engine` is the canonical absolute path to
+the Tethers Core executable that PREPARE invokes. Violations fail closed
+before any frame is accepted (`GATE_STDIO_REQUIRED`,
+`GATE_PATH_NOT_ABSOLUTE`, `GATE_CONFIG_NOT_FOUND`, `GATE_ENGINE_NOT_FOUND`).
 
 Callers must never supply authority booleans — `permission`, `within_scope`,
-`trusted`, `approved`, `authority_granted`, `granted` — on `prepare` (top
-level or nested in `plan`). The frame layer rejects them with
-`frame.forbidden_authority_key`. The Gate recomputes every decision itself.
+`trusted`, `approved`, `authority_granted`, `granted` — on `prepare`. The
+frame layer rejects them with `frame.forbidden_authority_key`. Callers must
+not supply a `plan` either: PREPARE takes run-input shape only
+(`action_id`, `evaluation_id`, `tether{id,version}`, `event{id,name,data}`,
+`facts`, optional `observations`), and a `plan` field is refused with
+`prepare.caller_plan_forbidden` (`frame.payload_invalid`, message prefix
+"caller Plan"). The Gate recomputes every decision itself.
 
 ## PREPARE versus COMMIT
 
@@ -97,12 +103,22 @@ level or nested in `plan`). The frame layer rejects them with
 | Replay | Not touched (`replay_mutated: false`) | Fresh admission required; guard held |
 | Provider calls | 0 | 0 |
 
-PREPARE loads the current runtime, selects the Tether, reconstructs the
-proposed Action from the supplied `tethers.plan/1` material, assesses scope,
-and evaluates current policy. It stores a `prepared_id` bound to canonical
-evaluation material (including the runtime config digest) and, when the
-decision is `ask`, creates an exact ApprovalStore record. PREPARE mutates no
-replay state and never authorises physical execution.
+PREPARE is Core-authoritative. It loads the current runtime, selects the
+Tether, and invokes real Tethers Core via `HostExecutionService::plan_only`
+with `--engine` (the canonical absolute path). Core produces the Plan; the
+Gate selects the requested `action_id` from that Plan only — a
+caller-supplied `plan` is refused (`prepare.caller_plan_forbidden`). Bridge
+pins (`manifest_digest`, `bridge_capability_version`,
+`bridge_provider_identity`) are host-side projections from the trusted
+manifest store after Core planning; they are not caller authority. The Gate
+then assesses scope and evaluates current policy. It stores a `prepared_id`
+bound to canonical evaluation material (including the runtime config digest)
+and, when the decision is `ask`, creates an exact ApprovalStore record. A
+Core plan with no Actions refuses with `prepare.no_actions` and creates no
+prepared identity; planner failure refuses with `prepare.unavailable`,
+`prepare.planner_error`, or `prepare.invalid_data`, also with no prepared
+identity. PREPARE mutates no replay state and never authorises physical
+execution.
 
 COMMIT re-does the consequential half against current truth. It refuses a
 forged or unknown `prepared_id` (`commit.unknown_prepared`), refuses a second
@@ -126,6 +142,10 @@ Approval is Tethers-owned and exact:
 - One-shot consumption: `commit.approval_consume_failed` if an approved
   record cannot be consumed, and consumption is recorded durably in the
   Trail (`approval_consumed` / `exact_approved_ask`).
+- Execution-id continuity: the ASK authorisation entry records
+  `admission.execution_id()` as the Trail `execution_id` for
+  `approval_consumed`; `evaluation_id` never occupies `execution_id`. A
+  pre-admission `approval_requested` entry carries an empty `execution_id`.
 - Not standing permission: `authorizes_dispatch` stays `false` after
   approval, and an approval never overrides a fresh Deny (`commit.deny`). A
   wrong, missing, or not-yet-approved approval surfaces as
@@ -186,6 +206,10 @@ The Host executes physically, then reports one `outcome` bound to the
   (`outcome.unknown_execution` otherwise);
 - classification is `succeeded` \| `failed` \| `uncertain`, with `succeeded`
   requiring `result` and `failed` requiring `error`;
+- a `succeeded` `result` is validated against the trusted capability output
+  schema via `validation::validate_output`; an invalid result is recorded as
+  `failed` with `reason_code: result_validation_failed` and terminal replay
+  `Failed`;
 - `result` and `error` are mutually exclusive;
 - `external_execution_identity` must not equal the Tethers `ActionId`
   (`outcome.identity_collapse`) — the external execution identity remains
@@ -199,23 +223,38 @@ A repeat of the same classification is idempotent (`idempotent: true`); a
 different classification for the same execution is refused
 (`outcome.conflict`).
 
+A late `outcome` after a durable restart is reconstructed rather than
+refused: the Gate rebuilds committed truth from the Trail intent plus the
+replay claim (`claim_material_for`), validates the result against the
+trusted manifest's output schema, writes the `OutcomeEntry`, and publishes
+terminal replay state on the recovered armed admission — the result carries
+`recovered: true` and `replay_terminal: "recorded"` when recovered durable
+state is `InvocationArmed` (otherwise `recovery_required`). Only an
+`execution_id` with no durable intent or replay claim remains
+`outcome.unknown_execution`.
+
 ## Crash recovery
 
 The admission guard is held in-process from COMMIT to OUTCOME. Recovery
 semantics are explicit, never guessed:
 
-- **Restart before OUTCOME.** The in-memory committed map is empty, so a late
-  `outcome` for the prior execution is refused as `outcome.unknown_execution`
-  rather than reconstructed. The durable Trail still holds the intent, and
-  `status.recovery_required` lists it as
-  `committed_outcome_incomplete`.
+- **Restart before OUTCOME.** `status` reconstructs from the durable Trail
+  and replay ledger: `unresolved_commits` carries state
+  `COMMITTED_OUTCOME_INCOMPLETE`, `terminal_outcomes` carries
+  `TERMINAL_KNOWN`, and `recovery_required` lists disagreements (e.g.
+  `outcome_without_intent`, `trail_replay_binding_disagreement`), with an
+  explicit `truncated` flag when any collection exceeds
+  `MAX_STATUS_ENTRIES`. A late `outcome` is reconstructed from Trail intent
+  plus the replay claim (see Outcome correlation); only an `execution_id`
+  with no durable intent is refused as `outcome.unknown_execution`.
 - **Outcome recorded but guard lost** (restart between commit and terminal
   publication): the Trail outcome is written, but `replay_terminal` reports
   `recovery_required`. The Gate never claims success or failure beyond the
   recorded observation.
-- **Intent without outcome.** `status` scans the Trail for intent records
-  lacking a matching outcome and reports them, bounded to
-  `MAX_STATUS_ENTRIES`.
+- **Intent without outcome.** `status` reports Trail intent records lacking
+  a matching outcome as `unresolved_commits`
+  (`COMMITTED_OUTCOME_INCOMPLETE`), bounded to `MAX_STATUS_ENTRIES` with
+  `truncated` set when the bound is hit.
 - **Approvals.** Process-local and restart-expiring; `status` on a fresh
   process shows no pending approvals.
 - **No silent reset.** Recovery surfaces unresolved state; it never repairs
@@ -259,7 +298,9 @@ The claim is enforced structurally rather than documented as intent:
   including `allow_prepared`.
 - Callers cannot inject authority booleans into `prepare`
   (`frame.forbidden_authority_key`), and unknown injected fields never change
-  the recomputed decision.
+  the recomputed decision. Callers cannot supply a Plan at all: a `plan`
+  field is refused (`prepare.caller_plan_forbidden`), because the
+  authoritative Plan is produced by Tethers Core during PREPARE.
 - Only COMMIT produces a `tethers.dispatch/1`, and even that record states
   `authorizes_physical_execution_by_tethers: false`.
 

@@ -413,13 +413,13 @@ fn reject_duplicate_top_level(raw: &str, _object: &Map<String, Value>) -> Result
 }
 
 /// Parse a `prepare` payload.
+///
+/// The Host supplies only evaluation identity, the waking event, Facts, the
+/// requested Action id, and bounded physical observations. It never supplies
+/// a Plan: Tethers Core produces the Plan during PREPARE.
 #[derive(Debug, Clone)]
 pub struct PreparePayload {
-    pub tether_id: String,
-    pub tether_version: String,
-    pub evaluation_id: String,
-    pub event_id: String,
-    pub plan: Value,
+    pub run_input: crate::run_input::RunInput,
     pub action_id: String,
     pub observations: Observations,
 }
@@ -488,26 +488,40 @@ impl Observations {
 }
 
 pub fn parse_prepare_payload(payload: &Map<String, Value>) -> Result<PreparePayload, FrameError> {
-    let tether_id = required_nonempty_string(payload, "tether_id")?;
-    let tether_version = required_nonempty_string(payload, "tether_version")?;
-    let evaluation_id = required_nonempty_string(payload, "evaluation_id")?;
-    let event_id = required_nonempty_string(payload, "event_id")?;
-    let action_id = required_nonempty_string(payload, "action_id")?;
-    let plan = payload
-        .get("plan")
-        .cloned()
-        .ok_or(FrameError::MissingField("plan"))?;
-    if !plan.is_object() {
-        return Err(FrameError::WrongType { field: "plan" });
+    // Caller-shaped Plan material is never authoritative. Refuse it.
+    if payload.contains_key("plan") {
+        return Err(FrameError::PayloadInvalid {
+            code: "prepare.caller_plan_forbidden",
+            message: "prepare does not accept a caller Plan; Tethers Core produces the Plan"
+                .to_owned(),
+        });
     }
-    reject_nested_authority_keys(&plan)?;
+    let action_id = required_nonempty_string(payload, "action_id")?;
     let observations = Observations::parse(payload)?;
+
+    // Remaining fields must form one canonical run-input document.
+    let mut run_doc = Map::new();
+    for (key, value) in payload {
+        if key == "action_id" || key == "observations" {
+            continue;
+        }
+        run_doc.insert(key.clone(), value.clone());
+    }
+    if !run_doc.contains_key("format_version") {
+        run_doc.insert("format_version".to_owned(), Value::String("1".to_owned()));
+    }
+    reject_nested_authority_keys(&Value::Object(run_doc.clone()))?;
+    let run_text =
+        serde_json::to_string(&Value::Object(run_doc)).map_err(|_| FrameError::InvalidJson)?;
+    let run_input = crate::run_input::parse_run_input(&run_text).map_err(|error| {
+        FrameError::PayloadInvalid {
+            code: "prepare.invalid_run_input",
+            message: error.to_string(),
+        }
+    })?;
+
     Ok(PreparePayload {
-        tether_id,
-        tether_version,
-        evaluation_id,
-        event_id,
-        plan,
+        run_input,
         action_id,
         observations,
     })
@@ -775,11 +789,43 @@ mod tests {
     }
 
     #[test]
-    fn prepare_payload_requires_identity_fields() {
-        let line = frame(OP_PREPARE, r#"{"plan":{}}"#);
+    fn prepare_payload_requires_run_input_identity_fields() {
+        let line = frame(OP_PREPARE, r#"{"action_id":"action_1"}"#);
         let request = parse_frame(&line).unwrap();
         let error = parse_prepare_payload(&request.payload).unwrap_err();
-        assert_eq!(error.code(), "frame.missing_field");
+        assert_eq!(error.code(), "frame.payload_invalid");
+    }
+
+    #[test]
+    fn prepare_payload_rejects_caller_plan() {
+        let line = frame(
+            OP_PREPARE,
+            r#"{"action_id":"action_1","plan":{"id":"p","actions":[]}}"#,
+        );
+        let request = parse_frame(&line).unwrap();
+        let error = parse_prepare_payload(&request.payload).unwrap_err();
+        assert_eq!(error.code(), "frame.payload_invalid");
+        assert!(error.to_string().contains("caller Plan"));
+    }
+
+    #[test]
+    fn prepare_payload_accepts_run_input_shape() {
+        let line = frame(
+            OP_PREPARE,
+            r#"{
+                "action_id": "action_1",
+                "evaluation_id": "eval_1",
+                "tether": {"id": "t1", "version": "1"},
+                "event": {"id": "evt_1", "name": "coding.task_completed", "data": {}},
+                "facts": {"project.type": "software"}
+            }"#,
+        );
+        let request = parse_frame(&line).unwrap();
+        let prepare = parse_prepare_payload(&request.payload).unwrap();
+        assert_eq!(prepare.action_id, "action_1");
+        assert_eq!(prepare.run_input.evaluation_id, "eval_1");
+        assert_eq!(prepare.run_input.tether.id, "t1");
+        assert_eq!(prepare.run_input.event.id, "evt_1");
     }
 
     #[test]

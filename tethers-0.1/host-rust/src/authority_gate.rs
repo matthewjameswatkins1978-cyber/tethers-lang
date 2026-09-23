@@ -15,6 +15,7 @@ use crate::dispatch::{self, ActionId, ExecutionId, FileTrail, Trail};
 use crate::gate_protocol::{
     AuthorityResponse, Observations, PreparePayload, AUTHORITY_PROTOCOL, MAX_STATUS_ENTRIES,
 };
+use crate::host_execution::{HostExecutionService, PlanResult, PreparedEvaluationInput};
 use crate::policy::{self, PermissionDecision, PolicyReason, ProposedAction};
 use crate::replay;
 use crate::replay_runtime::{
@@ -22,6 +23,7 @@ use crate::replay_runtime::{
 };
 use crate::resolver;
 use crate::runtime_config::load_runtime_config;
+use crate::validation;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -32,6 +34,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Debug, Clone)]
 pub struct GateConfig {
     pub config_path: PathBuf,
+    pub engine_path: PathBuf,
     pub trail_path: PathBuf,
     pub host_data_root: PathBuf,
 }
@@ -63,6 +66,8 @@ struct CommittedRecord {
     provider_identity: String,
     argument_digest: String,
     prepared_id: String,
+    /// Trusted capability output schema captured at COMMIT for OUTCOME validation.
+    output_schema: Value,
     outcome_status: Option<String>,
     /// Held across COMMIT → OUTCOME so terminal replay publication stays fresh.
     guard: Option<Box<dyn ReplayAdmissionGuard>>,
@@ -188,7 +193,7 @@ impl AuthorityGate {
     }
 
     // -----------------------------------------------------------------------
-    // PREPARE — current read-only authority precheck. Does not authorise.
+    // PREPARE — Core-authoritative read-only precheck. Does not authorise.
     // -----------------------------------------------------------------------
 
     fn op_prepare(&mut self, payload: &Map<String, Value>) -> Result<Value, GateError> {
@@ -196,10 +201,77 @@ impl AuthorityGate {
         let runtime = self.load_runtime()?;
         let config_digest = digest_config(&self.config.config_path)?;
 
-        let tether = select_tether(&runtime, &prepare.tether_id, &prepare.tether_version)?;
+        let tether = select_tether(
+            &runtime,
+            &prepare.run_input.tether.id,
+            &prepare.run_input.tether.version,
+        )?;
         let _ = tether;
 
-        let action = proposed_action_from_plan(&prepare)?;
+        // Tethers Core produces the Plan. The Host never supplies one.
+        let evaluation_input = PreparedEvaluationInput {
+            tether_id: prepare.run_input.tether.id.clone(),
+            tether_version: prepare.run_input.tether.version.clone(),
+            evaluation_id: prepare.run_input.evaluation_id.clone(),
+            anchor_event: json!({
+                "id": prepare.run_input.event.id,
+                "name": prepare.run_input.event.name,
+                "data": prepare.run_input.event.data,
+            }),
+            facts: prepare.run_input.facts.clone(),
+        };
+        let plan_result = self.core_plan(&runtime, &evaluation_input)?;
+        let (evaluation_id, event_id, plan) = match plan_result {
+            PlanResult::PlanAvailable {
+                evaluation_id,
+                event_id,
+                plan,
+                ..
+            } => (evaluation_id, event_id, plan),
+            PlanResult::NoActions { .. } => {
+                return Err(GateError::new(
+                    "prepare.no_actions",
+                    "Tethers Core produced no Actions for this evaluation",
+                ));
+            }
+            PlanResult::PlannerError { code, message, .. } => {
+                return Err(GateError::new(
+                    "prepare.planner_error",
+                    format!("Tethers Core planning failed: {code}: {message}"),
+                ));
+            }
+            PlanResult::Interrupted => {
+                return Err(GateError::new(
+                    "prepare.interrupted",
+                    "planning was interrupted",
+                ));
+            }
+            PlanResult::InvalidData { message, .. } => {
+                return Err(GateError::new(
+                    "prepare.invalid_data",
+                    format!("Tethers Core rejected the evaluation: {message}"),
+                ));
+            }
+            PlanResult::Unavailable { reason, .. } => {
+                return Err(GateError::new(
+                    "prepare.unavailable",
+                    format!("Tethers Core planning is unavailable: {reason}"),
+                ));
+            }
+        };
+
+        let action = proposed_action_from_core_plan(&evaluation_id, &plan, &prepare.action_id)?;
+        // Core produces Action identity and arguments. Bridge pins are
+        // host-side trusted projections from the admitted manifest store —
+        // independent of live provider observations (those affect policy
+        // availability, not pin identity).
+        let pin_availability = resolver::ProviderAvailability::from_identities(
+            runtime
+                .providers()
+                .iter()
+                .map(|provider| provider.identity.as_str()),
+        );
+        let action = ensure_bridge_pins(action, &runtime, &pin_availability)?;
         let scope = runtime.assess_action_scope(&action);
         let availability = availability_for(&runtime, &prepare.observations);
         let evaluation = policy::evaluate_effective_policy(
@@ -240,10 +312,10 @@ impl AuthorityGate {
             approval_id = record.map(|record| record.approval_id);
         }
 
-        let prepared_id = prepared_identity(&prepare, &action, &config_digest);
+        let prepared_id = prepared_identity(&prepare, &action, &event_id, &config_digest);
 
         // Replacing an identical prepared identity is refused: each prepare
-        // creates a fresh opaque handle bound to this evaluation material.
+        // creates a fresh opaque handle bound to this Core evaluation material.
         if self.prepared.contains_key(&prepared_id) {
             return Err(GateError::new(
                 "prepare.duplicate_identity",
@@ -256,9 +328,9 @@ impl AuthorityGate {
             PreparedRecord {
                 prepared_id: prepared_id.clone(),
                 action: action.clone(),
-                event_id: prepare.event_id.clone(),
-                tether_id: prepare.tether_id.clone(),
-                tether_version: prepare.tether_version.clone(),
+                event_id: event_id.clone(),
+                tether_id: prepare.run_input.tether.id.clone(),
+                tether_version: prepare.run_input.tether.version.clone(),
                 prepare_decision: decision,
                 approval_id: approval_id.clone(),
                 observations: prepare.observations.clone(),
@@ -273,10 +345,11 @@ impl AuthorityGate {
             "reason": reason,
             // PREPARE never authorises physical execution.
             "authorizes_dispatch": false,
-            "evaluation_id": prepare.evaluation_id,
+            "evaluation_id": evaluation_id,
             "action_id": prepare.action_id,
-            "tether_id": prepare.tether_id,
-            "tether_version": prepare.tether_version,
+            "tether_id": prepare.run_input.tether.id,
+            "tether_version": prepare.run_input.tether.version,
+            "core_planned": true,
             "provider_invocations": self.provider_invocations,
             "execution": {
                 "performed": false,
@@ -299,6 +372,27 @@ impl AuthorityGate {
             });
         }
         Ok(result)
+    }
+
+    /// Run Tethers Core planning through the current engine. Deterministic
+    /// semantic evaluation only — never a provider or effectful capability.
+    fn core_plan(
+        &self,
+        runtime: &PreparedRuntime,
+        input: &PreparedEvaluationInput,
+    ) -> Result<PlanResult, GateError> {
+        let service = HostExecutionService::new(
+            runtime,
+            &self.config.engine_path,
+            &self.config.trail_path,
+            Some(&self.config.host_data_root),
+        );
+        service.plan_only(input).map_err(|error| {
+            GateError::new(
+                "prepare.unavailable",
+                format!("Tethers Core planning failed: {error}"),
+            )
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -575,6 +669,9 @@ impl AuthorityGate {
         }
 
         // Consume an approved Ask only after the fresh replay claim exists.
+        // The authorisation entry must carry the Tethers execution identity,
+        // never the evaluation identity.
+        let execution_id_str = admission.execution_id().to_owned();
         if let Some((approval_id, proof)) = approval_consume.as_ref() {
             let consumed = self.approvals.consume(approval_id, proof);
             let Ok(consumed) = consumed else {
@@ -585,7 +682,7 @@ impl AuthorityGate {
                 ));
             };
             let entry = dispatch::AuthorisationEntry {
-                execution_id: consumed.proof.evaluation_id.clone(),
+                execution_id: execution_id_str.clone(),
                 action_id: consumed.proof.action_id.clone(),
                 capability_name: consumed.proof.capability_name.clone(),
                 capability_version: consumed.proof.capability_version,
@@ -612,7 +709,6 @@ impl AuthorityGate {
             ));
         }
 
-        let execution_id_str = admission.execution_id().to_owned();
         let execution_id = ExecutionId::from_replay(&execution_id_str);
         let ready = dispatch::prepare_and_record(
             decision.clone(),
@@ -673,6 +769,8 @@ impl AuthorityGate {
             "provider_invocations": self.provider_invocations,
         });
 
+        let output_schema = resolved.manifest().manifest().output_schema.clone();
+
         self.committed.insert(
             execution_id_str.clone(),
             CommittedRecord {
@@ -685,6 +783,7 @@ impl AuthorityGate {
                 provider_identity: ready.provider_identity().to_owned(),
                 argument_digest: approval::digest(ready.arguments()),
                 prepared_id: prepared_id_owned,
+                output_schema,
                 outcome_status: None,
                 guard: Some(admission),
             },
@@ -700,6 +799,19 @@ impl AuthorityGate {
     fn op_outcome(&mut self, payload: &Map<String, Value>) -> Result<Value, GateError> {
         let outcome = crate::gate_protocol::parse_outcome_payload(payload).map_err(frame_err)?;
 
+        // Same-session path: in-memory committed record with a held guard.
+        if self.committed.contains_key(&outcome.execution_id) {
+            return self.op_outcome_session(outcome);
+        }
+
+        // Durable restart path: reconstruct from Trail + replay ledger.
+        self.op_outcome_durable(outcome)
+    }
+
+    fn op_outcome_session(
+        &mut self,
+        outcome: crate::gate_protocol::OutcomePayload,
+    ) -> Result<Value, GateError> {
         let record = self.committed.get(&outcome.execution_id).ok_or_else(|| {
             GateError::new(
                 "outcome.unknown_execution",
@@ -738,6 +850,9 @@ impl AuthorityGate {
             }
         }
 
+        // Successful results must pass the trusted capability output schema.
+        let effective = classify_outcome(&record.output_schema, outcome)?;
+
         let action_id = record.action_id.clone();
         let evaluation_id = record.evaluation_id.clone();
         let capability_name = record.capability_name.clone();
@@ -754,12 +869,12 @@ impl AuthorityGate {
             .unwrap_or_default();
 
         let entry = dispatch::OutcomeEntry {
-            execution_id: outcome.execution_id.clone(),
+            execution_id: effective.execution_id.clone(),
             action_id: action_id.clone(),
-            status: outcome.classification.clone(),
-            result: outcome.result.clone(),
-            error_message: outcome.error.clone(),
-            reason_code: outcome.reason_code.clone(),
+            status: effective.classification.clone(),
+            result: effective.result.clone(),
+            error_message: effective.error.clone(),
+            reason_code: effective.reason_code.clone(),
             timestamp_unix_ms: timestamp_ms,
             semantic_position: None,
         };
@@ -777,7 +892,7 @@ impl AuthorityGate {
             )
         })?;
 
-        let terminal_state = match outcome.classification.as_str() {
+        let terminal_state = match effective.classification.as_str() {
             "succeeded" => replay::ReplayState::Succeeded,
             "failed" => replay::ReplayState::Failed,
             _ => replay::ReplayState::Uncertain,
@@ -785,7 +900,7 @@ impl AuthorityGate {
 
         let record = self
             .committed
-            .get_mut(&outcome.execution_id)
+            .get_mut(&effective.execution_id)
             .expect("committed record checked above");
 
         let mut replay_terminal = "recorded";
@@ -798,18 +913,15 @@ impl AuthorityGate {
             }
             drop(guard);
         } else {
-            // Guard lost (e.g. after restart). Physical outcome remains true;
-            // durable replay terminal requires recovery. Never claim success
-            // or failure beyond the recorded observation.
             replay_terminal = "recovery_required";
         }
-        record.outcome_status = Some(outcome.classification.clone());
+        record.outcome_status = Some(effective.classification.clone());
 
         Ok(json!({
-            "execution_id": outcome.execution_id,
-            "status": outcome.classification,
-            "attempted": outcome.attempted,
-            "external_execution_identity": outcome.external_execution_identity,
+            "execution_id": effective.execution_id,
+            "status": effective.classification,
+            "attempted": effective.attempted,
+            "external_execution_identity": effective.external_execution_identity,
             "evaluation_id": evaluation_id,
             "action_id": action_id,
             "capability": {
@@ -827,6 +939,165 @@ impl AuthorityGate {
         }))
     }
 
+    /// Late OUTCOME after Gate restart: reconstruct durable committed truth
+    /// from Trail intent + replay claim without the previous process map.
+    fn op_outcome_durable(
+        &mut self,
+        outcome: crate::gate_protocol::OutcomePayload,
+    ) -> Result<Value, GateError> {
+        let trail_view = scan_trail_full(&self.config.trail_path, &self.config.host_data_root);
+        let Some(intent) = trail_view.intents.get(&outcome.execution_id) else {
+            return Err(GateError::new(
+                "outcome.unknown_execution",
+                "execution_id has no durable committed intent",
+            ));
+        };
+
+        if let Some(existing) = trail_view.outcomes.get(&outcome.execution_id) {
+            if existing.status == outcome.classification {
+                return Ok(json!({
+                    "execution_id": outcome.execution_id,
+                    "status": existing.status,
+                    "idempotent": true,
+                    "recovered": true,
+                    "provider_invocations": self.provider_invocations,
+                }));
+            }
+            return Err(GateError::new(
+                "outcome.conflict",
+                "a different outcome was already recorded for this execution",
+            ));
+        }
+
+        if !outcome.attempted {
+            return Err(GateError::new(
+                "outcome.not_attempted",
+                "a committed dispatch must report an attempted physical execution",
+            ));
+        }
+
+        // Resolve trusted output schema from the durable intent's manifest pin.
+        let runtime = self.load_runtime()?;
+        let verified = runtime
+            .trusted_store()
+            .get_by_digest(&intent.manifest_digest)
+            .ok_or_else(|| {
+                GateError::new(
+                    "outcome.unavailable",
+                    "trusted manifest for durable intent is unavailable",
+                )
+            })?;
+        let output_schema = verified.manifest().output_schema.clone();
+
+        let effective = classify_outcome(&output_schema, outcome)?;
+
+        // Re-admit the durable claim so terminal replay publication can complete.
+        let logical_key = trail_view
+            .logical_keys
+            .get(&effective.execution_id)
+            .cloned()
+            .ok_or_else(|| {
+                GateError::new(
+                    "outcome.unknown_execution",
+                    "durable replay claim is missing for this execution",
+                )
+            })?;
+        let binding = trail_view
+            .bindings
+            .get(&effective.execution_id)
+            .cloned()
+            .ok_or_else(|| {
+                GateError::new(
+                    "outcome.unknown_execution",
+                    "durable replay binding is missing for this execution",
+                )
+            })?;
+
+        let replay_authority = FileReplayAuthority::new(Some(&self.config.host_data_root));
+        let mut admission = replay_authority
+            .admit(&logical_key, &binding)
+            .map_err(|_| {
+                GateError::new(
+                    "outcome.unavailable",
+                    "durable replay admission is unavailable",
+                )
+            })?;
+        if admission.execution_id() != effective.execution_id {
+            drop(admission);
+            return Err(GateError::new(
+                "outcome.unknown_execution",
+                "replay claim does not match the reported execution identity",
+            ));
+        }
+
+        let mut trail = self.open_trail()?;
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_default();
+        let entry = dispatch::OutcomeEntry {
+            execution_id: effective.execution_id.clone(),
+            action_id: intent.action_id.clone(),
+            status: effective.classification.clone(),
+            result: effective.result.clone(),
+            error_message: effective.error.clone(),
+            reason_code: effective.reason_code.clone(),
+            timestamp_unix_ms: timestamp_ms,
+            semantic_position: None,
+        };
+        trail.append_outcome(&entry).map_err(|error| {
+            GateError::new(
+                "outcome.trail_failed",
+                format!("outcome could not be recorded durably: {error}"),
+            )
+        })?;
+
+        let outcome_digest = replay::durable_outcome_digest(&entry).map_err(|_| {
+            GateError::new(
+                "outcome.digest_failed",
+                "outcome digest could not be computed",
+            )
+        })?;
+        let terminal_state = match effective.classification.as_str() {
+            "succeeded" => replay::ReplayState::Succeeded,
+            "failed" => replay::ReplayState::Failed,
+            _ => replay::ReplayState::Uncertain,
+        };
+
+        // Recovered admissions are not fresh; terminal publication is allowed
+        // only when durable state is already armed (COMMIT completed).
+        let replay_terminal = if admission.state() == replay::ReplayState::InvocationArmed
+            && admission
+                .publish_terminal(terminal_state, outcome_digest)
+                .is_ok()
+        {
+            "recorded"
+        } else {
+            "recovery_required"
+        };
+        drop(admission);
+
+        Ok(json!({
+            "execution_id": effective.execution_id,
+            "status": effective.classification,
+            "attempted": effective.attempted,
+            "external_execution_identity": effective.external_execution_identity,
+            "action_id": intent.action_id,
+            "capability": {
+                "name": intent.capability_name,
+                "version": intent.capability_version,
+            },
+            "manifest_digest": intent.manifest_digest,
+            "provider_identity": intent.provider_identity,
+            "argument_digest": intent.argument_digest,
+            "recovered": true,
+            "replay_terminal": replay_terminal,
+            "trail_outcome_recorded": true,
+            "idempotent": false,
+            "provider_invocations": self.provider_invocations,
+        }))
+    }
+
     // -----------------------------------------------------------------------
     // STATUS — bounded reconciliation surface for a reconnecting Host.
     // -----------------------------------------------------------------------
@@ -835,8 +1106,49 @@ impl AuthorityGate {
         let mut pending_approvals = Vec::new();
         let mut unresolved = Vec::new();
         let mut terminal = Vec::new();
+        let mut truncated = false;
 
+        // Durable Trail + replay views survive Gate restart.
+        let trail_view = scan_trail_full(&self.config.trail_path, &self.config.host_data_root);
+        for (execution_id, intent) in &trail_view.intents {
+            let evaluation_id = trail_view
+                .bindings
+                .get(execution_id)
+                .map(|binding| binding.evaluation_id.as_str())
+                .unwrap_or_default();
+            let summary = json!({
+                "execution_id": execution_id,
+                "action_id": intent.action_id,
+                "evaluation_id": evaluation_id,
+                "capability": {
+                    "name": intent.capability_name,
+                    "version": intent.capability_version,
+                },
+                "argument_digest": intent.argument_digest,
+                "state": if trail_view.outcomes.contains_key(execution_id) {
+                    "TERMINAL_KNOWN"
+                } else {
+                    "COMMITTED_OUTCOME_INCOMPLETE"
+                },
+            });
+            if trail_view.outcomes.contains_key(execution_id) {
+                if terminal.len() < MAX_STATUS_ENTRIES {
+                    terminal.push(summary);
+                } else {
+                    truncated = true;
+                }
+            } else if unresolved.len() < MAX_STATUS_ENTRIES {
+                unresolved.push(summary);
+            } else {
+                truncated = true;
+            }
+        }
+
+        // In-memory session records that are not yet durable-merged.
         for record in self.committed.values() {
+            if trail_view.intents.contains_key(&record.execution_id) {
+                continue;
+            }
             let summary = json!({
                 "execution_id": record.execution_id,
                 "action_id": record.action_id,
@@ -848,13 +1160,38 @@ impl AuthorityGate {
                 "argument_digest": record.argument_digest,
                 "prepared_id": record.prepared_id,
                 "outcome": record.outcome_status,
+                "state": if record.outcome_status.is_some() {
+                    "TERMINAL_KNOWN"
+                } else {
+                    "COMMITTED_OUTCOME_INCOMPLETE"
+                },
             });
             if record.outcome_status.is_some() {
                 if terminal.len() < MAX_STATUS_ENTRIES {
                     terminal.push(summary);
+                } else {
+                    truncated = true;
                 }
             } else if unresolved.len() < MAX_STATUS_ENTRIES {
                 unresolved.push(summary);
+            } else {
+                truncated = true;
+            }
+        }
+
+        // Trail outcome without intent, or intent binding disagreement → recovery.
+        let mut recovery_required = trail_view.disagreements.clone();
+        for (execution_id, outcome) in &trail_view.outcomes {
+            if !trail_view.intents.contains_key(execution_id) {
+                if recovery_required.len() < MAX_STATUS_ENTRIES {
+                    recovery_required.push(json!({
+                        "execution_id": execution_id,
+                        "state": "outcome_without_intent",
+                        "status": outcome.status,
+                    }));
+                } else {
+                    truncated = true;
+                }
             }
         }
 
@@ -875,11 +1212,10 @@ impl AuthorityGate {
             }
         }
 
-        let trail_recovery = scan_trail_recovery(&self.config.trail_path);
-
         let mut prepared_views = Vec::new();
         for record in self.prepared.values() {
             if prepared_views.len() >= MAX_STATUS_ENTRIES {
+                truncated = true;
                 break;
             }
             prepared_views.push(json!({
@@ -902,9 +1238,10 @@ impl AuthorityGate {
             "provider_invocations": self.provider_invocations,
             "pending_approvals": pending_approvals,
             "unresolved_commits": unresolved,
-            "prepared": prepared_views,
             "terminal_outcomes": terminal,
-            "recovery_required": trail_recovery,
+            "recovery_required": recovery_required,
+            "truncated": truncated,
+            "prepared": prepared_views,
             "prepared_count": self.prepared.len(),
             "committed_count": self.committed.len(),
         }))
@@ -1047,28 +1384,30 @@ fn availability_for(
     }
 }
 
-fn proposed_action_from_plan(prepare: &PreparePayload) -> Result<ProposedAction, GateError> {
-    let plan_id = prepare
-        .plan
+/// Select one Action from a Tethers Core-produced Plan. The Host never
+/// supplies this Plan; caller-shaped JSON is not a Tethers Plan.
+fn proposed_action_from_core_plan(
+    evaluation_id: &str,
+    plan: &Value,
+    requested_action_id: &str,
+) -> Result<ProposedAction, GateError> {
+    let plan_id = plan
         .get("id")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| GateError::new("prepare.invalid_plan", "plan.id is required"))?
         .to_owned();
-    let actions = prepare
-        .plan
+    let actions = plan
         .get("actions")
         .and_then(Value::as_array)
         .ok_or_else(|| GateError::new("prepare.invalid_plan", "plan.actions is required"))?;
     let action = actions
         .iter()
-        .find(|action| {
-            action.get("action_id").and_then(Value::as_str) == Some(prepare.action_id.as_str())
-        })
+        .find(|action| action.get("action_id").and_then(Value::as_str) == Some(requested_action_id))
         .ok_or_else(|| {
             GateError::new(
                 "prepare.action_not_found",
-                "action_id is not present in the supplied plan",
+                "requested action_id is not present in the Core-produced Plan",
             )
         })?;
 
@@ -1102,7 +1441,7 @@ fn proposed_action_from_plan(prepare: &PreparePayload) -> Result<ProposedAction,
     let arguments = action.get("arguments").cloned().unwrap_or(Value::Null);
 
     Ok(ProposedAction {
-        evaluation_id: prepare.evaluation_id.clone(),
+        evaluation_id: evaluation_id.to_owned(),
         plan_id,
         action_id,
         capability_name,
@@ -1113,25 +1452,67 @@ fn proposed_action_from_plan(prepare: &PreparePayload) -> Result<ProposedAction,
     })
 }
 
+/// Fill missing bridge pins on a Core-produced Action from the trusted
+/// manifest store. Core owns Action identity and arguments; pins are the
+/// host's admitted-manifest projection, never caller-supplied authority.
+fn ensure_bridge_pins(
+    mut action: ProposedAction,
+    runtime: &PreparedRuntime,
+    availability: &resolver::ProviderAvailability,
+) -> Result<ProposedAction, GateError> {
+    if action.manifest_digest.is_some()
+        && action.bridge_capability_version.is_some()
+        && action.bridge_provider_identity.is_some()
+    {
+        return Ok(action);
+    }
+    let version = action.bridge_capability_version.unwrap_or(1);
+    let resolved = resolver::resolve_capability(
+        runtime.trusted_store(),
+        availability,
+        &action.capability_name,
+        version,
+        None,
+    )
+    .map_err(|error| {
+        GateError::new(
+            "prepare.unavailable",
+            format!("capability resolution failed: {error:?}"),
+        )
+    })?;
+    if action.manifest_digest.is_none() {
+        action.manifest_digest = Some(resolved.manifest_digest().to_owned());
+    }
+    if action.bridge_capability_version.is_none() {
+        action.bridge_capability_version = Some(resolved.capability_version());
+    }
+    if action.bridge_provider_identity.is_none() {
+        action.bridge_provider_identity = Some(resolved.provider_identity().to_owned());
+    }
+    Ok(action)
+}
+
 fn prepared_identity(
     prepare: &PreparePayload,
     action: &ProposedAction,
+    event_id: &str,
     config_digest: &str,
 ) -> String {
     let material = json!({
         "protocol": AUTHORITY_PROTOCOL,
-        "tether_id": prepare.tether_id,
-        "tether_version": prepare.tether_version,
+        "tether_id": prepare.run_input.tether.id,
+        "tether_version": prepare.run_input.tether.version,
         "evaluation_id": action.evaluation_id,
         "plan_id": action.plan_id,
         "action_id": action.action_id,
-        "event_id": prepare.event_id,
+        "event_id": event_id,
         "capability_name": action.capability_name,
         "capability_version": action.bridge_capability_version,
         "argument_digest": approval::digest(&action.arguments),
         "manifest_digest": action.manifest_digest,
         "provider_identity": action.bridge_provider_identity,
         "config_digest": config_digest,
+        "core_planned": true,
     });
     let bytes = serde_json_canonicalizer::to_vec(&material).expect("canonical prepare material");
     let mut hasher = Sha256::new();
@@ -1156,68 +1537,171 @@ fn effect_summary(action: &ProposedAction) -> String {
     )
 }
 
-/// Bounded recovery identities derived from durable Trail intent records that
-/// have no matching outcome. Never repairs authority state by resetting it.
-fn scan_trail_recovery(trail_path: &Path) -> Vec<Value> {
-    let mut intents: HashMap<String, String> = HashMap::new();
-    let mut outcomes: std::collections::HashSet<String> = std::collections::HashSet::new();
+/// One durable Trail intent reconstructed for restart recovery.
+#[derive(Debug, Clone)]
+struct DurableIntent {
+    #[allow(dead_code)]
+    execution_id: String,
+    action_id: String,
+    capability_name: String,
+    capability_version: u32,
+    manifest_digest: String,
+    provider_identity: String,
+    argument_digest: String,
+}
 
-    let Ok(text) = std::fs::read_to_string(trail_path) else {
-        return Vec::new();
-    };
-    for line in text.lines().take(10_000) {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        let kind = value.get("kind").and_then(Value::as_str);
-        let execution_id = value
-            .get("execution_id")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if execution_id.is_empty() {
-            continue;
-        }
-        match kind {
-            Some("intent") | None => {
-                // IntentEntry serialises without a kind field; presence of
-                // capability_name distinguishes it from other records.
-                if value.get("capability_name").is_some() && value.get("status").is_none() {
-                    intents.insert(
-                        execution_id.to_owned(),
-                        value
+#[derive(Debug, Clone)]
+struct DurableOutcome {
+    status: String,
+}
+
+/// Full durable Trail view used by STATUS and late OUTCOME recovery.
+#[derive(Debug, Default)]
+struct TrailFullView {
+    intents: HashMap<String, DurableIntent>,
+    outcomes: HashMap<String, DurableOutcome>,
+    /// Replay logical keys recovered from durable claims, keyed by execution_id.
+    logical_keys: HashMap<String, replay::LogicalExecutionKey>,
+    /// Replay bindings (including evaluation_id) recovered from durable claims.
+    bindings: HashMap<String, replay::ExecutionBinding>,
+    disagreements: Vec<Value>,
+}
+
+/// Reconstruct durable execution truth from Trail intent/outcome records and
+/// the replay ledger. Never repairs authority state by resetting it.
+fn scan_trail_full(trail_path: &Path, host_data_root: &Path) -> TrailFullView {
+    let mut view = TrailFullView::default();
+
+    if let Ok(text) = std::fs::read_to_string(trail_path) {
+        for line in text.lines().take(10_000) {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Ok(value) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            let execution_id = value
+                .get("execution_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            if execution_id.is_empty() {
+                continue;
+            }
+
+            // IntentEntry: arguments present, no status/kind/timestamp.
+            if value.get("capability_name").is_some()
+                && value.get("arguments").is_some()
+                && value.get("status").is_none()
+                && value.get("kind").is_none()
+                && value.get("timestamp_unix_ms").is_none()
+            {
+                let argument_digest = value
+                    .get("arguments")
+                    .cloned()
+                    .map(|arguments| approval::digest(&arguments))
+                    .unwrap_or_default();
+                view.intents.insert(
+                    execution_id.clone(),
+                    DurableIntent {
+                        execution_id: execution_id.clone(),
+                        action_id: value
                             .get("action_id")
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_owned(),
-                    );
-                }
+                        capability_name: value
+                            .get("capability_name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        capability_version: value
+                            .get("capability_version")
+                            .and_then(Value::as_u64)
+                            .unwrap_or_default() as u32,
+                        manifest_digest: value
+                            .get("manifest_digest")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        provider_identity: value
+                            .get("provider_identity")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        argument_digest,
+                    },
+                );
+                continue;
             }
-            _ => {}
-        }
-        if value.get("status").and_then(Value::as_str).is_some()
-            && value.get("action_id").is_some()
-            && value.get("timestamp_unix_ms").is_some()
-        {
-            outcomes.insert(execution_id.to_owned());
+
+            // OutcomeEntry: status + timestamp present.
+            if value.get("status").and_then(Value::as_str).is_some()
+                && value.get("timestamp_unix_ms").is_some()
+            {
+                view.outcomes.insert(
+                    execution_id.clone(),
+                    DurableOutcome {
+                        status: value
+                            .get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                    },
+                );
+            }
         }
     }
 
-    intents
-        .into_iter()
-        .filter(|(execution_id, _)| !outcomes.contains(execution_id))
-        .take(MAX_STATUS_ENTRIES)
-        .map(|(execution_id, action_id)| {
-            json!({
-                "execution_id": execution_id,
-                "action_id": action_id,
-                "state": "committed_outcome_incomplete",
-            })
-        })
-        .collect()
+    // Replay ledger claims provide logical keys and detect durable disagreement.
+    if let Ok(ledger) = crate::replay_store::ReplayLedger::open(host_data_root) {
+        for (execution_id, intent) in &view.intents {
+            if let Some((logical_key, binding)) = ledger.claim_material_for(execution_id) {
+                view.logical_keys.insert(execution_id.clone(), logical_key);
+                if binding.action_id != intent.action_id
+                    || binding.capability_name != intent.capability_name
+                    || binding.manifest_digest != intent.manifest_digest
+                {
+                    view.disagreements.push(json!({
+                        "execution_id": execution_id,
+                        "state": "trail_replay_binding_disagreement",
+                    }));
+                }
+                view.bindings.insert(execution_id.clone(), binding);
+            }
+        }
+    }
+
+    view
+}
+
+/// Validate a reported success against the trusted capability output schema.
+/// An invalid claimed success becomes canonical `result_validation_failed`.
+fn classify_outcome(
+    output_schema: &Value,
+    outcome: crate::gate_protocol::OutcomePayload,
+) -> Result<crate::gate_protocol::OutcomePayload, GateError> {
+    if outcome.classification != "succeeded" {
+        return Ok(outcome);
+    }
+    let Some(result) = outcome.result.as_ref() else {
+        return Err(GateError::new(
+            "outcome.missing_result",
+            "succeeded outcome requires result",
+        ));
+    };
+    if validation::validate_output(output_schema, result).is_ok() {
+        return Ok(outcome);
+    }
+    let reason = crate::outcome::validation_reason();
+    Ok(crate::gate_protocol::OutcomePayload {
+        classification: "failed".to_owned(),
+        result: None,
+        error: Some(reason.message.to_owned()),
+        reason_code: Some(reason.code.to_owned()),
+        ..outcome
+    })
 }
 
 #[cfg(test)]
@@ -1228,6 +1712,7 @@ mod tests {
     fn provider_invocations_always_zero() {
         let mut gate = AuthorityGate::new(GateConfig {
             config_path: PathBuf::from("unused.json"),
+            engine_path: PathBuf::from("unused-engine"),
             trail_path: PathBuf::from("unused.trail.jsonl"),
             host_data_root: PathBuf::from("unused-root"),
         });
@@ -1244,6 +1729,7 @@ mod tests {
     fn hello_rejects_unexpected_payload() {
         let mut gate = AuthorityGate::new(GateConfig {
             config_path: PathBuf::from("unused.json"),
+            engine_path: PathBuf::from("unused-engine"),
             trail_path: PathBuf::from("unused.trail.jsonl"),
             host_data_root: PathBuf::from("unused-root"),
         });
@@ -1261,6 +1747,7 @@ mod tests {
     fn shutdown_sets_flag() {
         let mut gate = AuthorityGate::new(GateConfig {
             config_path: PathBuf::from("unused.json"),
+            engine_path: PathBuf::from("unused-engine"),
             trail_path: PathBuf::from("unused.trail.jsonl"),
             host_data_root: PathBuf::from("unused-root"),
         });
@@ -1273,16 +1760,16 @@ mod tests {
     fn prepare_without_config_fails_closed() {
         let mut gate = AuthorityGate::new(GateConfig {
             config_path: PathBuf::from("definitely-missing-gate-config.json"),
+            engine_path: PathBuf::from("unused-engine"),
             trail_path: PathBuf::from("unused.trail.jsonl"),
             host_data_root: PathBuf::from("unused-root"),
         });
         let payload = json!({
-            "tether_id": "t",
-            "tether_version": "1",
-            "evaluation_id": "e",
-            "event_id": "evt",
-            "action_id": "a",
-            "plan": {"id": "p", "actions": []}
+            "action_id": "action_1",
+            "evaluation_id": "eval_1",
+            "tether": {"id": "t", "version": "1"},
+            "event": {"id": "evt", "name": "coding.task_completed", "data": {}},
+            "facts": {}
         });
         let map = payload.as_object().unwrap().clone();
         let response = gate.handle("prepare", "req-4", &map);

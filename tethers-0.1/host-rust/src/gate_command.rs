@@ -23,6 +23,7 @@ const MAX_STDERR_LINES: u32 = 64;
 pub struct GateCommandArgs {
     pub stdio: bool,
     pub config: PathBuf,
+    pub engine: PathBuf,
     pub trail: PathBuf,
     pub host_data_root: PathBuf,
 }
@@ -41,6 +42,7 @@ pub fn run_gate(args: GateCommandArgs) -> GateCommandResult {
     }
     for (label, path) in [
         ("--config", &args.config),
+        ("--engine", &args.engine),
         ("--trail", &args.trail),
         ("--host-data-root", &args.host_data_root),
     ] {
@@ -56,6 +58,9 @@ pub fn run_gate(args: GateCommandArgs) -> GateCommandResult {
             "GATE_CONFIG_NOT_FOUND",
             "runtime configuration was not found",
         );
+    }
+    if !args.engine.is_file() {
+        return failure("GATE_ENGINE_NOT_FOUND", "engine binary was not found");
     }
     if let Some(parent) = args.trail.parent() {
         if let Err(error) = std::fs::create_dir_all(parent) {
@@ -87,6 +92,7 @@ pub fn run_gate(args: GateCommandArgs) -> GateCommandResult {
 
     let mut gate = AuthorityGate::new(GateConfig {
         config_path: args.config.clone(),
+        engine_path: args.engine.clone(),
         trail_path: args.trail.clone(),
         host_data_root: args.host_data_root.clone(),
     });
@@ -367,6 +373,7 @@ mod tests {
         let result = run_gate(GateCommandArgs {
             stdio: false,
             config: PathBuf::from("/abs/config.json"),
+            engine: PathBuf::from("/abs/engine"),
             trail: PathBuf::from("/abs/trail.jsonl"),
             host_data_root: PathBuf::from("/abs/host-data"),
         });
@@ -386,6 +393,7 @@ mod tests {
         let result = run_gate(GateCommandArgs {
             stdio: true,
             config: PathBuf::from("relative/config.json"),
+            engine: PathBuf::from("relative/engine"),
             trail: PathBuf::from("relative/trail.jsonl"),
             host_data_root: PathBuf::from("relative/host-data"),
         });
