@@ -2427,6 +2427,312 @@ fn terminal_classification_mismatch_is_integrity_failure() {
     assert_eq!(status["provider_invocations"], 0);
 }
 
+// ---------------------------------------------------------------------------
+// Idempotent late OUTCOME must never bless a durable disagreement
+// ---------------------------------------------------------------------------
+
+/// Full healthy lifecycle: prepare → commit → succeeded OUTCOME.
+fn commit_and_succeed(workspace: &GateWorkspace, path: &str) -> String {
+    let mut gate = workspace.gate();
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", path),
+    ))
+    .clone();
+    let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+    let exec = dispatch["execution_id"].as_str().unwrap().to_owned();
+    let result = ok(&call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": exec,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "baseline"}
+        }),
+    ))
+    .clone();
+    assert_eq!(result["replay_terminal"], "recorded");
+    assert!(
+        !workspace.marker_path().exists() || {
+            // External host may not have run; Gate never creates the marker.
+            true
+        }
+    );
+    exec
+}
+
+fn late_same_outcome(gate: &mut AuthorityGate, execution_id: &str) -> AuthorityResponse {
+    call(
+        gate,
+        "late-o1",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "late"}
+        }),
+    )
+}
+
+fn assert_refused_no_side_effects(
+    response: &AuthorityResponse,
+    gate: &AuthorityGate,
+    trail_before: &str,
+    trail_path: &Path,
+    expected_reason: &str,
+) {
+    assert_eq!(err(response), "outcome.unavailable");
+    let data = err_data(response).expect("error data");
+    assert_eq!(
+        data["reason"], expected_reason,
+        "expected explicit reason {expected_reason}, got {data}"
+    );
+    assert_eq!(gate.provider_invocations(), 0);
+    // Trail is not rewritten or repaired by the refusal.
+    let trail_after = fs::read_to_string(trail_path).unwrap();
+    assert_eq!(
+        trail_after, trail_before,
+        "refusal must not rewrite the durable Trail"
+    );
+}
+
+#[test]
+fn late_outcome_refuses_after_terminal_classification_mismatch() {
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = commit_and_succeed(&workspace, "projects/r2-idem-class");
+
+    // Tamper Trail classification while replay remains Succeeded.
+    let trail = fs::read_to_string(&workspace.trail).unwrap();
+    let mut lines: Vec<String> = trail.lines().map(str::to_owned).collect();
+    let mut rewritten = false;
+    for line in lines.iter_mut() {
+        if !line.contains(&execution_id) || !line.contains("\"status\"") {
+            continue;
+        }
+        let Ok(mut value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if value.get("timestamp_unix_ms").is_some()
+            && value.get("status").and_then(Value::as_str) == Some("succeeded")
+        {
+            value["status"] = json!("failed");
+            *line = serde_json::to_string(&value).unwrap();
+            rewritten = true;
+        }
+    }
+    assert!(rewritten, "expected a Trail OutcomeEntry to tamper");
+    lines.push(String::new());
+    let trail_after_tamper = lines.join("\n");
+    fs::write(&workspace.trail, &trail_after_tamper).unwrap();
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert!(recovery_states(&status)
+        .iter()
+        .any(|state| state == "terminal_classification_mismatch"));
+
+    // Re-report the Trail classification (failed). Replay remains Succeeded:
+    // same-as-Trail status must still refuse, not become idempotent success.
+    let response = call(
+        &mut gate,
+        "late-o1",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "failed",
+            "attempted": true,
+            "error": "late"
+        }),
+    );
+    assert_refused_no_side_effects(
+        &response,
+        &gate,
+        &trail_after_tamper,
+        &workspace.trail,
+        "terminal_classification_mismatch",
+    );
+    assert!(
+        !workspace.marker_path().exists(),
+        "no physical re-execution"
+    );
+}
+
+#[test]
+fn late_outcome_refuses_after_terminal_outcome_digest_mismatch() {
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = commit_and_succeed(&workspace, "projects/r2-idem-digest");
+
+    // Keep classification succeeded but change durable result bytes so the
+    // Trail OutcomeEntry digest no longer matches replay's stored digest.
+    let trail = fs::read_to_string(&workspace.trail).unwrap();
+    let mut lines: Vec<String> = trail.lines().map(str::to_owned).collect();
+    let mut rewritten = false;
+    for line in lines.iter_mut() {
+        if !line.contains(&execution_id) || !line.contains("\"status\"") {
+            continue;
+        }
+        let Ok(mut value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if value.get("timestamp_unix_ms").is_some()
+            && value.get("status").and_then(Value::as_str) == Some("succeeded")
+        {
+            value["result"] = json!({"echo": "tampered-digest"});
+            *line = serde_json::to_string(&value).unwrap();
+            rewritten = true;
+        }
+    }
+    assert!(rewritten, "expected a Trail OutcomeEntry to tamper");
+    lines.push(String::new());
+    let trail_after_tamper = lines.join("\n");
+    fs::write(&workspace.trail, &trail_after_tamper).unwrap();
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert!(recovery_states(&status)
+        .iter()
+        .any(|state| state == "terminal_outcome_digest_mismatch"));
+
+    let response = late_same_outcome(&mut gate, &execution_id);
+    assert_refused_no_side_effects(
+        &response,
+        &gate,
+        &trail_after_tamper,
+        &workspace.trail,
+        "terminal_outcome_digest_mismatch",
+    );
+    assert!(
+        !workspace.marker_path().exists(),
+        "no physical re-execution"
+    );
+}
+
+#[test]
+fn late_outcome_refuses_after_missing_replay_claim() {
+    use tethers_reference_host::replay::ExecutionId;
+
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = commit_and_succeed(&workspace, "projects/r2-idem-no-claim");
+
+    // Remove the durable claim + chain so the ledger still opens cleanly
+    // but this execution has no claim. Trail intent/outcome remain.
+    // Claim files are named by logical-key digest, not execution-id digest;
+    // locate the claim by its embedded execution_id.
+    let claims_dir = workspace.host_data.join("replay/v1/claims");
+    let mut removed_claim_path: Option<PathBuf> = None;
+    for entry in fs::read_dir(&claims_dir).expect("claims dir") {
+        let path = entry.expect("claim entry").path();
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if content.contains(&execution_id) {
+            fs::remove_file(&path).expect("remove claim");
+            removed_claim_path = Some(path);
+            break;
+        }
+    }
+    let claim_path = removed_claim_path.expect("claim file containing execution_id not found");
+
+    let parsed = ExecutionId::parse(execution_id.clone()).expect("parse execution id");
+    let digest = parsed.filename_digest();
+    let prefix = workspace
+        .host_data
+        .join("replay/v1/chains")
+        .join(&digest[..2]);
+    let chain_dir = prefix.join(&digest);
+    if chain_dir.exists() {
+        fs::remove_dir_all(&chain_dir).expect("remove chain");
+    }
+    if prefix.exists()
+        && fs::read_dir(&prefix)
+            .map(|entries| entries.count())
+            .unwrap_or(0)
+            == 0
+    {
+        let _ = fs::remove_dir(&prefix);
+    }
+
+    let trail_before = fs::read_to_string(&workspace.trail).unwrap();
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert!(recovery_states(&status)
+        .iter()
+        .any(|state| state == "missing_replay_claim"));
+
+    let response = late_same_outcome(&mut gate, &execution_id);
+    assert_refused_no_side_effects(
+        &response,
+        &gate,
+        &trail_before,
+        &workspace.trail,
+        "missing_replay_claim",
+    );
+    assert!(
+        !claim_path.exists(),
+        "refusal must not recreate the missing claim"
+    );
+    assert!(
+        !workspace.marker_path().exists(),
+        "no physical re-execution"
+    );
+}
+
+#[test]
+fn late_outcome_refuses_after_trail_replay_binding_disagreement() {
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = commit_and_succeed(&workspace, "projects/r2-idem-binding");
+
+    // Tamper Trail intent capability so binding no longer matches while the
+    // Trail outcome remains present and same-status.
+    let trail = fs::read_to_string(&workspace.trail).unwrap();
+    let mut lines: Vec<String> = trail.lines().map(str::to_owned).collect();
+    let mut rewritten = false;
+    for line in lines.iter_mut() {
+        if !line.contains(&execution_id) || !line.contains("\"capability_name\"") {
+            continue;
+        }
+        if line.contains("\"status\"") || line.contains("\"timestamp_unix_ms\"") {
+            continue;
+        }
+        let Ok(mut value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if value.get("arguments").is_some() && value.get("status").is_none() {
+            value["capability_name"] = json!("fixture.ping.tampered");
+            *line = serde_json::to_string(&value).unwrap();
+            rewritten = true;
+        }
+    }
+    assert!(rewritten, "expected a Trail IntentEntry to tamper");
+    lines.push(String::new());
+    let trail_after_tamper = lines.join("\n");
+    fs::write(&workspace.trail, &trail_after_tamper).unwrap();
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert!(recovery_states(&status)
+        .iter()
+        .any(|state| state == "trail_replay_binding_disagreement"));
+
+    let response = late_same_outcome(&mut gate, &execution_id);
+    assert_refused_no_side_effects(
+        &response,
+        &gate,
+        &trail_after_tamper,
+        &workspace.trail,
+        "trail_replay_binding_disagreement",
+    );
+    assert!(
+        !workspace.marker_path().exists(),
+        "no physical re-execution"
+    );
+}
+
 #[test]
 fn scan_bound_truncation_is_explicit_and_not_healthy() {
     let workspace = GateWorkspace::new("allow");

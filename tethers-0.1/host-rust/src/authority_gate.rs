@@ -975,20 +975,59 @@ impl AuthorityGate {
         };
 
         if let Some(existing) = view.outcomes.get(&outcome.execution_id) {
-            if existing.status == outcome.classification {
-                // Crash window recovery: Trail outcome exists but replay is
-                // still armed. Complete terminal publication without
-                // re-executing the physical effect.
-                let mut replay_terminal = "recorded";
-                if view.replay_states.get(&outcome.execution_id)
-                    == Some(&replay::ReplayState::InvocationArmed)
-                {
-                    replay_terminal = self.complete_armed_replay_terminal(
-                        &view,
-                        &outcome.execution_id,
-                        existing,
-                    )?;
-                }
+            // A. Different classification is always a conflict, never
+            // converted into success by reconciliation state.
+            if existing.status != outcome.classification {
+                return Err(GateError::new(
+                    "outcome.conflict",
+                    "a different outcome was already recorded for this execution",
+                ));
+            }
+
+            // Target-specific recovery must be evaluated before any
+            // idempotent acknowledgement. A known durable disagreement is
+            // never blessed into successful idempotency.
+            let target_states: Vec<String> = view
+                .recovery_required
+                .iter()
+                .filter_map(|entry| {
+                    if entry.get("execution_id").and_then(Value::as_str)
+                        == Some(outcome.execution_id.as_str())
+                    {
+                        entry
+                            .get("state")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if target_states.is_empty() {
+                // B. Fully reconciled terminal: Trail and replay already agree.
+                return Ok(json!({
+                    "execution_id": outcome.execution_id,
+                    "status": existing.status,
+                    "idempotent": true,
+                    "recovered": false,
+                    "replay_terminal": "recorded",
+                    "provider_invocations": self.provider_invocations,
+                }));
+            }
+
+            // C. Sole supported crash window: terminal_replay_incomplete with
+            // claim present, binding match, and replay still armed.
+            let crash_window_only = target_states
+                .iter()
+                .all(|state| state == "terminal_replay_incomplete");
+            let armed = view.replay_states.get(&outcome.execution_id)
+                == Some(&replay::ReplayState::InvocationArmed);
+            let claim_present = view.logical_keys.contains_key(&outcome.execution_id);
+            let binding_ok = view.binding_matches_intent(&outcome.execution_id);
+            if crash_window_only && armed && claim_present && binding_ok {
+                let replay_terminal =
+                    self.complete_armed_replay_terminal(&view, &outcome.execution_id, existing)?;
                 return Ok(json!({
                     "execution_id": outcome.execution_id,
                     "status": existing.status,
@@ -998,9 +1037,17 @@ impl AuthorityGate {
                     "provider_invocations": self.provider_invocations,
                 }));
             }
-            return Err(GateError::new(
-                "outcome.conflict",
-                "a different outcome was already recorded for this execution",
+
+            // D. Any other target durable disagreement refuses with an
+            // explicit bounded reason. Never report replay_terminal=recorded.
+            let reason = target_states
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "recovery_required".to_owned());
+            return Err(GateError::with_data(
+                "outcome.unavailable",
+                "durable authorities disagree for this execution",
+                json!({ "reason": reason }),
             ));
         }
 
