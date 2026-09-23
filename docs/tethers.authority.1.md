@@ -406,7 +406,10 @@ publishes terminal replay state on the recovered armed admission
 idempotent repeat on the recovered path also carries `recovered: true`.
 Only an `execution_id` with no durable intent or replay claim is refused
 with `outcome.unknown_execution`; durable disagreements are surfaced through
-`status.recovery_required`, never guessed.
+`status.recovery_required`, never guessed. A late `outcome` is also refused
+with `outcome.unavailable` and a bounded reason whenever the durable view is
+untrustworthy (Trail unreadable/malformed or scan truncated), never
+reconstructed from a corrupt view.
 
 Request:
 
@@ -422,9 +425,12 @@ Result:
 
 ### `status`
 
-Bounded reconciliation surface for a reconnecting Host. After a restart the
-durable Trail and replay views are reconstructed (`truncated` reports
-bounded collections). Payload is ignored; `{}` is the canonical form.
+Bounded reconciliation surface for a reconnecting Host. After a restart one
+canonical durable reconciliation of Trail intent/outcome records against the
+replay ledger is shared with late `outcome` recovery (`truncated` reports
+bounded collections **and** Trail scan truncation). `healthy` is process
+health only; durable authority health is `durable_reconciliation.state`.
+Payload is ignored; `{}` is the canonical form.
 
 Result:
 
@@ -433,15 +439,16 @@ Result:
 | `protocol` | string | `tethers.authority/1` |
 | `product_version` | string | e.g. `0.8.0` |
 | `gate_instance_id` | string | `gate_<uuid>` |
-| `healthy` | boolean | `true` when the Gate is answering |
+| `healthy` | boolean | `true` when the Gate process is answering (not a durable-authority claim) |
+| `durable_reconciliation` | object | typed durable view: `{state: healthy\|recovery_required\|unavailable, reconciliation_complete, truncated, trail_unavailable, replay_unavailable, trail_malformed}` |
 | `shutdown_requested` | boolean | `true` after a `shutdown` operation |
 | `provider_invocations` | integer | always `0` |
 | `pending_approvals` | object[] | ≤ 128; `{approval_id, state, action_id}` for `pending`/`approved` records; proofs are never exposed |
-| `unresolved_commits` | object[] | ≤ 128; committed executions with no recorded outcome; each entry carries state `COMMITTED_OUTCOME_INCOMPLETE` (reconstructed from the durable Trail after restart) |
+| `unresolved_commits` | object[] | ≤ 128; healthy armed commits with no Trail outcome: state `COMMITTED_OUTCOME_INCOMPLETE` (intent + matching claim + `InvocationArmed`). Intent without claim is **not** listed here |
 | `prepared` | object[] | ≤ 128; `{prepared_id, decision, committed, action_id, tether_id, tether_version, config_digest}` |
-| `terminal_outcomes` | object[] | ≤ 128; committed executions with a recorded outcome; each entry carries state `TERMINAL_KNOWN` |
-| `recovery_required` | object[] | ≤ 128; reconstructed durable disagreements: `{execution_id, state}` with `state` e.g. `outcome_without_intent` or `trail_replay_binding_disagreement` |
-| `truncated` | boolean | `true` when any collection was bounded at `MAX_STATUS_ENTRIES` |
+| `terminal_outcomes` | object[] | ≤ 128; committed executions with a Trail outcome; state `TERMINAL_KNOWN` (observed terminal classification; Trail terminal with replay still armed is also listed under `recovery_required` as `terminal_replay_incomplete`) |
+| `recovery_required` | object[] | ≤ 128; durable disagreements/integrity failures: `{execution_id?, state}` with `state` e.g. `outcome_without_intent`, `trail_replay_binding_disagreement`, `missing_replay_claim`, `replay_claim_without_trail_intent`, `terminal_replay_incomplete`, `replay_terminal_without_trail_outcome`, `terminal_classification_mismatch`, `terminal_outcome_digest_mismatch`, `trail_malformed`, `trail_unavailable`, `replay_unavailable`, `replay_integrity_failure`, `scan_truncated` |
+| `truncated` | boolean | `true` when any collection was bounded at `MAX_STATUS_ENTRIES` or the Trail scan hit the reconciliation line bound |
 | `prepared_count` | integer | total preparations this session |
 | `committed_count` | integer | total commits this session |
 
@@ -599,6 +606,7 @@ Host may now dispatch the effect physically and must report exactly one
 | `outcome.conflict` | a different classification was already recorded |
 | `outcome.not_attempted` | `attempted: false` for a committed dispatch |
 | `outcome.identity_collapse` | `external_execution_identity` equals the Tethers `action_id` |
+| `outcome.unavailable` | late recovery refused: the durable Trail/replay view is not trustworthy for recovery (bounded reason; e.g. `trail_unavailable`, `trail_malformed`, `scan_truncated`) |
 | `outcome.trail_failed` | outcome could not be recorded durably in the Trail |
 | `outcome.digest_failed` | durable outcome digest could not be computed |
 

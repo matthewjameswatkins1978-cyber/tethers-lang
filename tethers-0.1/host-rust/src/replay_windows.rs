@@ -1327,6 +1327,27 @@ impl ReplayLedger {
             .map(|claim| (claim.logical_key, claim.binding))
     }
 
+    /// Enumerate every durable claim with its reconstructed chain state.
+    /// Bounded, read-only; used by Authority Gate durable reconciliation.
+    pub fn inspect_durable(&self) -> Result<Vec<crate::replay::DurableReplayClaim>, ReplayError> {
+        let claims = self.scan_claims()?;
+        let mut inspected = Vec::with_capacity(claims.len());
+        for claim in claims.into_values() {
+            let (state, generations) = self.reconstruct(&claim)?;
+            inspected.push(crate::replay::DurableReplayClaim {
+                execution_id: claim.execution_id.as_str().to_owned(),
+                logical_key: claim.logical_key.clone(),
+                binding: claim.binding.clone(),
+                state,
+                durable_outcome_digest: generations
+                    .last()
+                    .and_then(|generation| generation.durable_outcome_digest.clone()),
+            });
+        }
+        inspected.sort_by(|left, right| left.execution_id.cmp(&right.execution_id));
+        Ok(inspected)
+    }
+
     fn scan_chains(&self, claims: &HashMap<String, Claim>) -> Result<(), ReplayError> {
         let mut seen = HashSet::new();
         for prefix_name in directory_entry_names(&self.chains)? {

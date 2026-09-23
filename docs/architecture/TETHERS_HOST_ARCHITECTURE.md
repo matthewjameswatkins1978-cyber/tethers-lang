@@ -258,11 +258,19 @@ Shape D specifics:
   `HostExecutionService::plan_only` with the canonical absolute `--engine`
   path; the caller supplies run-input only and never an authoritative Plan
   (a `plan` field is refused with `prepare.caller_plan_forbidden`).
-- **Durable restart reconciliation exists.** `status` reconstructs
-  unresolved commits (`COMMITTED_OUTCOME_INCOMPLETE`), terminal outcomes
-  (`TERMINAL_KNOWN`), and durable disagreements from the Trail and replay
-  ledger, and a late `outcome` reconstructs from durable intent plus the
-  replay claim rather than being refused.
+- **Durable restart reconciliation exists and is typed.** `status` shares one
+  canonical Trail×replay reconciliation with late `outcome`: healthy armed
+  unresolved commits (`COMMITTED_OUTCOME_INCOMPLETE`), observed terminal
+  outcomes (`TERMINAL_KNOWN`), and explicit `recovery_required` disagreements
+  (including `terminal_replay_incomplete` — Trail terminal with replay still
+  armed — plus `missing_replay_claim`, `replay_claim_without_trail_intent`,
+  `terminal_classification_mismatch`, `terminal_outcome_digest_mismatch`,
+  `trail_malformed`, `trail_unavailable`, `replay_unavailable`,
+  `scan_truncated`).
+  `durable_reconciliation.state` is `healthy|recovery_required|unavailable`
+  and is distinct from process `healthy`. Late `outcome` refuses whenever the
+  durable view is untrustworthy — incomplete or with authorities that
+  disagree for the target.
 - **Successful results are schema validated.** A `succeeded` result is
   checked against the trusted capability output schema
   (`validation::validate_output`); an invalid result is recorded as `failed`

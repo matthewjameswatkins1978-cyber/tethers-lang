@@ -2058,3 +2058,434 @@ fn evaluation_id_never_occupies_execution_id_field_in_gate_trail() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Durable reconciliation repair — crash windows and integrity failures
+// ---------------------------------------------------------------------------
+
+fn recovery_states(status: &Value) -> Vec<String> {
+    status["recovery_required"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry["state"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn durable_state(status: &Value) -> &str {
+    status["durable_reconciliation"]["state"]
+        .as_str()
+        .unwrap_or("")
+}
+
+fn commit_only(workspace: &GateWorkspace, path: &str) -> String {
+    let mut gate = workspace.gate();
+    let prepared = ok(&call(
+        &mut gate,
+        "p1",
+        "prepare",
+        workspace.prepare_payload("action_1", path),
+    ))
+    .clone();
+    let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+    dispatch["execution_id"].as_str().unwrap().to_owned()
+}
+
+/// Crash between Trail OutcomeEntry append and replay publish_terminal.
+/// Simulated by writing a durable Trail outcome while replay remains armed.
+#[test]
+fn crash_between_trail_outcome_and_replay_reports_terminal_replay_incomplete() {
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = commit_only(&workspace, "projects/r2-crash-window");
+
+    // Durable Trail outcome written; replay publish_terminal never completed.
+    let mut gate = workspace.gate();
+    let prepared = ok(&call(
+        &mut gate,
+        "p2",
+        "prepare",
+        workspace.prepare_payload("action_1", "projects/r2-crash-window"),
+    ))
+    .clone();
+    let _ = prepared;
+    drop(gate);
+
+    // Append a Trail OutcomeEntry without going through OUTCOME (which would
+    // also publish terminal). Replay remains InvocationArmed.
+    let mut trail = fs::read_to_string(&workspace.trail).unwrap();
+    trail.push_str(&format!(
+        "{{\"execution_id\":\"{execution_id}\",\"action_id\":\"action_1\",\"status\":\"succeeded\",\"result\":{{\"echo\":\"crash\"}},\"timestamp_unix_ms\":1790000000000}}\n"
+    ));
+    fs::write(&workspace.trail, trail).unwrap();
+
+    let mut gate2 = workspace.gate();
+    let status = ok(&call(&mut gate2, "s1", "status", json!({}))).clone();
+    assert_eq!(durable_state(&status), "recovery_required");
+    assert_eq!(
+        status["durable_reconciliation"]["reconciliation_complete"],
+        false
+    );
+    let states = recovery_states(&status);
+    assert!(
+        states
+            .iter()
+            .any(|state| state == "terminal_replay_incomplete"),
+        "trail terminal + replay armed must be explicit: {states:?}"
+    );
+    // Observed terminal classification may still be exposed.
+    let terminal = status["terminal_outcomes"].as_array().unwrap();
+    assert!(
+        terminal.iter().any(|entry| {
+            entry["execution_id"] == execution_id && entry["state"] == "TERMINAL_KNOWN"
+        }),
+        "observed terminal truth must remain visible: {terminal:?}"
+    );
+    // healthy is process health, not durable health.
+    assert_eq!(status["healthy"], true);
+    assert_ne!(durable_state(&status), "healthy");
+    assert_eq!(status["provider_invocations"], 0);
+
+    // Supported recovery: re-report the exact same outcome completes replay
+    // terminal publication without re-executing the physical effect.
+    let recovery = ok(&call(
+        &mut gate2,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "crash"}
+        }),
+    ))
+    .clone();
+    assert_eq!(recovery["idempotent"], true);
+    assert_eq!(recovery["replay_terminal"], "recorded");
+
+    let status2 = ok(&call(&mut gate2, "s2", "status", json!({}))).clone();
+    let states2 = recovery_states(&status2);
+    assert!(
+        !states2
+            .iter()
+            .any(|state| state == "terminal_replay_incomplete"),
+        "recovery must clear terminal_replay_incomplete: {states2:?}"
+    );
+    assert_eq!(durable_state(&status2), "healthy");
+    assert_eq!(status2["provider_invocations"], 0);
+}
+
+#[test]
+fn malformed_trail_line_blocks_late_outcome_and_reports_integrity() {
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = commit_only(&workspace, "projects/r2-malformed");
+
+    let mut trail = fs::read_to_string(&workspace.trail).unwrap();
+    trail.push_str("{not-valid-json\n");
+    fs::write(&workspace.trail, trail).unwrap();
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert_eq!(status["durable_reconciliation"]["trail_malformed"], true);
+    assert_eq!(
+        status["durable_reconciliation"]["reconciliation_complete"],
+        false
+    );
+    assert_eq!(durable_state(&status), "recovery_required");
+    assert!(recovery_states(&status)
+        .iter()
+        .any(|state| state == "trail_malformed"));
+    assert_eq!(status["healthy"], true);
+
+    let outcome = call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "x"}
+        }),
+    );
+    assert_eq!(err(&outcome), "outcome.unavailable");
+    let data = err_data(&outcome).expect("error data");
+    assert_eq!(data["reason"], "trail_malformed");
+    assert_eq!(gate.provider_invocations(), 0);
+
+    // Malformed line is preserved, not deleted or rewritten.
+    let after = fs::read_to_string(&workspace.trail).unwrap();
+    assert!(after.contains("{not-valid-json"));
+}
+
+#[test]
+fn replay_unavailable_reports_durable_recovery_and_blocks_late_outcome() {
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = commit_only(&workspace, "projects/r2-replay-down");
+
+    // Make the replay authority unreadable without deleting Trail truth.
+    let format = workspace.host_data.join("replay/v1/FORMAT.json");
+    fs::write(&format, b"broken").unwrap();
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert_eq!(status["durable_reconciliation"]["replay_unavailable"], true);
+    assert_eq!(
+        status["durable_reconciliation"]["reconciliation_complete"],
+        false
+    );
+    assert_eq!(durable_state(&status), "unavailable");
+    assert_eq!(status["healthy"], true);
+    let states = recovery_states(&status);
+    assert!(
+        states
+            .iter()
+            .any(|state| state == "replay_unavailable" || state == "replay_integrity_failure"),
+        "replay open failure must be explicit: {states:?}"
+    );
+
+    let outcome = call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": execution_id,
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "x"}
+        }),
+    );
+    assert_eq!(err(&outcome), "outcome.unavailable");
+    let data = err_data(&outcome).expect("error data");
+    let reason = data["reason"].as_str().unwrap_or("");
+    assert!(
+        reason == "replay_unavailable" || reason == "durable_view_incomplete",
+        "got reason {reason}"
+    );
+    assert_eq!(gate.provider_invocations(), 0);
+}
+
+#[test]
+fn trail_intent_without_replay_claim_is_missing_replay_claim() {
+    let workspace = GateWorkspace::new("allow");
+    // Durable Trail intent with no corresponding replay claim/chain.
+    fs::write(
+        &workspace.trail,
+        r#"{"execution_id":"exec_00000000-0000-4000-8000-0000000000aa","action_id":"action_1","capability_name":"fixture.ping","capability_version":1,"provider_identity":"tethers-stdio-fixture","manifest_digest":"sha256:eb61b62bde489e00a4d15c37c83e6cdb1e9e378b8f13b910d4b68bd6d68c19da","arguments":{"path":"projects/x","message":"m"}}
+"#,
+    )
+    .unwrap();
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    let states = recovery_states(&status);
+    assert!(
+        states.iter().any(|state| state == "missing_replay_claim"),
+        "intent without claim is a durable disagreement: {states:?}"
+    );
+    // Not an ordinary unresolved commit.
+    let unresolved = status["unresolved_commits"].as_array().unwrap();
+    assert!(
+        !unresolved
+            .iter()
+            .any(|entry| { entry["execution_id"] == "exec_00000000-0000-4000-8000-0000000000aa" }),
+        "missing claim must not appear as ordinary unresolved: {unresolved:?}"
+    );
+    assert_eq!(durable_state(&status), "recovery_required");
+
+    let outcome = call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": "exec_00000000-0000-4000-8000-0000000000aa",
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "x"}
+        }),
+    );
+    assert_eq!(err(&outcome), "outcome.unavailable");
+    assert_eq!(
+        err_data(&outcome).expect("data")["reason"],
+        "missing_replay_claim"
+    );
+    assert_eq!(gate.provider_invocations(), 0);
+}
+
+#[test]
+fn replay_claim_without_trail_intent_is_reported() {
+    use tethers_reference_host::replay::{ExecutionBinding, LogicalExecutionKey};
+    use tethers_reference_host::replay_runtime::{FileReplayAuthority, ReplayAuthority};
+
+    let workspace = GateWorkspace::new("allow");
+    let logical_key =
+        LogicalExecutionKey::derive("evt_r2_replay_only", "eval_replay_only", "action_1").unwrap();
+    let binding = ExecutionBinding {
+        evaluation_id: "eval_replay_only".into(),
+        action_id: "action_1".into(),
+        capability_name: "fixture.ping".into(),
+        capability_version: 1,
+        manifest_digest: STANDING_ALLOW_DIGEST.to_owned(),
+        provider_identity: "tethers-stdio-fixture".into(),
+        argument_digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            .into(),
+    };
+    let authority = FileReplayAuthority::new(Some(&workspace.host_data));
+    let mut guard = authority.admit(&logical_key, &binding).expect("admit");
+    guard.publish_intent().expect("intent");
+    guard.publish_armed().expect("armed");
+    let execution_id = guard.execution_id().to_owned();
+    drop(guard);
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    let states = recovery_states(&status);
+    assert!(
+        states
+            .iter()
+            .any(|state| state == "replay_claim_without_trail_intent"),
+        "replay-only claim must be explicit: {states:?}"
+    );
+    assert_eq!(durable_state(&status), "recovery_required");
+    assert_eq!(status["provider_invocations"], 0);
+
+    let unresolved = status["unresolved_commits"].as_array().unwrap();
+    assert!(
+        !unresolved
+            .iter()
+            .any(|entry| entry["execution_id"] == execution_id),
+        "replay-only claim is not an unresolved Trail commit"
+    );
+}
+
+#[test]
+fn terminal_classification_mismatch_is_integrity_failure() {
+    let workspace = GateWorkspace::new("allow");
+    let execution_id = {
+        let mut gate = workspace.gate();
+        let prepared = ok(&call(
+            &mut gate,
+            "p1",
+            "prepare",
+            workspace.prepare_payload("action_1", "projects/r2-mismatch"),
+        ))
+        .clone();
+        let dispatch = commit_ok(&mut gate, prepared["prepared_id"].as_str().unwrap());
+        let exec = dispatch["execution_id"].as_str().unwrap().to_owned();
+        let outcome = ok(&call(
+            &mut gate,
+            "o1",
+            "outcome",
+            json!({
+                "execution_id": exec,
+                "classification": "succeeded",
+                "attempted": true,
+                "result": {"echo": "mismatch"}
+            }),
+        ))
+        .clone();
+        assert_eq!(outcome["replay_terminal"], "recorded");
+        exec
+    };
+
+    // Tamper the durable Trail outcome classification while replay terminal
+    // remains Succeeded. Never auto-repair either authority.
+    let trail = fs::read_to_string(&workspace.trail).unwrap();
+    let mut lines: Vec<String> = trail.lines().map(str::to_owned).collect();
+    let mut rewritten = false;
+    for line in lines.iter_mut() {
+        if !line.contains(&execution_id) || !line.contains("\"status\"") {
+            continue;
+        }
+        let Ok(mut value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if value.get("timestamp_unix_ms").is_some()
+            && value.get("status").and_then(Value::as_str) == Some("succeeded")
+        {
+            value["status"] = json!("failed");
+            *line = serde_json::to_string(&value).unwrap();
+            rewritten = true;
+        }
+    }
+    assert!(rewritten, "expected a Trail OutcomeEntry to tamper");
+    lines.push(String::new());
+    fs::write(&workspace.trail, lines.join("\n")).unwrap();
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert_eq!(durable_state(&status), "recovery_required");
+    let states = recovery_states(&status);
+    assert!(
+        states
+            .iter()
+            .any(|state| state == "terminal_classification_mismatch"),
+        "classification mismatch must be explicit: {states:?}"
+    );
+    assert_eq!(status["provider_invocations"], 0);
+}
+
+#[test]
+fn scan_bound_truncation_is_explicit_and_not_healthy() {
+    let workspace = GateWorkspace::new("allow");
+    // Exceed the reconciliation scan bound with valid non-intent JSON lines.
+    let mut content = String::new();
+    for index in 0..10_001 {
+        content.push_str(&format!("{{\"pad\":{index}}}\n"));
+    }
+    content.push_str(&format!(
+        "{{\"execution_id\":\"exec_00000000-0000-4000-8000-0000000000bb\",\"action_id\":\"action_1\",\"status\":\"succeeded\",\"timestamp_unix_ms\":1}}\n"
+    ));
+    fs::write(&workspace.trail, content).unwrap();
+
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert_eq!(status["truncated"], true);
+    assert_eq!(status["durable_reconciliation"]["truncated"], true);
+    assert_eq!(
+        status["durable_reconciliation"]["reconciliation_complete"],
+        false
+    );
+    assert_ne!(durable_state(&status), "healthy");
+    assert_eq!(durable_state(&status), "recovery_required");
+    assert!(recovery_states(&status)
+        .iter()
+        .any(|state| state == "scan_truncated"));
+    // Do not claim a fully healthy durable authority from a partial scan.
+    assert_eq!(status["healthy"], true);
+    assert_eq!(status["provider_invocations"], 0);
+
+    let outcome = call(
+        &mut gate,
+        "o1",
+        "outcome",
+        json!({
+            "execution_id": "exec_00000000-0000-4000-8000-0000000000bb",
+            "classification": "succeeded",
+            "attempted": true,
+            "result": {"echo": "x"}
+        }),
+    );
+    assert_eq!(err(&outcome), "outcome.unavailable");
+    assert_eq!(
+        err_data(&outcome).expect("data")["reason"],
+        "scan_truncated"
+    );
+}
+
+#[test]
+fn durable_reconciliation_is_typed_and_distinct_from_process_health() {
+    let workspace = GateWorkspace::new("allow");
+    let mut gate = workspace.gate();
+    let status = ok(&call(&mut gate, "s1", "status", json!({}))).clone();
+    assert_eq!(status["healthy"], true);
+    let recon = &status["durable_reconciliation"];
+    assert_eq!(recon["state"], "healthy");
+    assert_eq!(recon["reconciliation_complete"], true);
+    assert_eq!(recon["truncated"], false);
+    assert_eq!(recon["trail_unavailable"], false);
+    assert_eq!(recon["replay_unavailable"], false);
+    assert_eq!(recon["trail_malformed"], false);
+}

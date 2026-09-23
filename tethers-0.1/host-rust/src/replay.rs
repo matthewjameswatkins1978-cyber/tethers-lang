@@ -46,6 +46,17 @@ pub fn durable_outcome_digest<T: Serialize>(value: &T) -> Result<String, ReplayE
     canonical_digest(value)
 }
 
+/// One durable replay claim with its reconstructed chain state. Read-only
+/// inspection surface for Authority Gate reconciliation; never mutates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DurableReplayClaim {
+    pub execution_id: String,
+    pub logical_key: LogicalExecutionKey,
+    pub binding: ExecutionBinding,
+    pub state: ReplayState,
+    pub durable_outcome_digest: Option<String>,
+}
+
 fn digest_bytes(bytes: &[u8]) -> String {
     format!("{SHA256_PREFIX}{:x}", Sha256::digest(bytes))
 }

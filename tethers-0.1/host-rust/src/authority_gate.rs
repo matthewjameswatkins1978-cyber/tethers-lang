@@ -945,21 +945,56 @@ impl AuthorityGate {
         &mut self,
         outcome: crate::gate_protocol::OutcomePayload,
     ) -> Result<Value, GateError> {
-        let trail_view = scan_trail_full(&self.config.trail_path, &self.config.host_data_root);
-        let Some(intent) = trail_view.intents.get(&outcome.execution_id) else {
+        let view = reconcile_durable(&self.config.trail_path, &self.config.host_data_root);
+
+        // Refuse recovery whenever the durable view cannot be fully trusted.
+        if !view.trustworthy_for_recovery() {
+            let reason = if view.trail_unavailable {
+                "trail_unavailable"
+            } else if view.trail_malformed {
+                "trail_malformed"
+            } else if view.truncated {
+                "scan_truncated"
+            } else if view.replay_unavailable {
+                "replay_unavailable"
+            } else {
+                "durable_view_incomplete"
+            };
+            return Err(GateError::with_data(
+                "outcome.unavailable",
+                "durable Trail/replay view is not trustworthy for recovery",
+                json!({ "reason": reason }),
+            ));
+        }
+
+        let Some(intent) = view.intents.get(&outcome.execution_id) else {
             return Err(GateError::new(
                 "outcome.unknown_execution",
                 "execution_id has no durable committed intent",
             ));
         };
 
-        if let Some(existing) = trail_view.outcomes.get(&outcome.execution_id) {
+        if let Some(existing) = view.outcomes.get(&outcome.execution_id) {
             if existing.status == outcome.classification {
+                // Crash window recovery: Trail outcome exists but replay is
+                // still armed. Complete terminal publication without
+                // re-executing the physical effect.
+                let mut replay_terminal = "recorded";
+                if view.replay_states.get(&outcome.execution_id)
+                    == Some(&replay::ReplayState::InvocationArmed)
+                {
+                    replay_terminal = self.complete_armed_replay_terminal(
+                        &view,
+                        &outcome.execution_id,
+                        existing,
+                    )?;
+                }
                 return Ok(json!({
                     "execution_id": outcome.execution_id,
                     "status": existing.status,
                     "idempotent": true,
                     "recovered": true,
+                    "replay_terminal": replay_terminal,
                     "provider_invocations": self.provider_invocations,
                 }));
             }
@@ -967,6 +1002,75 @@ impl AuthorityGate {
                 "outcome.conflict",
                 "a different outcome was already recorded for this execution",
             ));
+        }
+
+        // New late OUTCOME: any recovery entry for this execution blocks
+        // consequential recovery (ambiguity must refuse).
+        if view.recovery_required.iter().any(|entry| {
+            entry.get("execution_id").and_then(Value::as_str) == Some(outcome.execution_id.as_str())
+        }) {
+            let state = view
+                .recovery_required
+                .iter()
+                .find_map(|entry| {
+                    if entry.get("execution_id").and_then(Value::as_str)
+                        == Some(outcome.execution_id.as_str())
+                    {
+                        entry
+                            .get("state")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "recovery_required".to_owned());
+            return Err(GateError::with_data(
+                "outcome.unavailable",
+                "durable authorities disagree for this execution",
+                json!({ "reason": state }),
+            ));
+        }
+
+        // Late recovery requires the exact healthy crash-recovery shape:
+        // intent + claim + matching binding + InvocationArmed + no outcome.
+        if !view.logical_keys.contains_key(&outcome.execution_id) {
+            return Err(GateError::with_data(
+                "outcome.unavailable",
+                "durable replay claim is missing for this execution",
+                json!({ "reason": "missing_replay_claim" }),
+            ));
+        }
+        if !view.binding_matches_intent(&outcome.execution_id) {
+            return Err(GateError::with_data(
+                "outcome.unavailable",
+                "durable Trail/replay binding disagrees for this execution",
+                json!({ "reason": "trail_replay_binding_disagreement" }),
+            ));
+        }
+        match view.replay_states.get(&outcome.execution_id) {
+            Some(replay::ReplayState::InvocationArmed) => {}
+            Some(state) if is_terminal_replay_state(*state) => {
+                return Err(GateError::with_data(
+                    "outcome.unavailable",
+                    "replay is already terminal without a matching recovery path",
+                    json!({ "reason": "replay_terminal_without_trail_outcome" }),
+                ));
+            }
+            Some(state) => {
+                return Err(GateError::with_data(
+                    "outcome.unavailable",
+                    "replay claim is not armed for terminal publication",
+                    json!({ "reason": "replay_not_armed", "replay_state": format!("{state:?}") }),
+                ));
+            }
+            None => {
+                return Err(GateError::with_data(
+                    "outcome.unavailable",
+                    "durable replay state is unavailable for this execution",
+                    json!({ "reason": "replay_unavailable" }),
+                ));
+            }
         }
 
         if !outcome.attempted {
@@ -992,7 +1096,7 @@ impl AuthorityGate {
         let effective = classify_outcome(&output_schema, outcome)?;
 
         // Re-admit the durable claim so terminal replay publication can complete.
-        let logical_key = trail_view
+        let logical_key = view
             .logical_keys
             .get(&effective.execution_id)
             .cloned()
@@ -1002,7 +1106,7 @@ impl AuthorityGate {
                     "durable replay claim is missing for this execution",
                 )
             })?;
-        let binding = trail_view
+        let binding = view
             .bindings
             .get(&effective.execution_id)
             .cloned()
@@ -1108,14 +1212,22 @@ impl AuthorityGate {
         let mut terminal = Vec::new();
         let mut truncated = false;
 
-        // Durable Trail + replay views survive Gate restart.
-        let trail_view = scan_trail_full(&self.config.trail_path, &self.config.host_data_root);
-        for (execution_id, intent) in &trail_view.intents {
-            let evaluation_id = trail_view
+        // One canonical durable reconciliation shared with late OUTCOME.
+        let view = reconcile_durable(&self.config.trail_path, &self.config.host_data_root);
+        for (execution_id, intent) in &view.intents {
+            let evaluation_id = view
                 .bindings
                 .get(execution_id)
                 .map(|binding| binding.evaluation_id.as_str())
                 .unwrap_or_default();
+            let has_outcome = view.outcomes.contains_key(execution_id);
+            // Terminal observation is reported even when replay publication
+            // is incomplete; recovery_required carries the incompleteness.
+            let state = if has_outcome {
+                "TERMINAL_KNOWN"
+            } else {
+                "COMMITTED_OUTCOME_INCOMPLETE"
+            };
             let summary = json!({
                 "execution_id": execution_id,
                 "action_id": intent.action_id,
@@ -1125,28 +1237,28 @@ impl AuthorityGate {
                     "version": intent.capability_version,
                 },
                 "argument_digest": intent.argument_digest,
-                "state": if trail_view.outcomes.contains_key(execution_id) {
-                    "TERMINAL_KNOWN"
-                } else {
-                    "COMMITTED_OUTCOME_INCOMPLETE"
-                },
+                "state": state,
             });
-            if trail_view.outcomes.contains_key(execution_id) {
+            // Ordinary unresolved only for healthy armed commits; incomplete
+            // durable shapes stay out of unresolved_commits.
+            if has_outcome {
                 if terminal.len() < MAX_STATUS_ENTRIES {
                     terminal.push(summary);
                 } else {
                     truncated = true;
                 }
-            } else if unresolved.len() < MAX_STATUS_ENTRIES {
-                unresolved.push(summary);
-            } else {
-                truncated = true;
+            } else if view.is_unresolved_armed_commit(execution_id) {
+                if unresolved.len() < MAX_STATUS_ENTRIES {
+                    unresolved.push(summary);
+                } else {
+                    truncated = true;
+                }
             }
         }
 
         // In-memory session records that are not yet durable-merged.
         for record in self.committed.values() {
-            if trail_view.intents.contains_key(&record.execution_id) {
+            if view.intents.contains_key(&record.execution_id) {
                 continue;
             }
             let summary = json!({
@@ -1179,21 +1291,13 @@ impl AuthorityGate {
             }
         }
 
-        // Trail outcome without intent, or intent binding disagreement → recovery.
-        let mut recovery_required = trail_view.disagreements.clone();
-        for (execution_id, outcome) in &trail_view.outcomes {
-            if !trail_view.intents.contains_key(execution_id) {
-                if recovery_required.len() < MAX_STATUS_ENTRIES {
-                    recovery_required.push(json!({
-                        "execution_id": execution_id,
-                        "state": "outcome_without_intent",
-                        "status": outcome.status,
-                    }));
-                } else {
-                    truncated = true;
-                }
-            }
+        let mut recovery_required = view.recovery_required.clone();
+        if recovery_required.len() > MAX_STATUS_ENTRIES {
+            recovery_required.truncate(MAX_STATUS_ENTRIES);
+            truncated = true;
         }
+        let integrity = view.integrity();
+        truncated = truncated || view.truncated;
 
         // Process-local approvals: expose only live identities, never proofs.
         for record_id in self.approval_ids() {
@@ -1234,6 +1338,14 @@ impl AuthorityGate {
             "product_version": self.product_version,
             "gate_instance_id": self.gate_instance_id,
             "healthy": true,
+            "durable_reconciliation": {
+                "state": integrity.as_str(),
+                "reconciliation_complete": view.reconciliation_complete(),
+                "truncated": view.truncated,
+                "trail_unavailable": view.trail_unavailable,
+                "replay_unavailable": view.replay_unavailable,
+                "trail_malformed": view.trail_malformed,
+            },
             "shutdown_requested": self.shutdown_requested,
             "provider_invocations": self.provider_invocations,
             "pending_approvals": pending_approvals,
@@ -1281,6 +1393,82 @@ impl AuthorityGate {
                 format!("trail cannot be opened: {error}"),
             )
         })
+    }
+
+    /// Complete replay terminal publication for a durable Trail outcome whose
+    /// replay claim remains InvocationArmed (crash between Trail append and
+    /// publish_terminal). Does not re-execute the physical effect.
+    fn complete_armed_replay_terminal(
+        &self,
+        view: &DurableReconciliation,
+        execution_id: &str,
+        existing: &DurableOutcome,
+    ) -> Result<&'static str, GateError> {
+        let logical_key = view
+            .logical_keys
+            .get(execution_id)
+            .cloned()
+            .ok_or_else(|| {
+                GateError::with_data(
+                    "outcome.unavailable",
+                    "durable replay claim is missing for terminal completion",
+                    json!({ "reason": "missing_replay_claim" }),
+                )
+            })?;
+        let binding = view.bindings.get(execution_id).cloned().ok_or_else(|| {
+            GateError::with_data(
+                "outcome.unavailable",
+                "durable replay binding is missing for terminal completion",
+                json!({ "reason": "trail_replay_binding_disagreement" }),
+            )
+        })?;
+        if !view.binding_matches_intent(execution_id) {
+            return Err(GateError::with_data(
+                "outcome.unavailable",
+                "durable Trail/replay binding disagrees for terminal completion",
+                json!({ "reason": "trail_replay_binding_disagreement" }),
+            ));
+        }
+
+        let outcome_digest = replay::durable_outcome_digest(&existing.entry).map_err(|_| {
+            GateError::new(
+                "outcome.digest_failed",
+                "outcome digest could not be computed",
+            )
+        })?;
+        let terminal_state = match existing.status.as_str() {
+            "succeeded" => replay::ReplayState::Succeeded,
+            "failed" => replay::ReplayState::Failed,
+            _ => replay::ReplayState::Uncertain,
+        };
+
+        let replay_authority = FileReplayAuthority::new(Some(&self.config.host_data_root));
+        let mut admission = replay_authority
+            .admit(&logical_key, &binding)
+            .map_err(|_| {
+                GateError::new(
+                    "outcome.unavailable",
+                    "durable replay admission is unavailable",
+                )
+            })?;
+        if admission.execution_id() != execution_id {
+            drop(admission);
+            return Err(GateError::new(
+                "outcome.unknown_execution",
+                "replay claim does not match the reported execution identity",
+            ));
+        }
+        let result = if admission.state() == replay::ReplayState::InvocationArmed
+            && admission
+                .publish_terminal(terminal_state, outcome_digest)
+                .is_ok()
+        {
+            "recorded"
+        } else {
+            "recovery_required"
+        };
+        drop(admission);
+        Ok(result)
     }
 }
 
@@ -1540,8 +1728,6 @@ fn effect_summary(action: &ProposedAction) -> String {
 /// One durable Trail intent reconstructed for restart recovery.
 #[derive(Debug, Clone)]
 struct DurableIntent {
-    #[allow(dead_code)]
-    execution_id: String,
     action_id: String,
     capability_name: String,
     capability_version: u32,
@@ -1550,127 +1736,465 @@ struct DurableIntent {
     argument_digest: String,
 }
 
+/// One durable Trail outcome reconstructed for restart recovery.
 #[derive(Debug, Clone)]
 struct DurableOutcome {
     status: String,
+    /// Full Trail OutcomeEntry JSON so the durable outcome digest can be
+    /// recomputed and compared against replay terminal state.
+    entry: Value,
 }
 
-/// Full durable Trail view used by STATUS and late OUTCOME recovery.
+/// Canonical integrity state of durable Trail + replay reconciliation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DurableIntegrity {
+    /// Both authorities readable, scan complete, no disagreements.
+    Healthy,
+    /// Readable but disagreeing / malformed / truncated / incomplete.
+    RecoveryRequired,
+    /// An authority could not be read or opened; durable truth not established.
+    Unavailable,
+}
+
+impl DurableIntegrity {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Healthy => "healthy",
+            Self::RecoveryRequired => "recovery_required",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
+/// One canonical bounded reconciliation of Trail intent/outcome records against
+/// the durable replay ledger. Shared by STATUS and late OUTCOME recovery so the
+/// two paths cannot invent separate truth.
 #[derive(Debug, Default)]
-struct TrailFullView {
+struct DurableReconciliation {
     intents: HashMap<String, DurableIntent>,
     outcomes: HashMap<String, DurableOutcome>,
-    /// Replay logical keys recovered from durable claims, keyed by execution_id.
+    /// Replay claim material keyed by execution_id (only when replay opened).
     logical_keys: HashMap<String, replay::LogicalExecutionKey>,
-    /// Replay bindings (including evaluation_id) recovered from durable claims.
     bindings: HashMap<String, replay::ExecutionBinding>,
-    disagreements: Vec<Value>,
+    /// Reconstructed replay state keyed by execution_id.
+    replay_states: HashMap<String, replay::ReplayState>,
+    /// Replay terminal outcome digests keyed by execution_id.
+    replay_outcome_digests: HashMap<String, String>,
+    /// Explicit recovery entries (durable disagreement / integrity failure).
+    recovery_required: Vec<Value>,
+    /// True when the Trail scan hit the line bound before finishing the file.
+    truncated: bool,
+    /// True when Trail could not be read.
+    trail_unavailable: bool,
+    /// True when replay could not be opened or inspected.
+    replay_unavailable: bool,
+    /// True when any non-empty Trail line failed JSON parsing.
+    trail_malformed: bool,
 }
 
-/// Reconstruct durable execution truth from Trail intent/outcome records and
-/// the replay ledger. Never repairs authority state by resetting it.
-fn scan_trail_full(trail_path: &Path, host_data_root: &Path) -> TrailFullView {
-    let mut view = TrailFullView::default();
-
-    if let Ok(text) = std::fs::read_to_string(trail_path) {
-        for line in text.lines().take(10_000) {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let Ok(value) = serde_json::from_str::<Value>(line) else {
-                continue;
-            };
-            let execution_id = value
-                .get("execution_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned();
-            if execution_id.is_empty() {
-                continue;
-            }
-
-            // IntentEntry: arguments present, no status/kind/timestamp.
-            if value.get("capability_name").is_some()
-                && value.get("arguments").is_some()
-                && value.get("status").is_none()
-                && value.get("kind").is_none()
-                && value.get("timestamp_unix_ms").is_none()
-            {
-                let argument_digest = value
-                    .get("arguments")
-                    .cloned()
-                    .map(|arguments| approval::digest(&arguments))
-                    .unwrap_or_default();
-                view.intents.insert(
-                    execution_id.clone(),
-                    DurableIntent {
-                        execution_id: execution_id.clone(),
-                        action_id: value
-                            .get("action_id")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        capability_name: value
-                            .get("capability_name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        capability_version: value
-                            .get("capability_version")
-                            .and_then(Value::as_u64)
-                            .unwrap_or_default() as u32,
-                        manifest_digest: value
-                            .get("manifest_digest")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        provider_identity: value
-                            .get("provider_identity")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        argument_digest,
-                    },
-                );
-                continue;
-            }
-
-            // OutcomeEntry: status + timestamp present.
-            if value.get("status").and_then(Value::as_str).is_some()
-                && value.get("timestamp_unix_ms").is_some()
-            {
-                view.outcomes.insert(
-                    execution_id.clone(),
-                    DurableOutcome {
-                        status: value
-                            .get("status")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                    },
-                );
-            }
+impl DurableReconciliation {
+    fn integrity(&self) -> DurableIntegrity {
+        if self.trail_unavailable || self.replay_unavailable {
+            DurableIntegrity::Unavailable
+        } else if self.trail_malformed || self.truncated || !self.recovery_required.is_empty() {
+            DurableIntegrity::RecoveryRequired
+        } else {
+            DurableIntegrity::Healthy
         }
     }
 
-    // Replay ledger claims provide logical keys and detect durable disagreement.
-    if let Ok(ledger) = crate::replay_store::ReplayLedger::open(host_data_root) {
-        for (execution_id, intent) in &view.intents {
-            if let Some((logical_key, binding)) = ledger.claim_material_for(execution_id) {
-                view.logical_keys.insert(execution_id.clone(), logical_key);
-                if binding.action_id != intent.action_id
-                    || binding.capability_name != intent.capability_name
-                    || binding.manifest_digest != intent.manifest_digest
-                {
-                    view.disagreements.push(json!({
-                        "execution_id": execution_id,
-                        "state": "trail_replay_binding_disagreement",
-                    }));
+    /// True when the durable scan finished and both authorities were readable.
+    /// Does not imply every execution is fully reconciled.
+    fn scan_complete(&self) -> bool {
+        !self.trail_unavailable
+            && !self.replay_unavailable
+            && !self.trail_malformed
+            && !self.truncated
+    }
+
+    /// Full durable reconciliation: scan complete and zero disagreements.
+    fn reconciliation_complete(&self) -> bool {
+        self.scan_complete() && self.recovery_required.is_empty()
+    }
+
+    /// Late OUTCOME may proceed only when the durable view is trustworthy and
+    /// complete for the whole scan (any malformation/truncation poisons it).
+    fn trustworthy_for_recovery(&self) -> bool {
+        self.scan_complete()
+    }
+
+    fn push_recovery(&mut self, entry: Value) {
+        if self.recovery_required.len() < MAX_STATUS_ENTRIES {
+            self.recovery_required.push(entry);
+        }
+    }
+
+    fn binding_matches_intent(&self, execution_id: &str) -> bool {
+        let (Some(intent), Some(binding)) = (
+            self.intents.get(execution_id),
+            self.bindings.get(execution_id),
+        ) else {
+            return false;
+        };
+        intent.action_id == binding.action_id
+            && intent.capability_name == binding.capability_name
+            && intent.capability_version == binding.capability_version
+            && intent.manifest_digest == binding.manifest_digest
+            && intent.provider_identity == binding.provider_identity
+            && intent.argument_digest == binding.argument_digest
+    }
+
+    /// Healthy crash-recovery unresolved commit: intent + matching claim +
+    /// InvocationArmed + no Trail outcome.
+    fn is_unresolved_armed_commit(&self, execution_id: &str) -> bool {
+        self.intents.contains_key(execution_id)
+            && !self.outcomes.contains_key(execution_id)
+            && self.logical_keys.contains_key(execution_id)
+            && self.binding_matches_intent(execution_id)
+            && self.replay_states.get(execution_id) == Some(&replay::ReplayState::InvocationArmed)
+    }
+}
+
+fn is_terminal_replay_state(state: replay::ReplayState) -> bool {
+    matches!(
+        state,
+        replay::ReplayState::Succeeded
+            | replay::ReplayState::Failed
+            | replay::ReplayState::Uncertain
+    )
+}
+
+const MAX_RECONCILE_TRAIL_LINES: usize = 10_000;
+
+/// One canonical durable reconciliation used by STATUS and late OUTCOME.
+/// Never repairs authority state; only observes and classifies disagreement.
+fn reconcile_durable(trail_path: &Path, host_data_root: &Path) -> DurableReconciliation {
+    let mut view = DurableReconciliation::default();
+
+    // Trail read failure is not an empty Trail.
+    match std::fs::read_to_string(trail_path) {
+        Ok(text) => {
+            let mut line_index = 0usize;
+            for line in text.lines() {
+                if line_index >= MAX_RECONCILE_TRAIL_LINES {
+                    view.truncated = true;
+                    break;
                 }
-                view.bindings.insert(execution_id.clone(), binding);
+                line_index += 1;
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let value = match serde_json::from_str::<Value>(line) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        // Malformed durable Trail line: integrity cannot be
+                        // fully established. Do not delete or rewrite it.
+                        view.trail_malformed = true;
+                        view.push_recovery(json!({
+                            "state": "trail_malformed",
+                            "line": line_index,
+                            "bounded_reason": "trail_malformed",
+                        }));
+                        continue;
+                    }
+                };
+                let execution_id = value
+                    .get("execution_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                if execution_id.is_empty() {
+                    continue;
+                }
+
+                // IntentEntry: arguments present, no status/kind/timestamp.
+                if value.get("capability_name").is_some()
+                    && value.get("arguments").is_some()
+                    && value.get("status").is_none()
+                    && value.get("kind").is_none()
+                    && value.get("timestamp_unix_ms").is_none()
+                {
+                    let argument_digest = value
+                        .get("arguments")
+                        .cloned()
+                        .map(|arguments| approval::digest(&arguments))
+                        .unwrap_or_default();
+                    view.intents.insert(
+                        execution_id.clone(),
+                        DurableIntent {
+                            action_id: value
+                                .get("action_id")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            capability_name: value
+                                .get("capability_name")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            capability_version: value
+                                .get("capability_version")
+                                .and_then(Value::as_u64)
+                                .unwrap_or_default()
+                                as u32,
+                            manifest_digest: value
+                                .get("manifest_digest")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            provider_identity: value
+                                .get("provider_identity")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            argument_digest,
+                        },
+                    );
+                    continue;
+                }
+
+                // OutcomeEntry: status + timestamp present.
+                if value.get("status").and_then(Value::as_str).is_some()
+                    && value.get("timestamp_unix_ms").is_some()
+                {
+                    view.outcomes.insert(
+                        execution_id.clone(),
+                        DurableOutcome {
+                            status: value
+                                .get("status")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            entry: value,
+                        },
+                    );
+                }
+            }
+            // Detect truncation when the file has more lines than the bound
+            // even if the last scanned line was empty.
+            if !view.truncated {
+                let total = text.lines().count();
+                if total > MAX_RECONCILE_TRAIL_LINES {
+                    view.truncated = true;
+                }
             }
         }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // First start: no Trail file yet is an empty durable view, not a
+            // read failure.
+        }
+        Err(_) => {
+            view.trail_unavailable = true;
+            view.push_recovery(json!({
+                "state": "trail_unavailable",
+                "bounded_reason": "trail_unavailable",
+            }));
+        }
+    }
+
+    if view.truncated {
+        view.push_recovery(json!({
+            "state": "scan_truncated",
+            "bounded_reason": "scan_truncated",
+            "line_bound": MAX_RECONCILE_TRAIL_LINES,
+        }));
+    }
+
+    // Replay ledger: open failure is never "no claim found".
+    match crate::replay_store::ReplayLedger::open(host_data_root) {
+        Ok(ledger) => match ledger.inspect_durable() {
+            Ok(claims) => {
+                for claim in claims {
+                    view.logical_keys
+                        .insert(claim.execution_id.clone(), claim.logical_key);
+                    view.bindings
+                        .insert(claim.execution_id.clone(), claim.binding);
+                    view.replay_states
+                        .insert(claim.execution_id.clone(), claim.state);
+                    if let Some(digest) = claim.durable_outcome_digest {
+                        view.replay_outcome_digests
+                            .insert(claim.execution_id.clone(), digest);
+                    }
+                }
+            }
+            Err(replay::ReplayError::InvalidChain) => {
+                view.replay_unavailable = true;
+                view.push_recovery(json!({
+                    "state": "replay_integrity_failure",
+                    "bounded_reason": "replay_integrity_failure",
+                }));
+            }
+            Err(_) => {
+                view.replay_unavailable = true;
+                view.push_recovery(json!({
+                    "state": "replay_unavailable",
+                    "bounded_reason": "replay_unavailable",
+                }));
+            }
+        },
+        Err(replay::ReplayError::InvalidChain) => {
+            view.replay_unavailable = true;
+            view.push_recovery(json!({
+                "state": "replay_integrity_failure",
+                "bounded_reason": "replay_integrity_failure",
+            }));
+        }
+        Err(_) => {
+            view.replay_unavailable = true;
+            view.push_recovery(json!({
+                "state": "replay_unavailable",
+                "bounded_reason": "replay_unavailable",
+            }));
+        }
+    }
+
+    if view.replay_unavailable {
+        return view;
+    }
+
+    // Intent without matching replay claim → durable disagreement.
+    let missing_claim: Vec<String> = view
+        .intents
+        .keys()
+        .filter(|execution_id| !view.logical_keys.contains_key(*execution_id))
+        .cloned()
+        .collect();
+    for execution_id in missing_claim {
+        view.push_recovery(json!({
+            "execution_id": execution_id,
+            "state": "missing_replay_claim",
+        }));
+    }
+
+    // Replay claim without Trail intent → durable disagreement.
+    let claim_only: Vec<String> = view
+        .bindings
+        .keys()
+        .filter(|execution_id| !view.intents.contains_key(*execution_id))
+        .cloned()
+        .collect();
+    for execution_id in claim_only {
+        view.push_recovery(json!({
+            "execution_id": execution_id,
+            "state": "replay_claim_without_trail_intent",
+        }));
+    }
+
+    // Binding comparison where both sides exist.
+    let binding_mismatch: Vec<String> = view
+        .intents
+        .keys()
+        .filter(|execution_id| view.logical_keys.contains_key(*execution_id))
+        .filter(|execution_id| !view.binding_matches_intent(execution_id))
+        .cloned()
+        .collect();
+    for execution_id in binding_mismatch {
+        view.push_recovery(json!({
+            "execution_id": execution_id,
+            "state": "trail_replay_binding_disagreement",
+        }));
+    }
+
+    // Terminal reconciliation comparisons.
+    let intent_ids: Vec<String> = view.intents.keys().cloned().collect();
+    for execution_id in intent_ids {
+        let has_outcome = view.outcomes.contains_key(&execution_id);
+        let replay_state = view.replay_states.get(&execution_id).copied();
+        let binding_ok =
+            view.bindings.contains_key(&execution_id) && view.binding_matches_intent(&execution_id);
+
+        match (has_outcome, replay_state) {
+            // Trail intent + outcome + replay still armed: physical observation
+            // recorded, replay terminal publication incomplete.
+            (true, Some(replay::ReplayState::InvocationArmed)) => {
+                view.push_recovery(json!({
+                    "execution_id": execution_id,
+                    "state": "terminal_replay_incomplete",
+                }));
+            }
+            // Trail intent + outcome + replay non-terminal non-armed.
+            (true, Some(state)) if !is_terminal_replay_state(state) => {
+                view.push_recovery(json!({
+                    "execution_id": execution_id,
+                    "state": "terminal_replay_incomplete",
+                }));
+            }
+            // Trail terminal + replay terminal: compare classification and digest.
+            (true, Some(state)) if is_terminal_replay_state(state) => {
+                if let Some(outcome) = view.outcomes.get(&execution_id) {
+                    let expected = match outcome.status.as_str() {
+                        "succeeded" => replay::ReplayState::Succeeded,
+                        "failed" => replay::ReplayState::Failed,
+                        _ => replay::ReplayState::Uncertain,
+                    };
+                    if state != expected {
+                        view.push_recovery(json!({
+                            "execution_id": execution_id,
+                            "state": "terminal_classification_mismatch",
+                            "trail_status": outcome.status,
+                            "replay_state": format!("{state:?}"),
+                        }));
+                    } else if binding_ok {
+                        match replay::durable_outcome_digest(&outcome.entry) {
+                            Ok(trail_digest) => {
+                                let replay_digest = view.replay_outcome_digests.get(&execution_id);
+                                if replay_digest.map(String::as_str) != Some(trail_digest.as_str())
+                                {
+                                    view.push_recovery(json!({
+                                        "execution_id": execution_id,
+                                        "state": "terminal_outcome_digest_mismatch",
+                                    }));
+                                }
+                            }
+                            Err(_) => {
+                                view.push_recovery(json!({
+                                    "execution_id": execution_id,
+                                    "state": "terminal_outcome_digest_mismatch",
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+            // Replay terminal + no Trail outcome.
+            (false, Some(state)) if is_terminal_replay_state(state) => {
+                view.push_recovery(json!({
+                    "execution_id": execution_id,
+                    "state": "replay_terminal_without_trail_outcome",
+                }));
+            }
+            // Intent without outcome and replay not armed (not a healthy
+            // unresolved armed commit).
+            (false, Some(state)) if state != replay::ReplayState::InvocationArmed && binding_ok => {
+                view.push_recovery(json!({
+                    "execution_id": execution_id,
+                    "state": "replay_not_armed",
+                    "replay_state": format!("{state:?}"),
+                }));
+            }
+            // Missing claim already reported above.
+            (false, None) | (true, None) => {}
+            // Healthy unresolved armed commit: no recovery entry.
+            (false, Some(replay::ReplayState::InvocationArmed)) => {}
+            // Unmatched arms already handled.
+            _ => {}
+        }
+    }
+
+    // Outcome without intent.
+    let outcome_only: Vec<(String, String)> = view
+        .outcomes
+        .iter()
+        .filter(|(execution_id, _)| !view.intents.contains_key(*execution_id))
+        .map(|(execution_id, outcome)| (execution_id.clone(), outcome.status.clone()))
+        .collect();
+    for (execution_id, status) in outcome_only {
+        view.push_recovery(json!({
+            "execution_id": execution_id,
+            "state": "outcome_without_intent",
+            "status": status,
+        }));
     }
 
     view

@@ -236,29 +236,46 @@ state is `InvocationArmed` (otherwise `recovery_required`). Only an
 ## Crash recovery
 
 The admission guard is held in-process from COMMIT to OUTCOME. Recovery
-semantics are explicit, never guessed:
+semantics are explicit, never guessed. One canonical durable reconciliation
+(`Trail` intent/outcome × replay ledger) is shared by `status` and late
+`outcome`; durable disagreement is not absence, and terminal observation is
+not automatically fully reconciled terminal authority.
 
-- **Restart before OUTCOME.** `status` reconstructs from the durable Trail
-  and replay ledger: `unresolved_commits` carries state
-  `COMMITTED_OUTCOME_INCOMPLETE`, `terminal_outcomes` carries
-  `TERMINAL_KNOWN`, and `recovery_required` lists disagreements (e.g.
-  `outcome_without_intent`, `trail_replay_binding_disagreement`), with an
-  explicit `truncated` flag when any collection exceeds
-  `MAX_STATUS_ENTRIES`. A late `outcome` is reconstructed from Trail intent
-  plus the replay claim (see Outcome correlation); only an `execution_id`
-  with no durable intent is refused as `outcome.unknown_execution`.
-- **Outcome recorded but guard lost** (restart between commit and terminal
-  publication): the Trail outcome is written, but `replay_terminal` reports
-  `recovery_required`. The Gate never claims success or failure beyond the
-  recorded observation.
-- **Intent without outcome.** `status` reports Trail intent records lacking
-  a matching outcome as `unresolved_commits`
-  (`COMMITTED_OUTCOME_INCOMPLETE`), bounded to `MAX_STATUS_ENTRIES` with
-  `truncated` set when the bound is hit.
-- **Approvals.** Process-local and restart-expiring; `status` on a fresh
-  process shows no pending approvals.
+- **Durable health is typed.** `status.healthy` means the Gate process is
+  answering. `status.durable_reconciliation` is
+  `{state: healthy|recovery_required|unavailable, reconciliation_complete,
+  truncated, trail_unavailable, replay_unavailable, trail_malformed}`.
+- **Restart before OUTCOME.** Healthy armed commits with no Trail outcome
+  appear as `unresolved_commits` (`COMMITTED_OUTCOME_INCOMPLETE`). Fully
+  reconciled terminals appear as `terminal_outcomes` (`TERMINAL_KNOWN`).
+- **Trail terminal + replay still armed** (crash between Trail OutcomeEntry
+  and `publish_terminal`): STATUS still exposes the observed terminal
+  classification **and** `recovery_required: terminal_replay_incomplete`.
+  Re-reporting the exact same outcome completes replay terminal publication
+  without re-executing the physical effect.
+- **Replay terminal + no Trail outcome:** `recovery_required:
+  replay_terminal_without_trail_outcome`. The Gate never fabricates a Trail
+  outcome from replay state.
+- **Classification or outcome-digest mismatch** between Trail and replay:
+  explicit integrity failure (`terminal_classification_mismatch` /
+  `terminal_outcome_digest_mismatch`); neither authority is rewritten.
+- **Trail unreadable / malformed / scan truncated:** late `outcome` recovery
+  refuses (`outcome.unavailable` with bounded reason); STATUS reports
+  `trail_unavailable` / `trail_malformed` / `scan_truncated`.
+- **Replay unreadable:** `replay_unavailable` or `replay_integrity_failure`;
+  never silently treated as “no claim found.”
+- **Intent without claim:** `missing_replay_claim` (not an ordinary unresolved
+  commit). **Claim without intent:** `replay_claim_without_trail_intent`.
+- **Binding comparison** covers execution, evaluation (where available),
+  action, capability name/version, manifest digest, provider identity, and
+  argument digest.
+- **Intent without outcome + matching armed claim:** healthy
+  `COMMITTED_OUTCOME_INCOMPLETE`. A valid late `outcome` may reconcile this
+  exact state only when the durable view is trustworthy and complete.
 - **No silent reset.** Recovery surfaces unresolved state; it never repairs
   authority by discarding it.
+- **Approvals.** Process-local and restart-expiring; `status` on a fresh
+  process shows no pending approvals.
 
 ## Non-execution guarantee
 
