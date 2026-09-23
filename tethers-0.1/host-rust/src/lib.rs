@@ -5,6 +5,7 @@ pub mod agent_core;
 pub mod agent_workspace;
 pub mod application;
 pub mod approval;
+pub mod authority_gate;
 pub mod bench_timing;
 pub mod candidate;
 pub mod candidate_preparation;
@@ -29,6 +30,8 @@ mod f3c_installation_intent_publication_evidence;
 #[cfg(test)]
 mod f3d_bounded_persistence_stores_evidence;
 pub mod file_tools;
+pub mod gate_command;
+pub mod gate_protocol;
 pub mod host_execution;
 mod installation_driver;
 #[cfg(test)]

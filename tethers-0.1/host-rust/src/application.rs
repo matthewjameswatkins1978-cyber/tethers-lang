@@ -798,6 +798,23 @@ pub fn run() {
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {
+            command:
+                Some(CliCommand::Gate {
+                    stdio,
+                    config,
+                    trail,
+                    host_data_root,
+                }),
+        }) => {
+            let result = crate::gate_command::run_gate(crate::gate_command::GateCommandArgs {
+                stdio,
+                config,
+                trail,
+                host_data_root,
+            });
+            emit_envelope_and_exit(result.envelope, result.exit_code);
+        }
+        Ok(Cli {
             command: Some(CliCommand::Legacy { args }),
         }) => {
             // Route to legacy host with explicit __legacy subcommand.
@@ -1555,12 +1572,12 @@ pub(crate) fn request_exact_approval(
 /// approval record is evidence only for an otherwise-current Ask: it cannot
 /// turn Deny, Unavailable, schema failure, scope failure, or stale pins into
 /// an Allow.
-enum ExactApprovalPrecheck {
+pub(crate) enum ExactApprovalPrecheck {
     Ready(approval::ApprovalProof),
     NotDispatchable(PermissionDecision),
 }
 
-fn precheck_exact_approval(
+pub(crate) fn precheck_exact_approval(
     action: &policy::ProposedAction,
     approval_id: &str,
     requirements: &[policy::CapabilityRequirement],
@@ -1914,18 +1931,31 @@ fn process_one_event(
     Ok(response)
 }
 
-#[allow(dead_code)]
-struct ExactApprovalConsumption<'a> {
-    approval_id: &'a str,
+pub(crate) struct ExactApprovalConsumption<'a> {
+    approval_id: std::borrow::Cow<'a, str>,
     proof: approval::ApprovalProof,
     approvals: &'a mut approval::ApprovalStore,
+}
+
+impl ExactApprovalConsumption<'_> {
+    pub(crate) fn new<'a>(
+        approval_id: &'a str,
+        proof: approval::ApprovalProof,
+        approvals: &'a mut approval::ApprovalStore,
+    ) -> ExactApprovalConsumption<'a> {
+        ExactApprovalConsumption {
+            approval_id: std::borrow::Cow::Borrowed(approval_id),
+            proof,
+            approvals,
+        }
+    }
 }
 
 impl ApprovalConsumption for ExactApprovalConsumption<'_> {
     fn consume(&mut self, trail: &mut dyn dispatch::Trail) -> Result<(), ()> {
         let consumed = self
             .approvals
-            .consume(self.approval_id, &self.proof)
+            .consume(self.approval_id.as_ref(), &self.proof)
             .map_err(|_| ())?;
         trail
             .append_authorisation(&approval_trail_entry(
@@ -1981,11 +2011,7 @@ fn resume_and_execute_exact_approval_with_authority(
         action.bridge_provider_identity.as_deref(),
     )?;
     let decision = policy::allow_after_exact_approval(&resolved);
-    let mut consumption = ExactApprovalConsumption {
-        approval_id,
-        proof: fresh_proof,
-        approvals,
-    };
+    let mut consumption = ExactApprovalConsumption::new(approval_id, fresh_proof, approvals);
     let clock = outcome::ProductionMonotonicClock::new();
     let mut anchor_writer = ResponseResultAnchorWriter;
     let context = InputEventContext::for_initial(original_event_id);
