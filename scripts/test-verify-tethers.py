@@ -3,16 +3,60 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from verification_support import run_step, skipped_step  # noqa: E402
+from verification_support import command_path, discover_ocaml_switch, run_step, skipped_step  # noqa: E402
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix='tethers verify " quoted path ') as raw:
+    assert command_path(Path(sys.executable).stem) is not None
+    with tempfile.TemporaryDirectory(prefix="tethers switch discovery ") as raw:
+        repository = Path(raw)
+        calls: list[list[str]] = []
+
+        def fake_opam(argv: list[str], **_kwargs: object) -> SimpleNamespace:
+            calls.append(argv)
+            if argv == ["opam", "switch", "list", "--short"]:
+                return SimpleNamespace(returncode=0, stdout="unrelated-switch\nD:\\OCaml Tools\\tethers switch\n")
+            if argv[1] == "list":
+                candidate = argv[2].removeprefix("--switch=")
+                if candidate != "unrelated-switch":
+                    return SimpleNamespace(returncode=0, stdout="yojson 2.2.2\ndigestif 1.3.1\n")
+                return SimpleNamespace(returncode=0, stdout="yojson 3.0.0\ndigestif 1.3.1\n")
+            candidate = argv[2].removeprefix("--switch=")
+            if candidate != "unrelated-switch" and argv[-2:] == ["ocamlc", "-version"]:
+                return SimpleNamespace(returncode=0, stdout="5.5.0\n")
+            if candidate != "unrelated-switch" and argv[-2:] == ["dune", "--version"]:
+                return SimpleNamespace(returncode=0, stdout="3.24.0\n")
+            return SimpleNamespace(returncode=1, stdout="unavailable\n")
+
+        discovered = discover_ocaml_switch(repository, environ={}, run=fake_opam)
+        assert discovered == "D:\\OCaml Tools\\tethers switch"
+        assert ["opam", "exec", "--switch=D:\\OCaml Tools\\tethers switch", "--", "ocamlc", "-version"] in calls
+
+        explicit_calls: list[list[str]] = []
+        explicit = discover_ocaml_switch(
+            repository,
+            requested="C:\\Users\\Matmus\\.opam\\tethers",
+            environ={},
+            run=lambda argv, **kwargs: (explicit_calls.append(argv), fake_opam(argv, **kwargs))[1],
+        )
+        assert explicit == "C:\\Users\\Matmus\\.opam\\tethers"
+        assert not any(call == ["opam", "switch", "list", "--short"] for call in explicit_calls)
+        try:
+            discover_ocaml_switch(repository, requested="missing-switch", environ={}, run=fake_opam)
+        except RuntimeError as error:
+            assert "Requested OCaml switch is unavailable or incompatible" in str(error)
+        else:
+            raise AssertionError("an invalid explicit OCaml switch must fail closed")
+
+    quoted_prefix = 'tethers verify " quoted path ' if os.name != "nt" else "tethers verify quoted path "
+    with tempfile.TemporaryDirectory(prefix=quoted_prefix) as raw:
         working = Path(raw)
         passed = run_step("pass", [sys.executable, "-c", "print('ok')"], working)
         assert passed.status == "PASS" and passed.exit_code == 0
