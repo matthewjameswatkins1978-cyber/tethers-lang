@@ -210,3 +210,54 @@ Tethers Core or the reference Host to become Lantern's execution owner.
   Host's application lifecycle.
 - Authority is not inferred from a Capability name, Plug description or
   provider output. The selected Host must perform its own current checks.
+
+## Shape D: external executor + Tethers Authority Gate
+
+Status note (R2): this section is appended after the frozen R0 content. The
+`R0 RECOVERED AND FROZEN` Status line and every section above are unchanged.
+The catalogue above said "three" shapes; R2 adds a fourth without revising
+the first three.
+
+R2 adds a delegated-authority Host shape in which the external application
+keeps physical execution and application lifecycle while delegating the
+authority decision to a Tethers-owned Authority Gate:
+
+```text
+external Host
+  executor / provider invocation / outcome observation / application lifecycle
+        |
+        v  tethers.authority/1 (local stdio)
+Tethers Authority Gate
+  policy evaluation / approval / replay admission / durable intent
+        |
+        v
+Tethers Core / Capability contracts
+```
+
+Two delegated variants are legitimate side by side:
+
+- **Full external Host (R0/R1).** The external Host owns policy and approval
+  itself and consumes only the side-effect-free `tethers.plan/1` proposal.
+  Nothing is delegated; Tethers grants nothing.
+- **Delegated-authority Host (R2).** The external Host delegates authority,
+  policy, approval, replay admission and durable intent to the Tethers
+  Authority Gate over `tethers.authority/1`, while retaining physical
+  execution, provider invocation, outcome observation and application
+  lifecycle.
+
+The governing rule does not change between the variants: Tethers defines
+deterministic consequential behaviour and — where delegated — authorises it;
+the Host executes it. The Authority Gate is non-executing. It reports
+`provider_invocations: 0` on every surface, never dispatches the Action, and
+its PREPARE result always carries `authorizes_dispatch: false`. Delegation
+moves the authority decision into Tethers; it does not move execution there.
+
+Neither variant makes the other mandatory. A Host that implements its own
+policy (Shapes A–C, R0/R1) remains fully valid; a Host that delegates only
+the authority seam while keeping its own executor (Shape D) is equally
+valid. Authority is still never inferred from a Capability name, Plug
+description, provider output, or a proposed Plan.
+
+The R2 contract is frozen in
+`docs/architecture/TETHERS_R2_EXTERNAL_AUTHORITY_GATE.md`. The machine
+protocol is `docs/tethers.authority.1.md`.

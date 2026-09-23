@@ -140,12 +140,29 @@ def main() -> int:
         add(run_python("warning ratchet", SCRIPT_ROOT / "check-warning-ratchet.py"))
         test_command, test_env = test_commands(switch, args.release)
         add(run_step("Rust and cross-language tests", test_command, REPOSITORY_ROOT, env=test_env))
+        add(
+            run_step(
+                "R2 authority gate suite",
+                [
+                    "cargo",
+                    "test",
+                    "--manifest-path",
+                    str(REPOSITORY_ROOT / "tethers-0.1/host-rust/Cargo.toml"),
+                    "--test",
+                    "r2_authority_gate",
+                    "--locked",
+                    "--",
+                    "--test-threads=1",
+                ],
+                REPOSITORY_ROOT,
+            )
+        )
         add(run_python("protocol fixture sanity", REPOSITORY_ROOT / "tethers-0.1/scripts/check-fixtures.py"))
         add(run_python("MCP transcript suite", REPOSITORY_ROOT / "tethers-0.1/scripts/test-mcp-transcripts.py"))
         add(run_python("compatibility corpus", SCRIPT_ROOT / "check-compatibility-corpus.py"))
     else:
         reason = "current engine prerequisite failed; dependent suites were not run"
-        for name in ("OCaml tests", "Rust static checks", "warning ratchet", "Rust and cross-language tests", "protocol fixture sanity", "MCP transcript suite", "compatibility corpus"):
+        for name in ("OCaml tests", "Rust static checks", "warning ratchet", "Rust and cross-language tests", "R2 authority gate suite", "protocol fixture sanity", "MCP transcript suite", "compatibility corpus"):
             add(skipped_step(name, reason))
 
     counts = {status: sum(result.status == status for result in results) for status in ("PASS", "FAIL", "SKIPPED WITH REASON", "NOT APPLICABLE")}
