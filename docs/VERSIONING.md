@@ -1,7 +1,7 @@
 # Tethers Versioning Policy
 
 Status: living contract
-Updated: 2026-09-14
+Updated: 2026-09-23
 
 Tethers has several legitimate version axes. They are not interchangeable and
 must not be collapsed into one product number.
@@ -10,10 +10,11 @@ must not be collapsed into one product number.
 
 | Axis | Current value | Meaning and compatibility owner |
 | --- | --- | --- |
-| Product version | `0.7.1` | Practical native product/release identity; release control owns its public lifecycle |
+| Product version | `0.8.0` | Practical native product/release identity; release control owns its public lifecycle; R2 added the public `tethers gate` surface and `tethers.authority/1` |
 | Human Tether language | `0.1` | Source-language semantics defined by `tethers-0.1/SPEC.md`; Core owns meaning |
 | Core/wire protocol | `0.1` | Tethers request/response protocol; strict version checks at the boundary |
 | CLI envelope/discovery | `tethers.cli/1` | Machine-readable native host command envelope and discovery shape |
+| Authority protocol | `tethers.authority/1` | Authority Gate request/response protocol over local stdio; independent of the product version; exact schema match at the boundary, never inferred from product version |
 | Plan | `tethers.plan/1` | Stable machine-facing side-effect-free Plan projection |
 | Trail/receipt | `tethers.trail/1` | Host-owned causal evidence and its bounded receipt projection |
 | Capability manifest | `1.0` | Manifest schema/contract format, distinct from capability version |

@@ -124,6 +124,20 @@ pub enum Command {
         host_data_root: PathBuf,
     },
 
+    /// Serve the Tethers Authority Gate over persistent local stdio (`tethers.authority/1`).
+    Gate {
+        #[arg(long = "stdio", default_value_t = false)]
+        stdio: bool,
+        #[arg(long = "config", value_name = "PATH")]
+        config: PathBuf,
+        #[arg(long = "engine", value_name = "PATH")]
+        engine: PathBuf,
+        #[arg(long = "trail", value_name = "ABSOLUTE_PATH")]
+        trail: PathBuf,
+        #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
+        host_data_root: PathBuf,
+    },
+
     /// Hidden legacy positional compatibility route.
     #[command(hide = true)]
     #[clap(name = "__legacy")]

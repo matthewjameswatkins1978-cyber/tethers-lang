@@ -320,6 +320,55 @@ impl ReplayLedger {
         })
     }
 
+    /// Recover logical key and binding for one durable execution identity.
+    /// Used by Authority Gate restart reconciliation; read-only.
+    pub fn claim_material_for(
+        &self,
+        execution_id: &str,
+    ) -> Option<(LogicalExecutionKey, ExecutionBinding)> {
+        for name in names(&self.claims).ok()? {
+            let digest = name.strip_suffix(".claim.json")?;
+            if !is_lower_hex(digest, 64) {
+                return None;
+            }
+            let logical_key = LogicalExecutionKey::from_digest(format!("sha256:{digest}")).ok()?;
+            let claim = read_claim(&self.claims, &logical_key).ok()?;
+            if claim.execution_id.as_str() == execution_id {
+                return Some((claim.logical_key, claim.binding));
+            }
+        }
+        None
+    }
+
+    /// Enumerate every durable claim with its reconstructed chain state.
+    /// Bounded, read-only; used by Authority Gate durable reconciliation.
+    pub fn inspect_durable(&self) -> Result<Vec<crate::replay::DurableReplayClaim>, ReplayError> {
+        let mut inspected = Vec::new();
+        for name in names(&self.claims)? {
+            let Some(digest) = name.strip_suffix(".claim.json") else {
+                return unavailable();
+            };
+            if !is_lower_hex(digest, 64) {
+                return unavailable();
+            }
+            let logical_key = LogicalExecutionKey::from_digest(format!("sha256:{digest}"))
+                .map_err(|_| ReplayError::PersistenceUnavailable)?;
+            let claim = read_claim(&self.claims, &logical_key)?;
+            let (state, generations) = reconstruct(self, &claim)?;
+            inspected.push(crate::replay::DurableReplayClaim {
+                execution_id: claim.execution_id.as_str().to_owned(),
+                logical_key: claim.logical_key.clone(),
+                binding: claim.binding.clone(),
+                state,
+                durable_outcome_digest: generations
+                    .last()
+                    .and_then(|generation| generation.durable_outcome_digest.clone()),
+            });
+        }
+        inspected.sort_by(|left, right| left.execution_id.cmp(&right.execution_id));
+        Ok(inspected)
+    }
+
     pub fn admit_or_recover_owned(
         ledger: &Rc<ReplayLedger>,
         logical_key: LogicalExecutionKey,
@@ -475,8 +524,9 @@ impl ReplayAdmission {
         state: ReplayState,
         durable_outcome_digest: String,
     ) -> Result<(), ReplayError> {
-        if !self.fresh || self.state != ReplayState::InvocationArmed || self.generations.len() != 2
-        {
+        // Fresh armed admissions complete normally. Recovered (non-fresh)
+        // armed admissions complete durable outcome after Gate restart.
+        if self.state != ReplayState::InvocationArmed || self.generations.len() != 2 {
             return unavailable();
         }
         let generation = Generation::terminal(
