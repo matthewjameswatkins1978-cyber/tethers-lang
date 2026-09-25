@@ -9,16 +9,25 @@ use std::process::Command;
 // ===========================================================================
 
 fn host_binary() -> PathBuf {
-    // Find the compiled binary
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("target");
-    path.push("debug");
-    path.push(if cfg!(windows) {
-        "tethers-reference-host.exe"
-    } else {
-        "tethers-reference-host"
-    });
-    path
+    // Resolve the compiled binary for the active Cargo profile. Cargo sets
+    // CARGO_BIN_EXE_<name> at test time; fall back to the test executable's
+    // own profile directory so release-profile runs do not depend on a debug
+    // layout. This mirrors the helper used by the other CLI integration tests.
+    std::env::var_os("CARGO_BIN_EXE_tethers-reference-host")
+        .or_else(|| std::env::var_os("CARGO_BIN_EXE_tethers_reference_host"))
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::current_exe().ok().and_then(|path| {
+                path.parent()?.parent().map(|dir| {
+                    dir.join(if cfg!(windows) {
+                        "tethers-reference-host.exe"
+                    } else {
+                        "tethers-reference-host"
+                    })
+                })
+            })
+        })
+        .expect("compiled reference host binary")
 }
 
 fn run_host(args: &[&str]) -> (i32, String, String) {

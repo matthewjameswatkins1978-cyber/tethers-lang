@@ -23,10 +23,10 @@ use tethers_reference_host::child_process;
 use tethers_reference_host::cli::{Cli, CliEnvelope, Command as CliCommand, OutcomeStatus};
 const NORMAL_USAGE: &str = "usage: tethers-reference-host ENGINE REQUEST_JSON [POLICY] \
 [TRAIL_PATH] [EXECUTOR_MODE] [--host-data-root <ABSOLUTE_PATH>]";
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 const EVENT_ADMISSION_PROBE_USAGE: &str =
     "usage: tethers-reference-host event-admission-probe <duplicate-initial|duplicate-sibling|causal-depth|clean>";
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 const EVENT_ADMISSION_TRAIL_PROBE_USAGE: &str =
     "usage: tethers-reference-host event-admission-trail-probe <duplicate-initial|duplicate-sibling|causal-depth|clean> <ABSOLUTE_TRAIL_PATH>";
 
@@ -271,7 +271,7 @@ where
     })
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 fn build_event_admission_probe_response(
     scenario: &str,
 ) -> Result<Value, Box<dyn std::error::Error>> {
@@ -362,7 +362,7 @@ fn build_event_admission_probe_response(
     Ok(response)
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 fn build_event_admission_trail_probe_response(
     scenario: &str,
     trail_path: &Path,
@@ -969,7 +969,7 @@ fn run_event_admission_probe_clap(mode: &str) -> Result<(), Box<dyn std::error::
 }
 
 /// Clap-based wrapper for event-admission-trail-probe debug command.
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 fn run_event_admission_trail_probe_clap(
     mode: &str,
     trail_path: &std::path::Path,
