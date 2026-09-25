@@ -45,24 +45,19 @@ jobs:
           opam exec --switch=tethers-0.8 -- ocamlc -version
           opam exec --switch=tethers-0.8 -- dune --version
 
-      - name: Repository verification
-        env:
-          TETHERS_OCAML_SWITCH: tethers-0.8
+      - name: Repository verification (aggregate debug gate)
         run: |
-          python3 scripts/verify-tethers.py
+          python3 scripts/verify-tethers.py --ocaml-switch tethers-0.8
 
       - name: Rust format and static checks
         run: |
           cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
           cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --locked
 
-      - name: Normal-profile Rust suite with verified engine
-        env:
-          TETHERS_OCAML_SWITCH: tethers-0.8
-        run: |
-          bash scripts/run-rust-tests.sh
-
       - name: Release-profile Rust suite with verified engine
+        # verify-tethers.py has no Linux release-test path, so run the genuine
+        # release profile per target here. Benchmark features stay off on Linux:
+        # those binaries are Windows-only (see scripts/run-rust-tests.sh).
         env:
           TETHERS_OCAML_SWITCH: tethers-0.8
         run: |
