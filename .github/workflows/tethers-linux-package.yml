@@ -142,7 +142,13 @@ jobs:
         env:
           TETHERS_OCAML_SWITCH: tethers-0.8
         run: |
-          bash scripts/package-linux-release.sh --release
+          # On a release tag the strict gates engage (clean tree + exact tag);
+          # on branches the identical build/package machinery runs in dev mode.
+          release_flag=""
+          if git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+            release_flag="--release"
+          fi
+          bash scripts/package-linux-release.sh $release_flag
           version=$(tr -d '[:space:]' < VERSION)
           echo "TETHERS_VERSION=$version" >> "$GITHUB_ENV"
 
