@@ -87,10 +87,12 @@ esac
 engine_path="$repository_root/$binary_relative_path"
 [[ -f "$engine_path" && -x "$engine_path" ]] ||
     fail 'Current engine binary is missing or not executable; Rust tests were not attempted.'
-resolved_engine_path=$(realpath -e -- "$engine_path") ||
+canonical_repo=$(realpath "$repository_root" 2>/dev/null || echo "$repository_root")
+resolved_engine_path=$(realpath "$engine_path" 2>/dev/null || echo "$engine_path")
+[[ -f "$resolved_engine_path" && -x "$resolved_engine_path" ]] ||
     fail 'Current engine path could not be resolved; Rust tests were not attempted.'
 case "$resolved_engine_path" in
-    "$repository_root"/*)
+    "$repository_root"/*|"$canonical_repo"/*)
         ;;
     *)
         fail 'Current engine resolves outside the current repository; Rust tests were not attempted.'

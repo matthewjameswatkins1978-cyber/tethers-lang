@@ -56,15 +56,34 @@ fn verify_chain(path: &Path) -> Result<(), ReplayError> {
 }
 
 fn validate_directory(path: &Path) -> Result<PathBuf, ReplayError> {
-    verify_chain(path)?;
+    if !path.is_absolute() {
+        return unavailable();
+    }
     let metadata = fs::symlink_metadata(path).map_err(|_| ReplayError::PersistenceUnavailable)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return unavailable();
     }
     let canonical = fs::canonicalize(path).map_err(|_| ReplayError::PersistenceUnavailable)?;
-    if canonical != path {
-        return unavailable();
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, Darwin links /var -> private/var and /tmp -> private/tmp at system root.
+        // We verify that the canonical path has no symlink components, and that the only difference
+        // between path and canonical is the standard macOS /private prefix.
+        verify_chain(&canonical)?;
+        let stripped_canonical = canonical.strip_prefix("/private").unwrap_or(&canonical);
+        if stripped_canonical != path && canonical != path {
+            return unavailable();
+        }
     }
+    #[cfg(not(target_os = "macos"))]
+    {
+        verify_chain(path)?;
+        if canonical != path {
+            return unavailable();
+        }
+    }
+
     Ok(canonical)
 }
 
