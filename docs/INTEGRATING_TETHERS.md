@@ -18,6 +18,11 @@ the `v0.8.0` Git tag until a registry release is deliberately made; see the
 and the process protocol are separate consumption routes. The versioned
 process protocol remains the language-independent contract.
 
+Product line 0.8.1 keeps the same `tethers.authority/1` contract and the same
+`authority_v1` entry point; only the product/crate version advances. Until the
+`v0.8.1` tag and any registry publication land, keep pinning the released
+`v0.8.0` route above.
+
 The consumer provides Tethers Core's engine path, runtime configuration,
 Trail path, and an already provisioned host-data root. PREPARE invokes Core to
 produce and check the Plan. The Gate decides current host authority and emits
