@@ -520,10 +520,22 @@ fn harden_replay_acl(root: &std::path::Path) {
     let _ = root;
 }
 
+fn normalize_test_path(p: &std::path::Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        p.to_path_buf()
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    }
+}
+
 #[test]
 fn audit_item8_provision_replay_machine_output_success_and_failure() {
     let tmp = std::env::temp_dir().join(format!("audit-replay-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).unwrap();
+    let tmp = normalize_test_path(&tmp);
     harden_replay_acl(&tmp);
 
     // 1. Pristine success
@@ -567,6 +579,7 @@ fn audit_item8_provision_replay_machine_output_success_and_failure() {
     // 4. Failure case with invalid hierarchy
     let fail_tmp = std::env::temp_dir().join(format!("audit-replay-fail-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&fail_tmp).unwrap();
+    let fail_tmp = normalize_test_path(&fail_tmp);
     harden_replay_acl(&fail_tmp);
     // Create a regular file where replay directory needs to be
     std::fs::write(fail_tmp.join("replay"), "blocking file").unwrap();

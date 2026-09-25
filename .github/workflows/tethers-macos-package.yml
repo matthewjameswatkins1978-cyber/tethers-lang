@@ -79,6 +79,15 @@ jobs:
         run: |
           jq '{verdict, first_meaningful_failure, outcome_counts}' verification/tethers-verification.json 2>/dev/null || echo "no verification report was produced"
 
+      - name: Re-run tests with streamed output for diagnosis
+        if: failure()
+        run: |
+          manifest=verification/current-engine-provenance.json
+          engine=$(jq -er '.binary_relative_path' "$manifest")
+          export TETHERS_VERIFIED_ENGINE="$GITHUB_WORKSPACE/$engine"
+          export TETHERS_ENGINE_PROVENANCE="$GITHUB_WORKSPACE/$manifest"
+          bash scripts/run-rust-tests.sh
+
       - name: Upload verification log on failure
         if: failure()
         uses: actions/upload-artifact@v4

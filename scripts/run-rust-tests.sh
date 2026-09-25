@@ -115,6 +115,7 @@ else
     printf 'RUN Rust host tests with --test-threads=%s\n' "$test_threads"
 fi
 overall_status=0
+failed_targets=()
 
 run_test_target() {
     local target_kind="$1"
@@ -132,7 +133,11 @@ run_test_target() {
     if [[ "$test_threads" != default ]]; then
         cargo_args+=(-- "--test-threads=$test_threads")
     fi
-    "${cargo_args[@]}"
+    if ! "${cargo_args[@]}"; then
+        printf 'FAIL test target: %s %s\n' "$target_kind" "$target_name" >&2
+        failed_targets+=("$target_kind:$target_name")
+        overall_status=1
+    fi
 }
 
 # Cargo's `--all-targets --all-features` combination also tries to compile
@@ -140,9 +145,7 @@ run_test_target() {
 # explicitly: the host library, then every integration test file. The only
 # optional features are benchmark features, so omit them on Linux rather than
 # compiling Windows-only benchmark binaries.
-if ! run_test_target lib ''; then
-    overall_status=1
-fi
+run_test_target lib ''
 
 shopt -s nullglob
 integration_tests=("$repository_root/tethers-0.1/host-rust/tests/"*.rs)
@@ -150,9 +153,15 @@ integration_tests=("$repository_root/tethers-0.1/host-rust/tests/"*.rs)
 
 for test_file in "${integration_tests[@]}"; do
     test_name=$(basename -- "$test_file" .rs)
-    if ! run_test_target integration "$test_name"; then
-        overall_status=1
-    fi
+    run_test_target integration "$test_name"
 done
+
+if [[ ${#failed_targets[@]} -gt 0 ]]; then
+    printf '\nVERIFICATION FAILED: %d test target(s) failed:\n' "${#failed_targets[@]}" >&2
+    for target in "${failed_targets[@]}"; do
+        printf '  - %s\n' "$target" >&2
+    done
+    exit 1
+fi
 
 exit "$overall_status"
