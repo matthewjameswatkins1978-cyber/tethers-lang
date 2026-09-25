@@ -27,6 +27,8 @@ jobs:
             raw_arch: x86_64
             target_status: COMPATIBILITY-TESTED
     runs-on: ${{ matrix.os }}
+    env:
+      TETHERS_OCAML_SWITCH: tethers-0.8
     steps:
       - name: Checkout exact SHA
         uses: actions/checkout@v4
@@ -86,6 +88,7 @@ jobs:
           engine=$(jq -er '.binary_relative_path' "$manifest")
           export TETHERS_VERIFIED_ENGINE="$GITHUB_WORKSPACE/$engine"
           export TETHERS_ENGINE_PROVENANCE="$GITHUB_WORKSPACE/$manifest"
+          export TETHERS_OCAML_SWITCH=tethers-0.8
           bash scripts/run-rust-tests.sh
 
       - name: Upload verification log on failure

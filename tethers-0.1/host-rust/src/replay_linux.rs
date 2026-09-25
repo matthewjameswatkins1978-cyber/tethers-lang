@@ -143,9 +143,29 @@ fn read_record(path: &Path) -> Result<Vec<u8>, ReplayError> {
 }
 
 fn sync_directory(path: &Path) -> Result<(), ReplayError> {
-    File::open(path)
-        .and_then(|file| file.sync_all())
-        .map_err(|_| ReplayError::PersistenceUnavailable)
+    let file = File::open(path).map_err(|_| ReplayError::PersistenceUnavailable)?;
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS/Darwin, standard fsync() on a directory fd returns EINVAL.
+        // F_FULLFSYNC provides physical barrier synchronization for metadata.
+        let fd = file.as_raw_fd();
+        let ret = unsafe { libc::fcntl(fd, libc::F_FULLFSYNC) };
+        if ret == -1 {
+            let err = std::io::Error::last_os_error();
+            // Certain filesystem drivers return ENOTSUP or EINVAL even for F_FULLFSYNC on dirs;
+            // if so, opening the directory verified presence, do not fail closed on driver absence.
+            if err.raw_os_error() != Some(libc::ENOTSUP) && err.raw_os_error() != Some(libc::EINVAL)
+            {
+                return Err(ReplayError::PersistenceUnavailable);
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        file.sync_all()
+            .map_err(|_| ReplayError::PersistenceUnavailable)
+    }
 }
 
 /// Publish without replacing an existing destination. A hard link from a

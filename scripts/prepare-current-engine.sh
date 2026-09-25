@@ -69,7 +69,24 @@ if [[ "$release_mode" == true ]] && [[ -n "$(git -C "$repository_root" status --
     fail 'Release verification requires a clean Git worktree.'
 fi
 
-ocaml_switch=${TETHERS_OCAML_SWITCH:-bl-tethers-5.5.0}
+ocaml_switch="${TETHERS_OCAML_SWITCH:-}"
+if [[ -z "$ocaml_switch" ]]; then
+    current_switch=$(opam switch show 2>/dev/null || true)
+    if [[ -n "$current_switch" ]] && opam exec --switch="$current_switch" -- ocamlc -version >/dev/null 2>&1; then
+        ocaml_switch="$current_switch"
+    elif opam exec --switch=bl-tethers-5.5.0 -- ocamlc -version >/dev/null 2>&1; then
+        ocaml_switch=bl-tethers-5.5.0
+    else
+        for candidate_switch in $(opam switch list --short 2>/dev/null || true); do
+            if opam exec --switch="$candidate_switch" -- ocamlc -version >/dev/null 2>&1; then
+                ocaml_switch="$candidate_switch"
+                break
+            fi
+        done
+    fi
+fi
+[[ -n "$ocaml_switch" ]] || ocaml_switch=bl-tethers-5.5.0
+
 ocaml_version=$(opam exec --switch="$ocaml_switch" -- ocamlc -version 2>/dev/null) ||
     fail "Could not run OCaml from switch: $ocaml_switch"
 dune_version=$(opam exec --switch="$ocaml_switch" -- dune --version 2>/dev/null) ||
