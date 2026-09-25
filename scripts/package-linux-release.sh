@@ -154,6 +154,11 @@ cp "$repository_root/examples/external-consumer/consumer.py" "$package_dir/examp
 cp "$repository_root/examples/external-consumer/smoke.py" "$package_dir/examples/external-consumer/smoke.py"
 cp "$repository_root/examples/external-consumer/fixture-ping.json" "$package_dir/examples/external-consumer/fixture-ping.json"
 
+for req in README.md consumer.py smoke.py fixture-ping.json; do
+    [[ -f "$package_dir/examples/external-consumer/$req" ]] ||
+        fail "Packaging verification failure: missing required example file: examples/external-consumer/$req"
+done
+
 # Per-file hashes inside the stage (Windows parity).
 (cd "$package_dir" && find . -type f | sort | while IFS= read -r file; do
     sha256sum "$file"

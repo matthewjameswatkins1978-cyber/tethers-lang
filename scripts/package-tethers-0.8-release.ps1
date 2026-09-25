@@ -82,7 +82,21 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo "docs/$releaseNotes") -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $repo 'examples/external-consumer/README.md') -Destination $examples
     Copy-Item -LiteralPath (Join-Path $repo 'examples/external-consumer/consumer.py') -Destination $examples
+    Copy-Item -LiteralPath (Join-Path $repo 'examples/external-consumer/smoke.py') -Destination $examples
     Copy-Item -LiteralPath (Join-Path $repo 'examples/external-consumer/fixture-ping.json') -Destination $examples
+
+    $requiredExamples = @(
+        'examples/external-consumer/README.md',
+        'examples/external-consumer/consumer.py',
+        'examples/external-consumer/fixture-ping.json',
+        'examples/external-consumer/smoke.py'
+    )
+    foreach ($req in $requiredExamples) {
+        $stagedPath = Join-Path $stage $req
+        if (-not (Test-Path -LiteralPath $stagedPath -PathType Leaf)) {
+            throw "Packaging verification failure: required documented example missing from bundle: $req"
+        }
+    }
 
     $hashes = [ordered]@{}
     foreach ($file in Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName) {

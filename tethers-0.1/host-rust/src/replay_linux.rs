@@ -158,7 +158,9 @@ fn publish_new(path: &Path, stem: &str, bytes: &[u8]) -> Result<(), ReplayError>
 
 fn validate_hierarchy(root: &Path) -> Result<(PathBuf, PathBuf, PathBuf), ReplayError> {
     let root = validate_directory(root)?;
-    exact_entries(&root, &["replay"])?;
+    if !root.join("replay").is_dir() {
+        return unavailable();
+    }
     let replay = validate_directory(&root.join("replay"))?;
     exact_entries(&replay, &["v1"])?;
     let version = validate_directory(&replay.join("v1"))?;
@@ -194,7 +196,6 @@ pub fn provision_replay(root_path: &Path) -> Result<ProvisionReplayOutcome, Repl
         ReplayLedger::open(&root)?;
         return Ok(ProvisionReplayOutcome::AlreadyProvisioned);
     }
-    exact_entries(&root, &[])?;
     fs::create_dir(root.join("replay")).map_err(|_| ReplayError::PersistenceUnavailable)?;
     let version = root.join("replay/v1");
     fs::create_dir(&version).map_err(|_| ReplayError::PersistenceUnavailable)?;
