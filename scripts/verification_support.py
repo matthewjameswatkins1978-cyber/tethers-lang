@@ -135,6 +135,11 @@ def discover_ocaml_switch(
     """
     env = os.environ if environ is None else environ
     explicit = requested or env.get("TETHERS_OCAML_SWITCH")
+    # opam colorizes its own tabular output when OPAMCOLOR forces colour (as the
+    # GitHub setup-ocaml action does). Parsed output must be colour-free, or
+    # installed package names/versions will not match.
+    plain_env = dict(env)
+    plain_env["OPAMCOLOR"] = "never"
     if explicit:
         candidates = [explicit]
     else:
@@ -147,6 +152,7 @@ def discover_ocaml_switch(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 check=False,
+                env=plain_env,
             )
         except OSError as error:
             raise RuntimeError(f"Cannot discover OCaml switches because opam is unavailable: {error}") from error
@@ -190,6 +196,7 @@ def discover_ocaml_switch(
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     check=False,
+                    env=plain_env,
                 )
             except OSError:
                 packages = None
