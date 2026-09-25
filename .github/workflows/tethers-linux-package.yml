@@ -125,6 +125,11 @@ jobs:
               rm -f -- "$generated"
             fi
           done
+          # The setup-ocaml action creates a project-local ./_opam switch that
+          # this lane never uses (it uses the named tethers-0.8 switch). CI
+          # checkouts are always fresh, so ./_opam here is pure CI environment,
+          # not source: remove it before the clean assertion.
+          rm -rf -- _opam
           dirty=$(git status --porcelain=v1 --untracked-files=all)
           if [[ -n "$dirty" ]]; then
             printf '%s\n' 'Unexpected dirty files remain before release packaging:' >&2
