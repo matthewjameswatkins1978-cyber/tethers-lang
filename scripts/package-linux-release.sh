@@ -159,9 +159,10 @@ cp "$repository_root/examples/external-consumer/fixture-ping.json" "$package_dir
     sha256sum "$file"
 done > SHA256SUMS)
 
-# Deterministic tar.gz: sorted entries, fixed ownership/timestamps, no gzip filename/timestamp.
+# Deterministic tar.gz: entries arrive sorted from find, with fixed
+# ownership/timestamps and no gzip filename/timestamp.
 (cd "$stage_dir" && find "$package_name" -type f | sort | \
-    tar --no-recursion --sort-name --owner=root --group=root --numeric-owner \
+    tar --no-recursion --owner=root --group=root --numeric-owner \
     --mtime="2026-01-01T00:00:00Z" -cf - -T - | gzip -n > "$archive")
 
 archive_hash=$(sha256sum "$archive" | awk '{print $1}')
