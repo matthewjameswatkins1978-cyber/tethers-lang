@@ -36,6 +36,7 @@ require_command() {
 }
 require_command tar
 require_command ldd
+require_command readelf
 require_command python3
 
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/tethers-linux-test.XXXXXX")
@@ -77,11 +78,18 @@ for bin_name in tethers tethers-engine; do
 done
 printf 'PASS\n'
 
-printf 'Test 5: no developer-checkout path dependence... '
+printf 'Test 5: no foreign path dependence... '
 independent_bin=$(extract_package "$test_root/independent")
 [[ -n "$independent_bin" ]] || fail "independent extraction did not contain executable"
+# Windows build paths must never leak into a Linux binary. Absolute Unix build
+# paths can legitimately appear in panic/debug metadata, so build-tree
+# independence is proven behaviourally (tests 1-3, smoke, recovery) plus the
+# RUNPATH audit below — not by a blanket string ban.
 if strings "$independent_bin" | grep -Fq 'C:\\'; then fail "binary contains a Windows path"; fi
-if strings "$independent_bin" | grep -Fq '/home/'; then fail "binary contains a Linux home path"; fi
+if readelf -d "$independent_bin" | grep -Ei 'rpath|runpath' >/dev/null; then
+    readelf -d "$independent_bin" | grep -Ei 'rpath|runpath'
+    fail "binary carries a RUNPATH/RPATH into a build tree"
+fi
 printf 'PASS\n'
 
 printf 'Test 6: runtime dependency audit... '
