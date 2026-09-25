@@ -50,7 +50,16 @@ jobs:
 
       - name: Repository verification (aggregate debug gate)
         run: |
-          python3 scripts/verify-tethers.py --ocaml-switch tethers-0.8
+          set -o pipefail
+          python3 scripts/verify-tethers.py --ocaml-switch tethers-0.8 2>&1 | tee /tmp/verify-tethers.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Upload verification log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-tethers-log
+          path: /tmp/verify-tethers.log
 
       - name: Rust format and static checks
         run: |
@@ -64,6 +73,8 @@ jobs:
         env:
           TETHERS_OCAML_SWITCH: tethers-0.8
         run: |
+          set -o pipefail
+          {
           bash scripts/prepare-current-engine.sh
           manifest=verification/current-engine-provenance.json
           engine=$(jq -er '.binary_relative_path' "$manifest")
@@ -76,6 +87,15 @@ jobs:
             cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml \
               --test "$test_name" --locked --release -- --test-threads=1
           done
+          } 2>&1 | tee /tmp/rust-release.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Upload release-test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-release-log
+          path: /tmp/rust-release.log
 
       - name: Clear generated verification evidence and assert clean tree
         run: |
