@@ -1,141 +1,192 @@
-# TETHERS L1a - Native Cross-Platform Verifier
-
-Task: `TETHERS L1a / Native Cross-Platform Verifier`
+# TETHERS 0.8.0 RELEASE HARDENING AND READINESS
 
 Control contract: `1`
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
-Task colour: `Green`
+Task colour: `Amber`
 
 Owner: `Codex`
 
-Route: `Replace the PowerShell-only aggregate verifier with one repository-owned cross-platform authority, prove native Linux execution, document the contract, commit and push without merging.`
+Route: `Codex on native Windows; local verification and external-consumer smoke`
 
-Base commit: `7054875527dcb4332f9742b83c8d19e683be77a4`
+Worker note: `docs/worker-notes/2026-09-25-tethers-readiness-cleanup.md`
 
-Worker note: `docs/worker-notes/2026-09-17-tethers-l1a-native-verifier.md`
+Base branch: `main`
 
-Suggested branch:
+Base commit: `7e29110319c554a6586865ec6c47a45498696d16`
 
-`codex/tethers-l1a-native-verifier`
+The Base commit is the starting baseline only, not the final 0.8.0 release SHA.
+
+OCaml switch path: `N/A`
+
+Rust toolchain: `1.97.1`; plain Cargo resolved by root pin; `--locked` mandatory
+
+Toolchain preflight: `required`
+
+Rust change class: `NON_RUST`
 
 ## Objective
 
-Make `just verify` authoritative and native on both Windows and Linux. The
-verification result must describe this checkout, its current first-party OCaml
-engine, every required suite, and any explicit skip or failure. Linux must not
-invoke Windows PowerShell through WSL interop or inherit a stale engine.
+Harden Tethers into a reusable, versioned authority component. Complete cleanup,
+freeze and identify the final 0.8.0 release candidate, package it, tag that
+exact commit, build the full runtime from the tag, rerun every required proof
+against those artifacts, install that runtime locally, and record provenance.
+The starting baseline is not the final release SHA.
 
 ## Relevant background and existing behaviour
 
-The native engine preparation and Rust runner already exist as Linux shell
-entry points and bind the engine to the current source commit, tree and SHA-256.
-The aggregate `just verify` recipe still invokes `scripts/verify-tethers.ps1`,
-which causes WSL interop to select Windows PowerShell and fail before product
-verification. The pure fixture, MCP and compatibility checks are currently
-PowerShell-only. L1 product semantics and the Windows checkout are outside this
-task.
+- Canonical repository is `matthewjameswatkins1978-cyber/tethers-lang`, branch
+  `main`, handoff SHA `7e29110319c554a6586865ec6c47a45498696d16`, including merged
+  R0/R1/R2 architecture.
+- Tethers Core deterministically plans. `tethers.authority/1` evaluates current
+  host authority. The external Host owns physical effects and outcome reporting.
+- Product version is `0.8.0` on the release candidate; latest released Windows
+  full-runtime package at task start is `0.7.1`. Linux package proof PR #45 is open and its
+  required package workflow currently fails. PR #29 remains an open draft with
+  a unique `AGENTS.md` change.
+- The 0.8.0 Rust crate is package-ready under `MIT OR Apache-2.0`; crates.io
+  publication is deferred. The Windows x64 runtime is a separate process/binary
+  consumption route. The OCaml engine remains executable-only.
+- Initial local inventory found 59 linked worktrees across three Git stores,
+  eleven dirty worktrees, and 21 unreachable commits in the J10 store, plus
+  unreachable commits in two other stores. No checkout may be bulk-deleted.
+- The intended local layout is one clean `main` checkout under
+  `Projects/Tethers/tethers-lang` and only genuinely active task checkouts.
+  Preserve outer project repositories that merely contain a Tethers checkout.
 
 ## Required behaviour
 
-1. Provide one cross-platform Python verification authority at `scripts/verify-tethers.py`.
-2. Preserve the `tethers.verify/1` report schema and required evidence fields.
-3. Run the required packet, formatting, engine, OCaml, Rust, warning, protocol, MCP and compatibility suites in a fixed order.
-4. Use the existing native Linux engine preparation and Rust runner without PowerShell interop.
-5. Preserve the existing Windows engine and Rust verification contract through a native Windows process boundary.
-6. Report PASS, FAIL, SKIPPED WITH REASON and NOT APPLICABLE explicitly and fail on required failures.
-7. Make pure helper checks available natively and retain PowerShell files only as compatibility wrappers where practical.
-8. Add verifier self-tests covering subprocess outcomes, dirty state, first failure, release eligibility, report schema and paths containing spaces or quotes.
-9. Make `just verify` invoke the same authority on both platforms and update verification documentation.
-10. Prove the Linux verification process does not resolve or invoke `pwsh.exe` while still passing the authoritative route.
+1. Record the canonical source, exact SHA, live package/version/support state,
+   install route, and authority/consumer boundaries without changing product
+   semantics or making unsupported promises.
+2. Provide one tiny standard-library-only external consumer example using only
+   the public `tethers` process interface and versioned JSON contracts.
+3. Prove ALLOW, ASK/approval, DENY, useful receipt/evidence, malformed schema,
+   and caller-supplied authority rejection from a fresh temporary consumer
+   context; no effect may occur on ASK before approval or on DENY/error.
+4. Classify each discovered Tethers checkout/worktree as canonical, active,
+   merged/redundant, unique/recover, or obsolete experiment. Preserve unmerged
+   commits, dirty content, useful unique work, credentials, host state, and
+   personal data before removing any exact worktree directory.
+5. Assess PR #45 and PR #29 against the exact starting baseline. Leave both remote
+   PRs untouched and retain their unique work locally or remotely.
+6. Count unreachable commits before and after cleanup; preserve every commit
+   that is not proven represented by canonical `main` or another retained
+   branch. Prune stale worktree metadata only after verifying it is stale.
+7. Produce a readiness report with exact commands/results, worktree and dirty
+   counts, recovery/retention/deletion decisions, open PR status, package and
+   platform limits, external-smoke evidence, and known limitations.
 
 ## Relevant components
 
-- `justfile`
+- `docs/PROJECT_CONTROL.md`
+- `docs/CURRENT_CLINE_TASK.md`
+- `README.md`
+- `QUICKSTART.md`
+- `docs/AI_INTEGRATION.md`
+- `docs/VERSIONING.md`
+- `docs/SUPPORT_MATRIX.md`
+- `docs/tethers.authority.1.md`
+- `docs/architecture/TETHERS_R2_EXTERNAL_AUTHORITY_GATE.md`
+- `examples/external-consumer/`
 - `scripts/verify-tethers.py`
-- `scripts/verify-tethers.ps1`
-- `scripts/test-verify-tethers.py`
-- `scripts/test-engine-provenance.py`
-- `scripts/verification_support.py`
-- `scripts/prepare-current-engine.sh` and `.ps1`
-- `scripts/run-rust-tests.sh` and `.ps1`
-- `scripts/check-warning-ratchet.py` and `.ps1`
-- `scripts/check-compatibility-corpus.py` and `.ps1`
-- `tethers-0.1/scripts/check-fixtures.py` and `.ps1`
-- `tethers-0.1/scripts/test-mcp-transcripts.py` and `.ps1`
-- `.github/scripts/check-tethers-task-packet.py` and `.ps1`
-- `docs/VERIFICATION.md`
+- Local Tethers Git worktree stores identified in the cleanup inventory
 
 ## Frozen decisions and invariants
 
-- No Tethers product semantics, OCaml Core, Plan, Trail, policy, approval, replay, Resolve, provider, version or package changes.
-- The current OCaml engine must be built from this checkout and verified by provenance before dependent tests run.
-- Rust verification uses the repository lockfile and existing test protocol.
-- Linux verification must not call `pwsh.exe`, `powershell.exe`, `cmd.exe` or Windows-side tools.
-- The machine report remains safe, deterministic and free of credentials or arbitrary environment dumps.
-- A verifier failure is not a product failure unless a required product suite actually runs and fails.
+- `main` at the specified SHA is canonical; historical checkouts are evidence,
+  not competing implementations.
+- Keep one semantic authority. Core plans; host policy decides; Tethers Gate
+  records authority and durable intent; external consumers execute effects and
+  report outcomes. Never treat a Plan, approval, or commit response as proof an
+  external effect happened.
+- Reject malformed, unsupported, ambiguous, or caller-forged authority input.
+  Fail closed and preserve ALLOW/ASK/DENY/unavailable distinctions.
+- Do not add Tethers syntax, a second evaluator, an embedded LLM, a new runtime
+  framework, dependencies, new platform promises, or product semantics.
+- Use the approved `MIT OR Apache-2.0` license after checking incorporated
+  source and dependency notices.
+- Prove locked crate packaging and publish dry-run; do not publish to crates.io.
+- Freeze a clean final candidate, tag that exact SHA `v0.8.0`, build release
+  artifacts from the tag, rerun all proofs against those artifacts, and install
+  and smoke-test the exact runtime.
+- Never bulk-delete. Remove only individually inventoried worktree paths after
+  their exact contents and recovery state have been checked. Never delete
+  parent project directories, credentials, host databases/state, personal data,
+  or unique assets.
+- Retain PR #45 and PR #29 pending their owners' decisions.
 
 ## Acceptance criteria
 
-1. The Python authority exists and emits `tethers.verify/1` with source, toolchain, engine, suites, counts, first failure, verdict and release eligibility.
-2. `just verify` uses the Python authority on Linux and Windows.
-3. Native Linux verification builds and proves the current OCaml engine before host tests.
-4. Missing, stale or invalid engine provenance fails closed and dependent suites are reported skipped with reason.
-5. The native Linux route does not invoke `pwsh.exe` or Windows interop.
-6. Pure fixture, transcript, compatibility, warning and task checks have native implementations with thin compatibility wrappers.
-7. Verifier self-tests cover pass, failure, missing executable, skip, dirty/clean, first failure, release eligibility, schema and unusual paths.
-8. Existing Windows engine semantics remain unchanged and the PowerShell wrapper delegates to the same authority where applicable.
-9. `docs/VERIFICATION.md` describes the actual cross-platform route and report.
-10. Formatting, focused tests, native `just verify`, whitespace and Git evidence are recorded; no product semantics change.
+1. The readiness docs state current product/release versions, supported target,
+   crate and process/binary integration routes, and
+   Tethers/external-Host responsibility split consistently.
+2. An external example defines a Tether/Capability fixture, starts Tethers by
+   executable path, negotiates the exact protocol, parses strict structured
+   responses, and imports no internal Tethers modules.
+3. The fresh-context smoke proves allow, ask, explicit approval, deny, receipt,
+   malformed/unsupported protocol refusal, forbidden authority refusal, and
+   zero effects on any non-approved path.
+4. `cargo package --locked` and, where supported, `cargo publish --dry-run
+   --locked` succeed from the frozen candidate; an external consumer builds
+   from the package artifact.
+5. Tag `v0.8.0` points to the frozen final SHA; artifact hashes and all proof
+   results identify that exact SHA. The exact runtime is installed and smoked.
+6. The worktree ledger covers all discovered Git stores and worktrees; each
+   checkout has one classification and every dirty/unreachable item has a
+   recorded preservation or retention outcome.
+7. Before/after worktree counts and unreachable-commit counts are recorded;
+   only redundant or obsolete exact paths are removed, and the intended
+   canonical checkout is clean on `main` at current remote `main`.
+8. PR #45 and PR #29 are assessed against the starting baseline and remain open;
+   their unique content remains available.
+9. The final task-packet checker, verifier, focused consumer tests/smoke,
+   formatter check, whitespace check, and final status are reported truthfully.
 
 ## Required verification
 
-- Native Python verifier self-tests.
-- `cargo fmt --all -- --check`.
-- Rust static checks and the current engine/provenance route.
-- Native Linux `just verify` with a sanitized process-local PATH proving no `pwsh.exe` is available.
-- `git diff --check` and clean status before publication.
-- Windows verification evidence if a clean Windows checkout can be used without touching the canonical checkout.
+1. Inspect current worktree inventory, status, branch ancestry, dirty/untracked
+   and ignored paths, remote branch preservation, and unreachable commits.
+2. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
+3. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`
+4. Run standard-library external consumer unit tests and actual CLI/Gate smoke
+   against the current built host and verified current OCaml engine.
+5. `just verify`
+6. Re-run the task-packet checker, `git diff --check`, inspect the complete
+   diff, final worktree inventory, and final Git status.
+
+## Formatting and checkpoint sequence
+
+This is `NON_RUST`. Run `cargo fmt --manifest-path
+tethers-0.1/host-rust/Cargo.toml --all -- --check` only. Do not modify Rust
+source or run a mutating formatter.
+
+## Completion and publication
+
+Publish the reviewed 0.8.0 release commit, exact tag, and runtime artifacts after
+all required verification passes. Do not publish the crate to crates.io. Mark
+`COMPLETE` only if exact-tag evidence and the final packet checker support
+completion; otherwise record the precise remaining blocker.
 
 ## Forbidden changes
 
-- Tethers product semantics or Core syntax.
-- Plan, Trail, policy, approval, replay, Resolve, provider or packaging behaviour.
-- WSL configuration, global Git configuration, toolchains, authentication or PATH.
-- The Windows canonical checkout.
-- Weakening tests or treating an unverified engine as current.
-- Direct main updates, force-pushes, merges or version changes.
+- No Core/language/protocol/authority/replay/provider/packaging semantics or
+  product-version changes.
+- No speculative features, new product semantics, or crates.io publication.
+- No deletion of any remote ref or PR.
+- No worktree removal before review of tracked, untracked, ignored, and
+  unreachable state plus a recorded recovery decision.
+- No unrelated change to other projects nested beside or inside the Tethers
+  worktree roots.
 
 ## Stop conditions
 
-- A real product test failure after the verifier is repaired; report it as a separate L1b defect.
-- Current engine provenance or fail-closed behaviour regresses.
-- Native verification requires Windows interop or a new semantic authority.
-- A required toolchain is unavailable and cannot be diagnosed without workshop surgery.
-- Two materially similar failed implementation attempts against the same approach.
+Stop on a lost/unclear unique change, any unreviewed credentials or user data,
+unavailable required verification, an unsafe worktree relation, or conflicting
+authority evidence. Preserve it and report the exact path/SHA and the smallest
+unresolved decision.
 
 ## Expected pre-existing changes
 
-- The L1 branch remains the source baseline and is not rewritten.
-- The ignored generated engine and verification reports may be refreshed by tests.
-- The Windows canonical checkout may contain unrelated work and must remain untouched.
-
-## Implementation scope
-
-- `justfile`
-- `scripts/verify-tethers.py`
-- `scripts/verification_support.py`
-- `scripts/check-warning-ratchet.py`
-- `scripts/check-warning-ratchet.ps1`
-- `scripts/check-compatibility-corpus.py`
-- `scripts/check-compatibility-corpus.ps1`
-- `tethers-0.1/scripts/check-fixtures.py`
-- `tethers-0.1/scripts/check-fixtures.ps1`
-- `tethers-0.1/scripts/test-mcp-transcripts.py`
-- `tethers-0.1/scripts/test-mcp-transcripts.ps1`
-- `.github/scripts/check-tethers-task-packet.py`
-- `.github/scripts/check-tethers-task-packet.ps1`
-- `docs/VERIFICATION.md`
-- `docs/CURRENT_CLINE_TASK.md`
-- `docs/worker-notes/2026-09-17-tethers-l1a-native-verifier.md`
+None in this fresh task worktree at base `7e29110319c554a6586865ec6c47a45498696d16`.

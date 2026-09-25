@@ -175,12 +175,42 @@ def main() -> int:
                 REPOSITORY_ROOT,
             )
         )
+        consumer_build = add(
+            run_step(
+                "external consumer CLI build",
+                [
+                    "cargo",
+                    "build",
+                    "--manifest-path",
+                    str(REPOSITORY_ROOT / "tethers-0.1/host-rust/Cargo.toml"),
+                    "--bin",
+                    "tethers",
+                    "--locked",
+                ],
+                REPOSITORY_ROOT,
+            )
+        )
+        if consumer_build.status == "PASS":
+            executable_name = "tethers.exe" if os.name == "nt" else "tethers"
+            engine_binary = REPOSITORY_ROOT / str(provenance["binary_relative_path"])
+            add(
+                run_python(
+                    "external consumer integration",
+                    REPOSITORY_ROOT / "examples/external-consumer/smoke.py",
+                    "--tethers",
+                    str(REPOSITORY_ROOT / "tethers-0.1/host-rust/target/debug" / executable_name),
+                    "--engine",
+                    str(engine_binary),
+                )
+            )
+        else:
+            add(skipped_step("external consumer integration", "external consumer CLI build failed"))
         add(run_python("protocol fixture sanity", REPOSITORY_ROOT / "tethers-0.1/scripts/check-fixtures.py"))
         add(run_python("MCP transcript suite", REPOSITORY_ROOT / "tethers-0.1/scripts/test-mcp-transcripts.py"))
         add(run_python("compatibility corpus", SCRIPT_ROOT / "check-compatibility-corpus.py"))
     else:
         reason = "current engine prerequisite failed; dependent suites were not run"
-        for name in ("OCaml tests", "Rust static checks", "warning ratchet", "Rust and cross-language tests", "R2 authority gate suite", "protocol fixture sanity", "MCP transcript suite", "compatibility corpus"):
+        for name in ("OCaml tests", "Rust static checks", "warning ratchet", "Rust and cross-language tests", "R2 authority gate suite", "external consumer CLI build", "external consumer integration", "protocol fixture sanity", "MCP transcript suite", "compatibility corpus"):
             add(skipped_step(name, reason))
 
     counts = {status: sum(result.status == status for result in results) for status in ("PASS", "FAIL", "SKIPPED WITH REASON", "NOT APPLICABLE")}

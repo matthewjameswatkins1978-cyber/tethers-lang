@@ -1,5 +1,18 @@
 extern crate self as tethers_reference_host;
 
+/// Curated in-process Rust access to the versioned Authority Gate.
+///
+/// The wire contract remains `tethers.authority/1`; use the `tethers` binary
+/// when an out-of-process boundary is preferred. Core plans, this Gate
+/// decides current authority, and the consuming Host performs physical work.
+pub mod authority_v1 {
+    pub use crate::authority_gate::{AuthorityGate, GateConfig};
+    pub use crate::gate_protocol::{
+        parse_frame, AuthorityRequest, AuthorityResponse, FrameError, ResponseError,
+        ResponseStatus, AUTHORITY_PROTOCOL,
+    };
+}
+
 pub mod agent_coding;
 pub mod agent_core;
 pub mod agent_workspace;

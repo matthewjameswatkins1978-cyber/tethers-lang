@@ -1,0 +1,9 @@
+[package]
+name = "tethers-external-rust-consumer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+tethers-reference-host = { git = "https://github.com/matthewjameswatkins1978-cyber/tethers-lang", tag = "v0.8.0" }
+serde_json = "1"

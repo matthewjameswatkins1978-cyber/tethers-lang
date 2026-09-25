@@ -1,16 +1,16 @@
 # Current Goal
 
-Updated: 2026-09-14
+Updated: 2026-09-25
 
 ## Goal
 
 **Make the Road to Tethers 1.0 a clear, verifiable stability programme built on
-the released 0.7.1 execution boundary.**
+the released 0.8.0 authority and execution boundary.**
 
 The active R1 contract freeze is documented in [`ROAD_TO_1_0.md`](ROAD_TO_1_0.md),
 with versioning, compatibility, support, and deprecation policies beside it.
-0.8 begins with contract, verification, portability, MCP, and release
-hardening rather than Core expansion.
+The 0.8.0 line adds the versioned external Authority Gate, reusable Rust crate,
+and separately installable Windows runtime without expanding Core semantics.
 
 The foundation is no longer the problem. The first Agent Essentials pass is no longer the problem either. The next phase is product coherence, real-world use, and hardening through actual workloads.
 
@@ -31,10 +31,10 @@ The Tethers 0.7 release line carries forward the major capabilities delivered by
 - agent-oriented workspace/text/hash/patch reference capabilities;
 - structured Git, argv-only process, and named verification reference capabilities;
 - deterministic `tethers-bench` verification tooling;
-- Windows x64 full-runtime 0.7.1 practical release bundle;
+- Windows x64 full-runtime 0.8.0 release bundle and package-ready Rust crate;
 - the separate Portable Workbench 0.2.2 authority façade.
 
-The current product release line is Tethers 0.7.1, tagged `tethers-v0.7.1`.
+The current product release line is Tethers 0.8.0, tagged `v0.8.0`.
 
 ## Repository coherence
 
@@ -83,13 +83,13 @@ Tethers is the deterministic execution substrate between probabilistic intent an
 Tethers currently carries several legitimate version axes:
 
 - Human Tether language semantics: `0.1`;
-- reference-host Cargo package: `0.7.1`;
+- reference-host Cargo package: `0.8.0`;
 - Portable Workbench: `0.2.2`;
 - completed Plug milestone: `0.3`;
 - completed Together/concurrency milestone: `0.4`;
-- practical product release: `0.7.1`, latest tag `tethers-v0.7.1`.
+- practical product release: `0.8.0`, latest tag `v0.8.0`.
 
-The 0.7 public asset is a Windows x64 full-runtime archive. The language and
+The 0.8 public asset is a Windows x64 full-runtime archive. The language and
 compatibility package versions remain separate axes by design.
 
 ### 3. Use Tethers in real agent work

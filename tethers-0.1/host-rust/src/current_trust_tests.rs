@@ -114,7 +114,7 @@ fn write_read_only(path: &Path, bytes: &[u8]) {
 }
 
 fn manifest_bytes() -> &'static [u8] {
-    include_bytes!("../../protocol/capability-manifests/fixture-ping.json")
+    include_bytes!("../fixtures/capability-manifests/fixture-ping.json")
 }
 
 fn quarantine_fixture() -> (CandidateRecord, PathBuf, PathBuf) {

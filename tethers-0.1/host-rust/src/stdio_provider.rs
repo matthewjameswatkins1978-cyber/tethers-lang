@@ -634,13 +634,13 @@ mod tests {
     use crate::resolver::{self, ProviderAvailability};
 
     const TRUSTED_MANIFEST: &str =
-        include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        include_str!("../fixtures/capability-manifests/fixture-ping.json");
     const TRUSTED_DIGEST: &str =
         "sha256:01fed7a4b877dd82abe91a1b6cfcd476b02e4c115489e70cbb285b8bf2d32d8b";
 
     fn fixture_script_path() -> std::path::PathBuf {
         let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.pop();
+        path.push("fixtures");
         path.push("scripts");
         #[cfg(windows)]
         path.push("tethers-stdio-fixture.ps1");

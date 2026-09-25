@@ -3,7 +3,11 @@ name = "tethers-reference-host"
 version = "0.8.0"
 edition = "2021"
 rust-version = "1.97"
-publish = false
+description = "Reference Rust host and authority gate for deterministic Tethers integrations"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/matthewjameswatkins1978-cyber/tethers-lang"
+homepage = "https://github.com/matthewjameswatkins1978-cyber/tethers-lang"
+readme = "README.md"
 
 [[bin]]
 name = "tethers-reference-host"

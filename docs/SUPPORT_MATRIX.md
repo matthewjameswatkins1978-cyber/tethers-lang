@@ -1,7 +1,7 @@
 # Tethers 1.0 Support Matrix
 
 Status: living support promise
-Updated: 2026-09-14
+Updated: 2026-09-25
 
 Support is a product promise, not a claim that code cannot happen to compile
 elsewhere. A target becomes official only after every required layer below has
@@ -11,7 +11,7 @@ evidence.
 
 | Target | 1.0 intention | Current evidence/status |
 | --- | --- | --- |
-| Windows x86-64 | REQUIRED / OFFICIAL | Current practical 0.7 full-runtime target; published archive, checksums, manifest, CLI smoke, host/engine evidence pass |
+| Windows x86-64 | REQUIRED / OFFICIAL | Current practical 0.8 full-runtime target; published archive, checksums, provenance, CLI smoke, host/engine evidence pass |
 | Linux x86-64 | REQUIRED TARGET / NOT YET OFFICIAL | 1.0 target, not yet an official release promise; native host/engine, packaging, clean-machine, runtime, recovery, CI, and release evidence remain required |
 
 “Official” here describes the intended 1.0 support promise. Linux must not be
@@ -64,7 +64,7 @@ manifest generation, and clean-machine behaviour must be tested on the target.
 
 ## Current platform truth
 
-The published 0.7 native release is Windows x86-64. The Portable Workbench is a
+The published 0.8 native release is Windows x86-64. The Portable Workbench is a
 separate Rust surface and does not prove full-host parity. Linux has meaningful
 portable Rust seams and a portable musl target in the repository, but that is
 not evidence of a supported native Linux Tethers host release. R3 owns the

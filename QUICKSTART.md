@@ -332,20 +332,27 @@ Do not infer the limits of the full platform from the portable workbench, and do
 - [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) - enduring design principles.
 - [`tethers-0.1/portable-rust/AI-INTEGRATION.md`](tethers-0.1/portable-rust/AI-INTEGRATION.md) - embedding the small authority workbench.
 
-## 11. Install the 0.7.1 bundle
+## 11. Install the 0.8.0 bundle
 
-Download the Windows x64 full-runtime archive from the [0.7.1 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1),
-verify its `SHA256SUMS` and release manifest, and extract it. The archive
-contains `tethers.exe` and `tethers-engine.exe`.
+This is the Windows x64 full-runtime release with the `tethers.authority/1`
+Gate. It includes a matching `tethers.exe` host and `tethers-engine.exe` Core
+engine; see [`docs/INTEGRATING_TETHERS.md`](docs/INTEGRATING_TETHERS.md) for
+the separate Rust crate and process integration routes.
 
-The Windows bundle is reproducible locally:
+Download the Windows x64 full-runtime archive from the [0.8.0 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.0),
+verify its SHA-256 sidecar and provenance manifest, and extract it. Keep the
+host and engine binaries together when configuring a consumer.
+
+The Windows bundle is reproducible from the exact release tag. Supply the
+absolute path to the configured OCaml switch:
 
 ```powershell
-pwsh -NoProfile -File .\scripts\package-0.7.ps1
+pwsh -NoProfile -File .\scripts\package-tethers-0.8-release.ps1 -OcamlSwitch C:\path\to\opam\switch
 ```
 
-Linux parity and a Linux 0.7 release asset are not established by this
-Windows-only public package; do not infer them from the portable workbench.
+The previous [0.7.1 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1)
+remains available for compatibility. Linux parity is not established by this
+Windows-only full-runtime release; do not infer it from the portable workbench.
 
 The shortest accurate mental model is:
 

@@ -25,6 +25,13 @@ jobs:
       - name: Rust static checks
         shell: pwsh
         run: cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked
+      - name: Verify distributable Rust crate
+        shell: pwsh
+        run: |
+          cargo package --manifest-path tethers-0.1/host-rust/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo publish --manifest-path tethers-0.1/host-rust/Cargo.toml --dry-run --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Packet checker tests
         shell: pwsh
         run: pwsh -NoProfile -File .github/scripts/test-check-tethers-task-packet.ps1
