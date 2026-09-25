@@ -54,12 +54,19 @@ jobs:
           python3 scripts/verify-tethers.py --ocaml-switch tethers-0.8 2>&1 | tee /tmp/verify-tethers.log
           test "${PIPESTATUS[0]}" -eq 0
 
+      - name: Show first meaningful failure
+        if: always()
+        run: |
+          jq '{verdict, first_meaningful_failure, outcome_counts}' verification/tethers-verification.json 2>/dev/null || echo "no verification report was produced"
+
       - name: Upload verification log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: verify-tethers-log
-          path: /tmp/verify-tethers.log
+          path: |
+            /tmp/verify-tethers.log
+            verification/tethers-verification.json
 
       - name: Rust format and static checks
         run: |
