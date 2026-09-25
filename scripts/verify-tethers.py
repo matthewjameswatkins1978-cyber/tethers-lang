@@ -35,11 +35,21 @@ def python_command() -> str:
 
 def configure_native_path() -> None:
     if os.name != "nt":
-        native = [
+        # Preserve the inherited environment (CI runners, other developers) and
+        # only ensure the standard system directories plus the current user's
+        # Cargo/local tool directories are present. Never replace PATH with
+        # hardcoded developer-home entries: that hides the real toolchain.
+        home = os.path.expanduser("~")
+        wanted = [
             "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin",
-            "/home/matmus/.cargo/bin", "/home/matmus/.local/bin",
+            os.path.join(home, ".cargo", "bin"),
+            os.path.join(home, ".local", "bin"),
         ]
-        os.environ["PATH"] = os.pathsep.join(native)
+        current = os.environ.get("PATH", "").split(os.pathsep)
+        for directory in wanted:
+            if directory and directory not in current:
+                current.append(directory)
+        os.environ["PATH"] = os.pathsep.join([entry for entry in current if entry])
 
 
 def run_python(name: str, script: Path, *args: str, category: str = "required") -> StepResult:

@@ -101,7 +101,10 @@ no weakening of `tethers.authority/1`.
 4. Windows x64 runtime packaged from the release tag, installed/downloaded smoke green.
 5. Crate 0.8.1 packaged, dry-run green, contents reviewed; registry consumer proved iff published.
 6. R2 gate suite plus external hostile proof green on shipped artifacts.
-7. Provenance/manifest/hash record complete for every artifact.
+7. Provenance/manifest/hash record complete for every artifact; `VERSION`, release
+   notes, README, and support-matrix state updated from evidence only.
+8. R2 authority behaviour bit-for-bit preserved with no `tethers.authority/2`;
+   the shipped diff is limited to the authorised maintenance surface.
 
 ## Required verification
 

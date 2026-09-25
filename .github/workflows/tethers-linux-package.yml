@@ -39,9 +39,12 @@ jobs:
           sudo apt-get install -y python3 jq
 
       - name: Set up OCaml switch
+        # Pin the exact locked toolchain (tethers_engine.opam.locked): floating
+        # installs are rejected by switch discovery, which requires OCaml 5.5.0,
+        # Dune 3.24.0, Yojson 2.2.2, and Digestif 1.3.1.
         run: |
           opam switch create tethers-0.8 5.5.0
-          opam install --switch=tethers-0.8 -y dune yojson digestif
+          opam install --switch=tethers-0.8 -y dune.3.24.0 yojson.2.2.2 digestif.1.3.1
           opam exec --switch=tethers-0.8 -- ocamlc -version
           opam exec --switch=tethers-0.8 -- dune --version
 
