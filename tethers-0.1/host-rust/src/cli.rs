@@ -35,6 +35,8 @@ pub enum Command {
     Describe {
         #[arg(long = "host-data-root", value_name = "ABSOLUTE_PATH")]
         host_data_root: Option<PathBuf>,
+        #[arg(long = "engine", value_name = "PATH")]
+        engine: Option<PathBuf>,
         #[arg(long = "json", default_value_t = false)]
         json: bool,
     },
@@ -80,9 +82,9 @@ pub enum Command {
         #[command(subcommand)]
         command: PlugCommand,
     },
-    /// Validate Tether source, engine, and provider availability.
+    /// Validate Tether source, engine, and provider availability with a runtime configuration.
     Check {
-        #[arg(long = "config", value_name = "PATH")]
+        #[arg(long = "config", alias = "runtime-config", value_name = "PATH")]
         config: PathBuf,
         #[arg(long = "engine", value_name = "PATH")]
         engine: PathBuf,
@@ -90,7 +92,7 @@ pub enum Command {
 
     /// Evaluate one explicit external event against one configured Tether.
     Run {
-        #[arg(long = "config", value_name = "PATH")]
+        #[arg(long = "config", alias = "runtime-config", value_name = "PATH")]
         config: PathBuf,
         #[arg(long = "engine", value_name = "PATH")]
         engine: PathBuf,
@@ -104,7 +106,7 @@ pub enum Command {
 
     /// Validate and propose one evaluation without authority, provider, or Trail access.
     Preview {
-        #[arg(long = "config", value_name = "PATH")]
+        #[arg(long = "config", alias = "runtime-config", value_name = "PATH")]
         config: PathBuf,
         #[arg(long = "engine", value_name = "PATH")]
         engine: PathBuf,
@@ -114,7 +116,7 @@ pub enum Command {
 
     /// Evaluate one explicit event and return the deterministic proposed Plan without dispatch.
     Plan {
-        #[arg(long = "config", value_name = "PATH")]
+        #[arg(long = "config", alias = "runtime-config", value_name = "PATH")]
         config: PathBuf,
         #[arg(long = "engine", value_name = "PATH")]
         engine: PathBuf,
@@ -128,7 +130,7 @@ pub enum Command {
     Gate {
         #[arg(long = "stdio", default_value_t = false)]
         stdio: bool,
-        #[arg(long = "config", value_name = "PATH")]
+        #[arg(long = "config", alias = "runtime-config", value_name = "PATH")]
         config: PathBuf,
         #[arg(long = "engine", value_name = "PATH")]
         engine: PathBuf,
@@ -298,6 +300,7 @@ pub enum GitCommand {
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    #[command(alias = "branch_current")]
     BranchCurrent,
     Stage {
         #[arg(required = true)]
@@ -307,6 +310,7 @@ pub enum GitCommand {
         #[arg(long)]
         message: String,
     },
+    #[command(alias = "branch_create")]
     BranchCreate {
         name: String,
     },
@@ -813,7 +817,8 @@ mod tests {
             parse_cli(&["describe", "--json"]).unwrap().command,
             Some(Command::Describe {
                 json: true,
-                host_data_root: None
+                host_data_root: None,
+                engine: None,
             })
         ));
         assert!(matches!(

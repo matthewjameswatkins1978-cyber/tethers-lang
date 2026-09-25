@@ -524,11 +524,22 @@ pub fn run() {
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {
-            command: Some(CliCommand::Describe { host_data_root, .. }),
-        }) => {
-            let result = discovery::run_describe(host_data_root.as_deref());
-            emit_envelope_and_exit(result.envelope, result.exit_code);
-        }
+            command:
+                Some(CliCommand::Describe {
+                    host_data_root,
+                    engine,
+                    ..
+                }),
+        }) => match host_data_root {
+            Some(host_data_root) => {
+                let result = discovery::run_describe(Some(&host_data_root));
+                emit_envelope_and_exit(result.envelope, result.exit_code);
+            }
+            None => {
+                let result = agent_core::run_describe(engine);
+                emit_envelope_and_exit(result.envelope, result.exit_code);
+            }
+        },
         Ok(Cli {
             command:
                 Some(CliCommand::Capability {
@@ -838,16 +849,35 @@ pub fn run() {
             command: Some(CliCommand::ProvisionReplay { root }),
         }) => match crate::replay_store::provision_replay(&root) {
             Ok(result) => {
-                println!("{}", result.as_str());
-                std::process::exit(0);
+                let envelope = CliEnvelope::ok(
+                    "provision-replay",
+                    serde_json::json!({
+                        "outcome": result.as_str(),
+                        "host_data_root": root,
+                    }),
+                );
+                emit_envelope_and_exit(envelope, 0);
             }
             Err(e) => {
-                let envelope = CliEnvelope::error(
+                let diagnostic = crate::replay_store::last_replay_diagnostic();
+                let message = if let Some(ref diag) = diagnostic {
+                    format!(
+                        "{}: {} (phase: {}, recovery: {})",
+                        e, diag.reason, diag.phase, diag.recovery
+                    )
+                } else {
+                    e.to_string()
+                };
+                let envelope = CliEnvelope::error_with_data(
                     "provision-replay",
                     OutcomeStatus::Failed,
                     "PROVISION_FAILED",
-                    e.to_string(),
+                    message,
                     None,
+                    serde_json::json!({
+                        "diagnostic": diagnostic,
+                        "host_data_root": root,
+                    }),
                 );
                 emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
             }

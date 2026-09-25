@@ -393,3 +393,192 @@ fn j13a_outcome_status_values_correct() {
     let env3: serde_json::Value = serde_json::from_str(stdout3.trim()).unwrap();
     assert_eq!(env3["status"], "invalid_data");
 }
+
+#[test]
+fn audit_item1_git_log_multiple_commits_parsing() {
+    let (code, stdout, _) = run_host(&["git", "log", "--limit", "2"]);
+    if code != 0 {
+        // Not a git repo in context, skip gracefully
+        return;
+    }
+    let env: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid envelope");
+    assert_eq!(env["status"], "ok");
+    let commits = env["data"]["commits"].as_array().expect("commits array");
+    if commits.len() >= 2 {
+        for commit in commits {
+            let sha = commit["sha"].as_str().expect("sha string");
+            assert_eq!(sha.len(), 40, "sha must be 40 chars: {sha}");
+            assert!(
+                sha.chars().all(|c| c.is_ascii_hexdigit()),
+                "sha must be ascii hexdigit: {sha}"
+            );
+            assert_eq!(sha, sha.trim(), "sha must not have surrounding whitespace");
+            assert!(!commit["author"].as_str().unwrap().is_empty());
+            assert!(!commit["subject"].as_str().unwrap().is_empty());
+        }
+    }
+}
+
+#[test]
+fn audit_item2_describe_truthful_built_in_capabilities() {
+    let (code, stdout, _) = run_host(&["describe"]);
+    assert_eq!(code, 0);
+    let env: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid envelope");
+    assert_eq!(env["status"], "ok");
+    let available = env["data"]["available_capabilities"].as_u64().unwrap_or(0);
+    assert!(available > 0, "available_capabilities must be > 0");
+    let caps = env["data"]["capabilities"]
+        .as_array()
+        .expect("capabilities array");
+    assert!(caps.iter().any(|c| c.as_str() == Some("workspace")));
+    assert!(caps.iter().any(|c| c.as_str() == Some("git")));
+    assert!(caps.iter().any(|c| c.as_str() == Some("exec")));
+    let families = env["data"]["capability_families"]
+        .as_array()
+        .expect("families array");
+    assert!(
+        families.len() >= 3,
+        "must include workspace, git, exec families"
+    );
+}
+
+#[test]
+fn audit_item4_git_cli_spelling_aliases() {
+    // Both branch_current and branch-current should parse to the same operation
+    let (code1, stdout1, _) = run_host(&["git", "branch-current"]);
+    let (code2, stdout2, _) = run_host(&["git", "branch_current"]);
+    assert_eq!(code1, code2);
+    let env1: serde_json::Value = serde_json::from_str(stdout1.trim()).unwrap();
+    let env2: serde_json::Value = serde_json::from_str(stdout2.trim()).unwrap();
+    assert_eq!(env1["status"], env2["status"]);
+    assert_ne!(env1["status"], "invalid_cli_usage");
+    assert_ne!(env2["status"], "invalid_cli_usage");
+
+    // Both branch_create and branch-create should accept --help with identical output
+    let (code_help1, stdout_help1, _) = run_host(&["git", "branch-create", "--help"]);
+    let (code_help2, stdout_help2, _) = run_host(&["git", "branch_create", "--help"]);
+    assert_eq!(code_help1, code_help2);
+    assert!(stdout_help1.contains("branch_create") || stdout_help1.contains("branch-create"));
+    assert!(stdout_help2.contains("branch_create") || stdout_help2.contains("branch-create"));
+}
+
+#[test]
+fn audit_item7_config_cli_ambiguity() {
+    let tmp = std::env::temp_dir().join(format!("audit-cfg-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let proj_cfg = tmp.join("config.json");
+    std::fs::write(&proj_cfg, r#"{"schema":"tethers.project/1","version":1}"#).unwrap();
+    let engine = host_binary();
+
+    let (code, stdout, _) = run_host(&[
+        "check",
+        "--config",
+        &proj_cfg.to_string_lossy(),
+        "--engine",
+        &engine.to_string_lossy(),
+    ]);
+    assert_eq!(code, 3);
+    let env: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(env["status"], "invalid_data");
+    let msg = env["error"]["message"].as_str().unwrap();
+    assert!(
+        msg.contains("tethers.project/1"),
+        "error message should identify project config: {msg}"
+    );
+    assert!(
+        msg.contains("runtime configuration"),
+        "error message should mention runtime configuration: {msg}"
+    );
+
+    // Also test with --runtime-config flag alias
+    let (code2, stdout2, _) = run_host(&[
+        "check",
+        "--runtime-config",
+        &proj_cfg.to_string_lossy(),
+        "--engine",
+        &engine.to_string_lossy(),
+    ]);
+    assert_eq!(code2, 3);
+    let env2: serde_json::Value = serde_json::from_str(stdout2.trim()).unwrap();
+    assert_eq!(env2["status"], "invalid_data");
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+fn harden_replay_acl(root: &std::path::Path) {
+    #[cfg(windows)]
+    {
+        let acl_script = format!(
+            "$p='{}'; $identity=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name; $acl=[System.Security.AccessControl.DirectorySecurity]::new(); $acl.SetAccessRuleProtection($true,$false); $inherit=[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit; foreach($t in @($identity,'NT AUTHORITY\\SYSTEM','BUILTIN\\Administrators')) {{ $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($t,'FullControl',$inherit,'None','Allow')) }}; Set-Acl -LiteralPath $p -AclObject $acl",
+            root.display()
+        );
+        let _ = std::process::Command::new("pwsh.exe")
+            .args(["-NoProfile", "-Command", &acl_script])
+            .status();
+    }
+    #[cfg(not(windows))]
+    let _ = root;
+}
+
+#[test]
+fn audit_item8_provision_replay_machine_output_success_and_failure() {
+    let tmp = std::env::temp_dir().join(format!("audit-replay-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    harden_replay_acl(&tmp);
+
+    // 1. Pristine success
+    let (code1, stdout1, _) = run_host(&["provision-replay", &tmp.to_string_lossy()]);
+    assert_eq!(code1, 0, "provision-replay must exit 0 on success");
+    let env1: serde_json::Value =
+        serde_json::from_str(stdout1.trim()).expect("valid json envelope");
+    assert_eq!(env1["schema"], "tethers.cli/1");
+    assert_eq!(env1["command"], "provision-replay");
+    assert_eq!(env1["status"], "ok");
+    assert_eq!(env1["exit_code"], 0);
+    assert_eq!(env1["data"]["outcome"], "Provisioned");
+
+    // 2. Already-provisioned success
+    let (code2, stdout2, _) = run_host(&["provision-replay", &tmp.to_string_lossy()]);
+    assert_eq!(
+        code2, 0,
+        "provision-replay must exit 0 on already-provisioned"
+    );
+    let env2: serde_json::Value =
+        serde_json::from_str(stdout2.trim()).expect("valid json envelope");
+    assert_eq!(env2["schema"], "tethers.cli/1");
+    assert_eq!(env2["command"], "provision-replay");
+    assert_eq!(env2["status"], "ok");
+    assert_eq!(env2["exit_code"], 0);
+    assert_eq!(env2["data"]["outcome"], "AlreadyProvisioned");
+
+    // 3. Failure case with relative path
+    let (code3, stdout3, _) = run_host(&["provision-replay", "relative/path"]);
+    assert_ne!(code3, 0, "provision-replay must fail on relative path");
+    let env3: serde_json::Value =
+        serde_json::from_str(stdout3.trim()).expect("valid json envelope");
+    assert_eq!(env3["schema"], "tethers.cli/1");
+    assert_eq!(env3["command"], "provision-replay");
+    assert_eq!(env3["status"], "failed");
+    assert!(
+        env3["data"].is_object(),
+        "data object should contain diagnostic info"
+    );
+
+    // 4. Failure case with invalid hierarchy
+    let fail_tmp = std::env::temp_dir().join(format!("audit-replay-fail-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&fail_tmp).unwrap();
+    harden_replay_acl(&fail_tmp);
+    // Create a regular file where replay directory needs to be
+    std::fs::write(fail_tmp.join("replay"), "blocking file").unwrap();
+
+    let (code4, stdout4, _) = run_host(&["provision-replay", &fail_tmp.to_string_lossy()]);
+    assert_ne!(code4, 0, "provision-replay must fail on invalid hierarchy");
+    let env4: serde_json::Value =
+        serde_json::from_str(stdout4.trim()).expect("valid json envelope");
+    assert_eq!(env4["schema"], "tethers.cli/1");
+    assert_eq!(env4["command"], "provision-replay");
+    assert_eq!(env4["status"], "failed");
+
+    let _ = std::fs::remove_dir_all(&tmp);
+    let _ = std::fs::remove_dir_all(&fail_tmp);
+}

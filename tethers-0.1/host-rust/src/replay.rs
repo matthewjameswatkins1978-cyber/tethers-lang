@@ -32,6 +32,38 @@ impl fmt::Display for ReplayError {
 
 impl std::error::Error for ReplayError {}
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplayProvisionDiagnostic {
+    pub phase: String,
+    pub reason: String,
+    pub recovery: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+std::thread_local! {
+    static LAST_REPLAY_DIAGNOSTIC: std::cell::RefCell<Option<ReplayProvisionDiagnostic>> = const { std::cell::RefCell::new(None) };
+}
+
+pub fn record_replay_diagnostic(phase: &str, reason: &str, recovery: &str, detail: Option<String>) {
+    LAST_REPLAY_DIAGNOSTIC.with(|d| {
+        *d.borrow_mut() = Some(ReplayProvisionDiagnostic {
+            phase: phase.to_string(),
+            reason: reason.to_string(),
+            recovery: recovery.to_string(),
+            detail,
+        });
+    });
+}
+
+pub fn clear_replay_diagnostic() {
+    LAST_REPLAY_DIAGNOSTIC.with(|d| *d.borrow_mut() = None);
+}
+
+pub fn last_replay_diagnostic() -> Option<ReplayProvisionDiagnostic> {
+    LAST_REPLAY_DIAGNOSTIC.with(|d| d.borrow().clone())
+}
+
 fn canonical_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, ReplayError> {
     serde_json_canonicalizer::to_vec(value).map_err(|_| ReplayError::InvalidChain)
 }
