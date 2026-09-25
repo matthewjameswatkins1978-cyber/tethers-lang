@@ -3166,7 +3166,7 @@ mod tests {
 
     fn stdio_fixture_script_path() -> PathBuf {
         let mut script = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        script.pop();
+        script.push("fixtures");
         script.push("scripts");
         #[cfg(windows)]
         script.push("tethers-stdio-fixture.ps1");
@@ -3223,7 +3223,7 @@ mod tests {
         let script = stdio_fixture_script_path();
         let (command, args) = stdio_fixture_command_args(&script, mode);
         let verified_manifest = crate::manifest::verify_manifest(include_str!(
-            "../../protocol/capability-manifests/fixture-ping.json"
+            "../fixtures/capability-manifests/fixture-ping.json"
         ))
         .unwrap();
         PreparedProvider {
@@ -3939,7 +3939,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
+            .join("fixtures")
             .join("scripts")
             .join("tethers-stdio-fixture.ps1");
         let working_dir = script.parent().unwrap().to_path_buf();
@@ -4617,7 +4617,7 @@ mod tests {
     /// Build the fixture-ping manifest from the repository source.
     fn core9b_fixture_ping_manifest() -> crate::manifest::VerifiedManifest {
         crate::manifest::verify_manifest(include_str!(
-            "../../protocol/capability-manifests/fixture-ping.json"
+            "../fixtures/capability-manifests/fixture-ping.json"
         ))
         .unwrap()
     }
@@ -4636,7 +4636,7 @@ mod tests {
         .unwrap();
 
         let _verified_manifest = core9b_fixture_ping_manifest();
-        let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let manifest_json = include_str!("../fixtures/capability-manifests/fixture-ping.json");
         let (_, manifest_digest) = crate::manifest::canonicalize_and_digest(manifest_json).unwrap();
         std::fs::write(dir.join("manifests/fixture-ping.json"), manifest_json).unwrap();
 
@@ -4725,7 +4725,7 @@ mod tests {
         )
         .unwrap();
 
-        let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let manifest_json = include_str!("../fixtures/capability-manifests/fixture-ping.json");
         let (_, manifest_digest) = crate::manifest::canonicalize_and_digest(manifest_json).unwrap();
         std::fs::write(dir.join("manifests/fixture-ping.json"), manifest_json).unwrap();
 
@@ -5215,7 +5215,7 @@ mod tests {
         .unwrap();
 
         let manifest =
-            include_str!("../../protocol/capability-manifests/fixture-ping-standing-allow.json");
+            include_str!("../fixtures/capability-manifests/fixture-ping-standing-allow.json");
         let (_, manifest_digest) = crate::manifest::canonicalize_and_digest(manifest).unwrap();
         std::fs::write(dir.join("manifests/fixture-ping.json"), manifest).unwrap();
 
@@ -5599,8 +5599,7 @@ mod tests {
             )
             .unwrap();
 
-            let manifest_json =
-                include_str!("../../protocol/capability-manifests/fixture-ping.json");
+            let manifest_json = include_str!("../fixtures/capability-manifests/fixture-ping.json");
             let make_manifest = |cap_name: &str, provider_id: &str| -> String {
                 let mut m: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
                 m["capability_name"] = serde_json::json!(cap_name);
@@ -6472,8 +6471,7 @@ mod tests {
             )
             .unwrap();
 
-            let manifest_json =
-                include_str!("../../protocol/capability-manifests/fixture-ping.json");
+            let manifest_json = include_str!("../fixtures/capability-manifests/fixture-ping.json");
             let make_manifest =
                 |cap_name: &str, provider_id: &str, timeout_ms: Option<u64>| -> String {
                     let mut m: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
@@ -7660,8 +7658,7 @@ mod tests {
             )
             .unwrap();
 
-            let manifest_json =
-                include_str!("../../protocol/capability-manifests/fixture-ping.json");
+            let manifest_json = include_str!("../fixtures/capability-manifests/fixture-ping.json");
             let make_manifest = |cap_name: &str, provider_id: &str| -> String {
                 let mut m: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
                 m["capability_name"] = serde_json::json!(cap_name);
@@ -9667,8 +9664,7 @@ mod tests {
         )
         .unwrap();
 
-        let manifest_template =
-            include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let manifest_template = include_str!("../fixtures/capability-manifests/fixture-ping.json");
         let make_manifest = |cap_name: &str, provider_id: &str| -> (String, String) {
             let mut m: serde_json::Value = serde_json::from_str(manifest_template).unwrap();
             m["capability_name"] = serde_json::json!(cap_name);

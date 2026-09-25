@@ -884,7 +884,7 @@ mod tests {
     #[test]
     fn j13b_run_standing_allow_fixture_has_a_reviewed_canonical_digest() {
         let source =
-            include_str!("../../protocol/capability-manifests/fixture-ping-standing-allow.json");
+            include_str!("../fixtures/capability-manifests/fixture-ping-standing-allow.json");
         let (_, digest) = crate::manifest::canonicalize_and_digest(source).unwrap();
         assert_eq!(
             digest,
@@ -918,7 +918,7 @@ mod tests {
         std::fs::create_dir_all(&manifest_dir).unwrap();
         std::fs::create_dir_all(&tether_dir).unwrap();
         let manifest =
-            include_str!("../../protocol/capability-manifests/fixture-ping-standing-allow.json");
+            include_str!("../fixtures/capability-manifests/fixture-ping-standing-allow.json");
         let (_, digest) = crate::manifest::canonicalize_and_digest(manifest).unwrap();
         std::fs::write(manifest_dir.join("fixture-ping.json"), manifest).unwrap();
         std::fs::write(tether_dir.join("selected.tether"), "fixture source").unwrap();

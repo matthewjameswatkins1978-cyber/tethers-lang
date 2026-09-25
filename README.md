@@ -14,16 +14,21 @@
     ·
     <a href="docs/VERSIONING.md">Versioning</a>
     ·
+    <a href="docs/INTEGRATING_TETHERS.md">Integrate Tethers</a>
+    ·
     <a href="tethers-0.1/SPEC.md">Language specification</a>
     ·
     <a href="docs/PLUG_AUTHORING.md">Build a Plug</a>
     ·
-    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1">Tethers 0.7.1 release</a>
+    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.0">Tethers 0.8.0 release</a>
   </p>
 </div>
 
 AI is very good at deciding what it wants to do. The dangerous part begins one millisecond later, when that decision becomes a file edit, a Git operation, a network call, a deployment, a message, a database mutation, or some other real effect.
 **Tethers is the execution boundary between an AI's intentions and your computer.**
+
+Tethers is dual-licensed under [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE), at the recipient's option.
 
 That describes the Tethers product, which includes a capable Rust reference
 Host. Tethers Core itself remains the deterministic planner and semantic layer:
@@ -56,12 +61,18 @@ A model can change. A prompt can change. A provider can change. The execution co
 ## Why Tethers?
 
 Most automation stacks blur several different questions together:
-## Tethers 0.7.1
+## Release and development versions
 
-- Tethers product version: 0.7.1
-- Status: released 2026-09-16
+- Latest released product version: 0.8.0 (Windows x64 runtime bundle)
+- Current product version: 0.8.0
 - Language semantics: 0.1
-- Release notes: [`docs/TETHERS_0_7_1_RELEASE.md`](docs/TETHERS_0_7_1_RELEASE.md)
+- Release notes: [`docs/TETHERS_0_8_0_RELEASE.md`](docs/TETHERS_0_8_0_RELEASE.md)
+
+The 0.8.0 release is the Windows x64 full-runtime bundle and versioned
+`tethers.authority/1` Gate described in
+[`docs/INTEGRATING_TETHERS.md`](docs/INTEGRATING_TETHERS.md). The Rust crate
+is package-ready and available from the release source tag; crates.io
+publication remains deferred.
 
 Tethers 0.7 keeps the language deliberately small and adds a discoverable
 host-owned Agent Core for ordinary local repository work. Core plans; hosts
@@ -122,7 +133,7 @@ Tethers uses a layered set of authoritative and operational documents:
 - `docs/TASK_PACKET_TEMPLATE.md` and `docs/WORKER_NOTE_TEMPLATE.md` define the
   two durable sides of each implementation handoff.
 - `docs/PROJECT_DASHBOARD.md` is Matthew's short current-state view.
-- `docs/TETHERS_0_7_1_RELEASE.md` records the current 0.7.1 release scope;
+- `docs/TETHERS_0_8_0_RELEASE.md` records the current 0.8.0 release scope;
   `docs/releases/v0.7.0.md` preserves the previous release evidence;
   older `ROAD_TO_0_2.md` material is retained as historical project context.
 
@@ -359,7 +370,7 @@ projection over validated Trail entries.
 ## Download the portable workbench
 
 For the current native host, download the Windows x64 full-runtime asset from
-the [Tethers 0.7.1 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1).
+the [Tethers 0.8.0 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.0).
 Verify its `SHA256SUMS` and release manifest before extraction. The portable
 workbench remains separately versioned at 0.2.2 for compatibility.
 
@@ -370,20 +381,22 @@ Tethers currently has several version axes. They describe different things:
 | Layer | Current meaning |
 | --- | --- |
 | Human Tether language/protocol semantics | `0.1` specification |
-| Rust reference-host package version | `0.7.1` |
+| Rust reference-host crate version | `0.8.0` (Cargo package; crates.io publication deferred) |
+| Latest released product | `0.8.0` (Windows x64 full-runtime bundle) |
 | Portable workbench | `0.2.2` |
 | Public Plug-authoring programme | `0.3` milestone complete and integrated |
 | Together/concurrency programme | `0.4` milestone complete and integrated |
-| Practical release line | `0.7.1` — execution boundary, Agent Core, Plug/replay/Trail surfaces |
+| Current product line | `0.8.0` — includes the `tethers.authority/1` process contract |
 
 The 0.7 source tree includes three starter Tether Set examples under
 [`examples/tether-sets`](examples/tether-sets). They use the existing Tether
 language and runtime configuration; they do not introduce a second Set
 semantic or permission model.
 
-The 0.7 release publishes a Windows x64 full-runtime archive containing
-`tethers.exe` and `tethers-engine.exe`; the language and compatibility package
-versions remain separate axes by design.
+The 0.8.0 release publishes a Windows x64 full-runtime archive containing
+`tethers.exe` and the matching OCaml engine; the language and compatibility
+package versions remain separate axes by design. The reusable Rust crate is
+separately available as a Cargo package and is not yet published to crates.io.
 
 ## Security posture
 

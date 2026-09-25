@@ -240,11 +240,11 @@ mod tests {
     use super::*;
 
     const TRUSTED_MANIFEST: &str =
-        include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        include_str!("../fixtures/capability-manifests/fixture-ping.json");
 
     fn fixture_script_path() -> PathBuf {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.pop();
+        path.push("fixtures");
         path.push("scripts");
         #[cfg(windows)]
         path.push("tethers-stdio-fixture.ps1");

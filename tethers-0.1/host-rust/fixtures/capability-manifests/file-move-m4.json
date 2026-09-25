@@ -1,0 +1,20 @@
+{
+  "manifest_format_version": "1.0",
+  "capability_name": "file.move",
+  "capability_version": 1,
+  "title": "Exact File Move",
+  "description": "Move one regular file between two host-approved roots without overwrite.",
+  "input_schema": {"type":"object","properties":{"source_path":{"type":"string"},"destination_path":{"type":"string"}},"required":["source_path","destination_path"],"additionalProperties":false},
+  "output_schema": {"type":"object","properties":{"moved":{"type":"boolean"},"source_path":{"type":"string"},"destination_path":{"type":"string"}},"required":["moved","source_path","destination_path"],"additionalProperties":false},
+  "effects": ["data.read", "data.move"],
+  "permission_scope": {"kind":"path_prefix","allowed_prefixes":["source/","destination/"]},
+  "reversibility": "compensatable",
+  "determinism": "deterministic",
+  "idempotency": {"mechanism":"none"},
+  "confirmation_policy": {"standing_permitted":true,"per_call_required":false},
+  "timeout_ms": 5000,
+  "retry_policy": {"max_retries":0,"backoff_ms":0,"allowed_on":[],"requires_idempotency_proof":true},
+  "provider": {"identity":"tethers-file-tools","display_name":"Tethers File Tools","identity_source":"host_configuration","description":"Credential-free local reference provider."},
+  "binding": {"kind":"mcp","server_name":"tethers-file-tools","tool_name":"file_move","adapter":null},
+  "digest": "sha256:2ac3793d4b61725fd130dac531d9690b93881341245f0c2f7c3aca2fd2dd2311"
+}

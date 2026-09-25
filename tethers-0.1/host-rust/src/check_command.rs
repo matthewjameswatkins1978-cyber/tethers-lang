@@ -524,7 +524,7 @@ mod tests {
 
     fn fixture_command_args(mode: &str) -> Vec<String> {
         let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
+            .join("fixtures")
             .join("scripts");
         #[cfg(windows)]
         {
@@ -828,7 +828,7 @@ mod tests {
         )
         .unwrap();
 
-        let manifest_json = include_str!("../../protocol/capability-manifests/fixture-ping.json");
+        let manifest_json = include_str!("../fixtures/capability-manifests/fixture-ping.json");
         let mut manifest: serde_json::Value = serde_json::from_str(manifest_json).unwrap();
         manifest["provider"]["identity"] = serde_json::json!("provider-a");
         manifest["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");

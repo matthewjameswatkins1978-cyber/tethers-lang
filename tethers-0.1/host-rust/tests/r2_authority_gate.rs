@@ -15,7 +15,7 @@ use tethers_reference_host::gate_protocol::{AuthorityResponse, ResponseStatus};
 const STANDING_ALLOW_DIGEST: &str =
     "sha256:eb61b62bde489e00a4d15c37c83e6cdb1e9e378b8f13b910d4b68bd6d68c19da";
 const STANDING_ALLOW_MANIFEST: &str =
-    include_str!("../../protocol/capability-manifests/fixture-ping-standing-allow.json");
+    include_str!("../fixtures/capability-manifests/fixture-ping-standing-allow.json");
 
 const CORE_TETHER: &str = r#"tether "J14 complete local scenario"
 

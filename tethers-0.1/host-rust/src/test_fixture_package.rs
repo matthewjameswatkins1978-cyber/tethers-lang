@@ -10,7 +10,7 @@ use std::io::{Cursor, Write};
 
 pub fn build_fixture_package(provider_bytes: &[u8]) -> Result<Vec<u8>, String> {
     let manifest: Value = serde_json::from_str(include_str!(
-        "../../protocol/capability-manifests/fixture-ping.json"
+        "../fixtures/capability-manifests/fixture-ping.json"
     ))
     .map_err(|error| error.to_string())?;
     let manifest_bytes = serde_json::to_vec(&manifest).map_err(|error| error.to_string())?;

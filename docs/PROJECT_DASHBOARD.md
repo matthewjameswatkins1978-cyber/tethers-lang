@@ -1,12 +1,14 @@
 # Tethers Project Dashboard
 
-Updated: 2026-09-14
+Updated: 2026-09-25
 
 ## Product state
 
 **Tethers has crossed the line from foundation project to practical AI-facing execution platform.**
 
-The published 0.7.1 release combines the deterministic language/Core, trusted host/runtime, Plug system, bounded concurrency, replay/evidence machinery, and the host-owned Agent Core surfaces needed for an unfamiliar agent to inspect, plan, execute, and inspect the system.
+The 0.8.0 release carries the deterministic language/Core, trusted host/runtime,
+Plug system, bounded concurrency, replay/evidence machinery, host-owned Agent
+Core, and the versioned external Authority Gate.
 
 The next bottleneck is not missing architecture. The active Road to 1.0 now
 freezes the consequential contract first, followed by verification control,
@@ -56,13 +58,13 @@ The point is not to make AI deterministic. The point is to make the **consequent
 
 ## Latest published release
 
-Latest GitHub release: **Tethers 0.7.1**
-Tag: `tethers-v0.7.1`
+Latest GitHub release: **Tethers 0.8.0**
+Tag: `v0.8.0`
 
 Published release assets include the verified Windows x64 full-runtime bundle
-with `tethers.exe`, `tethers-engine.exe`, and its checksum/manifest assets.
+with `tethers.exe`, `tethers-engine.exe`, provenance, and checksum assets.
 
-The 0.7 tagged source includes:
+The 0.8 tagged source includes:
 
 - native host discovery;
 - trusted Capability listing and inspection;
@@ -73,14 +75,14 @@ The 0.7 tagged source includes:
 - structured Git, argv-only process, and named verification reference capabilities;
 - `tethers-bench`;
 - the wider trusted host/runtime and Plug platform;
+- the `tethers.authority/1` Gate and reusable Rust crate;
 - the separately versioned Portable Workbench 0.2.2.
 
 ## Repository state
 
-The Tethers 0.7 implementation ancestry is now reconciled into `main`, with
-the published `tethers-v0.7.1` tag carrying the current product line. The
-stable `tethers plan` command is present on the authoritative development
-line.
+The Tethers 0.7 implementation ancestry is reconciled into `main`. The
+published `v0.8.0` tag carries the current release line, including the stable
+`tethers plan` command and external authority contract.
 
 ## What is already proven
 
@@ -226,12 +228,12 @@ adoption work rather than a missing 0.5 source line.
 | Thing | Current meaning |
 | --- | --- |
 | Human Tether language semantics | `0.1` |
-| Reference-host Cargo package | `0.7.1` product host identity |
+| Reference-host Cargo package | `0.8.0` reusable crate |
 | Portable Workbench | `0.2.2` |
 | Public Plug authoring milestone | `0.3` complete |
 | Together/concurrency milestone | `0.4` complete |
 | Practical release line | `0.7.1` Agent Core + Plan + execution + replay/Trail proof |
-| Latest public GitHub tag | `tethers-v0.7.1` |
+| Latest public GitHub tag | `v0.8.0` |
 | Current 0.7 asset filename line | `Tethers-0.7.1-windows-x64-*` |
 
 These are related but not interchangeable. Future releases should make the public-facing version identity simpler.
@@ -257,6 +259,7 @@ These are related but not interchangeable. Future releases should make the publi
 6. `docs/SECURITY.md` - what the trust boundary does and does not guarantee.
 7. `docs/CONSTITUTION.md` - the enduring design test.
 
-For the exact 0.7 Agent Core command surface, use the source and manuals under the `tethers-v0.7.1` tag.
+For the current Agent Core command surface, use the source and manuals under
+the `v0.8.0` tag.
 
 Historical roadmaps, reviews, performance notes, foundation evidence, and worker notes remain valuable records of their checkpoints. They are not living product-status documents.

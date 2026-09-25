@@ -1238,7 +1238,7 @@ mod tests {
     #[cfg(windows)]
     fn fixture_script() -> std::path::PathBuf {
         let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.pop();
+        path.push("fixtures");
         path.push("scripts");
         path.push("tethers-stdio-fixture.ps1");
         path

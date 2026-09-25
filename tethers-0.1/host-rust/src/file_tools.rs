@@ -914,15 +914,15 @@ mod tests {
             );
         }
         let metadata = crate::manifest::verify_manifest(include_str!(
-            "../../protocol/capability-manifests/file-metadata-local.json"
+            "../fixtures/capability-manifests/file-metadata-local.json"
         ))
         .unwrap();
         let metadata_v2 = crate::manifest::verify_manifest(include_str!(
-            "../../protocol/capability-manifests/file-metadata-v2.json"
+            "../fixtures/capability-manifests/file-metadata-v2.json"
         ))
         .unwrap();
         let movement = crate::manifest::verify_manifest(include_str!(
-            "../../protocol/capability-manifests/file-move-m4.json"
+            "../fixtures/capability-manifests/file-move-m4.json"
         ))
         .unwrap();
         assert_eq!(
@@ -1144,7 +1144,7 @@ mod tests {
     fn metadata_v2_committed_frozen_manifest_matches_builder() {
         let built = manifest_with_digest(metadata_v2_manifest_without_digest()).unwrap();
         let file = crate::manifest::verify_manifest(include_str!(
-            "../../protocol/capability-manifests/file-metadata-v2.json"
+            "../fixtures/capability-manifests/file-metadata-v2.json"
         ))
         .unwrap();
         assert_eq!(file.verified_digest(), built["digest"].as_str().unwrap());

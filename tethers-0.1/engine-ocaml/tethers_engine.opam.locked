@@ -7,7 +7,7 @@ The OCaml reference engine for the frozen Tethers 0.1 semantic baseline.
 It parses, validates, evaluates, and plans from supplied immutable inputs."""
 maintainer: "Matthew"
 authors: "Matthew"
-license: "UNLICENSED"
+license: "MIT OR Apache-2.0"
 depends: [
   "arch-x86_64" {= "1"}
   "base-bigarray" {= "base"}

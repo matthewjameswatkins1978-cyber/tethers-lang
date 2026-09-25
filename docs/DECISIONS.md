@@ -1,5 +1,23 @@
 # Decisions
 
+## 2026-09-25: Tethers 0.8.0 distribution licence
+
+Decision: Tethers is dual-licensed under MIT OR Apache-2.0, at each
+recipient's option. The Rust host crate, OCaml engine package, source, and
+documentation use this repository licence unless an individual file or
+component declares its own terms.
+
+Basis: the current Git history's credited author is Matthew Watkins, no
+third-party source attribution was found in the Rust/OCaml implementation
+scan, and the locked Rust dependency policy already admits the MIT/Apache-2.0
+families plus other permissive licences. Reference provider samples retain
+their explicit MIT metadata. Root and crate-local copies of both licence
+texts are included for source and Cargo package distributions.
+
+This decision does not change trademark rights, grant rights in separately
+licensed dependencies, or state a legal opinion about a recipient's use. Keep
+required upstream notices with any third-party material added later.
+
 ## 2026-09-14: R1 / 0.8-A Tethers 1.0 contract freeze
 
 Decision: Tethers 1.0 is defined as a stable consequential execution boundary,
@@ -21,8 +39,8 @@ Consequences:
    reinterpret old inputs.
 5. Windows x86-64 is the current official practical target. Linux x86-64 is a
    required 1.0 target but is not yet an official supported release claim.
-6. Apache-2.0 remains the recommendation from preflight, but licence selection
-   is an owner decision and no licence is applied by R1 without approval.
+6. The 2026-09-25 owner decision applies MIT OR Apache-2.0 to Tethers source;
+   see the dated licence decision above and the root licence texts.
 7. The current aggregate verification route remains externally blocked by the
    historical GARY packet-checkpoint mismatch; R2 owns the repair.
 

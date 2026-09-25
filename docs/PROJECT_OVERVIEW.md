@@ -331,7 +331,7 @@ describe the host
 
 It also includes agent-oriented workspace/text/hash/patch capabilities, structured Git capabilities, bounded argv-only process execution, named verification checks, and the deterministic `tethers-bench` verification tool.
 
-For exact commands and source, use the [`tethers-v0.7.1` release tag](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1).
+For exact commands and source, use the [`v0.8.0` release tag](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.0).
 
 ## 14. Portable workbench
 
@@ -366,14 +366,14 @@ Tethers currently carries several version axes:
 | Axis | Current meaning |
 | --- | --- |
 | Human Tether language semantics | `0.1` |
-| Reference-host Cargo package | `0.7.1` product host identity |
+| Reference-host Cargo package | `0.8.0` reusable crate |
 | Portable workbench | `0.2.2` |
 | Public Plug authoring milestone | `0.3` complete |
 | Together/concurrency milestone | `0.4` complete |
-| Practical product release | `0.7.1` |
-| Latest public GitHub tag | `tethers-v0.7.1` |
+| Practical product release | `0.8.0` |
+| Latest public GitHub tag | `v0.8.0` |
 
-The current 0.7 public asset is a Windows x64 full-runtime archive. The
+The current 0.8 public asset is a Windows x64 full-runtime archive. The
 language and compatibility package versions are related but not interchangeable.
 
 ## 17. Where Tethers is strongest
