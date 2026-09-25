@@ -39,7 +39,13 @@ manifest_path="$repository_root/verification/current-engine-provenance.json"
 rust_manifest="$repository_root/tethers-0.1/host-rust/Cargo.toml"
 
 command -v jq >/dev/null 2>&1 || fail 'Required command is unavailable: jq'
-command -v sha256sum >/dev/null 2>&1 || fail 'Required command is unavailable: sha256sum'
+if command -v sha256sum >/dev/null 2>&1; then
+    compute_sha256() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+    compute_sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+else
+    fail 'Required command is unavailable: sha256sum or shasum'
+fi
 command -v cargo >/dev/null 2>&1 || fail 'Required command is unavailable: cargo'
 command -v git >/dev/null 2>&1 || fail 'Required command is unavailable: git'
 command -v realpath >/dev/null 2>&1 || fail 'Required command is unavailable: realpath'
@@ -90,7 +96,7 @@ case "$resolved_engine_path" in
         fail 'Current engine resolves outside the current repository; Rust tests were not attempted.'
         ;;
 esac
-actual_hash=$(sha256sum "$engine_path" | awk '{print $1}')
+actual_hash=$(compute_sha256 "$engine_path")
 [[ "$actual_hash" == "$expected_hash" ]] ||
     fail 'Current engine binary hash does not match provenance; Rust tests were not attempted.'
 

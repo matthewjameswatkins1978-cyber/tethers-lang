@@ -42,6 +42,7 @@ def configure_native_path() -> None:
         home = os.path.expanduser("~")
         wanted = [
             "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin",
+            "/opt/homebrew/bin", "/opt/homebrew/sbin",
             os.path.join(home, ".cargo", "bin"),
             os.path.join(home, ".local", "bin"),
         ]

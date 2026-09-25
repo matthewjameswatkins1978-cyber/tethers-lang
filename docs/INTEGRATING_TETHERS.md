@@ -39,12 +39,14 @@ Trail, and replay state.
 
 ## Installation and availability
 
-The 0.8.0 Windows x64 runtime is distributed as a versioned bundle containing
-the `tethers` host and matching OCaml engine. The reusable Rust crate is
-versioned and package-ready as `tethers-reference-host 0.8.0`; crates.io
-publication is deliberately deferred. A consumer can use the crate from the
-versioned source tag or build and pin the exact crate archive. The OCaml engine
-remains an executable package, not a public library.
+The 0.8.1 full runtime is distributed as versioned release archives for
+Windows x86-64 (`.zip`), Linux x86-64 (`.tar.gz`), and macOS (`.tar.gz` for
+Apple Silicon ARM64 official and Intel x86-64 compatibility lane), each
+containing the `tethers` host and matching OCaml engine. The reusable Rust
+crate is versioned and package-ready as `tethers-reference-host 0.8.1`;
+crates.io publication remains deliberately gated. A consumer can use the
+crate from the versioned source tag or build and pin the exact crate archive.
+The OCaml engine remains an executable package, not a public library.
 
 Before first Gate use, initialize the host data store with the release-managed
 administrative command `tethers provision-replay ABSOLUTE_ROOT`. It is hidden
@@ -74,7 +76,8 @@ python examples/external-consumer/smoke.py --tethers C:\path\to\tethers.exe --en
 - The Rust crate is package-ready under MIT OR Apache-2.0; crates.io
   publication remains deferred. The OCaml engine is still an executable
   package, not a public library.
-- The repository support matrix currently treats Windows x86-64 as the
-  official full-runtime release target. Linux package proof remains open work.
+- The repository support matrix treats Windows x86-64, Linux x86-64, and
+  macOS ARM64 as official full-runtime release targets, with macOS Intel x86-64
+  as a verified compatibility lane.
 - Host policy, human approval UI, physical effects, secret handling, process
   supervision, and recovery decisions remain the consuming Host's duties.

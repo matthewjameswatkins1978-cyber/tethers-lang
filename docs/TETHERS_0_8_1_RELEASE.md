@@ -22,10 +22,20 @@ effects and truthful outcome reporting.
   Resolve tests (require the accepted Resolve service/Firestore emulator), and
   five provider-dependent tests (p3/p6) with deterministic justfile invocations,
   proven passing against locally built providers.
-- **Linux x86-64 full runtime.** Native build, version-driven packaging, and
-  clean-package proof ported from PR #45 donor work onto the 0.8 authority
-  architecture (PR #45 itself was never merged). Official status follows the
-  support-matrix gates and CI evidence, not compilation alone.
+- **Hands-on audit repairs:**
+  - `git.log` parsing trims record separators properly, producing exact 40-character hexadecimal commit hashes without leading newlines or subject truncation.
+  - `tethers describe` without `--host-data-root` truthfully reflects built-in Agent Core capabilities (`workspace`, `git`, `exec`, optional `threadmoth`).
+  - Distributed release bundles include `examples/external-consumer/smoke.py`, and release packagers assert all required example files exist.
+  - Git CLI accepts snake_case operation aliases matching advertised capability identifiers (`branch_current` and `branch_create`).
+  - Replay exclusively owns `<host-data-root>/replay/v1`; standard sibling state (e.g. `trail.jsonl`) in the host root no longer blocks provisioning, while strict hierarchy checks remain fail-closed.
+  - Structured machine-readable diagnostics (`phase`, `reason`, `recovery`, `detail`) are recorded during replay provisioning failures without exposing secrets.
+  - Runtime commands accept `--runtime-config` explicitly, and `parse_runtime_config` rejects workspace project configuration files (`tethers.project/1`) with actionable typed diagnostics.
+  - `provision-replay` machine output uses the standard stable `tethers.cli/1` envelope for success, already-provisioned, and failure states.
+- **Three-platform runtime support:**
+  - **Windows x86-64:** Full native runtime release, Job Object process containment, Win32 handle-bound replay with ACL proof.
+  - **Linux x86-64:** Full native runtime release, POSIX process supervision with group termination, native packaging and CI proof.
+  - **macOS ARM64 & Intel:** Full native runtime release across Apple Silicon (`macos-arm64`) and compatibility on Intel (`macos-x64`), POSIX child supervision, and native `otool`/`file` dependency audits.
+  - *macOS Trust Note:* Technical compilation, packaging, and authority tests pass on hosted macOS runners; public Gatekeeper-trusted distribution remains blocked pending Apple Developer ID signing and notarization credentials.
 - **Windows x86-64 proof preserved.** Same suites, same gates, plus a generalised
   release packager driven by `VERSION` and the exact release tag.
 - **Crate quality preserved.** `tethers-reference-host 0.8.1`, MIT OR Apache-2.0,
@@ -40,10 +50,10 @@ effects and truthful outcome reporting.
   locked Cargo package under MIT OR Apache-2.0. Crates.io publication happens
   only as the final gated step; until then use the documented `authority_v1`
   module pinned to the `v0.8.1` source tag.
-- **Runtime/binary:** Windows x64 and (once accepted) Linux x64 bundles each
-  contain the `tethers` host and matching OCaml Core engine. A consumer starts
-  the host process and uses the versioned JSON protocol. The OCaml engine
-  remains executable-only.
+- **Runtime/binary:** Windows x64, Linux x64, and macOS bundles each contain
+  the `tethers` host and matching OCaml Core engine. A consumer starts the host
+  process and uses the versioned JSON protocol. The OCaml engine remains
+  executable-only.
 
 See [integration guide](INTEGRATING_TETHERS.md) and [crate README](../tethers-0.1/host-rust/README.md).
 
@@ -54,8 +64,8 @@ provider semantic changes. The R2 authority gate suite passes unchanged on the
 shipped artifacts, including forged-authority, malformed-frame, unsupported
 protocol, replay-confusion, and no-effect-by-the-Gate resistance.
 
-Windows x86-64 remains an official full-runtime target. Linux x86-64 becomes
-official only when every support-matrix gate has passing evidence; see
+Windows x86-64, Linux x86-64, and macOS ARM64 are official full-runtime
+targets; macOS x86-64 is compatibility-tested. See
 [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the current verdict.
 
 ## Provenance

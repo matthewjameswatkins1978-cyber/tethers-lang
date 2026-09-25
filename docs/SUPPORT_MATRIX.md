@@ -7,25 +7,25 @@ Support is a product promise, not a claim that code cannot happen to compile
 elsewhere. A target becomes official only after every required layer below has
 evidence.
 
-## 1.0 target matrix
+## 0.8.1 target matrix
 
-| Target | 1.0 intention | Current evidence/status |
+| Target | 0.8.1 status | Evidence/truth |
 | --- | --- | --- |
-| Windows x86-64 | REQUIRED / OFFICIAL | Current practical 0.8 full-runtime target; published archive, checksums, provenance, CLI smoke, host/engine evidence pass |
-| Linux x86-64 | REQUIRED TARGET / NOT YET OFFICIAL | 1.0 target, not yet an official release promise; native host/engine, packaging, clean-machine, runtime, recovery, CI, and release evidence remain required |
+| Windows x86-64 | OFFICIAL | Full native runtime release; verified archive, checksums, provenance, CLI smoke, R2 authority suite, clean-machine recovery |
+| Linux x86-64 | OFFICIAL | Full native runtime release; verified Ubuntu CI, runtime packager, clean-install smoke, orphan proof, provenance manifest |
+| macOS ARM64 | OFFICIAL | Apple Silicon target; full native Host and engine, POSIX child process supervision, clean-install smoke, authority and recovery proofs |
+| macOS x86-64 | COMPATIBILITY-TESTED | Intel compatibility target; builds and packages in CI, tested on macos-15-intel runner; promote to OFFICIAL if full gate passes cleanly |
 
-“Official” here describes the intended 1.0 support promise. Linux must not be
-described as already supported until its gates pass.
+> **Trust note on macOS:** Technical build, packaging, tests, and authority proofs are complete across both architectures. Public Gatekeeper-trusted distribution remains marked as blocked until Apple Developer ID signing and notarization credentials are provided.
 
 ## Other platforms
 
-| Platform | Status for 1.0 |
+| Platform | Status for 0.8.1 |
 | --- | --- |
-| macOS x86-64/ARM64 | FUTURE / UNSUPPORTED FOR THE 1.0 PROMISE |
-| Windows ARM64 | FUTURE / UNSUPPORTED FOR THE 1.0 PROMISE |
-| Linux ARM64 | FUTURE / UNSUPPORTED FOR THE 1.0 PROMISE |
-| Mobile | FUTURE / UNSUPPORTED FOR THE 1.0 PROMISE |
-| Remote hosted Tethers | FUTURE / UNSUPPORTED FOR THE 1.0 PROMISE |
+| Windows ARM64 | FUTURE / UNSUPPORTED |
+| Linux ARM64 | FUTURE / UNSUPPORTED |
+| Mobile | FUTURE / UNSUPPORTED |
+| Remote hosted Tethers | FUTURE / UNSUPPORTED |
 
 These statuses do not claim that the software cannot work on those platforms.
 They mean Tethers does not promise tested, packaged, supported parity there.

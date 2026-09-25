@@ -69,12 +69,18 @@ Most automation stacks blur several different questions together:
 - Release notes: [`docs/TETHERS_0_8_1_RELEASE.md`](docs/TETHERS_0_8_1_RELEASE.md)
   (previous: [`docs/TETHERS_0_8_0_RELEASE.md`](docs/TETHERS_0_8_0_RELEASE.md))
 
-The 0.8.1 release candidate keeps the Windows x64 full-runtime bundle and
-versioned `tethers.authority/1` Gate described in
-[`docs/INTEGRATING_TETHERS.md`](docs/INTEGRATING_TETHERS.md), adds the Linux
-x64 runtime bundle and maintenance fixes, and changes no authority behaviour.
-The Rust crate is package-ready at 0.8.1 and available from the release source
-tag; crates.io publication remains gated, not yet done.
+The 0.8.1 release candidate provides the same authority contract and trust
+guarantees across three target operating systems:
+- Windows x86-64 (full-runtime release archive)
+- Linux x86-64 (full-runtime release tarball)
+- macOS ARM64 / Apple Silicon (full-runtime release tarball; official target)
+- macOS x86-64 / Intel (full-runtime release tarball; compatibility lane)
+
+It preserves the versioned `tethers.authority/1` Gate described in
+[`docs/INTEGRATING_TETHERS.md`](docs/INTEGRATING_TETHERS.md), incorporates
+hands-on audit repairs across Git, CLI, Replay, and discovery surfaces, and
+changes no authority behaviour. The Rust crate is package-ready at 0.8.1 and
+available from the release source tag; crates.io publication remains gated.
 
 Tethers 0.7 keeps the language deliberately small and adds a discoverable
 host-owned Agent Core for ordinary local repository work. Core plans; hosts
@@ -395,7 +401,8 @@ The 0.7 source tree includes three starter Tether Set examples under
 language and runtime configuration; they do not introduce a second Set
 semantic or permission model.
 
-The 0.8.1 line publishes Windows x64 and Linux x64 full-runtime archives, each
+The 0.8.1 line publishes Windows x64, Linux x64, and macOS full-runtime
+archives (official macOS ARM64 and compatibility macOS x86-64), each
 containing `tethers` and the matching OCaml engine; the language and
 compatibility package versions remain separate axes by design. The reusable
 Rust crate is separately available as a Cargo package and is not yet published

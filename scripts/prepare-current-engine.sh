@@ -47,7 +47,13 @@ manifest_path="$repository_root/verification/current-engine-provenance.json"
 require_command git
 require_command opam
 require_command jq
-require_command sha256sum
+if command -v sha256sum >/dev/null 2>&1; then
+    compute_sha256() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+    compute_sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+else
+    fail 'Required command is unavailable: sha256sum or shasum'
+fi
 
 git_root=$(git -C "$repository_root" rev-parse --show-toplevel 2>/dev/null) ||
     fail 'Could not identify the current Git worktree.'
@@ -90,7 +96,7 @@ done
 binary_relative_path=${engine_path#"$repository_root/"}
 [[ "$binary_relative_path" != "$engine_path" ]] ||
     fail 'The built engine was not produced inside the current repository.'
-binary_sha256=$(sha256sum "$engine_path" | awk '{print $1}')
+binary_sha256=$(compute_sha256 "$engine_path")
 
 mkdir -p -- "$(dirname -- "$manifest_path")"
 temporary_manifest="$manifest_path.tmp.$$"
