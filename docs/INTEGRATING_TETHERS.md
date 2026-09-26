@@ -2,7 +2,7 @@
 
 ## Supported integration boundary
 
-Tethers 0.8.0 exposes `tethers.authority/1` through the
+Tethers 0.8.1 exposes `tethers.authority/1` through the
 `tethers gate --stdio` process interface. A consumer starts the `tethers`
 executable, negotiates the protocol with `hello`, sends versioned JSON frames,
 and validates every response schema and request identity. See the frozen
@@ -12,16 +12,16 @@ and the [small external consumer example](../examples/external-consumer/README.m
 
 For Rust source integration, the `tethers-reference-host` crate is packaged
 with a narrow `tethers_reference_host::authority_v1` entry point. Pin it by
-the `v0.8.0` Git tag until a registry release is deliberately made; see the
+the `v0.8.1` Git tag until a registry release is deliberately made; see the
 [crate README](../tethers-0.1/host-rust/README.md) and
 [pinned Rust consumer](../examples/rust-crate-consumer/). The crate interface
 and the process protocol are separate consumption routes. The versioned
 process protocol remains the language-independent contract.
 
 Product line 0.8.1 keeps the same `tethers.authority/1` contract and the same
-`authority_v1` entry point; only the product/crate version advances. Until the
-`v0.8.1` tag and any registry publication land, keep pinning the released
-`v0.8.0` route above.
+`authority_v1` entry point; only the product/crate version advances. Crates.io
+publication remains gated, so source consumers keep pinning the released
+`v0.8.1` tag above.
 
 The consumer provides Tethers Core's engine path, runtime configuration,
 Trail path, and an already provisioned host-data root. PREPARE invokes Core to

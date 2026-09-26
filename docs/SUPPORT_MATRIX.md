@@ -1,7 +1,7 @@
 # Tethers 1.0 Support Matrix
 
 Status: living support promise
-Updated: 2026-09-25
+Updated: 2026-09-26
 
 Support is a product promise, not a claim that code cannot happen to compile
 elsewhere. A target becomes official only after every required layer below has
@@ -16,7 +16,7 @@ evidence.
 | macOS ARM64 | OFFICIAL | Apple Silicon target; full native Host and engine, POSIX child process supervision, clean-install smoke, authority and recovery proofs |
 | macOS x86-64 | COMPATIBILITY-TESTED | Intel compatibility target; builds and packages in CI, tested on macos-15-intel runner; promote to OFFICIAL if full gate passes cleanly |
 
-> **Trust note on macOS:** Technical build, packaging, tests, and authority proofs are complete across both architectures. Public Gatekeeper-trusted distribution remains marked as blocked until Apple Developer ID signing and notarization credentials are provided.
+> **Trust note on macOS:** macOS ARM64 and Intel packages compile, package and pass Tethers authority/runtime proof. The release is not yet Apple Developer ID signed or notarized, so public Gatekeeper-trusted distribution remains unavailable until signing/notarization credentials exist.
 
 ## Other platforms
 
@@ -64,8 +64,8 @@ manifest generation, and clean-machine behaviour must be tested on the target.
 
 ## Current platform truth
 
-The published 0.8 native release is Windows x86-64. The Portable Workbench is a
-separate Rust surface and does not prove full-host parity. Linux has meaningful
-portable Rust seams and a portable musl target in the repository, but that is
-not evidence of a supported native Linux Tethers host release. R3 owns the
-remaining Linux proof.
+The published 0.8.1 release ships full-runtime packages for Windows x86-64,
+Linux x86-64, and macOS ARM64 as OFFICIAL targets, with macOS x86-64
+COMPATIBILITY-TESTED. Each archive carries `tethers` plus the matching OCaml
+engine, a release manifest, and checksums. The Portable Workbench is a separate
+Rust surface and does not prove full-host parity.

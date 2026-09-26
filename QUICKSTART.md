@@ -332,15 +332,17 @@ Do not infer the limits of the full platform from the portable workbench, and do
 - [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) - enduring design principles.
 - [`tethers-0.1/portable-rust/AI-INTEGRATION.md`](tethers-0.1/portable-rust/AI-INTEGRATION.md) - embedding the small authority workbench.
 
-## 11. Install the 0.8.0 bundle
+## 11. Install the 0.8.1 bundle
 
-This is the Windows x64 full-runtime release with the `tethers.authority/1`
-Gate. It includes a matching `tethers.exe` host and `tethers-engine.exe` Core
-engine; see [`docs/INTEGRATING_TETHERS.md`](docs/INTEGRATING_TETHERS.md) for
+The 0.8.1 release publishes full-runtime packages for Windows x64, Linux x64,
+and macOS (ARM64 official, x86-64 compatibility-tested). Each package carries
+the `tethers.authority/1` Gate: a `tethers` host plus the matching
+`tethers-engine` Core engine; see
+[`docs/INTEGRATING_TETHERS.md`](docs/INTEGRATING_TETHERS.md) for
 the separate Rust crate and process integration routes.
 
-Download the Windows x64 full-runtime archive from the [0.8.0 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.0),
-verify its SHA-256 sidecar and provenance manifest, and extract it. Keep the
+Download the archive for your platform from the [0.8.1 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.1),
+verify its `SHA256SUMS` and provenance manifest, and extract it. Keep the
 host and engine binaries together when configuring a consumer.
 
 The Windows bundle is reproducible from the exact release tag. Supply the
@@ -351,8 +353,10 @@ pwsh -NoProfile -File .\scripts\package-tethers-0.8-release.ps1 -OcamlSwitch C:\
 ```
 
 The previous [0.7.1 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/tethers-v0.7.1)
-remains available for compatibility. Linux parity is not established by this
-Windows-only full-runtime release; do not infer it from the portable workbench.
+remains available for compatibility. 0.8.1 publishes Linux x64 and macOS
+full-runtime packages alongside Windows; see
+[`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) for which targets are
+official. Do not infer full-host parity from the portable workbench.
 
 The shortest accurate mental model is:
 

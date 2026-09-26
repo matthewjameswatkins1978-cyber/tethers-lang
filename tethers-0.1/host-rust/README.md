@@ -24,12 +24,12 @@ assert_eq!(response.schema, AUTHORITY_PROTOCOL);
 assert!(matches!(response.status, ResponseStatus::Ok));
 ```
 
-Pin the exact 0.8.0 crate from the repository tag until a crates.io release is
+Pin the exact 0.8.1 crate from the repository tag until a crates.io release is
 made:
 
 ```toml
 [dependencies]
-tethers-reference-host = { git = "https://github.com/matthewjameswatkins1978-cyber/tethers-lang", tag = "v0.8.0" }
+tethers-reference-host = { git = "https://github.com/matthewjameswatkins1978-cyber/tethers-lang", tag = "v0.8.1" }
 serde_json = "1"
 ```
 

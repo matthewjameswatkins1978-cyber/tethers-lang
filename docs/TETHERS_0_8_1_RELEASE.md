@@ -1,6 +1,6 @@
 # Tethers 0.8.1
 
-Status: maintenance, Linux, and distribution closeout (release candidate)
+Status: released
 
 Tethers 0.8.1 takes the released 0.8.0 baseline and closes the remaining named
 engineering and distribution gaps. It is not an architecture redesign and not a

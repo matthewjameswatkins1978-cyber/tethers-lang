@@ -1,6 +1,6 @@
 # Tethers Project Dashboard
 
-Updated: 2026-09-25
+Updated: 2026-09-26
 
 ## Product state
 
@@ -58,11 +58,13 @@ The point is not to make AI deterministic. The point is to make the **consequent
 
 ## Latest published release
 
-Latest GitHub release: **Tethers 0.8.0**
-Tag: `v0.8.0`
+Latest GitHub release: **Tethers 0.8.1**
+Tag: `v0.8.1`
 
-Published release assets include the verified Windows x64 full-runtime bundle
-with `tethers.exe`, `tethers-engine.exe`, provenance, and checksum assets.
+Published release assets include the verified full-runtime bundles for Windows
+x64, Linux x64, and macOS (ARM64 official, x86-64 compatibility-tested), each
+with `tethers`, `tethers-engine`, a release manifest, provenance, and checksum
+assets.
 
 The 0.8 tagged source includes:
 
@@ -81,7 +83,7 @@ The 0.8 tagged source includes:
 ## Repository state
 
 The Tethers 0.7 implementation ancestry is reconciled into `main`. The
-published `v0.8.0` tag carries the current release line, including the stable
+published `v0.8.1` tag carries the current release line, including the stable
 `tethers plan` command and external authority contract.
 
 ## What is already proven
@@ -228,12 +230,12 @@ adoption work rather than a missing 0.5 source line.
 | Thing | Current meaning |
 | --- | --- |
 | Human Tether language semantics | `0.1` |
-| Reference-host Cargo package | `0.8.0` reusable crate |
+| Reference-host Cargo package | `0.8.1` reusable crate |
 | Portable Workbench | `0.2.2` |
 | Public Plug authoring milestone | `0.3` complete |
 | Together/concurrency milestone | `0.4` complete |
-| Practical release line | `0.7.1` Agent Core + Plan + execution + replay/Trail proof |
-| Latest public GitHub tag | `v0.8.0` |
+| Practical release line | `0.8.1` Agent Core + Plan + execution + replay/Trail proof |
+| Latest public GitHub tag | `v0.8.1` |
 | Current 0.7 asset filename line | `Tethers-0.7.1-windows-x64-*` |
 
 These are related but not interchangeable. Future releases should make the public-facing version identity simpler.
@@ -260,6 +262,6 @@ These are related but not interchangeable. Future releases should make the publi
 7. `docs/CONSTITUTION.md` - the enduring design test.
 
 For the current Agent Core command surface, use the source and manuals under
-the `v0.8.0` tag.
+the `v0.8.1` tag.
 
 Historical roadmaps, reviews, performance notes, foundation evidence, and worker notes remain valuable records of their checkpoints. They are not living product-status documents.

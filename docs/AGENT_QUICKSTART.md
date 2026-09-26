@@ -1,6 +1,6 @@
 # Tethers agent quickstart
 
-This is the machine-oriented entry path for Tethers 0.8.0. The CLI and trusted Plug
+This is the machine-oriented entry path for Tethers 0.8.1. The CLI and trusted Plug
 manifests are the discovery mechanism; this document only shows the sequence.
 
 ## 1. Identify the host

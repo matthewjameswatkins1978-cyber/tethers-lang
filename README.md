@@ -20,7 +20,7 @@
     ·
     <a href="docs/PLUG_AUTHORING.md">Build a Plug</a>
     ·
-    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.0">Tethers 0.8.0 release</a>
+    <a href="https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.1">Tethers 0.8.1 release</a>
   </p>
 </div>
 
@@ -63,13 +63,14 @@ A model can change. A prompt can change. A provider can change. The execution co
 Most automation stacks blur several different questions together:
 ## Release and development versions
 
-- Latest released product version: 0.8.0 (Windows x64 runtime bundle)
-- Current product version: 0.8.1 (release candidate; see below)
+- Latest released product version: 0.8.1 (Windows x64, Linux x64, macOS ARM64
+  official; macOS x86-64 compatibility-tested)
+- Current product version: 0.8.1 (released; see below)
 - Language semantics: 0.1
 - Release notes: [`docs/TETHERS_0_8_1_RELEASE.md`](docs/TETHERS_0_8_1_RELEASE.md)
   (previous: [`docs/TETHERS_0_8_0_RELEASE.md`](docs/TETHERS_0_8_0_RELEASE.md))
 
-The 0.8.1 release candidate provides the same authority contract and trust
+The 0.8.1 release provides the same authority contract and trust
 guarantees across three target operating systems:
 - Windows x86-64 (full-runtime release archive)
 - Linux x86-64 (full-runtime release tarball)
@@ -377,8 +378,8 @@ projection over validated Trail entries.
 
 ## Download the portable workbench
 
-For the current native host, download the Windows x64 full-runtime asset from
-the [Tethers 0.8.0 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.0).
+For the current native host, download the platform full-runtime asset from
+the [Tethers 0.8.1 release](https://github.com/matthewjameswatkins1978-cyber/tethers-lang/releases/tag/v0.8.1).
 Verify its `SHA256SUMS` and release manifest before extraction. The portable
 workbench remains separately versioned at 0.2.2 for compatibility.
 
@@ -390,7 +391,7 @@ Tethers currently has several version axes. They describe different things:
 | --- | --- |
 | Human Tether language/protocol semantics | `0.1` specification |
 | Rust reference-host crate version | `0.8.1` (Cargo package; crates.io publication gated, not yet done) |
-| Latest released product | `0.8.0` (Windows x64 full-runtime bundle) |
+| Latest released product | `0.8.1` (Windows x64, Linux x64, macOS ARM64 official; macOS x86-64 compatibility-tested) |
 | Portable workbench | `0.2.2` |
 | Public Plug-authoring programme | `0.3` milestone complete and integrated |
 | Together/concurrency programme | `0.4` milestone complete and integrated |

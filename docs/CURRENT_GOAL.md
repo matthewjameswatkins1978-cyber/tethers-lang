@@ -1,6 +1,6 @@
 # Current Goal
 
-Updated: 2026-09-25
+Updated: 2026-09-26
 
 ## Goal
 
@@ -34,7 +34,7 @@ The Tethers 0.7 release line carries forward the major capabilities delivered by
 - Windows x64 full-runtime 0.8.0 release bundle and package-ready Rust crate;
 - the separate Portable Workbench 0.2.2 authority façade.
 
-The current product release line is Tethers 0.8.0, tagged `v0.8.0`.
+The current product release line is Tethers 0.8.1, tagged `v0.8.1`.
 
 ## Repository coherence
 
@@ -83,13 +83,14 @@ Tethers is the deterministic execution substrate between probabilistic intent an
 Tethers currently carries several legitimate version axes:
 
 - Human Tether language semantics: `0.1`;
-- reference-host Cargo package: `0.8.0`;
+- reference-host Cargo package: `0.8.1`;
 - Portable Workbench: `0.2.2`;
 - completed Plug milestone: `0.3`;
 - completed Together/concurrency milestone: `0.4`;
-- practical product release: `0.8.0`, latest tag `v0.8.0`.
+- practical product release: `0.8.1`, latest tag `v0.8.1`.
 
-The 0.8 public asset is a Windows x64 full-runtime archive. The language and
+The 0.8.1 public assets are full-runtime archives for Windows x64, Linux x64,
+and macOS (ARM64 official, x86-64 compatibility-tested). The language and
 compatibility package versions remain separate axes by design.
 
 ### 3. Use Tethers in real agent work
