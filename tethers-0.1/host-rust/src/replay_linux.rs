@@ -46,7 +46,13 @@ fn verify_chain(path: &Path) -> Result<(), ReplayError> {
     }
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
-            Ok(metadata) if metadata.file_type().is_symlink() => return unavailable(),
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                #[cfg(target_os = "macos")]
+                if crate::path_safety::is_macos_system_path_alias(ancestor) {
+                    continue;
+                }
+                return unavailable();
+            }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => return unavailable(),

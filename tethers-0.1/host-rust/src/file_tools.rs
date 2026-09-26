@@ -257,6 +257,10 @@ fn reject_reparse_chain(path: &Path) -> Result<(), FileToolsError> {
     for ancestor in path.ancestors() {
         if let Ok(metadata) = fs::symlink_metadata(ancestor) {
             if metadata.file_type().is_symlink() {
+                #[cfg(target_os = "macos")]
+                if crate::path_safety::is_macos_system_path_alias(ancestor) {
+                    continue;
+                }
                 return Err(FileToolsError::new(
                     "reparse_refused",
                     "symbolic link encountered",

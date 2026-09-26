@@ -159,20 +159,20 @@ for test_file in "${integration_tests[@]}"; do
 done
 
 if [[ ${#failed_targets[@]} -gt 0 ]]; then
-    printf '\n======================================================\n' >&2
-    printf 'VERIFICATION FAILED: %d test target(s) failed:\n' "${#failed_targets[@]}" >&2
+    printf -- '\n======================================================\n' >&2
+    printf -- 'VERIFICATION FAILED: %d test target(s) failed:\n' "${#failed_targets[@]}" >&2
     for target in "${failed_targets[@]}"; do
-        printf '  - %s\n' "$target" >&2
-        printf '%s\n' "--- REPLAYING FAILURE FOR: $target ---" >&2
+        printf -- '  - %s\n' "$target" >&2
+        printf -- '--- REPLAYING FAILURE FOR: %s ---\n' "$target" >&2
         target_name="${target#*:}"
         if [[ "$target" == lib:* ]]; then
             cargo test --manifest-path "$rust_manifest" --lib --locked -- --nocapture || true
         else
             cargo test --manifest-path "$rust_manifest" --test "$target_name" --locked -- --nocapture || true
         fi
-        printf '%s\n' "--- END OF FAILURE FOR: $target ---" >&2
+        printf -- '--- END OF FAILURE FOR: %s ---\n' "$target" >&2
     done
-    printf '======================================================\n' >&2
+    printf -- '======================================================\n' >&2
     exit 1
 fi
 

@@ -45,7 +45,7 @@ fn reject_reparse_or_link(path: &Path) -> Result<(), PackageError> {
     let metadata = io(fs::symlink_metadata(path))?;
     if metadata.file_type().is_symlink() {
         #[cfg(target_os = "macos")]
-        if is_macos_system_path_alias(path) {
+        if crate::path_safety::is_macos_system_path_alias(path) {
             return Ok(());
         }
         Err(err(
@@ -72,16 +72,6 @@ fn reject_reparse_or_link(path: &Path) -> Result<(), PackageError> {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn is_macos_system_path_alias(path: &Path) -> bool {
-    let expected = match path {
-        path if path == Path::new("/var") => Path::new("/private/var"),
-        path if path == Path::new("/tmp") => Path::new("/private/tmp"),
-        _ => return false,
-    };
-
-    fs::canonicalize(path).is_ok_and(|canonical| canonical == expected)
-}
 /// Check every existing component before and after directory creation. On
 /// Windows this examines FILE_ATTRIBUTE_REPARSE_POINT, covering junctions,
 /// mount points, and other reparse forms that Path::is_symlink cannot see.

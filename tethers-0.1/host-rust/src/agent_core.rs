@@ -141,6 +141,10 @@ fn reject_reparse_chain(path: &Path) -> Result<(), CoreError> {
             )
         })?;
         if metadata.file_type().is_symlink() {
+            #[cfg(target_os = "macos")]
+            if crate::path_safety::is_macos_system_path_alias(ancestor) {
+                continue;
+            }
             return Err(CoreError::denied(
                 "REPARSE_REFUSED",
                 format!("reparse point is not permitted: {}", ancestor.display()),
