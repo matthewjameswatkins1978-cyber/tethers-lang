@@ -73,6 +73,10 @@ pub fn reject_reparse(path: &Path) -> Result<()> {
     let metadata =
         fs::symlink_metadata(path).map_err(|error| M3Error::new("store_io", error.to_string()))?;
     if metadata.file_type().is_symlink() {
+        #[cfg(target_os = "macos")]
+        if path == Path::new("/var") || path == Path::new("/tmp") || path == Path::new("/etc") {
+            return Ok(());
+        }
         return Err(M3Error::new("unsafe_store_path", "symbolic link refused"));
     }
     #[cfg(windows)]

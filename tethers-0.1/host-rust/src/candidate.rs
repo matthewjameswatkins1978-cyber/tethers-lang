@@ -44,6 +44,10 @@ fn wide(path: &Path) -> Vec<u16> {
 fn reject_reparse_or_link(path: &Path) -> Result<(), PackageError> {
     let metadata = io(fs::symlink_metadata(path))?;
     if metadata.file_type().is_symlink() {
+        #[cfg(target_os = "macos")]
+        if path == Path::new("/var") || path == Path::new("/tmp") || path == Path::new("/etc") {
+            return Ok(());
+        }
         Err(err(
             "unsafe_destination",
             "symbolic-link destinations are refused",
