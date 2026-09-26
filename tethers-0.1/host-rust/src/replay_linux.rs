@@ -71,8 +71,11 @@ fn validate_directory(path: &Path) -> Result<PathBuf, ReplayError> {
         // We verify that the canonical path has no symlink components, and that the only difference
         // between path and canonical is the standard macOS /private prefix.
         verify_chain(&canonical)?;
-        let stripped_canonical = canonical.strip_prefix("/private").unwrap_or(&canonical);
-        if stripped_canonical != path && canonical != path {
+        let without_private: PathBuf = match canonical.strip_prefix("/private") {
+            Ok(rest) => Path::new("/").join(rest),
+            Err(_) => canonical.clone(),
+        };
+        if without_private != path && canonical != path {
             return unavailable();
         }
     }
