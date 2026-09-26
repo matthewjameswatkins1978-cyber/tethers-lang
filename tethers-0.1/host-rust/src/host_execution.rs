@@ -5605,6 +5605,10 @@ mod tests {
                 m["capability_name"] = serde_json::json!(cap_name);
                 m["provider"]["identity"] = serde_json::json!(provider_id);
                 m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+                // These tests intentionally hold provider calls behind barriers;
+                // leave time for slower hosted runners to reach the assertions.
+                // Tests for timeout behavior supply an explicit override below.
+                m["timeout_ms"] = serde_json::json!(60_000);
                 m["permission_scope"] =
                     serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
                 m["confirmation_policy"] =
@@ -6482,9 +6486,7 @@ mod tests {
                         serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
                     m["confirmation_policy"] =
                         serde_json::json!({"standing_permitted": true, "per_call_required": false});
-                    if let Some(ms) = timeout_ms {
-                        m["timeout_ms"] = serde_json::json!(ms);
-                    }
+                    m["timeout_ms"] = serde_json::json!(timeout_ms.unwrap_or(60_000));
                     let s = serde_json::to_string(&m).unwrap();
                     let (_, digest) = crate::manifest::canonicalize_and_digest(&s).unwrap();
                     m["digest"] = serde_json::json!(digest);
@@ -7664,6 +7666,9 @@ mod tests {
                 m["capability_name"] = serde_json::json!(cap_name);
                 m["provider"]["identity"] = serde_json::json!(provider_id);
                 m["binding"]["server_name"] = serde_json::json!("tethers-stdio-fixture");
+                // Barrier tests should exercise ordering, not inherit the
+                // fixture's production-oriented five-second timeout.
+                m["timeout_ms"] = serde_json::json!(60_000);
                 m["permission_scope"] =
                     serde_json::json!({"kind": "path_prefix", "allowed_prefixes": ["member/"]});
                 m["confirmation_policy"] =

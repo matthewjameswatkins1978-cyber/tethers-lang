@@ -1,0 +1,215 @@
+name: Tethers macOS package proof
+
+# macOS ARM64 (Apple Silicon) and macOS x86-64 (Intel) full-runtime proof
+# for the 0.8 authority architecture.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-package-proof:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: macos-arm64
+            raw_arch: arm64
+            target_status: OFFICIAL
+          - os: macos-15-intel
+            arch: macos-x64
+            raw_arch: x86_64
+            target_status: COMPATIBILITY-TESTED
+    runs-on: ${{ matrix.os }}
+    env:
+      TETHERS_OCAML_SWITCH: tethers-0.8
+    steps:
+      - name: Checkout exact SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Record runner OS and architecture
+        run: |
+          printf 'Runner OS: %s\n' "$(uname -s)"
+          printf 'Kernel release: %s\n' "$(uname -r)"
+          printf 'Machine architecture: %s\n' "$(uname -m)"
+          printf 'Target packaging arch: %s\n' "${{ matrix.arch }}"
+          printf 'Expected raw arch: %s\n' "${{ matrix.raw_arch }}"
+          actual_arch="$(uname -m)"
+          if [[ "$actual_arch" != "${{ matrix.raw_arch }}" ]]; then
+            printf 'Runner arch mismatch: expected %s, got %s\n' "${{ matrix.raw_arch }}" "$actual_arch" >&2
+            exit 1
+          fi
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt, clippy
+
+      - name: Install OCaml and opam
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5.0"
+
+      - name: Install system dependencies
+        run: |
+          brew install jq
+
+      - name: Set up OCaml switch
+        # Pin the exact locked toolchain: OCaml 5.5.0, Dune 3.24.0, Yojson 2.2.2, Digestif 1.3.1
+        run: |
+          opam switch create tethers-0.8 5.5.0
+          opam install --switch=tethers-0.8 -y dune.3.24.0 yojson.2.2.2 digestif.1.3.1
+          opam exec --switch=tethers-0.8 -- ocamlc -version
+          opam exec --switch=tethers-0.8 -- dune --version
+
+      - name: Repository verification (aggregate debug gate)
+        run: |
+          set -o pipefail
+          python3 scripts/verify-tethers.py --ocaml-switch tethers-0.8 2>&1 | tee /tmp/verify-tethers.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Show first meaningful failure
+        if: always()
+        run: |
+          jq '{verdict, first_meaningful_failure, outcome_counts}' verification/tethers-verification.json 2>/dev/null || echo "no verification report was produced"
+
+      - name: Re-run tests with streamed output for diagnosis
+        if: failure()
+        run: |
+          manifest=verification/current-engine-provenance.json
+          engine=$(jq -er '.binary_relative_path' "$manifest")
+          export TETHERS_VERIFIED_ENGINE="$GITHUB_WORKSPACE/$engine"
+          export TETHERS_ENGINE_PROVENANCE="$GITHUB_WORKSPACE/$manifest"
+          export TETHERS_OCAML_SWITCH=tethers-0.8
+          bash scripts/run-rust-tests.sh
+
+      - name: Upload verification log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-tethers-log-${{ matrix.arch }}
+          path: |
+            /tmp/verify-tethers.log
+            verification/tethers-verification.json
+
+      - name: Rust format and static checks
+        run: |
+          cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
+          cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --locked
+
+      - name: Release-profile Rust suite with verified engine
+        env:
+          TETHERS_OCAML_SWITCH: tethers-0.8
+        run: |
+          set -o pipefail
+          {
+          bash scripts/prepare-current-engine.sh
+          manifest=verification/current-engine-provenance.json
+          engine=$(jq -er '.binary_relative_path' "$manifest")
+          export TETHERS_VERIFIED_ENGINE="$GITHUB_WORKSPACE/$engine"
+          export TETHERS_ENGINE_PROVENANCE="$GITHUB_WORKSPACE/$manifest"
+          cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml \
+            --lib --locked --release -- --test-threads=1
+          for test_file in tethers-0.1/host-rust/tests/*.rs; do
+            test_name=$(basename "$test_file" .rs)
+            cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml \
+              --test "$test_name" --locked --release -- --test-threads=1
+          done
+          } 2>&1 | tee /tmp/rust-release.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Upload release-test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-release-log-${{ matrix.arch }}
+          path: /tmp/rust-release.log
+
+      - name: Clear generated verification evidence and assert clean tree
+        run: |
+          printf '%s\n' 'Git status immediately after repository verification:'
+          git status --porcelain=v1 --untracked-files=all
+          for generated in verification/current-engine-provenance.json verification/tethers-verification.json; do
+            if [[ -e "$generated" ]]; then
+              rm -f -- "$generated"
+            fi
+          done
+          rm -rf -- _opam
+          dirty=$(git status --porcelain=v1 --untracked-files=all)
+          if [[ -n "$dirty" ]]; then
+            printf '%s\n' 'Unexpected dirty files remain before release packaging:' >&2
+            printf '%s\n' "$dirty" >&2
+            exit 1
+          fi
+          printf '%s\n' 'Release worktree is clean.'
+
+      - name: Build macOS release package
+        env:
+          TETHERS_OCAML_SWITCH: tethers-0.8
+        run: |
+          release_flag=""
+          if git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+            release_flag="--release"
+          fi
+          bash scripts/package-macos-release.sh --arch ${{ matrix.arch }} $release_flag
+          version=$(tr -d '[:space:]' < VERSION)
+          echo "TETHERS_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Verify package checksums
+        run: |
+          cd dist
+          archive="Tethers-$TETHERS_VERSION-${{ matrix.arch }}.tar.gz"
+          manifest="Tethers-$TETHERS_VERSION-${{ matrix.arch }}-manifest.json"
+          expected_archive_hash=$(jq -er '.archive.sha256' "$manifest")
+          actual_archive_hash=$(shasum -a 256 "$archive" | awk '{print $1}')
+          if [[ "$expected_archive_hash" != "$actual_archive_hash" ]]; then
+            printf 'Checksum mismatch: expected %s, got %s\n' "$expected_archive_hash" "$actual_archive_hash" >&2
+            exit 1
+          fi
+          printf 'PASS archive checksum: %s\n' "$actual_archive_hash"
+
+      - name: Build provider binary for lifecycle proof
+        run: |
+          cargo build --release --locked \
+            --manifest-path tethers-0.1/host-rust/Cargo.toml \
+            --bin agent_workspace_provider
+          echo "TETHERS_TEST_PROVIDER_EXE=$GITHUB_WORKSPACE/tethers-0.1/host-rust/target/release/agent_workspace_provider" >> "$GITHUB_ENV"
+
+      - name: Clean-package smoke including authority boundary
+        run: |
+          mkdir -p /tmp/test-package
+          tar xzf "dist/Tethers-$TETHERS_VERSION-${{ matrix.arch }}.tar.gz" -C /tmp/test-package
+          bash scripts/test-macos-package.sh "/tmp/test-package/Tethers-$TETHERS_VERSION-${{ matrix.arch }}"
+
+      - name: Archive-level proof (paths, permissions, dependencies, lifecycle, recovery)
+        run: |
+          bash scripts/test-macos-package-full.sh "dist/Tethers-$TETHERS_VERSION-${{ matrix.arch }}.tar.gz" "${{ matrix.raw_arch }}"
+
+      - name: Signing and notarization audit
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+        run: |
+          if [[ -n "${MACOS_CERTIFICATE:-}" ]]; then
+            printf 'Developer ID signing credentials present; signing procedure would execute.\n'
+          else
+            printf 'DISTRIBUTION TRUST NOTICE: Apple Developer ID signing/notarization credentials are not configured in repository secrets.\n'
+            printf 'Technical build, packaging, tests, and authority proofs are COMPLETE.\n'
+            printf 'Public Gatekeeper-trusted distribution remains BLOCKED until Apple Developer ID Application credentials and notarytool credentials are provided.\n'
+          fi
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tethers-${{ matrix.arch }}
+          path: |
+            dist/Tethers-${{ env.TETHERS_VERSION }}-${{ matrix.arch }}.tar.gz
+            dist/Tethers-${{ env.TETHERS_VERSION }}-${{ matrix.arch }}-manifest.json
+            dist/SHA256SUMS-${{ env.TETHERS_VERSION }}

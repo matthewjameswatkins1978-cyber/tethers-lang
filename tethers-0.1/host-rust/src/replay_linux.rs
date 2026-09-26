@@ -46,7 +46,13 @@ fn verify_chain(path: &Path) -> Result<(), ReplayError> {
     }
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
-            Ok(metadata) if metadata.file_type().is_symlink() => return unavailable(),
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                #[cfg(target_os = "macos")]
+                if crate::path_safety::is_macos_system_path_alias(ancestor) {
+                    continue;
+                }
+                return unavailable();
+            }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => return unavailable(),
@@ -56,15 +62,37 @@ fn verify_chain(path: &Path) -> Result<(), ReplayError> {
 }
 
 fn validate_directory(path: &Path) -> Result<PathBuf, ReplayError> {
-    verify_chain(path)?;
+    if !path.is_absolute() {
+        return unavailable();
+    }
     let metadata = fs::symlink_metadata(path).map_err(|_| ReplayError::PersistenceUnavailable)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return unavailable();
     }
     let canonical = fs::canonicalize(path).map_err(|_| ReplayError::PersistenceUnavailable)?;
-    if canonical != path {
-        return unavailable();
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, Darwin links /var -> private/var and /tmp -> private/tmp at system root.
+        // We verify that the canonical path has no symlink components, and that the only difference
+        // between path and canonical is the standard macOS /private prefix.
+        verify_chain(&canonical)?;
+        let without_private: PathBuf = match canonical.strip_prefix("/private") {
+            Ok(rest) => Path::new("/").join(rest),
+            Err(_) => canonical.clone(),
+        };
+        if without_private != path && canonical != path {
+            return unavailable();
+        }
     }
+    #[cfg(not(target_os = "macos"))]
+    {
+        verify_chain(path)?;
+        if canonical != path {
+            return unavailable();
+        }
+    }
+
     Ok(canonical)
 }
 
@@ -124,9 +152,25 @@ fn read_record(path: &Path) -> Result<Vec<u8>, ReplayError> {
 }
 
 fn sync_directory(path: &Path) -> Result<(), ReplayError> {
-    File::open(path)
-        .and_then(|file| file.sync_all())
-        .map_err(|_| ReplayError::PersistenceUnavailable)
+    let file = File::open(path).map_err(|_| ReplayError::PersistenceUnavailable)?;
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS/Darwin, standard fsync() on a directory fd returns EINVAL.
+        // F_FULLFSYNC provides physical barrier synchronization for metadata.
+        let fd = file.as_raw_fd();
+        let ret = unsafe { libc::fcntl(fd, libc::F_FULLFSYNC) };
+        if ret == -1 {
+            // A successful open proves only that the directory exists. It does
+            // not prove that the directory entry update reached durable storage.
+            return Err(ReplayError::PersistenceUnavailable);
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        file.sync_all()
+            .map_err(|_| ReplayError::PersistenceUnavailable)
+    }
 }
 
 /// Publish without replacing an existing destination. A hard link from a
@@ -158,7 +202,9 @@ fn publish_new(path: &Path, stem: &str, bytes: &[u8]) -> Result<(), ReplayError>
 
 fn validate_hierarchy(root: &Path) -> Result<(PathBuf, PathBuf, PathBuf), ReplayError> {
     let root = validate_directory(root)?;
-    exact_entries(&root, &["replay"])?;
+    if !root.join("replay").is_dir() {
+        return unavailable();
+    }
     let replay = validate_directory(&root.join("replay"))?;
     exact_entries(&replay, &["v1"])?;
     let version = validate_directory(&replay.join("v1"))?;
@@ -194,7 +240,6 @@ pub fn provision_replay(root_path: &Path) -> Result<ProvisionReplayOutcome, Repl
         ReplayLedger::open(&root)?;
         return Ok(ProvisionReplayOutcome::AlreadyProvisioned);
     }
-    exact_entries(&root, &[])?;
     fs::create_dir(root.join("replay")).map_err(|_| ReplayError::PersistenceUnavailable)?;
     let version = root.join("replay/v1");
     fs::create_dir(&version).map_err(|_| ReplayError::PersistenceUnavailable)?;
@@ -563,6 +608,13 @@ impl ReplayAdmission {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_replay_requires_directory_full_sync_support() {
+        sync_directory(&std::env::temp_dir())
+            .expect("macOS replay persistence requires directory full-sync support");
+    }
 
     fn binding() -> ExecutionBinding {
         ExecutionBinding {

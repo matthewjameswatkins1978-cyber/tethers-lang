@@ -10,7 +10,7 @@ must not be collapsed into one product number.
 
 | Axis | Current value | Meaning and compatibility owner |
 | --- | --- | --- |
-| Product version | `0.8.0` | Practical native product/release identity; release control owns its public lifecycle; R2 added the public `tethers gate` surface and `tethers.authority/1` |
+| Product version | `0.8.1` | Practical native product/release identity; release control owns its public lifecycle; R2 added the public `tethers gate` surface and `tethers.authority/1`; 0.8.1 is maintenance/distribution only, no authority change |
 | Human Tether language | `0.1` | Source-language semantics defined by `tethers-0.1/SPEC.md`; Core owns meaning |
 | Core/wire protocol | `0.1` | Tethers request/response protocol; strict version checks at the boundary |
 | CLI envelope/discovery | `tethers.cli/1` | Machine-readable native host command envelope and discovery shape |

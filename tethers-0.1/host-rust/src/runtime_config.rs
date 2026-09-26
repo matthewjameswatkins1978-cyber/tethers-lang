@@ -1125,6 +1125,24 @@ pub fn parse_runtime_config(json: &str) -> Result<RuntimeConfig, RuntimeConfigEr
     let value = parse_value_no_dupes(json)
         .map_err(|e| RuntimeConfigError::new(RuntimeConfigErrorCode::InvalidJson, e.to_string()))?;
 
+    // Explicit detection of workspace project configuration passed as runtime config
+    if let Some(schema) = value.get("schema").and_then(|v| v.as_str()) {
+        if schema == "tethers.project/1" {
+            return Err(RuntimeConfigError::with_field(
+                RuntimeConfigErrorCode::InvalidValue,
+                "expected runtime configuration schema ('format_version': '0.1'), found workspace project configuration ('tethers.project/1'); runtime commands require a runtime configuration file",
+                "/schema",
+            ));
+        }
+    }
+    if value.get("config_version").is_some() && value.get("format_version").is_none() {
+        return Err(RuntimeConfigError::with_field(
+            RuntimeConfigErrorCode::InvalidValue,
+            "expected runtime configuration with 'format_version', found workspace project configuration with 'config_version'; runtime commands require a runtime configuration file",
+            "/config_version",
+        ));
+    }
+
     // Step 2: serde deserialization
     let config: RuntimeConfig = deserialize_config(&value, "")?;
 

@@ -294,6 +294,12 @@ fn trusted_writer(
 /// Pure authority decision used by the native ACL walker and focused tests.
 fn allow_ace_is_permitted(mask: u32, trustee_is_trusted: bool) -> Result<(), ReplayError> {
     if mask & WRITE_CAPABLE != 0 && !trustee_is_trusted {
+        crate::replay::record_replay_diagnostic(
+            "security_validation",
+            "untrusted_trustee_permissions",
+            "Ensure directory DACL grants write access only to the current user, SYSTEM, or Administrators",
+            None,
+        );
         unavailable()
     } else {
         Ok(())
@@ -345,6 +351,12 @@ fn validate_security(handle: HANDLE) -> Result<(), ReplayError> {
     }
     let owner = OwnedSid::from_ptr(owner)?;
     if !owner.equals(&user) {
+        crate::replay::record_replay_diagnostic(
+            "security_validation",
+            "untrusted_owner",
+            "Ensure host-data root directory is owned by the current user",
+            None,
+        );
         return unavailable();
     }
     let mut present = 0;
@@ -422,6 +434,18 @@ fn open_directory(path: &Path, access: u32) -> Result<OwnedHandle, ReplayError> 
         )
     };
     if raw == INVALID_HANDLE_VALUE {
+        let err = unsafe { GetLastError() };
+        let reason = if err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND {
+            "directory_not_found"
+        } else {
+            "directory_open_failed"
+        };
+        crate::replay::record_replay_diagnostic(
+            "path_traversal",
+            reason,
+            "Ensure the host data root path exists and is an accessible directory",
+            Some(path.display().to_string()),
+        );
         return unavailable();
     }
     let handle = OwnedHandle(raw);
@@ -430,6 +454,12 @@ fn open_directory(path: &Path, access: u32) -> Result<OwnedHandle, ReplayError> 
     if unsafe { GetFileInformationByHandle(handle.0, &mut information) } == 0
         || information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
     {
+        crate::replay::record_replay_diagnostic(
+            "path_traversal",
+            "reparse_point_rejected",
+            "Host data root and its ancestor directories must not be reparse points or symlinks",
+            Some(path.display().to_string()),
+        );
         return unavailable();
     }
     Ok(handle)
@@ -478,12 +508,24 @@ fn validate_volume(handle: HANDLE, root: &Path) -> Result<(), ReplayError> {
         .copied()
         .ne("NTFS".encode_utf16())
     {
+        crate::replay::record_replay_diagnostic(
+            "volume_validation",
+            "unsupported_filesystem",
+            "Ensure host data root is located on an NTFS volume",
+            Some(root.display().to_string()),
+        );
         return unavailable();
     }
     let root_w = wide(root);
     // SAFETY: root_w is a live nul-terminated DOS volume root. Ancestor checks
     // rejected substitutions before this classification is consulted.
     if unsafe { GetDriveTypeW(root_w.as_ptr()) } != DRIVE_FIXED {
+        crate::replay::record_replay_diagnostic(
+            "volume_validation",
+            "unsupported_drive_type",
+            "Ensure host data root is located on a fixed local drive",
+            Some(root.display().to_string()),
+        );
         return unavailable();
     }
     let _volume_serial = serial; // retained proof comes from the opened root handle.
@@ -508,13 +550,36 @@ impl ValidatedHostRoot {
 /// unprovable owner or ACL are all one redacted unavailable result.
 pub fn validate_existing_root(path: &Path) -> Result<ValidatedHostRoot, ReplayError> {
     if !path.is_absolute() {
+        crate::replay::record_replay_diagnostic(
+            "path_validation",
+            "path_not_absolute",
+            "Provide an absolute path to the host data root",
+            Some(path.display().to_string()),
+        );
         return unavailable();
     }
     let spelling = path.as_os_str().to_string_lossy();
     if spelling.contains('/') || spelling.contains("\\\\.") {
+        crate::replay::record_replay_diagnostic(
+            "path_validation",
+            "invalid_path_syntax",
+            "Use canonical Windows path with backslashes and no relative components",
+            Some(spelling.to_string()),
+        );
         return unavailable();
     }
-    let root = volume_root(path)?;
+    let root = match volume_root(path) {
+        Ok(r) => r,
+        Err(e) => {
+            crate::replay::record_replay_diagnostic(
+                "volume_validation",
+                "invalid_volume_root",
+                "Host data root must specify a valid DOS drive letter (e.g. C:\\)",
+                Some(path.display().to_string()),
+            );
+            return Err(e);
+        }
+    };
     let mut current = root.clone();
     let mut ancestors = Vec::new();
     let mut final_handle = open_component(&current)?;
@@ -986,11 +1051,21 @@ fn child_exists(parent: &Path, name: &str) -> bool {
 }
 
 fn exact_directory_entries(path: &Path, expected: &[&str]) -> Result<(), ReplayError> {
-    let mut actual = std::fs::read_dir(path)
-        .map_err(|_| ReplayError::PersistenceUnavailable)?
-        .map(|entry| entry.map(|item| item.file_name().to_string_lossy().into_owned()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| ReplayError::PersistenceUnavailable)?;
+    let mut actual = match std::fs::read_dir(path) {
+        Ok(read) => read
+            .map(|entry| entry.map(|item| item.file_name().to_string_lossy().into_owned()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ReplayError::PersistenceUnavailable)?,
+        Err(_) => {
+            crate::replay::record_replay_diagnostic(
+                "hierarchy_validation",
+                "directory_read_failed",
+                "Ensure directory is accessible and readable",
+                Some(path.display().to_string()),
+            );
+            return Err(ReplayError::PersistenceUnavailable);
+        }
+    };
     actual.sort();
     let mut expected = expected
         .iter()
@@ -998,6 +1073,17 @@ fn exact_directory_entries(path: &Path, expected: &[&str]) -> Result<(), ReplayE
         .collect::<Vec<_>>();
     expected.sort();
     if actual != expected {
+        crate::replay::record_replay_diagnostic(
+            "hierarchy_validation",
+            "unexpected_directory_entry",
+            "Remove unrecognized files or directories from the replay subtree",
+            Some(format!(
+                "in {}: found {:?}, expected {:?}",
+                path.display(),
+                actual,
+                expected
+            )),
+        );
         return unavailable();
     }
     Ok(())
@@ -1012,13 +1098,27 @@ fn validate_format(directory: &ValidatedDirectory) -> Result<(), ReplayError> {
         FILE_ATTRIBUTE_NORMAL,
     )?;
     if read_complete(file.0, FORMAT_BYTES.len())? != FORMAT_BYTES {
+        crate::replay::record_replay_diagnostic(
+            "hierarchy_validation",
+            "invalid_format_file",
+            "Ensure replay/v1/FORMAT.json matches the expected v1 format",
+            Some(directory.path.display().to_string()),
+        );
         return unavailable();
     }
     Ok(())
 }
 
 fn validate_complete_hierarchy(root: ValidatedHostRoot) -> Result<(), ReplayError> {
-    exact_directory_entries(root.path(), &["replay"])?;
+    if !child_exists(root.path(), "replay") {
+        crate::replay::record_replay_diagnostic(
+            "hierarchy_validation",
+            "missing_replay_subtree",
+            "Host data root does not contain a replay subtree; run provision-replay first",
+            Some(root.path().display().to_string()),
+        );
+        return unavailable();
+    }
     let root = root.into_directory()?;
     let replay = root.child_directory(&ValidatedLeafName::new("replay")?)?;
     exact_directory_entries(&replay.path, &["v1"])?;
@@ -1040,7 +1140,9 @@ pub fn provision_replay(root_path: &Path) -> Result<ProvisionReplayOutcome, Repl
         let _validated_ledger = ReplayLedger::open(root_path)?;
         return Ok(ProvisionReplayOutcome::AlreadyProvisioned);
     }
-    exact_directory_entries(root.path(), &[])?;
+    // Preferred principle: The replay implementation owns its dedicated replay subtree,
+    // not requiring exclusive ownership of an otherwise shared host state root (which may
+    // contain legitimate standard sibling state such as trail data).
     let root = root.into_directory()?;
     let replay = create_new_directory(&root, "replay")?;
     let version = create_new_directory(&replay, "v1")?;
@@ -2020,14 +2122,40 @@ mod tests {
         );
         assert_eq!(tree_snapshot(&partial), partial_before);
 
-        let unknown = fresh_native_test_root("unknown-provisioning").unwrap();
-        std::fs::write(unknown.join("operator-owned.txt"), b"keep").unwrap();
-        let unknown_before = tree_snapshot(&unknown);
+        // Sibling state in the host root (such as trail.jsonl or operator files) is permitted;
+        // replay owns its dedicated subtree.
+        let sibling_root = fresh_native_test_root("sibling-provisioning").unwrap();
+        std::fs::write(
+            sibling_root.join("trail.jsonl"),
+            b"{\"receipt\":\"initial\"}\n",
+        )
+        .unwrap();
         assert_eq!(
-            provision_replay(&unknown),
+            provision_replay(&sibling_root),
+            Ok(ProvisionReplayOutcome::Provisioned)
+        );
+        assert!(sibling_root.join("replay/v1/FORMAT.json").is_file());
+        assert_eq!(
+            std::fs::read(sibling_root.join("trail.jsonl")).unwrap(),
+            b"{\"receipt\":\"initial\"}\n"
+        );
+        assert_eq!(
+            provision_replay(&sibling_root),
+            Ok(ProvisionReplayOutcome::AlreadyProvisioned)
+        );
+
+        // Hostile / unrecognized entries INSIDE the replay tree fail closed.
+        let hostile_replay = fresh_native_test_root("hostile-replay-entry").unwrap();
+        std::fs::create_dir_all(hostile_replay.join("replay")).unwrap();
+        std::fs::write(
+            hostile_replay.join("replay").join("hostile.txt"),
+            b"forbidden",
+        )
+        .unwrap();
+        assert_eq!(
+            provision_replay(&hostile_replay),
             Err(ReplayError::PersistenceUnavailable)
         );
-        assert_eq!(tree_snapshot(&unknown), unknown_before);
 
         let unknown_version = fresh_native_test_root("unknown-version").unwrap();
         std::fs::create_dir(unknown_version.join("replay")).unwrap();

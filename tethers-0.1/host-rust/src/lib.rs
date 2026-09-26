@@ -93,6 +93,7 @@ pub mod openshell_executor;
 pub mod operational_scope;
 mod outcome;
 pub mod package;
+mod path_safety;
 pub mod plan_command;
 pub mod plan_execution;
 pub mod plug_command;

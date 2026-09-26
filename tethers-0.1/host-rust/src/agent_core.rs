@@ -141,6 +141,10 @@ fn reject_reparse_chain(path: &Path) -> Result<(), CoreError> {
             )
         })?;
         if metadata.file_type().is_symlink() {
+            #[cfg(target_os = "macos")]
+            if crate::path_safety::is_macos_system_path_alias(ancestor) {
+                continue;
+            }
             return Err(CoreError::denied(
                 "REPARSE_REFUSED",
                 format!("reparse point is not permitted: {}", ancestor.display()),
@@ -210,7 +214,11 @@ fn default_state_root() -> Result<PathBuf, CoreError> {
     #[cfg(windows)]
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     #[cfg(not(windows))]
-    let base = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("state"))
+        });
     let base = base.ok_or_else(|| {
         CoreError::unavailable(
             "HOST_STATE_UNAVAILABLE",
@@ -886,7 +894,15 @@ fn git_log(context: &WorkspaceContext, limit: usize) -> Result<Value, CoreError>
             .map(|v| String::from_utf8_lossy(v).into_owned())
             .collect();
         if fields.len() >= 4 {
-            commits.push(json!({"sha": fields[0], "author": fields[1], "timestamp": fields[2], "subject": fields[3]}));
+            let sha = fields[0].trim();
+            if !sha.is_empty() && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                commits.push(json!({
+                    "sha": sha,
+                    "author": fields[1],
+                    "timestamp": fields[2],
+                    "subject": fields[3],
+                }));
+            }
         }
     }
     Ok(json!({"commits": commits, "limit": limit}))
@@ -1673,17 +1689,36 @@ pub fn run_describe(engine_override: Option<PathBuf>) -> CoreResult {
         Err(e) => return result(error("describe", e)),
     };
     let engine = discover_engine(engine_override.as_deref());
+    let families = vec![
+        capability_descriptor("workspace").unwrap(),
+        capability_descriptor("git").unwrap(),
+        capability_descriptor("exec").unwrap(),
+    ];
+    let threadmoth = threadmoth_descriptor();
+    let threadmoth_available = threadmoth["status"] == "available";
     result(CliEnvelope::ok(
         "describe",
         json!({
             "schema":"tethers.describe/1",
             "name":"Tethers",
             "version":env!("CARGO_PKG_VERSION"),
+            "cli_schema":"tethers.cli/1",
             "mode":"execution-boundary",
             "engine":engine,
             "workspace":{"root":context.root,"id":context.workspace_id},
             "host_state":context.state_root,
-            "capabilities":["workspace","git","exec","threadmoth (optional)"]
+            "capabilities":["workspace","git","exec","threadmoth (optional)"],
+            "capability_families":families,
+            "available_capabilities": families.iter().map(|f| f["operations"].as_array().map_or(0, |ops| ops.len())).sum::<usize>()
+                + if threadmoth_available { 2 } else { 0 },
+            "installed_plugs": 0,
+            "enabled_plugs": 0,
+            "supported_discovery_commands":["describe","capability list","capability inspect","plug show"],
+            "host_health": {
+                "status": "agent_core_builtin",
+                "provider_health_checked": false,
+                "host_data_configured": context.state_root.is_dir()
+            }
         }),
     ))
 }

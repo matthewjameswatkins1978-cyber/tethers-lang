@@ -10,14 +10,16 @@ $ErrorActionPreference = 'Stop'
 
 $repo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $version = (Get-Content -LiteralPath (Join-Path $repo 'VERSION') -Raw).Trim()
-if ($version -ne '0.8.0') { throw "Expected VERSION 0.8.0, found '$version'." }
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION must be a plain product version, found '$version'." }
+$expectedTag = "v$version"
+$releaseNotes = "TETHERS_$($version.Replace('.', '_'))_RELEASE.md"
 if (-not [System.IO.Path]::IsPathFullyQualified($OcamlSwitch)) {
     throw 'OcamlSwitch must be an absolute path.'
 }
 $switch = [System.IO.Path]::GetFullPath($OcamlSwitch)
 $tag = (& git -C $repo describe --exact-match --tags HEAD 2>$null).Trim()
-if ($LASTEXITCODE -ne 0 -or $tag -ne 'v0.8.0') {
-    throw "Packaging requires HEAD to be the exact v0.8.0 tag; got '$tag'."
+if ($LASTEXITCODE -ne 0 -or $tag -ne $expectedTag) {
+    throw "Packaging requires HEAD to be the exact $expectedTag tag; got '$tag'."
 }
 if (@(& git -C $repo status --porcelain=v1 --untracked-files=all).Count -ne 0) {
     throw 'Packaging requires a clean worktree.'
@@ -30,10 +32,10 @@ $target = [System.IO.Path]::GetFullPath($target)
 if (-not $target.StartsWith($repo + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw "OutputRoot must stay inside the repository: $target"
 }
-$archive = Join-Path $target 'Tethers-0.8.0-windows-x64.zip'
-$manifestPath = Join-Path $target 'Tethers-0.8.0-windows-x64-manifest.json'
-$sumsPath = Join-Path $target 'SHA256SUMS-0.8.0'
-$stage = Join-Path $target '.tethers-0.8.0-windows-x64-stage'
+$archive = Join-Path $target "Tethers-$version-windows-x64.zip"
+$manifestPath = Join-Path $target "Tethers-$version-windows-x64-manifest.json"
+$sumsPath = Join-Path $target "SHA256SUMS-$version"
+$stage = Join-Path $target ".tethers-$version-windows-x64-stage"
 foreach ($path in @($archive, "$archive.sha256", $manifestPath, $sumsPath, $stage)) {
     if (Test-Path -LiteralPath $path) { throw "Refusing to replace existing release output: $path" }
 }
@@ -77,10 +79,24 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo 'README.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'QUICKSTART.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/INTEGRATING_TETHERS.md') -Destination (Join-Path $stage 'docs')
-    Copy-Item -LiteralPath (Join-Path $repo 'docs/TETHERS_0_8_0_RELEASE.md') -Destination (Join-Path $stage 'docs')
+    Copy-Item -LiteralPath (Join-Path $repo "docs/$releaseNotes") -Destination (Join-Path $stage 'docs')
     Copy-Item -LiteralPath (Join-Path $repo 'examples/external-consumer/README.md') -Destination $examples
     Copy-Item -LiteralPath (Join-Path $repo 'examples/external-consumer/consumer.py') -Destination $examples
+    Copy-Item -LiteralPath (Join-Path $repo 'examples/external-consumer/smoke.py') -Destination $examples
     Copy-Item -LiteralPath (Join-Path $repo 'examples/external-consumer/fixture-ping.json') -Destination $examples
+
+    $requiredExamples = @(
+        'examples/external-consumer/README.md',
+        'examples/external-consumer/consumer.py',
+        'examples/external-consumer/fixture-ping.json',
+        'examples/external-consumer/smoke.py'
+    )
+    foreach ($req in $requiredExamples) {
+        $stagedPath = Join-Path $stage $req
+        if (-not (Test-Path -LiteralPath $stagedPath -PathType Leaf)) {
+            throw "Packaging verification failure: required documented example missing from bundle: $req"
+        }
+    }
 
     $hashes = [ordered]@{}
     foreach ($file in Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName) {

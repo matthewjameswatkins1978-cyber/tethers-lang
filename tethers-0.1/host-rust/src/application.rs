@@ -23,10 +23,10 @@ use tethers_reference_host::child_process;
 use tethers_reference_host::cli::{Cli, CliEnvelope, Command as CliCommand, OutcomeStatus};
 const NORMAL_USAGE: &str = "usage: tethers-reference-host ENGINE REQUEST_JSON [POLICY] \
 [TRAIL_PATH] [EXECUTOR_MODE] [--host-data-root <ABSOLUTE_PATH>]";
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 const EVENT_ADMISSION_PROBE_USAGE: &str =
     "usage: tethers-reference-host event-admission-probe <duplicate-initial|duplicate-sibling|causal-depth|clean>";
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 const EVENT_ADMISSION_TRAIL_PROBE_USAGE: &str =
     "usage: tethers-reference-host event-admission-trail-probe <duplicate-initial|duplicate-sibling|causal-depth|clean> <ABSOLUTE_TRAIL_PATH>";
 
@@ -271,7 +271,7 @@ where
     })
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 fn build_event_admission_probe_response(
     scenario: &str,
 ) -> Result<Value, Box<dyn std::error::Error>> {
@@ -362,7 +362,7 @@ fn build_event_admission_probe_response(
     Ok(response)
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 fn build_event_admission_trail_probe_response(
     scenario: &str,
     trail_path: &Path,
@@ -524,11 +524,22 @@ pub fn run() {
             emit_envelope_and_exit(result.envelope, result.exit_code);
         }
         Ok(Cli {
-            command: Some(CliCommand::Describe { host_data_root, .. }),
-        }) => {
-            let result = discovery::run_describe(host_data_root.as_deref());
-            emit_envelope_and_exit(result.envelope, result.exit_code);
-        }
+            command:
+                Some(CliCommand::Describe {
+                    host_data_root,
+                    engine,
+                    ..
+                }),
+        }) => match host_data_root {
+            Some(host_data_root) => {
+                let result = discovery::run_describe(Some(&host_data_root));
+                emit_envelope_and_exit(result.envelope, result.exit_code);
+            }
+            None => {
+                let result = agent_core::run_describe(engine);
+                emit_envelope_and_exit(result.envelope, result.exit_code);
+            }
+        },
         Ok(Cli {
             command:
                 Some(CliCommand::Capability {
@@ -838,16 +849,35 @@ pub fn run() {
             command: Some(CliCommand::ProvisionReplay { root }),
         }) => match crate::replay_store::provision_replay(&root) {
             Ok(result) => {
-                println!("{}", result.as_str());
-                std::process::exit(0);
+                let envelope = CliEnvelope::ok(
+                    "provision-replay",
+                    serde_json::json!({
+                        "outcome": result.as_str(),
+                        "host_data_root": root,
+                    }),
+                );
+                emit_envelope_and_exit(envelope, 0);
             }
             Err(e) => {
-                let envelope = CliEnvelope::error(
+                let diagnostic = crate::replay_store::last_replay_diagnostic();
+                let message = if let Some(ref diag) = diagnostic {
+                    format!(
+                        "{}: {} (phase: {}, recovery: {})",
+                        e, diag.reason, diag.phase, diag.recovery
+                    )
+                } else {
+                    e.to_string()
+                };
+                let envelope = CliEnvelope::error_with_data(
                     "provision-replay",
                     OutcomeStatus::Failed,
                     "PROVISION_FAILED",
-                    e.to_string(),
+                    message,
                     None,
+                    serde_json::json!({
+                        "diagnostic": diagnostic,
+                        "host_data_root": root,
+                    }),
                 );
                 emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
             }
@@ -969,7 +999,7 @@ fn run_event_admission_probe_clap(mode: &str) -> Result<(), Box<dyn std::error::
 }
 
 /// Clap-based wrapper for event-admission-trail-probe debug command.
-#[cfg(debug_assertions)]
+#[cfg(any(test, debug_assertions))]
 fn run_event_admission_trail_probe_clap(
     mode: &str,
     trail_path: &std::path::Path,

@@ -44,6 +44,10 @@ fn wide(path: &Path) -> Vec<u16> {
 fn reject_reparse_or_link(path: &Path) -> Result<(), PackageError> {
     let metadata = io(fs::symlink_metadata(path))?;
     if metadata.file_type().is_symlink() {
+        #[cfg(target_os = "macos")]
+        if crate::path_safety::is_macos_system_path_alias(path) {
+            return Ok(());
+        }
         Err(err(
             "unsafe_destination",
             "symbolic-link destinations are refused",
@@ -67,6 +71,7 @@ fn reject_reparse_or_link(path: &Path) -> Result<(), PackageError> {
         Ok(())
     }
 }
+
 /// Check every existing component before and after directory creation. On
 /// Windows this examines FILE_ATTRIBUTE_REPARSE_POINT, covering junctions,
 /// mount points, and other reparse forms that Path::is_symlink cannot see.
@@ -694,6 +699,30 @@ mod tests {
         assert!(!outside.join("provider-marker.exe").exists());
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn darwin_system_temp_alias_is_accepted_but_arbitrary_symlinks_are_rejected() {
+        let temp = std::env::temp_dir();
+        assert!(
+            verify_existing_chain(&temp).is_ok(),
+            "the OS-provided macOS temporary directory must remain usable"
+        );
+
+        let parent = temp.join(format!("tethers-symlink-check-{}", Uuid::new_v4()));
+        let target = parent.join("target");
+        let link = parent.join("link");
+        fs::create_dir_all(&target).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert_eq!(
+            verify_existing_chain(&link).unwrap_err().code,
+            "unsafe_destination",
+            "only the verified /var and /tmp system aliases may be followed"
+        );
+
+        fs::remove_dir_all(parent).unwrap();
     }
 
     #[cfg(windows)]

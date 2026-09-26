@@ -47,7 +47,13 @@ manifest_path="$repository_root/verification/current-engine-provenance.json"
 require_command git
 require_command opam
 require_command jq
-require_command sha256sum
+if command -v sha256sum >/dev/null 2>&1; then
+    compute_sha256() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+    compute_sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+else
+    fail 'Required command is unavailable: sha256sum or shasum'
+fi
 
 git_root=$(git -C "$repository_root" rev-parse --show-toplevel 2>/dev/null) ||
     fail 'Could not identify the current Git worktree.'
@@ -63,7 +69,24 @@ if [[ "$release_mode" == true ]] && [[ -n "$(git -C "$repository_root" status --
     fail 'Release verification requires a clean Git worktree.'
 fi
 
-ocaml_switch=${TETHERS_OCAML_SWITCH:-bl-tethers-5.5.0}
+ocaml_switch="${TETHERS_OCAML_SWITCH:-}"
+if [[ -z "$ocaml_switch" ]]; then
+    current_switch=$(opam switch show 2>/dev/null || true)
+    if [[ -n "$current_switch" ]] && opam exec --switch="$current_switch" -- ocamlc -version >/dev/null 2>&1; then
+        ocaml_switch="$current_switch"
+    elif opam exec --switch=bl-tethers-5.5.0 -- ocamlc -version >/dev/null 2>&1; then
+        ocaml_switch=bl-tethers-5.5.0
+    else
+        for candidate_switch in $(opam switch list --short 2>/dev/null || true); do
+            if opam exec --switch="$candidate_switch" -- ocamlc -version >/dev/null 2>&1; then
+                ocaml_switch="$candidate_switch"
+                break
+            fi
+        done
+    fi
+fi
+[[ -n "$ocaml_switch" ]] || ocaml_switch=bl-tethers-5.5.0
+
 ocaml_version=$(opam exec --switch="$ocaml_switch" -- ocamlc -version 2>/dev/null) ||
     fail "Could not run OCaml from switch: $ocaml_switch"
 dune_version=$(opam exec --switch="$ocaml_switch" -- dune --version 2>/dev/null) ||
@@ -90,7 +113,7 @@ done
 binary_relative_path=${engine_path#"$repository_root/"}
 [[ "$binary_relative_path" != "$engine_path" ]] ||
     fail 'The built engine was not produced inside the current repository.'
-binary_sha256=$(sha256sum "$engine_path" | awk '{print $1}')
+binary_sha256=$(compute_sha256 "$engine_path")
 
 mkdir -p -- "$(dirname -- "$manifest_path")"
 temporary_manifest="$manifest_path.tmp.$$"

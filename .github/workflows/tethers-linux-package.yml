@@ -1,0 +1,194 @@
+name: Tethers Linux package proof
+
+# Linux x86-64 full-runtime proof for the 0.8 authority architecture.
+# Donor history: PR #45 proved the mechanics against 0.7.1 assumptions; this
+# lane is rewritten for tethers.authority/1, Windows-parity packaging, and
+# version-driven artifacts (no hard-coded product version).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-package-proof:
+    runs-on: ubuntu-latest
+    env:
+      TETHERS_OCAML_SWITCH: tethers-0.8
+    steps:
+      - name: Checkout exact SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt, clippy
+
+      - name: Install OCaml and opam
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5.0"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 jq
+
+      - name: Set up OCaml switch
+        # Pin the exact locked toolchain (tethers_engine.opam.locked): floating
+        # installs are rejected by switch discovery, which requires OCaml 5.5.0,
+        # Dune 3.24.0, Yojson 2.2.2, and Digestif 1.3.1.
+        run: |
+          opam switch create tethers-0.8 5.5.0
+          opam install --switch=tethers-0.8 -y dune.3.24.0 yojson.2.2.2 digestif.1.3.1
+          opam exec --switch=tethers-0.8 -- ocamlc -version
+          opam exec --switch=tethers-0.8 -- dune --version
+
+      - name: Repository verification (aggregate debug gate)
+        run: |
+          set -o pipefail
+          python3 scripts/verify-tethers.py --ocaml-switch tethers-0.8 2>&1 | tee /tmp/verify-tethers.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Show first meaningful failure
+        if: always()
+        run: |
+          jq '{verdict, first_meaningful_failure, outcome_counts}' verification/tethers-verification.json 2>/dev/null || echo "no verification report was produced"
+
+      - name: Re-run tests with streamed output for diagnosis
+        # The verifier captures step output, so a test failure's detail can be
+        # truncated away. Re-running run-rust-tests.sh streams it to the job log tail.
+        if: failure()
+        run: |
+          manifest=verification/current-engine-provenance.json
+          engine=$(jq -er '.binary_relative_path' "$manifest")
+          export TETHERS_VERIFIED_ENGINE="$GITHUB_WORKSPACE/$engine"
+          export TETHERS_ENGINE_PROVENANCE="$GITHUB_WORKSPACE/$manifest"
+          export TETHERS_OCAML_SWITCH=tethers-0.8
+          bash scripts/run-rust-tests.sh
+
+      - name: Upload verification log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-tethers-log
+          path: |
+            /tmp/verify-tethers.log
+            verification/tethers-verification.json
+
+      - name: Rust format and static checks
+        run: |
+          cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check
+          cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --locked
+
+      - name: Release-profile Rust suite with verified engine
+        # verify-tethers.py has no Linux release-test path, so run the genuine
+        # release profile per target here. Benchmark features stay off on Linux:
+        # those binaries are Windows-only (see scripts/run-rust-tests.sh).
+        env:
+          TETHERS_OCAML_SWITCH: tethers-0.8
+        run: |
+          set -o pipefail
+          {
+          bash scripts/prepare-current-engine.sh
+          manifest=verification/current-engine-provenance.json
+          engine=$(jq -er '.binary_relative_path' "$manifest")
+          export TETHERS_VERIFIED_ENGINE="$GITHUB_WORKSPACE/$engine"
+          export TETHERS_ENGINE_PROVENANCE="$GITHUB_WORKSPACE/$manifest"
+          cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml \
+            --lib --locked --release -- --test-threads=1
+          for test_file in tethers-0.1/host-rust/tests/*.rs; do
+            test_name=$(basename "$test_file" .rs)
+            cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml \
+              --test "$test_name" --locked --release -- --test-threads=1
+          done
+          } 2>&1 | tee /tmp/rust-release.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Upload release-test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-release-log
+          path: /tmp/rust-release.log
+
+      - name: Clear generated verification evidence and assert clean tree
+        run: |
+          printf '%s\n' 'Git status immediately after repository verification:'
+          git status --porcelain=v1 --untracked-files=all
+          for generated in verification/current-engine-provenance.json verification/tethers-verification.json; do
+            if [[ -e "$generated" ]]; then
+              rm -f -- "$generated"
+            fi
+          done
+          # The setup-ocaml action creates a project-local ./_opam switch that
+          # this lane never uses (it uses the named tethers-0.8 switch). CI
+          # checkouts are always fresh, so ./_opam here is pure CI environment,
+          # not source: remove it before the clean assertion.
+          rm -rf -- _opam
+          dirty=$(git status --porcelain=v1 --untracked-files=all)
+          if [[ -n "$dirty" ]]; then
+            printf '%s\n' 'Unexpected dirty files remain before release packaging:' >&2
+            printf '%s\n' "$dirty" >&2
+            exit 1
+          fi
+          printf '%s\n' 'Release worktree is clean.'
+
+      - name: Build Linux release package
+        env:
+          TETHERS_OCAML_SWITCH: tethers-0.8
+        run: |
+          # On a release tag the strict gates engage (clean tree + exact tag);
+          # on branches the identical build/package machinery runs in dev mode.
+          release_flag=""
+          if git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+            release_flag="--release"
+          fi
+          bash scripts/package-linux-release.sh $release_flag
+          version=$(tr -d '[:space:]' < VERSION)
+          echo "TETHERS_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Verify package checksums
+        run: |
+          cd dist
+          sha256sum -c "SHA256SUMS-$TETHERS_VERSION"
+
+      - name: Build provider binary for lifecycle proof
+        run: |
+          cargo build --release --locked \
+            --manifest-path tethers-0.1/host-rust/Cargo.toml \
+            --bin agent_workspace_provider
+          echo "TETHERS_TEST_PROVIDER_EXE=$GITHUB_WORKSPACE/tethers-0.1/host-rust/target/release/agent_workspace_provider" >> "$GITHUB_ENV"
+
+      - name: Clean-package smoke including authority boundary
+        run: |
+          mkdir -p /tmp/test-package
+          tar xzf "dist/Tethers-$TETHERS_VERSION-linux-x64.tar.gz" -C /tmp/test-package
+          bash scripts/test-linux-package.sh "/tmp/test-package/Tethers-$TETHERS_VERSION-linux-x64"
+
+      - name: Archive-level proof (paths, permissions, dependencies, lifecycle, recovery)
+        run: |
+          bash scripts/test-linux-package-full.sh "dist/Tethers-$TETHERS_VERSION-linux-x64.tar.gz"
+
+      - name: Runtime dependency audit
+        run: |
+          mkdir -p /tmp/test-deps
+          tar xzf "dist/Tethers-$TETHERS_VERSION-linux-x64.tar.gz" -C /tmp/test-deps
+          cd "/tmp/test-deps/Tethers-$TETHERS_VERSION-linux-x64"
+          ldd bin/tethers
+          ldd bin/tethers-engine
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tethers-linux-x64
+          path: |
+            dist/Tethers-${{ env.TETHERS_VERSION }}-linux-x64.tar.gz
+            dist/Tethers-${{ env.TETHERS_VERSION }}-linux-x64-manifest.json
+            dist/SHA256SUMS-${{ env.TETHERS_VERSION }}
