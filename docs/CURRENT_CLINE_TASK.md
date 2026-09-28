@@ -1,171 +1,132 @@
-# TETHERS 0.8.1 — RECOVERY + THREE-PLATFORM TRUST CLOSEOUT
+# TETHERS 0.8.2 — ADVERSARIAL HARDENING AND THREE-PLATFORM TRUST
 
 Control contract: `1`
 
 Status: `IN_PROGRESS`
 
-Task colour: `Amber`
+Task colour: `Red`
 
-Owner: `Tethers 0.8.1 Maintenance Agent`
+Owner: `Integration / Architecture Agent (OpenCode session)`
 
-Route: `OpenCode implementation on canonical Windows checkout; Linux x86-64 & macOS (ARM64 + Intel) proof via GitHub Actions CI; gated tag/crates.io final steps`
+Route: `Four bounded lanes (A replay/persistence, B process supervision, C
+release engineering, D independent red team) as worker branches off
+fix/tethers-0.8.2-hardening; Linux x86-64 and macOS (ARM64 + Intel) proof via
+GitHub Actions CI; Windows x86-64 proof native on the canonical machine`
 
-Worker note: `docs/worker-notes/2026-09-25-tethers-0.8.1-maintenance.md`
+Worker note: `docs/worker-notes/2026-09-28-tethers-0.8.2-hardening.md`
 
 Base branch: `main`
 
-Base commit: `c5bd371ff348879313186406696457f7024f4446`
+Base commit: `2710e867768f33be3e6bd1e722004c1c50e3f53b`
 
-The Base commit is `v0.8.0` (Merge pull request #48). All 0.8.1 work builds forward from it.
+The Base commit is the `v0.8.1` tag target. All 0.8.2 work builds forward from
+it on the integration branch `fix/tethers-0.8.2-hardening`. The v0.8.1 tag is
+immutable and is never moved.
 
-Supersession note: this packet supersedes the stale `IN_PROGRESS` Codex 0.8.0-readiness
-packet previously in this file (base `7e29110`). That 0.8.0 objective is factually
-complete on `main` (`v0.8.0` tag resolves to the Base commit above); its packet state
-was never flipped to `COMPLETE`/`ACCEPTED`. No Codex work is overwritten: the prior
-packet text remains in Git history. Full acceptance contract is the supplied
-`TETHERS 0.8.1 — RECOVERY + THREE-PLATFORM TRUST CLOSEOUT` packet; this file is
-its condensed control record, not a second competing specification.
+Supersession note: this packet supersedes the 0.8.1 maintenance record
+previously in this file. The 0.8.1 objective is complete on `main`
+(`v0.8.1` tag); its packet text remains in Git history.
 
 Rust toolchain: `1.97.1`; plain Cargo resolved by root pin; `--locked` mandatory
 
-Toolchain preflight: `required`
-
 ## Objective
 
-Finish Tethers 0.8.1 as a genuinely reusable and trusted runtime across three target
-operating systems (Windows x86-64, Linux x86-64, macOS ARM64 official; plus macOS
-Intel x86-64 compatibility lane). Recover stopped-agent work from `D:\tethers-h2-gate`,
-incorporate hands-on audit addendum repairs (Items 1-11), provide native packaging and
-CI proof across platforms, and preserve bit-for-bit `tethers.authority/1` guarantees
-without architecture redesign or feature bloat.
+Repair the security, durability, recovery and process-supervision weaknesses
+identified by the independent Tethers 0.8.1 review, and prove the runtime
+trustworthy across Windows x86-64, Linux x86-64, macOS ARM64 (official) and
+macOS x86-64 (compatibility lane) when the machine crashes, filesystem
+operations fail halfway, parents are terminated abruptly, children hang,
+replay state is incomplete, permissions are unsafe, or another process
+interferes. Target product version 0.8.2. No language or authority
+architecture redesign.
 
-## Relevant background and existing behaviour
+## Findings under repair
 
-- `cargo test --release` fails to compile test-harness code gated on debug assertions.
-- 9 Rust tests are ignored without a current disposition record.
-- PR #45 (`codex/tethers-l2-linux-package-proof`, old head `0132dbba`) proved Linux
-  packaging against pre-0.8 (0.7.1-era) assumptions; it is non-mergeable and donor-only.
-- Windows x64 runtime flow: `scripts/package-tethers-0.8-release.ps1` (hard-codes 0.8.0).
-- Crate `tethers-reference-host 0.8.0`; crates.io publication deferred in 0.8.0.
-- External authority boundary `tethers.authority/1` via `authority_v1`; R2 gate suite
-  `tethers-0.1/host-rust/tests/r2_authority_gate.rs` is the hostile-regression anchor.
-
-## Required behaviour
-
-1. Release-profile test harness compiles and passes genuinely (`cfg(test)`-scoped
-   helpers, not global `debug-assertions = true`); `scripts/run-rust-tests.ps1 -Release` green.
-2. Every ignored test classified A–E (run / kept-manual / platform-gated / deleted /
-   deferred-gap) with a final disposition table; zero unexplained ignored tests.
-3. Linux x86-64 full runtime (Rust Host + matching OCaml engine) built natively,
-   packaged version-driven from `VERSION`, clean-package smoked (version/help, engine
-   availability, path independence, permissions, `ldd` audit, provider lifecycle,
-   recovery/replay, external-consumer authority smoke incl. hostile cases).
-4. macOS ARM64 (official) and macOS x86-64 (Intel compatibility lane) runtimes built,
-   packaged version-driven, clean-package smoked (permissions, `otool -L` audit,
-   architecture validation, provider lifecycle, and external consumer authority smoke).
-5. Hands-on audit addendum items 1-11 implemented and regression-tested (Git log SHA,
-   describe reconciliation, smoke.py packaging, Git CLI aliases, Replay trail collision,
-   Replay diagnostics, runtime-config ambiguity, provision-replay machine output).
-6. Windows x86-64 regression proof preserved; packager generalised off hard-coded 0.8.0.
-7. `cargo package --locked` and `cargo publish --dry-run --locked` pass; package
-   contents inspected; version bumped to 0.8.1 at release-candidate stage only.
-8. Actual crates.io publication and macOS Developer ID signing/notarization treated
-   as gated final steps requiring external credentials; otherwise reported truthfully
-   as BLOCKED without fabricating trust.
-9. Release provenance (source SHA/tree hash, tool versions, artifact hashes, manifests)
-   for every artifact; `VERSION = 0.8.1`, release notes, README/support-matrix updates
-   from evidence only.
-10. R2 authority behaviour bit-for-bit preserved; no `tethers.authority/2`.
-
-## Relevant components
-
-- `tethers-0.1/host-rust/` (Cargo.toml, src, tests incl. `r2_authority_gate.rs`, `j13a_cli.rs`, `child_process.rs`)
-- `tethers-0.1/engine-ocaml/`
-- `scripts/run-rust-tests.ps1`, `scripts/run-rust-tests.sh`
-- `scripts/package-tethers-0.8-release.ps1`, `scripts/package-linux-release.sh`, `scripts/package-macos-release.sh`
-- `scripts/test-linux-package.sh`, `scripts/test-linux-package-full.sh`
-- `scripts/test-macos-package.sh`, `scripts/test-macos-package-full.sh`
-- `scripts/prepare-current-engine.sh`, `scripts/verify-tethers.py`
-- `scripts/check-dev-tools.ps1`
-- `.github/workflows/tethers-verification.yml`, `.github/workflows/tethers-linux-package.yml`, `.github/workflows/tethers-macos-package.yml`
-- `examples/external-consumer/`, `examples/rust-crate-consumer/`
-- `docs/INTEGRATING_TETHERS.md`, `docs/SUPPORT_MATRIX.md`, `VERSION`, `justfile`
+- DEF-01: Unix replay publication strands deterministic temporary files and
+  bricks ledger reopening after an interrupted write.
+- DEF-02: macOS supervised children may survive host termination.
+- DEF-03: an abandoned fresh replay admission enters `claimed_no_state` with
+  no supported recovery route.
+- DEF-04: Unix provision-replay failures emit `diagnostic: null`.
+- DEF-05: git porcelain v1 `-z` parsing mishandles renames and hard-codes
+  `conflict: false`.
+- RSK-01: Unix replay ownership/permission validation weaker than Windows.
+- RSK-02: macOS data-file durability (fsync vs F_FULLFSYNC).
+- RSK-03: macOS archive reproducibility.
+- RSK-04: POSIX process-tree and resource-limit enforcement truth.
 
 ## Frozen decisions and invariants
 
-- A Plan is not permission; approval is not execution; COMMIT records durable intent;
-  the external Host alone performs effects; outcomes stay truthful; forged/malformed
-  authority input fails closed.
-- Do not enable release `debug-assertions` globally; do not merge PR #45 wholesale;
-  do not resurrect 0.7.1 assumptions; do not weaken tests for cross-platform green;
-  do not claim crates.io publication on dry-run alone; do not claim macOS Developer
-  ID notarization when credentials are not configured (report BLOCKED); no proof
-  laundering across SHAs.
-- Target platforms: Windows x86-64, Linux x86-64, macOS ARM64 (official) + macOS Intel x86-64 (compat).
+Core plans; the Gate evaluates authority; the external Host owns physical
+effects. A Plan is not permission; approval is not execution; COMMIT records
+durable intent, not observed success; outcomes stay truthful; forged or
+malformed authority input fails closed. Uncertainty never becomes permission;
+interrupted operations never become silently retryable; absent receipts never
+prove absence of effect; existing replay claims are never deleted merely
+because a later stage errored. Preserve `tethers.authority/1`, `tethers.cli/1`,
+Human Tether language 0.1. The Windows J09 fail-closed debris contract
+(ledger_29) is preserved; POSIX gains recognised-residue tolerance per packet.
+No `tethers.authority/2`. No global release debug-assertions. No weakened
+tests. Destructive/fault-injection tests only against isolated temporary
+stores, never Matthew's installed Tethers data.
 
-## Acceptance criteria
+## Lane ownership
 
-1. `cargo test --release` (genuine profile, `--all-targets --all-features --locked`) compiles and passes.
-2. Ignored-test disposition table complete; `ignored-only` and `include-ignored` runs reported.
-3. Linux x64 runtime packaged from the release tag, clean-package authority smoke green.
-4. macOS ARM64 runtime and macOS Intel runtime packaged, clean-package authority smoke green.
-5. Windows x64 runtime packaged from the release tag, installed/downloaded smoke green.
-6. Crate 0.8.1 packaged, dry-run green, contents reviewed; registry consumer proved iff published.
-7. R2 gate suite plus external hostile proof green on shipped artifacts.
-8. Hands-on audit items 1-11 verified with regression test coverage.
-9. Provenance/manifest/hash record complete for every artifact; `VERSION`, release
-   notes, README, and support-matrix state updated from evidence only.
-10. R2 authority behaviour bit-for-bit preserved with no `tethers.authority/2`;
-    the shipped diff is limited to the authorised maintenance surface.
+- Lane A (`fix/0.8.2-lane-a-replay`, PR #50): replay_linux.rs, replay.rs,
+  replay_store.rs, replay_windows.rs parity, authority_gate.rs hint, CLI
+  resolve command, audit_082_replay.
+- Lane B (`fix/0.8.2-lane-b-supervision`, PR #51): child_process.rs,
+  agent_core.rs (exec + git_status), agent_coding.rs (process paths only),
+  CLI watchdog entry, audit_082_git_status, audit_082_process.
+- Lane C (`fix/0.8.2-lane-c-packaging`, PR #52): package-macos-release.sh,
+  package-linux-release.sh, workflows, support matrix, 0.8.2 docs.
+- Lane D (`fix/0.8.2-lane-d-redteam`, evidence PR #53 against
+  `audit/0.8.2-red-baseline`): RED reproduction evidence, hostile fixtures,
+  independent final review. Agent D does not implement A/B/C fixes.
 
-## Required verification
+## Acceptance criteria (condensed)
 
-1. `pwsh -NoProfile -File scripts/run-rust-tests.ps1 -Release`
-2. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked --release -- --test-threads=1`
-3. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --locked -- --ignored`
-4. `cargo test --manifest-path tethers-0.1/host-rust/Cargo.toml --locked -- --include-ignored`
-5. `cargo fmt --manifest-path tethers-0.1/host-rust/Cargo.toml --all -- --check`
-6. `cargo check --manifest-path tethers-0.1/host-rust/Cargo.toml --all-targets --all-features --locked`
-7. `cargo package --manifest-path tethers-0.1/host-rust/Cargo.toml --locked`
-8. `cargo publish --manifest-path tethers-0.1/host-rust/Cargo.toml --dry-run --locked`
-9. R2 suite `r2_authority_gate.rs` + `examples/external-consumer/smoke.py` against packaged runtimes
-10. `pwsh -NoProfile -File .github/scripts/check-tethers-task-packet.ps1`
-11. `git diff --check`; Linux package/lifecycle/dependency proofs; Ubuntu CI lane green
-
-## Formatting and checkpoint sequence
-
-Rust-changing: run the packet's Cargo formatter command before the implementation
-checkpoint; stop if rustfmt touches files outside authorised Rust paths.
-Non-Rust/evidence-only: `cargo fmt --all -- --check` only, no Rust source mutation.
-
-## Completion and publication
-
-Freeze RC, rerun all gates against that exact SHA, merge after green evidence, tag
-final `main` as `v0.8.1`, build artifacts from the tag, verify hashes/provenance,
-smoke downloaded artifacts, upload GitHub release, publish crate only with
-credentials and release authority. Mark `COMPLETE` only with exact-tag evidence and
-a `control-v1/COMPLETE` checker pass.
+1. audit_082 suites RED against v0.8.1 (preserved separately) and GREEN
+   against the accepted candidate on Windows x86-64 (native), Linux x86-64,
+   macOS ARM64 and macOS Intel (CI lanes).
+2. R2 authority suite bit-for-bit behaviour preserved; no authority semantic
+   change; forged/malformed input still fails closed.
+3. Crash-safe Unix publication with all ten fault-injection boundaries
+   distinguished (not committed / durably committed / reconciliation required
+   / hostile state rejected).
+4. Operator resolve route for `claimed_no_state` on both platforms with
+   quarantine, audit log, and refusal of every other durable state.
+5. No orphaned descendants in the supported abrupt-host-death, SIGTERM and
+   SIGKILL scenarios on POSIX; truthful supervision reporting.
+6. Exec timeouts terminate the whole POSIX process tree; resource-limit
+   enforcement truthfully reported per platform.
+7. Git status agrees with native Git for renames, copies, conflicts, spaces,
+   Unicode, detached HEAD and clean repositories.
+8. macOS and Linux archives byte-reproducible from identical staging input
+   (double-build hash equality inside the packagers).
+9. Full Windows suite genuine in debug and release profiles; no unexplained
+   ignored tests; bounded timeouts.
+10. VERSION/release notes/support matrix updated from evidence only at RC
+    stage; v0.8.1 remains historical truth.
 
 ## Forbidden changes
 
-- No Core/language/protocol/authority/replay/provider/execution semantic changes;
-  no `tethers.authority/2`; no new policy engine.
-- No OCaml→Rust rewrite; no half-tested crate publication.
-- No PR #45 wholesale merge; no 0.7.1 architecture revival.
-- No global release debug-assertions; no unexplained ignored tests; no weakened tests.
-- No force-push, rebase, or direct `main` update; normal branch push only.
-- No cleaning, resetting, or absorbing the legacy Goose checkout
-  (`D:\The Next Thing\Tethers Lang - Goose Integration`).
+No Core/language/protocol/authority/replay semantics redesign; no
+`tethers.authority/2`; no PR #45 revival; no force-push, rebase of shared
+history, tag movement, crates.io publication, GitHub release publication, or
+main update from a worker; no signing/notarization claims without credentials
+and proof; no deletion of historical worktrees or the legacy Goose checkout;
+no secret material in logs or source control.
 
 ## Stop conditions
 
-- Conflicting server-name/authority derivation between check path and run path.
-- A required platform gate cannot be satisfied (report; do not declare official).
-- Missing crates.io credentials/authority at the final step (PUBLICATION BLOCKED, rest stays green).
-- Discovered production defect; unavailable required verification; contradictory frozen architecture.
-- After two materially similar failed attempts on one underlying problem: stop with
-  exact evidence and the smallest unresolved question.
+Conflicting authority derivation between check and run paths; a required
+platform gate that cannot be satisfied (report, never fake); contradictory
+frozen architecture; missing credentials at a gated publication step; after
+two materially similar failed repair attempts on one underlying problem —
+stop with exact evidence and the smallest unresolved question.
 
 ## Expected pre-existing changes
 
-None. Canonical checkout was clean at the Base commit before branching.
+Untracked `tmp_macos_arm64_log/` in the canonical checkout (unrelated,
+preserved). None in the lane worktrees.
