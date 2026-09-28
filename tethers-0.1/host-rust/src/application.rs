@@ -882,6 +882,25 @@ pub fn run() {
                 emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
             }
         },
+        Ok(Cli {
+            command: Some(CliCommand::SupervisorWatchdog),
+        }) => {
+            #[cfg(unix)]
+            {
+                std::process::exit(crate::child_process::run_supervisor_watchdog());
+            }
+            #[cfg(not(unix))]
+            {
+                let envelope = CliEnvelope::error(
+                    "__supervisor-watchdog",
+                    OutcomeStatus::Failed,
+                    "NOT_SUPPORTED",
+                    "the POSIX orphan-guard watchdog is not available on this platform",
+                    None,
+                );
+                emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
+            }
+        }
         #[cfg(debug_assertions)]
         Ok(Cli {
             command: Some(CliCommand::EventAdmissionProbe { mode }),
