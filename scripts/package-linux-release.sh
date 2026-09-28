@@ -160,17 +160,33 @@ for req in README.md consumer.py smoke.py fixture-ping.json; do
 done
 
 # Per-file hashes inside the stage (Windows parity).
-(cd "$package_dir" && find . -type f | sort | while IFS= read -r file; do
+(cd "$package_dir" && find . -type f | LC_ALL=C sort | while IFS= read -r file; do
     sha256sum "$file"
 done > SHA256SUMS)
 
-# Deterministic tar.gz: entries arrive sorted from find, with fixed
-# ownership/timestamps and no gzip filename/timestamp.
-(cd "$stage_dir" && find "$package_name" -type f | sort | \
-    tar --no-recursion --owner=root --group=root --numeric-owner \
-    --mtime="2026-01-01T00:00:00Z" -cf - -T - | gzip -n > "$archive")
+# Deterministic tar.gz: entries arrive sorted from find in C locale byte
+# order, with fixed ownership/timestamps and no gzip filename/timestamp.
+# A second archive built from the same unchanged staging input must be
+# byte-identical; the check archive is never published as an artifact.
+build_archive() {
+    local output="$1"
+    (cd "$stage_dir" && find "$package_name" -type f | LC_ALL=C sort | \
+        tar --no-recursion --owner=root --group=root --numeric-owner \
+        --mtime="2026-01-01T00:00:00Z" -cf - -T - | gzip -n > "$output")
+}
 
+build_archive "$archive"
+reproducibility_check="$dist_dir/.$package_name.reproducibility-check.tar.gz"
+build_archive "$reproducibility_check"
 archive_hash=$(sha256sum "$archive" | awk '{print $1}')
+reproducibility_hash=$(sha256sum "$reproducibility_check" | awk '{print $1}')
+rm -f "$reproducibility_check"
+if [[ "$archive_hash" != "$reproducibility_hash" ]]; then
+    printf 'REPRODUCIBILITY FAILED\n  first : %s\n  second: %s\n' "$archive_hash" "$reproducibility_hash" >&2
+    fail 'Two archives built from the same unchanged staging input differ; packaging is not deterministic.'
+fi
+printf 'Reproducibility: two builds from identical staging input match (%s)\n' "$archive_hash"
+
 tethers_hash=$(sha256sum "$package_dir/bin/tethers" | awk '{print $1}')
 engine_hash=$(sha256sum "$package_dir/bin/tethers-engine" | awk '{print $1}')
 
