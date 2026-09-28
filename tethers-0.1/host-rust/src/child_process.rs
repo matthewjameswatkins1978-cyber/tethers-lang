@@ -2203,6 +2203,60 @@ mod unix_tests {
     }
 
     #[test]
+    fn unix_watchdog_exits_quietly_when_the_child_dies_on_its_own() {
+        // Scenario "provider crashes": the watchdog's duty ends with the
+        // child's death; it must exit by itself without any kill and without
+        // waiting for host shutdown.
+        let exe = std::env::current_exe().unwrap();
+        std::env::set_var("TETHERS_SUPERVISOR_WATCHDOG_EXE", &exe);
+        std::env::set_var(
+            "TETHERS_SUPERVISOR_WATCHDOG_ARG",
+            "child_process::unix_tests::unix_watchdog_process_entry",
+        );
+        std::env::set_var("TETHERS_WATCHDOG_ENTRY", "1");
+
+        let config = ChildConfig::test_config(
+            "/bin/sh",
+            vec!["-c".into(), "exit 3".into()],
+            Duration::from_secs(2),
+            Duration::from_millis(200),
+        );
+        let mut child = SupervisedChild::launch(config).expect("launch with watchdog");
+        let watchdog_pid = child
+            .watchdog
+            .as_ref()
+            .map(|watchdog| watchdog.pid)
+            .expect("watchdog must be spawned") as i32;
+        // Reap the crashed child (an unreaped zombie still counts as "alive"
+        // to a liveness probe; the host protocol loop performs this reap in
+        // production).
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !child.has_exited() {
+            assert!(Instant::now() < deadline, "child must exit on its own");
+            thread::sleep(Duration::from_millis(50));
+        }
+        // The watchdog's duty ends with the child's death: it must exit by
+        // itself (<= one poll cycle) without any kill and without waiting
+        // for host shutdown.
+        let deadline = Instant::now() + Duration::from_secs(15);
+        // SAFETY: pure liveness probe.
+        while unsafe { libc::kill(watchdog_pid, 0) } == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "watchdog must exit on its own after the child dies"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+        let cleanup = child.shutdown();
+        assert!(cleanup.watchdog_spawned);
+        assert!(cleanup.watchdog_stopped);
+
+        std::env::remove_var("TETHERS_SUPERVISOR_WATCHDOG_EXE");
+        std::env::remove_var("TETHERS_SUPERVISOR_WATCHDOG_ARG");
+        std::env::remove_var("TETHERS_WATCHDOG_ENTRY");
+    }
+
+    #[test]
     fn unix_abrupt_host_death_orphans_no_descendants() {
         for signal in [libc::SIGKILL, libc::SIGTERM] {
             let dir = std::env::temp_dir().join(format!(
