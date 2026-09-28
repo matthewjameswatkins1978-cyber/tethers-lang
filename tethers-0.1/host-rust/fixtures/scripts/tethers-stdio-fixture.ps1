@@ -245,7 +245,11 @@ try {
                         $peerCount = [int](Get-Content -LiteralPath $peerCountFile -Raw).Trim()
                     }
 
-                    $limit = [DateTime]::UtcNow.AddSeconds(10)
+                    # Coordination budget for barrier sequencing only; host-side
+                    # call timeouts are separate (manifest timeout_ms). 60s keeps
+                    # slow hosted runners inside the harness polling phases while
+                    # remaining bounded, never indefinite.
+                    $limit = [DateTime]::UtcNow.AddSeconds(60)
                     while (@(Get-ChildItem -LiteralPath $BarrierDirectory -Filter 'entered-*').Count -lt $peerCount) {
                         if ([DateTime]::UtcNow -gt $limit) {
                             Write-ErrorResponse $request.id -32000 "overlap peer did not enter"
@@ -257,8 +261,11 @@ try {
                     # Wait for per-member release file (release-member-{tag}) or shared release.
                     $releaseMember = Join-Path $BarrierDirectory "release-$token"
                     $releaseShared = Join-Path $BarrierDirectory 'release'
+                    # Own bounded deadline: the entered-wait above must not be
+                    # able to consume the release-wait budget.
+                    $releaseLimit = [DateTime]::UtcNow.AddSeconds(60)
                     while (-not ((Test-Path -LiteralPath $releaseMember) -or (Test-Path -LiteralPath $releaseShared))) {
-                        if ([DateTime]::UtcNow -gt $limit) {
+                        if ([DateTime]::UtcNow -gt $releaseLimit) {
                             Write-ErrorResponse $request.id -32000 "overlap release timed out"
                             continue 2
                         }
