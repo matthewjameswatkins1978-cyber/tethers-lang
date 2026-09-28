@@ -882,6 +882,49 @@ pub fn run() {
                 emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
             }
         },
+        Ok(Cli {
+            command: Some(CliCommand::ReplayResolveClaim { root, execution_id }),
+        }) => match crate::replay_store::resolve_claimed_no_state(&root, &execution_id) {
+            Ok(report) => {
+                let envelope = CliEnvelope::ok(
+                    "replay-resolve-claim",
+                    serde_json::json!({
+                        "execution_id": report.execution_id,
+                        "logical_key_digest": report.logical_key_digest,
+                        "binding_digest": report.binding_digest,
+                        "claim_digest": report.claim_digest,
+                        "quarantined_record": report.quarantined_record,
+                        "already_quarantined": report.already_quarantined,
+                        "host_data_root": root,
+                    }),
+                );
+                emit_envelope_and_exit(envelope, 0);
+            }
+            Err(e) => {
+                let diagnostic = crate::replay_store::last_replay_diagnostic();
+                let message = if let Some(ref diag) = diagnostic {
+                    format!(
+                        "{}: {} (phase: {}, recovery: {})",
+                        e, diag.reason, diag.phase, diag.recovery
+                    )
+                } else {
+                    e.to_string()
+                };
+                let envelope = CliEnvelope::error_with_data(
+                    "replay-resolve-claim",
+                    OutcomeStatus::Failed,
+                    "REPLAY_RESOLVE_FAILED",
+                    message,
+                    None,
+                    serde_json::json!({
+                        "diagnostic": diagnostic,
+                        "host_data_root": root,
+                        "execution_id": execution_id,
+                    }),
+                );
+                emit_envelope_and_exit(envelope, OutcomeStatus::Failed.exit_code());
+            }
+        },
         #[cfg(debug_assertions)]
         Ok(Cli {
             command: Some(CliCommand::EventAdmissionProbe { mode }),

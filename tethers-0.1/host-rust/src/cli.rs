@@ -156,6 +156,18 @@ pub enum Command {
         root: PathBuf,
     },
 
+    /// Hidden operator reconciliation for one abandoned claimed_no_state
+    /// replay admission. Preserves the claim under quarantine and releases
+    /// the logical key; every other durable state is refused.
+    #[command(hide = true)]
+    #[clap(name = "replay-resolve-claim")]
+    ReplayResolveClaim {
+        #[arg(value_name = "ABSOLUTE_HOST_DATA_ROOT")]
+        root: PathBuf,
+        #[arg(long = "execution-id", value_name = "exec_UUID")]
+        execution_id: String,
+    },
+
     /// Debug-only event-admission probe.
     #[command(hide = true)]
     #[clap(name = "event-admission-probe")]
