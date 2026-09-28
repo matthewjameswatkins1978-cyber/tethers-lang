@@ -552,6 +552,20 @@ fn run_argv_in_dir(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env_clear();
+    // POSIX: own process group so a timeout terminates the whole spawned
+    // tree, not merely the immediate child.
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: runs between fork and exec; setsid is async-signal-safe and
+        // touches no Rust state.
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
     for key in &scope.allowed_environment_keys {
         if let Ok(value) = env::var(key) {
             command.env(key, value);
@@ -564,6 +578,9 @@ fn run_argv_in_dir(
     let mut child: Child = command
         .spawn()
         .map_err(|error| CodingError::new("process_spawn_failed", error.to_string()))?;
+    // setsid makes the child its own group leader, so pgid == child pid.
+    #[cfg(unix)]
+    let child_pgid = child.id() as i32;
     let stdout = drain(
         child
             .stdout
@@ -589,6 +606,30 @@ fn run_argv_in_dir(
         }
         if Instant::now() >= deadline {
             timed_out = true;
+            #[cfg(windows)]
+            {
+                // Best-effort whole-tree termination, matching `tethers exec`.
+                // taskkill must never inherit the host's stdout/stderr.
+                let pid = child.id().to_string();
+                let windir = std::env::var_os("WINDIR").unwrap_or_else(|| "C:\\Windows".into());
+                let _ =
+                    Command::new(std::path::PathBuf::from(windir).join("System32\\taskkill.exe"))
+                        .args(["/PID", &pid, "/T", "/F"])
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status();
+            }
+            #[cfg(unix)]
+            {
+                // Terminate the whole spawned tree via its process group
+                // before the direct child.
+                // SAFETY: child_pgid was captured from this host's own child
+                // immediately after spawn; a negative pid targets that group.
+                unsafe {
+                    libc::kill(-child_pgid, libc::SIGKILL);
+                }
+            }
             child
                 .kill()
                 .map_err(|error| CodingError::new("process_kill_failed", error.to_string()))?;
@@ -868,8 +909,14 @@ pub fn git_status(scope: &CodingScope, _arguments: &Value) -> Result<Value> {
         .map_err(|_| CodingError::new("git_invalid_utf8", "Git status contains invalid UTF-8"))?;
     let mut branch = None;
     let mut entries = Vec::new();
-    let tokens: Vec<&str> = text.split('\0').filter(|token| !token.is_empty()).collect();
-    for token in tokens {
+    let tokens: Vec<&str> = text.split('\0').collect();
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = tokens[index];
+        index += 1;
+        if token.is_empty() {
+            continue;
+        }
         if let Some(value) = token.strip_prefix("## ") {
             let value = value
                 .strip_prefix("No commits yet on ")
@@ -891,8 +938,29 @@ pub fn git_status(scope: &CodingScope, _arguments: &Value) -> Result<Value> {
                 "Git status record is malformed",
             ));
         }
+        let index_status = token[0..1].to_owned();
+        // Porcelain v1 -z emits rename/copy records with TWO pathname
+        // fields: this token carries the destination and the next token the
+        // source. The frozen capability output schema exposes one path per
+        // entry, so the destination is reported and the source token is
+        // consumed (never misparsed as an independent entry).
+        if matches!(index_status.as_bytes()[0], b'R' | b'C') {
+            let Some(source) = tokens.get(index) else {
+                return Err(CodingError::new(
+                    "git_status_invalid",
+                    "Git rename record is missing its source path",
+                ));
+            };
+            if source.is_empty() {
+                return Err(CodingError::new(
+                    "git_status_invalid",
+                    "Git rename record is missing its source path",
+                ));
+            }
+            index += 1;
+        }
         entries.push(json!({
-            "index_status": token[0..1].to_owned(),
+            "index_status": index_status,
             "worktree_status": token[1..2].to_owned(),
             "path": token[3..].to_owned()
         }));

@@ -156,6 +156,11 @@ pub enum Command {
         root: PathBuf,
     },
 
+    /// Hidden POSIX orphan-guard watchdog entry (DEF-02 supervision).
+    #[command(hide = true)]
+    #[clap(name = "__supervisor-watchdog")]
+    SupervisorWatchdog,
+
     /// Debug-only event-admission probe.
     #[command(hide = true)]
     #[clap(name = "event-admission-probe")]

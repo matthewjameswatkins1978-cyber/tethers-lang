@@ -1,13 +1,22 @@
-// Supervised Windows child-process owner with Job Object termination.
+// Supervised child-process owner.
 //
-// Every child receives piped stdin/stdout, separately captured stderr,
-// an unnamed Windows Job Object with KILL_ON_JOB_CLOSE, persistent
-// stdout reader thread with mpsc channel for timeout-aware protocol
-// reads, and stored reader-thread JoinHandles for proper cleanup.
+// Windows: every child receives piped stdin/stdout, separately captured
+// stderr, an unnamed Job Object with KILL_ON_JOB_CLOSE (structural descendant
+// termination even on abrupt host death), a persistent stdout reader thread
+// with mpsc channel for timeout-aware protocol reads, and stored
+// reader-thread JoinHandles for proper cleanup.
+//
+// POSIX: the child becomes a session/process-group leader (setsid) and Linux
+// additionally receives PR_SET_PDEATHSIG. Because SIGKILL of the host cannot
+// be caught and macOS has no prctl death signal, every supervised child also
+// gets a dedicated orphan-guard watchdog process: it observes host death
+// through EOF on a host-owned pipe (the kernel closes the write end on ANY
+// host termination, including SIGKILL) and then SIGKILLs the child's whole
+// process group. No child or descendant is represented as safely terminated
+// without evidence.
 
 use std::collections::BTreeMap;
 use std::fmt;
-#[cfg(windows)]
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(not(windows))]
@@ -58,6 +67,58 @@ pub fn install_ctrl_handler() -> Result<(), String> {
 
 #[cfg(not(windows))]
 pub fn install_ctrl_handler() -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        install_unix_signal_handlers()
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(())
+    }
+}
+
+/// SIGINT mirrors the Windows console Ctrl+C semantics: the interrupt flag is
+/// published and the process keeps running so command boundaries can shut
+/// engines and providers down gracefully. SIGTERM/SIGHUP publish the flag and
+/// then die by the default signal disposition, because nothing may pretend a
+/// termination was graceful. In both cases supervised children are not
+/// orphaned: the per-child watchdog process observes host death through pipe
+/// EOF and SIGKILLs the child's process group (see `launch`).
+///
+/// Signal-handler safety: the handler performs only an atomic store plus
+/// async-signal-safe `sigaction`/`raise` calls; SA_RESTART keeps unrelated
+/// blocking reads from surfacing spurious EINTR errors.
+#[cfg(unix)]
+unsafe extern "C" fn tethers_signal_handler(signal: libc::c_int) {
+    set_interrupted();
+    if signal != libc::SIGINT {
+        // Restore the default disposition and re-raise so the process
+        // terminates truthfully by the delivered signal.
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = libc::SIG_DFL;
+        libc::sigaction(signal, &action, std::ptr::null_mut());
+        libc::raise(signal);
+    }
+}
+
+#[cfg(unix)]
+fn install_unix_signal_handlers() -> Result<(), String> {
+    // SAFETY: `action` is fully initialised before each sigaction call; the
+    // handler function pointer is 'static and the mask is emptied explicitly.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = tethers_signal_handler as libc::sighandler_t;
+        libc::sigemptyset(&mut action.sa_mask);
+        action.sa_flags = libc::SA_RESTART;
+        for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+            if libc::sigaction(signal, &action, std::ptr::null_mut()) != 0 {
+                return Err(format!(
+                    "sigaction failed for signal {signal}: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -73,12 +134,49 @@ pub struct ChildConfig {
     /// environment is inherited.
     pub clear_environment: bool,
     pub environment: BTreeMap<String, String>,
+    /// Maximum simultaneously active processes in the child's tree.
+    ///
+    /// Enforcement is platform-specific and must never be assumed: query
+    /// [`ChildConfig::resource_limit_enforcement`]. Enforced by the Windows
+    /// Job Object (`JOB_OBJECT_LIMIT_ACTIVE_PROCESS`). NOT enforced on POSIX:
+    /// no safe kernel equivalent exists without cgroup delegation
+    /// (`RLIMIT_NPROC` counts every process of the real user, not the
+    /// supervised tree, and lowering it can break unrelated user processes).
     pub max_processes: u32,
+    /// Per-process memory ceiling for the child tree.
+    ///
+    /// Enforcement is platform-specific and must never be assumed: query
+    /// [`ChildConfig::resource_limit_enforcement`]. Enforced by the Windows
+    /// Job Object (`JOB_OBJECT_LIMIT_PROCESS_MEMORY`, job-wide commit). NOT
+    /// enforced on POSIX: `RLIMIT_AS` is per-process virtual address space
+    /// (a different quantity that breaks legitimate runtimes such as the
+    /// OCaml engine), so it is deliberately not applied.
     pub process_memory_limit_bytes: usize,
     /// M3 direct-provider launches must join their Job Object while suspended,
     /// before provider code can run. Legacy host children retain their frozen
     /// creation path.
     pub assign_before_execution: bool,
+}
+
+/// What the platform actually enforces for [`ChildConfig::max_processes`] and
+/// [`ChildConfig::process_memory_limit_bytes`]. A configured mandatory safety
+/// limit is never silently presented as enforced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceLimitEnforcement {
+    /// Windows Job Object kernel limits are active for every supervised child.
+    WindowsJobObject,
+    /// POSIX has no enforced equivalent; the configured limits are advisory
+    /// metadata only and callers must not treat them as kernel guarantees.
+    PosixNotEnforced,
+}
+
+impl ResourceLimitEnforcement {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::WindowsJobObject => "windows_job_object",
+            Self::PosixNotEnforced => "posix_not_enforced",
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -185,6 +283,197 @@ impl ManagedChild {
     }
 }
 
+// ---------------------------------------------------------------------------
+// POSIX orphan-guard watchdog (DEF-02)
+// ---------------------------------------------------------------------------
+
+/// The watchdog process plus the host-owned write end of the death pipe.
+/// Dropping `pipe_write` (or the death of the whole host process) delivers
+/// EOF to the watchdog, which then SIGKILLs the supervised child's process
+/// group if the child is still alive.
+#[cfg(unix)]
+struct WatchdogProcess {
+    child: Child,
+    pipe_write: File,
+    pid: u32,
+}
+
+/// Resolve the watchdog executable and entry arguments.
+///
+/// Production uses the running host binary's hidden `__supervisor-watchdog`
+/// subcommand. Test runs redirect through `TETHERS_SUPERVISOR_WATCHDOG_EXE` /
+/// `TETHERS_SUPERVISOR_WATCHDOG_ARG` so the test harness binary can serve as
+/// the watchdog via a gated entry test, mirroring the established
+/// provider-EXE override pattern.
+#[cfg(unix)]
+fn watchdog_command() -> Result<Command, ChildError> {
+    let mut command = match std::env::var_os("TETHERS_SUPERVISOR_WATCHDOG_EXE") {
+        Some(exe) if !exe.is_empty() => Command::new(exe),
+        _ => Command::new(
+            std::env::current_exe().map_err(|e| ChildError::LaunchFailed {
+                command: "<current_exe>".to_owned(),
+                message: e.to_string(),
+            })?,
+        ),
+    };
+    match std::env::var_os("TETHERS_SUPERVISOR_WATCHDOG_ARG") {
+        Some(arg) if !arg.is_empty() => {
+            command
+                .arg(arg)
+                .arg("--exact")
+                .arg("--nocapture")
+                .arg("--test-threads=1");
+        }
+        _ => {
+            command.arg("__supervisor-watchdog");
+        }
+    }
+    Ok(command)
+}
+
+/// Spawn the orphan-guard watchdog for one supervised child.
+///
+/// The watchdog is started BEFORE the death pipe's write end can be lost, and
+/// it is detached into its own session so terminal-generated signals aimed at
+/// the host's process group do not kill the supervisor along with the host.
+/// A watchdog that cannot be started fails the whole launch: on POSIX a
+/// supervised child without its orphan guard would silently reintroduce the
+/// abrupt-host-death orphaning defect, and a mandatory supervision guarantee
+/// must never be silently downgraded.
+#[cfg(unix)]
+fn spawn_unix_watchdog(child_pid: u32, child_pgid: i32) -> Result<WatchdogProcess, ChildError> {
+    use std::os::fd::FromRawFd;
+    use std::os::unix::process::CommandExt;
+
+    let mut fds = [0 as libc::c_int; 2];
+    // SAFETY: fds is a valid two-element array receiving the pipe endpoints.
+    #[cfg(target_os = "linux")]
+    let rc = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
+    #[cfg(not(target_os = "linux"))]
+    let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    if rc != 0 {
+        return Err(ChildError::LaunchFailed {
+            command: "<watchdog-pipe>".to_owned(),
+            message: std::io::Error::last_os_error().to_string(),
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    // SAFETY: both descriptors were just created by pipe() and are owned here.
+    unsafe {
+        libc::fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC);
+        libc::fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC);
+    }
+    // SAFETY: both descriptors are freshly owned; each transfers into exactly
+    // one File.
+    let read_end = unsafe { File::from_raw_fd(fds[0]) };
+    let write_end = unsafe { File::from_raw_fd(fds[1]) };
+
+    let mut command = watchdog_command()?;
+    command.stdin(Stdio::from(read_end));
+    // The watchdog must never write into the host's envelope stream.
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+    command.env("TETHERS_WATCHDOG_ENTRY", "1");
+    // SAFETY: runs between fork and exec in the watchdog child; only
+    // async-signal-safe libc calls, no Rust allocation or locking.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut watchdog = command.spawn().map_err(|e| ChildError::LaunchFailed {
+        command: "<supervisor-watchdog>".to_owned(),
+        message: e.to_string(),
+    })?;
+    let pid = watchdog.id();
+
+    // Hand the watchdog its target identity. The write end stays CLOEXEC and
+    // is retained by SupervisedChild; EOF on this pipe is the host-death
+    // signal, guaranteed by the kernel for every form of process termination.
+    let header = format!("{child_pid} {child_pgid}\n");
+    if let Err(error) = (&write_end).write_all(header.as_bytes()) {
+        let _ = watchdog.kill();
+        let _ = watchdog.wait();
+        return Err(ChildError::LaunchFailed {
+            command: "<supervisor-watchdog>".to_owned(),
+            message: format!("header write failed: {error}"),
+        });
+    }
+    Ok(WatchdogProcess {
+        child: watchdog,
+        pipe_write: write_end,
+        pid,
+    })
+}
+
+/// Watchdog main loop. Reads one `"pid pgid"` header line from stdin (the
+/// read end of the host-owned death pipe), then watches for either the
+/// supervised child's death or pipe EOF (= host process death; the kernel
+/// closes all of its descriptors on ANY termination, including SIGKILL).
+/// On EOF with the child still alive, the child's whole process group is
+/// SIGKILLed, so no descendant outlives the host unexplained.
+///
+/// Residual risk (documented, bounded): between the host reaping the child
+/// and the watchdog observing EOF, the child's pid could theoretically be
+/// reused by an unrelated process that also leads the same pgid; the
+/// liveness probe below makes this window microseconds wide and it requires
+/// full pid-space wraparound inside it.
+#[cfg(unix)]
+pub fn run_supervisor_watchdog() -> i32 {
+    let stdin = std::io::stdin();
+    let mut header = String::new();
+    match stdin.lock().read_line(&mut header) {
+        // Host died before the child was announced: nothing to supervise.
+        Ok(0) | Err(_) => return 0,
+        Ok(_) => {}
+    }
+    let Some((pid_text, pgid_text)) = header.split_once(' ') else {
+        return 1;
+    };
+    let (Ok(pid), Ok(pgid)) = (pid_text.parse::<i32>(), pgid_text.trim().parse::<i32>()) else {
+        return 1;
+    };
+    loop {
+        let mut pollfd = libc::pollfd {
+            fd: 0,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: pollfd is a valid single-element array for the call.
+        let rc = unsafe { libc::poll(&mut pollfd, 1, 100) };
+        if rc > 0 && pollfd.revents & (libc::POLLIN | libc::POLLHUP) != 0 {
+            let mut buf = [0u8; 64];
+            // SAFETY: fd 0 is the inherited pipe read end; buf is writable.
+            let n = unsafe { libc::read(0, buf.as_mut_ptr().cast::<libc::c_void>(), buf.len()) };
+            if n <= 0 {
+                // EOF (or an unrecoverable read error): the host is gone.
+                // SAFETY: kill(pid, 0) is a pure liveness probe; the group
+                // kill targets only the supervised child's own group.
+                if unsafe { libc::kill(pid, 0) } == 0 {
+                    unsafe { libc::kill(-pgid, libc::SIGKILL) };
+                }
+                return 0;
+            }
+            // Unexpected post-header data: ignore and keep watching.
+            continue;
+        }
+        if rc < 0 {
+            if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                continue;
+            }
+            return 1;
+        }
+        // Poll timeout: if the supervised child has died (and been reaped),
+        // the watchdog's duty ends without any kill.
+        // SAFETY: kill(pid, 0) is a pure liveness probe.
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return 0;
+        }
+    }
+}
+
 impl Default for ChildConfig {
     fn default() -> Self {
         Self {
@@ -205,6 +494,17 @@ impl Default for ChildConfig {
 }
 
 impl ChildConfig {
+    /// Truthful platform enforcement contract for the configured resource
+    /// limits. Consult this before relying on `max_processes` or
+    /// `process_memory_limit_bytes` as guarantees.
+    pub fn resource_limit_enforcement(&self) -> ResourceLimitEnforcement {
+        if cfg!(windows) {
+            ResourceLimitEnforcement::WindowsJobObject
+        } else {
+            ResourceLimitEnforcement::PosixNotEnforced
+        }
+    }
+
     pub fn production(command: impl Into<String>, args: Vec<String>) -> Self {
         Self {
             command: command.into(),
@@ -238,6 +538,12 @@ pub struct ChildCleanup {
     pub reaped: bool,
     pub stdout_thread_joined: bool,
     pub stderr_thread_joined: bool,
+    /// POSIX orphan-guard watchdog process was launched alongside the child.
+    /// Always false on Windows, where the Job Object's KILL_ON_JOB_CLOSE
+    /// provides the equivalent structural guarantee.
+    pub watchdog_spawned: bool,
+    /// The watchdog process was verifiably stopped during shutdown.
+    pub watchdog_stopped: bool,
 }
 
 /// A protocol line or error from the stdout reader thread.
@@ -249,6 +555,8 @@ pub struct SupervisedChild {
     stdin: Option<Box<dyn Write + Send>>,
     #[cfg(windows)]
     job_handle: windows_sys::Win32::Foundation::HANDLE,
+    #[cfg(unix)]
+    watchdog: Option<WatchdogProcess>,
     graceful_close_timeout: Duration,
 
     // Channel from stdout reader thread.
@@ -429,6 +737,19 @@ impl SupervisedChild {
             )
         };
 
+        #[cfg(unix)]
+        let watchdog = match spawn_unix_watchdog(child.id(), child.process_group) {
+            Ok(watchdog) => Some(watchdog),
+            Err(error) => {
+                // A supervised child must never continue without its orphan
+                // guard: terminate the freshly spawned group before failing.
+                let mut child = child;
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
+
         // Spawn stdout reader thread.
         let max_line = config.max_protocol_line_bytes;
         let (line_tx, line_rx) = mpsc::sync_channel::<LineResult>(SYNC_CHANNEL_BOUND);
@@ -499,6 +820,8 @@ impl SupervisedChild {
             stdin: Some(stdin),
             #[cfg(windows)]
             job_handle,
+            #[cfg(unix)]
+            watchdog,
             graceful_close_timeout: config.graceful_close_timeout,
             line_rx,
             stdout_thread: Some(stdout_thread),
@@ -609,6 +932,8 @@ impl SupervisedChild {
             reaped: false,
             stdout_thread_joined: false,
             stderr_thread_joined: false,
+            watchdog_spawned: false,
+            watchdog_stopped: false,
         };
 
         // 1. Close stdin.
@@ -651,6 +976,41 @@ impl SupervisedChild {
         cleanup.child_waited = self.child.wait().is_ok();
         self.reaped = cleanup.child_waited;
         cleanup.reaped = self.reaped;
+
+        // 4b. Stop the POSIX orphan-guard watchdog. The child is already dead
+        // and reaped, so closing the death pipe delivers EOF to a watchdog
+        // with nothing left to kill; the bounded wait proves it exited.
+        #[cfg(unix)]
+        {
+            cleanup.watchdog_spawned = self.watchdog.is_some();
+            if let Some(mut watchdog) = self.watchdog.take() {
+                drop(watchdog.pipe_write);
+                let deadline = Instant::now() + Duration::from_secs(2);
+                let mut exited = false;
+                loop {
+                    match watchdog.child.try_wait() {
+                        Ok(Some(_)) => {
+                            exited = true;
+                            break;
+                        }
+                        Ok(None) => {
+                            if Instant::now() >= deadline {
+                                break;
+                            }
+                            thread::sleep(Duration::from_millis(20));
+                        }
+                        Err(_) => break,
+                    }
+                }
+                if exited {
+                    let _ = watchdog.child.wait();
+                } else {
+                    let _ = watchdog.child.kill();
+                    exited = watchdog.child.wait().is_ok();
+                }
+                cleanup.watchdog_stopped = exited;
+            }
+        }
 
         // 5. Close Job Object handle.
         #[cfg(windows)]
@@ -1263,6 +1623,14 @@ mod tests {
     }
 
     #[test]
+    fn windows_child_config_reports_job_object_enforcement() {
+        assert_eq!(
+            ChildConfig::default().resource_limit_enforcement(),
+            ResourceLimitEnforcement::WindowsJobObject
+        );
+    }
+
+    #[test]
     #[cfg(windows)]
     fn j13a_child_launch_and_shutdown() {
         let child = launch_fixture("valid", 5, 2).expect("launch");
@@ -1728,5 +2096,184 @@ mod unix_tests {
             SupervisedChild::launch(config),
             Err(ChildError::LaunchFailed { .. })
         ));
+    }
+
+    #[test]
+    fn unix_child_config_reports_unenforced_resource_limits() {
+        let config = ChildConfig::default();
+        assert_eq!(
+            config.resource_limit_enforcement(),
+            ResourceLimitEnforcement::PosixNotEnforced,
+            "POSIX must never claim Job-Object-equivalent limit enforcement"
+        );
+    }
+
+    /// Gated entry point so this test-harness binary can serve as the
+    /// orphan-guard watchdog process for the supervision tests below.
+    #[test]
+    fn unix_watchdog_process_entry() {
+        if std::env::var_os("TETHERS_WATCHDOG_ENTRY").is_none() {
+            return;
+        }
+        let code = run_supervisor_watchdog();
+        assert!(code == 0, "watchdog must exit cleanly, got {code}");
+    }
+
+    /// Gated driver process: launches one supervised child that spawns a
+    /// descendant, records the descendant pid, then hangs until killed.
+    #[test]
+    fn unix_watchdog_host_death_driver() {
+        if std::env::var_os("TETHERS_WATCHDOG_DRIVER").is_none() {
+            return;
+        }
+        let ready = std::path::PathBuf::from(
+            std::env::var_os("TETHERS_WATCHDOG_DRIVER_READY").expect("ready path"),
+        );
+        let pidfile = std::path::PathBuf::from(
+            std::env::var_os("TETHERS_WATCHDOG_DRIVER_PIDFILE").expect("pidfile path"),
+        );
+        let mut config = ChildConfig::test_config(
+            "/bin/sh",
+            vec![
+                "-c".into(),
+                format!("sleep 60 & echo $! > '{}'; wait", pidfile.display()),
+            ],
+            Duration::from_secs(2),
+            Duration::from_millis(200),
+        );
+        config.clear_environment = false;
+        let _child = SupervisedChild::launch(config).expect("driver must launch its child");
+        std::fs::write(&ready, b"ready").expect("ready file");
+        loop {
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    #[test]
+    fn unix_watchdog_supervises_and_stops_on_normal_shutdown() {
+        let exe = std::env::current_exe().unwrap();
+        std::env::set_var("TETHERS_SUPERVISOR_WATCHDOG_EXE", &exe);
+        std::env::set_var(
+            "TETHERS_SUPERVISOR_WATCHDOG_ARG",
+            "child_process::tests::unix_watchdog_process_entry",
+        );
+        std::env::set_var("TETHERS_WATCHDOG_ENTRY", "1");
+
+        let config = ChildConfig::test_config(
+            "/bin/sh",
+            vec!["-c".into(), "sleep 30 & wait".into()],
+            Duration::from_secs(2),
+            Duration::from_millis(200),
+        );
+        let child = SupervisedChild::launch(config).expect("launch with watchdog");
+        let watchdog_pid = child
+            .watchdog
+            .as_ref()
+            .map(|watchdog| watchdog.pid)
+            .expect("watchdog must be spawned");
+        // SAFETY: pure liveness probe.
+        assert_eq!(
+            unsafe { libc::kill(watchdog_pid as i32, 0) },
+            0,
+            "watchdog must be alive while the child runs"
+        );
+        let cleanup = child.shutdown();
+        assert!(cleanup.watchdog_spawned);
+        assert!(
+            cleanup.watchdog_stopped,
+            "watchdog must be verifiably stopped"
+        );
+        assert!(cleanup.job_terminated, "process group must be killed");
+        assert!(cleanup.reaped);
+
+        // The watchdog process is verifiably gone.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        // SAFETY: pure liveness probe.
+        while unsafe { libc::kill(watchdog_pid as i32, 0) } == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "watchdog {watchdog_pid} outlived normal shutdown"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+
+        std::env::remove_var("TETHERS_SUPERVISOR_WATCHDOG_EXE");
+        std::env::remove_var("TETHERS_SUPERVISOR_WATCHDOG_ARG");
+        std::env::remove_var("TETHERS_WATCHDOG_ENTRY");
+    }
+
+    #[test]
+    fn unix_abrupt_host_death_orphans_no_descendants() {
+        for signal in [libc::SIGKILL, libc::SIGTERM] {
+            let dir = std::env::temp_dir().join(format!(
+                "tethers-watchdog-orphans-{}-{}",
+                signal,
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir(&dir).unwrap();
+            let ready = dir.join("ready");
+            let pidfile = dir.join("descendant.pid");
+            let exe = std::env::current_exe().unwrap();
+            let mut driver = Command::new(&exe);
+            driver
+                .arg("child_process::tests::unix_watchdog_host_death_driver")
+                .arg("--exact")
+                .arg("--nocapture")
+                .arg("--test-threads=1")
+                .env("TETHERS_WATCHDOG_DRIVER", "1")
+                .env("TETHERS_WATCHDOG_DRIVER_READY", &ready)
+                .env("TETHERS_WATCHDOG_DRIVER_PIDFILE", &pidfile)
+                .env("TETHERS_WATCHDOG_ENTRY", "1")
+                .env("TETHERS_SUPERVISOR_WATCHDOG_EXE", &exe)
+                .env(
+                    "TETHERS_SUPERVISOR_WATCHDOG_ARG",
+                    "child_process::tests::unix_watchdog_process_entry",
+                )
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            let mut driver = driver.spawn().expect("spawn driver harness");
+
+            let deadline = Instant::now() + Duration::from_secs(90);
+            while !(ready.exists() && pidfile.exists()) {
+                assert!(
+                    Instant::now() < deadline,
+                    "driver did not become ready (signal {signal})"
+                );
+                thread::sleep(Duration::from_millis(50));
+            }
+            let descendant: i32 = std::fs::read_to_string(&pidfile)
+                .unwrap()
+                .trim()
+                .parse()
+                .expect("descendant pid");
+            // Give the watchdog its header and first poll cycle.
+            thread::sleep(Duration::from_millis(300));
+            // SAFETY: pure liveness probe.
+            assert_eq!(
+                unsafe { libc::kill(descendant, 0) },
+                0,
+                "descendant must be alive before host death (signal {signal})"
+            );
+
+            // Abruptly terminate the host driver.
+            // SAFETY: the driver pid was returned by our own spawn.
+            assert_eq!(unsafe { libc::kill(driver.id() as i32, signal) }, 0);
+            let _ = driver.wait();
+
+            // The watchdog must terminate the descendant; bounded wait, and
+            // failure is the DEF-02 orphaning defect.
+            let deadline = Instant::now() + Duration::from_secs(30);
+            // SAFETY: pure liveness probe.
+            while unsafe { libc::kill(descendant, 0) } == 0 {
+                assert!(
+                    Instant::now() < deadline,
+                    "descendant {descendant} survived host death by signal {signal}: orphaned"
+                );
+                thread::sleep(Duration::from_millis(100));
+            }
+
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 }

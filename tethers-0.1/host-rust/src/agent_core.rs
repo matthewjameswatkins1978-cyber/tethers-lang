@@ -792,6 +792,129 @@ fn hooks_path(context: &WorkspaceContext) -> Result<PathBuf, CoreError> {
     Ok(path)
 }
 
+/// Parsed view of `git status --porcelain=v1 -z --branch` output.
+#[derive(Debug, PartialEq, Eq)]
+struct GitStatusView {
+    /// Raw text following the `## ` header token, exactly as Git reports it
+    /// (for example `main...origin/main [ahead 1]`, `No commits yet on main`,
+    /// or `HEAD (no branch)` when detached).
+    branch: Option<String>,
+    staged: Vec<String>,
+    unstaged: Vec<String>,
+    untracked: Vec<String>,
+    /// Rename/copy records as (source, destination) path pairs.
+    renamed: Vec<(String, String)>,
+    /// Unmerged (conflicted) paths, exactly as the porcelain specification
+    /// classifies them (DD, AU, UD, UA, DU, AA, UU).
+    conflicted: Vec<String>,
+}
+
+fn status_utf8(bytes: &[u8]) -> Result<String, CoreError> {
+    std::str::from_utf8(bytes).map(str::to_owned).map_err(|_| {
+        CoreError::failed(
+            "GIT_STATUS_INVALID_UTF8",
+            "git status -z path is not valid UTF-8; refusing to corrupt repository identity",
+        )
+    })
+}
+
+/// Parse porcelain v1 NUL-separated status output per the official Git
+/// specification:
+///
+/// - the optional `## ` branch header is the first token;
+/// - ordinary entries are `XY <path>` where XY are two status characters
+///   followed by exactly one space;
+/// - rename/copy entries (X = R or C) carry TWO pathname fields: the token
+///   holds the destination and the FOLLOWING token holds the source;
+/// - unmerged entries (DD, AU, UD, UA, DU, AA, UU) are conflicts and never
+///   leak into staged/unstaged;
+/// - malformed or truncated records fail closed instead of being skipped or
+///   misparsed, and paths are decoded as strict UTF-8 rather than lossily.
+fn parse_git_porcelain_v1_z(stdout: &[u8]) -> Result<GitStatusView, CoreError> {
+    let mut tokens: Vec<&[u8]> = stdout.split(|byte| *byte == 0).collect();
+    if tokens.last().is_some_and(|token| token.is_empty()) {
+        tokens.pop();
+    }
+    let mut view = GitStatusView {
+        branch: None,
+        staged: Vec::new(),
+        unstaged: Vec::new(),
+        untracked: Vec::new(),
+        renamed: Vec::new(),
+        conflicted: Vec::new(),
+    };
+    let malformed = |detail: &str| {
+        CoreError::failed(
+            "GIT_STATUS_MALFORMED",
+            format!("git status record is malformed: {detail}"),
+        )
+    };
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = tokens[index];
+        index += 1;
+        if index == 1 && token.starts_with(b"## ") {
+            view.branch = Some(status_utf8(&token[3..])?);
+            continue;
+        }
+        if token.len() < 4 || token[2] != b' ' {
+            return Err(malformed(
+                &status_utf8(token).unwrap_or_else(|_| "<non-utf8>".into()),
+            ));
+        }
+        let (x, y) = (token[0], token[1]);
+        let path = status_utf8(&token[3..])?;
+        if x == b'?' && y == b'?' {
+            view.untracked.push(path);
+            continue;
+        }
+        if x == b'!' && y == b'!' {
+            return Err(malformed(
+                "ignored entries require --ignored, which was not requested",
+            ));
+        }
+        // Porcelain v1 status characters. Anything else (for example a stray
+        // `##` outside the leading header position) is malformed input and
+        // must fail closed rather than be reported as a path.
+        let valid_code =
+            |code: u8| matches!(code, b' ' | b'M' | b'A' | b'D' | b'R' | b'C' | b'T' | b'U');
+        if !valid_code(x) || !valid_code(y) {
+            return Err(malformed(&format!(
+                "unknown status code pair '{}{}'",
+                x as char, y as char
+            )));
+        }
+        let unmerged =
+            (x == b'D' && y == b'D') || (x == b'A' && y == b'A') || x == b'U' || y == b'U';
+        if unmerged {
+            view.conflicted.push(path);
+            continue;
+        }
+        if x == b'R' || x == b'C' {
+            let Some(source_token) = tokens.get(index) else {
+                return Err(malformed(
+                    "rename/copy record is missing its source path token",
+                ));
+            };
+            index += 1;
+            let source = status_utf8(source_token)?;
+            view.renamed.push((source, path.clone()));
+            view.staged.push(path.clone());
+            if y != b' ' {
+                view.unstaged.push(path);
+            }
+            continue;
+        }
+        if x != b' ' {
+            view.staged.push(path.clone());
+        }
+        if y != b' ' {
+            view.unstaged.push(path);
+        }
+    }
+    Ok(view)
+}
+
 fn git_status(context: &WorkspaceContext) -> Result<Value, CoreError> {
     let args = vec![
         "status".to_owned(),
@@ -800,35 +923,26 @@ fn git_status(context: &WorkspaceContext) -> Result<Value, CoreError> {
         "--branch".to_owned(),
     ];
     let (stdout, _) = git_command(context, &args)?;
-    let mut branch = Value::Null;
-    let mut staged = Vec::new();
-    let mut unstaged = Vec::new();
-    let mut untracked = Vec::new();
-    for token in stdout.split(|b| *b == 0).filter(|v| !v.is_empty()) {
-        let text = String::from_utf8_lossy(token);
-        if let Some(value) = text.strip_prefix("## ") {
-            branch = json!(value);
-            continue;
-        }
-        if text.len() < 4 {
-            continue;
-        }
-        let code = &text[..2];
-        let path = text[3..].to_owned();
-        if code == "??" {
-            untracked.push(path);
-        } else {
-            if code.as_bytes()[0] != b' ' {
-                staged.push(path.clone());
-            }
-            if code.as_bytes()[1] != b' ' {
-                unstaged.push(path);
-            }
-        }
-    }
-    Ok(
-        json!({"branch": branch, "staged_paths": staged, "unstaged_paths": unstaged, "untracked_paths": untracked, "conflict": false, "clean": staged.is_empty() && unstaged.is_empty() && untracked.is_empty()}),
-    )
+    let view = parse_git_porcelain_v1_z(&stdout)?;
+    let clean = view.staged.is_empty()
+        && view.unstaged.is_empty()
+        && view.untracked.is_empty()
+        && view.renamed.is_empty()
+        && view.conflicted.is_empty();
+    Ok(json!({
+        "branch": view.branch,
+        "staged_paths": view.staged,
+        "unstaged_paths": view.unstaged,
+        "untracked_paths": view.untracked,
+        "renamed_paths": view
+            .renamed
+            .iter()
+            .map(|(from, to)| json!({"from": from, "to": to}))
+            .collect::<Vec<_>>(),
+        "conflicted_paths": view.conflicted,
+        "conflict": !view.conflicted.is_empty(),
+        "clean": clean,
+    }))
 }
 
 fn git_diff(
@@ -1449,9 +1563,26 @@ fn run_exec(
     for (key, value) in &explicit {
         command.env(key, value);
     }
+    // POSIX: give the child its own process group so a timeout can terminate
+    // the whole spawned tree, not merely the immediate child.
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: runs between fork and exec; setsid is async-signal-safe and
+        // touches no Rust state.
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
     let mut child = command
         .spawn()
         .map_err(|e| CoreError::failed("PROCESS_LAUNCH_FAILED", e.to_string()))?;
+    // setsid makes the child its own group leader, so pgid == child pid.
+    #[cfg(unix)]
+    let exec_pgid = child.id() as i32;
     let stdout = child
         .stdout
         .take()
@@ -1479,9 +1610,25 @@ fn run_exec(
             {
                 let pid = child.id().to_string();
                 let windir = std::env::var_os("WINDIR").unwrap_or_else(|| "C:\\Windows".into());
+                // taskkill must never inherit the host's stdout/stderr: its
+                // console output would corrupt the machine-readable envelope.
                 let _ = Command::new(PathBuf::from(windir).join("System32\\taskkill.exe"))
                     .args(["/PID", &pid, "/T", "/F"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
                     .status();
+            }
+            #[cfg(unix)]
+            {
+                // Terminate the whole spawned tree via its process group
+                // before the direct child, so descendants cannot detach a
+                // still-running tree from a "timed out" report.
+                // SAFETY: exec_pgid was captured from this host's own child
+                // immediately after spawn; a negative pid targets that group.
+                unsafe {
+                    libc::kill(-exec_pgid, libc::SIGKILL);
+                }
             }
             let _ = child.kill();
             let _ = child.wait();
@@ -1496,7 +1643,7 @@ fn run_exec(
     let (stderr, stderr_truncated) = stderr_thread.join().unwrap_or_default();
     let executable_sha256 = sha256_file(&executable).ok();
     Ok(
-        json!({"requested_program": program, "resolved_program": executable, "resolved_program_sha256": executable_sha256, "argv": argv, "cwd": working_directory, "environment_mode": environment, "exit_code": status.code(), "timed_out": timed_out, "supervision": if cfg!(windows) {"process_tree_best_effort_taskkill"} else {"child_process_only"}, "stdout": String::from_utf8_lossy(&stdout), "stderr": String::from_utf8_lossy(&stderr), "stdout_bytes": stdout.len(), "stderr_bytes": stderr.len(), "stdout_truncated": stdout_truncated, "stderr_truncated": stderr_truncated}),
+        json!({"requested_program": program, "resolved_program": executable, "resolved_program_sha256": executable_sha256, "argv": argv, "cwd": working_directory, "environment_mode": environment, "exit_code": status.code(), "timed_out": timed_out, "supervision": if cfg!(windows) {"process_tree_best_effort_taskkill"} else {"process_group_sigkill"}, "resource_limits": "none_applied", "stdout": String::from_utf8_lossy(&stdout), "stderr": String::from_utf8_lossy(&stderr), "stdout_bytes": stdout.len(), "stderr_bytes": stderr.len(), "stdout_truncated": stdout_truncated, "stderr_truncated": stderr_truncated}),
     )
 }
 
@@ -1802,5 +1949,115 @@ pub fn run_capability(command: CapabilityCommand) -> CoreResult {
                 ),
             )),
         },
+    }
+}
+
+#[cfg(test)]
+mod git_status_parser_tests {
+    use super::parse_git_porcelain_v1_z;
+
+    fn parse_ok(input: &[u8]) -> super::GitStatusView {
+        parse_git_porcelain_v1_z(input).expect("parse must succeed")
+    }
+
+    #[test]
+    fn ordinary_entries_are_classified_by_column() {
+        let view = parse_ok(b"## main...origin/main [ahead 1]\0M  staged.txt\0 M unstaged.txt\0MM both.txt\0?? untracked.txt\0");
+        assert_eq!(view.branch.as_deref(), Some("main...origin/main [ahead 1]"));
+        assert_eq!(view.staged, vec!["staged.txt", "both.txt"]);
+        assert_eq!(view.unstaged, vec!["unstaged.txt", "both.txt"]);
+        assert_eq!(view.untracked, vec!["untracked.txt"]);
+        assert!(view.renamed.is_empty());
+        assert!(view.conflicted.is_empty());
+    }
+
+    #[test]
+    fn rename_and_copy_records_consume_their_source_token() {
+        let view = parse_ok(b"## main\0R  new.txt\0old.txt\0C  copy.txt\0orig.txt\0RM renamed-modified.txt\0source.txt\0");
+        assert_eq!(
+            view.renamed,
+            vec![
+                ("old.txt".to_owned(), "new.txt".to_owned()),
+                ("orig.txt".to_owned(), "copy.txt".to_owned()),
+                ("source.txt".to_owned(), "renamed-modified.txt".to_owned()),
+            ]
+        );
+        // The old parser misparsed the source token as an independent entry
+        // (dropping its third byte). That must be impossible now.
+        assert_eq!(
+            view.staged,
+            vec!["new.txt", "copy.txt", "renamed-modified.txt"]
+        );
+        assert_eq!(view.unstaged, vec!["renamed-modified.txt"]);
+        assert!(view.untracked.is_empty());
+    }
+
+    #[test]
+    fn multibyte_rename_source_never_panics_or_corrupts() {
+        // The old parser byte-sliced token[..2]/token[3..] and panicked on a
+        // multibyte leading character in a rename source token.
+        let view = parse_ok("## main\0R  new.txt\0\u{65e5}\u{672c}old.txt\0".as_bytes());
+        assert_eq!(
+            view.renamed,
+            vec![("\u{65e5}\u{672c}old.txt".to_owned(), "new.txt".to_owned())]
+        );
+    }
+
+    #[test]
+    fn unmerged_entries_are_conflicts_not_staged_unstaged_noise() {
+        let view = parse_ok(b"## main\0UU conflicted.txt\0AA both-added.txt\0DD both-deleted.txt\0AU added-by-us.txt\0UD deleted-by-them.txt\0");
+        assert_eq!(
+            view.conflicted,
+            vec![
+                "conflicted.txt",
+                "both-added.txt",
+                "both-deleted.txt",
+                "added-by-us.txt",
+                "deleted-by-them.txt"
+            ]
+        );
+        assert!(view.staged.is_empty());
+        assert!(view.unstaged.is_empty());
+    }
+
+    #[test]
+    fn spaces_and_unicode_paths_survive_verbatim() {
+        let view =
+            parse_ok("## main\0M  a b \u{65e5}\u{672c}.txt\0?? dir with space/f.txt\0".as_bytes());
+        assert_eq!(view.staged, vec!["a b \u{65e5}\u{672c}.txt"]);
+        assert_eq!(view.untracked, vec!["dir with space/f.txt"]);
+    }
+
+    #[test]
+    fn detached_and_fresh_repository_headers_are_reported_raw() {
+        let detached = parse_ok(b"## HEAD (no branch)\0");
+        assert_eq!(detached.branch.as_deref(), Some("HEAD (no branch)"));
+        let fresh = parse_ok(b"## No commits yet on main\0?? a.txt\0");
+        assert_eq!(fresh.branch.as_deref(), Some("No commits yet on main"));
+        assert_eq!(fresh.untracked, vec!["a.txt"]);
+    }
+
+    #[test]
+    fn clean_repository_reports_no_entries() {
+        let view = parse_ok(b"## main\0");
+        assert!(view.staged.is_empty() && view.unstaged.is_empty() && view.untracked.is_empty());
+        assert!(view.renamed.is_empty() && view.conflicted.is_empty());
+    }
+
+    #[test]
+    fn malformed_records_fail_closed() {
+        // Truncated entry.
+        assert!(parse_git_porcelain_v1_z(b"## main\0M \0").is_err());
+        // Missing separator space.
+        assert!(parse_git_porcelain_v1_z(b"## main\0MMx.txt\0").is_err());
+        // Rename without its source token.
+        assert!(parse_git_porcelain_v1_z(b"## main\0R  new.txt\0").is_err());
+        // Unknown status characters.
+        assert!(parse_git_porcelain_v1_z(b"## main\0## main\0").is_err());
+        assert!(parse_git_porcelain_v1_z(b"## main\0XX weird.txt\0").is_err());
+        // Ignored entries were never requested.
+        assert!(parse_git_porcelain_v1_z(b"## main\0!! ignored.txt\0").is_err());
+        // Non-UTF-8 paths are refused, not lossily corrupted.
+        assert!(parse_git_porcelain_v1_z(b"## main\0M  \xff\xfe.txt\0").is_err());
     }
 }
