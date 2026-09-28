@@ -389,11 +389,10 @@ fn audit_082_group_writable_replay_storage_fails_closed_with_security_diagnostic
         std::fs::Permissions::from_mode(0o775),
     )
     .unwrap();
-    let error = ReplayLedger::open(&root).unwrap_err();
-    assert_eq!(
-        error,
-        tethers_reference_host::replay::ReplayError::PersistenceUnavailable
-    );
+    assert!(matches!(
+        ReplayLedger::open(&root),
+        Err(tethers_reference_host::replay::ReplayError::PersistenceUnavailable)
+    ));
     let diagnostic = tethers_reference_host::replay::last_replay_diagnostic()
         .expect("unix replay failures must record a structured diagnostic");
     assert_eq!(diagnostic.phase, "security_validation");
