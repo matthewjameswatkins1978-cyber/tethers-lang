@@ -5,8 +5,9 @@
 //! following, and the final directory handle carries the volume and ACL proof.
 
 use crate::replay::{
-    validate_chain, Claim, ExecutionBinding, ExecutionId, Generation, LogicalExecutionKey,
-    ReplayError, ReplayState,
+    resolve_audit_line, validate_chain, Claim, ExecutionBinding, ExecutionId, Generation,
+    LogicalExecutionKey, ReplayError, ReplayResolveReport, ReplayState, REPLAY_QUARANTINE_DIR_NAME,
+    REPLAY_RESOLVE_LOG_NAME,
 };
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
@@ -28,15 +29,15 @@ use windows_sys::Win32::Security::{
     PSECURITY_DESCRIPTOR, PSID, TOKEN_QUERY, TOKEN_USER,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateDirectoryW, CreateFileW, FileRenameInfo, FlushFileBuffers, GetDriveTypeW,
+    CreateDirectoryW, CreateFileW, DeleteFileW, FileRenameInfo, FlushFileBuffers, GetDriveTypeW,
     GetFileInformationByHandle, GetFileSizeEx, GetVolumeInformationByHandleW, LockFileEx, ReadFile,
-    SetFileInformationByHandle, WriteFile, BY_HANDLE_FILE_INFORMATION, CREATE_NEW, DELETE,
-    FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_APPEND_DATA, FILE_ATTRIBUTE_DIRECTORY,
-    FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DELETE_CHILD,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_WRITE_THROUGH,
-    FILE_GENERIC_READ, FILE_RENAME_INFO, FILE_RENAME_INFO_0, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FILE_WRITE_EA, LOCKFILE_EXCLUSIVE_LOCK, OPEN_ALWAYS,
-    OPEN_EXISTING, READ_CONTROL, WRITE_DAC, WRITE_OWNER,
+    RemoveDirectoryW, SetFileInformationByHandle, WriteFile, BY_HANDLE_FILE_INFORMATION,
+    CREATE_NEW, DELETE, FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_APPEND_DATA,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_DELETE_CHILD, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_FLAG_WRITE_THROUGH, FILE_GENERIC_READ, FILE_RENAME_INFO, FILE_RENAME_INFO_0,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FILE_WRITE_EA,
+    LOCKFILE_EXCLUSIVE_LOCK, OPEN_ALWAYS, OPEN_EXISTING, READ_CONTROL, WRITE_DAC, WRITE_OWNER,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows_sys::Win32::System::IO::OVERLAPPED;
@@ -1461,7 +1462,10 @@ impl ReplayLedger {
                 .child_directory(&ValidatedLeafName::new(&prefix_name)?)?;
             let execution_names = directory_entry_names(&prefix)?;
             if execution_names.is_empty() {
-                return unavailable();
+                // An empty prefix directory is recognised interrupted internal
+                // state (an interrupted publication or a completed operator
+                // resolve); it holds no records and cannot affect authority.
+                continue;
             }
             for execution_name in execution_names {
                 if !is_lower_hex(&execution_name, 64)
@@ -1730,6 +1734,226 @@ impl ReplayAdmission {
         self.generations.push(generation);
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Operator reconciliation of an abandoned `claimed_no_state` admission (DEF-03)
+// ---------------------------------------------------------------------------
+
+fn resolve_diagnostic(reason: &str, recovery: &str, detail: Option<String>) -> ReplayError {
+    crate::replay::record_replay_diagnostic("resolution", reason, recovery, detail);
+    ReplayError::PersistenceUnavailable
+}
+
+fn refuse_unresolvable_state(execution_id: &str, state: ReplayState) -> ReplayError {
+    resolve_diagnostic(
+        "state_not_resolvable",
+        "Only an abandoned claimed_no_state admission may be resolved; every other state is manual-resolution-only.",
+        Some(format!("execution_id:{execution_id} state:{state:?}")),
+    )
+}
+
+fn execution_not_found(execution_id: &str) -> ReplayError {
+    resolve_diagnostic(
+        "execution_not_found",
+        "No durable claim carries this execution identity; check gate STATUS recovery_required entries.",
+        Some(execution_id.to_owned()),
+    )
+}
+
+fn delete_released_claim(path: &Path) -> Result<(), ReplayError> {
+    let path_w = wide(path);
+    // SAFETY: the nul-terminated path lives through the call.
+    if unsafe { DeleteFileW(path_w.as_ptr()) } == 0 {
+        // SAFETY: captured immediately after the failed DeleteFileW call.
+        if unsafe { GetLastError() } == ERROR_FILE_NOT_FOUND {
+            // An interrupted earlier resolve already released the claim.
+            return Ok(());
+        }
+        return Err(resolve_diagnostic(
+            "claim_release_failed",
+            "Inspect the replay subtree; remove or repair only through an authorised operator route.",
+            Some(path.display().to_string()),
+        ));
+    }
+    Ok(())
+}
+
+fn remove_empty_directory(path: &Path) -> bool {
+    let path_w = wide(path);
+    // SAFETY: the nul-terminated path lives through the call.
+    // RemoveDirectoryW refuses non-empty directories, which is exactly the
+    // guarantee required before dropping recognised interrupted state.
+    let removed = unsafe { RemoveDirectoryW(path_w.as_ptr()) };
+    removed != 0
+}
+
+fn append_resolve_audit(quarantine: &ValidatedDirectory, line: &[u8]) -> Result<(), ReplayError> {
+    let name = ValidatedLeafName::new(REPLAY_RESOLVE_LOG_NAME)?;
+    let handle = open_file(
+        &quarantine.path.join(name.as_str()),
+        FILE_APPEND_DATA,
+        OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH,
+    )?;
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: handle is live and information is caller-owned writable storage.
+    if unsafe { GetFileInformationByHandle(handle.0, &mut information) } == 0
+        || information.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
+            != 0
+    {
+        return unavailable();
+    }
+    let mut remaining = line;
+    while !remaining.is_empty() {
+        let request = remaining.len().min(u32::MAX as usize) as u32;
+        let mut written = 0u32;
+        // SAFETY: `remaining` is live and readable; `written` is writable.
+        let succeeded = unsafe {
+            WriteFile(
+                handle.0,
+                remaining.as_ptr(),
+                request,
+                &mut written,
+                std::ptr::null_mut(),
+            )
+        };
+        if succeeded == 0 || written == 0 || written > request {
+            return unavailable();
+        }
+        remaining = &remaining[written as usize..];
+    }
+    // SAFETY: handle is a live writable file handle.
+    if unsafe { FlushFileBuffers(handle.0) } == 0 {
+        return unavailable();
+    }
+    Ok(())
+}
+
+/// Explicitly authorised operator route that releases one logical key whose
+/// fresh admission was abandoned at `claimed_no_state`. Identical replay
+/// meaning to the POSIX backend: the claim record is first preserved
+/// byte-identically under quarantine (`replay-quarantine/`) with an
+/// append-only audit line, every other durable state is refused, the
+/// logical-key exclusion is held across the whole transition, and the
+/// operation is idempotent across crashes at every intermediate point.
+pub fn resolve_claimed_no_state(
+    root_path: &Path,
+    execution_id: &str,
+) -> Result<ReplayResolveReport, ReplayError> {
+    crate::replay::clear_replay_diagnostic();
+    let parsed = ExecutionId::parse(execution_id.to_owned()).map_err(|_| {
+        resolve_diagnostic(
+            "invalid_execution_id",
+            "Supply the exact exec_UUID reported by gate STATUS recovery_required entries.",
+            None,
+        );
+        ReplayError::InvalidIdentifier
+    })?;
+    let ledger = ReplayLedger::open(root_path)?;
+    let Some(claim) = ledger
+        .scan_claims()?
+        .into_values()
+        .find(|claim| claim.execution_id.as_str() == parsed.as_str())
+    else {
+        return Err(execution_not_found(parsed.as_str()));
+    };
+    let (state, _) = ledger.reconstruct(&claim)?;
+    if state != ReplayState::ClaimedNoState {
+        return Err(refuse_unresolvable_state(parsed.as_str(), state));
+    }
+
+    // Hold the logical-key exclusion across the whole reconciliation.
+    let _lock = LogicalKeyLock::acquire(&ledger.locks, &claim.logical_key)?;
+
+    // Re-establish the facts under the lock: nothing may have advanced.
+    let Some(claim) =
+        ledger.existing_claim(&claim.logical_key, PersistenceFaultPoint::ClaimRead)?
+    else {
+        return Err(execution_not_found(parsed.as_str()));
+    };
+    let (state, _) = ledger.reconstruct(&claim)?;
+    if state != ReplayState::ClaimedNoState {
+        return Err(refuse_unresolvable_state(parsed.as_str(), state));
+    }
+
+    let bytes = model_unavailable(claim.canonical_bytes())?;
+    let record_name = ValidatedLeafName::new(&format!(
+        "{}.claim.json",
+        claim.logical_key.filename_digest()
+    ))?;
+
+    // 1. Quarantine copy first: evidence is preserved before anything moves.
+    let root_dir = validate_existing_root(root_path)?.into_directory()?;
+    let quarantine = open_or_create_directory(&root_dir, REPLAY_QUARANTINE_DIR_NAME)?;
+    let already_quarantined = match open_existing_regular_file(
+        &quarantine.path.join(record_name.as_str()),
+    )? {
+        Some(handle) => {
+            let existing = read_replay_record(handle.0)?;
+            if existing != bytes {
+                return Err(resolve_diagnostic(
+                        "quarantine_conflict",
+                        "The quarantine already holds different bytes for this logical key; manual inspection required.",
+                        Some(record_name.as_str().to_owned()),
+                    ));
+            }
+            true
+        }
+        None => {
+            publish_new_canonical_file(&quarantine, &record_name, &bytes)?;
+            false
+        }
+    };
+
+    // 2. Append the audit line before the release so a crash cannot leave an
+    //    unaudited removal behind.
+    append_resolve_audit(
+        &quarantine,
+        &resolve_audit_line(&claim, record_name.as_str(), already_quarantined)?,
+    )?;
+
+    // 3. Remove the recognised interrupted chain state (guaranteed empty of
+    //    records at claimed_no_state), then release the claim. While the
+    //    claim exists an empty chain directory is consistent; after the claim
+    //    is gone it would be an orphan that every strict scan must reject.
+    let execution_digest = claim.execution_id.filename_digest();
+    let prefix_path = ledger.chains.path.join(&execution_digest[..2]);
+    let execution_path = prefix_path.join(&execution_digest);
+    if execution_path.exists() {
+        let empty = std::fs::read_dir(&execution_path)
+            .map_err(|_| ReplayError::PersistenceUnavailable)?
+            .next()
+            .is_none();
+        if !empty {
+            return Err(resolve_diagnostic(
+                "chain_directory_not_empty",
+                "Inspect the replay subtree; remove or repair only through an authorised operator route.",
+                Some(execution_path.display().to_string()),
+            ));
+        }
+        if !remove_empty_directory(&execution_path) && execution_path.exists() {
+            return Err(resolve_diagnostic(
+                "chain_directory_remove_failed",
+                "Inspect the replay subtree; remove or repair only through an authorised operator route.",
+                Some(execution_path.display().to_string()),
+            ));
+        }
+        // The prefix may still hold other executions; failure is expected and
+        // tolerated. An empty prefix directory is recognised interrupted
+        // state and is tolerated by every strict scan.
+        let _ = remove_empty_directory(&prefix_path);
+    }
+    delete_released_claim(&ledger.claims.path.join(record_name.as_str()))?;
+
+    Ok(ReplayResolveReport {
+        execution_id: claim.execution_id.as_str().to_owned(),
+        logical_key_digest: claim.logical_key.as_digest().to_owned(),
+        binding_digest: claim.binding_digest.clone(),
+        claim_digest: claim.claim_digest.clone(),
+        quarantined_record: record_name.as_str().to_owned(),
+        already_quarantined,
+    })
 }
 
 #[cfg(test)]
@@ -2829,10 +3053,26 @@ mod tests {
                 ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
             assert!(!recovered.is_fresh());
             let before = tree_snapshot(&root);
+            if generations == 2 {
+                // A recovered ARMED admission keeps exactly one supported
+                // route: the durable terminal completion used by Gate
+                // crash-window recovery (see the r2 late-OUTCOME suite). It
+                // can never publish intent, re-arm, or complete twice.
+                recovered
+                    .publish_terminal(ReplayState::Succeeded, test_digest("outcome"))
+                    .expect("supported armed terminal completion");
+                assert_eq!(recovered.state(), ReplayState::Succeeded);
+                assert!(recovered.publish_intent().is_err());
+                assert!(recovered.publish_armed().is_err());
+                assert!(recovered
+                    .publish_terminal(ReplayState::Failed, test_digest("other-outcome"))
+                    .is_err());
+                assert_ne!(tree_snapshot(&root), before);
+                continue;
+            }
             let result = match generations {
                 0 => recovered.publish_intent(),
                 1 => recovered.publish_armed(),
-                2 => recovered.publish_terminal(ReplayState::Succeeded, test_digest("outcome")),
                 _ => unreachable!(),
             };
             assert!(matches!(result, Err(ReplayError::PersistenceUnavailable)));
@@ -2955,6 +3195,164 @@ mod tests {
             std::fs::read(claim_path(&root, &key)).unwrap(),
             claim_before
         );
+    }
+
+    #[test]
+    fn ledger_31_staging_shaped_debris_remains_fail_closed_on_windows() {
+        // The accepted J09 Windows contract is deliberately stricter than the
+        // POSIX backend's recognised-residue tolerance: ANY temporary-shaped
+        // entry (including the full `<stem>.<nonce>.tmp` shape) is evidence of
+        // ambiguity, is never parsed or repaired, and fails the whole ledger
+        // closed until an operator removes it through an authorised route.
+        let Some(root) = provisioned_test_root("ledger-residue") else {
+            return;
+        };
+        let hostile = b"not-a-record";
+        let key = test_key("residue-fail-closed");
+        let claim_residue = format!(
+            "{}.claim.json.{}.tmp",
+            key.filename_digest(),
+            Uuid::new_v4().simple()
+        );
+        let residue_path = root
+            .join("replay")
+            .join("v1")
+            .join("claims")
+            .join(&claim_residue);
+        std::fs::write(&residue_path, hostile).unwrap();
+
+        assert!(matches!(
+            ReplayLedger::open(&root),
+            Err(ReplayError::PersistenceUnavailable)
+        ));
+        // The debris was never modified, deleted, or parsed.
+        assert_eq!(std::fs::read(&residue_path).unwrap(), hostile);
+
+        // After the operator removes the debris, the ledger is healthy again
+        // and the key admits fresh.
+        std::fs::remove_file(&residue_path).unwrap();
+        let ledger = open_ledger(&root);
+        let admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key, test_binding("residue-fail-closed"))
+                .unwrap();
+        assert!(admission.is_fresh());
+    }
+
+    #[test]
+    fn ledger_32_abandoned_claim_is_resolved_and_key_released() {
+        let Some(root) = provisioned_test_root("ledger-resolve") else {
+            return;
+        };
+        let key = test_key("resolve-released");
+        let binding = test_binding("resolve-released");
+        let abandoned = {
+            let ledger = open_ledger(&root);
+            let admission =
+                ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone())
+                    .unwrap();
+            assert!(admission.is_fresh());
+            admission.execution_id().to_owned()
+        };
+        {
+            // Recovery across restart: the abandoned claim blocks execution.
+            let ledger = open_ledger(&root);
+            let recovered =
+                ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone())
+                    .unwrap();
+            assert!(!recovered.is_fresh());
+            assert_eq!(recovered.state(), ReplayState::ClaimedNoState);
+        }
+
+        let report = resolve_claimed_no_state(&root, &abandoned).unwrap();
+        assert_eq!(report.execution_id, abandoned);
+        assert!(!report.already_quarantined);
+
+        // Evidence preserved: quarantine holds the byte-identical claim and
+        // the audit log names the exact execution identity.
+        let quarantine = root.join(REPLAY_QUARANTINE_DIR_NAME);
+        let preserved = std::fs::read(quarantine.join(&report.quarantined_record)).unwrap();
+        assert!(
+            !claim_path(&root, &key).exists(),
+            "the original claim must be released"
+        );
+        let claim = Claim::from_canonical_bytes(
+            &preserved,
+            &LogicalExecutionKey::from_digest(report.logical_key_digest.clone()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(claim.execution_id.as_str(), abandoned);
+        let audit = std::fs::read_to_string(quarantine.join(REPLAY_RESOLVE_LOG_NAME)).unwrap();
+        let line: serde_json::Value = serde_json::from_str(audit.trim()).unwrap();
+        assert_eq!(line["schema"], crate::replay::REPLAY_RESOLVE_AUDIT_SCHEMA);
+        assert_eq!(line["execution_id"], abandoned);
+        assert_eq!(line["resolved_state"], "claimed_no_state");
+        assert_eq!(line["already_quarantined"], false);
+
+        // The original claim is released; a fresh admission with a NEW
+        // execution identity completes the whole lifecycle.
+        let ledger = open_ledger(&root);
+        let mut admission = ReplayLedger::admit_or_recover_owned(&ledger, key, binding).unwrap();
+        assert!(admission.is_fresh());
+        assert_ne!(admission.execution_id(), abandoned);
+        admission.publish_intent().unwrap();
+        admission.publish_armed().unwrap();
+        admission
+            .publish_terminal(ReplayState::Succeeded, test_digest("outcome"))
+            .unwrap();
+        drop(admission);
+
+        // Resolving again reports the truth: nothing carries that identity.
+        let error = resolve_claimed_no_state(&root, &abandoned).unwrap_err();
+        assert_eq!(error, ReplayError::PersistenceUnavailable);
+        let diagnostic = crate::replay::last_replay_diagnostic().expect("diagnostic recorded");
+        assert_eq!(diagnostic.reason, "execution_not_found");
+    }
+
+    #[test]
+    fn ledger_33_resolve_refuses_states_beyond_claimed_no_state() {
+        let Some(root) = provisioned_test_root("ledger-resolve-refuse") else {
+            return;
+        };
+        let key = test_key("resolve-refuse");
+        let binding = test_binding("resolve-refuse");
+        let ledger = open_ledger(&root);
+        let mut admission =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding.clone()).unwrap();
+        admission.publish_intent().unwrap();
+        let execution = admission.execution_id().to_owned();
+        drop(admission);
+        drop(ledger);
+
+        // IntentRecorded is durable evidence of a recorded intent: refused,
+        // and the generation record is untouched.
+        let before = tree_snapshot(&root);
+        assert!(resolve_claimed_no_state(&root, &execution).is_err());
+        let diagnostic = crate::replay::last_replay_diagnostic().expect("diagnostic recorded");
+        assert_eq!(diagnostic.reason, "state_not_resolvable");
+        let ledger = open_ledger(&root);
+        let recovered =
+            ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding).unwrap();
+        assert_eq!(recovered.state(), ReplayState::IntentRecorded);
+        drop(recovered);
+        drop(ledger);
+        let mut after = tree_snapshot(&root);
+        after.retain(|entry| !entry.0.starts_with(REPLAY_QUARANTINE_DIR_NAME));
+        let mut before = before;
+        before.retain(|entry| !entry.0.starts_with(REPLAY_QUARANTINE_DIR_NAME));
+        assert_eq!(after, before, "a refused resolve mutates no replay state");
+
+        // Invalid identities are rejected before any storage access.
+        let error = resolve_claimed_no_state(&root, "not-an-execution-id").unwrap_err();
+        assert_eq!(error, ReplayError::InvalidIdentifier);
+    }
+
+    #[test]
+    fn ledger_34_empty_prefix_directory_is_tolerated() {
+        let Some(root) = provisioned_test_root("ledger-empty-prefix") else {
+            return;
+        };
+        std::fs::create_dir(root.join("replay").join("v1").join("chains").join("ab")).unwrap();
+        let _ledger = open_ledger(&root);
     }
 
     #[test]

@@ -64,6 +64,137 @@ pub fn last_replay_diagnostic() -> Option<ReplayProvisionDiagnostic> {
     LAST_REPLAY_DIAGNOSTIC.with(|d| d.borrow().clone())
 }
 
+/// Directory context that decides which authoritative stem a recognised
+/// interrupted internal publication could have staged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StagingContext {
+    /// `replay/v1/` — `FORMAT.json`.
+    Format,
+    /// `replay/v1/claims/` — `{64-lower-hex}.claim.json`.
+    Claims,
+    /// `replay/v1/chains/xx/<execution>/` — `g{:016}.json`.
+    Generations,
+}
+
+const STAGING_SUFFIX: &str = ".tmp";
+const STAGING_NONCE_LEN: usize = 32;
+
+pub fn is_lower_hex(value: &str, length: usize) -> bool {
+    value.len() == length
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+/// Parse an exact canonical generation filename; returns its number (0..=2).
+pub fn canonical_generation_number(name: &str) -> Option<u64> {
+    let digits = name.strip_prefix('g')?.strip_suffix(".json")?;
+    if digits.len() != 16 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let number: u64 = digits.parse().ok()?;
+    if number > 2 || format!("g{number:016}.json") != name {
+        return None;
+    }
+    Some(number)
+}
+
+/// True when `name` is an authoritative record name for `context`.
+pub fn is_authoritative_record_name(context: StagingContext, name: &str) -> bool {
+    match context {
+        StagingContext::Format => name == "FORMAT.json",
+        StagingContext::Claims => name
+            .strip_suffix(".claim.json")
+            .is_some_and(|digest| is_lower_hex(digest, 64)),
+        StagingContext::Generations => canonical_generation_number(name).is_some(),
+    }
+}
+
+/// Produce the uniquely named staging temporary that POSIX internal
+/// publication uses: `<stem>.<32-lower-hex-nonce>.tmp`. The nonce guarantees
+/// that a stranded temporary from an interrupted publication can never
+/// collide with, or block, a later publication attempt for the same stem.
+///
+/// Platform note: the POSIX backend recognises and tolerates this exact
+/// residue shape during strict scans (never reading or trusting it). The
+/// Windows backend keeps its accepted J09 contract: it uses its own shorter
+/// staging stems and fails closed on ANY temporary-shaped debris, which an
+/// operator removes through an authorised maintenance route.
+pub fn staging_temp_name(stem: &str) -> String {
+    format!("{stem}.{}.tmp", Uuid::new_v4().simple())
+}
+
+/// True only for a filename that the internal publication primitive itself
+/// could have left behind as interrupted staging residue in `context`:
+/// exactly `<valid authoritative stem>.<32-lower-hex-nonce>.tmp`.
+///
+/// Recognised residue is never authoritative. Backends must not parse or
+/// trust its content, and no authoritative record name can collide with this
+/// shape because authoritative names never end in `.tmp` and never carry a
+/// nonce component. Unrecognised `.tmp` names, symlinks, and every other
+/// unexpected entry must continue to fail closed.
+pub fn is_recognized_staging_residue(context: StagingContext, name: &str) -> bool {
+    let Some(stem_and_nonce) = name.strip_suffix(STAGING_SUFFIX) else {
+        return false;
+    };
+    let Some((stem, nonce)) = stem_and_nonce.rsplit_once('.') else {
+        return false;
+    };
+    is_lower_hex(nonce, STAGING_NONCE_LEN) && is_authoritative_record_name(context, stem)
+}
+
+/// Outcome of the explicitly authorised operator reconciliation of one
+/// abandoned `claimed_no_state` replay admission. The original claim record
+/// is preserved under quarantine in the host-data root and its execution
+/// identity is never reused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayResolveReport {
+    pub execution_id: String,
+    pub logical_key_digest: String,
+    pub binding_digest: String,
+    pub claim_digest: String,
+    pub quarantined_record: String,
+    pub already_quarantined: bool,
+}
+
+/// Quarantine location for operator-resolved claims, as a sibling of the
+/// `replay/` subtree inside the host-data root. Identical on every platform.
+pub const REPLAY_QUARANTINE_DIR_NAME: &str = "replay-quarantine";
+
+/// Append-only audit log inside the quarantine directory.
+pub const REPLAY_RESOLVE_LOG_NAME: &str = "resolve-log.jsonl";
+
+pub const REPLAY_RESOLVE_AUDIT_SCHEMA: &str = "tethers.replay_resolve/1";
+
+/// Build the canonical audit line for one operator claim resolution. The
+/// timestamp is host-supplied wall-clock milliseconds: this is host operator
+/// tooling, not planner determinism.
+pub fn resolve_audit_line(
+    claim: &Claim,
+    quarantined_record: &str,
+    already_quarantined: bool,
+) -> Result<Vec<u8>, ReplayError> {
+    let timestamp_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0);
+    let mut line = serde_json_canonicalizer::to_vec(&json!({
+        "schema": REPLAY_RESOLVE_AUDIT_SCHEMA,
+        "timestamp_unix_ms": timestamp_unix_ms,
+        "action": "claim_quarantined",
+        "resolved_state": "claimed_no_state",
+        "execution_id": claim.execution_id.as_str(),
+        "logical_key_digest": claim.logical_key.as_digest(),
+        "binding_digest": claim.binding_digest,
+        "claim_digest": claim.claim_digest,
+        "quarantined_record": quarantined_record,
+        "already_quarantined": already_quarantined,
+    }))
+    .map_err(|_| ReplayError::InvalidChain)?;
+    line.push(b'\n');
+    Ok(line)
+}
+
 fn canonical_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, ReplayError> {
     serde_json_canonicalizer::to_vec(value).map_err(|_| ReplayError::InvalidChain)
 }
@@ -702,10 +833,89 @@ mod tests {
         let claim = claim();
         let generation = Generation::intent(&claim).unwrap();
         let bytes = generation.canonical_bytes().unwrap();
-        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let mut value = value.as_object().unwrap().clone();
         value.insert("generation".into(), json!(3));
         let bytes = serde_json_canonicalizer::to_vec(&Value::Object(value)).unwrap();
         assert!(Generation::from_canonical_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn staging_names_round_trip_through_the_recogniser() {
+        let nonce = "0123456789abcdef0123456789abcdef";
+        let claim_stem = format!("{}.claim.json", "a".repeat(64));
+        assert!(is_recognized_staging_residue(
+            StagingContext::Claims,
+            &format!("{claim_stem}.{nonce}.tmp")
+        ));
+        assert!(is_recognized_staging_residue(
+            StagingContext::Generations,
+            &format!("g0000000000000002.json.{nonce}.tmp")
+        ));
+        assert!(is_recognized_staging_residue(
+            StagingContext::Format,
+            &format!("FORMAT.json.{nonce}.tmp")
+        ));
+        assert!(is_recognized_staging_residue(
+            StagingContext::Claims,
+            &staging_temp_name(&claim_stem)
+        ));
+    }
+
+    #[test]
+    fn staging_recognition_rejects_ambiguous_or_hostile_shapes() {
+        let nonce = "0123456789abcdef0123456789abcdef";
+        let claim_stem = format!("{}.claim.json", "a".repeat(64));
+        // Wrong context for a valid shape.
+        assert!(!is_recognized_staging_residue(
+            StagingContext::Generations,
+            &format!("{claim_stem}.{nonce}.tmp")
+        ));
+        // Nonce not lowercase hex / wrong length.
+        assert!(!is_recognized_staging_residue(
+            StagingContext::Claims,
+            &format!("{claim_stem}.{nonce}.tx")
+        ));
+        assert!(!is_recognized_staging_residue(
+            StagingContext::Claims,
+            &format!("{claim_stem}.ABCDEF.tmp")
+        ));
+        assert!(!is_recognized_staging_residue(
+            StagingContext::Claims,
+            &format!("{claim_stem}.tmp")
+        ));
+        // Stem that is not an authoritative name.
+        assert!(!is_recognized_staging_residue(
+            StagingContext::Claims,
+            &format!("hostile.claim.json.{nonce}.tmp")
+        ));
+        assert!(!is_recognized_staging_residue(
+            StagingContext::Generations,
+            &format!("g0000000000000003.json.{nonce}.tmp")
+        ));
+        // A bare authoritative name is never "residue".
+        assert!(!is_recognized_staging_residue(
+            StagingContext::Claims,
+            &claim_stem
+        ));
+    }
+
+    #[test]
+    fn canonical_generation_name_is_exact() {
+        assert_eq!(
+            canonical_generation_number("g0000000000000000.json"),
+            Some(0)
+        );
+        assert_eq!(
+            canonical_generation_number("g0000000000000002.json"),
+            Some(2)
+        );
+        assert_eq!(canonical_generation_number("g0000000000000003.json"), None);
+        assert_eq!(canonical_generation_number("g0.json"), None);
+        assert_eq!(canonical_generation_number("x0000000000000000.json"), None);
+        assert_eq!(
+            canonical_generation_number("g0000000000000000.json.tmp"),
+            None
+        );
     }
 }

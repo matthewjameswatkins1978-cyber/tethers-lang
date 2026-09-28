@@ -2125,6 +2125,7 @@ fn reconcile_durable(trail_path: &Path, host_data_root: &Path) -> DurableReconci
         view.push_recovery(json!({
             "execution_id": execution_id,
             "state": "replay_claim_without_trail_intent",
+            "operator_route": "tethers replay-resolve-claim <host-data-root> --execution-id <exec_UUID>",
         }));
     }
 
