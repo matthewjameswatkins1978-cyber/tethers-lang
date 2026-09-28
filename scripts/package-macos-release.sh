@@ -180,7 +180,7 @@ for req in README.md consumer.py smoke.py fixture-ping.json; do
 done
 
 # Per-file hashes inside the stage.
-(cd "$package_dir" && find . -type f | sort | while IFS= read -r file; do
+(cd "$package_dir" && find . -type f | LC_ALL=C sort | while IFS= read -r file; do
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum "$file"
     else
@@ -188,10 +188,47 @@ done
     fi
 done > SHA256SUMS)
 
-# Package archive using tar -czf.
-(cd "$stage_dir" && tar -czf "$archive" "$package_name")
+# Deterministic tar.gz (RSK-03). Controls, matching the Linux packager's
+# guarantees with bsdtar-compatible flags:
+#   - clamped mtimes (touch) so build time never reaches member headers;
+#   - sorted file-only entry list (LC_ALL=C byte order, no directory members);
+#   - pinned numeric ownership (uid/gid 0, root/root names);
+#   - COPYFILE_DISABLE=1 plus --no-mac-metadata where supported, so no
+#     AppleDouble (._*) entries or extended attributes leak into the archive;
+#   - gzip -n so the gzip header carries no timestamp or name.
+# A second archive is then built from the same unchanged staging input and
+# must be byte-identical; the check hash is never published as an artifact.
+mac_metadata_flag=()
+if tar --help 2>&1 | grep -q -- '--no-mac-metadata'; then
+    mac_metadata_flag=(--no-mac-metadata)
+fi
 
+(cd "$stage_dir" && find "$package_name" -exec touch -h -t 202601010000.00 {} +)
+
+build_archive() {
+    local output="$1"
+    (
+        cd "$stage_dir"
+        find "$package_name" -type f | LC_ALL=C sort > .archive-filelist
+        COPYFILE_DISABLE=1 tar ${mac_metadata_flag[@]+"${mac_metadata_flag[@]}"} -n \
+            --uid 0 --gid 0 --uname root --gname root \
+            -cf - -T .archive-filelist | gzip -n > "$output"
+        rm -f .archive-filelist
+    )
+}
+
+build_archive "$archive"
+reproducibility_check="$dist_dir/.$package_name.reproducibility-check.tar.gz"
+build_archive "$reproducibility_check"
 archive_hash=$(compute_sha256 "$archive")
+reproducibility_hash=$(compute_sha256 "$reproducibility_check")
+rm -f "$reproducibility_check"
+if [[ "$archive_hash" != "$reproducibility_hash" ]]; then
+    printf 'REPRODUCIBILITY FAILED\n  first : %s\n  second: %s\n' "$archive_hash" "$reproducibility_hash" >&2
+    fail 'Two archives built from the same unchanged staging input differ; packaging is not deterministic.'
+fi
+printf 'Reproducibility: two builds from identical staging input match (%s)\n' "$archive_hash"
+
 tethers_hash=$(compute_sha256 "$package_dir/bin/tethers")
 engine_hash=$(compute_sha256 "$package_dir/bin/tethers-engine")
 

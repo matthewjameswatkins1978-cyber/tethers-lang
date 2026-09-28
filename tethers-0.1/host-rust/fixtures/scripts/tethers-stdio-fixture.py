@@ -241,7 +241,11 @@ def member_token(message):
     return "%d-%s" % (os.getpid(), os.urandom(8).hex())
 
 
-def wait_for(predicate, timeout_seconds=10):
+def wait_for(predicate, timeout_seconds=60):
+    # Coordination budget for barrier sequencing only. Host-side call timeouts
+    # are separate (manifest timeout_ms). 60s keeps slow hosted runners
+    # (e.g. macOS Intel) inside the harness's own 15s polling phases while
+    # remaining bounded; this is never an indefinite wait.
     deadline = time.monotonic() + timeout_seconds
     while not predicate():
         if time.monotonic() > deadline:
