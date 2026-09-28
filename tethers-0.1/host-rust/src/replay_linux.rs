@@ -481,15 +481,16 @@ fn open_file_at(
     let cname = CString::new(name.as_bytes())
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "interior NUL"))?;
     // SAFETY: parent.fd() is live; cname is NUL-terminated; O_NOFOLLOW and
-    // O_CLOEXEC are always added; mode applies only with O_CREAT; a
-    // successful openat returns an owned descriptor transferred into a File
-    // exactly once.
+    // O_CLOEXEC are always added; mode applies only with O_CREAT and is
+    // widened to c_uint because Darwin's mode_t is u16 and variadic
+    // arguments must not be narrower than c_int; a successful openat
+    // returns an owned descriptor transferred into a File exactly once.
     let fd = unsafe {
         libc::openat(
             parent.fd(),
             cname.as_ptr(),
             flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            mode,
+            mode as libc::c_uint,
         )
     };
     if fd < 0 {
@@ -594,6 +595,12 @@ fn names_at(dir: &TrustedDir) -> Result<Vec<String>, ReplayError> {
             &error,
         );
     }
+    // The duplicate SHARES the directory offset with the retained descriptor,
+    // and earlier enumerations may have consumed the stream to EOF. Rewind so
+    // every scan reads the directory from the beginning. (The retained
+    // descriptor is only used for openat/fstatat, which ignore the offset.)
+    // SAFETY: the DIR handle is exclusively owned by this function.
+    unsafe { libc::rewinddir(handle) };
     let mut names = Vec::new();
     loop {
         reset_errno();
@@ -822,6 +829,7 @@ fn publish_new(dir: &TrustedDir, stem: &str, bytes: &[u8]) -> Result<(), ReplayE
         );
     }
     persistence_fault(UnixPersistenceFaultPoint::AfterPublication)?;
+    persistence_fault(UnixPersistenceFaultPoint::BeforeDirectorySync)?;
     sync_dir(dir)?;
     persistence_fault(UnixPersistenceFaultPoint::BeforeTemporaryCleanup)?;
 
