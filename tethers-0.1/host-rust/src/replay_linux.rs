@@ -102,6 +102,7 @@ const RECOVERY_PERMISSIONS: &str =
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // DuringPartialWrite is armed only from cfg(test) code.
 enum UnixPersistenceFaultPoint {
     BeforeTemporaryCreate,
     AfterTemporaryCreate,
@@ -602,7 +603,8 @@ fn names_at(dir: &TrustedDir) -> Result<Vec<String>, ReplayError> {
         let entry = unsafe { libc::readdir(handle) };
         if entry.is_null() {
             let errno = std::io::Error::last_os_error();
-            // SAFETY: closedir on the exclusively owned handle.
+            // SAFETY: closedir on the exclusively owned handle; this is the
+            // only close on every exit path (exactly-once ownership).
             unsafe { libc::closedir(handle) };
             if errno.raw_os_error() != Some(0) {
                 return io_fail(
@@ -612,7 +614,8 @@ fn names_at(dir: &TrustedDir) -> Result<Vec<String>, ReplayError> {
                     &errno,
                 );
             }
-            break;
+            names.sort();
+            return Ok(names);
         }
         // SAFETY: d_name is a NUL-terminated C string inside a valid entry.
         let name = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) };
@@ -622,10 +625,6 @@ fn names_at(dir: &TrustedDir) -> Result<Vec<String>, ReplayError> {
         }
         names.push(text);
     }
-    // SAFETY: closedir on the exclusively owned handle after a clean scan.
-    unsafe { libc::closedir(handle) };
-    names.sort();
-    Ok(names)
 }
 
 /// Verify that a recognised staging-residue name is a trusted regular file.
@@ -1087,6 +1086,14 @@ pub struct ReplayLedger {
     locks: TrustedDir,
     claims: TrustedDir,
     chains: TrustedDir,
+}
+
+impl std::fmt::Debug for ReplayLedger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReplayLedger")
+            .field("root", &self.root.path)
+            .finish()
+    }
 }
 
 fn read_claim_at(claims: &TrustedDir, key: &LogicalExecutionKey) -> Result<Claim, ReplayError> {
@@ -2171,7 +2178,7 @@ mod tests {
         {
             // Recovery across restart: the abandoned claim blocks execution.
             let ledger = Rc::new(ReplayLedger::open(&root).unwrap());
-            let recovered =
+            let mut recovered =
                 ReplayLedger::admit_or_recover_owned(&ledger, key.clone(), binding()).unwrap();
             assert!(!recovered.is_fresh());
             assert_eq!(recovered.state(), ReplayState::ClaimedNoState);
