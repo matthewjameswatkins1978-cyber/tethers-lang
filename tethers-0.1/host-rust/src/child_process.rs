@@ -2155,7 +2155,7 @@ mod unix_tests {
         std::env::set_var("TETHERS_SUPERVISOR_WATCHDOG_EXE", &exe);
         std::env::set_var(
             "TETHERS_SUPERVISOR_WATCHDOG_ARG",
-            "child_process::tests::unix_watchdog_process_entry",
+            "child_process::unix_tests::unix_watchdog_process_entry",
         );
         std::env::set_var("TETHERS_WATCHDOG_ENTRY", "1");
 
@@ -2216,7 +2216,7 @@ mod unix_tests {
             let exe = std::env::current_exe().unwrap();
             let mut driver = Command::new(&exe);
             driver
-                .arg("child_process::tests::unix_watchdog_host_death_driver")
+                .arg("child_process::unix_tests::unix_watchdog_host_death_driver")
                 .arg("--exact")
                 .arg("--nocapture")
                 .arg("--test-threads=1")
@@ -2227,7 +2227,7 @@ mod unix_tests {
                 .env("TETHERS_SUPERVISOR_WATCHDOG_EXE", &exe)
                 .env(
                     "TETHERS_SUPERVISOR_WATCHDOG_ARG",
-                    "child_process::tests::unix_watchdog_process_entry",
+                    "child_process::unix_tests::unix_watchdog_process_entry",
                 )
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
