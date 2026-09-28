@@ -1007,7 +1007,7 @@ pub fn provision_replay(root_path: &Path) -> Result<ProvisionReplayOutcome, Repl
                 );
             }
             if !stat_is_trusted(&stat, true) {
-                return trust_violation(root.path().join("replay"));
+                return trust_violation(&root.path().join("replay"));
             }
             validate_hierarchy_at(&root)?;
             ReplayLedger::open_with_root(root)?;
@@ -1132,7 +1132,7 @@ impl ReplayLedger {
             }
             match stat_at(&hierarchy.locks, &name) {
                 StatAtOutcome::Entry(stat) if stat_is_trusted(&stat, false) => {}
-                _ => return trust_violation(hierarchy.locks.path().join(&name)),
+                _ => return trust_violation(&hierarchy.locks.path().join(&name)),
             }
         }
         let mut claims_by_execution = HashMap::new();
