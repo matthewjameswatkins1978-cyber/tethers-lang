@@ -638,10 +638,18 @@ pub struct CommitBundlePayload {
 
 /// Parse a `commit_bundle` payload. Only ever called for `/2` frames; the
 /// frame layer already refused this operation on `/1`.
-pub fn parse_commit_bundle_payload(payload: &Map<String, Value>) -> Result<CommitBundlePayload, FrameError> {
-    let ids = payload.get("prepared_ids").ok_or(FrameError::MissingField("prepared_ids"))?;
-    let ids = ids.as_array().ok_or(FrameError::WrongType { field: "prepared_ids" })?;
-    if ids.len() < crate::bundle::MIN_BUNDLE_MEMBERS || ids.len() > crate::bundle::MAX_BUNDLE_MEMBERS {
+pub fn parse_commit_bundle_payload(
+    payload: &Map<String, Value>,
+) -> Result<CommitBundlePayload, FrameError> {
+    let ids = payload
+        .get("prepared_ids")
+        .ok_or(FrameError::MissingField("prepared_ids"))?;
+    let ids = ids.as_array().ok_or(FrameError::WrongType {
+        field: "prepared_ids",
+    })?;
+    if ids.len() < crate::bundle::MIN_BUNDLE_MEMBERS
+        || ids.len() > crate::bundle::MAX_BUNDLE_MEMBERS
+    {
         return Err(FrameError::PayloadInvalid {
             code: "commit_bundle.member_count",
             message: format!(
@@ -653,7 +661,9 @@ pub fn parse_commit_bundle_payload(payload: &Map<String, Value>) -> Result<Commi
     }
     let mut prepared_ids = Vec::with_capacity(ids.len());
     for id in ids {
-        let id = id.as_str().ok_or(FrameError::WrongType { field: "prepared_ids" })?;
+        let id = id.as_str().ok_or(FrameError::WrongType {
+            field: "prepared_ids",
+        })?;
         if id.is_empty() {
             return Err(FrameError::PayloadInvalid {
                 code: "frame.empty_field",
@@ -676,9 +686,13 @@ pub fn parse_commit_bundle_payload(payload: &Map<String, Value>) -> Result<Commi
     }
     let mut approvals = std::collections::HashMap::new();
     if let Some(value) = payload.get("approvals") {
-        let object = value.as_object().ok_or(FrameError::WrongType { field: "approvals" })?;
+        let object = value
+            .as_object()
+            .ok_or(FrameError::WrongType { field: "approvals" })?;
         for (key, approval) in object {
-            let approval = approval.as_str().ok_or(FrameError::WrongType { field: "approvals" })?;
+            let approval = approval
+                .as_str()
+                .ok_or(FrameError::WrongType { field: "approvals" })?;
             if approval.is_empty() {
                 return Err(FrameError::PayloadInvalid {
                     code: "commit.invalid_approval",
@@ -697,7 +711,11 @@ pub fn parse_commit_bundle_payload(payload: &Map<String, Value>) -> Result<Commi
         }
     }
     let observations = Observations::parse(payload)?;
-    Ok(CommitBundlePayload { prepared_ids, approvals, observations })
+    Ok(CommitBundlePayload {
+        prepared_ids,
+        approvals,
+        observations,
+    })
 }
 
 pub fn parse_outcome_payload(payload: &Map<String, Value>) -> Result<OutcomePayload, FrameError> {
@@ -726,7 +744,8 @@ pub fn parse_outcome_payload_for(
     ) {
         return Err(FrameError::PayloadInvalid {
             code: "outcome.invalid_classification",
-            message: "classification must be succeeded, failed, uncertain, or not_attempted".to_owned(),
+            message: "classification must be succeeded, failed, uncertain, or not_attempted"
+                .to_owned(),
         });
     }
     let attempted = match payload.get("attempted") {
@@ -1024,18 +1043,14 @@ mod tests {
             parse_frame(&frame_v2(OP_COMMIT_BUNDLE, r#"{"prepared_ids":["a","b"]}"#)).unwrap();
         assert_eq!(request.schema, AUTHORITY_PROTOCOL_V2);
         assert_eq!(request.operation, OP_COMMIT_BUNDLE);
-        let error = parse_frame(&frame(OP_COMMIT_BUNDLE, r#"{"prepared_ids":["a","b"]}"#))
-            .unwrap_err();
+        let error =
+            parse_frame(&frame(OP_COMMIT_BUNDLE, r#"{"prepared_ids":["a","b"]}"#)).unwrap_err();
         assert_eq!(error.code(), "frame.unknown_operation");
     }
 
     #[test]
     fn v2_responses_carry_the_v2_schema() {
-        let ok = AuthorityResponse::ok_in(
-            AUTHORITY_PROTOCOL_V2,
-            "r1",
-            serde_json::json!({}),
-        );
+        let ok = AuthorityResponse::ok_in(AUTHORITY_PROTOCOL_V2, "r1", serde_json::json!({}));
         assert!(ok.to_json_line().contains("tethers.authority/2"));
         let err = AuthorityResponse::error_in(AUTHORITY_PROTOCOL_V2, "r2", "boom", "failed");
         assert!(err.to_json_line().contains("tethers.authority/2"));
@@ -1058,7 +1073,10 @@ mod tests {
         let request = parse_frame(&line).unwrap();
         let parsed = parse_commit_bundle_payload(&request.payload).unwrap();
         assert_eq!(parsed.prepared_ids, vec!["a", "b"]);
-        assert_eq!(parsed.approvals.get("a").map(String::as_str), Some("approval-1"));
+        assert_eq!(
+            parsed.approvals.get("a").map(String::as_str),
+            Some("approval-1")
+        );
     }
 
     #[test]

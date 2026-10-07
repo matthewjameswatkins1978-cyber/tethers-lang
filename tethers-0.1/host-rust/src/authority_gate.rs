@@ -10,14 +10,12 @@
 //! A previous admission is never a reusable permission slip.
 
 use crate::approval::{self, ApprovalState, ApprovalStore};
-use crate::bundle::{
-    BundleFailPoint, BundleLedger, BundleMember, BundleRecord, BUNDLE_FORMAT,
-};
+use crate::bundle::{BundleFailPoint, BundleLedger, BundleMember, BundleRecord, BUNDLE_FORMAT};
 use crate::configured_runtime::{prepare_runtime, PreparedRuntime};
 use crate::dispatch::{self, ActionId, ExecutionId, FileTrail, Trail};
 use crate::gate_protocol::{
-    AuthorityResponse, Observations, PreparePayload, AUTHORITY_PROTOCOL,
-    AUTHORITY_PROTOCOL_V2, MAX_STATUS_ENTRIES, OP_COMMIT_BUNDLE,
+    AuthorityResponse, Observations, PreparePayload, AUTHORITY_PROTOCOL, AUTHORITY_PROTOCOL_V2,
+    MAX_STATUS_ENTRIES,
 };
 use crate::host_execution::{HostExecutionService, PlanResult, PreparedEvaluationInput};
 use crate::policy::{self, PermissionDecision, PolicyReason, ProposedAction};
@@ -885,11 +883,16 @@ impl AuthorityGate {
 
     fn op_commit_bundle(&mut self, payload: &Map<String, Value>) -> Result<Value, GateError> {
         use crate::bundle::code as bcode;
-        let parsed = crate::gate_protocol::parse_commit_bundle_payload(payload)
-            .map_err(frame_err)?;
+        let parsed =
+            crate::gate_protocol::parse_commit_bundle_payload(payload).map_err(frame_err)?;
 
-        // -- Phase 0: collect prepared members; refuse unknown, committed,
-        //    or already-bundled identities before touching authority state. --
+        // -- Phase 0: collect prepared members; refuse unknown or
+        //    already-committed identities before touching authority state.
+        //    Bundle-membership collisions are decided in Phase 2, after the
+        //    bundle identity is derived: members of this same unfinished
+        //    bundle are the identical retry and must resume, while members
+        //    of any other bundle (or a committed one) refuse the whole
+        //    bundle with zero mutation. --
         struct MemberCtx {
             prepared_id: String,
             action: policy::ProposedAction,
@@ -910,22 +913,6 @@ impl AuthorityGate {
                     bcode::ALREADY_COMMITTED,
                     "this prepared identity was already committed",
                 ));
-            }
-            match bundle_ledger.find_member_bundle(prepared_id) {
-                Ok(Some(bundle_id)) => {
-                    return Err(GateError::with_data(
-                        bcode::BUNDLE_MEMBER,
-                        "this prepared identity is already a member of an atomic bundle",
-                        json!({ "bundle_id": bundle_id }),
-                    ));
-                }
-                Ok(None) => {}
-                Err(_) => {
-                    return Err(GateError::new(
-                        bcode::UNAVAILABLE,
-                        "bundle ledger is unavailable",
-                    ));
-                }
             }
             members.push(MemberCtx {
                 prepared_id: prepared_id.clone(),
@@ -949,9 +936,9 @@ impl AuthorityGate {
         // -- Phase 1: fresh authority truth for every member. No durable
         //    mutation here except approval-audit invalidation entries, which
         //    carry no dispatch authority. --
-        let runtime = self.load_runtime().map_err(|_| {
-            GateError::new(bcode::UNAVAILABLE, "authority state is unavailable")
-        })?;
+        let runtime = self
+            .load_runtime()
+            .map_err(|_| GateError::new(bcode::UNAVAILABLE, "authority state is unavailable"))?;
         let config_digest = digest_config(&self.config.config_path)?;
         let mut trail = self.open_trail()?;
         struct ValidatedMember {
@@ -998,7 +985,10 @@ impl AuthorityGate {
                                 &availability,
                                 &ctx.action.capability_name,
                                 ctx.action.bridge_capability_version.ok_or_else(|| {
-                                    GateError::new(bcode::MISSING_PIN, "bridge capability version is required")
+                                    GateError::new(
+                                        bcode::MISSING_PIN,
+                                        "bridge capability version is required",
+                                    )
                                 })?,
                                 ctx.action.bridge_provider_identity.as_deref(),
                             )
@@ -1011,7 +1001,9 @@ impl AuthorityGate {
                             approval_consume = Some((approval_id.clone(), proof));
                             policy::allow_after_exact_approval(&resolved)
                         }
-                        Ok(crate::application::ExactApprovalPrecheck::NotDispatchable(decision)) => {
+                        Ok(crate::application::ExactApprovalPrecheck::NotDispatchable(
+                            decision,
+                        )) => {
                             return Err(match decision {
                                 PermissionDecision::Ask => GateError::new(
                                     bcode::APPROVAL_NOT_READY,
@@ -1042,13 +1034,19 @@ impl AuthorityGate {
                 PermissionDecision::Deny => {
                     return Err(GateError::new(
                         bcode::DENY,
-                        format!("current authority denies: {}", reason_code(&evaluation.reason)),
+                        format!(
+                            "current authority denies: {}",
+                            reason_code(&evaluation.reason)
+                        ),
                     ));
                 }
                 PermissionDecision::Unavailable => {
                     return Err(GateError::new(
                         bcode::UNAVAILABLE,
-                        format!("current authority unavailable: {}", reason_code(&evaluation.reason)),
+                        format!(
+                            "current authority unavailable: {}",
+                            reason_code(&evaluation.reason)
+                        ),
                     ));
                 }
             };
@@ -1062,10 +1060,16 @@ impl AuthorityGate {
                 ctx.action.bridge_provider_identity.as_deref(),
             )
             .map_err(|error| {
-                GateError::new(bcode::UNAVAILABLE, format!("capability resolution failed: {error:?}"))
+                GateError::new(
+                    bcode::UNAVAILABLE,
+                    format!("capability resolution failed: {error:?}"),
+                )
             })?;
             let PermissionDecision::Allow(allowed) = &decision else {
-                return Err(GateError::new(bcode::DENY, "commit did not receive an allow decision"));
+                return Err(GateError::new(
+                    bcode::DENY,
+                    "commit did not receive an allow decision",
+                ));
             };
             if allowed.capability_name() != resolved.capability_name()
                 || allowed.capability_version() != resolved.capability_version()
@@ -1076,9 +1080,21 @@ impl AuthorityGate {
                 ));
             }
             let composition = crate::bundle::extract_composition_digest(&ctx.action.arguments)
-                .map_err(|(code, message)| GateError::new(code, message))?;
+                .map_err(|(code, message)| {
+                    let code: &'static str = if code == crate::bundle::code::COMPOSITION_MISSING {
+                        crate::bundle::code::COMPOSITION_MISSING
+                    } else {
+                        crate::bundle::code::COMPOSITION_INVALID
+                    };
+                    GateError::new(code, message)
+                })?;
             compositions.push(composition);
-            validated.push(ValidatedMember { ctx, decision, resolved, approval_consume });
+            validated.push(ValidatedMember {
+                ctx,
+                decision,
+                resolved,
+                approval_consume,
+            });
         }
         let composition_digest = compositions
             .first()
@@ -1112,13 +1128,12 @@ impl AuthorityGate {
             .collect();
         let bundle_id =
             crate::bundle::derive_bundle_id(&bundle_members, &composition_digest, &config_digest);
-        let committing = bundle_ledger
-            .read_committing(&bundle_id)
-            .map_err(|_| GateError::new(bcode::LEDGER_UNAVAILABLE, "bundle ledger is unavailable"))?;
-        if bundle_ledger
-            .is_committed(&bundle_id)
-            .map_err(|_| GateError::new(bcode::LEDGER_UNAVAILABLE, "bundle ledger is unavailable"))?
-        {
+        let committing = bundle_ledger.read_committing(&bundle_id).map_err(|_| {
+            GateError::new(bcode::LEDGER_UNAVAILABLE, "bundle ledger is unavailable")
+        })?;
+        if bundle_ledger.is_committed(&bundle_id).map_err(|_| {
+            GateError::new(bcode::LEDGER_UNAVAILABLE, "bundle ledger is unavailable")
+        })? {
             return Err(GateError::with_data(
                 bcode::REPLAY_BLOCKED,
                 "this bundle was already committed",
@@ -1132,8 +1147,15 @@ impl AuthorityGate {
             Some(record) => {
                 let same = record.composition_digest == composition_digest
                     && record.config_digest == config_digest
-                    && record.members.iter().map(|m| m.prepared_id.as_str()).collect::<Vec<_>>()
-                        == bundle_members.iter().map(|m| m.prepared_id.as_str()).collect::<Vec<_>>();
+                    && record
+                        .members
+                        .iter()
+                        .map(|m| m.prepared_id.as_str())
+                        .collect::<Vec<_>>()
+                        == bundle_members
+                            .iter()
+                            .map(|m| m.prepared_id.as_str())
+                            .collect::<Vec<_>>();
                 if !same {
                     return Err(GateError::new(
                         bcode::LEDGER_UNAVAILABLE,
@@ -1144,9 +1166,34 @@ impl AuthorityGate {
             }
             None => false,
         };
+        // Member-collision scan: a member already owned by a *different*
+        // bundle (committing or committed) blocks the whole bundle with
+        // zero mutation. Members of this same unfinished bundle are the
+        // identical retry and resume below.
+        for member in &bundle_members {
+            match bundle_ledger.find_member_bundle(&member.prepared_id) {
+                Ok(Some(owner)) if owner == bundle_id && is_retry => {}
+                Ok(Some(owner)) => {
+                    return Err(GateError::with_data(
+                        bcode::BUNDLE_MEMBER,
+                        "this prepared identity is already a member of an atomic bundle",
+                        json!({ "bundle_id": owner }),
+                    ));
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    return Err(GateError::new(
+                        bcode::UNAVAILABLE,
+                        "bundle ledger is unavailable",
+                    ));
+                }
+            }
+        }
         // Read-only durable claim inspection per member.
         let replay_ledger = crate::replay_store::ReplayLedger::open(&self.config.host_data_root)
-            .map_err(|_| GateError::new(bcode::REPLAY_UNAVAILABLE, "durable replay is unavailable"))?;
+            .map_err(|_| {
+                GateError::new(bcode::REPLAY_UNAVAILABLE, "durable replay is unavailable")
+            })?;
         let durable_claims = replay_ledger.inspect_durable().map_err(|_| {
             GateError::new(bcode::REPLAY_UNAVAILABLE, "durable replay is unavailable")
         })?;
@@ -1180,7 +1227,10 @@ impl AuthorityGate {
                 if !(is_retry && matches) {
                     return Err(GateError::with_data(
                         bcode::REPLAY_BLOCKED,
-                        format!("replay refused a second admission: {}", replay::ReplayState::as_blocked_str(claim.state)),
+                        format!(
+                            "replay refused a second admission: {}",
+                            replay::ReplayState::as_blocked_str(claim.state)
+                        ),
                         json!({
                             "replay": replay::ReplayState::as_blocked_str(claim.state),
                             "execution_id": claim.execution_id,
@@ -1201,17 +1251,26 @@ impl AuthorityGate {
             members: bundle_members.clone(),
         };
         if !is_retry {
-            bundle_ledger.write_committing(&committing_record).map_err(|e| {
-                GateError::new(bcode::LEDGER_UNAVAILABLE, format!("bundle ledger failed: {e}"))
-            })?;
+            bundle_ledger
+                .write_committing(&committing_record)
+                .map_err(|e| {
+                    GateError::new(
+                        bcode::LEDGER_UNAVAILABLE,
+                        format!("bundle ledger failed: {e}"),
+                    )
+                })?;
         }
         if self.bundle_fail_point == Some(BundleFailPoint::AfterBundleIntent) {
-            return Err(GateError::new(bcode::CRASH_SIMULATED, "simulated crash after bundle intent"));
+            return Err(GateError::new(
+                bcode::CRASH_SIMULATED,
+                "simulated crash after bundle intent",
+            ));
         }
 
         // Admit every member (fresh claim, or recovered identical claim).
         let replay_authority = FileReplayAuthority::new(Some(&self.config.host_data_root));
-        let mut admissions: Vec<Box<dyn ReplayAdmissionGuard>> = Vec::with_capacity(validated.len());
+        let mut admissions: Vec<Box<dyn ReplayAdmissionGuard>> =
+            Vec::with_capacity(validated.len());
         let mut execution_ids = Vec::with_capacity(validated.len());
         for (index, v) in validated.iter().enumerate() {
             let member = &bundle_members[index];
@@ -1231,16 +1290,19 @@ impl AuthorityGate {
                 argument_digest: member.argument_digest.clone(),
                 bundle_id: Some(bundle_id.clone()),
             };
-            let admission = replay_authority.admit(&logical_key, &binding).map_err(|error| {
-                match error {
+            let admission = replay_authority
+                .admit(&logical_key, &binding)
+                .map_err(|error| match error {
                     replay::ReplayError::BindingMismatch => GateError::with_data(
                         bcode::REPLAY_BLOCKED,
                         "replay binding disagrees with bundle material",
                         json!({ "replay": "replay_requires_manual_resolution" }),
                     ),
-                    _ => GateError::new(bcode::REPLAY_UNAVAILABLE, "durable replay admission is unavailable"),
-                }
-            })?;
+                    _ => GateError::new(
+                        bcode::REPLAY_UNAVAILABLE,
+                        "durable replay admission is unavailable",
+                    ),
+                })?;
             if !admission.is_fresh() && !is_retry {
                 // Defensive: the read-only precheck above refuses every
                 // non-retry second admission, so this is unreachable in a
@@ -1277,13 +1339,17 @@ impl AuthorityGate {
             // are append-only evidence, and reconciliation collapses
             // identical intents by execution identity.
             let state = admission.state();
-            if state == replay::ReplayState::ClaimedNoState {
-                if admission.publish_intent().is_err() {
-                    return Err(GateError::new(bcode::INTENT_FAILED, "durable replay intent could not be recorded"));
-                }
+            if state == replay::ReplayState::ClaimedNoState && admission.publish_intent().is_err() {
+                return Err(GateError::new(
+                    bcode::INTENT_FAILED,
+                    "durable replay intent could not be recorded",
+                ));
             }
             if self.bundle_fail_point == Some(BundleFailPoint::AfterMemberIntent(index)) {
-                return Err(GateError::new(bcode::CRASH_SIMULATED, "simulated crash after member intent"));
+                return Err(GateError::new(
+                    bcode::CRASH_SIMULATED,
+                    "simulated crash after member intent",
+                ));
             }
             let ready = dispatch::prepare_and_record_bundled(
                 v.decision.clone(),
@@ -1296,17 +1362,26 @@ impl AuthorityGate {
                 &bundle_id,
             )
             .map_err(|error| {
-                GateError::new(bcode::INTENT_FAILED, format!("durable trail intent failed: {error:?}"))
+                GateError::new(
+                    bcode::INTENT_FAILED,
+                    format!("durable trail intent failed: {error:?}"),
+                )
             })?;
-            if admission.state() == replay::ReplayState::IntentRecorded {
-                if admission.publish_armed().is_err() {
-                    drop(ready);
-                    return Err(GateError::new(bcode::ARMED_FAILED, "replay could not mark the execution armed"));
-                }
+            if admission.state() == replay::ReplayState::IntentRecorded
+                && admission.publish_armed().is_err()
+            {
+                drop(ready);
+                return Err(GateError::new(
+                    bcode::ARMED_FAILED,
+                    "replay could not mark the execution armed",
+                ));
             }
             if self.bundle_fail_point == Some(BundleFailPoint::AfterMemberArmed(index)) {
                 drop(ready);
-                return Err(GateError::new(bcode::CRASH_SIMULATED, "simulated crash after member armed"));
+                return Err(GateError::new(
+                    bcode::CRASH_SIMULATED,
+                    "simulated crash after member armed",
+                ));
             }
             readies.push(ready);
         }
@@ -1342,7 +1417,10 @@ impl AuthorityGate {
             }
         }
         if self.bundle_fail_point == Some(BundleFailPoint::AfterApprovalConsume) {
-            return Err(GateError::new(bcode::CRASH_SIMULATED, "simulated crash after approval consume"));
+            return Err(GateError::new(
+                bcode::CRASH_SIMULATED,
+                "simulated crash after approval consume",
+            ));
         }
 
         // The committed marker is the dispatchability boundary.
@@ -1350,7 +1428,10 @@ impl AuthorityGate {
             bundle_members[index].execution_id = Some(execution_id.clone());
         }
         if self.bundle_fail_point == Some(BundleFailPoint::BeforeCommittedMarker) {
-            return Err(GateError::new(bcode::CRASH_SIMULATED, "simulated crash before committed marker"));
+            return Err(GateError::new(
+                bcode::CRASH_SIMULATED,
+                "simulated crash before committed marker",
+            ));
         }
         let committed_record = BundleRecord {
             format: BUNDLE_FORMAT.to_owned(),
@@ -1359,9 +1440,14 @@ impl AuthorityGate {
             config_digest,
             members: bundle_members.clone(),
         };
-        bundle_ledger.write_committed(&committed_record).map_err(|e| {
-            GateError::new(bcode::LEDGER_UNAVAILABLE, format!("bundle ledger failed: {e}"))
-        })?;
+        bundle_ledger
+            .write_committed(&committed_record)
+            .map_err(|e| {
+                GateError::new(
+                    bcode::LEDGER_UNAVAILABLE,
+                    format!("bundle ledger failed: {e}"),
+                )
+            })?;
 
         // Publish the bundle dispatch record and hold every guard.
         let mut member_records = Vec::with_capacity(validated.len());
@@ -1423,7 +1509,11 @@ impl AuthorityGate {
     // OUTCOME — Host physical observation bound to one committed execution.
     // -----------------------------------------------------------------------
 
-    fn op_outcome(&mut self, schema: &str, payload: &Map<String, Value>) -> Result<Value, GateError> {
+    fn op_outcome(
+        &mut self,
+        schema: &str,
+        payload: &Map<String, Value>,
+    ) -> Result<Value, GateError> {
         let v2 = crate::gate_protocol::is_authority_v2(schema);
         let outcome =
             crate::gate_protocol::parse_outcome_payload_for(payload, v2).map_err(frame_err)?;
@@ -1999,6 +2089,15 @@ impl AuthorityGate {
             .flat_map(|summary| summary.members.iter())
             .filter_map(|member| member.execution_id.clone())
             .collect();
+        // Bundle identities stuck in the committing (unfinished) state.
+        // Trail intents carry the same identity, so crashed-bundle members
+        // route to bundle_awaiting_commit even when the committing record
+        // predates recovered execution identities.
+        let committing_bundles: std::collections::HashSet<String> = bundle_summaries
+            .iter()
+            .filter(|summary| summary.state == "committing")
+            .map(|summary| summary.bundle_id.clone())
+            .collect();
         let mut bundle_awaiting = Vec::new();
         for (execution_id, intent) in &view.intents {
             let evaluation_id = view
@@ -2035,7 +2134,15 @@ impl AuthorityGate {
                 } else {
                     truncated = true;
                 }
-            } else if committing_executions.contains(execution_id) {
+            } else if intent
+                .bundle_id
+                .as_deref()
+                .is_some_and(|id| committing_bundles.contains(id))
+                || committing_executions.contains(execution_id)
+            {
+                // Members of ledger-committing bundles await bundle
+                // completion; they are not individually dispatchable and
+                // stay out of unresolved_commits on every protocol version.
                 if bundle_awaiting.len() < MAX_STATUS_ENTRIES {
                     bundle_awaiting.push(json!({
                         "execution_id": execution_id,

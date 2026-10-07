@@ -182,8 +182,7 @@ pub fn derive_bundle_id(
         "composition_digest": composition_digest,
         "config_digest": config_digest,
     });
-    let bytes =
-        serde_json_canonicalizer::to_vec(&material).expect("canonical bundle material");
+    let bytes = serde_json_canonicalizer::to_vec(&material).expect("canonical bundle material");
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     format!("bundle_{:x}", hasher.finalize())
@@ -250,17 +249,26 @@ impl BundleLedger {
         let tmp_path = self.dir.join(&tmp_name);
         let final_path = self.dir.join(name);
         let result = (|| -> Result<(), String> {
-            std::fs::write(&tmp_path, bytes)
-                .map_err(|e| format!("bundle ledger write failed: {e}"))?;
-            let file =
-                std::fs::File::open(&tmp_path).map_err(|e| format!("bundle ledger reopen failed: {e}"))?;
-            file.sync_all()
-                .map_err(|e| format!("bundle ledger sync failed: {e}"))?;
-            drop(file);
+            // Write + sync through one write handle: on Windows a
+            // read-only reopen cannot FlushFileBuffers (os error 5), so
+            // the sync must happen on the writing handle before close.
+            // `create_new` keeps publication create-new atomic.
+            {
+                use std::io::Write;
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&tmp_path)
+                    .map_err(|e| format!("bundle ledger write failed: {e}"))?;
+                file.write_all(bytes)
+                    .map_err(|e| format!("bundle ledger write failed: {e}"))?;
+                file.sync_all()
+                    .map_err(|e| format!("bundle ledger sync failed: {e}"))?;
+            }
             std::fs::rename(&tmp_path, &final_path)
                 .map_err(|e| format!("bundle ledger publish failed: {e}"))?;
-            let back =
-                std::fs::read(&final_path).map_err(|e| format!("bundle ledger verify failed: {e}"))?;
+            let back = std::fs::read(&final_path)
+                .map_err(|e| format!("bundle ledger verify failed: {e}"))?;
             if back != bytes {
                 return Err("bundle ledger published bytes do not verify".to_owned());
             }
@@ -280,8 +288,8 @@ impl BundleLedger {
         if bytes.len() as u64 > MAX_BUNDLE_FILE_BYTES {
             return Err("bundle record exceeds size bound".to_owned());
         }
-        let record: BundleRecord = serde_json::from_slice(&bytes)
-            .map_err(|e| format!("bundle record malformed: {e}"))?;
+        let record: BundleRecord =
+            serde_json::from_slice(&bytes).map_err(|e| format!("bundle record malformed: {e}"))?;
         if record.format != BUNDLE_FORMAT {
             return Err("bundle record format mismatch".to_owned());
         }
@@ -408,13 +416,10 @@ mod tests {
             event_id: "evt-1".to_owned(),
             capability_name: "process.execute".to_owned(),
             capability_version: 2,
-            manifest_digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                .to_owned(),
+            manifest_digest:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             provider_identity: "tethers-agent-coding".to_owned(),
-            argument_digest: format!(
-                "sha256:{:0<64}",
-                prepared.trim_start_matches("prep_")
-            ),
+            argument_digest: format!("sha256:{:0<64}", prepared.trim_start_matches("prep_")),
             execution_id: None,
             approval_consumed: false,
         }
@@ -450,7 +455,8 @@ mod tests {
 
     #[test]
     fn ledger_round_trip_and_member_lookup() {
-        let dir = std::env::temp_dir().join(format!("tethers-bundle-{}", uuid::Uuid::new_v4().simple()));
+        let dir =
+            std::env::temp_dir().join(format!("tethers-bundle-{}", uuid::Uuid::new_v4().simple()));
         let ledger = BundleLedger::new(&dir);
         let members = vec![member("prep_a", "a1"), member("prep_b", "a2")];
         let bundle_id = derive_bundle_id(&members, "comp", "cfg");
@@ -464,7 +470,11 @@ mod tests {
         ledger.write_committing(&record).unwrap();
         assert!(!ledger.is_committed(&bundle_id).unwrap());
         assert_eq!(
-            ledger.read_committing(&bundle_id).unwrap().unwrap().bundle_id,
+            ledger
+                .read_committing(&bundle_id)
+                .unwrap()
+                .unwrap()
+                .bundle_id,
             bundle_id
         );
         assert_eq!(

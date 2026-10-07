@@ -831,9 +831,7 @@ pub fn process_execute(scope: &CodingScope, arguments: &Value) -> Result<Value> 
 /// authority operation is string equality across bundle members.
 fn composition_digest(value: &Value) -> Result<String> {
     let digest = text(value, "composition_digest", false)?;
-    if digest.len() > MAX_COMPOSITION_DIGEST_BYTES
-        || digest.chars().any(|c| c.is_control())
-    {
+    if digest.len() > MAX_COMPOSITION_DIGEST_BYTES || digest.chars().any(|c| c.is_control()) {
         return Err(CodingError::new(
             "arguments_invalid",
             "composition_digest must be a bounded opaque identity without control characters",
@@ -853,7 +851,12 @@ pub fn process_execute_argv(scope: &CodingScope, arguments: &Value) -> Result<Va
     let args = object(
         arguments,
         &["argv"],
-        &["cwd", "timeout_ms", "max_output_bytes", "composition_digest"],
+        &[
+            "cwd",
+            "timeout_ms",
+            "max_output_bytes",
+            "composition_digest",
+        ],
     )?;
     let argv = array_of_strings(args.get("argv").unwrap(), "argv", MAX_ARGS)?;
     let (program, process_args) = match argv.split_first() {
@@ -1247,11 +1250,9 @@ mod tests {
     fn argv_process_rejects_disallowed_program_cwd_and_environment() {
         let root = fixture();
         let scope = scope(&root);
-        let denied =
-            process_execute_argv(&scope, &json!({"argv":["powershell","-NoProfile"]}));
+        let denied = process_execute_argv(&scope, &json!({"argv":["powershell","-NoProfile"]}));
         assert_eq!(denied.unwrap_err().code, "program_not_allowed");
-        let escaped =
-            process_execute_argv(&scope, &json!({"argv":["git","--version"],"cwd":".."}));
+        let escaped = process_execute_argv(&scope, &json!({"argv":["git","--version"],"cwd":".."}));
         assert_eq!(escaped.unwrap_err().code, "path_invalid");
         let env = process_execute_argv(
             &scope,

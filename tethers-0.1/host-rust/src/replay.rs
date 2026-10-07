@@ -195,7 +195,9 @@ impl ExecutionBinding {
         if let Some(bundle_id) = &self.bundle_id {
             if bundle_id.is_empty()
                 || bundle_id.len() > 256
-                || bundle_id.chars().any(|c| c.is_whitespace() || c.is_control())
+                || bundle_id
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control())
             {
                 return Err(ReplayError::InvalidChain);
             }

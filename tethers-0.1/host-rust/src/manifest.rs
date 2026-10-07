@@ -776,11 +776,7 @@ fn parse_binding(
             })
         }
         "host" => {
-            reject_unknown_keys(
-                obj,
-                &["kind", "executor_identity", "adapter"],
-                pointer,
-            )?;
+            reject_unknown_keys(obj, &["kind", "executor_identity", "adapter"], pointer)?;
             let adapter = parse_optional_adapter(obj, pointer)?;
             let executor_identity = require_str(obj, "executor_identity", pointer)?;
             validate_executor_identity(executor_identity, pointer)?;
@@ -822,7 +818,10 @@ fn parse_optional_adapter(
 /// A Host executor identity is an exact trusted name, never an ambient
 /// token: non-empty, bounded, no whitespace or control characters.
 fn validate_executor_identity(value: &str, pointer: &str) -> Result<(), ManifestError> {
-    if value.is_empty() || value.len() > 256 || value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+    if value.is_empty()
+        || value.len() > 256
+        || value.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
         return Err(ManifestError::with_field(
             ManifestErrorCode::InvalidBinding,
             "executor_identity must be a bounded exact identity without whitespace",
@@ -1829,7 +1828,10 @@ mod tests {
     #[test]
     fn reject_host_binding_without_executor_identity() {
         let mut m = host_manifest_json();
-        m["binding"].as_object_mut().unwrap().remove("executor_identity");
+        m["binding"]
+            .as_object_mut()
+            .unwrap()
+            .remove("executor_identity");
         let err = TrustedManifest::parse(&m.to_string()).unwrap_err();
         assert_eq!(err.code, ManifestErrorCode::MissingField);
     }
