@@ -27,6 +27,15 @@ pub const GIT_BRANCH_CREATE: &str = "git_branch_create";
 pub const GIT_CHECKOUT: &str = "git_checkout";
 pub const GIT_COMMIT: &str = "git_commit";
 pub const PROCESS_EXECUTE: &str = "process_execute";
+/// Resolved argv-only single process execution (process.execute@2).
+///
+/// Unlike [`PROCESS_EXECUTE`], the caller supplies one resolved argv vector
+/// whose first element is the allow-listed program, and no per-call
+/// environment overrides. stdin is closed, stdout/stderr are bounded text
+/// with UTF-8 indicators — identical execution truth to @1.
+pub const PROCESS_EXECUTE_ARGV: &str = "process_execute_argv";
+/// Bound on the opaque composition identity carried alongside @2 execution.
+const MAX_COMPOSITION_DIGEST_BYTES: usize = 512;
 pub const VERIFICATION_RUN: &str = "verification_run";
 
 const MAX_ARGS: usize = 256;
@@ -817,6 +826,84 @@ pub fn process_execute(scope: &CodingScope, arguments: &Value) -> Result<Value> 
     Ok(process_value(result, &program, &cwd))
 }
 
+/// Validate an opaque composition identity. Tethers never parses shell or
+/// composition content: the digest is an exact bounded handle whose only
+/// authority operation is string equality across bundle members.
+fn composition_digest(value: &Value) -> Result<String> {
+    let digest = text(value, "composition_digest", false)?;
+    if digest.len() > MAX_COMPOSITION_DIGEST_BYTES || digest.chars().any(|c| c.is_control()) {
+        return Err(CodingError::new(
+            "arguments_invalid",
+            "composition_digest must be a bounded opaque identity without control characters",
+        ));
+    }
+    Ok(digest)
+}
+
+/// Execute one resolved argv-only process (process.execute@2).
+///
+/// `argv[0]` is the program resolved against the scope allow-list; the rest
+/// are literal arguments. There is no shell, no per-call environment, and
+/// stdin is closed. Output truth (bounded text, truncation and UTF-8
+/// indicators) matches [`process_execute`]; the result additionally echoes
+/// the resolved `argv` and any caller-supplied opaque `composition_digest`.
+pub fn process_execute_argv(scope: &CodingScope, arguments: &Value) -> Result<Value> {
+    let args = object(
+        arguments,
+        &["argv"],
+        &[
+            "cwd",
+            "timeout_ms",
+            "max_output_bytes",
+            "composition_digest",
+        ],
+    )?;
+    let argv = array_of_strings(args.get("argv").unwrap(), "argv", MAX_ARGS)?;
+    let (program, process_args) = match argv.split_first() {
+        Some((program, rest)) if !program.is_empty() => (program.clone(), rest.to_vec()),
+        _ => {
+            return Err(CodingError::new(
+                "arguments_invalid",
+                "argv must start with a non-empty resolved program",
+            ));
+        }
+    };
+    let cwd = match args.get("cwd") {
+        Some(value) => text(value, "cwd", false)?,
+        None => ".".to_owned(),
+    };
+    safe_relative(&cwd, "cwd", true)?;
+    let timeout_ms = match args.get("timeout_ms") {
+        Some(value) => bounded_u64(value, "timeout_ms", scope.max_runtime_ms)?,
+        None => scope.max_runtime_ms,
+    };
+    let max_output_bytes = match args.get("max_output_bytes") {
+        Some(value) => bounded_u64(value, "max_output_bytes", scope.max_output_bytes)?,
+        None => scope.max_output_bytes,
+    };
+    let digest = match args.get("composition_digest") {
+        None => None,
+        Some(value) => Some(composition_digest(value)?),
+    };
+    // No per-call environment: @2 executes exactly the resolved argv under
+    // the scope's own inherited environment.
+    let result = run_argv(
+        scope,
+        &program,
+        &process_args,
+        &cwd,
+        timeout_ms,
+        max_output_bytes,
+        &BTreeMap::new(),
+    )?;
+    let mut value = process_value(result, &program, &cwd);
+    value["argv"] = Value::Array(argv.into_iter().map(Value::String).collect());
+    if let Some(digest) = digest {
+        value["composition_digest"] = Value::String(digest);
+    }
+    Ok(value)
+}
+
 pub fn verification_run(scope: &CodingScope, arguments: &Value) -> Result<Value> {
     let args = object(arguments, &["check"], &[])?;
     let name = text(args.get("check").unwrap(), "check", false)?;
@@ -1134,6 +1221,53 @@ mod tests {
             &json!({"program":"cmd","args":["/c","echo","ok"],"cwd":".."}),
         );
         assert_eq!(escaped.unwrap_err().code, "path_invalid");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn argv_process_executes_resolved_program_with_bounded_result() {
+        let root = fixture();
+        let scope = scope(&root);
+        let result = process_execute_argv(
+            &scope,
+            &json!({"argv":["git","--version"],"composition_digest":"sha256:composition-fixture"}),
+        )
+        .unwrap();
+        assert_eq!(result["exit_code"], 0);
+        assert_eq!(result["timed_out"], false);
+        assert_eq!(result["stdout_utf8"], true);
+        assert_eq!(result["stdout_truncated"], false);
+        assert_eq!(result["argv"][0], "git");
+        assert_eq!(result["composition_digest"], "sha256:composition-fixture");
+        assert!(result["stdout"]
+            .as_str()
+            .unwrap()
+            .starts_with("git version "));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn argv_process_rejects_disallowed_program_cwd_and_environment() {
+        let root = fixture();
+        let scope = scope(&root);
+        let denied = process_execute_argv(&scope, &json!({"argv":["powershell","-NoProfile"]}));
+        assert_eq!(denied.unwrap_err().code, "program_not_allowed");
+        let escaped = process_execute_argv(&scope, &json!({"argv":["git","--version"],"cwd":".."}));
+        assert_eq!(escaped.unwrap_err().code, "path_invalid");
+        let env = process_execute_argv(
+            &scope,
+            &json!({"argv":["git","--version"],"environment":{"PATH":"x"}}),
+        );
+        assert_eq!(env.unwrap_err().code, "arguments_invalid");
+        let empty = process_execute_argv(&scope, &json!({"argv":[]}));
+        assert_eq!(empty.unwrap_err().code, "arguments_invalid");
+        let blank = process_execute_argv(&scope, &json!({"argv":[""] }));
+        assert_eq!(blank.unwrap_err().code, "arguments_invalid");
+        let bad_digest = process_execute_argv(
+            &scope,
+            &json!({"argv":["git","--version"],"composition_digest":"has\ncontrol"}),
+        );
+        assert_eq!(bad_digest.unwrap_err().code, "arguments_invalid");
         fs::remove_dir_all(root).unwrap();
     }
 

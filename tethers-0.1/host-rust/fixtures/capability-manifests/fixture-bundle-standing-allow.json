@@ -1,0 +1,77 @@
+{
+  "manifest_format_version": "1.0",
+  "capability_name": "fixture.bundle",
+  "capability_version": 1,
+  "title": "Fixture Bundle Standing Allow",
+  "description": "Host-bound fixture capability for atomic bundle authority acceptance (Phase A).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "composition_digest": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "message",
+      "path"
+    ],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "echo": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "echo"
+    ],
+    "additionalProperties": false
+  },
+  "effects": [
+    "fixture.test"
+  ],
+  "permission_scope": {
+    "kind": "path_prefix",
+    "allowed_prefixes": ["projects/"]
+  },
+  "reversibility": "reversible",
+  "determinism": "deterministic",
+  "idempotency": {
+    "mechanism": "argument_key",
+    "argument_name": "idempotency_key",
+    "key_source": "evaluation_id/action_id"
+  },
+  "confirmation_policy": {
+    "standing_permitted": true,
+    "per_call_required": false
+  },
+  "timeout_ms": 5000,
+  "retry_policy": {
+    "max_retries": 0,
+    "backoff_ms": 500,
+    "allowed_on": [
+      "outcome_unknown"
+    ],
+    "requires_idempotency_proof": false
+  },
+  "provider": {
+    "identity": "tethers-host-fixture",
+    "display_name": "Tethers Host Fixture",
+    "identity_source": "host_configuration",
+    "description": "Test-only host-executed fixture provider. Never invoked by the reference host."
+  },
+  "binding": {
+    "kind": "host",
+    "executor_identity": "tethers-host-fixture",
+    "adapter": null
+  },
+  "digest": "sha256:257476fa6b84e91699260428ea0fd85087d357b8127764c93f669ff75c27b06d"
+}

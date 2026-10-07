@@ -2331,6 +2331,7 @@ fn replay_claim_without_trail_intent_is_reported() {
         provider_identity: "tethers-stdio-fixture".into(),
         argument_digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             .into(),
+        bundle_id: None,
     };
     let authority = FileReplayAuthority::new(Some(&workspace.host_data));
     let mut guard = authority.admit(&logical_key, &binding).expect("admit");

@@ -2505,6 +2505,7 @@ fn execute_boundary_impl(
         manifest_digest: resolved.manifest_digest().to_owned(),
         provider_identity: resolved.provider_identity().to_owned(),
         argument_digest: approval::digest(&arguments),
+        bundle_id: None,
     };
 
     // Replay persistence is opened lazily here, after all ordinary fresh gates
@@ -3151,6 +3152,7 @@ pub(crate) fn execute_boundary_prepare(
         manifest_digest: resolved.manifest_digest().to_owned(),
         provider_identity: resolved.provider_identity().to_owned(),
         argument_digest: approval::digest(&arguments),
+        bundle_id: None,
     };
 
     // Replay persistence is opened lazily here.
@@ -6718,6 +6720,7 @@ mod tests {
                 manifest_digest: resolved.manifest_digest().to_owned(),
                 provider_identity: resolved.provider_identity().to_owned(),
                 argument_digest: approval::digest(&json!({"project":"p","task":"t"})),
+                bundle_id: None,
             }
         }
 
@@ -6745,7 +6748,8 @@ mod tests {
                 }
                 replay::ReplayState::Succeeded
                 | replay::ReplayState::Failed
-                | replay::ReplayState::Uncertain => {
+                | replay::ReplayState::Uncertain
+                | replay::ReplayState::NotAttempted => {
                     admission.publish_intent().unwrap();
                     admission.publish_armed().unwrap();
                     admission

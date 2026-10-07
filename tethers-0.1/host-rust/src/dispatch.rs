@@ -296,6 +296,11 @@ pub struct IntentEntry {
     /// Absent in pre-C2-A2b records.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub semantic_position: Option<SemanticPosition>,
+    /// Atomic bundle this intent belongs to. `None` for single-action
+    /// commits; skipped when absent so pre-bundle intent records stay
+    /// byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -962,7 +967,102 @@ pub fn prepare_and_record(
         manifest_digest: manifest_digest.to_owned(),
         arguments: arguments.clone(),
         semantic_position,
+        bundle_id: None,
     };
+
+    record_intent(resolved, execution_id, action_id, arguments, entry, trail)
+}
+
+/// Bundle-member variant of [`prepare_and_record`]. Shares the identical
+/// decision/identity/durability boundary; the only difference is the durable
+/// `bundle_id` carried on the intent entry. This is not a loop over the
+/// single-commit path: each member is recorded once, inside the bundle's own
+/// durable transaction, and becomes dispatchable only when the bundle ledger
+/// holds the committed marker.
+pub fn prepare_and_record_bundled(
+    decision: PermissionDecision,
+    resolved: &ResolvedCapability,
+    execution_id: ExecutionId,
+    action_id: ActionId,
+    arguments: serde_json::Value,
+    trail: &mut dyn Trail,
+    semantic_position: Option<SemanticPosition>,
+    bundle_id: &str,
+) -> Result<DispatchReadyAction, PrepareError> {
+    // 1. Decision must be Allow and must carry a policy-created token.
+    let allowed = match decision {
+        PermissionDecision::Allow(allowed) => allowed,
+        PermissionDecision::Ask => return Err(PrepareError::Ask),
+        PermissionDecision::Deny => return Err(PrepareError::Deny),
+        PermissionDecision::Unavailable => return Err(PrepareError::Unavailable),
+    };
+
+    // 2. Validate non-empty identifiers.
+    if execution_id.0.is_empty() {
+        return Err(PrepareError::EmptyIdentifier {
+            field: "execution_id",
+        });
+    }
+    if action_id.0.is_empty() {
+        return Err(PrepareError::EmptyIdentifier { field: "action_id" });
+    }
+    if bundle_id.is_empty() {
+        return Err(PrepareError::EmptyIdentifier { field: "bundle_id" });
+    }
+
+    // 3. Identity binding: the AllowedIdentity must match the resolved
+    //    capability.
+    if allowed.capability_name() != resolved.capability_name()
+        || allowed.capability_version() != resolved.capability_version()
+    {
+        return Err(PrepareError::CapabilityIdentityMismatch {
+            allowed_name: allowed.capability_name().to_owned(),
+            allowed_version: allowed.capability_version(),
+            resolved_name: resolved.capability_name().to_owned(),
+            resolved_version: resolved.capability_version(),
+        });
+    }
+
+    let capability_name = resolved.capability_name();
+    let capability_version = resolved.capability_version();
+    let provider_identity = resolved.provider_identity();
+    let manifest_digest = resolved.manifest_digest();
+
+    debug_assert_eq!(resolved.manifest().capability_name(), capability_name);
+    debug_assert_eq!(resolved.manifest().capability_version(), capability_version);
+    debug_assert_eq!(resolved.manifest().verified_digest(), manifest_digest);
+
+    // 4. Build bundle-bound intent entry.
+    let entry = IntentEntry {
+        execution_id: execution_id.0.clone(),
+        action_id: action_id.0.clone(),
+        capability_name: capability_name.to_owned(),
+        capability_version,
+        provider_identity: provider_identity.to_owned(),
+        manifest_digest: manifest_digest.to_owned(),
+        arguments: arguments.clone(),
+        semantic_position,
+        bundle_id: Some(bundle_id.to_owned()),
+    };
+
+    record_intent(resolved, execution_id, action_id, arguments, entry, trail)
+}
+
+/// Shared durable tail: append-and-flush one intent entry, then mint the
+/// dispatch-ready proof token. Reached only after the caller established the
+/// Allow decision, identifiers, and identity binding.
+fn record_intent(
+    resolved: &ResolvedCapability,
+    execution_id: ExecutionId,
+    action_id: ActionId,
+    arguments: serde_json::Value,
+    entry: IntentEntry,
+    trail: &mut dyn Trail,
+) -> Result<DispatchReadyAction, PrepareError> {
+    let capability_name = resolved.capability_name();
+    let capability_version = resolved.capability_version();
+    let provider_identity = resolved.provider_identity();
+    let manifest_digest = resolved.manifest_digest();
 
     // 5. Durably append and flush intent.
     trail.append_and_flush_intent(&entry).map_err(|e| match e {
@@ -1680,6 +1780,7 @@ mod tests {
                 manifest_digest: "sha256:abc".into(),
                 arguments: json!({}),
                 semantic_position: None,
+                bundle_id: None,
             })
             .unwrap();
 
@@ -1773,6 +1874,7 @@ mod tests {
                 manifest_digest: "sha256:abc".into(),
                 arguments: json!({}),
                 semantic_position: None,
+                bundle_id: None,
             })
             .unwrap();
 
@@ -1926,6 +2028,7 @@ mod tests {
                 manifest_digest: "sha256:deadbeef".into(),
                 arguments: serde_json::json!({"msg": "intent before close"}),
                 semantic_position: None,
+                bundle_id: None,
             })
             .expect("append");
         }
@@ -1957,6 +2060,7 @@ mod tests {
                     manifest_digest: format!("sha256:multi{i:x}"),
                     arguments: serde_json::json!({"idx": i}),
                     semantic_position: None,
+                    bundle_id: None,
                 })
                 .expect("append");
             }
@@ -2124,6 +2228,7 @@ mod tests {
                 member_ordinal: None,
                 phase: SemanticPhase::Action,
             }),
+            bundle_id: None,
         };
         let line = serde_json::to_string(&entry).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
@@ -2144,6 +2249,7 @@ mod tests {
             manifest_digest: "sha256:abc".into(),
             arguments: json!({}),
             semantic_position: None,
+            bundle_id: None,
         };
         let line = serde_json::to_string(&entry).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();

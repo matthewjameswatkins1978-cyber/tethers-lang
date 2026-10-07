@@ -162,6 +162,10 @@ impl LogicalExecutionKey {
 
 /// Complete redacted proof bound to a claim. Raw arguments cannot be supplied
 /// to this type; callers provide only their already-canonical digest.
+///
+/// `bundle_id` is `None` for single-action commits and `Some` for members of
+/// an atomic host-execution bundle. It is skipped in canonical bytes when
+/// `None`, so every pre-bundle digest remains bit-for-bit stable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionBinding {
@@ -172,6 +176,8 @@ pub struct ExecutionBinding {
     pub manifest_digest: String,
     pub provider_identity: String,
     pub argument_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<String>,
 }
 
 impl ExecutionBinding {
@@ -185,6 +191,17 @@ impl ExecutionBinding {
         }
         validate_digest(&self.manifest_digest)?;
         validate_digest(&self.argument_digest)?;
+        // A bundle identity is an opaque exact handle, never parsed content.
+        if let Some(bundle_id) = &self.bundle_id {
+            if bundle_id.is_empty()
+                || bundle_id.len() > 256
+                || bundle_id
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control())
+            {
+                return Err(ReplayError::InvalidChain);
+            }
+        }
         Ok(())
     }
 
@@ -242,6 +259,19 @@ pub enum ReplayState {
     Succeeded,
     Failed,
     Uncertain,
+    /// Bundle member never attempted: the bundle was admitted but physical
+    /// execution of this member never started. Terminal and distinct from
+    /// failure — it asserts never-attempted, not failed-or-uncertain. Only
+    /// reachable for bundle-bound executions via `tethers.authority/2`.
+    NotAttempted,
+}
+
+impl ReplayState {
+    /// Refusal vocabulary for a recovered durable state, shared by the
+    /// single-commit and bundle-commit admission paths.
+    pub fn as_blocked_str(state: ReplayState) -> &'static str {
+        crate::replay_runtime::ReplayDispatchResult::from_recovered_state(state).as_str()
+    }
 }
 
 #[derive(Serialize)]
@@ -537,7 +567,13 @@ impl Generation {
 fn state_data(state: ReplayState, outcome_digest: Option<&str>) -> Result<Value, ReplayError> {
     match (state, outcome_digest) {
         (ReplayState::IntentRecorded | ReplayState::InvocationArmed, None) => Ok(json!({})),
-        (ReplayState::Succeeded | ReplayState::Failed | ReplayState::Uncertain, Some(digest)) => {
+        (
+            ReplayState::Succeeded
+            | ReplayState::Failed
+            | ReplayState::Uncertain
+            | ReplayState::NotAttempted,
+            Some(digest),
+        ) => {
             validate_digest(digest)?;
             Ok(json!({"durable_outcome_digest": digest}))
         }
@@ -554,7 +590,10 @@ fn parse_state_data(state: ReplayState, value: Value) -> Result<Option<String>, 
                 Err(ReplayError::InvalidChain)
             }
         }
-        ReplayState::Succeeded | ReplayState::Failed | ReplayState::Uncertain => {
+        ReplayState::Succeeded
+        | ReplayState::Failed
+        | ReplayState::Uncertain
+        | ReplayState::NotAttempted => {
             let data: TerminalStateData =
                 serde_json::from_value(value).map_err(|_| ReplayError::InvalidChain)?;
             validate_digest(&data.durable_outcome_digest)?;
@@ -586,7 +625,10 @@ pub fn validate_chain(
             1 => generation.state == ReplayState::InvocationArmed,
             2 => matches!(
                 generation.state,
-                ReplayState::Succeeded | ReplayState::Failed | ReplayState::Uncertain
+                ReplayState::Succeeded
+                    | ReplayState::Failed
+                    | ReplayState::Uncertain
+                    | ReplayState::NotAttempted
             ),
             _ => false,
         };
@@ -616,6 +658,7 @@ mod tests {
             manifest_digest: digest("manifest"),
             provider_identity: "provider".into(),
             argument_digest: digest("arguments"),
+            bundle_id: None,
         }
     }
 

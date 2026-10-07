@@ -1814,6 +1814,7 @@ mod tests {
             manifest_digest: test_digest("manifest"),
             provider_identity: "provider-local".into(),
             argument_digest: test_digest("redacted-arguments"),
+            bundle_id: None,
         }
     }
 
