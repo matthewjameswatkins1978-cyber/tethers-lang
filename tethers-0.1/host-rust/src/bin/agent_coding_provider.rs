@@ -73,9 +73,18 @@ fn bounded_bytes() -> Value {
 }
 
 fn process_output() -> Value {
+    argv_process_output()
+}
+
+/// Output truth shared by process_execute@1 and process_execute_argv@2:
+/// bounded text streams with truncation and UTF-8 indicators. @2 adds the
+/// resolved `argv` echo and the opaque `composition_digest` echo.
+fn argv_process_output() -> Value {
     output_object(
         json!({
             "program": nonempty_text(),
+            "argv":{"type":"array","items":{"type":"string"}},
+            "composition_digest":{"type":"string"},
             "cwd": nonempty_text(),
             "exit_code":{"type":["integer","null"]},
             "stdout":{"type":"string"},
@@ -186,6 +195,13 @@ fn tools() -> Value {
         }),
         &["revision", "content", "utf8", "truncated"],
     );
+    let argv_command_args = json!({
+        "argv":{"type":"array","minItems":1,"maxItems":256,"items":{"type":"string","maxLength":16384}},
+        "cwd": command_args["cwd"].clone(),
+        "timeout_ms": command_args["timeout_ms"].clone(),
+        "max_output_bytes": bytes.clone(),
+        "composition_digest":{"type":"string","minLength":1,"maxLength":512}
+    });
     json!({"tools":[
         tool("git_status", object(json!({}), &[]), status_output()),
         tool("git_diff", object(json!({"staged":{"type":"boolean"},"max_bytes":bytes.clone(),"path":path.clone()}), &["staged","max_bytes"]), diff_output),
@@ -198,6 +214,7 @@ fn tools() -> Value {
         tool("git_checkout", object(json!({"branch":nonempty_text()}), &["branch"]), output_object(json!({"branch":{"type":"string"},"checked_out":{"type":"boolean"}}), &["branch","checked_out"])),
         tool("git_commit", object(json!({"message":nonempty_text()}), &["message"]), output_object(json!({"committed":{"type":"boolean"},"commit":{"type":"string"}}), &["committed","commit"])),
         tool("process_execute", object(command_args, &["program","args"]), process_output()),
+        tool("process_execute_argv", object(argv_command_args, &["argv"]), argv_process_output()),
         tool("verification_run", object(json!({"check":nonempty_text()}), &["check"]), verification_output())
     ]})
 }
@@ -219,6 +236,7 @@ fn call(
         agent_coding::GIT_CHECKOUT => agent_coding::git_checkout(scope, arguments),
         agent_coding::GIT_COMMIT => agent_coding::git_commit(scope, arguments),
         agent_coding::PROCESS_EXECUTE => agent_coding::process_execute(scope, arguments),
+        agent_coding::PROCESS_EXECUTE_ARGV => agent_coding::process_execute_argv(scope, arguments),
         agent_coding::VERIFICATION_RUN => agent_coding::verification_run(scope, arguments),
         _ => Err(agent_coding::CodingError {
             code: "unknown_operation",

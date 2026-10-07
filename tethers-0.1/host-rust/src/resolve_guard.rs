@@ -941,6 +941,7 @@ fn binding_digest(
     let binding = &manifest.binding;
     let binding_kind = match binding.kind {
         BindingKind::Mcp => "mcp",
+        BindingKind::Host => "host",
     };
     let provider_source = match manifest.provider.identity_source {
         IdentitySource::HostConfiguration => "host_configuration",

@@ -271,6 +271,12 @@ pub struct ProviderIdentity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BindingKind {
     Mcp,
+    /// Host-executed capability. The manifest names the exact trusted
+    /// executor identity; there is no ambient-host token. A Host-bound
+    /// capability resolves only when its executor identity is exactly the
+    /// admitted provider identity, and only an external admitted Host ever
+    /// executes it (the reference host refuses non-MCP bindings).
+    Host,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -283,8 +289,13 @@ pub struct AdapterBinding {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
     pub kind: BindingKind,
+    /// MCP server name. Empty for Host bindings.
     pub server_name: String,
+    /// MCP tool name. Empty for Host bindings.
     pub tool_name: String,
+    /// Exact trusted executor identity. `Some` only for Host bindings;
+    /// must equal `provider.identity` (C1c cross-field rule).
+    pub executor_identity: Option<String>,
     pub adapter: Option<AdapterBinding>,
 }
 
@@ -744,42 +755,81 @@ fn parse_binding(
     obj: &serde_json::Map<String, serde_json::Value>,
     pointer: &str,
 ) -> Result<Binding, ManifestError> {
-    reject_unknown_keys(
-        obj,
-        &["kind", "server_name", "tool_name", "adapter"],
-        pointer,
-    )?;
     let kind_str = require_str(obj, "kind", pointer)?;
-    let kind = match kind_str {
-        "mcp" => BindingKind::Mcp,
-        _ => {
-            return Err(ManifestError::with_field(
-                ManifestErrorCode::InvalidBinding,
-                format!("unknown binding kind: {}", kind_str),
-                json_pointer_child(pointer, "kind"),
-            ));
+    // Each binding kind owns an exact key set. MCP and Host shapes never
+    // mix: a Host binding carries no server/tool names, an MCP binding
+    // carries no executor identity.
+    match kind_str {
+        "mcp" => {
+            reject_unknown_keys(
+                obj,
+                &["kind", "server_name", "tool_name", "adapter"],
+                pointer,
+            )?;
+            let adapter = parse_optional_adapter(obj, pointer)?;
+            Ok(Binding {
+                kind: BindingKind::Mcp,
+                server_name: require_str(obj, "server_name", pointer)?.to_string(),
+                tool_name: require_str(obj, "tool_name", pointer)?.to_string(),
+                executor_identity: None,
+                adapter,
+            })
         }
-    };
-    let adapter = match obj.get("adapter") {
-        Some(serde_json::Value::Null) | None => None,
-        Some(serde_json::Value::Object(a)) => Some(parse_adapter_binding(
+        "host" => {
+            reject_unknown_keys(
+                obj,
+                &["kind", "executor_identity", "adapter"],
+                pointer,
+            )?;
+            let adapter = parse_optional_adapter(obj, pointer)?;
+            let executor_identity = require_str(obj, "executor_identity", pointer)?;
+            validate_executor_identity(executor_identity, pointer)?;
+            Ok(Binding {
+                kind: BindingKind::Host,
+                server_name: String::new(),
+                tool_name: String::new(),
+                executor_identity: Some(executor_identity.to_string()),
+                adapter,
+            })
+        }
+        _ => Err(ManifestError::with_field(
+            ManifestErrorCode::InvalidBinding,
+            format!("unknown binding kind: {}", kind_str),
+            json_pointer_child(pointer, "kind"),
+        )),
+    }
+}
+
+/// Parse the optional `adapter` member shared by every binding kind.
+fn parse_optional_adapter(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    pointer: &str,
+) -> Result<Option<AdapterBinding>, ManifestError> {
+    match obj.get("adapter") {
+        Some(serde_json::Value::Null) | None => Ok(None),
+        Some(serde_json::Value::Object(a)) => Ok(Some(parse_adapter_binding(
             a,
             &json_pointer_child(pointer, "adapter"),
-        )?),
-        Some(_) => {
-            return Err(ManifestError::with_field(
-                ManifestErrorCode::InvalidType,
-                "adapter must be an object or null",
-                json_pointer_child(pointer, "adapter"),
-            ));
-        }
-    };
-    Ok(Binding {
-        kind,
-        server_name: require_str(obj, "server_name", pointer)?.to_string(),
-        tool_name: require_str(obj, "tool_name", pointer)?.to_string(),
-        adapter,
-    })
+        )?)),
+        Some(_) => Err(ManifestError::with_field(
+            ManifestErrorCode::InvalidType,
+            "adapter must be an object or null",
+            json_pointer_child(pointer, "adapter"),
+        )),
+    }
+}
+
+/// A Host executor identity is an exact trusted name, never an ambient
+/// token: non-empty, bounded, no whitespace or control characters.
+fn validate_executor_identity(value: &str, pointer: &str) -> Result<(), ManifestError> {
+    if value.is_empty() || value.len() > 256 || value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(ManifestError::with_field(
+            ManifestErrorCode::InvalidBinding,
+            "executor_identity must be a bounded exact identity without whitespace",
+            json_pointer_child(pointer, "executor_identity"),
+        ));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -968,6 +1018,10 @@ impl TrustedManifest {
     ///    non-`.read` effect AND `retry_policy.max_retries > 0`, the manifest
     ///    is inconsistent (automatic retry is forbidden for effectful Actions
     ///    without a concrete idempotency mechanism).
+    ///
+    /// 4. **Host binding names its executor exactly**: a `host` binding must
+    ///    carry an `executor_identity` that equals `provider.identity`. The
+    ///    executor is an exact trusted identity, never an ambient token.
     fn validate_semantics(&self) -> Result<(), ManifestError> {
         // Rule 1: null scope → per-call confirmation mandatory.
         if matches!(self.permission_scope, PermissionScope::Unrestricted)
@@ -1009,6 +1063,20 @@ impl TrustedManifest {
                 "idempotency mechanism is \"none\" but retry_policy.max_retries > 0 for effectful (non-.read) effects; automatic retry requires a concrete idempotency mechanism",
                 "/retry_policy/max_retries",
             ));
+        }
+
+        // Rule 4: host binding executor identity equals provider identity.
+        if self.binding.kind == BindingKind::Host {
+            match &self.binding.executor_identity {
+                Some(executor) if executor == &self.provider.identity => {}
+                _ => {
+                    return Err(ManifestError::with_field(
+                        ManifestErrorCode::InvalidBinding,
+                        "host binding executor_identity must exactly equal provider.identity",
+                        "/binding/executor_identity",
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -1714,6 +1782,82 @@ mod tests {
         m["binding"]["kind"] = json!("http");
         let err = TrustedManifest::parse(&m.to_string()).unwrap_err();
         assert_eq!(err.code, ManifestErrorCode::InvalidBinding);
+    }
+
+    // === Host binding (omen host-execution bundles) ===
+
+    fn host_manifest_json() -> serde_json::Value {
+        let mut m = minimal_manifest_json();
+        m["binding"] = json!({
+            "kind": "host",
+            "executor_identity": "tethers-agent-coding",
+            "adapter": null
+        });
+        m["provider"]["identity"] = json!("tethers-agent-coding");
+        m
+    }
+
+    #[test]
+    fn accept_host_binding_with_exact_executor_identity() {
+        let parsed = TrustedManifest::parse(&host_manifest_json().to_string()).unwrap();
+        assert_eq!(parsed.binding.kind, BindingKind::Host);
+        assert_eq!(
+            parsed.binding.executor_identity.as_deref(),
+            Some("tethers-agent-coding")
+        );
+        assert!(parsed.binding.server_name.is_empty());
+        assert!(parsed.binding.tool_name.is_empty());
+        parsed.validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn reject_host_binding_with_mcp_keys() {
+        let mut m = host_manifest_json();
+        m["binding"]["server_name"] = json!("some-server");
+        let err = TrustedManifest::parse(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::UnknownField);
+    }
+
+    #[test]
+    fn reject_host_binding_with_tool_name() {
+        let mut m = host_manifest_json();
+        m["binding"]["tool_name"] = json!("some-tool");
+        let err = TrustedManifest::parse(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::UnknownField);
+    }
+
+    #[test]
+    fn reject_host_binding_without_executor_identity() {
+        let mut m = host_manifest_json();
+        m["binding"].as_object_mut().unwrap().remove("executor_identity");
+        let err = TrustedManifest::parse(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::MissingField);
+    }
+
+    #[test]
+    fn reject_host_binding_with_blank_executor_identity() {
+        let mut m = host_manifest_json();
+        m["binding"]["executor_identity"] = json!("has space");
+        let err = TrustedManifest::parse(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidBinding);
+    }
+
+    #[test]
+    fn reject_host_binding_when_executor_differs_from_provider() {
+        let mut m = host_manifest_json();
+        m["provider"]["identity"] = json!("someone-else");
+        let parsed = TrustedManifest::parse(&m.to_string()).unwrap();
+        let err = parsed.validate_semantics().unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::InvalidBinding);
+        assert_eq!(err.field.as_deref(), Some("/binding/executor_identity"));
+    }
+
+    #[test]
+    fn reject_mcp_binding_with_executor_identity() {
+        let mut m = minimal_manifest_json();
+        m["binding"]["executor_identity"] = json!("tethers-agent-coding");
+        let err = TrustedManifest::parse(&m.to_string()).unwrap_err();
+        assert_eq!(err.code, ManifestErrorCode::UnknownField);
     }
 
     #[test]

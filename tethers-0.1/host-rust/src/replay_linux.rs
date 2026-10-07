@@ -627,6 +627,7 @@ mod tests {
             provider_identity: "provider-linux".into(),
             argument_digest:
                 "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+            bundle_id: None,
         }
     }
 

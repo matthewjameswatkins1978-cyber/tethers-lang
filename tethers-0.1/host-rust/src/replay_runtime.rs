@@ -11,6 +11,7 @@ pub enum ReplayDispatchResult {
     PersistenceUnavailable,
     BlockedCompletedSuccess,
     BlockedCompletedFailure,
+    BlockedNotAttempted,
     RequiresManualResolution,
 }
 
@@ -20,6 +21,7 @@ impl ReplayDispatchResult {
             Self::PersistenceUnavailable => "replay_persistence_unavailable",
             Self::BlockedCompletedSuccess => "replay_blocked_completed_success",
             Self::BlockedCompletedFailure => "replay_blocked_completed_failure",
+            Self::BlockedNotAttempted => "replay_blocked_not_attempted",
             Self::RequiresManualResolution => "replay_requires_manual_resolution",
         }
     }
@@ -28,6 +30,7 @@ impl ReplayDispatchResult {
         match state {
             ReplayState::Succeeded => Self::BlockedCompletedSuccess,
             ReplayState::Failed => Self::BlockedCompletedFailure,
+            ReplayState::NotAttempted => Self::BlockedNotAttempted,
             ReplayState::ClaimedNoState
             | ReplayState::IntentRecorded
             | ReplayState::InvocationArmed

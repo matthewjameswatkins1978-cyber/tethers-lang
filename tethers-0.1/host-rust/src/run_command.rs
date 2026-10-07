@@ -482,6 +482,21 @@ pub(crate) fn map_execution_result(result: &ExecutionServiceResult) -> CliEnvelo
                 execution_id.as_deref(),
             ),
         ),
+        ExecutionServiceResult::ReplayBlockedNotAttempted {
+            evaluation_id,
+            action_id,
+            execution_id,
+        } => error_with_data(
+            OutcomeStatus::Failed,
+            "REPLAY_BLOCKED_NOT_ATTEMPTED",
+            "replay is blocked by a prior never-attempted bundle member",
+            execution_data_with_id(
+                evaluation_id,
+                Some(action_id),
+                Some("replay_blocked_not_attempted"),
+                execution_id.as_deref(),
+            ),
+        ),
         ExecutionServiceResult::ReplayRequiresManualResolution {
             evaluation_id,
             action_id,

@@ -20,6 +20,7 @@ pub mod application;
 pub mod approval;
 pub mod authority_gate;
 pub mod bench_timing;
+pub mod bundle;
 pub mod candidate;
 pub mod candidate_preparation;
 pub mod check_command;

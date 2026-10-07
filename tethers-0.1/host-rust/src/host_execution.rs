@@ -152,6 +152,14 @@ pub enum ExecutionServiceResult {
         action_id: String,
         execution_id: Option<String>,
     },
+    /// A prior bundle member was terminally recorded as never attempted;
+    /// replay is blocked. Stops the plan: the reference host must never
+    /// dispatch a bundle member on its own authority.
+    ReplayBlockedNotAttempted {
+        evaluation_id: String,
+        action_id: String,
+        execution_id: Option<String>,
+    },
     /// Recovered claim, intent, armed, or uncertain state requires a human.
     ReplayRequiresManualResolution {
         evaluation_id: String,
@@ -1794,6 +1802,13 @@ impl<'a> HostExecutionService<'a> {
             crate::SharedExecutionOutcome::Replay(
                 crate::replay_runtime::ReplayDispatchResult::BlockedCompletedFailure,
             ) => ExecutionServiceResult::ReplayBlockedCompletedFailure {
+                evaluation_id,
+                action_id,
+                execution_id,
+            },
+            crate::SharedExecutionOutcome::Replay(
+                crate::replay_runtime::ReplayDispatchResult::BlockedNotAttempted,
+            ) => ExecutionServiceResult::ReplayBlockedNotAttempted {
                 evaluation_id,
                 action_id,
                 execution_id,

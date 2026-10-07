@@ -10,7 +10,12 @@ use std::collections::HashSet;
 use std::fmt;
 
 /// Authority protocol identity. Independent of product, Core, and CLI versions.
+/// Frozen: `tethers.authority/1` frames keep their exact behaviour forever.
 pub const AUTHORITY_PROTOCOL: &str = "tethers.authority/1";
+/// Extended authority protocol carrying the atomic host-execution bundle
+/// operations (`commit_bundle`, bundle-bound `not_attempted` outcomes).
+/// Additive: every `/1` operation behaves identically on `/2`.
+pub const AUTHORITY_PROTOCOL_V2: &str = "tethers.authority/2";
 
 /// Bound on one raw frame (including the trailing newline handling budget).
 pub const MAX_FRAME_BYTES: usize = 1_048_576;
@@ -35,6 +40,9 @@ pub const OP_HELLO: &str = "hello";
 pub const OP_PREPARE: &str = "prepare";
 pub const OP_APPROVAL_DECISION: &str = "approval_decision";
 pub const OP_COMMIT: &str = "commit";
+/// Atomic bundle commit. Only recognised on `tethers.authority/2` frames;
+/// on `/1` frames it is refused as an unknown operation (frozen protocol).
+pub const OP_COMMIT_BUNDLE: &str = "commit_bundle";
 pub const OP_OUTCOME: &str = "outcome";
 pub const OP_STATUS: &str = "status";
 pub const OP_SHUTDOWN: &str = "shutdown";
@@ -158,8 +166,12 @@ pub struct ResponseError {
 
 impl AuthorityResponse {
     pub fn ok(request_id: impl Into<String>, result: Value) -> Self {
+        Self::ok_in(AUTHORITY_PROTOCOL, request_id, result)
+    }
+
+    pub fn ok_in(schema: &str, request_id: impl Into<String>, result: Value) -> Self {
         Self {
-            schema: AUTHORITY_PROTOCOL.to_owned(),
+            schema: schema.to_owned(),
             request_id: request_id.into(),
             status: ResponseStatus::Ok,
             result: Some(result),
@@ -172,9 +184,18 @@ impl AuthorityResponse {
         code: impl Into<String>,
         message: impl Into<String>,
     ) -> Self {
+        Self::error_in(AUTHORITY_PROTOCOL, request_id, code, message)
+    }
+
+    pub fn error_in(
+        schema: &str,
+        request_id: impl Into<String>,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         let message = message.into();
         Self {
-            schema: AUTHORITY_PROTOCOL.to_owned(),
+            schema: schema.to_owned(),
             request_id: request_id.into(),
             status: ResponseStatus::Error,
             result: None,
@@ -192,9 +213,19 @@ impl AuthorityResponse {
         message: impl Into<String>,
         data: Value,
     ) -> Self {
+        Self::error_with_data_in(AUTHORITY_PROTOCOL, request_id, code, message, data)
+    }
+
+    pub fn error_with_data_in(
+        schema: &str,
+        request_id: impl Into<String>,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        data: Value,
+    ) -> Self {
         let message = message.into();
         Self {
-            schema: AUTHORITY_PROTOCOL.to_owned(),
+            schema: schema.to_owned(),
             request_id: request_id.into(),
             status: ResponseStatus::Error,
             result: None,
@@ -208,6 +239,10 @@ impl AuthorityResponse {
 
     pub fn from_frame_error(request_id: &str, error: &FrameError) -> Self {
         Self::error(request_id, error.code(), error.to_string())
+    }
+
+    pub fn from_frame_error_in(schema: &str, request_id: &str, error: &FrameError) -> Self {
+        Self::error_in(schema, request_id, error.code(), error.to_string())
     }
 
     pub fn to_json_line(&self) -> String {
@@ -275,13 +310,15 @@ pub fn parse_frame(line: &str) -> Result<AuthorityRequest, FrameError> {
     reject_duplicate_top_level(trimmed, object)?;
 
     let schema = parse_string_field(object, "schema")?;
-    if schema != AUTHORITY_PROTOCOL {
-        return Err(FrameError::SchemaUnsupported { schema });
-    }
+    let v2 = match schema.as_str() {
+        AUTHORITY_PROTOCOL => false,
+        AUTHORITY_PROTOCOL_V2 => true,
+        _ => return Err(FrameError::SchemaUnsupported { schema }),
+    };
     let request_id = parse_string_field(object, "request_id")?;
     validate_request_id(&request_id)?;
     let operation = parse_string_field(object, "operation")?;
-    if !is_known_operation(&operation) {
+    if !is_known_operation(&operation, v2) {
         return Err(FrameError::UnknownOperation { operation });
     }
     let payload_value = object
@@ -311,7 +348,7 @@ pub fn parse_frame(line: &str) -> Result<AuthorityRequest, FrameError> {
     })
 }
 
-fn is_known_operation(operation: &str) -> bool {
+fn is_known_operation(operation: &str, v2: bool) -> bool {
     matches!(
         operation,
         OP_HELLO
@@ -321,7 +358,7 @@ fn is_known_operation(operation: &str) -> bool {
             | OP_OUTCOME
             | OP_STATUS
             | OP_SHUTDOWN
-    )
+    ) || (v2 && operation == OP_COMMIT_BUNDLE)
 }
 
 fn validate_request_id(request_id: &str) -> Result<(), FrameError> {
@@ -570,16 +607,126 @@ pub fn parse_commit_payload_with_observations(
     Ok((prepared_id, approval_id, observations))
 }
 
+/// True when the frame speaks the extended bundle protocol.
+pub fn is_authority_v2(schema: &str) -> bool {
+    schema == AUTHORITY_PROTOCOL_V2
+}
+
+/// Extract the response schema for a raw frame line: `/2` when the frame
+/// declares it, `/1` otherwise (including malformed frames). Used to keep
+/// frame-layer refusals on the caller's own protocol.
+pub fn response_schema_for_line(line: &str) -> &'static str {
+    let trimmed = line.trim();
+    let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+        return AUTHORITY_PROTOCOL;
+    };
+    match value.get("schema").and_then(Value::as_str) {
+        Some(AUTHORITY_PROTOCOL_V2) => AUTHORITY_PROTOCOL_V2,
+        _ => AUTHORITY_PROTOCOL,
+    }
+}
+
+/// A parsed `commit_bundle` payload: a bounded ordered set of prepared
+/// identities plus optional per-member approval overrides and one shared
+/// observation set applied to every member recheck.
+#[derive(Debug, Clone)]
+pub struct CommitBundlePayload {
+    pub prepared_ids: Vec<String>,
+    pub approvals: std::collections::HashMap<String, String>,
+    pub observations: Observations,
+}
+
+/// Parse a `commit_bundle` payload. Only ever called for `/2` frames; the
+/// frame layer already refused this operation on `/1`.
+pub fn parse_commit_bundle_payload(payload: &Map<String, Value>) -> Result<CommitBundlePayload, FrameError> {
+    let ids = payload.get("prepared_ids").ok_or(FrameError::MissingField("prepared_ids"))?;
+    let ids = ids.as_array().ok_or(FrameError::WrongType { field: "prepared_ids" })?;
+    if ids.len() < crate::bundle::MIN_BUNDLE_MEMBERS || ids.len() > crate::bundle::MAX_BUNDLE_MEMBERS {
+        return Err(FrameError::PayloadInvalid {
+            code: "commit_bundle.member_count",
+            message: format!(
+                "commit_bundle requires {}-{} prepared members",
+                crate::bundle::MIN_BUNDLE_MEMBERS,
+                crate::bundle::MAX_BUNDLE_MEMBERS
+            ),
+        });
+    }
+    let mut prepared_ids = Vec::with_capacity(ids.len());
+    for id in ids {
+        let id = id.as_str().ok_or(FrameError::WrongType { field: "prepared_ids" })?;
+        if id.is_empty() {
+            return Err(FrameError::PayloadInvalid {
+                code: "frame.empty_field",
+                message: "prepared_ids must not contain empty identities".to_owned(),
+            });
+        }
+        if id.len() > 4_096 {
+            return Err(FrameError::PayloadOversized { bytes: id.len() });
+        }
+        prepared_ids.push(id.to_owned());
+    }
+    let mut seen = std::collections::HashSet::new();
+    for id in &prepared_ids {
+        if !seen.insert(id) {
+            return Err(FrameError::PayloadInvalid {
+                code: "commit_bundle.duplicate_member",
+                message: "commit_bundle members must be distinct prepared identities".to_owned(),
+            });
+        }
+    }
+    let mut approvals = std::collections::HashMap::new();
+    if let Some(value) = payload.get("approvals") {
+        let object = value.as_object().ok_or(FrameError::WrongType { field: "approvals" })?;
+        for (key, approval) in object {
+            let approval = approval.as_str().ok_or(FrameError::WrongType { field: "approvals" })?;
+            if approval.is_empty() {
+                return Err(FrameError::PayloadInvalid {
+                    code: "commit.invalid_approval",
+                    message: "approval_id must not be empty".to_owned(),
+                });
+            }
+            approvals.insert(key.clone(), approval.to_owned());
+        }
+    }
+    for key in payload.keys() {
+        if !matches!(key.as_str(), "prepared_ids" | "approvals" | "observations") {
+            return Err(FrameError::PayloadInvalid {
+                code: "commit_bundle.unknown_field",
+                message: format!("unknown commit_bundle field: {key}"),
+            });
+        }
+    }
+    let observations = Observations::parse(payload)?;
+    Ok(CommitBundlePayload { prepared_ids, approvals, observations })
+}
+
 pub fn parse_outcome_payload(payload: &Map<String, Value>) -> Result<OutcomePayload, FrameError> {
+    parse_outcome_payload_for(payload, false)
+}
+
+/// Parse an `outcome` payload. `allow_not_attempted` is true only on
+/// `/2` frames: the `not_attempted` classification is the narrowly bounded
+/// bundle-start terminal outcome and is refused everywhere else.
+pub fn parse_outcome_payload_for(
+    payload: &Map<String, Value>,
+    allow_not_attempted: bool,
+) -> Result<OutcomePayload, FrameError> {
     let execution_id = required_nonempty_string(payload, "execution_id")?;
     let classification = required_nonempty_string(payload, "classification")?;
-    if !matches!(
-        classification.as_str(),
-        "succeeded" | "failed" | "uncertain"
-    ) {
+    let not_attempted = classification == "not_attempted";
+    if not_attempted && !allow_not_attempted {
         return Err(FrameError::PayloadInvalid {
             code: "outcome.invalid_classification",
             message: "classification must be succeeded, failed, or uncertain".to_owned(),
+        });
+    }
+    if !matches!(
+        classification.as_str(),
+        "succeeded" | "failed" | "uncertain" | "not_attempted"
+    ) {
+        return Err(FrameError::PayloadInvalid {
+            code: "outcome.invalid_classification",
+            message: "classification must be succeeded, failed, uncertain, or not_attempted".to_owned(),
         });
     }
     let attempted = match payload.get("attempted") {
@@ -607,6 +754,17 @@ pub fn parse_outcome_payload(payload: &Map<String, Value>) -> Result<OutcomePayl
             return Err(FrameError::PayloadInvalid {
                 code: "outcome.missing_error",
                 message: "failed outcome requires error".to_owned(),
+            })
+        }
+        // The bundle-start nonattempt outcome asserts physical execution
+        // never started: it carries neither a result nor an error, and
+        // `attempted` must be false. Deeper gating (bundle-bound execution
+        // of a committed bundle) happens in the operation handler.
+        "not_attempted" if attempted || result.is_some() || error.is_some() => {
+            return Err(FrameError::PayloadInvalid {
+                code: "outcome.not_attempted_malformed",
+                message: "not_attempted requires attempted false with neither result nor error"
+                    .to_owned(),
             })
         }
         _ => {}
@@ -852,5 +1010,77 @@ mod tests {
         assert!(line.contains("tethers.authority/1"));
         let err = AuthorityResponse::error("r2", "boom", "failed");
         assert!(err.to_json_line().contains("\"status\":\"error\""));
+    }
+
+    fn frame_v2(operation: &str, payload: &str) -> String {
+        format!(
+            r#"{{"schema":"tethers.authority/2","request_id":"req-1","operation":"{operation}","payload":{payload}}}"#
+        )
+    }
+
+    #[test]
+    fn v2_frame_accepts_commit_bundle_but_v1_refuses_it() {
+        let request =
+            parse_frame(&frame_v2(OP_COMMIT_BUNDLE, r#"{"prepared_ids":["a","b"]}"#)).unwrap();
+        assert_eq!(request.schema, AUTHORITY_PROTOCOL_V2);
+        assert_eq!(request.operation, OP_COMMIT_BUNDLE);
+        let error = parse_frame(&frame(OP_COMMIT_BUNDLE, r#"{"prepared_ids":["a","b"]}"#))
+            .unwrap_err();
+        assert_eq!(error.code(), "frame.unknown_operation");
+    }
+
+    #[test]
+    fn v2_responses_carry_the_v2_schema() {
+        let ok = AuthorityResponse::ok_in(
+            AUTHORITY_PROTOCOL_V2,
+            "r1",
+            serde_json::json!({}),
+        );
+        assert!(ok.to_json_line().contains("tethers.authority/2"));
+        let err = AuthorityResponse::error_in(AUTHORITY_PROTOCOL_V2, "r2", "boom", "failed");
+        assert!(err.to_json_line().contains("tethers.authority/2"));
+    }
+
+    #[test]
+    fn commit_bundle_payload_bounds_members() {
+        let line = frame_v2(OP_COMMIT_BUNDLE, r#"{"prepared_ids":["only-one"]}"#);
+        let request = parse_frame(&line).unwrap();
+        let error = parse_commit_bundle_payload(&request.payload).unwrap_err();
+        assert_eq!(error.code(), "frame.payload_invalid");
+        let line = frame_v2(OP_COMMIT_BUNDLE, r#"{"prepared_ids":["a","a"]}"#);
+        let request = parse_frame(&line).unwrap();
+        let error = parse_commit_bundle_payload(&request.payload).unwrap_err();
+        assert_eq!(error.code(), "frame.payload_invalid");
+        let line = frame_v2(
+            OP_COMMIT_BUNDLE,
+            r#"{"prepared_ids":["a","b"],"approvals":{"a":"approval-1"}}"#,
+        );
+        let request = parse_frame(&line).unwrap();
+        let parsed = parse_commit_bundle_payload(&request.payload).unwrap();
+        assert_eq!(parsed.prepared_ids, vec!["a", "b"]);
+        assert_eq!(parsed.approvals.get("a").map(String::as_str), Some("approval-1"));
+    }
+
+    #[test]
+    fn not_attempted_parses_only_on_v2() {
+        let payload: Map<String, Value> = serde_json::from_value(serde_json::json!({
+            "execution_id": "exec_1",
+            "classification": "not_attempted",
+            "attempted": false
+        }))
+        .unwrap();
+        let parsed = parse_outcome_payload_for(&payload, true).unwrap();
+        assert_eq!(parsed.classification, "not_attempted");
+        assert!(!parsed.attempted);
+        let error = parse_outcome_payload(&payload).unwrap_err();
+        assert_eq!(error.code(), "frame.payload_invalid");
+        let bad: Map<String, Value> = serde_json::from_value(serde_json::json!({
+            "execution_id": "exec_1",
+            "classification": "not_attempted",
+            "attempted": true
+        }))
+        .unwrap();
+        let error = parse_outcome_payload_for(&bad, true).unwrap_err();
+        assert_eq!(error.code(), "frame.payload_invalid");
     }
 }
