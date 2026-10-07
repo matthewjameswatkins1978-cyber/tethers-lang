@@ -6,7 +6,7 @@
 use crate::authority_gate::{AuthorityGate, GateConfig};
 use crate::cli::{CliEnvelope, OutcomeStatus};
 use crate::gate_protocol::{
-    parse_frame, AuthorityResponse, FrameError, RequestIdMemory, MAX_FRAME_BYTES,
+    parse_frame, AuthorityResponse, FrameError, RequestIdMemory, is_authority_v2, MAX_FRAME_BYTES,
 };
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -308,7 +308,15 @@ fn handle_line(
                     AuthorityResponse::error(&request.request_id, error.code(), error.to_string());
                 return write_response(stdout, stderr_lines, &response);
             }
-            let response = gate.handle(&request.operation, &request.request_id, &request.payload);
+            // Authority/2 frames (including commit_bundle and bundle-bound
+            // not_attempted outcomes) route to the extended entry point;
+            // /1 frames keep exact behaviour. The frame layer already
+            // refused commit_bundle on /1 as an unknown operation.
+            let response = if is_authority_v2(&request.schema) {
+                gate.handle_v2(&request.operation, &request.request_id, &request.payload)
+            } else {
+                gate.handle(&request.operation, &request.request_id, &request.payload)
+            };
             write_response(stdout, stderr_lines, &response)?;
             if gate.shutdown_requested() {
                 let bye = AuthorityResponse::ok(

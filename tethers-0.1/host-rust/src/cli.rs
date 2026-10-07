@@ -126,7 +126,7 @@ pub enum Command {
         host_data_root: PathBuf,
     },
 
-    /// Serve the Tethers Authority Gate over persistent local stdio (`tethers.authority/1`).
+    /// Serve the Tethers Authority Gate over persistent local stdio (/1 frames keep exact behaviour; /2 frames route to the extended entry point).
     Gate {
         #[arg(long = "stdio", default_value_t = false)]
         stdio: bool,
